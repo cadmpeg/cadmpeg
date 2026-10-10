@@ -1433,6 +1433,7 @@ fn profile_roster_construction_axis(
         ctx.reserve_vec(&mut markers, 1, "collect SLDPRT revolution profile markers")?;
         markers.push(marker);
     }
+    let markers = super::endpoints::coordinate_rosters::CoordinateRosters::new(ctx, markers)?;
     let mut first_axis = None;
     let mut second_axis = None;
     for marker in lane
@@ -1557,6 +1558,8 @@ fn profile_generated_surface_axis(
     const QUANTUM: f64 = 1e-8;
     const NATIVE_TO_IR: f64 = 1000.0;
     const LINE_TOLERANCE: f64 = 1e-6;
+    let coordinate_rosters =
+        super::endpoints::coordinate_rosters::CoordinateRosters::borrowed(ctx, markers)?;
     let Some((origin, normal, u_axis)) = sketch.resolved_placement() else {
         return Ok(None);
     };
@@ -1606,7 +1609,7 @@ fn profile_generated_surface_axis(
         .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
     {
         let curve_endpoints =
-            roster_curve_endpoint_markers(ctx, &lane.native_payload, curve, markers)?;
+            roster_curve_endpoint_markers(ctx, &lane.native_payload, curve, &coordinate_rosters)?;
         for endpoint in curve_endpoints
             .into_iter()
             .filter(|endpoint| endpoint.object_index().is_some())
@@ -1727,6 +1730,8 @@ fn profile_curve_endpoint_ids<'a>(
     markers: &[&'a SketchInputEntity],
     indexed_only: bool,
 ) -> Result<HashSet<&'a str>, CodecError> {
+    let coordinate_rosters =
+        super::endpoints::coordinate_rosters::CoordinateRosters::borrowed(ctx, markers)?;
     let mut ids = HashSet::new();
     for curve in markers
         .iter()
@@ -1734,7 +1739,9 @@ fn profile_curve_endpoint_ids<'a>(
         .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
     {
         ctx.charge_work(1, "scan SLDPRT profile curve endpoints")?;
-        for endpoint in roster_curve_endpoint_markers(ctx, &lane.native_payload, curve, markers)? {
+        for endpoint in
+            roster_curve_endpoint_markers(ctx, &lane.native_payload, curve, &coordinate_rosters)?
+        {
             if (indexed_only && endpoint.object_index().is_none()) || ids.contains(endpoint.id()) {
                 continue;
             }
@@ -1907,6 +1914,8 @@ fn profile_roster_implicit_axis_endpoints<'a>(
     profile_native: &str,
     markers: &[&'a SketchInputEntity],
 ) -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
+    let coordinate_rosters =
+        super::endpoints::coordinate_rosters::CoordinateRosters::borrowed(ctx, markers)?;
     let curve_candidates = markers.iter().copied().filter(|marker| {
         let Ok(offset) = usize::try_from(marker.offset()) else {
             return false;
@@ -2014,8 +2023,12 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         }) {
             continue;
         }
-        let endpoints =
-            roster_curve_endpoint_markers(ctx, &lane.native_payload, candidate, markers)?;
+        let endpoints = roster_curve_endpoint_markers(
+            ctx,
+            &lane.native_payload,
+            candidate,
+            &coordinate_rosters,
+        )?;
         let [start, end] = endpoints.as_slice() else {
             continue;
         };
@@ -2047,7 +2060,8 @@ fn profile_roster_implicit_axis_endpoints<'a>(
     let [candidate] = curve_candidates.as_slice() else {
         return Ok(None);
     };
-    let endpoints = roster_curve_endpoint_markers(ctx, &lane.native_payload, candidate, markers)?;
+    let endpoints =
+        roster_curve_endpoint_markers(ctx, &lane.native_payload, candidate, &coordinate_rosters)?;
     let [start, end] = endpoints.as_slice() else {
         return Ok(None);
     };

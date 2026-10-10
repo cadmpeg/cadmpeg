@@ -20,7 +20,7 @@ fn type308_malformed_counts_or_spans_do_not_enable_generic_recovery() {
         vec![
             308.into(),
             0.into(),
-            TokenValue::String(b"FIG".to_vec()),
+            TokenValue::String(b"FIG".to_vec().into()),
             (-1_i64).into(),
             1.into(),
             1.into(),
@@ -30,7 +30,7 @@ fn type308_malformed_counts_or_spans_do_not_enable_generic_recovery() {
         vec![
             308.into(),
             0.into(),
-            TokenValue::String(b"FIG".to_vec()),
+            TokenValue::String(b"FIG".to_vec().into()),
             i64::MAX.into(),
             1.into(),
             1.into(),
@@ -40,18 +40,22 @@ fn type308_malformed_counts_or_spans_do_not_enable_generic_recovery() {
         vec![
             308.into(),
             0.into(),
-            TokenValue::String(b"FIG".to_vec()),
-            TokenValue::String(b"bad-count".to_vec()),
+            TokenValue::String(b"FIG".to_vec().into()),
+            TokenValue::String(b"bad-count".to_vec().into()),
             1.into(),
             1.into(),
             1.into(),
             5.into(),
         ],
-        vec![308.into(), 0.into(), TokenValue::String(b"FIG".to_vec())],
         vec![
             308.into(),
             0.into(),
-            TokenValue::String(b"FIG".to_vec()),
+            TokenValue::String(b"FIG".to_vec().into()),
+        ],
+        vec![
+            308.into(),
+            0.into(),
+            TokenValue::String(b"FIG".to_vec().into()),
             2.into(),
             7.into(),
         ],
@@ -221,7 +225,7 @@ fn type302_malformed_class_counts_or_spans_do_not_enable_generic_recovery() {
         ],
         vec![
             302_i64.into(),
-            TokenValue::String(b"bad-class-count".to_vec()),
+            TokenValue::String(b"bad-class-count".to_vec().into()),
             1_i64.into(),
             1_i64.into(),
             1_i64.into(),
@@ -245,7 +249,7 @@ fn type302_malformed_class_counts_or_spans_do_not_enable_generic_recovery() {
             1_i64.into(),
             1_i64.into(),
             1_i64.into(),
-            TokenValue::String(b"bad-item-count".to_vec()),
+            TokenValue::String(b"bad-item-count".to_vec().into()),
             1_i64.into(),
             1_i64.into(),
             1_i64.into(),
@@ -298,8 +302,8 @@ fn type316_entity_table_boundary_follows_unit_entry_count() {
         ];
         for _ in 0..count {
             values.extend([
-                TokenValue::String(b"LENGTH".to_vec()),
-                TokenValue::String(b"M".to_vec()),
+                TokenValue::String(b"LENGTH".to_vec().into()),
+                TokenValue::String(b"M".to_vec().into()),
                 1.0_f64.into(),
             ]);
         }
@@ -348,8 +352,8 @@ fn type316_table_boundary_precedes_valid_generic_alternative() {
         vec![
             316_i64.into(),
             1_i64.into(),
-            TokenValue::String(b"LENGTH".to_vec()),
-            TokenValue::String(b"M".to_vec()),
+            TokenValue::String(b"LENGTH".to_vec().into()),
+            TokenValue::String(b"M".to_vec().into()),
             2_i64.into(),
             1_i64.into(),
             3_i64.into(),
@@ -427,7 +431,7 @@ fn type316_malformed_count_or_span_does_not_enable_generic_recovery() {
         ],
         vec![
             316_i64.into(),
-            TokenValue::String(b"bad-count".to_vec()),
+            TokenValue::String(b"bad-count".to_vec().into()),
             1_i64.into(),
             1_i64.into(),
             1_i64.into(),
@@ -436,8 +440,8 @@ fn type316_malformed_count_or_span_does_not_enable_generic_recovery() {
         vec![
             316_i64.into(),
             1_i64.into(),
-            TokenValue::String(b"LENGTH".to_vec()),
-            TokenValue::String(b"M".to_vec()),
+            TokenValue::String(b"LENGTH".to_vec().into()),
+            TokenValue::String(b"M".to_vec().into()),
         ],
     ];
     for values in malformed {
@@ -483,7 +487,7 @@ fn type322_entity_table_boundary_follows_form_specific_attribute_values() {
         let attribute_count = i64::try_from(value_counts.len()).expect("test count fits");
         let mut values: Vec<TokenValue> = vec![
             322_i64.into(),
-            TokenValue::String(b"ATTR".to_vec()),
+            TokenValue::String(b"ATTR".to_vec().into()),
             1_i64.into(),
             attribute_count.into(),
         ];
@@ -558,7 +562,7 @@ fn type322_table_boundary_precedes_valid_generic_alternative() {
         11,
         vec![
             322_i64.into(),
-            TokenValue::String(b"ATTR".to_vec()),
+            TokenValue::String(b"ATTR".to_vec().into()),
             1_i64.into(),
             1_i64.into(),
             10_i64.into(),
@@ -618,7 +622,7 @@ fn type322_malformed_counts_or_spans_do_not_enable_generic_recovery() {
     let malformed: Vec<Vec<TokenValue>> = vec![
         vec![
             322_i64.into(),
-            TokenValue::String(b"ATTR".to_vec()),
+            TokenValue::String(b"ATTR".to_vec().into()),
             1_i64.into(),
             0_i64.into(),
             1_i64.into(),
@@ -629,7 +633,7 @@ fn type322_malformed_counts_or_spans_do_not_enable_generic_recovery() {
         ],
         vec![
             322_i64.into(),
-            TokenValue::String(b"ATTR".to_vec()),
+            TokenValue::String(b"ATTR".to_vec().into()),
             1_i64.into(),
             (-1_i64).into(),
             1_i64.into(),
@@ -640,9 +644,9 @@ fn type322_malformed_counts_or_spans_do_not_enable_generic_recovery() {
         ],
         vec![
             322_i64.into(),
-            TokenValue::String(b"ATTR".to_vec()),
+            TokenValue::String(b"ATTR".to_vec().into()),
             1_i64.into(),
-            TokenValue::String(b"bad-count".to_vec()),
+            TokenValue::String(b"bad-count".to_vec().into()),
             1_i64.into(),
             1_i64.into(),
             1_i64.into(),
@@ -651,7 +655,7 @@ fn type322_malformed_counts_or_spans_do_not_enable_generic_recovery() {
         ],
         vec![
             322_i64.into(),
-            TokenValue::String(b"ATTR".to_vec()),
+            TokenValue::String(b"ATTR".to_vec().into()),
             1_i64.into(),
             i64::MAX.into(),
             1_i64.into(),
@@ -661,7 +665,7 @@ fn type322_malformed_counts_or_spans_do_not_enable_generic_recovery() {
         ],
         vec![
             322_i64.into(),
-            TokenValue::String(b"ATTR".to_vec()),
+            TokenValue::String(b"ATTR".to_vec().into()),
             1_i64.into(),
             1_i64.into(),
             1_i64.into(),
@@ -672,18 +676,18 @@ fn type322_malformed_counts_or_spans_do_not_enable_generic_recovery() {
         ],
         vec![
             322_i64.into(),
-            TokenValue::String(b"ATTR".to_vec()),
+            TokenValue::String(b"ATTR".to_vec().into()),
             1_i64.into(),
             1_i64.into(),
             1_i64.into(),
             1_i64.into(),
-            TokenValue::String(b"bad-value-count".to_vec()),
+            TokenValue::String(b"bad-value-count".to_vec().into()),
             1_i64.into(),
             5_i64.into(),
         ],
         vec![
             322_i64.into(),
-            TokenValue::String(b"ATTR".to_vec()),
+            TokenValue::String(b"ATTR".to_vec().into()),
             1_i64.into(),
             1_i64.into(),
             1_i64.into(),
@@ -691,7 +695,7 @@ fn type322_malformed_counts_or_spans_do_not_enable_generic_recovery() {
         ],
         vec![
             322_i64.into(),
-            TokenValue::String(b"ATTR".to_vec()),
+            TokenValue::String(b"ATTR".to_vec().into()),
             1_i64.into(),
             1_i64.into(),
             1_i64.into(),
@@ -733,7 +737,7 @@ fn type422_entity_table_boundary_follows_referenced_definition_shape() {
         9,
         vec![
             322_i64.into(),
-            TokenValue::String(b"ATTR".to_vec()),
+            TokenValue::String(b"ATTR".to_vec().into()),
             1_i64.into(),
             1_i64.into(),
             10_i64.into(),
@@ -838,7 +842,7 @@ fn type422_table_boundary_precedes_valid_generic_alternative() {
         9,
         vec![
             322_i64.into(),
-            TokenValue::String(b"ATTR".to_vec()),
+            TokenValue::String(b"ATTR".to_vec().into()),
             1_i64.into(),
             1_i64.into(),
             10_i64.into(),
@@ -908,7 +912,7 @@ fn type422_malformed_definition_or_value_span_does_not_enable_generic_recovery()
             9,
             vec![
                 322_i64.into(),
-                TokenValue::String(b"ATTR".to_vec()),
+                TokenValue::String(b"ATTR".to_vec().into()),
                 1_i64.into(),
                 1_i64.into(),
                 10_i64.into(),
@@ -920,12 +924,12 @@ fn type422_malformed_definition_or_value_span_does_not_enable_generic_recovery()
             9,
             vec![
                 322_i64.into(),
-                TokenValue::String(b"ATTR".to_vec()),
+                TokenValue::String(b"ATTR".to_vec().into()),
                 1_i64.into(),
                 1_i64.into(),
                 10_i64.into(),
                 1_i64.into(),
-                TokenValue::String(b"bad-count".to_vec()),
+                TokenValue::String(b"bad-count".to_vec().into()),
             ],
         ),
     ];
@@ -935,7 +939,7 @@ fn type422_malformed_definition_or_value_span_does_not_enable_generic_recovery()
             11,
             vec![
                 422_i64.into(),
-                TokenValue::String(b"bad-row-count".to_vec()),
+                TokenValue::String(b"bad-row-count".to_vec().into()),
                 7_i64.into(),
                 2_i64.into(),
                 1_i64.into(),

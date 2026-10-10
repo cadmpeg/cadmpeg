@@ -77,7 +77,7 @@ fn anchor_memo_output_node_slice_refuses_as_resource() {
             Value::List(vec![Value::Integer(1), Value::Integer(2)]),
         )]);
         let mut resolver = AnchorResolver::new(&anchors, ctx).expect("empty resolver scope fits");
-        let value = Value::Resource("a".into());
+        let value = Value::Resource("#a".into());
         resolver
             .resolve_root(&value)
             .expect("fixture operation succeeds");
@@ -102,7 +102,7 @@ fn anchor_first_expansion_output_node_slice_refuses_as_resource() {
         resolver.remaining_nodes = 2;
         assert_local_refusal(
             resolver
-                .resolve_root(&Value::Resource("a".into()))
+                .resolve_root(&Value::Resource("#a".into()))
                 .expect_err("local ceiling refuses"),
             "step_anchor_output_node_limit",
         );
@@ -187,12 +187,15 @@ fn value_node_count_nodes_refuse_in_the_node_dimension() {
 }
 
 #[test]
-fn unknown_record_rejects_non_finite_real_at_lex_admission() {
+fn unknown_record_omits_non_finite_real_at_lex_admission() {
     const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=UNKNOWN_ITEM(1.E9999);ENDSEC;END-ISO-10303-21;";
     with_service_context(SOURCE, |source, ctx| {
-        assert!(
-            matches!(crate::parse::parse_with_context(source, ctx), Err(CodecError::Malformed(message))
-            if message.contains("finite binary64 range"))
-        );
+        let (exchange, diagnostics) = crate::parse::parse_with_context(source, ctx)
+            .expect("literal failure has a bounded record");
+        assert!(exchange.records().is_empty());
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.kind == crate::parse::ParseDiagnosticKind::RecordOmitted
+                && diagnostic.message.contains("finite binary64 range")
+        }));
     });
 }

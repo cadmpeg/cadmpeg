@@ -25,12 +25,24 @@ const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("fcstd");
 /// string form (via [`FreecadLossCode::code`]) is the stable contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum FreecadLossCode {
+    /// A bounded archive payload cannot be opened; its stored bytes remain retained.
+    ArchiveEntryUnreadable,
+    /// A property payload cannot enter the admitted persistence graph.
+    PersistencePayloadUnresolved,
+    /// An optional file reference has no readable archive payload.
+    PersistenceSideEntryUnresolved,
+    /// Redundant persistence counts disagree with framed XML populations.
+    PersistenceCountNoncanonical,
     /// Feature history cannot enter a neutral definition because its ordering is cyclic.
     FeatureCyclicHistory,
     /// Feature retains its native kind without a complete neutral operation.
     FeatureNativeKindRetained,
     /// Sketch geometry record retains a native kind without solved geometry.
     SketchNativeGeometry,
+    /// Cached sketch geometry has no matching live external reference.
+    SketchExternalReferenceUnresolved,
+    /// Optional external sketch cache cannot be projected; live links remain authoritative.
+    SketchExternalCacheUnresolved,
     /// Sketch constraint retains a native relation kind without neutral semantics.
     SketchNativeConstraint,
     /// Topology color values were retained because their count did not match mapped topology.
@@ -43,37 +55,64 @@ pub(crate) enum FreecadLossCode {
     SourceGuiSchemaUnverified,
     /// A GUI property states a blank key, so its value has no name to carry.
     SourceGuiPropertyKeyBlank,
+    /// Optional GUI records could not be interpreted; exact XML remains retained.
+    SourceGuiMetadataUnresolved,
+    /// Optional persistent naming metadata could not be interpreted.
+    ElementMapMetadataUnresolved,
     /// A parameter-space curve could not enter neutral geometry.
     PcurveNotTransferred,
     /// Producer version metadata used an alias or conflicting declarations.
     ProgramVersionNoncanonical,
+    /// Persistence version metadata used a lowercase alias.
+    FileVersionNoncanonical,
+    /// Persistence file-version declaration cannot select a legacy map encoding.
+    FileVersionUnverified,
+    /// Nonempty inline legacy map has no verified file-version interpretation.
+    ElementMapVersionUnresolved,
 }
 
 impl FreecadLossCode {
     /// Every code, in declaration order.
     #[cfg(test)]
     const ALL: &'static [FreecadLossCode] = &[
+        Self::ArchiveEntryUnreadable,
+        Self::PersistencePayloadUnresolved,
+        Self::PersistenceSideEntryUnresolved,
+        Self::PersistenceCountNoncanonical,
         Self::FeatureCyclicHistory,
         Self::FeatureNativeKindRetained,
         Self::SketchNativeGeometry,
         Self::SketchNativeConstraint,
+        Self::SketchExternalReferenceUnresolved,
+        Self::SketchExternalCacheUnresolved,
         Self::AppearanceTopologyColorCountMismatch,
         Self::AppearancePrimitiveSizeNotTransferred,
         Self::SourceDialectUnverified,
         Self::SourceGuiSchemaUnverified,
         Self::SourceGuiPropertyKeyBlank,
+        Self::SourceGuiMetadataUnresolved,
+        Self::ElementMapMetadataUnresolved,
         Self::PcurveNotTransferred,
         Self::ProgramVersionNoncanonical,
+        Self::FileVersionNoncanonical,
+        Self::FileVersionUnverified,
+        Self::ElementMapVersionUnresolved,
     ];
 
     /// The stable string identifier. This is the gating contract.
     #[must_use]
     const fn code(self) -> &'static str {
         match self {
+            Self::ArchiveEntryUnreadable => "source.archive-entry-unreadable",
+            Self::PersistencePayloadUnresolved => "metadata.persistence-payload-unresolved",
+            Self::PersistenceSideEntryUnresolved => "metadata.persistence-side-entry-unresolved",
+            Self::PersistenceCountNoncanonical => "metadata.persistence-count-noncanonical",
             Self::FeatureCyclicHistory => "feature.cyclic-history",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
             Self::SketchNativeGeometry => "sketch.native-geometry",
             Self::SketchNativeConstraint => "sketch.native-constraint",
+            Self::SketchExternalReferenceUnresolved => "sketch.external-reference-unresolved",
+            Self::SketchExternalCacheUnresolved => "sketch.external-cache-unresolved",
             Self::AppearanceTopologyColorCountMismatch => {
                 "appearance.topology-color-count-mismatch"
             }
@@ -83,8 +122,13 @@ impl FreecadLossCode {
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::SourceGuiSchemaUnverified => "source.gui-schema-unverified",
             Self::SourceGuiPropertyKeyBlank => "source.gui-property-key-blank",
+            Self::SourceGuiMetadataUnresolved => "source.gui-metadata-unresolved",
+            Self::ElementMapMetadataUnresolved => "element-map.metadata-unresolved",
             Self::PcurveNotTransferred => "pcurve.not-transferred",
             Self::ProgramVersionNoncanonical => "metadata.program-version-noncanonical",
+            Self::FileVersionNoncanonical => "metadata.file-version-noncanonical",
+            Self::FileVersionUnverified => "metadata.file-version-unverified",
+            Self::ElementMapVersionUnresolved => "element-map.version-unresolved",
         }
     }
 
@@ -96,28 +140,50 @@ impl FreecadLossCode {
             | Self::FeatureNativeKindRetained
             | Self::SketchNativeGeometry
             | Self::SketchNativeConstraint => Severity::Blocking,
-            Self::AppearanceTopologyColorCountMismatch
+            Self::SketchExternalCacheUnresolved
+            | Self::SketchExternalReferenceUnresolved
+            | Self::ArchiveEntryUnreadable
+            | Self::PersistencePayloadUnresolved
+            | Self::PersistenceSideEntryUnresolved
+            | Self::PersistenceCountNoncanonical
+            | Self::AppearanceTopologyColorCountMismatch
             | Self::AppearancePrimitiveSizeNotTransferred
             | Self::SourceDialectUnverified
             | Self::SourceGuiSchemaUnverified
             | Self::SourceGuiPropertyKeyBlank
+            | Self::SourceGuiMetadataUnresolved
+            | Self::ElementMapMetadataUnresolved
             | Self::PcurveNotTransferred
-            | Self::ProgramVersionNoncanonical => Severity::Warning,
+            | Self::ProgramVersionNoncanonical
+            | Self::FileVersionNoncanonical
+            | Self::FileVersionUnverified
+            | Self::ElementMapVersionUnresolved => Severity::Warning,
         }
     }
 
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::ArchiveEntryUnreadable
+            | Self::PersistencePayloadUnresolved
+            | Self::PersistenceSideEntryUnresolved => LossTaxonomy::RecordNotTyped,
             Self::FeatureCyclicHistory | Self::FeatureNativeKindRetained => {
                 LossTaxonomy::FeatureHistoryRetained
             }
-            Self::SketchNativeGeometry
+            Self::SketchExternalCacheUnresolved
+            | Self::SketchExternalReferenceUnresolved
+            | Self::SketchNativeGeometry
             | Self::SketchNativeConstraint
             | Self::SourceGuiPropertyKeyBlank
+            | Self::SourceGuiMetadataUnresolved
+            | Self::ElementMapMetadataUnresolved
             | Self::PcurveNotTransferred => LossTaxonomy::RecordNotTyped,
             Self::AppearanceTopologyColorCountMismatch
             | Self::AppearancePrimitiveSizeNotTransferred => LossTaxonomy::MaterialNotTransferred,
-            Self::ProgramVersionNoncanonical => LossTaxonomy::NoncanonicalSourceSyntax,
+            Self::PersistenceCountNoncanonical
+            | Self::ProgramVersionNoncanonical
+            | Self::FileVersionNoncanonical
+            | Self::FileVersionUnverified => LossTaxonomy::NoncanonicalSourceSyntax,
+            Self::ElementMapVersionUnresolved => LossTaxonomy::RecordNotTyped,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::SourceGuiSchemaUnverified => LossTaxonomy::SourceDialectUnverified,
         }
@@ -158,17 +224,28 @@ mod tests {
         assert_eq!(
             codes,
             [
+                "source.archive-entry-unreadable",
+                "metadata.persistence-payload-unresolved",
+                "metadata.persistence-side-entry-unresolved",
+                "metadata.persistence-count-noncanonical",
                 "feature.cyclic-history",
                 "feature.native-kind-retained",
                 "sketch.native-geometry",
                 "sketch.native-constraint",
+                "sketch.external-reference-unresolved",
+                "sketch.external-cache-unresolved",
                 "appearance.topology-color-count-mismatch",
                 "appearance.primitive-size-not-transferred",
                 "source.dialect-unverified",
                 "source.gui-schema-unverified",
                 "source.gui-property-key-blank",
+                "source.gui-metadata-unresolved",
+                "element-map.metadata-unresolved",
                 "pcurve.not-transferred",
                 "metadata.program-version-noncanonical",
+                "metadata.file-version-noncanonical",
+                "metadata.file-version-unverified",
+                "element-map.version-unresolved",
             ]
         );
     }

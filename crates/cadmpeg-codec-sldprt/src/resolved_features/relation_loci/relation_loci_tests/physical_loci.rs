@@ -25,10 +25,15 @@ fn coincident_physical_loci_keep_the_smallest_identity_and_role() {
         SketchLocus::End(first.id().clone()),
     ];
     let expected = vec![SketchLocus::End(first.id().clone())];
+    let entities = [first, second];
+    let index = entities
+        .iter()
+        .map(|entity| (entity.id(), entity))
+        .collect();
     canonicalize_physical_loci(
         &cadmpeg_test_support::service_decode_context(),
         &mut loci,
-        &[first, second],
+        &index,
         EPS_PHYSICAL_LOCUS_QUANTIZATION,
     )
     .unwrap();
@@ -49,10 +54,15 @@ fn distinct_physical_loci_preserve_input_order() {
         SketchLocus::Start(line.id().clone()),
     ];
     let expected = loci.clone();
+    let entities = [line];
+    let index = entities
+        .iter()
+        .map(|entity| (entity.id(), entity))
+        .collect();
     canonicalize_physical_loci(
         &cadmpeg_test_support::service_decode_context(),
         &mut loci,
-        &[line],
+        &index,
         EPS_PHYSICAL_LOCUS_QUANTIZATION,
     )
     .unwrap();
@@ -73,10 +83,15 @@ fn unresolved_physical_loci_preserve_input_order() {
         SketchLocus::Start(SketchEntityId::mint("synthetic:test:id#absent").unwrap()),
     ];
     let expected = loci.clone();
+    let entities = [line];
+    let index = entities
+        .iter()
+        .map(|entity| (entity.id(), entity))
+        .collect();
     canonicalize_physical_loci(
         &cadmpeg_test_support::service_decode_context(),
         &mut loci,
-        &[line],
+        &index,
         EPS_PHYSICAL_LOCUS_QUANTIZATION,
     )
     .unwrap();

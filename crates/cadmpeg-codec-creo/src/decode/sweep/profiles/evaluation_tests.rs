@@ -7,15 +7,23 @@ use cadmpeg_ir::math::Point3;
 
 #[test]
 fn profile_sampling_propagates_evaluator_refusal() {
+    // Degree 16 is the smallest support that exceeds the inline basis window.
+    let poles = 17_usize;
     let nurbs = NurbsCurve::from_lanes(
         &cadmpeg_test_support::service_decode_context(),
-        2,
-        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(0.5, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-        ],
+        16,
+        std::iter::repeat_n(0.0, poles)
+            .chain(std::iter::repeat_n(1.0, poles))
+            .collect::<Vec<f64>>(),
+        (0..poles)
+            .map(|index| {
+                Point3::new(
+                    f64::from(u32::try_from(index).expect("pole")) / 16.0,
+                    0.0,
+                    0.0,
+                )
+            })
+            .collect(),
         None,
         false,
     )

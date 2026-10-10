@@ -178,6 +178,7 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
         let len = dir.norm();
         let unit = Vector3::new(dir.x / len, dir.y / len, dir.z / len);
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: cube_id!(CurveId, "curve", i),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 crate::geometry::analytic::LineCurve::try_new(Point3::new(ax, ay, az), unit)
@@ -320,6 +321,7 @@ pub fn directed_subd_sum() -> Result<CadIr, ExampleError> {
     let mut ir = CadIr::empty();
     ir.model.curves = vec![
         Curve {
+            parameter_range: None,
             id: v2_id!(CurveId, "curve", crate::identity_key!("u")),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 crate::geometry::analytic::LineCurve::new(FinitePoint3::ZERO, UnitVector3::X_AXIS),
@@ -327,6 +329,7 @@ pub fn directed_subd_sum() -> Result<CadIr, ExampleError> {
             source_object: None,
         },
         Curve {
+            parameter_range: None,
             id: v2_id!(CurveId, "curve", crate::identity_key!("v")),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 crate::geometry::analytic::LineCurve::new(FinitePoint3::ZERO, UnitVector3::Y_AXIS),

@@ -443,10 +443,22 @@ fn scan_decodes_complete_allfeatur_f9_scalar_slots() {
     let namespace = result.ir().native.namespace("creo").unwrap();
     let rows = &namespace.arenas()["feature_rows"];
     assert_eq!(rows[0].fields()["owner_feature_id"], 4);
-    assert_eq!(rows[0].fields()["header"][0], 0xeb);
-    assert_eq!(rows[0].fields()["header"][1], 0x04);
-    assert_eq!(rows[0].fields()["body"][0], 0xeb);
-    assert_eq!(rows[0].fields()["body"][14], 0xe0);
+    assert_eq!(
+        crate::test_support::native_bytes(&rows[0].fields()["header"])[0],
+        0xeb
+    );
+    assert_eq!(
+        crate::test_support::native_bytes(&rows[0].fields()["header"])[1],
+        0x04
+    );
+    assert_eq!(
+        crate::test_support::native_bytes(&rows[0].fields()["body"])[0],
+        0xeb
+    );
+    assert_eq!(
+        crate::test_support::native_bytes(&rows[0].fields()["body"])[14],
+        0xe0
+    );
     let choices = &namespace.arenas()["feature_choices"];
     assert_eq!(choices[0].fields()["owner_feature_id"], 4);
     assert_eq!(choices[0].fields()["label"], "blend_choice");
@@ -547,7 +559,10 @@ fn scan_decodes_complete_allfeatur_loop_history_rosters() {
     assert_eq!(records[0].fields()["owner_feature_id"], 4);
     assert_eq!(records[0].fields()["ordinal"], 0);
     assert_eq!(records[0].fields()["loop_id"], 42);
-    assert_eq!(records[0].fields()["field_bytes"][0][0], 1);
+    assert_eq!(
+        crate::test_support::native_bytes(&records[0].fields()["field_bytes"][0])[0],
+        1
+    );
     assert_eq!(records[0].fields()["boundary"], "reference_continue");
     assert_eq!(records[0].fields()["boundary_reference"], 96);
     assert_eq!(records[1].fields()["ordinal"], 1);

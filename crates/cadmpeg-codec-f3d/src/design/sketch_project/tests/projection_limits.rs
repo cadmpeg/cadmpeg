@@ -307,7 +307,7 @@ fn owner_limit_text() -> SketchText {
             second_reference: None,
             placement: None,
         },
-        raw_bytes: Vec::new(),
+        raw_bytes: Vec::new().into(),
     }
 }
 

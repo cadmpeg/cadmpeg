@@ -13,6 +13,7 @@ use cadmpeg_ir::math::Point3;
 use crate::{RhinoArchiveVersion, RhinoCodec};
 
 mod computed_values;
+mod coverage;
 mod encoding;
 mod free_geometry;
 mod model;
@@ -217,6 +218,7 @@ fn polygon_sheet(points: &[Point3]) -> CadIr {
             tolerance: None,
         });
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve_ids[index].clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(points[index], direction)
@@ -331,6 +333,7 @@ fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
             tolerance: None,
         });
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve_ids[index].clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -531,6 +534,7 @@ fn adjacent_quad_sheet() -> CadIr {
             positions[end].z - positions[start].z,
         );
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve_ids[index].clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -711,6 +715,7 @@ fn planar_tetrahedron() -> CadIr {
         let length = delta.norm();
         let direction = Vector3::new(delta.x / length, delta.y / length, delta.z / length);
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve_ids[index].clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(

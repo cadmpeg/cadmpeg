@@ -237,3 +237,23 @@ fn detection_refuses_a_start_card_with_no_readable_sequence() {
         "not the expected format: unrecognized IGES representation"
     );
 }
+
+#[test]
+fn readable_start_and_global_sequence_disagreements_recover_from_the_card_census() {
+    for offset in [
+        CARD_DATA_COLUMNS + 1,
+        CARD_LINE_BYTES + CARD_DATA_COLUMNS + 1,
+    ] {
+        let mut bytes = point_file();
+        bytes[offset..offset + 7].copy_from_slice(b"0000009");
+        let result = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(result.ir().model.points.len(), 1);
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == crate::loss::IgesLossCode::CardFramingRecovered.kind()));
+    }
+}

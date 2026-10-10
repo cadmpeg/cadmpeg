@@ -21,7 +21,8 @@ fn type38_leading_statuses_preserve_default_omission_and_nondefault_values() {
     for statuses in [None, Some([1; 5]), Some([1, 1, 1, 1, 0])] {
         let mut wire = base.clone();
         if let Some(statuses) = statuses {
-            wire["leading_statuses"] = serde_json::json!(statuses);
+            wire["leading_statuses"] =
+                serde_json::json!(cadmpeg_ir::native::bytes::NativeBytes::from(statuses));
         }
         let fields: InlineSchemaFields = serde_json::from_value(wire.clone()).unwrap();
         let InlineSchemaFields::Type38 { state } = &fields else {

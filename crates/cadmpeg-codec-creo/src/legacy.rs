@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Structural grammar for legacy ASCII persistence records.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use cadmpeg_core::{decode::DecodeContext, CodecError};
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
@@ -15,8 +17,8 @@ use type_code::LegacyTypeCode;
 
 pub(crate) fn value_index<'a, K: LegacyCode>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    records: &'a [ValueRecord<K>],
-    index: &mut BTreeMap<(usize, &'a str), Vec<&'a ValueRecord<K>>>,
+    records: impl IntoIterator<Item = &'a ValueRecord<K>>,
+    index: &mut BTreeMap<(usize, &'a str), Option<&'a ValueRecord<K>>>,
 ) -> Result<(), CodecError> {
     for record in records {
         if let Some(parent) = record.parent {
@@ -24,15 +26,10 @@ pub(crate) fn value_index<'a, K: LegacyCode>(
             ctx.admit_btree_entry(index, &key, "creo legacy value index nodes")?;
             match index.entry(key) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    let mut values = Vec::new();
-                    ctx.reserve_vec(&mut values, 1, "creo legacy value index rows")?;
-                    values.push(record);
-                    entry.insert(values);
+                    entry.insert(Some(record));
                 }
                 std::collections::btree_map::Entry::Occupied(mut entry) => {
-                    let values = entry.get_mut();
-                    ctx.reserve_vec(values, 1, "creo legacy value index rows")?;
-                    values.push(record);
+                    entry.insert(None);
                 }
             }
         }
@@ -271,7 +268,7 @@ pub(crate) enum ObjectPayload {
     /// A type-0 payload outside the defined object forms.
     Opaque {
         /// Uninterpreted payload bytes after the attribute identifier.
-        bytes: Vec<u8>,
+        bytes: cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>,
     },
 }
 
@@ -364,7 +361,7 @@ pub(crate) enum StringValue {
     /// A byte string whose character encoding is not UTF-8.
     Bytes {
         /// Exact uninterpreted source bytes.
-        bytes: Vec<u8>,
+        bytes: NativeBytes<Vec<u8>>,
     },
 }
 
@@ -593,12 +590,15 @@ impl Persistence {
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Option<(String, usize)>, CodecError> {
-        let mut objects = BTreeMap::new();
-        for object in &self.objects {
-            ctx.insert_btree_map(
-                &mut objects,
+        let mut root_solids = BTreeSet::new();
+        for object in self
+            .objects
+            .iter()
+            .filter(|object| object.parent.is_none() && object.name.eq_ignore_ascii_case("solid"))
+        {
+            ctx.insert_btree_set(
+                &mut root_solids,
                 object.offset,
-                object,
                 "creo legacy model name object nodes",
             )?;
         }
@@ -629,10 +629,7 @@ impl Persistence {
             let is_root_solid = record
                 .parent
                 .as_ref()
-                .and_then(|parent| objects.get(parent))
-                .is_some_and(|object| {
-                    object.parent.is_none() && object.name.eq_ignore_ascii_case("solid")
-                });
+                .is_some_and(|parent| root_solids.contains(parent));
             if is_root_solid {
                 match preferred {
                     None => preferred = Some((text, record.offset)),
@@ -1231,7 +1228,9 @@ fn object_records(
             } else {
                 unresolved += 1;
                 ObjectPayload::Opaque {
-                    bytes: ctx.copy_retained(bytes, "creo legacy opaque object bytes")?,
+                    bytes: ctx
+                        .copy_retained(bytes, "creo legacy opaque object bytes")?
+                        .into(),
                 }
             };
             let name =
@@ -1270,7 +1269,9 @@ fn byte_string_value(
         })
     } else {
         Ok(StringValue::Bytes {
-            bytes: ctx.copy_retained(bytes, "creo legacy string byte payload")?,
+            bytes: ctx
+                .copy_retained(bytes, "creo legacy string byte payload")?
+                .into(),
         })
     }
 }

@@ -19,6 +19,104 @@ use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::SourceObjectAssociation;
 
 #[test]
+fn transferred_nurbs_curve_keeps_one_geometry_copy() {
+    use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+    let nurbs = NurbsCurve::from_finite_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        vec![
+            FiniteReal::ZERO,
+            FiniteReal::ZERO,
+            FiniteReal::ONE,
+            FiniteReal::ONE,
+        ],
+        vec![FinitePoint3::ZERO, FinitePoint3::ZERO],
+        None,
+        false,
+    )
+    .unwrap()
+    .unwrap();
+    let curve = TextCurve::Nurbs(nurbs.clone());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // Four knots, two poles, and one stored curve record.
+    policy.limits.max_collection_items = 4 + 2 + 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut transfer = CurveTransfer::default();
+    let index = append_text_curve(
+        &ctx,
+        &curve,
+        CurveId::mint("fcstd:model:curve#Nurbs").unwrap(),
+        &source_association(),
+        &mut transfer,
+    )
+    .expect("one geometry copy fits the item budget");
+    assert_eq!(transfer.curves.len(), 1);
+    assert_eq!(
+        transfer.curves[index].geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Solved(
+            cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(nurbs)
+        )
+    );
+}
+
+#[test]
+fn transferred_nurbs_surface_keeps_one_geometry_copy() {
+    use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    let axis = || {
+        NurbsSurfaceAxis::new(
+            1,
+            vec![
+                FiniteReal::ZERO,
+                FiniteReal::ZERO,
+                FiniteReal::ONE,
+                FiniteReal::ONE,
+            ],
+            false,
+        )
+    };
+    let nurbs = NurbsSurface::from_finite_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        axis(),
+        axis(),
+        NurbsSurfaceLanes::new(
+            vec![
+                vec![FinitePoint3::ZERO, FinitePoint3::ZERO],
+                vec![FinitePoint3::ZERO, FinitePoint3::ZERO],
+            ],
+            None,
+        ),
+        false,
+    )
+    .unwrap()
+    .unwrap();
+    let surface = TextSurface::Nurbs(nurbs.clone());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // Eight knots, two pole rows, four poles, and one stored surface record.
+    policy.limits.max_collection_items = 8 + 2 + 4 + 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut curves = CurveTransfer::default();
+    let mut transfer = SurfaceTransfer::default();
+    let index = append_text_surface(
+        &ctx,
+        &surface,
+        SurfaceId::mint("fcstd:model:surface#Nurbs").unwrap(),
+        &source_association(),
+        &mut curves,
+        &mut transfer,
+    )
+    .expect("one geometry copy fits the item budget");
+    assert_eq!(transfer.surfaces.len(), 1);
+    assert_eq!(
+        transfer.surfaces[index].geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+            cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(nurbs)
+        )
+    );
+}
+
+#[test]
 fn pcurve_pair_continuity_refuses_at_matching_retained_limit() {
     let counts = BTreeMap::from([
         ("Curve2ds".to_owned(), 2),
@@ -372,6 +470,7 @@ fn plane_surface() -> TextSurface {
 
 fn source_association() -> SourceObjectAssociation {
     SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Fcstd,
         object_id: cadmpeg_core::text::NonBlankString::new("Owner").expect("nonblank object"),
         name: None,

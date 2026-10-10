@@ -182,6 +182,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
             ctx,
             ir,
             Curve {
+                parameter_range: None,
                 id: crate::identity::copy_checked_id(
                     ctx,
                     id.as_str(),
@@ -189,6 +190,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
                 )?,
                 geometry,
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
                         format_args!("VisibGeom:{}", row.id),
@@ -435,6 +437,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
             ctx,
             ir,
             Curve {
+                parameter_range: None,
                 id: crate::identity::copy_checked_id(
                     ctx,
                     id.as_str(),
@@ -442,6 +445,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                 )?,
                 geometry,
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
                         format_args!("VisibGeom:{}", row.id),

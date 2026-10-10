@@ -133,7 +133,12 @@ fn current_v5_text_extra_reaches_annotation_native_fields() {
     assert_eq!(extra["parent_text_uuid"], serde_json::Value::Null);
     assert_eq!(extra["draw_mask"], serde_json::json!(true));
     assert_eq!(extra["mask_color_source"], serde_json::json!(1));
-    assert_eq!(extra["mask_color"], serde_json::json!([17, 34, 51, 68]));
+    assert_eq!(
+        extra["mask_color"],
+        serde_json::json!(cadmpeg_ir::native::bytes::NativeBytes::from([
+            17, 34, 51, 68
+        ]))
+    );
     assert_eq!(extra["border_offset_factor"], serde_json::json!(0.375));
     assert_valid(&result);
 }

@@ -128,16 +128,12 @@ pub fn transfer_into_ir<'ir>(
     ctx.extend_vec(&mut ir.model.surfaces, surfaces, "ASM transfer surfaces")?;
     ctx.extend_vec(&mut ir.model.curves, curves, "ASM transfer curves")?;
     ctx.extend_vec(&mut ir.model.pcurves, pcurves, "ASM transfer pcurves")?;
-    for (owner, procedural) in procedural_surfaces {
-        ir.model
-            .add_procedural_surface(ctx, &owner, procedural)?
-            .map_err(|error| CodecError::malformed(error.to_string()))?;
-    }
-    for (owner, procedural) in procedural_curves {
-        ir.model
-            .add_procedural_curve(ctx, &owner, procedural)?
-            .map_err(|error| CodecError::malformed(error.to_string()))?;
-    }
+    ir.model
+        .add_procedural_surfaces(ctx, procedural_surfaces)?
+        .map_err(CodecError::malformed)?;
+    ir.model
+        .add_procedural_curves(ctx, procedural_curves)?
+        .map_err(CodecError::malformed)?;
     ctx.extend_vec(
         &mut ir.model.attributes,
         attributes,

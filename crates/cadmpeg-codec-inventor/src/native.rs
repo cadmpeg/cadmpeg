@@ -4,6 +4,8 @@
 pub(crate) mod protein;
 pub(crate) mod ufrx;
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
@@ -950,7 +952,7 @@ pub(crate) struct PmGraphicsPrimaryColorStyleRecord {
     pub(crate) segment_version_major: u8,
     pub(crate) header_value: u32,
     pub(crate) controls: [u16; 7],
-    pub(crate) color_header: [u8; 2],
+    pub(crate) color_header: NativeBytes<[u8; 2]>,
     pub(crate) colors: [[cadmpeg_ir::scalar::FiniteBinary32; 4]; 4],
     pub(crate) color_tail: [u16; 2],
     pub(crate) state: u8,
@@ -1685,7 +1687,7 @@ mod tests {
         let mut wire = valid;
         wire["style_references"] = serde_json::json!([2_147_483_648_u32]);
         wire["style_reference_qualifiers"] = serde_json::json!([false]);
-        wire["list_metadata"] = serde_json::json!([0, 0]);
+        wire["list_metadata"] = serde_json::json!("0000");
         assert!(serde_json::from_value::<super::PmGraphicsStyleCollectionRecord>(wire).is_err());
     }
 

@@ -69,21 +69,13 @@ fn construction_group_parse_refuses_collection_limit(bytes: &[u8], operation: &s
 
 #[test]
 fn construction_group_members_refuse_collection_limit() {
-    let mut bytes = Vec::new();
-    indexed_header(&mut bytes, *b"332", 100);
-    bytes.extend_from_slice(&[0; 10]);
-    bytes.extend_from_slice(&1u32.to_le_bytes());
-    push_marked_reference(&mut bytes, 101);
+    let bytes = super::construction_budget::complete_group_bytes(true, false, false);
     construction_group_parse_refuses_collection_limit(&bytes, "f3d construction operand members");
 }
 
 #[test]
 fn construction_group_auxiliary_refuses_collection_limit() {
-    let mut bytes = Vec::new();
-    indexed_header(&mut bytes, *b"332", 100);
-    bytes.extend_from_slice(&[0; 10]);
-    bytes.extend_from_slice(&0u32.to_le_bytes());
-    push_marked_reference(&mut bytes, 101);
+    let bytes = super::construction_budget::complete_group_bytes(false, true, false);
     construction_group_parse_refuses_collection_limit(
         &bytes,
         "f3d construction operand auxiliary record",
@@ -92,13 +84,7 @@ fn construction_group_auxiliary_refuses_collection_limit() {
 
 #[test]
 fn construction_group_trailing_refuses_collection_limit() {
-    let mut bytes = Vec::new();
-    indexed_header(&mut bytes, *b"332", 100);
-    bytes.extend_from_slice(&[0; 10]);
-    bytes.extend_from_slice(&0u32.to_le_bytes());
-    bytes.extend_from_slice(&[0; 2]);
-    bytes.extend_from_slice(&1u32.to_le_bytes());
-    push_marked_reference(&mut bytes, 101);
+    let bytes = super::construction_budget::complete_group_bytes(false, false, true);
     construction_group_parse_refuses_collection_limit(
         &bytes,
         "f3d construction operand trailing records",

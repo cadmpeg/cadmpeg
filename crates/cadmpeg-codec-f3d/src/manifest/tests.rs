@@ -66,7 +66,8 @@ fn manifest_entry_name_index_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let manifest = super::TopLevelManifest {
-        version: TOP_LEVEL_MANIFEST_VERSION.to_owned(),
+        version: Some(TOP_LEVEL_MANIFEST_VERSION.to_owned()),
+        diagnostics: Vec::new(),
         asset_folder_bases: vec!["Design Base".to_owned()],
     };
     let error =
@@ -95,7 +96,8 @@ fn manifest_active_name_refuses_materialization_limit() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let manifest = super::TopLevelManifest {
-        version: TOP_LEVEL_MANIFEST_VERSION.to_owned(),
+        version: Some(TOP_LEVEL_MANIFEST_VERSION.to_owned()),
+        diagnostics: Vec::new(),
         asset_folder_bases: vec!["Design".to_owned()],
     };
     let error =
@@ -112,7 +114,8 @@ fn manifest_member_name_refuses_materialization_limit() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let manifest = super::TopLevelManifest {
-        version: TOP_LEVEL_MANIFEST_VERSION.to_owned(),
+        version: Some(TOP_LEVEL_MANIFEST_VERSION.to_owned()),
+        diagnostics: Vec::new(),
         asset_folder_bases: vec!["Design".to_owned()],
     };
     let error =
@@ -280,7 +283,7 @@ fn an_unknown_version_is_parsed_with_the_known_layout() {
     let manifest =
         parse_top_level(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
     assert_eq!(manifest.asset_folder_bases, ["Design Base"]);
-    assert_eq!(manifest.declared_version(), "3-3-0-0");
+    assert_eq!(manifest.declared_version(), Some("3-3-0-0"));
 }
 
 #[test]
@@ -301,14 +304,14 @@ fn a_broken_layout_is_malformed_for_every_declared_version() {
             parse_top_level(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap_err();
         assert!(
             matches!(&error, CodecError::Malformed(message)
-                    if message.contains(version) && message.contains("probable cause")),
+                    if message.contains(version) && message.contains("grammar does not fit")),
             "expected a structural failure naming version {version}, found {error:?}"
         );
     }
 }
 
 #[test]
-fn a_broken_top_level_manifest_version_field_stays_malformed() {
+fn top_level_manifest_version_requires_framing_but_recovers_unreadable_payload() {
     let complete = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
 
     let truncated = parse_top_level(
@@ -323,12 +326,11 @@ fn a_broken_top_level_manifest_version_field_stays_malformed() {
 
     let mut non_ascii = complete.clone();
     non_ascii[4] = 0x01;
-    let error =
-        parse_top_level(&cadmpeg_test_support::service_decode_context(), &non_ascii).unwrap_err();
-    assert!(
-        matches!(error, CodecError::Malformed(_)),
-        "expected a malformed non-ASCII version, found {error:?}"
-    );
+    let recovered =
+        parse_top_level(&cadmpeg_test_support::service_decode_context(), &non_ascii).unwrap();
+    assert_eq!(recovered.declared_version(), None);
+    assert_eq!(recovered.asset_folder_bases, ["Design Base"]);
+    assert_eq!(recovered.diagnostics[0].field, "top-level manifest version");
 }
 
 #[test]
@@ -419,6 +421,43 @@ fn revision_ten_design_asset_carries_linked_document_triples() {
             fusion_subtype: None
         }
     );
+}
+
+#[test]
+fn revision_ten_design_asset_accepts_the_unlinked_root_tail() {
+    for revision in [3, 11] {
+        let mut bytes = encode_asset_header(
+            "Root Design",
+            DESIGN_GUID,
+            SECONDARY_GUID,
+            DESIGN_ASSET_TYPE,
+        )
+        .unwrap();
+        push_u32(&mut bytes, 10);
+        push_u32(&mut bytes, 0);
+        push_ascii(&mut bytes, "Neutron3DAssetType").unwrap();
+        bytes.push(0);
+        for word in [0, revision, 1, 0] {
+            push_u32(&mut bytes, word);
+        }
+        push_ascii(&mut bytes, "Design").unwrap();
+        push_ascii(&mut bytes, "Design").unwrap();
+
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let header = parse_asset_header(&ctx, &bytes).unwrap();
+        assert!(header.base_name.eq_str("Root Design"));
+        assert_eq!(
+            header.kind,
+            AssetKind::Design {
+                fusion_subtype: None
+            }
+        );
+
+        // A root entry still requires both role tokens and exact consumption.
+        assert!(parse_asset_header(&ctx, &bytes[..bytes.len() - 1]).is_err());
+        bytes.push(0);
+        assert!(parse_asset_header(&ctx, &bytes).is_err());
+    }
 }
 
 #[test]
@@ -562,7 +601,10 @@ fn manifest_discarded_fields_and_failed_tails_do_not_retain_text() {
     .unwrap();
     crate::test_support::with_decode_policy(&policy, |ctx| {
         let manifest = parse_top_level(ctx, &bytes).unwrap();
-        assert_eq!(manifest.declared_version(), TOP_LEVEL_MANIFEST_VERSION);
+        assert_eq!(
+            manifest.declared_version(),
+            Some(TOP_LEVEL_MANIFEST_VERSION)
+        );
         assert_eq!(manifest.asset_folder_bases, ["Design Base"]);
     });
     let asset = generated_design_asset().unwrap();
@@ -594,4 +636,46 @@ fn failed_manifest_tail_preserves_scoped_refusal() {
             if failure.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
                 && failure.operation == "describe malformed F3D manifest"));
     });
+}
+
+#[test]
+fn descriptive_manifest_payload_recovery_preserves_folder_selection() {
+    let original = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
+    // Counted ASCII version/kind, then counted UTF-16 extension and four metadata fields.
+    let mut cursor = 0;
+    for _ in 0..2 {
+        let count = usize::try_from(u32::from_le_bytes(
+            original[cursor..cursor + 4].try_into().unwrap(),
+        ))
+        .expect("fixture string length fits usize");
+        cursor += 4 + count;
+    }
+    for index in 0..5 {
+        let count = usize::try_from(u32::from_le_bytes(
+            original[cursor..cursor + 4].try_into().unwrap(),
+        ))
+        .expect("fixture string length fits usize");
+        if index > 0 {
+            for malformed in [0xd800u16, u16::from(b'Z')] {
+                if index < 3 && malformed == u16::from(b'Z') {
+                    continue;
+                }
+                let mut source = original.clone();
+                source[cursor + 4..cursor + 6].copy_from_slice(&malformed.to_le_bytes());
+                let recovered =
+                    parse_top_level(&cadmpeg_test_support::service_decode_context(), &source)
+                        .unwrap();
+                assert_eq!(recovered.asset_folder_bases, ["Design Base"]);
+                assert_eq!(recovered.diagnostics.len(), 1);
+                let mut truncated = source;
+                truncated[cursor..cursor + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+                assert!(parse_top_level(
+                    &cadmpeg_test_support::service_decode_context(),
+                    &truncated
+                )
+                .is_err());
+            }
+        }
+        cursor += 4 + 2 * count;
+    }
 }

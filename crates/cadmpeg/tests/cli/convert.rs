@@ -14,6 +14,76 @@ use tempfile::tempdir;
 
 use crate::support::{fixture, geometryless_creo, sldprt_cube};
 
+#[cfg(feature = "fcstd")]
+#[test]
+fn validation_budgets_follow_loaded_native_and_cadir_input_sizes() {
+    use std::fmt::Write as _;
+    use std::io::{Read, Write};
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("naming-metadata.FCStd");
+    let mut source = zip::ZipArchive::new(std::io::Cursor::new(include_bytes!(
+        "../../../../corpus/freecad_fcstd/fixtures/geometry_topology.FCStd"
+    )))
+    .unwrap();
+    let mut writer = zip::ZipWriter::new(fs::File::create(&input).unwrap());
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    for index in 0..source.len() {
+        let mut entry = source.by_index(index).unwrap();
+        let mut bytes = Vec::new();
+        entry.read_to_end(&mut bytes).unwrap();
+        if entry.name() == "Document.xml" {
+            let text = std::str::from_utf8(&bytes).unwrap();
+            assert!(text.contains("<Properties Count=\"17\""));
+            let mut extra = String::new();
+            for number in 0..1000 {
+                writeln!(
+                    extra,
+                    "<Property name=\"Stress{number}\" type=\"App::PropertyString\"><StringHasher count=\"0\"/></Property>"
+                )
+                .expect("writing metadata into a String succeeds");
+            }
+            bytes = text
+                .replacen("<Properties Count=\"17\"", "<Properties Count=\"1017\"", 1)
+                .replacen("</Properties>", &format!("{extra}</Properties>"), 1)
+                .into_bytes();
+        }
+        writer.start_file(entry.name(), options).unwrap();
+        writer.write_all(&bytes).unwrap();
+    }
+    writer.finish().unwrap();
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["check", input.to_str().unwrap()])
+        .assert()
+        .success();
+    let output = dir.path().join("naming-metadata.cadir.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "--to",
+            "cadir",
+            "-o",
+            output.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["check", output.to_str().unwrap()])
+        .assert()
+        .success();
+    fs::remove_file(cadmpeg_ir::decode_sidecar_path(&output).unwrap()).unwrap();
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["check", output.to_str().unwrap()])
+        .assert()
+        .success();
+}
+
 #[test]
 fn convert_stdout_contains_only_json_artifact() {
     let dir = tempdir().unwrap();
@@ -553,7 +623,7 @@ fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() 
             .code(1)
             .stderr(
                 predicate::str::contains("Preserved")
-                    .or(predicate::str::contains("export planning reported 1 loss")),
+                    .or(predicate::str::contains("source image is unavailable")),
             );
         assert!(!refused.exists());
     }

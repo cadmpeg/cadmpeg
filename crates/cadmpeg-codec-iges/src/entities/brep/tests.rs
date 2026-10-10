@@ -418,6 +418,7 @@ fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
     let curve_id = CurveId::mint("test:model:curve#curve").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -476,6 +477,7 @@ fn source_edge_selection_rejects_multiple_matching_occurrences() {
     let curve_id = CurveId::mint("test:model:curve#curve").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
@@ -716,7 +718,7 @@ fn decode_rejects_closed_shell_with_inconsistent_radial_sense() {
         .all(|body| body.id.as_str() != "iges:model:body#D55"));
     assert!(result.report().losses.iter().any(|loss| {
         loss.message
-            == "IGES entity type 186 form 0 was not projected: closed shell does not use every edge exactly twice with opposite senses"
+            == "IGES entity type 186 form 0 geometry was not projected: closed shell does not use every edge exactly twice with opposite senses"
     }));
     assert_eq!(
         result.ir().native.namespace("iges").unwrap().arenas()["entities"].len(),

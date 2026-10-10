@@ -1554,6 +1554,7 @@ pub(super) fn build_standard_edge_curve(
     );
     admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves")?;
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: id.try_clone_for_decode(ctx, "catia_standard_model_curve_id_copy")?,
         geometry,
         source_object: Some(cgm_source(ctx, "edge-support", support.tag)?),
@@ -2220,6 +2221,7 @@ pub(super) fn attach_standard_circles(
         )?;
         admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves")?;
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(payload)),
             source_object: Some(cgm_source(
@@ -2462,6 +2464,7 @@ pub(super) fn attach_standard_lines(
         )?;
         admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves")?;
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(payload)),
             source_object: Some(cgm_source(

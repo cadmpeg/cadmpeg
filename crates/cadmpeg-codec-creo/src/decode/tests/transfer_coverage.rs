@@ -44,6 +44,7 @@ fn curve_coverage_with_limit(
     };
     let rows = [row(41, 0x05), row(42, 0x13)];
     let source = |native_id| SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Creo,
         object_id: cadmpeg_core::text::NonBlankString::new(format!("VisibGeom:{native_id}"))
             .expect("source identity"),
@@ -55,6 +56,7 @@ fn curve_coverage_with_limit(
     };
     let curves = [
         Curve {
+            parameter_range: None,
             id: CurveId::mint("test:model:entity#coverage-known".to_string()).expect("identity"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -66,6 +68,7 @@ fn curve_coverage_with_limit(
             source_object: Some(source(41)),
         },
         Curve {
+            parameter_range: None,
             id: CurveId::mint("test:model:entity#coverage-unknown".to_string()).expect("identity"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: Some(source(42)),
@@ -146,6 +149,7 @@ fn surface_coverage_with_limit(
     )
     .expect("valid plane");
     let source = |native_id| SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Creo,
         object_id: cadmpeg_core::text::NonBlankString::new(format!("VisibGeom:{native_id}"))
             .expect("source identity"),
@@ -334,6 +338,7 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
             .unwrap(),
         )),
         source_object: Some(SourceObjectAssociation {
+            geometry_role: None,
             format: cadmpeg_ir::CodecFormat::Creo,
             object_id: cadmpeg_core::text::NonBlankString::new(format!("VisibGeom:{native_id}"))
                 .expect("nonempty source identity"),
@@ -408,6 +413,7 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
     };
     let rows = vec![row(41, 0x05), row(42, 0x13), row(43, 0x05), row(43, 0x05)];
     let source = |native_id| SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Creo,
         object_id: cadmpeg_core::text::NonBlankString::new(format!("VisibGeom:{native_id}"))
             .expect("nonempty source identity"),
@@ -419,6 +425,7 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
     };
     let curves = vec![
         Curve {
+            parameter_range: None,
             id: CurveId::mint("test:model:entity#typed".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -430,6 +437,7 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
             source_object: Some(source(41)),
         },
         Curve {
+            parameter_range: None,
             id: CurveId::mint("test:model:entity#opaque".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: Some(source(42)),

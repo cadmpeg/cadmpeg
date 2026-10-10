@@ -52,14 +52,14 @@ use cadmpeg_ir::geometry::SolvedCurveGeometry;
 #[test]
 fn kernel_tolerance_floor_uses_millimetres() {
     let admitted = super::super::admit_kernel_tolerances(
-        ABOVE_FLOOR_RESABS_CM,
-        HEADER_NORMAL_TOLERANCE_RADIANS,
+        Some(ABOVE_FLOOR_RESABS_CM),
+        Some(HEADER_NORMAL_TOLERANCE_RADIANS),
     )
     .expect("the centimetre value is above the millimetre floor");
     assert_eq!(admitted.linear.get(), ABOVE_FLOOR_RESABS_MM);
     assert!(super::super::admit_kernel_tolerances(
-        BELOW_FLOOR_RESABS_CM,
-        HEADER_NORMAL_TOLERANCE_RADIANS,
+        Some(BELOW_FLOOR_RESABS_CM),
+        Some(HEADER_NORMAL_TOLERANCE_RADIANS),
     )
     .is_err());
 }
@@ -926,8 +926,8 @@ fn primary_brep_metadata_skips_invalid_and_empty_candidates() {
 #[test]
 fn kernel_tolerance_below_precision_floor_is_unsupported() {
     let error = super::super::admit_kernel_tolerances(
-        BELOW_FLOOR_RESABS_CM,
-        HEADER_NORMAL_TOLERANCE_RADIANS,
+        Some(BELOW_FLOOR_RESABS_CM),
+        Some(HEADER_NORMAL_TOLERANCE_RADIANS),
     )
     .unwrap_err();
     assert!(
@@ -936,11 +936,22 @@ fn kernel_tolerance_below_precision_floor_is_unsupported() {
 }
 
 #[test]
-fn kernel_tolerance_invalid_values_remain_malformed() {
-    for value in [f64::NAN, f64::INFINITY, -1.0, 0.0] {
-        assert!(matches!(
-            super::super::admit_kernel_tolerances(value, HEADER_NORMAL_TOLERANCE_RADIANS),
-            Err(cadmpeg_core::CodecError::Malformed(_))
-        ));
+fn kernel_tolerance_invalid_values_keep_defaults_and_the_other_field() {
+    let default = cadmpeg_ir::units::Tolerances::default();
+    for value in [f64::NAN, f64::INFINITY, -1.0, 0.0, f64::MAX] {
+        let recovered = super::super::admit_kernel_tolerances(Some(value), Some(0.001)).unwrap();
+        assert_eq!(recovered.linear, default.linear);
+        assert_eq!(recovered.angular.get(), 0.001);
     }
+    for value in [f64::NAN, f64::INFINITY, -1.0, 0.0] {
+        let recovered =
+            super::super::admit_kernel_tolerances(Some(ABOVE_FLOOR_RESABS_CM), Some(value))
+                .unwrap();
+        assert_eq!(recovered.linear.get(), ABOVE_FLOOR_RESABS_MM);
+        assert_eq!(recovered.angular, default.angular);
+    }
+    assert_eq!(
+        super::super::admit_kernel_tolerances(None, None).unwrap(),
+        default
+    );
 }

@@ -369,7 +369,7 @@ fn decode_projects_multispan_degree_zero_bspline_surface() {
 }
 
 #[test]
-fn decode_enforces_type128_closure_flags_in_iges_4_and_5_0() {
+fn decode_recovers_type128_closure_claims_in_iges_4_and_5_0() {
     for global in [
         b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H900101.000000,0.001,1000.0,6Hauthor,3Horg,6,0;".as_slice(),
         b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H900101.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;".as_slice(),
@@ -385,7 +385,7 @@ fn decode_enforces_type128_closure_flags_in_iges_4_and_5_0() {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        assert!(invalid.ir().model.surfaces.is_empty());
+        assert_eq!(invalid.ir().model.surfaces.len(), 1);
         assert!(invalid
             .report()
             .losses
@@ -513,7 +513,7 @@ fn decode_applies_rational_surface_weight_declaration_in_iges_4_and_5_0() {
                 )
                 .unwrap();
 
-            assert_eq!(result.ir().model.surfaces.len(), usize::from(projected));
+            assert_eq!(result.ir().model.surfaces.len(), 1);
             if projected {
                 let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
                     result.ir().model.surfaces[0].geometry.solved()

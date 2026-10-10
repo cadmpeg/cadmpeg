@@ -922,7 +922,7 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
             record_index: 31,
             frame_length: 100,
             prefix_offset: 300,
-            prefix_bytes: Vec::new(),
+            prefix_bytes: Vec::new().into(),
             references: Vec::new(),
             program_offset: 320,
             program: vec![-1],

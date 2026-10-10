@@ -300,9 +300,25 @@ fn mesh_ordered_boundary_entries_refuse_collection_limit() {
 }
 
 #[test]
-fn mesh_completed_boundary_entries_refuse_collection_limit() {
+fn mesh_completed_boundary_entries_refuse_retained_limit() {
+    let bytes = standard_quad_topology_stream();
+    let context = crate::test_support::with_service_context(|ctx| {
+        crate::solve::missing_edge::StandardMeshBoundaryContext::parse(ctx, &bytes, &[[0, 0]; 4])
+            .expect("service resource budget")
+            .expect("quad boundary context")
+    });
+    let refused = crate::test_support::with_retained_refusal(
+        &[],
+        "catia_mesh_completed_boundary_entries",
+        |ctx| {
+            crate::solve::missing_edge::standard_mesh_boundary_domains_from_context(
+                ctx, &context, None, false,
+            )
+        },
+    );
     assert!(
-        mesh_boundary_domain_limit_operations().contains("catia_mesh_completed_boundary_entries")
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_mesh_completed_boundary_entries")
     );
 }
 
@@ -1240,4 +1256,63 @@ fn standard_mesh_endpoint_domains_ignore_row_local_endpoint_order() {
         .expect("independent endpoint-port gauge");
     let coedges = &topology.faces[0].boundaries[0].coedges;
     assert!(coedges.iter().all(|coedge| !coedge.reversed));
+}
+
+#[test]
+fn mesh_coverage_reuses_one_buffer_for_independent_cycles() {
+    use crate::solve::missing_edge::{mesh_face_coverage, StandardMeshAnalysis};
+    const FACES: usize = 64;
+    let analysis = StandardMeshAnalysis {
+        edge_rows: Vec::new(),
+        cycles: vec![vec![vec![0, 1, 2, 3]]; FACES],
+        occurrences: Vec::new(),
+        fixed_complete_row_spans: false,
+    };
+    // Four face-index slots and two output slots per face, plus four reusable coverage cells.
+    let coverage = crate::test_support::with_collection_limit(
+        u64::try_from(6 * FACES + 4).expect("synthetic coverage items fit u64"),
+        |ctx| mesh_face_coverage(ctx, &analysis, &[]),
+    )
+    .expect("cycle coverage is admitted once")
+    .expect("uncovered cycles are valid");
+    assert_eq!(coverage.len(), FACES);
+    assert!(coverage
+        .iter()
+        .all(|face| face.gaps.len() == 1 && face.gaps[0].length == 4));
+    crate::test_support::with_materialized_limit(4, |ctx| {
+        for _ in 0..128 {
+            assert!(mesh_face_coverage(ctx, &analysis, &[])
+                .expect("released coverage buffer")
+                .is_some());
+        }
+    });
+}
+
+#[test]
+fn endpoint_pruning_with_known_domains_does_not_build_all_point_pairs() {
+    let bytes = standard_quad_topology_stream();
+    let candidates = [vec![[0, 1]], vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]];
+    let mut limit = 0;
+    for _ in 0..512 {
+        let result = crate::test_support::with_collection_limit(limit, |ctx| {
+            crate::solve::missing_edge::standard_mesh_prune_endpoint_candidates(
+                ctx,
+                &bytes,
+                &[[0, 0]; 4],
+                &candidates,
+            )
+        });
+        match result {
+            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
+                assert_ne!(error.operation, "catia_prune_complete_point_pairs");
+                limit = error.used + error.additional;
+            }
+            Ok(Some(pruned)) => {
+                assert_eq!(pruned, candidates);
+                return;
+            }
+            outcome => panic!("unexpected endpoint pruning outcome: {outcome:?}"),
+        }
+    }
+    panic!("adaptive limit must reach the known domains");
 }

@@ -227,7 +227,7 @@ fn cosmetic_thread_retains_unique_cylinder_marker_without_component_path() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -313,7 +313,7 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
     let mut lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: vec![
             FeatureInputName {
@@ -346,6 +346,27 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
     assert_eq!(
         cosmetic_thread_diameter_child_tail(&references_ctx, &feature, &lane).unwrap(),
         Some(158..400)
+    );
+    let mut unrelated = lane.clone();
+    for i in 0..1024 {
+        let mut scalar = lane.scalars[0].clone();
+        scalar.object_id = 1000 + i;
+        scalar.offset = 0;
+        unrelated.scalars.push(scalar);
+        let mut name = lane.names[0].clone();
+        name.id = format!("unrelated#{i}");
+        name.offset = 0;
+        unrelated.names.push(name);
+    }
+    let limited_arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut limited_policy = cadmpeg_core::decode::DecodePolicy::service();
+    limited_policy.limits.max_work_units = 100_000;
+    let (limited_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &limited_arena, &limited_policy)
+            .unwrap();
+    assert_eq!(
+        cosmetic_thread_diameter_child_tail(&limited_ctx, &feature, &unrelated).unwrap(),
+        Some(158..400),
     );
     let references = cosmetic_thread_cylinder_references(
         &references_ctx,
@@ -428,7 +449,7 @@ fn cosmetic_thread_reads_a_direct_component_edge_reference() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: vec![FeatureInputClass {
             id: "component-edge".into(),
             parent: "lane".into(),
@@ -517,7 +538,7 @@ fn cosmetic_thread_reads_component_edge_reference_through_edge_ref_child() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: vec![
             FeatureInputClass {
                 id: "component-edge".into(),
@@ -602,7 +623,7 @@ fn cosmetic_thread_reads_repeated_component_edge_reference_through_edge_ref_chil
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),

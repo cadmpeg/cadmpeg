@@ -95,7 +95,7 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
             "next_byte_offset": 160
         }))
         .expect("profile face operand");
-        operand.recipe_prefix_bytes = paired_prefix();
+        *operand.recipe_prefix_bytes = paired_prefix();
         operand.recipe_references = crate::test_support::with_decode_context(|ctx| {
             crate::design::decode::dimension_frames::decode_recipe_references_charged(
                 ctx,

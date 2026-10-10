@@ -92,6 +92,7 @@ fn blend_grid_samples_a_wide_finite_spine_domain() {
         let spine =
             CurveId::mint("test:model:entity#nx:test:wide-blend-spine").expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: spine.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
@@ -722,6 +723,7 @@ fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
         let curve =
             CurveId::mint("test:model:entity#synthetic:piecewise-spine").expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
@@ -1261,6 +1263,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
             None,
         ));
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: spine.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -1371,6 +1374,7 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
         .get();
         point.y += 3.0;
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: ellipse.clone(),
             geometry,
             source_object: None,

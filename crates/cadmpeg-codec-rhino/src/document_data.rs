@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rhino document properties, selectors, previews, and setting identities.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use crate::loss::Diagnostics;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -71,7 +73,7 @@ struct DocumentSettingsRecord {
     current_layer_index: Option<i64>,
     current_material_index: Option<i32>,
     current_material_source: Option<i32>,
-    current_color: Option<[u8; 4]>,
+    current_color: Option<NativeBytes<[u8; 4]>>,
     current_color_source: Option<i32>,
     current_wire_density: Option<i64>,
     current_font_index: Option<i64>,
@@ -149,10 +151,10 @@ struct RenderSettingsRecord {
     image_height_pixels: i32,
     image_dpi: Option<f64>,
     image_unit_system: Option<u32>,
-    ambient_light: [u8; 4],
+    ambient_light: NativeBytes<[u8; 4]>,
     background_style: i32,
-    background_color: [u8; 4],
-    background_bottom_color: Option<[u8; 4]>,
+    background_color: NativeBytes<[u8; 4]>,
+    background_bottom_color: Option<NativeBytes<[u8; 4]>>,
     background_bitmap_path: String,
     #[serde(flatten)]
     lighting_flags: RenderLightingFlags,
@@ -463,10 +465,10 @@ fn render_settings(
         image_height_pixels,
         image_dpi,
         image_unit_system,
-        ambient_light,
+        ambient_light: (ambient_light).into(),
         background_style,
-        background_color,
-        background_bottom_color,
+        background_color: (background_color).into(),
+        background_bottom_color: (background_bottom_color).map(Into::into),
         background_bitmap_path,
         lighting_flags: RenderLightingFlags {
             use_hidden_lights,
@@ -663,7 +665,7 @@ pub(crate) fn install(
         current_layer_index: settings.current_layer,
         current_material_index: settings.current_material.map(|selection| selection.value),
         current_material_source: settings.current_material.map(|selection| selection.source),
-        current_color: settings.current_color.map(|selection| selection.value),
+        current_color: (settings.current_color.map(|selection| selection.value)).map(Into::into),
         current_color_source: settings.current_color.map(|selection| selection.source),
         current_wire_density: settings.current_wire_density,
         current_font_index: settings.current_font,

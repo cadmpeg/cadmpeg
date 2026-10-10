@@ -351,6 +351,7 @@ fn composite_coplanarity_refuses_segment_work_active_nodes_and_depth() {
 
     let child_id = CurveId::mint("iges:model:curve#D1").unwrap();
     let child = Curve {
+        parameter_range: None,
         id: child_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -440,7 +441,7 @@ fn source_object_fields_refuse_retained_limits_before_copy() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut entry = transform_entry(1, 0);
     entry.label = *b"HELLO   ";
-    entry.level = 7;
+    entry.level = Some(7);
     for (cap, operation) in [
         (0, "iges source object ID"),
         (2, "iges source object name"),
@@ -551,19 +552,20 @@ fn transform_entry(sequence: u32, transform: i64) -> crate::directory::Directory
         entity_type: 124,
         parameter_start: 0,
         structure: 0,
-        line_font: 0,
-        level: 0,
-        view: 0,
+        line_font: Some(0),
+        level: Some(0),
+        view: Some(0),
         transform,
-        label_display: 0,
+        label_display: Some(0),
+        status_padding_recovered: false,
         status: crate::directory::SourceStatus::from_codes([0, 0, 0, 0]),
-        line_weight: 0,
-        color: 0,
+        line_weight: Some(0),
+        color: Some(0),
         parameter_line_count: 0,
         form: 0,
         reserved: [[b' '; 8]; 2],
         label: [b' '; 8],
-        subscript: 0,
+        subscript: Some(0),
     }
 }
 
@@ -617,7 +619,7 @@ fn entity_use_flag_six_is_admitted_only_by_the_later_profile() {
         .unwrap();
     assert!(v4.ir().model.points.is_empty());
     assert!(v4.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::EntityNotProjected.kind()
+        loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss.message.contains("Entity Use Flag 06 is outside")
     }));
 
@@ -626,7 +628,7 @@ fn entity_use_flag_six_is_admitted_only_by_the_later_profile() {
         .unwrap();
     assert_eq!(v5.ir().model.points.len(), 1);
     assert!(!v5.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::EntityNotProjected.kind()
+        loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss.message.contains("Entity Use Flag 06 is outside")
     }));
 }
@@ -702,7 +704,7 @@ fn base_geometry_use_flag_follows_the_declared_dialect() {
 }
 
 #[test]
-fn decode_rejects_a_zero_v4_base_geometry_line_font() {
+fn decode_retains_geometry_with_a_zero_v4_line_font() {
     const GLOBAL_V4: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
     let result = IgesCodec
         .decode(
@@ -720,9 +722,9 @@ fn decode_rejects_a_zero_v4_base_geometry_line_font() {
         )
         .unwrap();
 
-    assert!(result.ir().model.curves.is_empty());
+    assert_eq!(result.ir().model.curves.len(), 1);
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::EntityNotProjected.kind()
+        loss.code == IgesLossCode::DirectoryMetadataNoncanonical.kind()
             && loss
                 .message
                 .contains("Line Font must be nonzero for this IGES 4.0 geometry entity")
@@ -752,7 +754,7 @@ fn decode_applies_v4_base_geometry_use_flag_03_by_dialect() {
 
     assert!(result.ir().model.curves.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::EntityNotProjected.kind()
+        loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss.message.contains(
                 "Entity Use Flag 03 is outside the IGES 4.0 base geometry values 00, 01, 02, and 05",
             )
@@ -776,7 +778,7 @@ fn decode_applies_v4_base_geometry_use_flag_03_by_dialect() {
         .unwrap();
     assert_eq!(later.ir().model.curves.len(), 1);
     assert!(!later.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::EntityNotProjected.kind()
+        loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss.message.contains("base geometry values")
     }));
 }
@@ -1008,7 +1010,7 @@ fn type125_flash_is_admitted_in_v4_and_v5() {
         );
         assert!(!result.report().losses.iter().any(|loss| {
             loss.code == IgesLossCode::EntityOutsideEnvelope.kind()
-                || loss.code == IgesLossCode::EntityNotProjected.kind()
+                || loss.code == IgesLossCode::GeometryNotProjected.kind()
         }));
     }
 }
@@ -1131,7 +1133,7 @@ fn decode_preserves_rational_bspline_weights_and_multiplicities() {
 }
 
 #[test]
-fn decode_rejects_a_rational_declaration_with_equal_weights() {
+fn decode_recovers_a_rational_declaration_with_equal_weights() {
     let result = IgesCodec
         .decode(
             &mut Cursor::new(equal_weight_rational_nurbs_curve_file()),
@@ -1139,16 +1141,16 @@ fn decode_rejects_a_rational_declaration_with_equal_weights() {
         )
         .unwrap();
 
-    assert!(result.ir().model.curves.is_empty());
+    assert_eq!(result.ir().model.curves.len(), 1);
     assert_eq!(result.report().losses.len(), 1);
     assert_eq!(
         result.report().losses[0].code,
-        IgesLossCode::EntityNotProjected.kind()
+        IgesLossCode::SplineClaimRecovered.kind()
     );
 }
 
 #[test]
-fn decode_rejects_inconsistent_type_126_planar_and_closed_flags() {
+fn decode_recovers_inconsistent_type_126_planar_and_closed_flags() {
     for (flags, normal) in [
         ([1, 0, 0, 0], [1, 0, 0]),
         ([1, 1, 0, 0], [0, 0, 1]),
@@ -1165,14 +1167,14 @@ fn decode_rejects_inconsistent_type_126_planar_and_closed_flags() {
             )
             .unwrap();
         assert!(
-            result.ir().model.curves.is_empty(),
+            result.ir().model.curves.len() == 1,
             "flags={flags:?}: losses={:?}",
             result.report().losses
         );
         assert_eq!(result.report().losses.len(), 1, "flags={flags:?}");
         assert_eq!(
             result.report().losses[0].code,
-            IgesLossCode::EntityNotProjected.kind(),
+            IgesLossCode::SplineClaimRecovered.kind(),
             "flags={flags:?}"
         );
     }
@@ -1197,7 +1199,7 @@ fn decode_uses_strict_global_resolution_for_type_126_closed_flag() {
 
         assert_eq!(
             result.ir().model.curves.len(),
-            usize::from(decoded),
+            1,
             "endpoint={endpoint}, PROP2={prop2}"
         );
         assert_eq!(
@@ -1209,7 +1211,7 @@ fn decode_uses_strict_global_resolution_for_type_126_closed_flag() {
         if !decoded {
             assert_eq!(
                 result.report().losses[0].code,
-                IgesLossCode::EntityNotProjected.kind()
+                IgesLossCode::SplineClaimRecovered.kind()
             );
         }
     }
@@ -1313,7 +1315,7 @@ fn decode_treats_type_126_periodic_flag_as_evaluation_metadata() {
 }
 
 #[test]
-fn decode_rejects_type_126_without_required_normal_fields() {
+fn decode_recovers_type_126_without_required_normal_fields() {
     let result = IgesCodec
         .decode(
             &mut Cursor::new(polynomial_nurbs_curve_file(
@@ -1323,11 +1325,11 @@ fn decode_rejects_type_126_without_required_normal_fields() {
         )
         .unwrap();
 
-    assert!(result.ir().model.curves.is_empty());
+    assert_eq!(result.ir().model.curves.len(), 1);
     assert_eq!(result.report().losses.len(), 1);
     assert_eq!(
         result.report().losses[0].code,
-        IgesLossCode::EntityNotProjected.kind()
+        IgesLossCode::SplineClaimRecovered.kind()
     );
 }
 
@@ -1358,7 +1360,7 @@ fn decode_accepts_omitted_type_126_normal_for_nonplanar_v4_and_v5() {
             .report()
             .losses
             .iter()
-            .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+            .any(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind()));
     }
 }
 
@@ -1444,8 +1446,8 @@ fn decode_projects_a_degree_zero_polynomial_bspline_curve() {
 }
 
 #[test]
-fn decode_applies_declared_real_significance_to_polynomial_weights() {
-    for (weights, decoded) in [
+fn decode_preserves_actual_weights_when_polynomial_claim_disagrees() {
+    for (weights, claim_usable) in [
         ("1.,0.9999999", true),
         ("1.,0.99", false),
         ("1.D0,0.9999999D0", false),
@@ -1457,24 +1459,22 @@ fn decode_applies_declared_real_significance_to_polynomial_weights() {
                 &DecodeOptions::default(),
             )
             .unwrap();
-
-        assert_eq!(
-            result.ir().model.curves.len(),
-            usize::from(decoded),
-            "{weights}"
+        assert_eq!(result.ir().model.curves.len(), 1, "{weights}");
+        assert_eq!(result.report().losses.is_empty(), claim_usable, "{weights}");
+        let Some(SolvedCurveGeometry::Nurbs(nurbs)) = result.ir().model.curves[0].geometry.solved()
+        else {
+            panic!("expected NURBS");
+        };
+        assert!(
+            nurbs.weights().is_some(),
+            "actual unequal weights must survive {weights}"
         );
-        assert_eq!(result.report().losses.is_empty(), decoded, "{weights}");
-        if decoded {
-            let Some(SolvedCurveGeometry::Nurbs(nurbs)) =
-                result.ir().model.curves[0].geometry.solved()
-            else {
-                panic!("expected a NURBS carrier");
-            };
-            assert_eq!(nurbs.weights(), None);
-        } else {
-            assert!(result.report().losses[0]
-                .message
-                .contains("polynomial spline has unequal weights"));
+        if !claim_usable {
+            assert!(result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == crate::loss::IgesLossCode::SplineClaimRecovered.kind()));
         }
     }
 }
@@ -1962,3 +1962,7 @@ fn decode_reports_transform_translation_overflow_after_inch_scaling() {
         .message
         .contains("non-finite coefficients after length scaling")));
 }
+
+mod ownership;
+
+mod lexical_recovery;

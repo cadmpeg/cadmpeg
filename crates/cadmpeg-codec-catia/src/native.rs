@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! CATIA-native ownership and design records retained outside the neutral model.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use cadmpeg_core::decode::u64_from_index;
 
 use serde::{Deserialize, Serialize};
@@ -119,7 +121,7 @@ struct CatiaFaceNodeRelation {
     /// Class-`0x5f` target retained by the enclosing source-scoped relation.
     target: u32,
     /// Two terminal bytes of the face-node payload.
-    terminal: [u8; 2],
+    terminal: NativeBytes<[u8; 2]>,
 }
 
 /// Selected class of a fixed-nine owner identity target.
@@ -1182,8 +1184,7 @@ pub(crate) struct CatiaConsolidatedPcurve {
     /// Native evaluation interval.
     range: cadmpeg_ir::topology::IncreasingParameterInterval,
     /// Bytes following the evaluation interval in the framed payload.
-    #[serde(with = "cadmpeg_ir::bytes")]
-    tail: Vec<u8>,
+    tail: NativeBytes<Vec<u8>>,
 }
 
 /// One structurally complete consolidated `B:2a` sphere chart.
@@ -1340,13 +1341,12 @@ enum CatiaConsolidatedClass61Payload {
         /// Compact identities in serialization order.
         references: Vec<u32>,
         /// Complete nonempty tail, including terminal byte `0x03`.
-        #[serde(with = "cadmpeg_ir::bytes")]
-        tail: Vec<u8>,
+        tail: NativeBytes<Vec<u8>>,
     },
     /// Long form with a monotone member lane and five persistent references.
     Long {
         /// Complete eight-byte prefix preceding the member-list marker.
-        prefix: [u8; 8],
+        prefix: NativeBytes<[u8; 8]>,
         /// Strictly increasing allocation members.
         members: Vec<u16>,
         /// Five persistent identities following the list delimiter.
@@ -1377,8 +1377,7 @@ pub(crate) struct CatiaConsolidatedConeFace {
     /// Complete framed-record length.
     byte_len: u64,
     /// Complete reference-and-control program preceding the scalars.
-    #[serde(with = "cadmpeg_ir::bytes")]
-    program: Vec<u8>,
+    program: NativeBytes<Vec<u8>>,
     /// Stored angular chart scale.
     angular_scale: FiniteReal,
     /// Cone half-angle in radians, strictly between zero and a quarter turn.
@@ -1478,14 +1477,14 @@ struct CatiaConsolidatedEdgeUses {
 #[derive(Serialize, Deserialize)]
 struct CatiaConsolidatedEdgeUsesWire {
     references: [[u32; 2]; 2],
-    senses: [u8; 2],
+    senses: NativeBytes<[u8; 2]>,
 }
 
 impl From<CatiaConsolidatedEdgeUses> for CatiaConsolidatedEdgeUsesWire {
     fn from(value: CatiaConsolidatedEdgeUses) -> Self {
         Self {
             references: value.references,
-            senses: [0x88, 0x84],
+            senses: ([0x88, 0x84]).into(),
         }
     }
 }
@@ -1592,8 +1591,7 @@ pub(crate) struct CatiaFinjplSegment {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     name: Option<String>,
     /// Complete segment bytes from marker through the byte before the next segment.
-    #[serde(with = "cadmpeg_ir::bytes")]
-    data: Vec<u8>,
+    data: NativeBytes<Vec<u8>>,
 }
 
 /// One external CATIA document selected by a storage-property record.
@@ -1625,8 +1623,7 @@ pub(crate) struct CatiaPreviewImage {
     /// JPEG component count.
     components: u8,
     /// Exact JPEG byte stream.
-    #[serde(with = "cadmpeg_ir::bytes")]
-    data: Vec<u8>,
+    data: NativeBytes<Vec<u8>>,
 }
 
 /// One exact outer `01 00 04 00` alias-row core.
@@ -1644,7 +1641,7 @@ pub(crate) struct CatiaAliasRow {
     /// Single-byte row flag.
     flag: u8,
     /// Complete three-byte F1 field.
-    f1: [u8; 3],
+    f1: NativeBytes<[u8; 3]>,
     /// Primary object graph selected by the valid F1 ordinal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     object_graph: Option<String>,
@@ -1701,7 +1698,7 @@ struct CatiaAliasRowWire {
     tag: u32,
     tag_raw: u32,
     flag: u8,
-    f1: [u8; 3],
+    f1: NativeBytes<[u8; 3]>,
     entity_record_ordinal: u8,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     object_graph: Option<String>,
@@ -1726,7 +1723,7 @@ struct CatiaAliasRowWireRef<'a> {
     tag: u32,
     tag_raw: u32,
     flag: u8,
-    f1: [u8; 3],
+    f1: NativeBytes<[u8; 3]>,
     entity_record_ordinal: u8,
     #[serde(skip_serializing_if = "Option::is_none")]
     object_graph: Option<&'a str>,
@@ -1755,7 +1752,7 @@ impl Serialize for CatiaAliasRow {
             tag: self.tag(),
             tag_raw: self.tag_raw,
             flag: self.flag,
-            f1: self.f1,
+            f1: (self.f1),
             entity_record_ordinal: self.entity_record_ordinal(),
             object_graph: self.object_graph.as_deref(),
             object_record: self.object_record.as_deref(),
@@ -1781,7 +1778,7 @@ impl From<CatiaAliasRow> for CatiaAliasRowWire {
             lead_raw: value.lead_raw,
             tag_raw: value.tag_raw,
             flag: value.flag,
-            f1: value.f1,
+            f1: (value.f1),
             object_graph: value.object_graph,
             object_record: value.object_record,
             design_object: value.design_object,
@@ -1814,7 +1811,7 @@ impl TryFrom<CatiaAliasRowWire> for CatiaAliasRow {
             lead_raw: wire.lead_raw,
             tag_raw: wire.tag_raw,
             flag: wire.flag,
-            f1: wire.f1,
+            f1: (wire.f1),
             object_graph: wire.object_graph,
             object_record: wire.object_record,
             design_object: wire.design_object,
@@ -1840,7 +1837,6 @@ pub(crate) struct CatiaValueBlock {
     /// Source-schema catalog that begins immediately after this block.
     pub(crate) catalog: String,
     /// Value payload in serialized order.
-    #[serde(with = "cadmpeg_ir::bytes")]
     pub(crate) payload: Vec<u8>,
     /// Schema selectors in payload order, resolved against the adjacent catalog.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1878,8 +1874,7 @@ struct CatiaValueBlockWire {
     /// Source-schema catalog that begins immediately after this block.
     catalog: String,
     /// Value payload in serialized order.
-    #[serde(with = "cadmpeg_ir::bytes")]
-    payload: Vec<u8>,
+    payload: NativeBytes<Vec<u8>>,
     /// Lossless typed fields in payload order.
     #[serde(default)]
     fields: Vec<value_block::ValueField>,
@@ -1898,7 +1893,7 @@ impl From<CatiaValueBlock> for CatiaValueBlockWire {
             byte_offset: block.byte_offset,
             object_graph: block.object_graph,
             catalog: block.catalog,
-            payload: block.payload,
+            payload: (block.payload).into(),
             schema_selections: block.schema_selections,
         }
     }
@@ -1914,7 +1909,7 @@ impl CatiaValueBlockWire {
             byte_offset: block.byte_offset,
             object_graph: block.object_graph,
             catalog: block.catalog,
-            payload: block.payload,
+            payload: (block.payload).into(),
             schema_selections: block.schema_selections,
         })
     }
@@ -1929,7 +1924,7 @@ impl TryFrom<CatiaValueBlockWire> for CatiaValueBlock {
             byte_offset: wire.byte_offset,
             object_graph: wire.object_graph,
             catalog: wire.catalog,
-            payload: wire.payload,
+            payload: wire.payload.into_inner(),
             schema_selections: wire.schema_selections,
         };
         if wire.byte_len != block.byte_len()
@@ -2488,7 +2483,7 @@ pub(crate) struct CatiaEntitySuffixValue {
     /// Three canonical compact atoms preceding the field code.
     prefix_atoms: [u32; 3],
     /// Stored width of each prefix atom.
-    pub(crate) prefix_atom_widths: [u8; 3],
+    pub(crate) prefix_atom_widths: NativeBytes<[u8; 3]>,
     /// Exact field code preceding the payload.
     prefix_code: u8,
     /// Stored suffix payload.
@@ -2531,8 +2526,7 @@ pub(crate) enum CatiaEntitySuffixFraming {
     /// Standalone fixed frame `FE F6 <payload[16]>`.
     FixedFeF6 {
         /// Exact fixed-width payload.
-        #[serde(with = "cadmpeg_ir::bytes")]
-        payload: Vec<u8>,
+        payload: NativeBytes<Vec<u8>>,
     },
     /// One paged compact atom followed by state byte `01`.
     PagedAtomState01 {
@@ -3672,7 +3666,7 @@ struct CatiaObjectRecordWire {
     lead: u8,
     head: Vec<HeadToken>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    inline_body: Option<Vec<u8>>,
+    inline_body: Option<NativeBytes<Vec<u8>>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     owner: Option<CatiaObjectOwner>,
     class_ref: Option<u32>,
@@ -3742,7 +3736,7 @@ impl CatiaObjectRecordWire {
             byte_len: value.byte_len,
             lead: value.lead,
             head: value.head,
-            inline_body: value.inline_body,
+            inline_body: (value.inline_body).map(Into::into),
             owner: value.owner,
             class_ref,
             class_name,
@@ -3813,7 +3807,7 @@ impl TryFrom<CatiaObjectRecordWire> for CatiaObjectRecord {
             byte_len: wire.byte_len,
             lead: wire.lead,
             head: wire.head,
-            inline_body: wire.inline_body,
+            inline_body: wire.inline_body.map(NativeBytes::into_inner),
             owner: wire.owner,
             class,
             storage,
@@ -5972,7 +5966,7 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
     };
     Some(CatiaEntitySuffixValue {
         prefix_atoms,
-        prefix_atom_widths,
+        prefix_atom_widths: (prefix_atom_widths).into(),
         prefix_code,
         payload,
         trailer,
@@ -6003,7 +5997,9 @@ fn entity_suffix_framing(
         }
         [0x81, 0x49] => CatiaEntitySuffixFraming::Token8149,
         [0xfe, 0xf6, payload @ ..] if payload.len() == 16 => CatiaEntitySuffixFraming::FixedFeF6 {
-            payload: ctx.copy_slice(payload, "catia_native_fixed_suffix_payload")?,
+            payload: ctx
+                .copy_slice(payload, "catia_native_fixed_suffix_payload")?
+                .into(),
         },
         [lead @ 0xd1..=0xe4, low, 0x01] => CatiaEntitySuffixFraming::PagedAtomState01 {
             value: u32::from(*lead - 0xd1) * 256 + u32::from(*low) + 1,
@@ -7114,8 +7110,7 @@ pub(crate) struct CatiaLegacySchemaProgram {
     #[serde(default)]
     pub(crate) boundary: CatiaLegacySchemaProgramBoundary,
     /// Exact program bytes, including the terminal `FE`.
-    #[serde(with = "cadmpeg_ir::bytes")]
-    pub(crate) data: Vec<u8>,
+    pub(crate) data: NativeBytes<Vec<u8>>,
     /// Complete inclusive-length identifier packets in source order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) identifiers: Vec<CatiaLegacySchemaIdentifier>,
@@ -7224,7 +7219,7 @@ pub(crate) struct CatiaLegacySchemaField {
     /// Stored schema field code.
     pub(crate) field_code: u16,
     /// Exact bytes after the opener and before the boundary role.
-    pub(crate) payload: Vec<u8>,
+    pub(crate) payload: NativeBytes<Vec<u8>>,
 }
 
 /// One typed parameter role in a legacy relation signature.
@@ -7451,7 +7446,7 @@ pub(crate) struct CatiaZeroEntitySupportOccurrence {
     /// One-based global record ordinal in the zero-entity stream.
     pub(crate) record_ordinal: u32,
     /// Complete two-byte record tag.
-    pub(crate) tag: [u8; 2],
+    pub(crate) tag: NativeBytes<[u8; 2]>,
     /// Face-local support slot stored at record offset 12.
     pub(crate) face_local_slot: u32,
     /// Stored UV endpoints when the record family carries them inline.
@@ -7485,7 +7480,7 @@ pub(crate) struct CatiaZeroEntityFace {
     /// One-based global record ordinal.
     pub(crate) record_ordinal: u32,
     /// Complete two-byte record tag.
-    tag: [u8; 2],
+    tag: NativeBytes<[u8; 2]>,
     /// Counted allocation values in storage order.
     pub(crate) allocations: Vec<u32>,
     /// Ordered loop terminals derived from the allocation lane.
@@ -7504,7 +7499,7 @@ pub(crate) struct CatiaZeroEntityLoop {
     /// One-based global record ordinal.
     record_ordinal: u32,
     /// Complete two-byte record tag.
-    tag: [u8; 2],
+    tag: NativeBytes<[u8; 2]>,
     /// Nonterminal even-lane logical member identifiers.
     pub(crate) member_ids: Vec<u32>,
     /// Odd-lane typed references in member order.
@@ -7641,7 +7636,7 @@ pub(crate) struct CatiaZeroEntityVertexIncidence {
     /// One-based global record ordinal in the zero-entity stream.
     pub(crate) record_ordinal: u32,
     /// Complete two-byte record tag.
-    tag: [u8; 2],
+    tag: NativeBytes<[u8; 2]>,
     /// Stored allocation values.
     pub(crate) allocations: Vec<u32>,
     /// Immediately following `5d06` vertex-owner record.
@@ -7680,7 +7675,7 @@ pub(crate) struct CatiaZeroEntityRecord {
     /// Exclusive logical byte end, including any inline continuation.
     pub(crate) logical_end: u64,
     /// Complete two-byte record tag.
-    pub(crate) tag: [u8; 2],
+    pub(crate) tag: NativeBytes<[u8; 2]>,
     /// One-based global record ordinal.
     pub(crate) record_ordinal: u32,
 }
@@ -8193,7 +8188,7 @@ fn legacy_entity_runs(
                             CatiaLegacySchemaProgramBoundary::StreamDirectory
                         }
                     },
-                    data: program.bytes,
+                    data: (program.bytes).into(),
                     identifiers: ctx.collect_vec(
                         program.identifiers.into_iter().map(|identifier| {
                             CatiaLegacySchemaIdentifier {
@@ -8358,7 +8353,7 @@ fn legacy_entity_runs(
                         role_byte_offset: u64_from_index(field.role_offset),
                         boundary_role_byte_offset: u64_from_index(field.boundary_role_offset),
                         field_code: field.field_code,
-                        payload: field.payload,
+                        payload: (field.payload).into(),
                     }),
                 "catia_native_legacy_schema_fields",
             )?,
@@ -8442,7 +8437,7 @@ fn consolidated_class61_records(
                 record.header_token,
                 CatiaConsolidatedClass61Payload::Counted {
                     references: record.references,
-                    tail: record.tail,
+                    tail: record.tail.into(),
                 },
             ),
             "catia_native_class61_order",
@@ -8455,7 +8450,7 @@ fn consolidated_class61_records(
                 record.pos,
                 record.header_token,
                 CatiaConsolidatedClass61Payload::Long {
-                    prefix: record.prefix,
+                    prefix: record.prefix.into(),
                     members: record.members,
                     references: record.references,
                     scalar: record.scalar,
@@ -8703,7 +8698,7 @@ fn consolidated_cone_faces(
             )?,
             byte_offset,
             byte_len,
-            program: face.program,
+            program: (face.program).into(),
             angular_scale: face.angular_scale,
             half_angle: face.half_angle,
             parameter_points: bound_points,
@@ -9215,7 +9210,7 @@ fn consolidated_pcurves(
             first_derivatives,
             second_derivatives,
             range: pcurve.range,
-            tail: pcurve.tail,
+            tail: (pcurve.tail).into(),
         };
         ctx.push_vec(&mut native, value, "catia_native_pcurves")?;
     }
@@ -9462,7 +9457,7 @@ fn zero_entity_support_runs(
                 native_loops.push(CatiaZeroEntityLoop {
                     byte_offset: u64_from_index(loop_record.pos),
                     record_ordinal: loop_record.record_ordinal,
-                    tag: loop_record.tag,
+                    tag: (loop_record.tag).into(),
                     member_ids,
                     typed_references: loop_record.typed_references,
                     typed_records,
@@ -9477,7 +9472,7 @@ fn zero_entity_support_runs(
             Some(CatiaZeroEntityFace {
                 byte_offset: u64_from_index(face.pos),
                 record_ordinal: face.record_ordinal,
-                tag: face.tag,
+                tag: (face.tag).into(),
                 allocations: face.allocations,
                 loop_terminals,
                 loops: native_loops,
@@ -9496,7 +9491,7 @@ fn zero_entity_support_runs(
             supports.push(CatiaZeroEntitySupportOccurrence {
                 byte_offset: u64_from_index(support.pos),
                 record_ordinal: support.record_ordinal,
-                tag: support.tag,
+                tag: (support.tag).into(),
                 face_local_slot: support.face_local_slot,
                 uv_endpoints: support.uv_endpoints,
                 pcurve: support.pcurve,
@@ -9730,7 +9725,7 @@ fn zero_entity_vertex_incidences(
             )?,
             byte_offset: u64_from_index(record.pos),
             record_ordinal: record.record_ordinal,
-            tag: record.tag(),
+            tag: (record.tag()).into(),
             allocations: ctx.copy_slice(
                 record.allocations.as_slice(),
                 "catia_native_zero_vertex_allocations",
@@ -9759,7 +9754,7 @@ fn zero_entity_records(
             )?,
             byte_offset: u64_from_index(record.pos),
             logical_end: u64_from_index(record.end),
-            tag: record.tag,
+            tag: (record.tag).into(),
             record_ordinal: record.record_ordinal,
         });
     }
@@ -9825,7 +9820,7 @@ impl CatiaNative {
             let family = ctx
                 .copy_retained_text(finjpl_family(segment.kind()), "catia_native_finjpl_family")?;
             let data =
-                ctx.copy_slice(&bytes[segment.range.clone()], "catia_native_finjpl_bytes")?;
+                ctx.copy_retained(&bytes[segment.range.clone()], "catia_native_finjpl_bytes")?;
             ctx.push_vec(
                 &mut finjpl_segments,
                 CatiaFinjplSegment {
@@ -9835,7 +9830,7 @@ impl CatiaNative {
                     type_word: segment.type_word,
                     family,
                     name: segment.name,
-                    data,
+                    data: (data).into(),
                 },
                 "catia_native_finjpl_segments",
             )?;

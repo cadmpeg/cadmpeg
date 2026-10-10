@@ -26,7 +26,9 @@ impl Serialize for FeatureOperationBodyReferenceLane {
                 )?;
                 wire.serialize_entry(
                     "raw_object_indices",
-                    &IterWire($references.iter().map(|reference| reference.token.raw())),
+                    &IterWire($references.iter().map(|reference| {
+                        cadmpeg_ir::native::bytes::NativeBytes::from(reference.token.raw())
+                    })),
                 )?;
                 wire.serialize_entry(
                     "data_blocks",
@@ -67,8 +69,8 @@ mod tests {
     #[test]
     fn operation_body_reference_borrowed_wires_match_owned_bytes_and_retained_limit() {
         for json in [
-            r#"{"id":"nx:feature:body-reference-lane#0","operation_label":"operation","body_reference_ordinal":0,"body_object_index":110,"branch":28,"encoding":"compact_index","object_indices":[4096,28673],"raw_object_indices":[[144,0],[240,1]],"data_blocks":[null,"block"],"source_offsets":[111,113]}"#,
-            r#"{"id":"nx:feature:body-reference-lane#1","operation_label":"operation","body_reference_ordinal":0,"body_object_index":110,"branch":17,"encoding":"payload_object_index","object_indices":[1,256],"raw_object_indices":[[240,1],[241,1,0]],"data_blocks":[null,"block"],"source_offsets":[111,113]}"#,
+            r#"{"id":"nx:feature:body-reference-lane#0","operation_label":"operation","body_reference_ordinal":0,"body_object_index":110,"branch":28,"encoding":"compact_index","object_indices":[4096,28673],"raw_object_indices":["9000","f001"],"data_blocks":[null,"block"],"source_offsets":[111,113]}"#,
+            r#"{"id":"nx:feature:body-reference-lane#1","operation_label":"operation","body_reference_ordinal":0,"body_object_index":110,"branch":17,"encoding":"payload_object_index","object_indices":[1,256],"raw_object_indices":["f001","f10100"],"data_blocks":[null,"block"],"source_offsets":[111,113]}"#,
         ] {
             let record: FeatureOperationBodyReferenceLane = serde_json::from_str(json).unwrap();
             assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());

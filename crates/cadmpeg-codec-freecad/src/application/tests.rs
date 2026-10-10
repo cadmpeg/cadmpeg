@@ -129,8 +129,10 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
     let records = namespace
         .arena_as::<serde_json::Value>("applications")
         .expect("applications");
-    let bytes = |record: &serde_json::Value| {
-        serde_json::from_value::<Vec<u8>>(record["data"].clone()).expect("wire bytes")
+    let xml_bytes = |record: &serde_json::Value| {
+        let start = usize::try_from(record["byte_start"].as_u64().unwrap()).unwrap();
+        let end = usize::try_from(record["byte_end"].as_u64().unwrap()).unwrap();
+        &document.as_bytes()[start..end]
     };
     assert_eq!(records.len(), 5);
     let by_domain = records
@@ -153,27 +155,34 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
     assert!(report["byte_start"].as_u64().unwrap() < report["byte_end"].as_u64().unwrap());
     assert_eq!(
         report["byte_len"],
-        cadmpeg_core::decode::u64_from_index(bytes(report).len())
+        cadmpeg_core::decode::u64_from_index(xml_bytes(report).len())
     );
     assert_eq!(
         report["sha256"],
-        cadmpeg_ir::hash::sha256_hex(&bytes(report))
+        cadmpeg_ir::hash::sha256_hex(xml_bytes(report))
     );
     assert_eq!(report["payloads"].as_array().unwrap().len(), 1);
     let payload = &report["payloads"][0];
     assert_eq!(payload["name"], "analysis.dat");
-    assert_eq!(bytes(payload), b"finite-element-results");
+    assert_eq!(payload["byte_len"], b"finite-element-results".len());
+    assert!(payload.get("data").is_none());
     assert_eq!(
         payload["sha256"],
-        cadmpeg_ir::hash::sha256_hex(&bytes(payload))
+        cadmpeg_ir::hash::sha256_hex(b"finite-element-results")
     );
     let python = &by_domain["Path"]["property_records"][0];
     assert_eq!(python["inert"], true);
-    assert!(String::from_utf8_lossy(&bytes(python)).contains("serialized-but-inert"));
+    assert!(String::from_utf8_lossy(xml_bytes(python)).contains("serialized-but-inert"));
     assert!(records.iter().all(|record| {
+        assert!(record.get("data").is_none());
+        assert!(record["property_records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|property| property.get("data").is_none()));
         record["byte_start"].as_u64().unwrap() < record["byte_end"].as_u64().unwrap()
-            && record["byte_len"] == cadmpeg_core::decode::u64_from_index(bytes(record).len())
-            && record["sha256"] == cadmpeg_ir::hash::sha256_hex(&bytes(record))
+            && record["byte_len"] == cadmpeg_core::decode::u64_from_index(xml_bytes(record).len())
+            && record["sha256"] == cadmpeg_ir::hash::sha256_hex(xml_bytes(record))
     }));
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
@@ -184,7 +193,6 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
         .find(|record| record["domain"] == "Fem")
         .unwrap()["property_records"][0]["payloads"][0];
     let replacement = b"different internally consistent bytes";
-    payload["data"] = serde_json::json!(replacement.as_slice());
     payload["byte_len"] = serde_json::json!(replacement.len());
     payload["sha256"] = serde_json::json!(cadmpeg_ir::hash::sha256_hex(replacement));
     let mut edited = result.ir().clone();
@@ -207,7 +215,7 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
 }
 
 #[test]
-fn absent_object_data_keeps_the_legacy_empty_wire_without_a_domain_sentinel() {
+fn absent_object_data_keeps_empty_ranges_and_digest() {
     let objects = [crate::native::ObjectRecord {
         identity: crate::native::object_identity::ObjectIdentity::try_new(
             "fcstd:native:object#Absent".into(),
@@ -236,7 +244,7 @@ fn absent_object_data_keeps_the_legacy_empty_wire_without_a_domain_sentinel() {
     let records = namespace
         .arena_as::<serde_json::Value>("applications")
         .unwrap();
-    assert_eq!(records[0]["data"], serde_json::json!([]));
+    assert!(records[0].get("data").is_none());
     assert_eq!(records[0]["byte_start"], 0);
     assert_eq!(records[0]["byte_end"], 0);
     assert_eq!(records[0]["byte_len"], 0);
@@ -455,7 +463,8 @@ fn application_hashes_refuse_work_before_digest_allocation() {
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 8;
+    policy.limits.max_work_units =
+        cadmpeg_core::decode::u64_from_index(object.id().as_str().len()) + 8;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("context");
     assert!(
@@ -493,9 +502,10 @@ fn application_property_hash_refuses_work_and_digest_storage() {
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    // The owner's one-property sort takes its count plus eight bytes over two levels at eight
-    // units each; the property digest then needs more than the ten units left.
-    policy.limits.max_work_units = 1 + 8 * 2 * 8 + 10;
+    // The owner's one-property sort charges only its one item; the property digest then needs
+    // more than the ten units left.
+    policy.limits.max_work_units =
+        cadmpeg_core::decode::u64_from_index(object.id().as_str().len()) * 3 + 1 + 10;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("context");
     assert!(
@@ -568,7 +578,9 @@ fn application_repeated_payloads_borrow_the_cached_digest() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     // The owner's two-property sort takes its count plus sixteen bytes over three levels at
     // eight units each; the remaining 22 units hash only the two property XML texts.
-    policy.limits.max_work_units = 2 + 16 * 3 * 8 + 22;
+    let index_work = cadmpeg_core::decode::u64_from_index(objects[0].id().as_str().len()) * 5
+        + cadmpeg_core::decode::u64_from_index(entries[0].name().len()) * 6;
+    policy.limits.max_work_units = index_work + 2 + 16 * 3 * 8 + 22;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("context");
     let records = super::wire_records(&ctx, &objects, &properties, &entries)
@@ -577,4 +589,12 @@ fn application_repeated_payloads_borrow_the_cached_digest() {
         assert_eq!(property.payloads[0].sha256.as_ptr(), digest);
         assert_eq!(property.payloads[0].sha256, entries[0].sha256());
     }
+    policy.limits.max_work_units = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(
+        matches!(super::wire_records(&ctx, &objects, &properties, &entries),
+        Err(cadmpeg_core::CodecError::ResourceLimit(ref limit))
+            if limit.operation == "FreeCAD application owner hashing")
+    );
 }

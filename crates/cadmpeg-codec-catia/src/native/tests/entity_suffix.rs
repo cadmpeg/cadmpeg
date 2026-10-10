@@ -245,7 +245,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         native.entity_records[0].suffix_value().cloned(),
         Some(CatiaEntitySuffixValue {
             prefix_atoms: [4, 22, 2],
-            prefix_atom_widths: [1, 1, 1],
+            prefix_atom_widths: [1, 1, 1].into(),
             prefix_code: 0xad,
             payload: CatiaEntitySuffixPayload::Evaluation {
                 opcode_offset: 4,
@@ -351,10 +351,10 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
             .expect("complete wide-prefix control"),
         CatiaEntitySuffixValue {
             prefix_atoms: [104, 8, 1],
-            prefix_atom_widths: [2, 1, 1],
+            prefix_atom_widths,
             payload: CatiaEntitySuffixPayload::ControlE8,
             ..
-        }
+        } if prefix_atom_widths.as_ref() == [2, 1, 1]
     ));
 
     let truncated_wide_prefix =

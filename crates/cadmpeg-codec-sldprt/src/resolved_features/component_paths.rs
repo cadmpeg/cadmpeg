@@ -7,10 +7,64 @@ use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{
     FeatureInputComponentPathEntry, FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName,
 };
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use std::collections::{HashMap, HashSet};
+
+enum ComponentProducer<'a> {
+    Missing,
+    Unique(&'a str),
+    Ambiguous,
+}
+
+fn component_producers<'ctx, 'feature>(
+    ctx: &'ctx DecodeContext<'_>,
+    components: &[FeatureInputComponentPathEntry],
+    features: impl IntoIterator<Item = &'feature crate::records::Feature>,
+    operation: &'static str,
+) -> Result<
+    (
+        HashMap<u32, ComponentProducer<'feature>>,
+        ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
+    ctx.with_scoped_storage(operation, || {
+        let mut by_source = HashMap::new();
+        for component in components {
+            ctx.charge_work(4, operation)?;
+            let Some(source) = View::u32_le_at(component.type_signature.as_ref(), 4) else {
+                continue;
+            };
+            ctx.insert_hash_map(
+                &mut by_source,
+                source,
+                ComponentProducer::Missing,
+                operation,
+            )?;
+        }
+        if by_source.is_empty() {
+            return Ok(by_source);
+        }
+        for feature in features {
+            ctx.charge_work(4, operation)?;
+            let Some(source) = feature.source_value() else {
+                continue;
+            };
+            let Some(producer) = by_source.get_mut(&source) else {
+                continue;
+            };
+            *producer = match producer {
+                ComponentProducer::Missing => ComponentProducer::Unique(feature.id.as_str()),
+                ComponentProducer::Unique(_) | ComponentProducer::Ambiguous => {
+                    ComponentProducer::Ambiguous
+                }
+            };
+        }
+        Ok(by_source)
+    })
+}
 
 pub(super) fn component_path_features<'a>(
     ctx: &DecodeContext<'_>,
@@ -18,26 +72,14 @@ pub(super) fn component_path_features<'a>(
     features: impl IntoIterator<Item = &'a crate::records::Feature>,
 ) -> Result<Vec<String>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT component path producers";
-    let mut by_source = HashMap::<u32, Option<&str>>::new();
-    for feature in features {
-        ctx.charge_work(1, OPERATION)?;
-        let Some(source_id) = feature.source_value() else {
-            continue;
-        };
-        if let Some(candidate) = by_source.get_mut(&source_id) {
-            *candidate = None;
-        } else {
-            ctx.reserve_map(&mut by_source, 1, OPERATION)?;
-            by_source.insert(source_id, Some(feature.id.as_str()));
-        }
-    }
+    let (by_source, _storage) = component_producers(ctx, components, features, OPERATION)?;
     let mut result: Vec<String> = Vec::new();
     for component in components {
         ctx.charge_work(1, OPERATION)?;
-        let Some(source_id) = View::u32_le_at(&component.type_signature, 4) else {
+        let Some(source_id) = View::u32_le_at(component.type_signature.as_ref(), 4) else {
             continue;
         };
-        let Some(Some(feature)) = by_source.get(&source_id) else {
+        let Some(ComponentProducer::Unique(feature)) = by_source.get(&source_id) else {
             continue;
         };
         let mut duplicate = false;
@@ -57,33 +99,40 @@ pub(super) fn component_path_features<'a>(
     Ok(result)
 }
 
-pub(super) fn feature_precedes_consumer(
+pub(super) fn component_path_consumer<'a>(
     ctx: &DecodeContext<'_>,
-    feature: &crate::records::Feature,
-    features: &[crate::records::Feature],
+    features: &'a [crate::records::Feature],
     consumer_ref: &str,
-) -> Result<bool, CodecError> {
+) -> Result<Option<&'a crate::records::Feature>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT component path consumer";
     for consumer in features {
         charge_component_text_comparison(ctx, &consumer.id, consumer_ref, OPERATION)?;
-        if consumer.id != consumer_ref {
-            continue;
+        if consumer.id == consumer_ref {
+            return Ok(Some(consumer));
         }
-        charge_component_text_comparison(ctx, &feature.parent, &consumer.parent, OPERATION)?;
-        if feature.parent != consumer.parent {
-            return Ok(false);
-        }
-        return Ok(
-            match (
-                feature.source_value().filter(|source| *source != 0),
-                consumer.source_value().filter(|source| *source != 0),
-            ) {
-                (Some(feature_source), Some(consumer_source)) => feature_source < consumer_source,
-                _ => feature.ordinal < consumer.ordinal,
-            },
-        );
     }
-    Ok(false)
+    Ok(None)
+}
+
+pub(super) fn component_feature_precedes(
+    ctx: &DecodeContext<'_>,
+    feature: &crate::records::Feature,
+    consumer: &crate::records::Feature,
+) -> Result<bool, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT component path consumer";
+    charge_component_text_comparison(ctx, &feature.parent, &consumer.parent, OPERATION)?;
+    if feature.parent != consumer.parent {
+        return Ok(false);
+    }
+    Ok(
+        match (
+            feature.source_value().filter(|source| *source != 0),
+            consumer.source_value().filter(|source| *source != 0),
+        ) {
+            (Some(feature_source), Some(consumer_source)) => feature_source < consumer_source,
+            _ => feature.ordinal < consumer.ordinal,
+        },
+    )
 }
 
 pub(super) fn component_path_input_features(
@@ -93,6 +142,12 @@ pub(super) fn component_path_input_features(
     consumer_ref: &str,
 ) -> Result<Vec<String>, CodecError> {
     let mut producers = component_path_features(ctx, components, features)?;
+    if producers.is_empty() {
+        return Ok(producers);
+    }
+    let Some(consumer) = component_path_consumer(ctx, features, consumer_ref)? else {
+        return Ok(Vec::new());
+    };
     let mut retained = 0;
     for index in 0..producers.len() {
         let mut found = None;
@@ -109,7 +164,7 @@ pub(super) fn component_path_input_features(
             }
         }
         if let Some(feature) = found {
-            if feature_precedes_consumer(ctx, feature, features, consumer_ref)? {
+            if component_feature_precedes(ctx, feature, consumer)? {
                 producers.swap(retained, index);
                 retained += 1;
             }
@@ -168,28 +223,18 @@ pub(super) fn component_path_terminal_feature<'a>(
     features: impl IntoIterator<Item = &'a crate::records::Feature>,
 ) -> Result<Option<String>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT component path terminal";
-    let mut by_source = HashMap::<u32, Option<&str>>::new();
-    for feature in features {
-        ctx.charge_work(1, OPERATION)?;
-        let Some(source_id) = feature.source_value() else {
-            continue;
-        };
-        if let Some(candidate) = by_source.get_mut(&source_id) {
-            *candidate = None;
-        } else {
-            ctx.reserve_map(&mut by_source, 1, OPERATION)?;
-            by_source.insert(source_id, Some(feature.id.as_str()));
-        }
-    }
+    let (by_source, _storage) = component_producers(ctx, components, features, OPERATION)?;
     for component in components.iter().rev() {
         ctx.charge_work(1, OPERATION)?;
-        let Some(source_id) = View::u32_le_at(&component.type_signature, 4) else {
+        let Some(source_id) = View::u32_le_at(component.type_signature.as_ref(), 4) else {
             continue;
         };
         match by_source.get(&source_id) {
-            Some(Some(feature)) => return Ok(Some(copy_component_text(ctx, feature)?)),
-            Some(None) => return Ok(None),
-            None => {}
+            Some(ComponentProducer::Unique(feature)) => {
+                return Ok(Some(copy_component_text(ctx, feature)?))
+            }
+            Some(ComponentProducer::Ambiguous) => return Ok(None),
+            Some(ComponentProducer::Missing) | None => {}
         }
     }
     Ok(None)
@@ -235,7 +280,7 @@ pub(super) fn component_path_feature<'a>(
     };
     let candidate = |component: &'a FeatureInputComponentPathEntry| {
         ctx.charge_work(1, OPERATION)?;
-        let Some(source_id) = View::u32_le_at(&component.type_signature, 4) else {
+        let Some(source_id) = View::u32_le_at(component.type_signature.as_ref(), 4) else {
             return Ok(None);
         };
         if source_id >= owner_source {
@@ -970,3 +1015,6 @@ fn collect_component_vec<T>(
 
 #[cfg(test)]
 mod component_paths_tests;
+
+#[cfg(test)]
+mod tests;

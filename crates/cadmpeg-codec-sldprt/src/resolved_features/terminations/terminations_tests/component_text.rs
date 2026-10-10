@@ -9,7 +9,7 @@ fn charged_surface_component_text_matches_native_text() {
     let entries = [None, Some(0), Some(u32::MAX)].map(|local_id| {
         crate::records::FeatureInputComponentPathEntry {
             instance: None,
-            type_signature: [0; 12],
+            type_signature: [0; 12].into(),
             local_id,
         }
     });

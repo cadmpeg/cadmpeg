@@ -175,6 +175,22 @@ fn scan_retained_records_refuse_collection_growth() {
         ],
     );
     assert_scan_descriptor_refusal(&bytes, "Rhino scanned opaque records");
+    let bytes = minimal_document(
+        "50",
+        &[
+            table(
+                archive,
+                0x1000_0014,
+                &[crate::test_support::test_dump::short_chunk(
+                    archive,
+                    0xa000_0026,
+                    201_000_000,
+                )],
+            ),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0013, &[]),
+        ],
+    );
     assert_scan_descriptor_refusal(&bytes, "Rhino scanned table records");
 }
 

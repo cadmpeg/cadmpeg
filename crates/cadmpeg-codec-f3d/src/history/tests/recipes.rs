@@ -13,7 +13,7 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
-use crate::history::{bind_body_recipe_operand_history_candidates, complete_body_face_slots};
+use crate::history::bind_body_recipe_operand_history_candidates;
 use crate::history_records::{
     AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalEntityDelta, AsmHistoricalRelation,
     AsmHistoricalTopology, AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory,
@@ -401,6 +401,7 @@ fn feature_input_topology_projects_historical_vertices() {
         std::slice::from_ref(&scope),
         std::slice::from_ref(&history),
         &[],
+        &std::collections::HashMap::new(),
     )
     .unwrap();
     let prefix = super::super::feature_input_prefix(&feature.id, 4);
@@ -494,6 +495,7 @@ fn surface_patch_recipe_uses_the_unique_common_boundary_edge() {
                 Some(&structure),
                 &references,
                 &topology,
+                &mut crate::history::topology_cache::TopologyQueryCache::default(),
             )
         })
         .unwrap(),
@@ -517,6 +519,7 @@ fn surface_patch_recipe_uses_the_unique_common_boundary_edge() {
                 Some(&structure),
                 &references,
                 &ambiguous,
+                &mut crate::history::topology_cache::TopologyQueryCache::default(),
             )
         })
         .unwrap(),
@@ -653,15 +656,13 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
     ];
 
     assert_eq!(
-        super::super::unique_external_body_candidate(
-            &cadmpeg_test_support::service_decode_context(),
-            &operand,
-            Some("current"),
-            &bodies,
-            &regions,
-            &shells,
-        )
-        .unwrap(),
+        crate::history::body_candidates::BodyCandidates::new(&bodies, &regions, &shells, &[], &[])
+            .external(
+                &cadmpeg_test_support::service_decode_context(),
+                &operand,
+                Some("current")
+            )
+            .unwrap(),
         Some(bodies[1].id.clone())
     );
 
@@ -683,15 +684,13 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
     operand =
         crate::records::topology::body_recipe::DesignBodyRecipeOperand::try_new(draft).unwrap();
     assert_eq!(
-        super::super::unique_external_body_candidate(
-            &cadmpeg_test_support::service_decode_context(),
-            &operand,
-            Some("current"),
-            &bodies,
-            &regions,
-            &shells,
-        )
-        .unwrap(),
+        crate::history::body_candidates::BodyCandidates::new(&bodies, &regions, &shells, &[], &[])
+            .external(
+                &cadmpeg_test_support::service_decode_context(),
+                &operand,
+                Some("current")
+            )
+            .unwrap(),
         None
     );
 }
@@ -900,9 +899,10 @@ fn complete_body_boundary_rejects_incomplete_or_ambiguous_incidence() {
         ..AsmHistoricalTopology::default()
     };
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| complete_body_face_slots(
-            decode_ctx, &topology, 1
-        ))
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::history::body_index::CompleteBodyIndex::new(decode_ctx, &topology)?
+                .faces(decode_ctx, 1)
+        })
         .unwrap(),
         Some(vec![10, 11])
     );
@@ -910,11 +910,10 @@ fn complete_body_boundary_rejects_incomplete_or_ambiguous_incidence() {
     let mut incomplete = topology.clone();
     incomplete.shell_faces[0].member_refs.clear();
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| complete_body_face_slots(
-            decode_ctx,
-            &incomplete,
-            1
-        ))
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::history::body_index::CompleteBodyIndex::new(decode_ctx, &incomplete)?
+                .faces(decode_ctx, 1)
+        })
         .unwrap(),
         None
     );
@@ -922,9 +921,10 @@ fn complete_body_boundary_rejects_incomplete_or_ambiguous_incidence() {
     let mut ambiguous = topology;
     ambiguous.shell_faces.push(relation(4, vec![10]));
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| complete_body_face_slots(
-            decode_ctx, &ambiguous, 1
-        ))
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::history::body_index::CompleteBodyIndex::new(decode_ctx, &ambiguous)?
+                .faces(decode_ctx, 1)
+        })
         .unwrap(),
         None
     );
@@ -1074,6 +1074,13 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         &mut selection,
         &scope,
         &inputs,
+        &mut crate::history::body_candidates::BodyCandidates::new(
+            inputs.bodies,
+            inputs.regions,
+            inputs.shells,
+            inputs.construction_recipes,
+            inputs.persistent_design_links,
+        ),
     )
     .unwrap();
     assert_eq!(
@@ -1116,18 +1123,91 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         design_reference: 9,
         ordinal: 0,
     };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 32;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut candidates = crate::history::body_candidates::BodyCandidates::new(
+        std::slice::from_ref(&body),
+        std::slice::from_ref(&region),
+        std::slice::from_ref(&shell),
+        std::slice::from_ref(&recipe),
+        std::slice::from_ref(&link),
+    );
+    for _ in 0..1_000 {
+        assert_eq!(
+            candidates.linked(&ctx, &operand).unwrap(),
+            Some(body.id.clone())
+        );
+        assert_eq!(
+            candidates
+                .face_body_candidates(&ctx, &operand, &body.id)
+                .unwrap(),
+            (true, true)
+        );
+    }
+    ctx.finish_session().unwrap();
     assert_eq!(
-        super::super::body_recipe_link_candidate(
-            &cadmpeg_test_support::service_decode_context(),
-            &operand,
-            std::slice::from_ref(&recipe),
-            std::slice::from_ref(&link),
+        crate::history::body_candidates::BodyCandidates::new(
             std::slice::from_ref(&body),
+            &[],
+            &[],
+            std::slice::from_ref(&recipe),
+            std::slice::from_ref(&link)
         )
+        .linked(&cadmpeg_test_support::service_decode_context(), &operand)
         .unwrap(),
         Some(body.id.clone())
     );
 
+    let mut replacement = link.clone();
+    replacement.ordinal = 1;
+    replacement.design_reference = 99;
+    let links = [link.clone(), replacement.clone()];
+    assert_eq!(
+        crate::history::body_candidates::BodyCandidates::new(
+            std::slice::from_ref(&body),
+            &[],
+            &[],
+            std::slice::from_ref(&recipe),
+            &links
+        )
+        .linked(&cadmpeg_test_support::service_decode_context(), &operand)
+        .unwrap(),
+        None
+    );
+    // Equal ordinals retain the first source link, regardless of its selector.
+    replacement.ordinal = 0;
+    let links = [link.clone(), replacement];
+    assert_eq!(
+        crate::history::body_candidates::BodyCandidates::new(
+            std::slice::from_ref(&body),
+            &[],
+            &[],
+            std::slice::from_ref(&recipe),
+            &links
+        )
+        .linked(&cadmpeg_test_support::service_decode_context(), &operand)
+        .unwrap(),
+        Some(body.id.clone())
+    );
+    let mut second_body = body.clone();
+    second_body.id = BodyId::mint("f3d:brep:body#2").unwrap();
+    let mut second_link = link.clone();
+    second_link.target = cadmpeg_ir::attributes::AttributeTarget::Body(second_body.id.clone());
+    assert_eq!(
+        crate::history::body_candidates::BodyCandidates::new(
+            &[body.clone(), second_body],
+            &[],
+            &[],
+            std::slice::from_ref(&recipe),
+            &[link.clone(), second_link]
+        )
+        .linked(&cadmpeg_test_support::service_decode_context(), &operand)
+        .unwrap(),
+        None
+    );
     let mut direct_operand = operand.clone();
     direct_operand.owner =
         crate::records::topology::body_recipe::DesignOperandOwner::ScopeReference {
@@ -1154,6 +1234,13 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         &mut selection,
         &scope,
         &direct_inputs,
+        &mut crate::history::body_candidates::BodyCandidates::new(
+            inputs.bodies,
+            inputs.regions,
+            inputs.shells,
+            inputs.construction_recipes,
+            inputs.persistent_design_links,
+        ),
     )
     .unwrap();
     assert_eq!(

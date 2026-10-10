@@ -40,25 +40,29 @@ impl TryFrom<u8> for SurfaceFamily {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
-pub(crate) struct SurfaceSuffix(Vec<u8>);
+pub(crate) struct SurfaceSuffix(cadmpeg_ir::native::bytes::NativeBytes);
 
 impl SurfaceSuffix {
     pub(crate) fn new(bytes: Vec<u8>) -> Result<Self, &'static str> {
         if !(1..=5).contains(&bytes.len()) {
             return Err("surface suffix must contain 1 through 5 bytes");
         }
-        Ok(Self(bytes))
+        Ok(Self(bytes.into()))
     }
 
     #[cfg(test)]
     pub(crate) fn into_vec(self) -> Vec<u8> {
-        self.0
+        self.0.into_inner()
     }
 }
 
 impl<'de> Deserialize<'de> for SurfaceSuffix {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Self::new(Vec::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+        Self::new(
+            cadmpeg_ir::native::bytes::NativeBytes::<Vec<u8>>::deserialize(deserializer)?
+                .into_inner(),
+        )
+        .map_err(serde::de::Error::custom)
     }
 }
 
@@ -418,17 +422,17 @@ mod tests {
     #[test]
     fn surface_suffix_preserves_opaque_bytes_and_rejects_invalid_lengths() {
         for wire in [
-            "[255]",
-            "[0,255]",
-            "[1,2,3]",
-            "[0,1,2,255]",
-            "[255,0,1,2,3]",
+            "\"ff\"",
+            "\"00ff\"",
+            "\"010203\"",
+            "\"000102ff\"",
+            "\"ff00010203\"",
         ] {
             let decoded: SurfaceSuffix = serde_json::from_str(wire).unwrap();
             assert_eq!(serde_json::to_string(&decoded).unwrap(), wire);
             assert!((1..=5).contains(&decoded.into_vec().len()));
         }
-        for wire in ["[]", "[0,1,2,3,4,5]"] {
+        for wire in ["\"\"", "\"000102030405\""] {
             assert!(serde_json::from_str::<SurfaceSuffix>(wire)
                 .unwrap_err()
                 .to_string()

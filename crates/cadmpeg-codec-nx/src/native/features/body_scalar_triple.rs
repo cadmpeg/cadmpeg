@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native body scalar triples with derived contiguous positions.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use crate::om::body_scalar_triple::ScalarTriple;
 use crate::om::scalar::{PayloadScalarAtom, PayloadScalarEncoding};
 use serde::{Deserialize, Serialize};
@@ -32,7 +34,7 @@ struct FeatureOperationBodyScalarTripleRef<'a> {
     branch: u8,
     values: [f64; 3],
     encodings: [PayloadScalarEncoding; 3],
-    raw_values: [&'a [u8]; 3],
+    raw_values: [NativeBytes<&'a [u8]>; 3],
     source_offsets: [u64; 3],
 }
 
@@ -46,7 +48,8 @@ impl Serialize for FeatureOperationBodyScalarTriple {
             branch: self.branch,
             values: self.scalars.atoms().map(|atom| atom.value().get()),
             encodings: self.scalars.atoms().map(PayloadScalarAtom::encoding),
-            raw_values: self.scalars.atoms().each_ref().map(PayloadScalarAtom::raw),
+            raw_values: (self.scalars.atoms().each_ref().map(PayloadScalarAtom::raw))
+                .map(Into::into),
             source_offsets: self.scalars.source_offsets(),
         }
         .serialize(serializer)
@@ -70,7 +73,7 @@ struct FeatureOperationBodyScalarTripleWire {
     /// Ordered serialized width forms.
     encodings: [PayloadScalarEncoding; 3],
     /// Exact serialized scalar atoms in value order.
-    raw_values: [Vec<u8>; 3],
+    raw_values: [NativeBytes<Vec<u8>>; 3],
     /// Absolute file offsets of the three scalar markers.
     source_offsets: [u64; 3],
 }
@@ -86,7 +89,7 @@ impl From<FeatureOperationBodyScalarTriple> for FeatureOperationBodyScalarTriple
             branch: value.branch,
             values: value.scalars.atoms().map(|atom| atom.value().get()),
             encodings: value.scalars.atoms().map(PayloadScalarAtom::encoding),
-            raw_values: value.scalars.atoms().map(|atom| atom.raw().to_vec()),
+            raw_values: (value.scalars.atoms().map(|atom| atom.raw().to_vec())).map(Into::into),
             source_offsets: value.scalars.source_offsets(),
         }
     }
@@ -120,7 +123,7 @@ impl TryFrom<FeatureOperationBodyScalarTripleWire> for FeatureOperationBodyScala
 mod tests {
     use super::{FeatureOperationBodyScalarTriple, FeatureOperationBodyScalarTripleWire};
 
-    const WIRE: &str = r#"{"id":"nx:feature:body-scalar#0","operation_label":"operation","body_reference_ordinal":0,"body_object_index":10,"branch":28,"values":[0.0,3.0,1.0],"encodings":["zero","binary32","binary64"],"raw_values":[[0],[80,64,0,0],[47,240,0,0,0,0,0,0]],"source_offsets":[100,101,105]}"#;
+    const WIRE: &str = r#"{"id":"nx:feature:body-scalar#0","operation_label":"operation","body_reference_ordinal":0,"body_object_index":10,"branch":28,"values":[0.0,3.0,1.0],"encodings":["zero","binary32","binary64"],"raw_values":["00","50400000","2ff0000000000000"],"source_offsets":[100,101,105]}"#;
 
     #[test]
     fn body_scalar_triple_borrowed_wire_preserves_bytes() {
@@ -148,7 +151,7 @@ mod tests {
             "id": "triple", "operation_label": "operation", "body_reference_ordinal": 0,
             "body_object_index": 10, "branch": 28, "values": [0.0, 3.0, 1.0],
             "encodings": ["zero", "binary32", "binary64"],
-            "raw_values": [[0], [80, 64, 0, 0], [47, 240, 0, 0, 0, 0, 0, 0]],
+            "raw_values": ["00","50400000","2ff0000000000000"],
             "source_offsets": [100, 101, 105]
         });
         for offsets in [

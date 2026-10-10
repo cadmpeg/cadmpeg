@@ -79,7 +79,7 @@ fn type212_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
             0.into(),
             0.into(),
             0.into(),
-            TokenValue::String(b"A".to_vec()),
+            TokenValue::String(b"A".to_vec().into()),
             1.into(),
             3.into(),
             1.into(),
@@ -88,7 +88,10 @@ fn type212_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
     };
 
     for (font, mirror) in [
-        (TokenValue::String(b"bad".to_vec()), TokenValue::Integer(0)),
+        (
+            TokenValue::String(b"bad".to_vec().into()),
+            TokenValue::Integer(0),
+        ),
         (TokenValue::Integer(1), TokenValue::Integer(9)),
     ] {
         let record = token_parameter_record(7, complete(1.into(), font, mirror));
@@ -189,7 +192,7 @@ fn type213_form0_follows_string_count() {
             0.into(),
             1.into(),
             0.into(),
-            TokenValue::String(Vec::new()),
+            TokenValue::String(Vec::new().into()),
             TokenValue::Integer(i64::try_from(text.len()).expect("test text length fits i64")),
             1.into(),
             1.into(),
@@ -201,7 +204,7 @@ fn type213_form0_follows_string_count() {
             0.into(),
             0.into(),
             0.into(),
-            TokenValue::String(text.to_vec()),
+            TokenValue::String(text.to_vec().into()),
         ]
     };
     let association = directory_target(3, 212);
@@ -290,7 +293,7 @@ fn type213_table_boundary_precedes_valid_generic_alternative() {
         0.into(),
         1.into(),
         0.into(),
-        TokenValue::String(Vec::new()),
+        TokenValue::String(Vec::new().into()),
         1.into(),
         1.into(),
         1.into(),
@@ -374,7 +377,7 @@ fn type213_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
             0.into(),
             font,
             0.into(),
-            TokenValue::String(Vec::new()),
+            TokenValue::String(Vec::new().into()),
             1.into(),
             1.into(),
             1.into(),
@@ -386,7 +389,7 @@ fn type213_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
             0.into(),
             0.into(),
             0.into(),
-            TokenValue::String(b"A".to_vec()),
+            TokenValue::String(b"A".to_vec().into()),
             1.into(),
             3.into(),
             1.into(),
@@ -401,7 +404,7 @@ fn type213_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
 
     for values in [
         complete(9.into(), 1.into()),
-        complete(1.into(), TokenValue::String(b"bad".to_vec())),
+        complete(1.into(), TokenValue::String(b"bad".to_vec().into())),
     ] {
         let analysis_record = token_parameter_record(7, values);
         let analysis = crate::test_support::with_service_context(&[], |ctx| {
@@ -439,7 +442,7 @@ fn type213_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
             0.into(),
             1.into(),
             0.into(),
-            TokenValue::String(Vec::new()),
+            TokenValue::String(Vec::new().into()),
             1.into(),
             1.into(),
             1.into(),
@@ -451,7 +454,7 @@ fn type213_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
             0.into(),
             0.into(),
             0.into(),
-            TokenValue::String(b"A".to_vec()),
+            TokenValue::String(b"A".to_vec().into()),
         ]
     };
     let mut truncated_primary = prefix(1.into());
@@ -831,7 +834,7 @@ fn type410_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         9,
         vec![
             410.into(),
-            TokenValue::String(b"bad".to_vec()),
+            TokenValue::String(b"bad".to_vec().into()),
             1.into(),
             0.into(),
             0.into(),
@@ -896,7 +899,7 @@ fn type410_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         9,
         vec![
             410.into(),
-            TokenValue::String(b"bad".to_vec()),
+            TokenValue::String(b"bad".to_vec().into()),
             TokenValue::real(1.5),
             0.into(),
             0.into(),
@@ -983,8 +986,8 @@ fn type416_entity_table_boundaries_follow_external_reference_fields() {
             0_i64,
             vec![
                 TokenValue::Integer(416),
-                TokenValue::String(b"FILE01".to_vec()),
-                TokenValue::String(b"ONE".to_vec()),
+                TokenValue::String(b"FILE01".to_vec().into()),
+                TokenValue::String(b"ONE".to_vec().into()),
                 1.into(),
                 3.into(),
                 0.into(),
@@ -995,7 +998,7 @@ fn type416_entity_table_boundaries_follow_external_reference_fields() {
             1_i64,
             vec![
                 TokenValue::Integer(416),
-                TokenValue::String(b"FILE01".to_vec()),
+                TokenValue::String(b"FILE01".to_vec().into()),
                 1.into(),
                 3.into(),
                 0.into(),
@@ -1006,8 +1009,8 @@ fn type416_entity_table_boundaries_follow_external_reference_fields() {
             2_i64,
             vec![
                 TokenValue::Integer(416),
-                TokenValue::String(b"FILE01".to_vec()),
-                TokenValue::String(b"LOG".to_vec()),
+                TokenValue::String(b"FILE01".to_vec().into()),
+                TokenValue::String(b"LOG".to_vec().into()),
                 1.into(),
                 3.into(),
                 0.into(),
@@ -1018,7 +1021,7 @@ fn type416_entity_table_boundaries_follow_external_reference_fields() {
             3_i64,
             vec![
                 TokenValue::Integer(416),
-                TokenValue::String(b"NAT".to_vec()),
+                TokenValue::String(b"NAT".to_vec().into()),
                 1.into(),
                 3.into(),
                 0.into(),
@@ -1029,8 +1032,8 @@ fn type416_entity_table_boundaries_follow_external_reference_fields() {
             4_i64,
             vec![
                 TokenValue::Integer(416),
-                TokenValue::String(b"LIBRARY".to_vec()),
-                TokenValue::String(b"NAT".to_vec()),
+                TokenValue::String(b"LIBRARY".to_vec().into()),
+                TokenValue::String(b"NAT".to_vec().into()),
                 1.into(),
                 3.into(),
                 0.into(),
@@ -1083,7 +1086,7 @@ fn type416_entity_table_boundary_precedes_valid_generic_alternative() {
             0_i64,
             vec![
                 TokenValue::Integer(416),
-                TokenValue::String(b"FILE01".to_vec()),
+                TokenValue::String(b"FILE01".to_vec().into()),
                 2.into(),
                 1.into(),
                 3.into(),
@@ -1110,7 +1113,7 @@ fn type416_entity_table_boundary_precedes_valid_generic_alternative() {
             2_i64,
             vec![
                 TokenValue::Integer(416),
-                TokenValue::String(b"FILE01".to_vec()),
+                TokenValue::String(b"FILE01".to_vec().into()),
                 2.into(),
                 1.into(),
                 3.into(),
@@ -1137,7 +1140,7 @@ fn type416_entity_table_boundary_precedes_valid_generic_alternative() {
             4_i64,
             vec![
                 TokenValue::Integer(416),
-                TokenValue::String(b"LIBRARY".to_vec()),
+                TokenValue::String(b"LIBRARY".to_vec().into()),
                 2.into(),
                 1.into(),
                 3.into(),
@@ -1204,18 +1207,18 @@ fn type416_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
             0_i64,
             vec![
                 416.into(),
-                TokenValue::String(b"BAD".to_vec()),
-                TokenValue::String(b"NAME".to_vec()),
+                TokenValue::String(b"BAD".to_vec().into()),
+                TokenValue::String(b"NAME".to_vec().into()),
                 1.into(),
                 3.into(),
                 0.into(),
             ],
             3_usize,
-            vec![416.into(), TokenValue::String(b"FILE01".to_vec())],
+            vec![416.into(), TokenValue::String(b"FILE01".to_vec().into())],
             vec![
                 416.into(),
-                TokenValue::String(b"FILE01".to_vec()),
-                TokenValue::String(b"NAME".to_vec()),
+                TokenValue::String(b"FILE01".to_vec().into()),
+                TokenValue::String(b"NAME".to_vec().into()),
                 1.into(),
                 3.into(),
             ],
@@ -1224,7 +1227,7 @@ fn type416_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
             1_i64,
             vec![
                 416.into(),
-                TokenValue::String(b"BAD".to_vec()),
+                TokenValue::String(b"BAD".to_vec().into()),
                 1.into(),
                 3.into(),
                 0.into(),
@@ -1233,7 +1236,7 @@ fn type416_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
             vec![416.into()],
             vec![
                 416.into(),
-                TokenValue::String(b"FILE01".to_vec()),
+                TokenValue::String(b"FILE01".to_vec().into()),
                 1.into(),
                 3.into(),
             ],
@@ -1242,18 +1245,18 @@ fn type416_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
             2_i64,
             vec![
                 416.into(),
-                TokenValue::String(b"BAD".to_vec()),
-                TokenValue::String(b"LOG".to_vec()),
+                TokenValue::String(b"BAD".to_vec().into()),
+                TokenValue::String(b"LOG".to_vec().into()),
                 1.into(),
                 3.into(),
                 0.into(),
             ],
             3,
-            vec![416.into(), TokenValue::String(b"FILE01".to_vec())],
+            vec![416.into(), TokenValue::String(b"FILE01".to_vec().into())],
             vec![
                 416.into(),
-                TokenValue::String(b"FILE01".to_vec()),
-                TokenValue::String(b"LOG".to_vec()),
+                TokenValue::String(b"FILE01".to_vec().into()),
+                TokenValue::String(b"LOG".to_vec().into()),
                 1.into(),
                 3.into(),
             ],
@@ -1262,7 +1265,7 @@ fn type416_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
             3_i64,
             vec![
                 416.into(),
-                TokenValue::String(b"BAD".to_vec()),
+                TokenValue::String(b"BAD".to_vec().into()),
                 1.into(),
                 3.into(),
                 0.into(),
@@ -1271,7 +1274,7 @@ fn type416_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
             vec![416.into()],
             vec![
                 416.into(),
-                TokenValue::String(b"FILE01".to_vec()),
+                TokenValue::String(b"FILE01".to_vec().into()),
                 1.into(),
                 3.into(),
             ],
@@ -1280,18 +1283,18 @@ fn type416_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
             4_i64,
             vec![
                 416.into(),
-                TokenValue::String(b"LIB".to_vec()),
-                TokenValue::String(b"BAD".to_vec()),
+                TokenValue::String(b"LIB".to_vec().into()),
+                TokenValue::String(b"BAD".to_vec().into()),
                 1.into(),
                 3.into(),
                 0.into(),
             ],
             3,
-            vec![416.into(), TokenValue::String(b"LIBRARY".to_vec())],
+            vec![416.into(), TokenValue::String(b"LIBRARY".to_vec().into())],
             vec![
                 416.into(),
-                TokenValue::String(b"LIBRARY".to_vec()),
-                TokenValue::String(b"NAT".to_vec()),
+                TokenValue::String(b"LIBRARY".to_vec().into()),
+                TokenValue::String(b"NAT".to_vec().into()),
                 1.into(),
                 3.into(),
             ],
@@ -1457,11 +1460,11 @@ fn type420_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
             0.into(),
             0.into(),
             0.into(),
-            TokenValue::String(b"BAD".to_vec()),
+            TokenValue::String(b"BAD".to_vec().into()),
             0.into(),
             0.into(),
             0.into(),
-            TokenValue::String(b"R".to_vec()),
+            TokenValue::String(b"R".to_vec().into()),
             0.into(),
             0.into(),
             1.into(),
@@ -1509,7 +1512,7 @@ fn type420_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
                 0.into(),
                 1.into(),
                 0.into(),
-                TokenValue::String(b"BAD".to_vec()),
+                TokenValue::String(b"BAD".to_vec().into()),
                 1.into(),
                 1.into(),
                 2.into(),
@@ -1529,7 +1532,7 @@ fn type420_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
                 TokenValue::Omitted,
                 TokenValue::Omitted,
                 TokenValue::Omitted,
-                TokenValue::String(b"R".to_vec()),
+                TokenValue::String(b"R".to_vec().into()),
                 0.into(),
             ],
         ),

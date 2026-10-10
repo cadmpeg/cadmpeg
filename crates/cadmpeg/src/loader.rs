@@ -45,7 +45,7 @@ pub(crate) fn load_artifact(
     let mut prefix =
         cadmpeg_container::compound::read_detection_prefix(&ctx, &mut file, DETECTION_PREFIX_LEN)?;
     let resolved = catalog
-        .resolve_source(&ctx, View::over_retained(&prefix), forced)
+        .resolve_seekable_source(&ctx, View::over_retained(&prefix), &mut file, forced)
         .map_err(|error| match error {
             ResolveSourceError::Codec(error) => ApplicationError::from(error),
             error => ApplicationError::from(detection_failure(&error)),
@@ -59,7 +59,11 @@ pub(crate) fn load_artifact(
             let result = result.map_err(|failure| {
                 ApplicationError::from_decode_failure(path, format_id, failure)
             })?;
-            return Ok(LoadedDocument::decoded(result, selection));
+            return Ok(LoadedDocument::decoded(
+                result,
+                selection,
+                cadmpeg_core::decode::u64_from_index(prefix.len()),
+            ));
         }
         ResolvedSource::Cadir => {}
         ResolvedSource::Unrecognized => {
@@ -88,12 +92,16 @@ pub(crate) fn load_artifact(
     })?;
     let Some(sidecar) = artifact_store::load_matching_sidecar(path, text.as_bytes(), max_bytes)?
     else {
-        return Ok(LoadedDocument::neutral(ir));
+        return Ok(LoadedDocument::neutral(
+            ir,
+            cadmpeg_core::decode::u64_from_index(text.len()),
+        ));
     };
     Ok(LoadedDocument::restored(
         ir,
         sidecar.report,
         sidecar.fidelity,
+        cadmpeg_core::decode::u64_from_index(text.len()),
     ))
 }
 
@@ -122,7 +130,7 @@ mod tests {
         )
         .expect_err("input limit");
         assert!(
-            matches!(error, crate::application::refusal::ApplicationError::Resource(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == cadmpeg_core::decode::ResourceDimension::InputBytes && limit.limit == 4)
+            matches!(error.refusal(), Some(crate::application::refusal::ConversionRefusal::ResourceLimit { limit, .. }) if limit.dimension == cadmpeg_core::decode::ResourceDimension::InputBytes && limit.limit == 4)
         );
     }
 
@@ -158,6 +166,7 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(outcome.origin, LoadOrigin::Restored { .. }));
+        assert_eq!(outcome.input_bytes, u64::try_from(text.len()).unwrap());
 
         std::fs::write(&path, format!("{text}\n")).unwrap();
         let error = load_artifact(

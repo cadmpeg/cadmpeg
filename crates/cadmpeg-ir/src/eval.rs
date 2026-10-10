@@ -13,7 +13,6 @@
 //! parameterization is established by model entities.
 
 use cadmpeg_core::convert::f64_from_index;
-use std::borrow::Cow;
 use std::cmp::Ordering;
 
 use crate::features::{FinitePoint3, FiniteVector3};
@@ -1911,6 +1910,18 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
         if degree == 0 || !point.is_finite() {
             return Ok(None);
         }
+        let seed = domain.project(ExtendedReal::from_finite(seed));
+        // An already matching polynomial seed needs no global speed bound,
+        // control copy, or knot-interval search. Rational search still admits
+        // its positive weights before accepting any witness.
+        if matches!(
+            curve.pole_rows(),
+            crate::geometry::nurbs::NurbsPoles3::Polynomial { .. }
+        ) && finite_or_refusal(decode::nurbs_curve_point_at(ctx, curve, seed.get()))?
+            .is_some_and(|position| position.distance(point) <= tolerance)
+        {
+            return Ok(Some(seed));
+        }
         let mut source_storage = ctx.reserve_scoped(0, "IR curve inversion source scratch")?;
         let Some(weights) = validated_nurbs_curve_weights(ctx, &mut source_storage, curve)? else {
             return Ok(None);
@@ -1950,7 +1961,6 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
             ))?;
             Ok(position.map(|position| position.distance(point)))
         };
-        let seed = domain.project(ExtendedReal::from_finite(seed));
         let mut boundaries = Vec::new();
         ctx.reserve_scoped_vec(
             &mut source_storage,
@@ -2703,7 +2713,7 @@ fn nurbs_pcurve_differential_unsettled(
             return Ok(point_only(unreached));
         };
         first_basis = scaled.first;
-        second_basis = Some(Cow::Owned(scaled.second));
+        second_basis = Some(scaled.second);
         scale
     };
     let first_sum = sum(&first_basis);
@@ -2904,7 +2914,7 @@ struct NurbsSurfaceLocal<'a> {
 /// The first partials of a NURBS surface at a parameter: the derivative
 /// bases, the homogeneous derivative sums and the finite lanes.
 struct NurbsSurfaceFirstPartials {
-    bases: [Vec<f64>; 2],
+    bases: [decode::SupportValues<f64>; 2],
     sums: [Homogeneous; 2],
     lanes: [[FiniteReal; 3]; 2],
 }
@@ -4071,7 +4081,10 @@ fn nurbs_curve_derivative_unsettled(
     let mut second_basis = if second {
         basis::bspline_basis_second_derivative(scratch, knots, degree, span, t).ok_or(non_finite)?
     } else {
-        Cow::Borrowed(&[][..])
+        decode::SupportValues::Inline {
+            values: [0.0; decode::INLINE_SUPPORT],
+            len: 0,
+        }
     };
     let scale = if basis::all_finite(scratch, &first_basis)
         .ok_or_else(|| scratch.failure(non_finite))?
@@ -4098,7 +4111,7 @@ fn nurbs_curve_derivative_unsettled(
                 .ok_or(non_finite)?;
         first_basis = scaled.first;
         if second {
-            second_basis = Cow::Owned(scaled.second);
+            second_basis = scaled.second;
         }
         scale
     };

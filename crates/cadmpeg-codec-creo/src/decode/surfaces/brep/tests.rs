@@ -126,6 +126,7 @@ fn brep_edge_indexes_preserve_model_curve_multiplicity() {
         mut ir,
     } = brep_edge_index_input();
     let curve = Curve {
+        parameter_range: None,
         id: CurveId::compose(&crate::identity::VISIBGEOM_CURVE, 10),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
@@ -399,6 +400,7 @@ fn brep_pcurve_candidates_reuse_nodes_and_preserve_source_order() {
 fn typed_curve_id_fixture() -> CadIr {
     let mut ir = CadIr::empty();
     let circle = |id: u32| Curve {
+        parameter_range: None,
         id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("fixture curve identity"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
@@ -622,6 +624,7 @@ fn circle_order_collection_error(limit: u64) -> CodecError {
     let outer = make_loop(10);
     let inner = make_loop(20);
     let make_circle = |id: u32, radius| Curve {
+        parameter_range: None,
         id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
@@ -1503,6 +1506,7 @@ fn native_parameter_loops_admit_proven_two_edge_circles() {
         ((21, 5), vec![([[-1.0, 0.0], [1.0, 0.0]], 0)]),
     ]);
     let circle = |id, radius| Curve {
+        parameter_range: None,
         id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
@@ -1722,6 +1726,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         ),
     ] {
         let curve = Curve {
+            parameter_range: None,
             id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(

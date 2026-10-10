@@ -19,7 +19,6 @@ use cadmpeg_ir::ids::{AppearanceId, FaceId, ProductDefinitionId, UnknownId};
 use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
 use cadmpeg_ir::report::decode::TransferLedger;
 use cadmpeg_ir::topology::Color;
-use cadmpeg_ir::units::Tolerances;
 use cadmpeg_ir::{AnnotationBuilder, SourceFidelity, UnknownRecord};
 
 use crate::container::InventorContainer;
@@ -628,12 +627,19 @@ fn decode_container<'a>(
     namespace.set_arena(ctx, "unpaired_segments", &unpaired_segments)?;
     namespace.set_arena(ctx, "active_carrier", std::slice::from_ref(&active_carrier))?;
 
+    let mut losses = Vec::new();
     let mut geometry_failure = None;
     let kernel_brep = match &container.rse.active_carrier {
         ActiveCarrierState::Selected(carrier) => match carrier.header.as_ref() {
             Ok(header) => match crate::kernel::decode_kernel_carrier(ctx, carrier, header) {
                 Ok(decoded) => {
-                    apply_kernel_header(ctx, &mut ir, carrier.family, &decoded.header.metadata)?;
+                    apply_kernel_header(
+                        ctx,
+                        &mut ir,
+                        carrier.family,
+                        &decoded.header.metadata,
+                        &mut losses,
+                    )?;
                     Some(decoded.brep)
                 }
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
@@ -740,7 +746,6 @@ fn decode_container<'a>(
     }
     // Read before `geometry_failure` is consumed by the loss message below.
     let carrier_read_no_geometry = geometry_failure.is_some();
-    let mut losses = Vec::new();
     if protein_admission_issue_count != 0 {
         losses.push(admitted_loss(ctx, InventorLossCode::ProteinAssetRejected, format_args!(
             "Rejected {protein_admission_issue_count} Protein native record(s); retained the remaining records."
@@ -854,6 +859,16 @@ fn decode_container<'a>(
                     sketch_inventory.issues.len()
                 ),
             )?);
+        }
+        let unnamed_labels = feature_inventory
+            .labels
+            .iter()
+            .filter(|label| label.name().is_none())
+            .count();
+        if unnamed_labels != 0 {
+            losses.push(admitted_loss(ctx, InventorLossCode::FeatureLabelUnusable, format_args!(
+                "{unnamed_labels} optional feature label(s) have no display name; their exact native records are retained."
+            ))?);
         }
         if !feature_inventory.issues.is_empty() {
             losses.push(admitted_loss(
@@ -2034,7 +2049,7 @@ fn project_ufrx_embedded_reference(
             &reference.display_name,
             "retain Inventor UFRx embedded display name",
         )?,
-        state_values: reference.state_values,
+        state_values: reference.state_values.into(),
         record_len: cadmpeg_core::decode::u64_from_index(reference.source.window().len()),
         record_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
             ctx,
@@ -2225,7 +2240,36 @@ fn apply_kernel_header(
     ir: &mut CadIr,
     family: crate::kernel::KernelFamily,
     header: &cadmpeg_asm::kernel_header::KernelHeader,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
+    for field in header.unreadable_product_fields() {
+        let loss = admitted_loss(
+            ctx,
+            InventorLossCode::KernelHeaderMetadataUnresolved,
+            format_args!("kernel header {field} is unreadable; independent geometry retained"),
+        )?;
+        ctx.push_vec(losses, loss, "Inventor kernel header losses")?;
+    }
+    if let Some(value) = header.linear {
+        if let Some(linear) = cadmpeg_ir::scalar::PositiveLength::new(value * 10.0) {
+            ir.tolerances.linear = linear;
+        } else {
+            let loss = admitted_loss(ctx, InventorLossCode::KernelHeaderToleranceUnresolved, format_args!(
+                "kernel linear tolerance {value} cannot supply a positive finite millimetre tolerance; keeping the default"
+            ))?;
+            ctx.push_vec(losses, loss, "Inventor kernel header losses")?;
+        }
+    }
+    if let Some(value) = header.angular {
+        if let Some(angular) = cadmpeg_ir::scalar::PositiveAngle::new(value) {
+            ir.tolerances.angular = angular;
+        } else {
+            let loss = admitted_loss(ctx, InventorLossCode::KernelHeaderToleranceUnresolved, format_args!(
+                "kernel angular tolerance {value} cannot supply a positive finite tolerance; keeping the default"
+            ))?;
+            ctx.push_vec(losses, loss, "Inventor kernel header losses")?;
+        }
+    }
     let Some(source) = ir.source.as_mut() else {
         return Ok(());
     };
@@ -2268,9 +2312,6 @@ fn apply_kernel_header(
             cadmpeg_core::nonblank_literal!("kernel_product_version"),
             value,
         );
-    }
-    if let (Some(linear), Some(angular)) = (header.linear, header.angular) {
-        ir.tolerances = Tolerances::new(linear * 10.0, angular).map_err(CodecError::Malformed)?;
     }
     let value =
         admitted_kernel_attribute(ctx, "kernel_family", format_args!("{}", family.label()))?;

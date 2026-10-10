@@ -68,7 +68,7 @@ fn canvas_image() -> crate::records::canvas::DesignCanvasImage {
         "id": "f3d:Design/BulkStream.dat:canvas#1", "scope_record_index": 103,
         "scope_reference_offset": 247, "geometry_class_tag": "256",
         "geometry_record_index": 101, "geometry_reference_offset": 424,
-        "geometry_byte_offset": 100, "geometry_prologue": prologue,
+        "geometry_byte_offset": 100, "geometry_prologue": cadmpeg_ir::native::bytes::NativeBytes::from(prologue),
         "visible": true, "visibility_offset": 125,
         "geometry_frame_length": 229, "paired_geometry_class_tag": "257",
         "paired_geometry_byte_offset": 329, "paired_component_reference_offset": 349,
@@ -84,7 +84,7 @@ fn canvas_image() -> crate::records::canvas::DesignCanvasImage {
         "opacity": 0.75, "origin": {"x":10.0,"y":20.0,"z":30.0},
         "u_axis": {"x":1.0,"y":0.0,"z":0.0},
         "v_axis": {"x":0.0,"y":0.0,"z":1.0},
-        "geometry_payload": payload.as_slice()
+        "geometry_payload": cadmpeg_ir::native::bytes::NativeBytes::from(payload.as_slice())
     }))
     .unwrap()
 }

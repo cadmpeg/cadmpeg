@@ -355,24 +355,7 @@ fn local_surface_inverse_preserves_each_work_refusal() {
 #[test]
 fn surface_partials_preserve_scratch_refusal_and_temporary_lifetime() {
     use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-    let surface = NurbsSurface::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
-        NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
-        NurbsSurfaceLanes::new(
-            (0..3)
-                .map(|u| {
-                    (0..3)
-                        .map(|v| Point3::new(f64::from(u) * 0.5, f64::from(v) * 0.5, 0.0))
-                        .collect()
-                })
-                .collect(),
-            None,
-        ),
-        false,
-    )
-    .expect("fixture admission")
-    .expect("quadratic plane");
+    let surface = crate::eval::test_support::high_degree_plane();
     for dimension in [
         ResourceDimension::MaterializedBytes,
         ResourceDimension::CollectionItems,

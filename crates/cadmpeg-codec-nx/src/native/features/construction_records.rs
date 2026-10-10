@@ -637,7 +637,7 @@ pub(in crate::native) fn feature_thru_curve_construction_envelopes(
                     discriminator: field.discriminator,
                     controls: field.controls,
                     trailing_control: field.trailing_control,
-                    trailing_value: field.trailing_value,
+                    trailing_value: field.trailing_value.into(),
                     source_offset: field.origin(),
                 })
             })();

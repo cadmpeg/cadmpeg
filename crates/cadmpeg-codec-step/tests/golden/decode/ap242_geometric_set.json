@@ -30,7 +30,12 @@
             ],
             "self_intersect": false
           },
-          "id": "step:data:curve#10"
+          "id": "step:data:curve#10",
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#10"
+          }
         },
         {
           "geometry": {
@@ -52,7 +57,12 @@
               "z": 0.0
             }
           },
-          "id": "step:data:curve#7"
+          "id": "step:data:curve#7",
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#7"
+          }
         }
       ],
       "drawings": [],
@@ -164,7 +174,12 @@
               "z": 0.0
             }
           },
-          "id": "step:data:surface#8"
+          "id": "step:data:surface#8",
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#8"
+          }
         }
       ],
       "tessellations": [],

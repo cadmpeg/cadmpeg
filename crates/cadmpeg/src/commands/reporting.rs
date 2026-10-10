@@ -300,7 +300,7 @@ impl ReportBody for serde_json::Value {}
 impl<T: ReportBody + ?Sized> ReportBody for &T {}
 
 /// Status-bearing serialized command payload.
-pub(super) enum Payload<'a, P: ReportBody> {
+pub(crate) enum Payload<'a, P: ReportBody> {
     Ok(P),
     Refused(P, &'a ConversionRefusal),
 }
@@ -359,13 +359,12 @@ pub(crate) fn command_report_json<P: ReportBody>(
     )?)
 }
 
-pub(super) fn refused_command_report_json<P: ReportBody>(
+pub(crate) fn payload_report_json<P: ReportBody>(
     command: &'static str,
-    payload: P,
-    refusal: &ConversionRefusal,
+    payload: Payload<'_, P>,
 ) -> Result<String> {
     Ok(cadmpeg_ir::hash::finite_json::to_canonical_json_string(
-        &CommandReport::new(command, Payload::Refused(payload, refusal)),
+        &CommandReport::new(command, payload),
     )?)
 }
 
@@ -382,16 +381,6 @@ pub(super) fn write_json_report<P: ReportBody>(
     )
 }
 
-/// Writes a status-bearing command payload.
-pub(super) fn write_payload_report<P: ReportBody>(
-    input: &Path,
-    output: Option<&FileDestination>,
-    command: &'static str,
-    payload: Payload<'_, P>,
-) -> Result<()> {
-    write_serialized_report(input, output, &CommandReport::new(command, payload))
-}
-
 fn write_serialized_report(
     input: &Path,
     output: Option<&FileDestination>,
@@ -400,7 +389,20 @@ fn write_serialized_report(
     let Some(output) = output else {
         return Ok(());
     };
-    let mut bytes = cadmpeg_ir::hash::finite_json::to_canonical_json_string(report)?.into_bytes();
+    let text = cadmpeg_ir::hash::finite_json::to_canonical_json_string(report)?;
+    write_report_text(input, Some(output), &text)
+}
+
+/// Persist an already serialized envelope so stdout and the report file agree.
+pub(super) fn write_report_text(
+    input: &Path,
+    output: Option<&FileDestination>,
+    text: &str,
+) -> Result<()> {
+    let Some(output) = output else {
+        return Ok(());
+    };
+    let mut bytes = text.as_bytes().to_vec();
     bytes.push(b'\n');
     output.write(input, &bytes)?;
     eprintln!("wrote report {}", output.path.display());

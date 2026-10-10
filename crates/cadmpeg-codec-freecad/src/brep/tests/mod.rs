@@ -324,6 +324,7 @@ fn transferred_curve_refuses_at_caller_limit() {
             .expect("finite direction"),
     };
     let association = cadmpeg_ir::SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Fcstd,
         object_id: cadmpeg_core::text::NonBlankString::new("object").expect("nonblank object"),
         name: None,
@@ -357,6 +358,7 @@ fn transferred_surface_refuses_at_caller_limit() {
         v_reversed: false,
     };
     let association = cadmpeg_ir::SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Fcstd,
         object_id: cadmpeg_core::text::NonBlankString::new("object").expect("nonblank object"),
         name: None,
@@ -1703,6 +1705,7 @@ fn transfers_zero_radius_brep_circles_as_degenerate_curves() {
         radius: FiniteReal::ZERO,
     };
     let association = cadmpeg_ir::SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Fcstd,
         object_id: cadmpeg_core::text::NonBlankString::new("object")
             .expect("nonempty source identity"),
@@ -1714,7 +1717,7 @@ fn transfers_zero_radius_brep_circles_as_degenerate_curves() {
     };
     let mut transfer = crate::brep::CurveTransfer::default();
 
-    let geometry = in_decode_context(|ctx| {
+    let index = in_decode_context(|ctx| {
         crate::brep::append_text_curve(
             ctx,
             &curve,
@@ -1724,10 +1727,11 @@ fn transfers_zero_radius_brep_circles_as_degenerate_curves() {
         )
     })
     .unwrap();
+    let geometry = &transfer.curves[index].geometry;
 
     assert_eq!(
         geometry,
-        cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
+        &cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
             cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(center).unwrap()
         ))
     );
@@ -1824,6 +1828,7 @@ fn transfers_occt_revolution_surface_parameter_order() {
         .expect("one inline directrix is admitted"),
     };
     let association = cadmpeg_ir::SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Fcstd,
         object_id: cadmpeg_core::text::NonBlankString::new("fcstd:native:object#Surface")
             .expect("nonempty source identity"),
@@ -1865,6 +1870,7 @@ fn transfers_a_signed_cone_half_angle_without_moving_the_frame() {
         u_reversed: false,
     };
     let association = cadmpeg_ir::SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Fcstd,
         object_id: cadmpeg_core::text::NonBlankString::new("fcstd:native:object#Surface")
             .expect("nonempty source identity"),
@@ -1876,7 +1882,7 @@ fn transfers_a_signed_cone_half_angle_without_moving_the_frame() {
     };
     let mut curves = crate::brep::CurveTransfer::default();
     let mut surfaces = crate::brep::SurfaceTransfer::default();
-    let geometry = in_decode_context(|ctx| {
+    let index = in_decode_context(|ctx| {
         crate::brep::append_text_surface(
             ctx,
             &surface,
@@ -1887,6 +1893,7 @@ fn transfers_a_signed_cone_half_angle_without_moving_the_frame() {
         )
     })
     .expect("a signed half angle is a b-rep cone the reader admits");
+    let geometry = &surfaces.surfaces[index].geometry;
     assert!(matches!(
         geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone))

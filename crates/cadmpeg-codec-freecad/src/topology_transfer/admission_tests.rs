@@ -137,7 +137,9 @@ fn connected_component_comparison_refuses_at_work_limit() {
     let connected = std::collections::HashSet::from(["edge".to_owned()]);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_work_units = 1;
+    // Fill work for the two assignment flags (2), then one unit short of the
+    // first comparison: its probe of one shared-size member plus one (1 + 1).
+    policy.limits.max_work_units = 2 + (1 + 1) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     assert!(
         matches!(connected_components(&ctx, &[connected.clone(), connected]),
@@ -280,6 +282,7 @@ fn placed_nurbs_surface_basis_refuses_at_collection_limit() {
 #[test]
 fn placed_geometry_source_association_refuses_at_retained_limit() {
     let source = cadmpeg_ir::SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Fcstd,
         object_id: cadmpeg_core::text::NonBlankString::new("source").expect("nonblank source"),
         name: None,

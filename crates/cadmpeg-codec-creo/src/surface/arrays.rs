@@ -32,7 +32,7 @@ impl<Shape> ScalarExtent<Shape> {
 pub(crate) struct Scalars<Shape> {
     shape: Shape,
     values: FiniteScalarSlots,
-    tokens: Option<Vec<Vec<u8>>>,
+    tokens: Option<Vec<cadmpeg_ir::native::bytes::NativeBytes>>,
 }
 /// An outer dimension and a scalar count per dimension.
 pub(crate) type DimensionedScalars = Scalars<[u32; 2]>;
@@ -129,7 +129,7 @@ impl<Shape> Scalars<Shape> {
         ctx.charge_work(u64_from_index(slots.len()), "creo scalar array filling")?;
         for (value, token) in slots {
             values.push(value);
-            tokens.push(token);
+            tokens.push(token.into());
         }
         Ok(Some(Self {
             shape: extent.shape,
@@ -149,7 +149,7 @@ impl<Shape> Scalars<Shape> {
     pub(crate) fn values(&self) -> &[Option<f64>] {
         &self.values.0
     }
-    pub(crate) fn tokens(&self) -> Option<&[Vec<u8>]> {
+    pub(crate) fn tokens(&self) -> Option<&[cadmpeg_ir::native::bytes::NativeBytes]> {
         self.tokens.as_deref()
     }
 }
@@ -203,7 +203,7 @@ mod tests {
             },
         );
         assert_eq!(array.values(), &[Some(1.0)]);
-        assert_eq!(array.tokens(), Some([vec![0xe4]].as_slice()));
+        assert_eq!(array.tokens(), Some([vec![0xe4].into()].as_slice()));
     }
 
     #[test]
@@ -279,7 +279,10 @@ mod tests {
             Some(())
         );
         assert_eq!(array.values(), &[None; 2]);
-        assert_eq!(array.tokens(), Some([vec![0x0f], vec![0x0f]].as_slice()));
+        assert_eq!(
+            array.tokens(),
+            Some([vec![0x0f].into(), vec![0x0f].into()].as_slice())
+        );
     }
 
     #[test]

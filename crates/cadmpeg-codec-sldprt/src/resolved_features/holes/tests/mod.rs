@@ -118,7 +118,7 @@ fn lane() -> FeatureInputLane {
         parent: "lane".into(),
         ordinal,
         offset: u64::from(ordinal),
-        type_prefix: [0xc3, 0x80, 0xc5, 0],
+        type_prefix: [0xc3, 0x80, 0xc5, 0].into(),
         feature_source_id: 7_u32.try_into().unwrap(),
         local_identity: 2,
         components: Vec::new(),
@@ -126,7 +126,7 @@ fn lane() -> FeatureInputLane {
     FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),

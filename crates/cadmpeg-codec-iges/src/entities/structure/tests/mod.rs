@@ -88,19 +88,20 @@ fn flow_join_targets_use_geometry_classification_or_subfigure_instance_type() {
         entity_type,
         parameter_start: 0,
         structure: 0,
-        line_font: 0,
-        level: 0,
-        view: 0,
+        line_font: Some(0),
+        level: Some(0),
+        view: Some(0),
         transform: 0,
-        label_display: 0,
+        label_display: Some(0),
+        status_padding_recovered: false,
         status: SourceStatus::from_codes([0, 0, use_flag, 0]),
-        line_weight: 0,
-        color: 0,
+        line_weight: Some(0),
+        color: Some(0),
         parameter_line_count: 0,
         form: 0,
         reserved: [[b' '; 8]; 2],
         label: [b' '; 8],
-        subscript: 0,
+        subscript: Some(0),
     };
 
     assert!(flow_join_target_valid(
@@ -442,7 +443,10 @@ fn decode_distinguishes_all_external_reference_forms_without_resolution() {
         references[4].fields()["reference_kind"],
         "native_library_definition"
     );
-    assert_eq!(references[4].fields()["library_name"][0], 68);
+    assert_eq!(
+        u64::from(crate::test_support::native_bytes(&references[4].fields()["library_name"])[0]),
+        68
+    );
     assert!(references
         .iter()
         .all(|reference| reference.fields()["resolution_state"] == "not_attempted"));
@@ -911,7 +915,10 @@ fn decode_links_product_names_and_reference_designators_to_owners() {
         "iges:entity:directory#1"
     );
     assert_eq!(properties[1].fields()["property_kind"], "name");
-    assert_eq!(properties[1].fields()["value"][0], 66);
+    assert_eq!(
+        u64::from(crate::test_support::native_bytes(&properties[1].fields()["value"])[0]),
+        66
+    );
     assert_eq!(
         properties[1].fields()["owners"][0],
         "iges:entity:directory#1"
@@ -964,7 +971,10 @@ fn decode_types_scalar_and_string_property_forms() {
     assert_eq!(property(6).fields()["lower_layer"], 2);
     assert_eq!(property(6).fields()["upper_layer"], 8);
     assert_eq!(property(12).fields()["names"].as_array().unwrap().len(), 2);
-    assert_eq!(property(13).fields()["standard"][0], 65);
+    assert_eq!(
+        u64::from(crate::test_support::native_bytes(&property(13).fields()["standard"])[0]),
+        65
+    );
     assert_eq!(property(18).fields()["percent"], 12.5);
     assert_eq!(property(20).fields()["highlighted"], true);
     assert_eq!(property(21).fields()["pickable"], true);
@@ -1200,7 +1210,10 @@ fn decode_types_dimension_drawing_text_and_closure_properties() {
     assert_eq!(units["secondary_position"], 0);
     assert_eq!(units["units_indicator"], 2);
     assert_eq!(units["character_set"], 1);
-    assert_eq!(units["suffix"], serde_json::json!([77, 77]));
+    assert_eq!(
+        crate::test_support::native_bytes(&units["suffix"]),
+        [77, 77]
+    );
     assert_eq!(units["fraction_flag"], 0);
     assert_eq!(units["precision"], 3);
     let tolerance = property(29);
@@ -1219,7 +1232,10 @@ fn decode_types_dimension_drawing_text_and_closure_properties() {
     assert_eq!(display["label_position"], 1);
     assert_eq!(display["declared_character_set"], 1);
     assert_eq!(display["character_set"], 1);
-    assert_eq!(display["label"], serde_json::json!([68, 73, 65]));
+    assert_eq!(
+        crate::test_support::native_bytes(&display["label"]),
+        [68, 73, 65]
+    );
     assert_eq!(display["decimal_symbol"], 0);
     assert_eq!(
         display["declared_witness_line_angle"],
@@ -1254,9 +1270,18 @@ fn decode_types_dimension_drawing_text_and_closure_properties() {
         .expect("approval property")
         .fields();
     assert_eq!(approval["property_kind"], "drawing_sheet_approval");
-    assert_eq!(approval["name"], serde_json::json!([74, 65, 78, 69]));
-    assert_eq!(approval["organization"], serde_json::json!([69, 78, 71]));
-    assert_eq!(approval["date"], serde_json::json!(b"20260714.123456"));
+    assert_eq!(
+        crate::test_support::native_bytes(&approval["name"]),
+        [74, 65, 78, 69]
+    );
+    assert_eq!(
+        crate::test_support::native_bytes(&approval["organization"]),
+        [69, 78, 71]
+    );
+    assert_eq!(
+        crate::test_support::native_bytes(&approval["date"]),
+        b"20260714.123456"
+    );
     let sheet = properties
         .iter()
         .find(|property| property.fields()["form"] == 33)
@@ -1264,7 +1289,7 @@ fn decode_types_dimension_drawing_text_and_closure_properties() {
         .fields();
     assert_eq!(sheet["property_kind"], "drawing_sheet_id");
     assert_eq!(sheet["sheet_number"], 2);
-    assert_eq!(sheet["revision"], serde_json::json!([67]));
+    assert_eq!(crate::test_support::native_bytes(&sheet["revision"]), [67]);
     assert!(
         drawing.report().losses.is_empty(),
         "{:#?}",
@@ -1449,8 +1474,8 @@ fn decode_types_bounded_predefined_associativity_roles() {
         .unwrap();
     assert_eq!(external_index.fields()["declared_count"], 1);
     assert_eq!(
-        external_index.fields()["entries"][0]["symbolic_name"],
-        serde_json::json!([78, 65, 77, 69])
+        crate::test_support::native_bytes(&external_index.fields()["entries"][0]["symbolic_name"]),
+        [78, 65, 77, 69]
     );
     assert_eq!(
         external_index.fields()["entries"][0]["entity"],

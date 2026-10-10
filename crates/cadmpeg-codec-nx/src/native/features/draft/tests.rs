@@ -11,7 +11,7 @@ use crate::native::features::test_support::check_lane_wire;
 #[test]
 fn draft_fixed_lane_preserves_parallel_wire_and_requires_complete_tokens() {
     check_lane_wire::<FeatureDraftConstructionFixedLane>(
-        r#"{"id":"lane","operation_label":"operation","graph_payload":"payload","ordinal":0,"values":[0.25,0.5],"markers":[48,176],"raw_values":[[32,0,0,0,0,0,0],[64,0,0,0,0,0,0]],"payload_offset":0,"value_payload_offsets":[18,26],"source_offset":100,"value_source_offsets":[118,126]}"#,
+        r#"{"id":"lane","operation_label":"operation","graph_payload":"payload","ordinal":0,"values":[0.25,0.5],"markers":"30b0","raw_values":["20000000000000","40000000000000"],"payload_offset":0,"value_payload_offsets":[18,26],"source_offset":100,"value_source_offsets":[118,126]}"#,
         &[
             "values",
             "markers",
@@ -25,7 +25,7 @@ fn draft_fixed_lane_preserves_parallel_wire_and_requires_complete_tokens() {
 #[test]
 fn draft_binary32_lane_preserves_parallel_wire_and_requires_complete_tokens() {
     check_lane_wire::<FeatureDraftConstructionBinary32Lane>(
-        r#"{"id":"lane","operation_label":"operation","graph_payload":"payload","ordinal":0,"discriminator":[144,24,69,1,4,1,3,1,192,69,4,0,128,134,2,0,3,0],"branch":3,"values":[2.5,4.0],"raw_values":[[80,32,0,0],[80,128,0,0]],"payload_offset":0,"value_payload_offsets":[18,22],"source_offset":100,"value_source_offsets":[118,122]}"#,
+        r#"{"id":"lane","operation_label":"operation","graph_payload":"payload","ordinal":0,"discriminator":"9018450104010301c0450400808602000300","branch":3,"values":[2.5,4.0],"raw_values":["50200000","50800000"],"payload_offset":0,"value_payload_offsets":[18,22],"source_offset":100,"value_source_offsets":[118,122]}"#,
         &[
             "values",
             "raw_values",
@@ -38,23 +38,24 @@ fn draft_binary32_lane_preserves_parallel_wire_and_requires_complete_tokens() {
 #[test]
 fn draft_index_lane_preserves_wire_and_groups_resolution_with_tokens() {
     check_lane_wire::<FeatureDraftConstructionIndexLane>(
-        r#"{"id":"lane","operation_label":"operation","declared_count":3,"indices":[7,8],"raw_indices":[[7],[8]],"data_blocks":["first","second"],"source_offsets":[110,111]}"#,
+        r#"{"id":"lane","operation_label":"operation","declared_count":3,"indices":[7,8],"raw_indices":["07","08"],"data_blocks":["first","second"],"source_offsets":[110,111]}"#,
         &["indices", "raw_indices", "data_blocks", "source_offsets"],
     );
     check_lane_wire::<FeatureDraftConstructionIndexLane>(
-        r#"{"id":"lane","operation_label":"operation","declared_count":3,"indices":[7,8],"raw_indices":[[7],[8]],"source_offsets":[110,111]}"#,
+        r#"{"id":"lane","operation_label":"operation","declared_count":3,"indices":[7,8],"raw_indices":["07","08"],"source_offsets":[110,111]}"#,
         &["indices", "raw_indices", "source_offsets"],
     );
 }
 
 #[test]
 fn draft_index_lane_checks_compact_token_grammar() {
-    let json = r#"{"id":"lane","operation_label":"operation","declared_count":3,"indices":[4096,7],"raw_indices":[[144,0],[128,7]],"source_offsets":[110,112]}"#;
+    let json = r#"{"id":"lane","operation_label":"operation","declared_count":3,"indices":[4096,7],"raw_indices":["9000","8007"],"source_offsets":[110,112]}"#;
     let lane: FeatureDraftConstructionIndexLane = serde_json::from_str(json).unwrap();
     assert_eq!(serde_json::to_string(&lane).unwrap(), json);
     for raw in [vec![255], vec![144], vec![144, 0, 0], vec![1]] {
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
-        wire["raw_indices"][0] = serde_json::json!(raw);
+        wire["raw_indices"][0] =
+            serde_json::json!(cadmpeg_ir::native::bytes::NativeBytes::from(raw));
         let error = serde_json::from_value::<FeatureDraftConstructionIndexLane>(wire).unwrap_err();
         assert!(error.to_string().contains("indices[0]"));
     }
@@ -65,7 +66,7 @@ fn draft_index_lane_requires_nonempty_byte_counted_members() {
     for count in [0, 1, 254, 255] {
         let wire = serde_json::json!({
             "id": "lane", "operation_label": "operation", "declared_count": count + 1,
-            "indices": vec![1; count], "raw_indices": vec![vec![1]; count],
+            "indices": vec![1; count], "raw_indices": vec![cadmpeg_ir::native::bytes::NativeBytes::from(vec![1]); count],
             "source_offsets": (100..100 + count).collect::<Vec<_>>(),
         });
         assert_eq!(
@@ -77,7 +78,7 @@ fn draft_index_lane_requires_nonempty_byte_counted_members() {
 
 #[test]
 fn draft_terminal_lane_derives_its_source_offset() {
-    let json = r#"{"id":"lane","operation_label":"operation","indices":[128,129],"raw_indices":[[128,128],[128,129]],"tail":[1,2,3],"index_source_offsets":[100,102],"source_offset":100}"#;
+    let json = r#"{"id":"lane","operation_label":"operation","indices":[128,129],"raw_indices":["8080","8081"],"tail":"010203","index_source_offsets":[100,102],"source_offset":100}"#;
     check_lane_wire::<FeatureDraftConstructionTerminalLane>(json, &[]);
     let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
     malformed["source_offset"] = serde_json::json!(101);
@@ -88,7 +89,7 @@ fn draft_terminal_lane_derives_its_source_offset() {
 
 #[test]
 fn draft_terminal_lane_requires_two_byte_compact_indices() {
-    let json = r#"{"id":"lane","operation_label":"operation","indices":[4096,1],"raw_indices":[[144,0],[128,1]],"tail":[1,2,3],"index_source_offsets":[100,102],"source_offset":100}"#;
+    let json = r#"{"id":"lane","operation_label":"operation","indices":[4096,1],"raw_indices":["9000","8001"],"tail":"010203","index_source_offsets":[100,102],"source_offset":100}"#;
     check_lane_wire::<FeatureDraftConstructionTerminalLane>(json, &[]);
     for (value, raw) in [
         (4096, [255, 0]),
@@ -98,7 +99,8 @@ fn draft_terminal_lane_requires_two_byte_compact_indices() {
     ] {
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire["indices"][0] = serde_json::json!(value);
-        wire["raw_indices"][0] = serde_json::json!(raw);
+        wire["raw_indices"][0] =
+            serde_json::json!(cadmpeg_ir::native::bytes::NativeBytes::from(raw));
         let error =
             serde_json::from_value::<FeatureDraftConstructionTerminalLane>(wire).unwrap_err();
         assert!(error.to_string().contains("indices[0]"));
@@ -107,7 +109,7 @@ fn draft_terminal_lane_requires_two_byte_compact_indices() {
 
 #[test]
 fn draft_binary32_lane_rejects_inconsistent_or_wrong_width_atoms() {
-    let json = r#"{"id":"lane","operation_label":"operation","graph_payload":"payload","ordinal":0,"discriminator":[144,24,69,1,4,1,3,1,192,69,4,0,128,134,2,0,3,0],"branch":3,"values":[2.5],"raw_values":[[80,32,0,0]],"payload_offset":0,"value_payload_offsets":[18],"source_offset":100,"value_source_offsets":[118]}"#;
+    let json = r#"{"id":"lane","operation_label":"operation","graph_payload":"payload","ordinal":0,"discriminator":"9018450104010301c0450400808602000300","branch":3,"values":[2.5],"raw_values":["50200000"],"payload_offset":0,"value_payload_offsets":[18],"source_offset":100,"value_source_offsets":[118]}"#;
     let original: serde_json::Value = serde_json::from_str(json).unwrap();
     for (value, raw) in [
         (4.0, vec![80, 32, 0, 0]),
@@ -116,29 +118,22 @@ fn draft_binary32_lane_rejects_inconsistent_or_wrong_width_atoms() {
     ] {
         let mut invalid = original.clone();
         invalid["values"][0] = serde_json::json!(value);
-        invalid["raw_values"][0] = serde_json::json!(raw);
+        invalid["raw_values"][0] =
+            serde_json::json!(cadmpeg_ir::native::bytes::NativeBytes::from(raw));
         assert!(serde_json::from_value::<FeatureDraftConstructionBinary32Lane>(invalid).is_err());
     }
 }
 
 #[test]
 fn draft_identity_frame_derives_prefix_form_and_preserves_wire() {
-    let json = r#"{"id":"frame","operation_label":"operation","draft_construction_payload":"payload","ordinal":0,"prefix":[65,129,84,240,56,2,1],"form":{"kind":"indexed_branch","first_index":340,"second_index":56,"branch":2},"identity":"abc123","payload_offset":1,"identity_payload_offset":8,"source_offset":100,"identity_source_offset":500}"#;
+    let json = r#"{"id":"frame","operation_label":"operation","draft_construction_payload":"payload","ordinal":0,"prefix":"418154f0380201","form":{"kind":"indexed_branch","first_index":340,"second_index":56,"branch":2},"identity":"abc123","payload_offset":1,"identity_payload_offset":8,"source_offset":100,"identity_source_offset":500}"#;
     let frame: FeatureDraftConstructionIdentityFrame = serde_json::from_str(json).unwrap();
     assert_eq!(serde_json::to_string(&frame).unwrap(), json);
     for (field, value, expected) in [
         ("identity", serde_json::json!(""), "identity"),
         ("identity", serde_json::json!("ABC123"), "identity"),
-        (
-            "prefix",
-            serde_json::json!([65, 129, 84, 240, 56, 3, 1]),
-            "form",
-        ),
-        (
-            "prefix",
-            serde_json::json!([65, 129, 84, 240, 56, 2, 1, 0]),
-            "prefix",
-        ),
+        ("prefix", serde_json::json!("418154f0380301"), "form"),
+        ("prefix", serde_json::json!("418154f038020100"), "prefix"),
         (
             "identity_payload_offset",
             serde_json::json!(9),
@@ -160,7 +155,7 @@ fn draft_identity_frame_derives_prefix_form_and_preserves_wire() {
 
 #[test]
 fn draft_terminal_lane_rejects_detached_second_index_and_frame_overflow() {
-    let json = r#"{"id":"lane","operation_label":"operation","indices":[128,129],"raw_indices":[[128,128],[128,129]],"tail":[1,2,3],"index_source_offsets":[100,102],"source_offset":100}"#;
+    let json = r#"{"id":"lane","operation_label":"operation","indices":[128,129],"raw_indices":["8080","8081"],"tail":"010203","index_source_offsets":[100,102],"source_offset":100}"#;
     for offsets in [[100, 101], [100, 103], [100, u64::MAX]] {
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire["index_source_offsets"] = serde_json::json!(offsets);
@@ -182,7 +177,7 @@ fn draft_terminal_lane_rejects_detached_second_index_and_frame_overflow() {
 
 #[test]
 fn draft_index_lane_rejects_detached_offsets_and_frame_overflow() {
-    let json = r#"{"id":"lane","operation_label":"operation","declared_count":3,"indices":[7,8],"raw_indices":[[128,7],[8]],"source_offsets":[110,112]}"#;
+    let json = r#"{"id":"lane","operation_label":"operation","declared_count":3,"indices":[7,8],"raw_indices":["8007","08"],"source_offsets":[110,112]}"#;
     let lane: FeatureDraftConstructionIndexLane = serde_json::from_str(json).unwrap();
     assert_eq!(serde_json::to_string(&lane).unwrap(), json);
     for offsets in [[110, 113], [23, 25], [u64::MAX - 4, u64::MAX - 2]] {

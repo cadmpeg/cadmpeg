@@ -100,7 +100,10 @@ fn scan_bounds_tabulated_cylinder_cubic_curve_replay() {
         ["tabulated_cylinder_curve_replays"][0];
     assert_eq!(native.fields()["surface_id"], 7);
     assert_eq!(native.fields()["control_point_ids"][2], 34);
-    assert_eq!(native.fields()["control_point_bodies"][3][8], 0x46);
+    assert_eq!(
+        crate::test_support::native_bytes(&native.fields()["control_point_bodies"][3])[8],
+        0x46
+    );
     assert_eq!(native.fields()["control_points"][2][0], -3.0);
     assert_eq!(
         result.source_fidelity().annotations.provenance[native.id()]
@@ -709,7 +712,10 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
     assert_eq!(native.fields()["parameters"][0]["scalar_dimensions"], 4);
     assert_eq!(native.fields()["parameters"][0]["scalar_values"][0], 1.0);
     assert_eq!(native.fields()["parameters"][1]["name"], "radius");
-    assert_eq!(native.fields()["parameters"][1]["body"][0], 0xe4);
+    assert_eq!(
+        crate::test_support::native_bytes(&native.fields()["parameters"][1]["body"])[0],
+        0xe4
+    );
     assert_eq!(native.fields()["parameters"][2]["compact_values"][0], 7);
     assert_eq!(native.fields()["parameters"][2]["compact_values"][1], 8);
     assert_eq!(native.fields()["parameters"][3]["compact_values"][0], 128);
@@ -727,7 +733,10 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
         "compact_int"
     );
     assert_eq!(native.fields()["parameters"][7]["compact_values"][0], 1);
-    assert_eq!(native.fields()["parameters"][7]["body"][0], 0xf1);
+    assert_eq!(
+        crate::test_support::native_bytes(&native.fields()["parameters"][7]["body"])[0],
+        0xf1
+    );
     assert_eq!(native.fields()["parameters"][8]["name"], "dum_array");
     assert_eq!(native.fields()["parameters"][8]["value_kind"], "opaque");
     assert_eq!(
@@ -750,9 +759,7 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
     assert_eq!(native.fields()["parameters"][16]["name"], "tan_spline");
     assert_eq!(native.fields()["parameters"][16]["value_kind"], "empty");
     assert_eq!(
-        native.fields()["parameters"][16]["body"]
-            .as_array()
-            .map(Vec::len),
+        Some(crate::test_support::native_bytes(&native.fields()["parameters"][16]["body"]).len()),
         Some(0)
     );
     assert_eq!(
@@ -1019,4 +1026,23 @@ fn spline_scalar_reader_withholds_zero_count_past_end() {
                 .is_none()
         );
     });
+}
+#[test]
+fn parent_feature_array_keeps_three_byte_ids_and_excludes_its_trailer() {
+    let payload =
+        b"srf_prim_ptr(plane)\0\xe0\0parent_feats\0\xf8\x02\xbf\xff\xc0\x40\0\xf7\x10\x01\xe1";
+    let records = crate::decode::with_test_decode_ctx(|ctx| {
+        super::super::named_prototype_records(
+            ctx,
+            payload,
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        )
+    })
+    .expect("prototype");
+    assert_eq!(
+        records[0].field("parent_feats").map(|field| &field.value),
+        Some(&super::super::SurfaceNamedValue::CompactIntArray(vec![
+            16383, 16384
+        ]))
+    );
 }

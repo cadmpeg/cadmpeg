@@ -540,6 +540,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 id,
                 geometry,
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: crate::identity::source_object_id_checked(
                         ctx,
@@ -704,6 +705,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
                 id,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: crate::identity::source_object_id_checked(
                         ctx,
@@ -895,6 +897,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                 id,
                 geometry,
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: crate::identity::source_object_id_checked(
                         ctx,

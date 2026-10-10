@@ -164,7 +164,7 @@ pub(super) fn project(
         matches!(entry.entity_type, 150 | 152 | 154 | 156 | 158 | 160 | 168) && entry.form == 0
     }) {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -183,7 +183,7 @@ pub(super) fn project(
             ctx,
         ) {
             error.non_resource()?;
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -214,7 +214,7 @@ pub(super) fn project(
             }
         }
         if !dimensions_present {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -258,7 +258,7 @@ pub(super) fn project(
             _ => false,
         };
         if !dimensions_valid {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -275,7 +275,7 @@ pub(super) fn project(
             160 => (3, None, Some(6)),
             168 => (4, Some(7), Some(10)),
             _ => {
-                super::push_entity_loss(
+                super::push_geometry_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -285,7 +285,7 @@ pub(super) fn project(
             }
         };
         let Some(origin) = vector_or(record, origin_start, Vector3::new(0.0, 0.0, 0.0)) else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -294,7 +294,7 @@ pub(super) fn project(
             continue;
         };
         if !origin.is_finite() {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -324,7 +324,7 @@ pub(super) fn project(
                     )
                 })
         {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -340,7 +340,7 @@ pub(super) fn project(
             || (entry.entity_type == 164 && entry.form == 0)
     }) {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -350,7 +350,7 @@ pub(super) fn project(
         };
         let factor = global.length_factor_mm();
         let Some(profile) = pointer(record, 1) else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -367,7 +367,7 @@ pub(super) fn project(
             .iter()
             .any(|curve| Some(curve.id.as_str()) == profile_id)
         {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -379,7 +379,7 @@ pub(super) fn project(
             .number_or(2, 1.0)
             .filter(|value| value.is_finite() && *value > 0.0)
         else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -388,7 +388,7 @@ pub(super) fn project(
             continue;
         };
         if entry.entity_type == 162 && amount > 1.0 {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -408,7 +408,7 @@ pub(super) fn project(
                     .is_none()
             })
         {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -417,7 +417,7 @@ pub(super) fn project(
             continue;
         }
         let Some(closed) = profile_closed(ir, profile, global.minimum_resolution_mm()) else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -428,7 +428,7 @@ pub(super) fn project(
         if (entry.entity_type == 162 && entry.form == 0 && closed)
             || (entry.entity_type == 164 && !closed)
         {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -446,7 +446,7 @@ pub(super) fn project(
             ctx,
         ) {
             error.non_resource()?;
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -463,7 +463,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 180 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -472,7 +472,7 @@ pub(super) fn project(
             continue;
         };
         let Some(count) = record.count(1).filter(|count| *count > 2) else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -502,7 +502,7 @@ pub(super) fn project(
             }
         }
         if !terms_valid {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -523,7 +523,7 @@ pub(super) fn project(
             BooleanTerm::Operation => false,
         });
         if !valid_stack || depth != 1 {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -563,7 +563,7 @@ pub(super) fn project(
                 })
         })?;
         if !operands_valid || cyclic {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -585,7 +585,7 @@ pub(super) fn project(
             ctx,
         ) {
             error.non_resource()?;
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -601,7 +601,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 182 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -615,7 +615,7 @@ pub(super) fn project(
                     .get(sequence)
                     .is_some_and(|target| target.entity_type == 180)
         }) else {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -625,7 +625,7 @@ pub(super) fn project(
         };
         let point_valid = (2..=4).all(|index| record.number(index).is_some());
         if !point_valid || entry.status.use_flag(global.global_table()) != Some(UseFlag::Other) {
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -647,7 +647,7 @@ pub(super) fn project(
             ctx,
         ) {
             error.non_resource()?;
-            super::push_entity_loss(
+            super::push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,

@@ -118,3 +118,36 @@ macro_rules! rewrite_native_wire {
         Ok(())
     }};
 }
+
+// These wire records retain string storage for their native identity, but only
+// that field is an identity. Other strings (names and source tokens) stay text.
+macro_rules! rewrite_native_identity_record {
+    ($type:ty; $($field:ident),* $(,)?) => {
+        impl cadmpeg_ir::schema::rewrite::typed::RewriteIdentities for $type {
+            fn rewrite_native_value<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: &mut serde_json::Value, map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<(), cadmpeg_core::CodecError> {
+                let _depth = ctx.enter_nested("rewrite F3D native identity fields")?;
+                ctx.charge_work(1, "rewrite F3D native identity fields")?;
+                if let Some(serde_json::Value::String(id)) = value.get_mut("id") {
+                    *id = map.identity(ctx, id)?;
+                }
+                $(cadmpeg_ir::schema::rewrite::typed::native_fields::rewrite_field(ctx, value, stringify!($field), map, |owner: &Self| Some(&owner.$field))?;)*
+                Ok(())
+            }
+
+            fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
+                let _depth = ctx.enter_nested("walk F3D native identity fields")?;
+                ctx.charge_work(1, "walk F3D native identity fields")?;
+                visitor(&self.id)?;
+                $(cadmpeg_ir::schema::rewrite::typed::RewriteIdentities::visit_identity_references(&self.$field, ctx, visitor)?;)*
+                Ok(())
+            }
+            fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(mut self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<Self, cadmpeg_core::CodecError> {
+                let _depth = ctx.enter_nested("rewrite F3D native identity fields")?;
+                ctx.charge_work(1, "rewrite F3D native identity fields")?;
+                self.id = map.identity(ctx, &self.id)?;
+                $(self.$field = cadmpeg_ir::schema::rewrite::typed::RewriteIdentities::rewrite_identities(self.$field, ctx, map)?;)*
+                Ok(self)
+            }
+        }
+    };
+}

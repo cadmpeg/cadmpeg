@@ -114,10 +114,13 @@ fn decode_types_fundamental_units_and_property_owner() {
         .unwrap();
     let units = &result.ir().native.namespace("iges").unwrap().arenas()["units_data"][0];
     assert_eq!(units.fields()["units"].as_array().unwrap().len(), 3);
-    assert_eq!(units.fields()["units"][0]["unit_type"][0], 76);
     assert_eq!(
-        units.fields()["units"][0]["unit_value"],
-        serde_json::json!([75, 78])
+        u64::from(crate::test_support::native_bytes(&units.fields()["units"][0]["unit_type"])[0]),
+        76
+    );
+    assert_eq!(
+        crate::test_support::native_bytes(&units.fields()["units"][0]["unit_value"]),
+        [75, 78]
     );
     assert_eq!(units.fields()["units"][0]["scale_factor"], 1852.0);
     assert_eq!(
@@ -1004,19 +1007,20 @@ fn subfigure_definition_directory_fields_use_the_v4_table_rules() {
         entity_type: 308,
         parameter_start: 0,
         structure: 0,
-        line_font,
-        level: 0,
-        view: 0,
+        line_font: Some(line_font),
+        level: Some(0),
+        view: Some(0),
         transform: 0,
-        label_display: 0,
+        label_display: Some(0),
+        status_padding_recovered: false,
         status: SourceStatus::from_codes([0, subordinate, use_flag, hierarchy]),
-        line_weight: 0,
-        color: 0,
+        line_weight: Some(0),
+        color: Some(0),
         parameter_line_count: 0,
         form: 0,
         reserved: [[b' '; 8]; 2],
         label: [b' '; 8],
-        subscript: 0,
+        subscript: Some(0),
     };
 
     assert!(!subfigure_definition_directory_fields_valid(
@@ -1176,8 +1180,14 @@ fn decode_preserves_owned_network_connect_points() {
     let points = &native.arenas()["connect_points"];
     assert_eq!(points.len(), 2);
     assert_eq!(points[0].fields()["type_flag"], 101);
-    assert_eq!(points[0].fields()["function_identifier"][0], 80);
-    assert_eq!(points[0].fields()["function_identifier"][1], 49);
+    assert_eq!(
+        u64::from(crate::test_support::native_bytes(&points[0].fields()["function_identifier"])[0]),
+        80
+    );
+    assert_eq!(
+        u64::from(crate::test_support::native_bytes(&points[0].fields()["function_identifier"])[1]),
+        49
+    );
     assert_eq!(points[0].fields()["owner"], "iges:entity:directory#3");
     assert_eq!(points[1].fields()["position"][2], 3.0);
     assert_eq!(points[1].fields()["owner"], "iges:entity:directory#7");

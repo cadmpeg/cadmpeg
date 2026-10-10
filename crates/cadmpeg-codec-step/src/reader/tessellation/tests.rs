@@ -56,6 +56,7 @@ fn decode_tessellation_under_policy(
     )?;
     let geometry = super::super::geometry::decode(&exchange, &mut ir, &topology_ctx)
         .expect("resource allocation did not fail")
+        .0
         .value;
     let index = super::super::index::CarrierIndex::from_ir(&ir, &topology_ctx)?;
     let topology = super::super::topology::decode(&exchange, &mut ir, &index, &topology_ctx)
@@ -1878,14 +1879,33 @@ fn complex_strip_and_malformed_strip_witnesses_preserve_winding() {
 }
 
 #[test]
-fn non_finite_tessellation_coordinates_are_rejected() {
+fn non_finite_tessellation_coordinates_omit_dependents_and_retain_source() {
     let result = decode_inline_result(
         "#1=COORDINATES_LIST('',1,((1E400,0.,0.)));
 #2=TRIANGULATED_SURFACE_SET('',#1,1,$,$,((1,1,1)));",
-    );
-    assert!(
-        matches!(result, Err(cadmpeg_ir::DecodeFailure::Codec(CodecError::Malformed(message))) if message.contains("finite binary64 range"))
-    );
+    )
+    .expect("bounded nonfinite coordinate and its dependent are omitted");
+    let result = cadmpeg_test_support::EditableDecodeResult::from(result);
+    assert!(result.ir().model.tessellations.is_empty());
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::ParseRecordOmitted.kind()
+            && loss.message.contains("finite binary64 range")
+    }));
+    let retained = result
+        .ir()
+        .native_unknowns("step")
+        .expect("retained source");
+    for bytes in [
+        b"#1=COORDINATES_LIST('',1,((1E400,0.,0.)));".as_slice(),
+        b"#2=TRIANGULATED_SURFACE_SET('',#1,1,$,$,((1,1,1)));",
+    ] {
+        assert!(retained.iter().any(|record| {
+            result
+                .source_fidelity()
+                .retained_record(record.id.as_str())
+                .is_some_and(|source| source.data() == Some(bytes))
+        }));
+    }
 }
 #[test]
 fn complex_tessellated_face_keeps_exact_support_surface_reachable() {

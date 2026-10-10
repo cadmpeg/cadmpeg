@@ -504,8 +504,7 @@ use super::{
     bounded_nurbs_for_curve, bounded_nurbs_for_curve_with_tolerance, close, close_with_tolerance,
     composite_child_type_allowed, composite_line_font_valid, composite_logical_connector_use_valid,
     composite_minimum_child_count, composite_use_flag_valid, concatenate_nurbs,
-    elevate_nurbs_to_degree, homogeneous_control_points, insert_homogeneous_knot,
-    trim_nurbs_to_interval, CompositeIndex,
+    elevate_nurbs_to_degree, trim_nurbs_to_interval, CompositeIndex,
 };
 
 #[test]
@@ -683,7 +682,7 @@ fn decode_rejects_a_nonzero_v4_composite_entity_use_flag() {
         .iter()
         .any(|curve| curve.id.as_str() == "iges:model:curve#D5"));
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::EntityNotProjected.kind()
+        loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss
                 .message
                 .contains("Type 102 Entity Use Flag must be 00 in IGES 4.0")
@@ -726,7 +725,7 @@ fn decode_rejects_a_v5_logical_connector_without_entity_use_flag_04() {
         .unwrap();
 
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::EntityNotProjected.kind()
+        loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss.message.contains(
                 "Type 102 logical connectors made of exactly two Type 132 Connect Points require Entity Use Flag 04",
             )
@@ -754,7 +753,7 @@ fn decode_rejects_a_zero_v4_composite_line_font() {
 
     assert!(result.ir().model.curves.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::EntityNotProjected.kind()
+        loss.code == IgesLossCode::DirectoryMetadataNoncanonical.kind()
             && loss
                 .message
                 .contains("Type 102 Line Font must be nonzero in IGES 4.0")
@@ -800,7 +799,7 @@ fn decode_rejects_a_single_v4_composite_constituent() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+            .filter(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind())
             .count(),
         1
     );
@@ -839,7 +838,7 @@ fn decode_projects_a_single_v5_composite_constituent() {
         .report()
         .losses
         .iter()
-        .any(|loss| { loss.code == IgesLossCode::EntityNotProjected.kind() }));
+        .any(|loss| { loss.code == IgesLossCode::GeometryNotProjected.kind() }));
 }
 
 #[test]
@@ -981,50 +980,55 @@ fn decode_projects_a_v5_type_130_constituent_after_its_offset_carrier() {
 }
 
 #[test]
-fn decode_projects_a_v4_composite_with_a_nonzero_line_font() {
+fn decode_projects_v4_composites_with_canonical_and_noncanonical_line_fonts() {
     const GLOBAL_V4: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(owned_test_file_with_global_and_directory_fields(
-                &[
-                    OwnedTestEntity {
-                        entity_type: 110,
-                        form: 0,
-                        label: "CHILD1".into(),
-                        status: "00010000",
-                        parameters: "110,0,0,0,1,0,0;".into(),
-                    },
-                    OwnedTestEntity {
-                        entity_type: 110,
-                        form: 0,
-                        label: "CHILD2".into(),
-                        status: "00010000",
-                        parameters: "110,1,0,0,2,0,0;".into(),
-                    },
-                    OwnedTestEntity {
-                        entity_type: 102,
-                        form: 0,
-                        label: "COMPOSIT".into(),
-                        status: "00000000",
-                        parameters: "102,2,1,3;".into(),
-                    },
-                ],
-                GLOBAL_V4,
-                &[],
-                &[(1, 1), (3, 1), (5, 1)],
-                &[],
-                &[],
-                &[],
-            )),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
+    for font in [0, 1] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(owned_test_file_with_global_and_directory_fields(
+                    &[
+                        OwnedTestEntity {
+                            entity_type: 110,
+                            form: 0,
+                            label: "CHILD1".into(),
+                            status: "00010000",
+                            parameters: "110,0,0,0,1,0,0;".into(),
+                        },
+                        OwnedTestEntity {
+                            entity_type: 110,
+                            form: 0,
+                            label: "CHILD2".into(),
+                            status: "00010000",
+                            parameters: "110,1,0,0,2,0,0;".into(),
+                        },
+                        OwnedTestEntity {
+                            entity_type: 102,
+                            form: 0,
+                            label: "COMPOSIT".into(),
+                            status: "00000000",
+                            parameters: "102,2,1,3;".into(),
+                        },
+                    ],
+                    GLOBAL_V4,
+                    &[],
+                    &[(1, font), (3, font), (5, font)],
+                    &[],
+                    &[],
+                    &[],
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
 
-    assert_eq!(result.ir().model.procedural_curves.len(), 1);
-    assert!(!result.report().losses.iter().any(|loss| {
-        loss.message
-            .contains("Type 102 Line Font must be nonzero in IGES 4.0")
-    }));
+        assert_eq!(result.ir().model.procedural_curves.len(), 1);
+        assert_eq!(
+            result.report().losses.iter().any(|loss| {
+                loss.message
+                    .contains("Type 102 Line Font must be nonzero in IGES 4.0")
+            }),
+            font == 0
+        );
+    }
 }
 
 #[test]
@@ -1052,6 +1056,7 @@ fn bounded_line_carrier_excludes_an_endpoint_at_the_resolution_boundary() {
         let curve_id = CurveId::mint("test:model:curve#line").expect("identity grammar");
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -1156,6 +1161,7 @@ fn composite_flattening_over_its_depth_limit_fuses_the_decode_session() {
     let base_id = CurveId::mint("test:model:curve#base").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: base_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(test_nurbs(
             1,
@@ -1205,6 +1211,7 @@ fn composite_flattening_over_its_depth_limit_fuses_the_decode_session() {
         let composite_id =
             CurveId::mint(format!("test:model:curve#composite-{level}")).expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: composite_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
                 segments: cadmpeg_ir::geometry::CompositeCurveSegments::try_from(vec![
@@ -1246,6 +1253,7 @@ fn bounded_line_carrier_selects_a_curve_valid_edge_occurrence() {
         let curve_id = CurveId::mint("test:model:curve#line").expect("identity grammar");
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -1350,6 +1358,7 @@ fn bounded_line_carrier_rejects_conflicting_valid_edge_ranges() {
         let curve_id = CurveId::mint("test:model:curve#line").expect("identity grammar");
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -1431,6 +1440,7 @@ fn composite_index_lookups_match_the_unindexed_scan() {
         let mut ir = CadIr::empty();
         for id in [bounded.clone(), edgeless.clone()] {
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                     cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -1605,64 +1615,6 @@ fn rational_linear_degree_elevation_preserves_the_curve() {
 }
 
 #[test]
-fn homogeneous_control_points_refuse_collection_limit() {
-    let curve = test_nurbs(
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-        None,
-    );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = homogeneous_control_points(&ctx, &curve).unwrap_err();
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.used == 0
-                && limit.additional == 2
-    ));
-}
-
-#[test]
-fn composite_knot_insertion_refuses_knot_collection_limit() {
-    let controls = [[1.0, 0.0, 0.0, 0.0], [1.0, 1.0, 0.0, 0.0]];
-    let knots = [0.0, 0.0, 1.0, 1.0];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 4;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = insert_homogeneous_knot(&ctx, &controls, &knots, 1, 0.5).unwrap_err();
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.used == 0
-                && limit.additional == 5
-    ));
-}
-
-#[test]
-fn composite_knot_insertion_refuses_control_collection_limit() {
-    let controls = [[1.0, 0.0, 0.0, 0.0], [1.0, 1.0, 0.0, 0.0]];
-    let knots = [0.0, 0.0, 1.0, 1.0];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 7;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = insert_homogeneous_knot(&ctx, &controls, &knots, 1, 0.5).unwrap_err();
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.used == 5
-                && limit.additional == 3
-    ));
-}
-
-#[test]
 fn composite_elevated_knots_refuse_collection_limit() {
     let mut curve = test_nurbs(
         1,
@@ -1791,7 +1743,7 @@ fn composite_child_weights_refuse_collection_limit() {
     );
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 3;
+    policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = concatenate_nurbs(&ctx, vec![(curve, [0.0, 1.0], ())], None)
         .unwrap_err()
@@ -1801,7 +1753,8 @@ fn composite_child_weights_refuse_collection_limit() {
         error,
         CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.used == 2
+                && limit.operation == "iges composite child weights"
+                && limit.used == 0
                 && limit.additional == 2
     ));
 }
@@ -1835,7 +1788,7 @@ fn composite_join_refuses_child_and_joined_lane_storage() {
         ]
     };
     for (rational, operation) in [
-        (false, "iges composite child control points"),
+        (true, "iges composite child control points"),
         (true, "iges composite child weight copy"),
         (false, "iges composite segment slots"),
         (false, "iges composite joined knots"),

@@ -140,25 +140,7 @@
             "state_offset": 93,
             "state_ordinal": 0,
             "stored_name": "xProtrusion id 40",
-            "stored_name_bytes": [
-              120,
-              80,
-              114,
-              111,
-              116,
-              114,
-              117,
-              115,
-              105,
-              111,
-              110,
-              32,
-              105,
-              100,
-              32,
-              52,
-              48
-            ],
+            "stored_name_bytes": "7850726f74727573696f6e206964203430",
             "stored_name_prefix": "x"
           },
           {
@@ -176,18 +158,7 @@
             "state_offset": 174,
             "state_ordinal": 1,
             "stored_name": "Hole id 40",
-            "stored_name_bytes": [
-              72,
-              111,
-              108,
-              101,
-              32,
-              105,
-              100,
-              32,
-              52,
-              48
-            ],
+            "stored_name_bytes": "486f6c65206964203430",
             "stored_name_prefix": null
           },
           {
@@ -204,19 +175,7 @@
             "state_offset": 111,
             "state_ordinal": 0,
             "stored_name": "Round id 41",
-            "stored_name_bytes": [
-              82,
-              111,
-              117,
-              110,
-              100,
-              32,
-              105,
-              100,
-              32,
-              52,
-              49
-            ],
+            "stored_name_bytes": "526f756e64206964203431",
             "stored_name_prefix": null
           },
           {
@@ -233,28 +192,7 @@
             "state_offset": 123,
             "state_ordinal": 0,
             "stored_name": "Future Feature id 42",
-            "stored_name_bytes": [
-              70,
-              117,
-              116,
-              117,
-              114,
-              101,
-              32,
-              70,
-              101,
-              97,
-              116,
-              117,
-              114,
-              101,
-              32,
-              105,
-              100,
-              32,
-              52,
-              50
-            ],
+            "stored_name_bytes": "4675747572652046656174757265206964203432",
             "stored_name_prefix": null
           },
           {
@@ -271,25 +209,7 @@
             "state_offset": 144,
             "state_ordinal": 0,
             "stored_name": "Datum Plane id 43",
-            "stored_name_bytes": [
-              68,
-              97,
-              116,
-              117,
-              109,
-              32,
-              80,
-              108,
-              97,
-              110,
-              101,
-              32,
-              105,
-              100,
-              32,
-              52,
-              51
-            ],
+            "stored_name_bytes": "446174756d20506c616e65206964203433",
             "stored_name_prefix": null
           },
           {
@@ -306,19 +226,7 @@
             "state_offset": 162,
             "state_ordinal": 0,
             "stored_name": "Draft id 44",
-            "stored_name_bytes": [
-              68,
-              114,
-              97,
-              102,
-              116,
-              32,
-              105,
-              100,
-              32,
-              52,
-              52
-            ],
+            "stored_name_bytes": "4472616674206964203434",
             "stored_name_prefix": null
           },
           {
@@ -335,22 +243,7 @@
             "state_offset": 185,
             "state_ordinal": 0,
             "stored_name": "ySurface id 45",
-            "stored_name_bytes": [
-              121,
-              83,
-              117,
-              114,
-              102,
-              97,
-              99,
-              101,
-              32,
-              105,
-              100,
-              32,
-              52,
-              53
-            ],
+            "stored_name_bytes": "7953757266616365206964203435",
             "stored_name_prefix": "y"
           }
         ]

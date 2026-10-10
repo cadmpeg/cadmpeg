@@ -73,7 +73,10 @@ impl Serialize for FeatureDatumPlaneDescriptor {
         wire.serialize_entry("ordinal", &self.ordinal)?;
         wire.serialize_entry("data_block", &self.data_block)?;
         wire.serialize_entry("identity", self.descriptor.identity())?;
-        wire.serialize_entry("suffix", &IterWire(self.descriptor.suffix_bytes()))?;
+        wire.serialize_entry(
+            "suffix",
+            &cadmpeg_ir::native::bytes::NativeBytes::iter_wire(self.descriptor.suffix_bytes()),
+        )?;
         wire.serialize_entry("schema_index", &self.descriptor.schema_index())?;
         wire.serialize_entry("label", self.descriptor.label())?;
         wire.serialize_entry("source_offset", &self.source_offset)?;
@@ -88,7 +91,7 @@ mod tests {
 
     #[test]
     fn datum_plane_payload_borrowed_wire_matches_owned_bytes_and_retained_limit() {
-        let json = r#"{"id":"nx:feature:datum-plane-payload#0","operation_label":"operation","datum_plane_header":"header","data_blocks":["block"],"byte_len":8,"sha256":"d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa","block_payload_offsets":[0],"block_byte_lengths":[8],"block_source_offsets":[10],"index_lane_offset":2,"index_lane_declared_count":3,"index_lane_values":[4096,1],"index_lane_raw_indices":[[144,0],[128,1]],"index_lane_value_offsets":[4,6],"index_lane_trailer":0}"#;
+        let json = r#"{"id":"nx:feature:datum-plane-payload#0","operation_label":"operation","datum_plane_header":"header","data_blocks":["block"],"byte_len":8,"sha256":"d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa","block_payload_offsets":[0],"block_byte_lengths":[8],"block_source_offsets":[10],"index_lane_offset":2,"index_lane_declared_count":3,"index_lane_values":[4096,1],"index_lane_raw_indices":["9000","8001"],"index_lane_value_offsets":[4,6],"index_lane_trailer":0}"#;
         let record: FeatureDatumPlanePayload = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
         assert_eq!(
@@ -103,7 +106,7 @@ mod tests {
 
     #[test]
     fn datum_plane_descriptor_borrowed_wire_matches_owned_bytes_and_retained_limit() {
-        let json = r#"{"id":"nx:feature:datum-plane-descriptor#0","operation_label":"operation","datum_plane_header":"header","ordinal":0,"data_block":"block","identity":"012345678901234567890123456789","suffix":[63,65,1,255,2,1,97,98,99,100],"schema_index":1,"label":"abcd","source_offset":10}"#;
+        let json = r#"{"id":"nx:feature:datum-plane-descriptor#0","operation_label":"operation","datum_plane_header":"header","ordinal":0,"data_block":"block","identity":"012345678901234567890123456789","suffix":"3f4101ff020161626364","schema_index":1,"label":"abcd","source_offset":10}"#;
         let record: FeatureDatumPlaneDescriptor = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
         assert_eq!(

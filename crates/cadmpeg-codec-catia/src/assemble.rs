@@ -50,6 +50,7 @@ pub(crate) fn cgm_source_key(
     let object_id = cadmpeg_core::text::NonBlankString::new(object_id)
         .ok_or_else(|| ctx.refuse_codec_limit("catia_cgm_source_object_id", 1, 1))?;
     Ok(SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::codec_format!(crate::dialect::FORMAT),
         object_id,
         name: None,
@@ -1218,6 +1219,7 @@ mod route_tests {
         let mut ir = CadIr::empty();
         let id = CurveId::mint("catia:test:curve#link".to_string()).expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
@@ -1254,6 +1256,7 @@ mod route_tests {
         let id =
             CurveId::mint("catia:test:curve#unresolved".to_string()).expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
@@ -1610,6 +1613,7 @@ mod route_tests {
         let mut ir = CadIr::empty();
         for key in [9_u32, 10] {
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: CurveId::mint(format!("catia:test:curve#{key}")).expect("identity grammar"),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                     cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -1667,6 +1671,7 @@ mod route_tests {
         let mut ir = CadIr::empty();
         let curve_id = CurveId::mint("catia:test:curve#0").expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                 record: Some(record_id.clone()),
@@ -1710,6 +1715,7 @@ mod route_tests {
         let curve_id =
             CurveId::mint("catia:test:curve#curve-0".to_string()).expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,

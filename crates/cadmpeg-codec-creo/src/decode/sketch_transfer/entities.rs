@@ -106,6 +106,7 @@ fn placed_source_object(
         "creo placed section source object",
     )?;
     Ok(SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Creo,
         object_id: cadmpeg_core::text::NonBlankString::new(object_id).ok_or_else(|| {
             cadmpeg_core::CodecError::malformed("source object_id must not be empty")
@@ -1002,6 +1003,7 @@ pub(super) fn transfer_section_entities(
                 ctx,
                 ir,
                 Curve {
+                    parameter_range: None,
                     id,
                     geometry,
                     source_object: Some(placed_source_object(
@@ -1052,6 +1054,7 @@ pub(super) fn transfer_section_entities(
                 ctx,
                 ir,
                 Curve {
+                    parameter_range: None,
                     id,
                     geometry,
                     source_object: Some(placed_source_object(
@@ -1102,6 +1105,7 @@ pub(super) fn transfer_section_entities(
                 ctx,
                 ir,
                 Curve {
+                    parameter_range: None,
                     id,
                     geometry,
                     source_object: Some(placed_source_object(
@@ -1135,6 +1139,7 @@ pub(super) fn transfer_section_entities(
                 ctx,
                 ir,
                 Curve {
+                    parameter_range: None,
                     id,
                     geometry,
                     source_object: Some(match external_id {

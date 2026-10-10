@@ -242,7 +242,7 @@ pub(crate) fn decode_dimension_recipe_records(
                 record_index,
                 frame_length,
                 prefix_offset,
-                prefix_bytes,
+                prefix_bytes: prefix_bytes.into(),
                 references,
                 program_offset,
                 program,
@@ -2040,7 +2040,7 @@ fn parse_dimension_presentation_frame(
         record_index,
         frame_length: u64::try_from(paired_byte_offset.checked_sub(start)?).ok()?,
         operands,
-        presentation_bytes,
+        presentation_bytes: presentation_bytes.into(),
         presentation_byte_offset: u64::try_from(presentation_byte_offset).ok()?,
         paired_class_tag: crate::design::decode::text::class_tag_from_view(paired_class_tag)
             .ok()?,

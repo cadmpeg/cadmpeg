@@ -24,7 +24,7 @@ fn enum_and_registry_rows_are_closed_bidirectionally() -> Result<(), Box<dyn std
 fn document() -> DocumentFacts {
     DocumentFacts {
         id: "document-0".into(),
-        file_version: "1".to_owned().try_into().unwrap(),
+        file_version: "1".to_owned().into(),
         program_version: Some("1.1R20260414 (Git shallow)".into()),
         root_name: "Document".into(),
         object_count: 0,

@@ -228,7 +228,7 @@ mod admission_tests {
     use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
-    const ROW: &str = r#"{"id":"relation","ordinal":0,"first_index":1,"raw_first_index":[128,1],"first_index_source_offset":8,"class_name":"UGS::RM_creation_display_data","class_definition":"definition","encoding":{"kind":"index","flag":3,"indices":[2,3,4,5],"raw_indices":[[2],[3],[4],[5]],"index_source_offsets":[13,14,15,16]},"source_entry":"entry","source_offset":5}"#;
+    const ROW: &str = r#"{"id":"relation","ordinal":0,"first_index":1,"raw_first_index":"8001","first_index_source_offset":8,"class_name":"UGS::RM_creation_display_data","class_definition":"definition","encoding":{"kind":"index","flag":3,"indices":[2,3,4,5],"raw_indices":["02","03","04","05"],"index_source_offsets":[13,14,15,16]},"source_entry":"entry","source_offset":5}"#;
 
     #[test]
     fn creation_display_relation_refuses_collection_limit() {
@@ -273,9 +273,21 @@ mod admission_tests {
 
     #[test]
     fn creation_display_finalization_refuses_scoped_limit() {
-        // The stable sort reserves scratch only above 20 values.
+        // Twenty-one descending offsets require the stable sort's index scratch.
         let rows: Vec<RmCreationDisplayDataRelation> = (0..21)
-            .map(|_| serde_json::from_str(ROW).unwrap())
+            .rev()
+            .map(|index| {
+                let mut wire: serde_json::Value = serde_json::from_str(ROW).unwrap();
+                wire["source_offset"] = serde_json::json!(100 * index + 5);
+                wire["first_index_source_offset"] = serde_json::json!(100 * index + 8);
+                wire["encoding"]["index_source_offsets"] = serde_json::json!([
+                    100 * index + 13,
+                    100 * index + 14,
+                    100 * index + 15,
+                    100 * index + 16
+                ]);
+                serde_json::from_value(wire).unwrap()
+            })
             .collect();
         let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
             policy.limits.max_materialized_bytes = 0;

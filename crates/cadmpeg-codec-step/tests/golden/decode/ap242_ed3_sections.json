@@ -66,8 +66,8 @@
     },
     "source": {
       "attributes": {
-        "bytes_named_opaque": "27",
-        "bytes_structural": "538",
+        "bytes_named_opaque": "28",
+        "bytes_structural": "539",
         "bytes_typed": "30",
         "bytes_unclassified": "0",
         "data_sections": "2",
@@ -177,7 +177,7 @@
     ],
     "notes": [
       "external reference #100 -> https://example.invalid/external-part",
-      "byte accounting: 538 structural, 30 typed, 27 named opaque, 0 unclassified"
+      "byte accounting: 539 structural, 30 typed, 28 named opaque, 0 unclassified"
     ],
     "transfer": {
       "geometry_transferred": false,
@@ -189,10 +189,10 @@
     "retained_records": {
       "step:data:example_record#2": {
         "bytes": {
-          "data": "IzI9RVhBTVBMRV9SRUNPUkQoPGFsaWFzPik7",
+          "data": "IzI9RVhBTVBMRV9SRUNPUkQoPCNhbGlhcz4pOw==",
           "retention": "inline"
         },
-        "offset": 397,
+        "offset": 398,
         "stream": ""
       },
       "step:file:signature#0": {
@@ -200,7 +200,7 @@
           "data": "U0lHTkFUVVJFOwpNRm9HQ1NxR1NJYjNEUUVIQXFCTk1Fc0NBUUV4RFRBTEJnbGdoa2dCWlFNRUFnRXdDd1lKS29aSWh2Y05BUWNCTVNvd0tBSUJBVEFGTUFBQ0FRRXdDd1lKWUlaSUFXVURCQUlCTUEwR0NTcUdTSWIzRFFFQkFRVUFCQUE9CkVORFNFQzs=",
           "retention": "inline"
         },
-        "offset": 451,
+        "offset": 453,
         "stream": ""
       }
     }

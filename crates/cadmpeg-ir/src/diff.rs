@@ -734,6 +734,7 @@ mod tests {
         use crate::math::Point3;
 
         let nurbs = |degree: u32| Curve {
+            parameter_range: None,
             id: CurveId::mint("synthetic:tolerance:curve#nurbs").expect("valid identity"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(

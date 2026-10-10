@@ -121,7 +121,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         record_index,
         frame_length: 10,
         prefix_offset: 0,
-        prefix_bytes: Vec::new(),
+        prefix_bytes: Vec::new().into(),
         references: Vec::new(),
         program_offset: 0,
         program: vec![-1],

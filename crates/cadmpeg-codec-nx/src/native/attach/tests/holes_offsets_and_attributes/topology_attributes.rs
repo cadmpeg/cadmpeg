@@ -1293,3 +1293,42 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
         );
     });
 }
+
+#[test]
+fn attribute_name_lookup_uses_only_the_searched_index() {
+    let keys: Vec<_> = (0..10_000).map(|i| format!("value-use-{i}")).collect();
+    let index = ParasolidAttributeNameIndex {
+        classes_by_entity: BTreeMap::new(),
+        fields_by_value_use: keys.iter().map(|key| (key.as_str(), None)).collect(),
+        definitions_by_id: BTreeMap::new(),
+        field_names_by_definition: BTreeMap::new(),
+    };
+    let reference = crate::native::parasolid::ParasolidTopologyAttributeListReference {
+        id: "reference".into(),
+        stream_ordinal: 0,
+        topology_type: TopologyAttributeKind::Face,
+        topology_xmt: 10,
+        attribute_list_xmt: 11,
+        attribute_list_record: None,
+        inflated_offset: 0,
+    };
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_work_units = 400,
+        |ctx| {
+            assert!(index.field_name(ctx, &reference, "x").unwrap().is_none());
+            assert!(ctx.resource_refusal().is_none());
+        },
+    );
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_work_units = 0,
+        |ctx| {
+            let error = index.field_name(ctx, &reference, "x").unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "NX Parasolid attribute field name lookup" && ctx.resource_refusal() == Some(limit))
+            );
+        },
+    );
+}

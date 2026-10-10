@@ -146,3 +146,86 @@ fn native_order_groups_preserve_combined_name_and_finding_order() {
     );
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn large_identity_validation_fits_sort_and_lookup_work_without_per_insert_movement() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut ir = crate::CadIr::empty();
+    for ordinal in 0..40_000 {
+        ir.model.points.push(crate::topology::Point::new(
+            format!("test:validation:point#{ordinal:05}")
+                .try_into()
+                .unwrap(),
+            crate::features::FinitePoint3::new(crate::math::Point3::new(0.0, 0.0, 0.0)).unwrap(),
+            None,
+        ));
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 220_000_000;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 4 * 1024 * 1024;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut findings = Vec::new();
+    super::check_identity_and_order(
+        &ctx,
+        crate::native::view::NativeView::new(&ir, None),
+        &mut findings,
+    )
+    .expect("identity construction needs one sort and logarithmic lookups");
+    assert!(findings.is_empty());
+    drop(
+        ctx.reserve_scoped(4 * 1024 * 1024, "identity storage released")
+            .unwrap(),
+    );
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn duplicate_identity_findings_keep_model_then_native_visit_order() {
+    let mut ir = crate::CadIr::empty();
+    for id in [
+        "test:validation:point#a",
+        "test:validation:point#a",
+        "test:validation:point#b",
+    ] {
+        ir.model.points.push(crate::topology::Point::new(
+            id.try_into().unwrap(),
+            crate::features::FinitePoint3::new(crate::math::Point3::new(0.0, 0.0, 0.0)).unwrap(),
+            None,
+        ));
+    }
+    for id in ["test:validation:point#b", "test:validation:point#a"] {
+        ir.native
+            .namespace_mut("test")
+            .arenas_mut()
+            .entry("records".into())
+            .or_default()
+            .push(
+                crate::native::NativeRecord::new(id.try_into().unwrap(), serde_json::Map::new())
+                    .unwrap(),
+            );
+    }
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut findings = Vec::new();
+    super::check_identity_and_order(
+        &ctx,
+        crate::native::view::NativeView::new(&ir, None),
+        &mut findings,
+    )
+    .unwrap();
+    assert_eq!(
+        findings
+            .iter()
+            .map(|finding| (finding.check, finding.entity.as_deref()))
+            .collect::<Vec<_>>(),
+        [
+            (Check::ArenaOrder, Some("test:validation:point#a")),
+            (Check::Identity, Some("test:validation:point#a")),
+            (Check::Identity, Some("test:validation:point#b")),
+            (Check::Identity, Some("test:validation:point#a")),
+            (Check::ArenaOrder, Some("test:validation:point#a")),
+        ]
+    );
+    ctx.finish_session().unwrap();
+}

@@ -38,7 +38,6 @@ impl DecodeContext<'_> {
             }
             self.budget
                 .charge_input(u64_from_index(read), "read input prefix")?;
-            self.charge_collection_items(u64_from_index(read), "input byte slots")?;
             self.charge_work(u64_from_index(read), "copy input prefix")?;
             bytes.try_reserve_exact(read).map_err(|_| {
                 self.budget.refuse(
@@ -110,6 +109,20 @@ mod tests {
     use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use crate::CodecError;
     use std::io::Cursor;
+
+    #[test]
+    fn raw_input_storage_does_not_consume_decoded_collection_slots() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // One arena-registry entry; payload bytes are not decoded items.
+        policy.limits.max_collection_items = 1;
+        let source = vec![b'x'; 9000];
+        let (ctx, root) =
+            DecodeContext::read_root(&mut Cursor::new(&source), &arena, &policy, false)
+                .expect("physical input is governed by input bytes");
+        assert_eq!(root.window(), source);
+        ctx.finish_session().expect("no collection refusal");
+    }
 
     #[test]
     fn input_prefix_refusal_keeps_input_dimension() {

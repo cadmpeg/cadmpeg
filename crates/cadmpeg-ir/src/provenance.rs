@@ -189,6 +189,19 @@ impl<'de> Deserialize<'de> for CodecFormat {
     }
 }
 
+/// Whether source geometry is a standalone object or a support of another object.
+/// Supports retain their mathematics when their owner cannot be projected; writers
+/// must not promote them to standalone geometry merely because they are unused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum SourceGeometryRole {
+    /// Geometry independently present in the source document.
+    Independent,
+    /// Geometry used to define another source object.
+    Support,
+}
+
 /// Native object identity and effective display metadata for a free carrier.
 ///
 /// `format` identifies the source format. `object_id` is the source format's
@@ -203,6 +216,13 @@ impl<'de> Deserialize<'de> for CodecFormat {
 pub struct SourceObjectAssociation {
     /// Source format identifier.
     pub format: CodecFormat,
+    /// Source ownership, when it can be established independently of projection.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_geometry_role"
+    )]
+    pub geometry_role: Option<SourceGeometryRole>,
     /// Native source object identifier.
     #[serde(deserialize_with = "deserialize_object_id")]
     pub object_id: cadmpeg_core::text::NonBlankString,
@@ -257,6 +277,7 @@ impl SourceObjectAssociation {
             ctx.try_collect_retained_with(&self.instance_path, operation, |id| text(id))?;
         Ok(Self {
             format: self.format,
+            geometry_role: self.geometry_role,
             object_id,
             name,
             color: self.color,
@@ -846,9 +867,33 @@ mod tests {
         .expect_err("empty identity");
         assert!(error.to_string().contains("object_id"));
     }
+
+    #[test]
+    fn source_geometry_role_preserves_ownership_and_requires_omission_for_absence() {
+        for role in ["independent", "support"] {
+            let wire = serde_json::json!({
+                "format": "iges", "object_id": "D1", "geometry_role": role
+            });
+            let value: SourceObjectAssociation =
+                serde_json::from_value(wire.clone()).expect("source ownership");
+            assert_eq!(serde_json::to_value(value).expect("serialize"), wire);
+        }
+        for role in [serde_json::Value::Null, serde_json::json!("unknown")] {
+            let error = serde_json::from_value::<SourceObjectAssociation>(serde_json::json!({
+                "format": "iges", "object_id": "D1", "geometry_role": role
+            }))
+            .expect_err("invalid ownership");
+            assert!(error.to_string().contains("geometry_role"));
+        }
+    }
 }
 
 // Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(
+    deserialize_geometry_role,
+    SourceGeometryRole,
+    "geometry_role"
+);
 cadmpeg_core::named_optional_field!(deserialize_name, String, "name");
 cadmpeg_core::named_optional_field!(deserialize_color, Color, "color");
 cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");

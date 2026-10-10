@@ -610,36 +610,12 @@
           "class_definitions": [
             {
               "id": "nx:om-entry-0:class#43",
-              "layout_prefix": [
-                129,
-                33
-              ],
+              "layout_prefix": "8121",
               "layout_terminal": 6,
               "name": "UGS::FEATURE_RECORD",
               "ordinal": 0,
-              "registry_suffix": [
-                129,
-                33,
-                1,
-                35,
-                69,
-                103,
-                137,
-                171,
-                205,
-                239,
-                6
-              ],
-              "schema_fingerprint": [
-                1,
-                35,
-                69,
-                103,
-                137,
-                171,
-                205,
-                239
-              ],
+              "registry_suffix": "81210123456789abcdef06",
+              "schema_fingerprint": "0123456789abcdef",
               "section_offset": 100,
               "source_entry": "/Root/UG_PART/UG_PART",
               "source_offset": 119,
@@ -661,11 +637,7 @@
               "id": "nx:feature-history:body-reference-occurrence#0000000000-0000000000-0000000000",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000000",
               "ordinal": 0,
-              "raw_body_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_body_object_index": "901942",
               "source_offset": 366
             },
             {
@@ -673,11 +645,7 @@
               "id": "nx:feature-history:body-reference-occurrence#0000000000-0000000001-0000000000",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
               "ordinal": 0,
-              "raw_body_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_body_object_index": "901942",
               "source_offset": 440
             },
             {
@@ -685,11 +653,7 @@
               "id": "nx:feature-history:body-reference-occurrence#0000000000-0000000002-0000000000",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
               "ordinal": 0,
-              "raw_body_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_body_object_index": "901942",
               "source_offset": 514
             },
             {
@@ -697,11 +661,7 @@
               "id": "nx:feature-history:body-reference-occurrence#0000000000-0000000003-0000000000",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000003",
               "ordinal": 0,
-              "raw_body_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_body_object_index": "901942",
               "source_offset": 588
             },
             {
@@ -709,11 +669,7 @@
               "id": "nx:feature-history:body-reference-occurrence#0000000000-0000000004-0000000000",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000004",
               "ordinal": 0,
-              "raw_body_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_body_object_index": "901942",
               "source_offset": 662
             },
             {
@@ -721,11 +677,7 @@
               "id": "nx:feature-history:body-reference-occurrence#0000000000-0000000005-0000000000",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000005",
               "ordinal": 0,
-              "raw_body_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_body_object_index": "901942",
               "source_offset": 736
             },
             {
@@ -733,11 +685,7 @@
               "id": "nx:feature-history:body-reference-occurrence#0000000000-0000000006-0000000000",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000006",
               "ordinal": 0,
-              "raw_body_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_body_object_index": "901942",
               "source_offset": 810
             },
             {
@@ -745,11 +693,7 @@
               "id": "nx:feature-history:body-reference-occurrence#0000000000-0000000007-0000000000",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000007",
               "ordinal": 0,
-              "raw_body_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_body_object_index": "901942",
               "source_offset": 884
             },
             {
@@ -757,11 +701,7 @@
               "id": "nx:feature-history:body-reference-occurrence#0000000000-0000000008-0000000000",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000008",
               "ordinal": 0,
-              "raw_body_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_body_object_index": "901942",
               "source_offset": 958
             },
             {
@@ -769,11 +709,7 @@
               "id": "nx:feature-history:body-reference-occurrence#0000000000-0000000009-0000000000",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000009",
               "ordinal": 0,
-              "raw_body_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_body_object_index": "901942",
               "source_offset": 1032
             },
             {
@@ -781,11 +717,7 @@
               "id": "nx:feature-history:body-reference-occurrence#0000000000-0000000010-0000000000",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000010",
               "ordinal": 0,
-              "raw_body_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_body_object_index": "901942",
               "source_offset": 1106
             },
             {
@@ -793,11 +725,7 @@
               "id": "nx:feature-history:body-reference-occurrence#0000000000-0000000011-0000000000",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000011",
               "ordinal": 0,
-              "raw_body_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_body_object_index": "901942",
               "source_offset": 1180
             }
           ],
@@ -806,132 +734,84 @@
               "body_object_index": 6466,
               "id": "nx:feature-history:body-reference#0000000000-0000000000",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000000",
-              "raw_body_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_body_object_index": "901942",
               "source_offset": 366
             },
             {
               "body_object_index": 6466,
               "id": "nx:feature-history:body-reference#0000000000-0000000001",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
-              "raw_body_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_body_object_index": "901942",
               "source_offset": 440
             },
             {
               "body_object_index": 6466,
               "id": "nx:feature-history:body-reference#0000000000-0000000002",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
-              "raw_body_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_body_object_index": "901942",
               "source_offset": 514
             },
             {
               "body_object_index": 6466,
               "id": "nx:feature-history:body-reference#0000000000-0000000003",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000003",
-              "raw_body_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_body_object_index": "901942",
               "source_offset": 588
             },
             {
               "body_object_index": 6466,
               "id": "nx:feature-history:body-reference#0000000000-0000000004",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000004",
-              "raw_body_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_body_object_index": "901942",
               "source_offset": 662
             },
             {
               "body_object_index": 6466,
               "id": "nx:feature-history:body-reference#0000000000-0000000005",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000005",
-              "raw_body_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_body_object_index": "901942",
               "source_offset": 736
             },
             {
               "body_object_index": 6466,
               "id": "nx:feature-history:body-reference#0000000000-0000000006",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000006",
-              "raw_body_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_body_object_index": "901942",
               "source_offset": 810
             },
             {
               "body_object_index": 6466,
               "id": "nx:feature-history:body-reference#0000000000-0000000007",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000007",
-              "raw_body_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_body_object_index": "901942",
               "source_offset": 884
             },
             {
               "body_object_index": 6466,
               "id": "nx:feature-history:body-reference#0000000000-0000000008",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000008",
-              "raw_body_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_body_object_index": "901942",
               "source_offset": 958
             },
             {
               "body_object_index": 6466,
               "id": "nx:feature-history:body-reference#0000000000-0000000009",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000009",
-              "raw_body_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_body_object_index": "901942",
               "source_offset": 1032
             },
             {
               "body_object_index": 6466,
               "id": "nx:feature-history:body-reference#0000000000-0000000010",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000010",
-              "raw_body_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_body_object_index": "901942",
               "source_offset": 1106
             },
             {
               "body_object_index": 6466,
               "id": "nx:feature-history:body-reference#0000000000-0000000011",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000011",
-              "raw_body_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_body_object_index": "901942",
               "source_offset": 1180
             }
           ],
@@ -940,20 +820,10 @@
               "id": "nx:feature-history:boolean#0000000000-0000000000",
               "kind": "unite",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000000",
-              "raw_target_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_target_object_index": "901942",
               "raw_tool_object_indices": [
-                [
-                  144,
-                  25,
-                  76
-                ],
-                [
-                  127
-                ]
+                "90194c",
+                "7f"
               ],
               "source_offset": 318,
               "target_object_index": 6466,
@@ -971,20 +841,10 @@
               "id": "nx:feature-history:boolean#0000000000-0000000001",
               "kind": "unite",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
-              "raw_target_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_target_object_index": "901942",
               "raw_tool_object_indices": [
-                [
-                  144,
-                  25,
-                  76
-                ],
-                [
-                  127
-                ]
+                "90194c",
+                "7f"
               ],
               "source_offset": 392,
               "target_object_index": 6466,
@@ -1002,20 +862,10 @@
               "id": "nx:feature-history:boolean#0000000000-0000000002",
               "kind": "unite",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
-              "raw_target_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_target_object_index": "901942",
               "raw_tool_object_indices": [
-                [
-                  144,
-                  25,
-                  76
-                ],
-                [
-                  127
-                ]
+                "90194c",
+                "7f"
               ],
               "source_offset": 466,
               "target_object_index": 6466,
@@ -1033,20 +883,10 @@
               "id": "nx:feature-history:boolean#0000000000-0000000003",
               "kind": "unite",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000003",
-              "raw_target_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_target_object_index": "901942",
               "raw_tool_object_indices": [
-                [
-                  144,
-                  25,
-                  76
-                ],
-                [
-                  127
-                ]
+                "90194c",
+                "7f"
               ],
               "source_offset": 540,
               "target_object_index": 6466,
@@ -1064,20 +904,10 @@
               "id": "nx:feature-history:boolean#0000000000-0000000004",
               "kind": "unite",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000004",
-              "raw_target_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_target_object_index": "901942",
               "raw_tool_object_indices": [
-                [
-                  144,
-                  25,
-                  76
-                ],
-                [
-                  127
-                ]
+                "90194c",
+                "7f"
               ],
               "source_offset": 614,
               "target_object_index": 6466,
@@ -1095,20 +925,10 @@
               "id": "nx:feature-history:boolean#0000000000-0000000005",
               "kind": "unite",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000005",
-              "raw_target_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_target_object_index": "901942",
               "raw_tool_object_indices": [
-                [
-                  144,
-                  25,
-                  76
-                ],
-                [
-                  127
-                ]
+                "90194c",
+                "7f"
               ],
               "source_offset": 688,
               "target_object_index": 6466,
@@ -1126,20 +946,10 @@
               "id": "nx:feature-history:boolean#0000000000-0000000006",
               "kind": "unite",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000006",
-              "raw_target_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_target_object_index": "901942",
               "raw_tool_object_indices": [
-                [
-                  144,
-                  25,
-                  76
-                ],
-                [
-                  127
-                ]
+                "90194c",
+                "7f"
               ],
               "source_offset": 762,
               "target_object_index": 6466,
@@ -1157,20 +967,10 @@
               "id": "nx:feature-history:boolean#0000000000-0000000007",
               "kind": "unite",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000007",
-              "raw_target_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_target_object_index": "901942",
               "raw_tool_object_indices": [
-                [
-                  144,
-                  25,
-                  76
-                ],
-                [
-                  127
-                ]
+                "90194c",
+                "7f"
               ],
               "source_offset": 836,
               "target_object_index": 6466,
@@ -1188,20 +988,10 @@
               "id": "nx:feature-history:boolean#0000000000-0000000008",
               "kind": "unite",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000008",
-              "raw_target_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_target_object_index": "901942",
               "raw_tool_object_indices": [
-                [
-                  144,
-                  25,
-                  76
-                ],
-                [
-                  127
-                ]
+                "90194c",
+                "7f"
               ],
               "source_offset": 910,
               "target_object_index": 6466,
@@ -1219,20 +1009,10 @@
               "id": "nx:feature-history:boolean#0000000000-0000000009",
               "kind": "unite",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000009",
-              "raw_target_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_target_object_index": "901942",
               "raw_tool_object_indices": [
-                [
-                  144,
-                  25,
-                  76
-                ],
-                [
-                  127
-                ]
+                "90194c",
+                "7f"
               ],
               "source_offset": 984,
               "target_object_index": 6466,
@@ -1250,20 +1030,10 @@
               "id": "nx:feature-history:boolean#0000000000-0000000010",
               "kind": "unite",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000010",
-              "raw_target_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_target_object_index": "901942",
               "raw_tool_object_indices": [
-                [
-                  144,
-                  25,
-                  76
-                ],
-                [
-                  127
-                ]
+                "90194c",
+                "7f"
               ],
               "source_offset": 1058,
               "target_object_index": 6466,
@@ -1281,20 +1051,10 @@
               "id": "nx:feature-history:boolean#0000000000-0000000011",
               "kind": "unite",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000011",
-              "raw_target_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_target_object_index": "901942",
               "raw_tool_object_indices": [
-                [
-                  144,
-                  25,
-                  76
-                ],
-                [
-                  127
-                ]
+                "90194c",
+                "7f"
               ],
               "source_offset": 1132,
               "target_object_index": 6466,
@@ -1320,21 +1080,10 @@
               ],
               "ordinal": 0,
               "raw_object_indices": [
-                [
-                  1
-                ],
-                [
-                  130,
-                  64
-                ],
-                [
-                  144,
-                  23,
-                  211
-                ],
-                [
-                  255
-                ]
+                "01",
+                "8240",
+                "9017d3",
+                "ff"
               ],
               "section_link": "nx:segment-om-links:link#0",
               "source_offset": 318,
@@ -1350,21 +1099,10 @@
               ],
               "ordinal": 1,
               "raw_object_indices": [
-                [
-                  1
-                ],
-                [
-                  130,
-                  64
-                ],
-                [
-                  144,
-                  23,
-                  211
-                ],
-                [
-                  255
-                ]
+                "01",
+                "8240",
+                "9017d3",
+                "ff"
               ],
               "section_link": "nx:segment-om-links:link#0",
               "source_offset": 392,
@@ -1380,21 +1118,10 @@
               ],
               "ordinal": 2,
               "raw_object_indices": [
-                [
-                  1
-                ],
-                [
-                  130,
-                  64
-                ],
-                [
-                  144,
-                  23,
-                  211
-                ],
-                [
-                  255
-                ]
+                "01",
+                "8240",
+                "9017d3",
+                "ff"
               ],
               "section_link": "nx:segment-om-links:link#0",
               "source_offset": 466,
@@ -1410,21 +1137,10 @@
               ],
               "ordinal": 3,
               "raw_object_indices": [
-                [
-                  1
-                ],
-                [
-                  130,
-                  64
-                ],
-                [
-                  144,
-                  23,
-                  211
-                ],
-                [
-                  255
-                ]
+                "01",
+                "8240",
+                "9017d3",
+                "ff"
               ],
               "section_link": "nx:segment-om-links:link#0",
               "source_offset": 540,
@@ -1440,21 +1156,10 @@
               ],
               "ordinal": 4,
               "raw_object_indices": [
-                [
-                  1
-                ],
-                [
-                  130,
-                  64
-                ],
-                [
-                  144,
-                  23,
-                  211
-                ],
-                [
-                  255
-                ]
+                "01",
+                "8240",
+                "9017d3",
+                "ff"
               ],
               "section_link": "nx:segment-om-links:link#0",
               "source_offset": 614,
@@ -1470,21 +1175,10 @@
               ],
               "ordinal": 5,
               "raw_object_indices": [
-                [
-                  1
-                ],
-                [
-                  130,
-                  64
-                ],
-                [
-                  144,
-                  23,
-                  211
-                ],
-                [
-                  255
-                ]
+                "01",
+                "8240",
+                "9017d3",
+                "ff"
               ],
               "section_link": "nx:segment-om-links:link#0",
               "source_offset": 688,
@@ -1500,21 +1194,10 @@
               ],
               "ordinal": 6,
               "raw_object_indices": [
-                [
-                  1
-                ],
-                [
-                  130,
-                  64
-                ],
-                [
-                  144,
-                  23,
-                  211
-                ],
-                [
-                  255
-                ]
+                "01",
+                "8240",
+                "9017d3",
+                "ff"
               ],
               "section_link": "nx:segment-om-links:link#0",
               "source_offset": 762,
@@ -1530,21 +1213,10 @@
               ],
               "ordinal": 7,
               "raw_object_indices": [
-                [
-                  1
-                ],
-                [
-                  130,
-                  64
-                ],
-                [
-                  144,
-                  23,
-                  211
-                ],
-                [
-                  255
-                ]
+                "01",
+                "8240",
+                "9017d3",
+                "ff"
               ],
               "section_link": "nx:segment-om-links:link#0",
               "source_offset": 836,
@@ -1560,21 +1232,10 @@
               ],
               "ordinal": 8,
               "raw_object_indices": [
-                [
-                  1
-                ],
-                [
-                  130,
-                  64
-                ],
-                [
-                  144,
-                  23,
-                  211
-                ],
-                [
-                  255
-                ]
+                "01",
+                "8240",
+                "9017d3",
+                "ff"
               ],
               "section_link": "nx:segment-om-links:link#0",
               "source_offset": 910,
@@ -1590,21 +1251,10 @@
               ],
               "ordinal": 9,
               "raw_object_indices": [
-                [
-                  1
-                ],
-                [
-                  130,
-                  64
-                ],
-                [
-                  144,
-                  23,
-                  211
-                ],
-                [
-                  255
-                ]
+                "01",
+                "8240",
+                "9017d3",
+                "ff"
               ],
               "section_link": "nx:segment-om-links:link#0",
               "source_offset": 984,
@@ -1620,21 +1270,10 @@
               ],
               "ordinal": 10,
               "raw_object_indices": [
-                [
-                  1
-                ],
-                [
-                  130,
-                  64
-                ],
-                [
-                  144,
-                  23,
-                  211
-                ],
-                [
-                  255
-                ]
+                "01",
+                "8240",
+                "9017d3",
+                "ff"
               ],
               "section_link": "nx:segment-om-links:link#0",
               "source_offset": 1058,
@@ -1650,21 +1289,10 @@
               ],
               "ordinal": 11,
               "raw_object_indices": [
-                [
-                  1
-                ],
-                [
-                  130,
-                  64
-                ],
-                [
-                  144,
-                  23,
-                  211
-                ],
-                [
-                  255
-                ]
+                "01",
+                "8240",
+                "9017d3",
+                "ff"
               ],
               "section_link": "nx:segment-om-links:link#0",
               "source_offset": 1132,
@@ -1812,10 +1440,7 @@
               "ordinal": 0,
               "registry_owner_class": 2,
               "registry_storage_code": 2,
-              "registry_suffix": [
-                1,
-                2
-              ],
+              "registry_suffix": "0102",
               "section_offset": 100,
               "source_entry": "/Root/UG_PART/UG_PART",
               "source_offset": 185,

@@ -136,36 +136,12 @@
             },
             {
               "id": "nx:om-entry-0:class#51",
-              "layout_prefix": [
-                129,
-                33
-              ],
+              "layout_prefix": "8121",
               "layout_terminal": 6,
               "name": "UGS::FEATURE_RECORD",
               "ordinal": 0,
-              "registry_suffix": [
-                129,
-                33,
-                1,
-                35,
-                69,
-                103,
-                137,
-                171,
-                205,
-                239,
-                6
-              ],
-              "schema_fingerprint": [
-                1,
-                35,
-                69,
-                103,
-                137,
-                171,
-                205,
-                239
-              ],
+              "registry_suffix": "81210123456789abcdef06",
+              "schema_fingerprint": "0123456789abcdef",
               "section_offset": 108,
               "source_entry": "/Root/UG_PART/UG_PART",
               "source_offset": 127,
@@ -224,9 +200,7 @@
               "id": "nx:om-data-block-references-0-2:reference#0",
               "object_id": 42,
               "ordinal": 0,
-              "raw_object_id": [
-                42
-              ],
+              "raw_object_id": "2a",
               "source_offset": 469
             }
           ],
@@ -290,11 +264,7 @@
               "id": "nx:feature-history:body-reference-occurrence#0000000000-0000000000-0000000000",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000000",
               "ordinal": 0,
-              "raw_body_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_body_object_index": "901942",
               "source_offset": 374
             }
           ],
@@ -303,11 +273,7 @@
               "body_object_index": 6466,
               "id": "nx:feature-history:body-reference#0000000000-0000000000",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000000",
-              "raw_body_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_body_object_index": "901942",
               "source_offset": 374
             }
           ],
@@ -316,20 +282,10 @@
               "id": "nx:feature-history:boolean#0000000000-0000000000",
               "kind": "unite",
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000000",
-              "raw_target_object_index": [
-                144,
-                25,
-                66
-              ],
+              "raw_target_object_index": "901942",
               "raw_tool_object_indices": [
-                [
-                  144,
-                  25,
-                  76
-                ],
-                [
-                  127
-                ]
+                "90194c",
+                "7f"
               ],
               "source_offset": 326,
               "target_object_index": 6466,
@@ -351,9 +307,7 @@
               "input_slot": 0,
               "object_index": 1,
               "operation_label": "nx:feature-history:operation-label#0000000000-0000000000",
-              "raw_object_index": [
-                1
-              ],
+              "raw_object_index": "01",
               "source_offset": 319
             }
           ],
@@ -368,21 +322,10 @@
               ],
               "ordinal": 0,
               "raw_object_indices": [
-                [
-                  1
-                ],
-                [
-                  130,
-                  64
-                ],
-                [
-                  144,
-                  23,
-                  211
-                ],
-                [
-                  255
-                ]
+                "01",
+                "8240",
+                "9017d3",
+                "ff"
               ],
               "section_link": "nx:segment-om-links:link#0",
               "source_offset": 326,
@@ -409,10 +352,7 @@
               "ordinal": 0,
               "registry_owner_class": 2,
               "registry_storage_code": 2,
-              "registry_suffix": [
-                1,
-                2
-              ],
+              "registry_suffix": "0102",
               "section_offset": 108,
               "source_entry": "/Root/UG_PART/UG_PART",
               "source_offset": 193,

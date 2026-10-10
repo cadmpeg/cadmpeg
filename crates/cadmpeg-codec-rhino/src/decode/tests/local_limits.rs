@@ -45,6 +45,7 @@ fn candidate_propagates_local_entity_limit() {
                     cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                         .expect("point"),
                     Some(cadmpeg_ir::SourceObjectAssociation {
+                        geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Rhino,
                         object_id: cadmpeg_core::text::NonBlankString::new("one")
                             .expect("source identity"),
@@ -268,6 +269,7 @@ fn transformed_instance_identity_refuses_scoped_text_before_copy() {
             .model
             .curves
             .push(cadmpeg_ir::geometry::Curve {
+                parameter_range: None,
                 id: "rhino:test:curve#one".try_into().expect("id"),
                 geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(
                     cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(super::line_nurbs(

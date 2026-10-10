@@ -104,6 +104,7 @@
           "id": "step:data:curve#16",
           "source_object": {
             "format": "step",
+            "geometry_role": "support",
             "object_id": "#57"
           }
         },
@@ -121,7 +122,12 @@
               "z": 0.0
             }
           },
-          "id": "step:data:curve#17"
+          "id": "step:data:curve#17",
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#17"
+          }
         },
         {
           "geometry": {
@@ -137,7 +143,12 @@
               "z": 0.0
             }
           },
-          "id": "step:data:curve#18"
+          "id": "step:data:curve#18",
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#18"
+          }
         }
       ],
       "drawings": [],
@@ -243,6 +254,11 @@
             "x": 0.0,
             "y": 0.0,
             "z": 0.0
+          },
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#3"
           }
         },
         {
@@ -251,6 +267,11 @@
             "x": 10.0,
             "y": 0.0,
             "z": 0.0
+          },
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#4"
           }
         },
         {
@@ -259,6 +280,11 @@
             "x": 0.0,
             "y": 10.0,
             "z": 0.0
+          },
+          "source_object": {
+            "format": "step",
+            "geometry_role": "support",
+            "object_id": "#5"
           }
         }
       ],
@@ -331,6 +357,7 @@
           "id": "step:data:surface#28",
           "source_object": {
             "format": "step",
+            "geometry_role": "support",
             "object_id": "#56"
           }
         }

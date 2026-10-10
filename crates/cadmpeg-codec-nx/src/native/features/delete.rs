@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native DELETE reference fields and construction payloads.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::payload_content::{FeaturePayloadBlock, FeaturePayloadContent};
 use super::{
     charged_unique_offset_data_block, format_feature_history_id, offset_data_block_bytes,
@@ -45,7 +47,7 @@ struct DeleteReferenceFieldWire {
     operation_label: String,
     control: u8,
     object_indices: [Option<u32>; 5],
-    raw_object_indices: [Vec<u8>; 5],
+    raw_object_indices: [NativeBytes<Vec<u8>>; 5],
     data_blocks: [Option<String>; 5],
     source_offset: u64,
     object_index_source_offsets: [u64; 5],
@@ -67,9 +69,9 @@ impl Serialize for FeatureDeleteReferenceField {
         )?;
         wire.serialize_entry(
             "raw_object_indices",
-            &slots
-                .each_ref()
-                .map(|slot| slot.as_ref().map_or(NULL_TOKEN, |target| target.0.raw())),
+            &slots.each_ref().map(|slot| {
+                NativeBytes::from(slot.as_ref().map_or(NULL_TOKEN, |target| target.0.raw()))
+            }),
         )?;
         wire.serialize_entry(
             "data_blocks",
@@ -98,10 +100,11 @@ impl From<FeatureDeleteReferenceField> for DeleteReferenceFieldWire {
                 .slots()
                 .each_ref()
                 .map(|slot| slot.as_ref().map(|target| target.0.value())),
-            raw_object_indices: value.references.slots().each_ref().map(|slot| {
+            raw_object_indices: (value.references.slots().each_ref().map(|slot| {
                 slot.as_ref()
                     .map_or_else(|| vec![0xff], |target| target.0.raw().to_vec())
-            }),
+            }))
+            .map(Into::into),
             data_blocks: value
                 .references
                 .slots()
@@ -331,7 +334,7 @@ mod tests {
         FeatureDeleteReferenceField,
         BTreeMap<String, (&'static [u8], u64)>,
     ) {
-        let field = serde_json::from_str(r#"{"id":"field","operation_label":"nx:feature-history:operation-label#0-0000000001","control":255,"object_indices":[32,33,34,35,36],"raw_object_indices":[[240,32],[240,33],[240,34],[240,35],[240,36]],"data_blocks":["nx:om-data-blocks-0:block#32","nx:om-data-blocks-0:block#33","nx:om-data-blocks-0:block#34","nx:om-data-blocks-0:block#35","nx:om-data-blocks-0:block#36"],"source_offset":100,"object_index_source_offsets":[107,109,111,113,115]}"#)
+        let field = serde_json::from_str(r#"{"id":"field","operation_label":"nx:feature-history:operation-label#0-0000000001","control":255,"object_indices":[32,33,34,35,36],"raw_object_indices":["f020","f021","f022","f023","f024"],"data_blocks":["nx:om-data-blocks-0:block#32","nx:om-data-blocks-0:block#33","nx:om-data-blocks-0:block#34","nx:om-data-blocks-0:block#35","nx:om-data-blocks-0:block#36"],"source_offset":100,"object_index_source_offsets":[107,109,111,113,115]}"#)
             .expect("complete DELETE field");
         let blocks = (32u32..=36)
             .map(|ordinal| {
@@ -417,7 +420,7 @@ mod tests {
 
     #[test]
     fn delete_reference_borrowed_wire_matches_owned_bytes_and_retained_limit() {
-        let json = r#"{"id":"nx:feature:delete-reference#0","operation_label":"operation","control":255,"object_indices":[32,null,520,521,null],"raw_object_indices":[[240,32],[255],[241,2,8],[241,2,9],[255]],"data_blocks":["block-32",null,"block-520",null,null],"source_offset":100,"object_index_source_offsets":[107,109,110,113,116]}"#;
+        let json = r#"{"id":"nx:feature:delete-reference#0","operation_label":"operation","control":255,"object_indices":[32,null,520,521,null],"raw_object_indices":["f020","ff","f10208","f10209","ff"],"data_blocks":["block-32",null,"block-520",null,null],"source_offset":100,"object_index_source_offsets":[107,109,110,113,116]}"#;
         let record: FeatureDeleteReferenceField = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
         assert_eq!(
@@ -433,7 +436,7 @@ mod tests {
     #[test]
     fn delete_wire_derives_mixed_width_and_null_positions() -> Result<(), Box<dyn std::error::Error>>
     {
-        let json = r#"{"id":"delete","operation_label":"operation","control":255,"object_indices":[32,null,520,521,null],"raw_object_indices":[[240,32],[255],[241,2,8],[241,2,9],[255]],"data_blocks":["block-32",null,"block-520",null,null],"source_offset":100,"object_index_source_offsets":[107,109,110,113,116]}"#;
+        let json = r#"{"id":"delete","operation_label":"operation","control":255,"object_indices":[32,null,520,521,null],"raw_object_indices":["f020","ff","f10208","f10209","ff"],"data_blocks":["block-32",null,"block-520",null,null],"source_offset":100,"object_index_source_offsets":[107,109,110,113,116]}"#;
         let field: FeatureDeleteReferenceField = serde_json::from_str(json)?;
         assert_eq!(serde_json::to_string(&field)?, json);
         for (key, value) in [
@@ -444,7 +447,7 @@ mod tests {
             ("source_offset", serde_json::json!(u64::MAX)),
             (
                 "raw_object_indices",
-                serde_json::json!([[32], [255], [241, 2, 8], [241, 2, 9], [255]]),
+                serde_json::json!(["20", "ff", "f10208", "f10209", "ff"]),
             ),
         ] {
             let mut wire: serde_json::Value = serde_json::from_str(json)?;
@@ -466,10 +469,9 @@ mod tests {
     #[test]
     fn a_refused_delete_slot_token_states_its_whole_path() -> Result<(), Box<dyn std::error::Error>>
     {
-        let json = r#"{"id":"delete","operation_label":"operation","control":255,"object_indices":[32,null,520,521,null],"raw_object_indices":[[240,32],[255],[241,2,8],[241,2,9],[255]],"data_blocks":["block-32",null,"block-520",null,null],"source_offset":100,"object_index_source_offsets":[107,109,110,113,116]}"#;
+        let json = r#"{"id":"delete","operation_label":"operation","control":255,"object_indices":[32,null,520,521,null],"raw_object_indices":["f020","ff","f10208","f10209","ff"],"data_blocks":["block-32",null,"block-520",null,null],"source_offset":100,"object_index_source_offsets":[107,109,110,113,116]}"#;
         let mut wire: serde_json::Value = serde_json::from_str(json)?;
-        wire["raw_object_indices"] =
-            serde_json::json!([[32], [255], [241, 2, 8], [241, 2, 9], [255]]);
+        wire["raw_object_indices"] = serde_json::json!(["20", "ff", "f10208", "f10209", "ff"]);
 
         let error = serde_json::from_value::<FeatureDeleteReferenceField>(wire)
             .err()

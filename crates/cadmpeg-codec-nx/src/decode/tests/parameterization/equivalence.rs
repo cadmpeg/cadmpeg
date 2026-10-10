@@ -73,6 +73,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
     }
     let carrier = CurveId::mint("test:model:entity#curve").expect("identity grammar");
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: carrier.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,

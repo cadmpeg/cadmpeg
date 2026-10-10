@@ -21,7 +21,9 @@ fn with_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T
 }
 
 fn classify_document(version: &str) -> DialectMatch {
-    with_context(|ctx| F3dDialect::classify_document(ctx, version).expect("dialect classification"))
+    with_context(|ctx| {
+        F3dDialect::classify_document(ctx, Some(version)).expect("dialect classification")
+    })
 }
 
 fn classify_f3z(members: &[&str]) -> DialectMatch {
@@ -35,7 +37,7 @@ fn manifest_dialect_classification_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty test input");
-    let error = F3dDialect::classify_document(&ctx, "3-2-0-0").unwrap_err();
+    let error = F3dDialect::classify_document(&ctx, Some("3-2-0-0")).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "classify F3D manifest dialect")

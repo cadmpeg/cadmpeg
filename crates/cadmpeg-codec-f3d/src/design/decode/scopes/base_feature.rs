@@ -740,7 +740,7 @@ pub(super) fn exact_base_feature_construction(
                     usize::try_from(scope.byte_offset()).ok()? + 37,
                 )?,
                 metadata_record_offset: scope.byte_offset() + 37,
-                metadata_field: bytes.get(start + 45..start + 51)?.to_vec(),
+                metadata_field: bytes.get(start + 45..start + 51)?.to_vec().into(),
             }));
         }
         let legacy_290_261 =
@@ -802,7 +802,8 @@ pub(super) fn exact_base_feature_construction(
                         start + legacy_zero_body::SHARED_METADATA_FIELD
                             ..start + legacy_zero_body::ZERO_PADDING_8,
                     )?
-                    .to_vec(),
+                    .to_vec()
+                    .into(),
             }));
         }
         if legacy_444_263 && scope.frame_length() == 258 {
@@ -882,7 +883,8 @@ pub(super) fn exact_base_feature_construction(
                         start + legacy_444_zero_body::SHARED_METADATA_ZERO_TAIL
                             ..start + legacy_444_zero_body::GUID_CODE_UNIT_COUNT,
                     )?
-                    .to_vec(),
+                    .to_vec()
+                    .into(),
             }));
         }
         if bytes.get(start + result_body::ZERO_RUN_8..start + result_body::BODY_COUNT_MARKER)?
@@ -1079,7 +1081,7 @@ pub(super) fn exact_base_feature_construction(
             bodies: DesignBaseFeatureResults::WithRepeatedFields { first, rest },
             metadata_record,
             metadata_record_offset,
-            metadata_field,
+            metadata_field: metadata_field.into(),
         }))
     })()
     .transpose()

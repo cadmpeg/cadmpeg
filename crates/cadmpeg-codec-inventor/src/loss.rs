@@ -50,6 +50,8 @@ pub(crate) enum InventorLossCode {
     SketchRecordMalformed,
     /// Typed feature records could not be parsed exactly.
     FeatureRecordMalformed,
+    /// An optional feature label is empty and has no neutral display name.
+    FeatureLabelUnusable,
     /// Typed feature records have an operation graph that is not closed.
     FeatureOperationGraphOpen,
     /// Inventor operations retain native result-body identity with unresolved state.
@@ -96,6 +98,10 @@ pub(crate) enum InventorLossCode {
     KernelDialectUnverified,
     /// The selected kernel carrier did not expose a parseable kernel header.
     KernelCarrierUnparseable,
+    /// An independently framed kernel product string is unreadable.
+    KernelHeaderMetadataUnresolved,
+    /// An optional kernel tolerance cannot enter document units.
+    KernelHeaderToleranceUnresolved,
 }
 
 impl InventorLossCode {
@@ -112,6 +118,7 @@ impl InventorLossCode {
         Self::DesignRecordMalformed,
         Self::SketchRecordMalformed,
         Self::FeatureRecordMalformed,
+        Self::FeatureLabelUnusable,
         Self::FeatureOperationGraphOpen,
         Self::FeatureStateUnresolved,
         Self::ParameterGraphOpen,
@@ -135,6 +142,8 @@ impl InventorLossCode {
         Self::SourceDialectUnverified,
         Self::KernelDialectUnverified,
         Self::KernelCarrierUnparseable,
+        Self::KernelHeaderMetadataUnresolved,
+        Self::KernelHeaderToleranceUnresolved,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -153,6 +162,7 @@ impl InventorLossCode {
             Self::DesignRecordMalformed => "design.record-malformed",
             Self::SketchRecordMalformed => "sketch.record-malformed",
             Self::FeatureRecordMalformed => "feature.record-malformed",
+            Self::FeatureLabelUnusable => "feature.label-unusable",
             Self::FeatureOperationGraphOpen => "feature.operation-graph-open",
             Self::FeatureStateUnresolved => "feature.state-unresolved",
             Self::ParameterGraphOpen => "parameter.graph-open",
@@ -176,6 +186,8 @@ impl InventorLossCode {
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
             Self::KernelCarrierUnparseable => "source.kernel-carrier-unparseable",
+            Self::KernelHeaderMetadataUnresolved => "source.kernel-header-metadata-unresolved",
+            Self::KernelHeaderToleranceUnresolved => "source.kernel-header-tolerance-unresolved",
         }
     }
 
@@ -208,11 +220,15 @@ impl InventorLossCode {
             | Self::ProteinStreamMalformed
             | Self::UfrxTableMalformed => LossTaxonomy::DecodeDiagnostic,
             Self::KernelCarrierUnparseable => LossTaxonomy::RecordNotTyped,
+            Self::KernelHeaderMetadataUnresolved => LossTaxonomy::NoncanonicalSourceSyntax,
+            Self::KernelHeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
             Self::FeatureOperationGraphOpen
             | Self::FeatureStateUnresolved
             | Self::SketchGraphOpen => LossTaxonomy::FeatureHistoryRetained,
             Self::ParameterGraphOpen => LossTaxonomy::ParametricRecordOmitted,
-            Self::MetadataPropertyUnmapped => LossTaxonomy::MetadataNotTransferred,
+            Self::MetadataPropertyUnmapped | Self::FeatureLabelUnusable => {
+                LossTaxonomy::MetadataNotTransferred
+            }
             Self::ProteinCatalogUndecodable
             | Self::ProteinAssetRejected
             | Self::ProteinAppearanceAbsent
@@ -277,6 +293,7 @@ mod tests {
                 "design.record-malformed",
                 "sketch.record-malformed",
                 "feature.record-malformed",
+                "feature.label-unusable",
                 "feature.operation-graph-open",
                 "feature.state-unresolved",
                 "parameter.graph-open",
@@ -300,6 +317,8 @@ mod tests {
                 "source.dialect-unverified",
                 "source.kernel-dialect-unverified",
                 "source.kernel-carrier-unparseable",
+                "source.kernel-header-metadata-unresolved",
+                "source.kernel-header-tolerance-unresolved",
             ]
         );
     }

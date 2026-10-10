@@ -118,7 +118,7 @@ fn canvas_wire_fixture() -> serde_json::Value {
         "id": "canvas", "scope_record_index": 103, "scope_reference_offset": 247,
         "geometry_class_tag": "256", "geometry_record_index": 101,
         "geometry_reference_offset": 424, "geometry_byte_offset": 100,
-        "geometry_prologue": prologue, "visible": true, "visibility_offset": 125,
+        "geometry_prologue": cadmpeg_ir::native::bytes::NativeBytes::from(prologue), "visible": true, "visibility_offset": 125,
         "geometry_frame_length": 229, "paired_geometry_class_tag": "257",
         "paired_geometry_byte_offset": 329, "paired_component_reference_offset": 349,
         "boundary_segments": [[{"u":-2.0,"v":-1.0},{"u":3.0,"v":-1.0}],[{"u":-2.0,"v":4.0},{"u":3.0,"v":4.0}]],
@@ -130,7 +130,7 @@ fn canvas_wire_fixture() -> serde_json::Value {
         "asset_name_offset": 384, "label": "Canvas", "label_offset": 317,
         "opacity": 0.75, "origin": {"x":10.0,"y":20.0,"z":30.0},
         "u_axis": {"x":1.0,"y":0.0,"z":0.0}, "v_axis": {"x":0.0,"y":0.0,"z":1.0},
-        "geometry_payload": payload.as_slice()
+        "geometry_payload": cadmpeg_ir::native::bytes::NativeBytes::from(payload.as_slice())
     });
     base
 }
@@ -189,8 +189,12 @@ fn canvas_image_wire_derives_visibility_and_geometry_values() {
     for first_flag in [0, 1] {
         for visible in [false, true] {
             let mut value = base.clone();
-            value["geometry_prologue"][10] = serde_json::json!(first_flag);
-            value["geometry_prologue"][14] = serde_json::json!(u8::from(visible));
+            let mut prologue: cadmpeg_ir::native::bytes::NativeBytes =
+                serde_json::from_value(value["geometry_prologue"].clone())
+                    .expect("Canvas prologue bytes");
+            prologue[10] = first_flag;
+            prologue[14] = u8::from(visible);
+            value["geometry_prologue"] = serde_json::json!(prologue);
             value["visible"] = serde_json::json!(visible);
             let wire: crate::records::canvas::DesignCanvasImageWire =
                 serde_json::from_value(value).expect("Canvas wire");

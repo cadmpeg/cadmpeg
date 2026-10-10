@@ -148,36 +148,12 @@
           "class_definitions": [
             {
               "id": "nx:om-entry-0:class#19",
-              "layout_prefix": [
-                129,
-                33
-              ],
+              "layout_prefix": "8121",
               "layout_terminal": 6,
               "name": "UGS::FEATURE_RECORD",
               "ordinal": 0,
-              "registry_suffix": [
-                129,
-                33,
-                1,
-                35,
-                69,
-                103,
-                137,
-                171,
-                205,
-                239,
-                6
-              ],
-              "schema_fingerprint": [
-                1,
-                35,
-                69,
-                103,
-                137,
-                171,
-                205,
-                239
-              ],
+              "registry_suffix": "81210123456789abcdef06",
+              "schema_fingerprint": "0123456789abcdef",
               "section_offset": 76,
               "source_entry": "/Root/UG_PART/UG_PART",
               "source_offset": 95,
@@ -200,10 +176,7 @@
               "ordinal": 0,
               "registry_owner_class": 2,
               "registry_storage_code": 2,
-              "registry_suffix": [
-                1,
-                2
-              ],
+              "registry_suffix": "0102",
               "section_offset": 76,
               "source_entry": "/Root/UG_PART/UG_PART",
               "source_offset": 161,

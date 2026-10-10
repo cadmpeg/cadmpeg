@@ -128,11 +128,10 @@ fn plane_nurbs_boundary_points_refuse_collection_limit() {
 }
 
 fn has_entity_projection_loss(result: &cadmpeg_ir::codec::DecodeResult) -> bool {
-    result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+    result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::EntityNotProjected.kind()
+            || loss.code == IgesLossCode::GeometryNotProjected.kind()
+    })
 }
 
 #[test]
@@ -345,6 +344,7 @@ fn bounded_plane_refuses_recursive_child_curve_identity_copy() {
     let child = CurveId::mint("test:model:curve#child").unwrap();
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: child.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)).unwrap(),

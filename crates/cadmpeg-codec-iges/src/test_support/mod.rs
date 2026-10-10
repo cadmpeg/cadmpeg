@@ -100,19 +100,20 @@ pub(crate) fn directory_target(
         entity_type,
         parameter_start: 1,
         structure: 0,
-        line_font: 0,
-        level: 0,
-        view: 0,
+        line_font: Some(0),
+        level: Some(0),
+        view: Some(0),
         transform: 0,
-        label_display: 0,
+        label_display: Some(0),
+        status_padding_recovered: false,
         status: crate::directory::SourceStatus::from_codes([0, 0, 0, 0]),
-        line_weight: 0,
-        color: 0,
+        line_weight: Some(0),
+        color: Some(0),
         parameter_line_count: 1,
         form: 0,
         reserved: [[b' '; 8]; 2],
         label: [b' '; 8],
-        subscript: 0,
+        subscript: Some(0),
     }
 }
 
@@ -164,4 +165,11 @@ pub(crate) fn with_policy_context<T>(
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(input, &arena, policy)
         .expect("test input is within policy limits");
     use_context(&ctx)
+}
+
+/// Decodes the exact bytes of a native wire payload for byte assertions.
+pub(crate) fn native_bytes(value: &serde_json::Value) -> Vec<u8> {
+    serde_json::from_value::<cadmpeg_ir::native::bytes::NativeBytes>(value.clone())
+        .expect("native hexadecimal byte string")
+        .into_inner()
 }

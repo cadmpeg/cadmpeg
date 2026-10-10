@@ -179,8 +179,8 @@ pub(super) fn validate_zero_entity_support_runs(
                         .as_ref()
                         .is_none_or(|previous| previous.byte_offset < face.byte_offset))
         });
-        let carrier_tag =
-            zero_entity_record(records, run.carrier_record_ordinal).map(|record| record.tag);
+        let carrier_tag = zero_entity_record(records, run.carrier_record_ordinal)
+            .map(|record| record.tag.into_inner());
         let supports_valid = !run.supports.is_empty()
             && run
                 .supports
@@ -190,7 +190,7 @@ pub(super) fn validate_zero_entity_support_runs(
                     if support.face_local_slot == 0 {
                         return false;
                     }
-                    let endpoints_valid = match (support.tag, support.uv_endpoints) {
+                    let endpoints_valid = match (support.tag.into_inner(), support.uv_endpoints) {
                         (
                             [0x21, 0x45 | 0x71 | 0x72 | 0x91 | 0x99 | 0x9f | 0xd6 | 0xe8],
                             Some(_),
@@ -219,7 +219,7 @@ pub(super) fn validate_zero_entity_support_runs(
                         .model_parameters
                         .is_some_and(|parameters| parameters[0] != parameters[1])
                         == has_model_carrier;
-                    let pcurve_valid = match (&support.tag, &support.pcurve) {
+                    let pcurve_valid = match (&*support.tag, &support.pcurve) {
                         (
                             [0x21, tag @ (0x45 | 0x71 | 0x72 | 0x91 | 0x99 | 0x9f | 0xd6 | 0xe8)],
                             Some(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs }),
@@ -591,7 +591,7 @@ pub(super) fn validate_zero_entity_topology_records(
             })
     });
     let incidences_valid = vertex_incidences.iter().enumerate().all(|(index, record)| {
-        let expected_count = match record.tag {
+        let expected_count = match record.tag.into_inner() {
             [0x05, 0x0b] => 2,
             [0x05, 0x10] => 3,
             [0x05, 0x15] => 4,

@@ -253,9 +253,16 @@ struct ContainerSummaryProbe {
 #[derive(Deserialize)]
 struct ExportReportProbe {
     #[serde(default)]
-    payload: Option<String>,
+    identity: Option<ExportIdentityProbe>,
     #[serde(default)]
-    target: Option<String>,
+    losses: Vec<LossProbe>,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "payload", rename_all = "snake_case")]
+enum ExportIdentityProbe {
+    Cadir {},
+    Native { target: String },
 }
 
 /// Lenient decode report: enum-valued fields read as strings so future
@@ -751,16 +758,23 @@ fn summary(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
                 None => rows.push(("check_report".to_owned(), "null".to_owned().into())),
             }
             if let Some(export) = &report.export {
-                if let Some(payload) = &export.payload {
+                let (payload, target) = match &export.identity {
+                    Some(ExportIdentityProbe::Cadir {}) => (Some("cadir"), None),
+                    Some(ExportIdentityProbe::Native { target }) => {
+                        (Some("native"), Some(target.as_str()))
+                    }
+                    None => (None, None),
+                };
+                if let Some(payload) = payload {
                     rows.push(("export_payload".to_owned(), cell(payload).into()));
                 }
                 rows.push((
                     "export_target".to_owned(),
-                    export
-                        .target
-                        .as_ref()
-                        .map_or_else(|| "null".to_owned(), |target| cell(target))
-                        .into(),
+                    target.map_or_else(|| "null".to_owned(), cell).into(),
+                ));
+                rows.push((
+                    "export_losses".to_owned(),
+                    export.losses.len().to_string().into(),
                 ));
             }
         }
@@ -1052,21 +1066,31 @@ fn findings(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
 
 fn losses(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
     note_unvalidated_sidecar_fidelity(artifact);
-    let (rows, note): (&[LossProbe], Option<&str>) = match artifact {
+    let (rows, export_losses, note): (&[LossProbe], &[LossProbe], Option<&str>) = match artifact {
         Artifact::Report(report) => {
-            match (&report.check_report, &report.decode_report, &report.summary) {
-                (Some(validation), _, _) => (&validation.losses, None),
-                (None, Some(decode), _) => (&decode.losses, None),
-                (None, None, Some(summary)) => (&summary.losses, None),
-                (None, None, None) => (
-                    &[],
-                    Some("(this report has no inspect, decode, or check stage)"),
-                ),
-            }
+            let (rows, note): (&[LossProbe], Option<&str>) =
+                match (&report.check_report, &report.decode_report, &report.summary) {
+                    (Some(validation), _, _) => (&validation.losses, None),
+                    (None, Some(decode), _) => (&decode.losses, None),
+                    (None, None, Some(summary)) => (&summary.losses, None),
+                    (None, None, None) => (
+                        &[],
+                        Some("(this report has no inspect, decode, check, or export stage)"),
+                    ),
+                };
+            let export_losses = report
+                .export
+                .as_ref()
+                .map_or(&[][..], |export| export.losses.as_slice());
+            (
+                rows,
+                export_losses,
+                if report.export.is_some() { None } else { note },
+            )
         }
         Artifact::Sidecar(sidecar) => match &sidecar.report {
-            Some(decode) => (&decode.losses, None),
-            None => (&[], Some("(this sidecar has no decode report)")),
+            Some(decode) => (&decode.losses, &[], None),
+            None => (&[], &[], Some("(this sidecar has no decode report)")),
         },
         Artifact::Cadir(_) => bail!(
             "a CADIR document has no loss notes; losses are in the report written \
@@ -1076,6 +1100,7 @@ fn losses(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
     if args.json {
         let payload = rows
             .iter()
+            .chain(export_losses)
             .map(|loss| {
                 serde_json::json!({
                     "code": loss.code.as_ref().map(LossCodeProbe::display),
@@ -1087,7 +1112,7 @@ fn losses(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
         print_json("losses", serde_json::Value::Array(payload))?;
     } else {
         println!("severity\tcode\tmessage");
-        for loss in rows {
+        for loss in rows.iter().chain(export_losses) {
             println!(
                 "{}\t{}\t{}",
                 opt(loss.severity.as_ref()),

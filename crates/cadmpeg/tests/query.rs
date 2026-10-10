@@ -252,7 +252,7 @@ fn summary_exposes_inspect_export_and_refusal_identity_without_positional_layers
           },
           "decode_report": null,
           "check_report": null,
-          "export": {"payload": "native", "target": "step:ap242-e3"}
+          "export": {"identity": {"payload": "native", "target": "step:ap242-e3"}}
         }"#,
     );
 
@@ -1679,7 +1679,7 @@ fn every_view_json_is_a_query_command_report() {
         assert!(relosses.status.success(), "{view}");
         assert!(
             String::from_utf8_lossy(&relosses.stderr)
-                .contains("(this report has no inspect, decode, or check stage)"),
+                .contains("(this report has no inspect, decode, check, or export stage)"),
             "{view}"
         );
     }
@@ -1703,4 +1703,127 @@ fn a_foreign_ir_version_is_refused() {
                 cadmpeg_ir::IR_VERSION
             ))),
         );
+}
+
+#[test]
+fn query_projects_export_identity_and_losses_from_a_generated_report() {
+    use cadmpeg_ir::{CodecFormat, SourceGeometryRole, SourceObjectAssociation};
+    let dir = tempdir().unwrap();
+    let mut ir = unit_cube().unwrap();
+    ir.model.points.push(cadmpeg_ir::topology::Point::new(
+        "synthetic:cube:point#orphan".try_into().unwrap(),
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(20.0, 30.0, 40.0))
+            .unwrap(),
+        Some(SourceObjectAssociation {
+            format: CodecFormat::Step,
+            object_id: cadmpeg_core::nonblank_literal!("orphan"),
+            geometry_role: Some(SourceGeometryRole::Support),
+            name: None,
+            color: None,
+            visible: None,
+            layer: None,
+            instance_path: Vec::new(),
+        }),
+    ));
+    let input = write(
+        dir.path(),
+        "model.cadir.json",
+        &serde_json::to_string(&ir).unwrap(),
+    );
+    let output = dir.path().join("model.igs");
+    let report = dir.path().join("convert.json");
+    cadmpeg()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "--to",
+            "iges:5.3",
+            "-o",
+            output.to_str().unwrap(),
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let mut wire: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    let export_loss_count = wire["export"]["losses"].as_array().unwrap().len();
+    assert!(export_loss_count > 0);
+    let summary = cadmpeg()
+        .args(["query", "summary", "--json", report.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(summary.status.success());
+    let summary: serde_json::Value = serde_json::from_slice(&summary.stdout).unwrap();
+    assert_eq!(
+        summary["payload"]["export_target"],
+        wire["export"]["identity"]["target"]
+    );
+    assert_eq!(
+        summary["payload"]["export_payload"],
+        wire["export"]["identity"]["payload"]
+    );
+    assert_eq!(
+        summary["payload"]["export_losses"]
+            .as_str()
+            .unwrap()
+            .parse::<usize>()
+            .unwrap(),
+        export_loss_count
+    );
+    // Keep the chosen check-stage losses and append the distinct export stage.
+    let check: serde_json::Value = serde_json::from_str(CHECK_REPORT).unwrap();
+    wire["check_report"]["losses"] = check["check_report"]["losses"].clone();
+    fs::write(&report, serde_json::to_vec(&wire).unwrap()).unwrap();
+    let losses = cadmpeg()
+        .args(["query", "losses", "--json", report.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(losses.status.success());
+    let losses: serde_json::Value = serde_json::from_slice(&losses.stdout).unwrap();
+    let rows = losses["payload"].as_array().unwrap();
+    assert_eq!(rows.len(), export_loss_count + 1);
+    assert_eq!(rows[0]["message"], "wire dropped");
+    assert!(rows
+        .iter()
+        .any(|row| row["code"] == "iges/writer.support-geometry-not-represented"));
+    cadmpeg()
+        .args(["query", "losses", report.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("wire dropped").and(predicate::str::contains(
+                "iges/writer.support-geometry-not-represented",
+            )),
+        );
+}
+
+#[test]
+fn summary_projects_cadir_export_without_a_native_target() {
+    let dir = tempdir().unwrap();
+    let report = write(
+        dir.path(),
+        "canonical-export.json",
+        &serde_json::json!({
+            "ir_version": cadmpeg_ir::IR_VERSION,
+            "command": "convert",
+            "status": "ok",
+            "export": {"identity": {"payload": "cadir"}, "losses": []}
+        })
+        .to_string(),
+    );
+    cadmpeg()
+        .args(["query", "summary", report.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("export_payload\tcadir")
+                .and(predicate::str::contains("export_target\tnull"))
+                .and(predicate::str::contains("export_losses\t0")),
+        );
+    cadmpeg()
+        .args(["query", "losses", report.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout("severity\tcode\tmessage\n")
+        .stderr("");
 }

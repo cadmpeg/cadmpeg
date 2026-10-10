@@ -43,6 +43,8 @@ loss_codes! {
 pub(crate) enum CreoLossCode {
     /// PSB section census and prototype/instance transfer summary.
     ContainerCensus,
+    /// A byte-bounded compressed section has invalid or incomplete LZW data.
+    CompressedSectionUnexpanded,
     /// No persistence-layout discriminant matched, so no layout-specific
     /// decode strategy was applied.
     SourceDialectUnverified,
@@ -196,6 +198,7 @@ impl CreoLossCode {
     const fn code(self) -> &'static str {
         match self {
             Self::ContainerCensus => "container.census",
+            Self::CompressedSectionUnexpanded => "container.compressed-section-unexpanded",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::LegacyRealValueUnresolved => "legacy.real-value-unresolved",
             Self::LegacyIntegerValueUnresolved => "legacy.integer-value-unresolved",
@@ -304,6 +307,7 @@ impl CreoLossCode {
             | Self::TopologyVertexIdentifierUnstatable
             | Self::ExtrusionBodyRejected => Severity::Blocking,
             Self::SectionSplineUnresolved
+            | Self::CompressedSectionUnexpanded
             | Self::SurfacePrototypeFieldRetained
             | Self::SourceDialectUnverified
             | Self::LegacyRealValueUnresolved
@@ -374,6 +378,7 @@ impl CreoLossCode {
             | Self::CarrierSharedExtrusionGenerators
             | Self::CarrierTorusParameterRetention => LossTaxonomy::CarrierSummary,
             Self::LegacyRealValueUnresolved
+            | Self::CompressedSectionUnexpanded
             | Self::LegacyIntegerValueUnresolved
             | Self::LegacyContinuationFormUndefined
             | Self::LegacyUnsignedValueUnresolved
@@ -464,6 +469,7 @@ mod tests {
             codes,
             [
                 "container.census",
+                "container.compressed-section-unexpanded",
                 "source.dialect-unverified",
                 "legacy.real-value-unresolved",
                 "legacy.integer-value-unresolved",

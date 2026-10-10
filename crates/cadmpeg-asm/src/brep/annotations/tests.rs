@@ -13,6 +13,7 @@ fn annotation_curve_index_refuses_collection_limit() {
 
     let mut out = AsmBrep {
         curves: vec![Curve {
+            parameter_range: None,
             id: CurveId::mint("f3d:brep:entity#1").unwrap(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
@@ -54,6 +55,7 @@ fn annotation_stream_refuses_retained_limit() {
     }];
     let mut out = AsmBrep {
         curves: vec![Curve {
+            parameter_range: None,
             id: CurveId::mint("f3d:brep:entity#1").unwrap(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
@@ -162,4 +164,120 @@ fn synthetic_annotations_use_record_keys_independent_of_id_text() {
     assert!(!wire.contains_key(&serde_value::Value::String(
         "procedural_curve_child_sources".into()
     )));
+}
+
+#[test]
+fn ellipse_edge_annotation_names_only_a_stored_carrier_range() {
+    use crate::sab::Token;
+    use cadmpeg_ir::ids::{EdgeId, VertexId};
+    use cadmpeg_ir::topology::{Edge, EdgeCarrier};
+    let mut tokens = vec![Token::Ref(-1); 9];
+    tokens[8] = Token::Ref(2);
+    let records = [
+        Record {
+            index: 1,
+            name: "edge".into(),
+            tokens: tokens.into(),
+            offset: 0,
+            len: 0,
+        },
+        Record {
+            index: 2,
+            name: "ellipse".into(),
+            tokens: Vec::new().into(),
+            offset: 0,
+            len: 0,
+        },
+    ];
+    let by_index = std::collections::HashMap::from([(1, &records[0]), (2, &records[1])]);
+    for range in [None, Some([0.0, 1.0])] {
+        let mut out = AsmBrep {
+            edges: vec![Edge {
+                id: EdgeId::from(crate::brep::id(crate::asm_format!("sat"), 1)),
+                carrier: EdgeCarrier::new(
+                    Some(CurveId::from(crate::brep::id(crate::asm_format!("sat"), 2))),
+                    range,
+                )
+                .unwrap(),
+                start: VertexId::from(crate::brep::id(crate::asm_format!("sat"), 3)),
+                end: VertexId::from(crate::brep::id(crate::asm_format!("sat"), 4)),
+                tolerance: None,
+            }],
+            ..AsmBrep::default()
+        };
+        let ctx = cadmpeg_test_support::service_decode_context();
+        emit_annotation_records(
+            &ctx,
+            &mut out,
+            &records,
+            &by_index,
+            &Carriers::default(),
+            "source",
+            crate::asm_format!("sat"),
+        )
+        .unwrap();
+        let annotation = &out.annotation_records[0];
+        assert_eq!(annotation.id, "sat:brep:entity#1");
+        assert_eq!(
+            annotation.derived_fields,
+            if range.is_some() {
+                vec!["carrier.param_range"]
+            } else {
+                vec![]
+            }
+        );
+    }
+}
+
+#[test]
+fn unresolved_analytic_carriers_have_no_derived_geometry_fields() {
+    use cadmpeg_ir::geometry::{
+        Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    };
+    let records = [
+        Record {
+            index: 0,
+            name: "plane".into(),
+            tokens: Vec::new().into(),
+            offset: 0,
+            len: 0,
+        },
+        Record {
+            index: 1,
+            name: "straight".into(),
+            tokens: Vec::new().into(),
+            offset: 0,
+            len: 0,
+        },
+    ];
+    let mut out = AsmBrep {
+        surfaces: vec![Surface {
+            id: SurfaceId::from(crate::brep::id(crate::asm_format!("sat"), 0)),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            source_object: None,
+        }],
+        curves: vec![Curve {
+            id: CurveId::from(crate::brep::id(crate::asm_format!("sat"), 1)),
+            parameter_range: None,
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            source_object: None,
+        }],
+        ..AsmBrep::default()
+    };
+    let ctx = cadmpeg_test_support::service_decode_context();
+    emit_annotation_records(
+        &ctx,
+        &mut out,
+        &records,
+        &std::collections::HashMap::new(),
+        &Carriers::default(),
+        "source",
+        crate::asm_format!("sat"),
+    )
+    .unwrap();
+    assert_eq!(out.annotation_records.len(), 2);
+    assert!(out
+        .annotation_records
+        .iter()
+        .all(|annotation| annotation.derived_fields.is_empty()));
 }

@@ -16,6 +16,13 @@ identifiers remain metadata and do not override that report. AP203, AP214, and
 AP242 documents carry exchanged product shape and product structure. Product
 occurrence relationships carry identity and placement.
 
+Draft clear-text exchanges open with `STEP;` and close with `ENDSTEP;`.
+Their header records include `FILE_IDENTIFICATION`, `FILE_DESCRIPTION`, and
+`IMP_LEVEL`; they need not contain `FILE_SCHEMA`. Draft comments use
+`!*` and `*!` delimiters. A draft entity assignment uses `@n` or `#n`, and
+`#n` references that entity. The draft attribute layouts do not imply a
+standard EXPRESS schema.
+
 Part 28 XML, Part 26 binary, AP242 BO-Model XML, and ZIP containers use
 separate encodings.
 
@@ -397,12 +404,9 @@ only member that a URI from outside the archive may address. A root
 `REFERENCE` entry or a root `ANCHOR` forwarding a resource may address a
 subsidiary. An internal relative address is resolved from the directory of its
 referencing member and cannot address a file outside the archive. Archive
-member paths use `/`; the reader
-rejects an unsafe path, a duplicate name, an encrypted or Unicode-name entry,
-an unsupported compression method, or a root member with a size or CRC
-mismatch. For each member it retains the central-directory name, compression,
-CRC-32, compressed and uncompressed sizes, and local-header, payload, and
-central-directory offsets.
+member paths use `/`. The Part 21 ZIP profile uses stored or Deflate compression and excludes Unicode filename support.
+
+CADIR decision: the default recovery route rejects unsafe paths and duplicate names, and requires a readable root with matching size and CRC. Ancillary Unicode names, unsupported compression, encryption, and damaged local frames do not prevent that root from being decoded. A safely readable root with nonprofile compression is also recoverable. Each such recovery carries `step/container.member-noncanonical`, which strict admission rejects, and retains the exact central declaration as a source record. Container metadata records central names, compression, CRC, sizes and offsets; an unreadable local frame has no admitted payload offset.
 
 The STEP detector uses a bounded prefix. A medium-confidence ZIP result
 requires the prefix to parse as a ZIP archive whose central directory has an
@@ -410,9 +414,12 @@ entry with the exact name `ISO-10303.p21`. A generic ZIP local-file signature is
 only a low-confidence container signal. A byte sequence in an entry payload,
 archive comment, or unrelated entry name does not establish a STEP root. The
 full inspect and decode paths validate the complete central directory and then
-open that exact root entry. A root outside the bounded detection prefix does
-not produce medium-confidence detection; explicit STEP selection still runs
-the full archive validation. ISO 10303-21:2016 Annex A.4 requires the exact
+open that exact root entry. When the root lies outside the bounded detection
+prefix of a seekable input, the central directory read from the end of the
+input supplies the same exact-name evidence and gives medium-confidence
+detection without reading member payloads. A non-seekable input keeps the
+low-confidence container signal; explicit STEP selection still runs the full
+archive validation. ISO 10303-21:2016 Annex A.4 requires the exact
 root name, and the [PKWARE ZIP application
 note](https://www.pkware.com/documents/APPNOTE/APPNOTE-6.3.3.TXT) defines the
 local-file header and central-directory entry records used to read it.
@@ -628,7 +635,7 @@ explicit attributes before the attributes introduced by the leaf. External
 complex mapping supplies every partial's explicit attributes. `$` represents
 an absent OPTIONAL explicit attribute; no mapping removes an inherited
 attribute from its required position. A record that shifts a leaf parameter
-into an omitted inherited `name` position is invalid Part 21 source.
+into an omitted inherited `name` position is invalid Part 21 source. Recovery of a missing leading name requires one fewer parameter than the carrier's declared arity. A present value at canonical arity retains its position even when it is not an admissible name. Closed, bounded descriptive literals retain their source bytes when their values cannot be interpreted; this does not relax required schema selection, DATA geometry values, or delimiter framing.
 
 Entity instance names share one namespace across all DATA sections. Forward
 and backward references resolve after all DATA sections are read. A reference
@@ -672,8 +679,11 @@ name any schema in the list.
 
 CADIR decision: the reader locates header records by name. Missing, duplicate,
 reordered, or invalid descriptive metadata produces a loss and does not prevent
-DATA admission. A unique, readable `FILE_SCHEMA` remains required. An
-unverified implementation-level declaration uses the edition-3 class-3 grammar
+DATA admission. In Part 21, a unique `FILE_SCHEMA` record must contain at least one
+usable identifier. Invalid entries supply no schema identity, and repeated
+identifiers supply the same identity once. Schema selection uses the first
+usable identifier. An unverified implementation-level declaration uses the
+edition-3 class-3 grammar
 and reports that choice. A header metadata loss, an unverified implementation
 level, or an out-of-range schema object identifier retains every header record
 as exact source-fidelity bytes under `step:file:header#<byte-offset>`.
@@ -719,11 +729,11 @@ AP242 edition report. The decode reports one
 identifier. The warning names the schema and the first component in source
 order that is out of range. Strict decode does not refuse this warning, because
 the decode transfers the source identifier text and reports the defect.
-An identifier that does not parse refuses the exchange structure. The
+An identifier that does not parse supplies no usable schema identity. The
 unparseable forms are an invalid schema name, an unbalanced brace, fewer than
 two components, a numeric component with a leading zero, and a component that
-does not have one of the component forms. Each other identifier defect, such as
-a duplicate identifier, also refuses the exchange structure.
+does not have one of the component forms. Duplicate identifiers define one
+schema identity after string decoding, whitespace trimming, and case normalization.
 The schema name in a parameterized DATA section compares with the
 identifier's schema-name portion when the identifier has an object identifier.
 The writer's supported schema identifiers are:
@@ -1077,6 +1087,12 @@ and CADIR keeps one carrier for each referenced entity. `$` denotes an omitted
 optional value. `*` denotes a derived attribute. An empty aggregate uses an
 empty list. Select and typed-parameter wrappers remain available to schema
 accessors.
+
+A DATA statement ends at a semicolon outside a quoted literal, resource token,
+or comment. DATA instance names are nonzero and unique across all DATA
+sections. A reference denotes a DATA instance or a REFERENCE binding. A
+duplicate name does not determine a unique reference target.
+An open literal or comment provides no continuation boundary.
 
 Length values convert to millimetres. Plane-angle values convert to radians.
 `PLANE_ANGLE_MEASURE_WITH_UNIT` requires a `PLANE_ANGLE_UNIT`, and all
@@ -1509,17 +1525,17 @@ noncanonical Part 21 source; CADIR retains it and reports the source-order
 loss, then applies the same attribute rule. An empty partial that supplies no
 boundary parameters cannot create a loop or an implicit surface.
 
-CADIR decision: when malformed input declares more than one outer bound, the
-decoder rejects the containing topology shell/root. It assigns no outer role,
-derives no implicit face carrier, and creates no neutral `Face`, `Loop`,
-`Surface`, or shell for that root. It retains the source `FACE`, every
-`FACE_OUTER_BOUND` and loop in its bounds graph, and the enclosing shell and
-representation records as source-native opaque records with their source
-links. Point carriers follow the normal point admission path but are not
-assigned to the rejected root. The loss identifies both the malformed face and
-the rejected root. This result is independent of the serialized order of the
-`bounds` SET and does not claim that ISO 10303-42 prescribes a recovery for
-malformed input.
+CADIR decision: when input declares more than one outer bound, the decoder
+keeps every bound loop in serialized source order and creates the neutral
+`Face` with unclassified loops. The source states no single outer boundary,
+so the decoder states none: it assigns no outer role and the face carries
+`FaceLoops::Unspecified`. Loop, edge, coedge, surface, and shell admission
+follow the normal path, and the enclosing root is retained. The
+`topology.face-multiple-outer-bounds` warning identifies the face and the
+count. This result is independent of the serialized order of the `bounds` SET.
+The original face and bound records remain exact source records with their
+reference links. Unclassified loops state no outer role. A `FACE` may carry
+only `FACE_BOUND` records; its `FACE_OUTER_BOUND` count need not be positive.
 
 `AXIS2_PLACEMENT_2D` defines the origin and positive-u axis of a parameter-space
 conic. Its positive-v axis is the counterclockwise perpendicular. ISO

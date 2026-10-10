@@ -283,6 +283,7 @@ impl SourceOccurrenceKey {
 }
 
 struct Builder<'a, 'c, 'r> {
+    procedural_admission: Option<cadmpeg_ir::document::procedural::ProceduralAdmission<'c>>,
     ctx: &'c DecodeContext<'r>,
     payload: &'a ShapePayloadRecord,
     tables: Tables<'a>,
@@ -310,6 +311,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         let source_indices = source_topology_indices(ctx, tables)?;
         Ok(Self {
             ctx,
+            procedural_admission: None,
             payload,
             tables,
             vertices: HashMap::new(),
@@ -329,6 +331,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
 
     fn source_association(&self) -> Result<SourceObjectAssociation, CodecError> {
         Ok(SourceObjectAssociation {
+            geometry_role: None,
             format: cadmpeg_ir::CodecFormat::Fcstd,
             object_id: cadmpeg_core::text::NonBlankString::new(self.ctx.copy_retained_text(
                 self.source_object.as_str(),
@@ -1562,6 +1565,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         self.ctx
             .reserve_vec(&mut ir.model.curves, 1, "FreeCAD curves records")?;
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: CurveId::mint(
                 self.ctx
                     .copy_retained_text(id.as_str(), "FreeCAD polygon curve record identity")?,
@@ -1587,6 +1591,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             self.ctx
                 .reserve_vec(&mut ir.model.curves, 1, "FreeCAD curves records")?;
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: self.polygon_curve_id(edge, ordinal, true)?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
                     place_polyline_samples(&mut samples, carrier_transform, self.ctx)?;
@@ -1825,6 +1830,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             self.ctx
                 .reserve_vec(&mut ir.model.curves, 1, "FreeCAD curves records")?;
             ir.model.curves.push(Curve {
+                parameter_range: None,
                 id: id.try_clone_for_decode(self.ctx, "FreeCAD located curve record identity")?,
                 geometry,
                 source_object,
@@ -1891,10 +1897,9 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     (source).try_clone_for_decode(self.ctx, "FreeCAD geometry source association")
                 })
                 .transpose()?;
-            let has_procedural_construction =
-                ir.model.procedural_surfaces.iter().any(|surface| {
-                    ir.model.procedural_surface_owner(&surface.id) == Some(&base_id)
-                });
+            self.ctx
+                .charge_work(1, "FreeCAD surface construction lookup")?;
+            let has_procedural_construction = base.geometry.procedural_construction().is_some();
             self.ctx
                 .reserve_vec(&mut ir.model.surfaces, 1, "FreeCAD surfaces records")?;
             ir.model.surfaces.push(Surface {
@@ -1903,9 +1908,16 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 source_object,
             });
             if has_procedural_construction {
-                ir.model
-                    .add_procedural_surface(
-                        self.ctx,
+                let admission = match self.procedural_admission.take() {
+                    Some(admission) => admission,
+                    None => cadmpeg_ir::document::procedural::ProceduralAdmission::new(
+                        self.ctx, &ir.model,
+                    )?,
+                };
+                self.procedural_admission
+                    .insert(admission)
+                    .add_surface(
+                        &mut ir.model,
                         &id.try_clone_for_decode(
                             self.ctx,
                             "FreeCAD procedural surface owner identity",
@@ -2507,7 +2519,8 @@ fn source_topology_indices(
     ] {
         let mut next_index = 1;
         for root in tables.roots {
-            let mut stack = ctx.collection_vec(1, "FreeCAD source topology stack")?;
+            let (mut stack, mut stack_reservation) =
+                ctx.temporary_vec(1, "FreeCAD source topology stack")?;
             stack.push((root.clone(), Transform::identity()));
             while let Some((shape_use, parent)) = stack.pop() {
                 ctx.charge_work(1, "FreeCAD source topology scan")?;
@@ -2529,7 +2542,8 @@ fn source_topology_indices(
                     continue;
                 }
                 if topology_rank(shape.kind()) < topology_rank(target) {
-                    ctx.reserve_vec(
+                    ctx.reserve_scoped_vec(
+                        &mut stack_reservation,
                         &mut stack,
                         shape.children.len(),
                         "FreeCAD source topology stack",
@@ -2839,3 +2853,6 @@ mod admission_tests;
 
 #[cfg(test)]
 mod numerical_range_tests;
+
+#[cfg(test)]
+mod located_geometry_tests;

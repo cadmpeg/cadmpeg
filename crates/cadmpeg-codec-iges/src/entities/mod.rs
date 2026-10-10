@@ -6,10 +6,7 @@ use cadmpeg_core::CodecError;
 use std::collections::BTreeSet;
 use std::fmt;
 
-use cadmpeg_ir::geometry::SolvedCurveGeometry;
-use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::CadIr;
 
 use crate::directory::DirectoryEntry;
 use crate::loss::IgesLossCode;
@@ -48,6 +45,24 @@ fn push_entity_loss(
         IgesLossCode::EntityNotProjected,
         format_args!(
             "IGES entity type {} form {} was not projected: {reason}",
+            entry.entity_type, entry.form
+        ),
+    )
+}
+
+fn push_geometry_loss(
+    ctx: &DecodeContext<'_>,
+    losses: &mut Vec<LossNote>,
+    entry: &DirectoryEntry,
+    reason: fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    push_attributed_loss(
+        ctx,
+        losses,
+        entry,
+        IgesLossCode::GeometryNotProjected,
+        format_args!(
+            "IGES entity type {} form {} geometry was not projected: {reason}",
             entry.entity_type, entry.form
         ),
     )
@@ -121,24 +136,6 @@ fn vertical_text_flag_valid(value: i64) -> bool {
     matches!(value, 0..=1)
 }
 
-pub(crate) fn line_directrix(ir: &CadIr, curve_id: &CurveId) -> bool {
-    // `cadmpeg_ir::geometry::PlacedCurve::try_new` bounds the chain, so the
-    // walk needs no depth of its own.
-    fn is_line(geometry: &SolvedCurveGeometry) -> bool {
-        match geometry {
-            SolvedCurveGeometry::Line(_) => true,
-            SolvedCurveGeometry::Transformed(placed) => is_line(placed.basis()),
-            _ => false,
-        }
-    }
-
-    ir.model
-        .curves
-        .iter()
-        .find(|curve| curve.id == *curve_id)
-        .is_some_and(|curve| curve.geometry.solved().is_some_and(is_line))
-}
-
 pub(crate) fn affine_parameter_map(source: [f64; 2], target: [f64; 2]) -> Option<(f64, f64)> {
     let source = cadmpeg_ir::topology::IncreasingParameterInterval::new(source)?;
     let target = cadmpeg_ir::topology::IncreasingParameterInterval::new(target)?;
@@ -156,7 +153,9 @@ mod csg;
 pub(crate) mod curve_conversion;
 pub(crate) mod drawing;
 pub(crate) mod geometry;
+pub(crate) mod nurbs_controls;
 mod offsets;
+pub(crate) mod ownership;
 mod presentation;
 mod splines;
 pub(crate) mod structure;

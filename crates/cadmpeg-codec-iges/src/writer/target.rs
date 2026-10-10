@@ -4,7 +4,7 @@
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{ResolvedTarget, ResolvedWrite},
-    Consumption, EncodeInput, ExportBody, WritePath,
+    ArenaCoverage, Consumption, EncodeInput, ExportBody, WritePath,
 };
 use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
 use cadmpeg_ir::{CadIr, SourceFidelity};
@@ -64,6 +64,8 @@ fn replayed_body(ir: &CadIr, bytes: Vec<u8>) -> ExportBody {
     super::body(
         bytes,
         WritePath::VerbatimReplay,
+        // Replay runs only while the document digest matches its decode baseline.
+        ArenaCoverage::Complete,
         Vec::new(),
         "preserved source container replayed verbatim",
         super::counts_for_ir(ir),
@@ -82,6 +84,7 @@ fn synthesized_body(
     Ok(super::body(
         synthesis.bytes,
         WritePath::Synthesized { consumption },
+        ArenaCoverage::Declared(super::SYNTHESIS_COVERAGE),
         losses,
         "IGES Fixed ASCII container regenerated from supported neutral geometry",
         synthesis.counts,

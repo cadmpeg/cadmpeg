@@ -197,7 +197,7 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: Vec::new(),
+        native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -550,7 +550,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload,
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: vec![
             FeatureInputName {
@@ -751,7 +751,7 @@ fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
     let lanes = vec![FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: vec![0],
+        native_payload: vec![0].into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -996,7 +996,7 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload,
+        native_payload: native_payload.into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),

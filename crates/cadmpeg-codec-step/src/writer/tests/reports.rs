@@ -28,7 +28,7 @@ use super::round_trips::cylinder_surface_doc;
 
 /// A one-face document whose single edge has no attributed curve, so the writer
 /// must omit that edge and record a loss.
-fn edgeless_doc() -> CadIr {
+pub(super) fn edgeless_doc() -> CadIr {
     use cadmpeg_ir::ids::{
         BodyId, CoedgeId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId, VertexId,
     };
@@ -865,7 +865,7 @@ fn writer_reports_reduced_tessellation_metadata_and_body_links() {
 }
 
 #[test]
-fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
+fn writer_reports_each_enclosing_topology_reduction() {
     let mut outer_face = unit_cube().expect("unit cube fixture is admitted");
     outer_face.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
     let report = write_step(
@@ -882,16 +882,30 @@ fn writer_reports_each_enclosing_topology_reduction_and_strict_mode_rejects() {
     }));
 
     let mut inner_loop = unit_cube().expect("unit cube fixture is admitted");
-    let face_loops = inner_loop.model.faces[0]
+    let outer = inner_loop.model.faces[0]
         .loops
         .iter()
-        .cloned()
-        .chain(std::iter::once(
-            cadmpeg_ir::ids::LoopId::mint("step:data:loop#missing-inner")
-                .expect("identity grammar"),
-        ))
-        .collect();
-    inner_loop.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(face_loops);
+        .next()
+        .expect("cube face boundary")
+        .clone();
+    let missing =
+        cadmpeg_ir::ids::LoopId::mint("step:data:loop#missing-inner").expect("identity grammar");
+    inner_loop.model.faces[0].loops =
+        cadmpeg_ir::topology::FaceLoops::unspecified(vec![outer.clone(), missing.clone()]);
+    let report = write_step(
+        &inner_loop,
+        &mut Vec::new(),
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("report mode writes the surviving unclassified loop");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::FaceOmittedUnclassifiedLoop.kind()
+            && loss.severity == cadmpeg_ir::report::Severity::Error
+            && loss.message.contains("has no writable topology")
+    }));
+    inner_loop.model.faces[0].loops =
+        cadmpeg_ir::topology::FaceLoops::classified(outer, vec![missing]);
     let report = write_step(
         &inner_loop,
         &mut Vec::new(),
@@ -1021,6 +1035,7 @@ fn unsupported_standalone_curve_is_reported_and_strict_export_rejects() {
     let curve_id =
         CurveId::mint("step:test:curve#standalone-unsupported").expect("identity grammar");
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Procedural {
             construction: ProceduralCurveId::mint("step:test:construction#standalone-unsupported")
@@ -1280,6 +1295,7 @@ fn edge_without_curve_is_reported_and_omitted() {
     )
     .unwrap();
     let curve = Curve {
+        parameter_range: None,
         id: CurveId::mint("test:model:curve#unused").expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -1306,6 +1322,7 @@ fn edge_without_curve_is_reported_and_omitted() {
 #[test]
 fn subds_tessellations_and_source_associations_are_reported_as_losses() {
     let source_object = cadmpeg_ir::SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Rhino,
         object_id: cadmpeg_core::text::NonBlankString::new("object-0")
             .expect("nonempty source identity"),
@@ -1402,7 +1419,8 @@ fn face_on_unknown_surface_is_skipped_and_reported() {
     );
     assert!(unknown_notes[0].message.contains("1 face(s)"));
     assert!(report.losses.iter().any(|loss| {
-        loss.code == StepLossCode::ShellOmittedOuterFace.kind()
+        loss.code == StepLossCode::ShellOmittedUnclassifiedFace.kind()
+            && loss.severity == cadmpeg_ir::report::Severity::Error
             && loss.message.contains("omitted face")
     }));
 }
@@ -1521,6 +1539,7 @@ fn procedural_curve_outside_the_writable_set_is_reported_not_panicked() {
     let construction_id = ProceduralCurveId::mint("step:test:construction-curve#unsupported")
         .expect("identity grammar");
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Procedural {
             construction: construction_id.clone(),

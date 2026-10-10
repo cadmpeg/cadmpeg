@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Face operands, face source groups and face recipe structures.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::body_recipe::DesignOperandGroup;
 use super::construction::DesignConstructionPersistentIdentity;
 use super::edge_recipe::DesignTopologyRecipeSide;
@@ -39,7 +41,7 @@ pub(crate) struct DesignFaceOperand {
     /// Native construction-recipe arena id.
     pub(crate) recipe_id: String,
     /// Complete recipe-specific prefix before the length-prefixed family name.
-    pub(crate) recipe_prefix_bytes: Vec<u8>,
+    pub(crate) recipe_prefix_bytes: NativeBytes<Vec<u8>>,
     /// Persistent Design selector/reference entries decoded from the prefix.
     pub(crate) recipe_references: Vec<DesignRecipeReference>,
     /// Exact face-recipe family.
@@ -99,7 +101,7 @@ impl Clone for DesignFaceOperand {
             paired_class_tag: self.paired_class_tag.clone(),
             recipe_record_byte_offset: self.recipe_record_byte_offset,
             recipe_id: self.recipe_id.clone(),
-            recipe_prefix_bytes: self.recipe_prefix_bytes.clone(),
+            recipe_prefix_bytes: (self.recipe_prefix_bytes.clone()),
             recipe_references: self.recipe_references.clone(),
             recipe_kind: self.recipe_kind,
             recipe_program_offset: self.recipe_program_offset,
@@ -139,8 +141,7 @@ impl Serialize for DesignFaceOperand {
             recipe_record_byte_offset: u64,
             recipe_id: &'a str,
             recipe_prefix_offset: u64,
-            #[serde(serialize_with = "cadmpeg_ir::bytes::serialize")]
-            recipe_prefix_bytes: &'a [u8],
+            recipe_prefix_bytes: NativeBytes<&'a [u8]>,
             recipe_references: &'a Vec<DesignRecipeReference>,
             recipe_kind: ConstructionRecipeKind,
             recipe_program_offset: u64,
@@ -181,7 +182,7 @@ impl Serialize for DesignFaceOperand {
             recipe_record_byte_offset: self.recipe_record_byte_offset,
             recipe_id: &self.recipe_id,
             recipe_prefix_offset: self.recipe_prefix_offset(),
-            recipe_prefix_bytes: &self.recipe_prefix_bytes,
+            recipe_prefix_bytes: (&self.recipe_prefix_bytes).into(),
             recipe_references: &self.recipe_references,
             recipe_kind: self.recipe_kind,
             recipe_program_offset: self.recipe_program_offset,
@@ -235,7 +236,7 @@ impl DesignFaceOperand {
             paired_class_tag: draft.paired_class_tag,
             recipe_record_byte_offset: draft.recipe_record_byte_offset,
             recipe_id: draft.recipe_id,
-            recipe_prefix_bytes: draft.recipe_prefix_bytes,
+            recipe_prefix_bytes: (draft.recipe_prefix_bytes).into(),
             recipe_references: draft.recipe_references,
             recipe_kind: draft.recipe_kind,
             recipe_program_offset: draft.recipe_program_offset,
@@ -280,7 +281,7 @@ impl DesignFaceOperand {
             recipe_record_byte_offset: self.recipe_record_byte_offset,
             recipe_id: self.recipe_id,
             recipe_prefix_offset,
-            recipe_prefix_bytes: self.recipe_prefix_bytes,
+            recipe_prefix_bytes: self.recipe_prefix_bytes.into_inner(),
             recipe_references: self.recipe_references,
             recipe_kind: self.recipe_kind,
             recipe_program_offset: self.recipe_program_offset,
@@ -429,8 +430,7 @@ struct DesignFaceOperandWire {
     /// Byte offset of the recipe-specific prefix after the indexed header.
     recipe_prefix_offset: u64,
     /// Complete recipe-specific prefix before the length-prefixed family name.
-    #[serde(with = "cadmpeg_ir::bytes")]
-    recipe_prefix_bytes: Vec<u8>,
+    recipe_prefix_bytes: NativeBytes<Vec<u8>>,
     /// Persistent Design selector/reference entries decoded from the prefix.
     recipe_references: Vec<DesignRecipeReference>,
     /// Exact face-recipe family.
@@ -521,7 +521,7 @@ impl TryFrom<DesignFaceOperandWire> for DesignFaceOperand {
             recipe_record_byte_offset: wire.recipe_record_byte_offset,
             recipe_id: wire.recipe_id,
             recipe_prefix_offset: wire.recipe_prefix_offset,
-            recipe_prefix_bytes: wire.recipe_prefix_bytes,
+            recipe_prefix_bytes: wire.recipe_prefix_bytes.into_inner(),
             recipe_references: wire.recipe_references,
             recipe_kind: wire.recipe_kind,
             recipe_program_offset: wire.recipe_program_offset,
@@ -565,7 +565,7 @@ impl From<DesignFaceOperand> for DesignFaceOperandWire {
             recipe_record_byte_offset: operand.recipe_record_byte_offset,
             recipe_id: operand.recipe_id,
             recipe_prefix_offset: operand.recipe_prefix_offset,
-            recipe_prefix_bytes: operand.recipe_prefix_bytes,
+            recipe_prefix_bytes: (operand.recipe_prefix_bytes).into(),
             recipe_references: operand.recipe_references,
             recipe_kind: operand.recipe_kind,
             recipe_program_offset: operand.recipe_program_offset,

@@ -167,7 +167,7 @@ fn type406_form31_entity_table_boundary_follows_fixed_corners() {
             TokenValue::Integer(8),
             TokenValue::Integer(0),
             TokenValue::Integer(0),
-            TokenValue::String(b"2".to_vec()),
+            TokenValue::String(b"2".to_vec().into()),
             TokenValue::Integer(0),
             TokenValue::Integer(2),
             TokenValue::Integer(1),
@@ -373,7 +373,7 @@ fn type406_form36_entity_table_boundary_follows_np_arity() {
                 TokenValue::Integer(406),
                 TokenValue::Integer(2),
                 TokenValue::Integer(2),
-                TokenValue::String(b"1".to_vec()),
+                TokenValue::String(b"1".to_vec().into()),
                 TokenValue::Integer(1),
                 TokenValue::Integer(3),
                 TokenValue::Integer(1),
@@ -840,7 +840,7 @@ fn type412_malformed_counts_do_not_enable_generic_recovery() {
     values[7].value = TokenValue::Integer(2);
     values[8].value = TokenValue::Integer(1);
     values[9].value = TokenValue::Integer(1);
-    values[11].value = TokenValue::String(b"1".to_vec());
+    values[11].value = TokenValue::String(b"1".to_vec().into());
     values[13].value = TokenValue::Integer(1);
     values[14].value = TokenValue::Integer(1);
     values[15].value = TokenValue::Integer(5);
@@ -1029,7 +1029,7 @@ fn type414_malformed_counts_do_not_enable_generic_recovery() {
     values[6].value = TokenValue::Integer(8);
     values[7].value = TokenValue::Integer(1);
     values[8].value = TokenValue::Integer(1);
-    values[9].value = TokenValue::String(b"1".to_vec());
+    values[9].value = TokenValue::String(b"1".to_vec().into());
     values[11].value = TokenValue::Integer(1);
     values[12].value = TokenValue::Integer(1);
     values[13].value = TokenValue::Integer(5);
@@ -1215,7 +1215,7 @@ fn type402_form5_malformed_counts_do_not_enable_generic_recovery() {
         })
         .collect::<Vec<_>>();
     values[0].value = TokenValue::Integer(402);
-    values[1].value = TokenValue::String(b"1".to_vec());
+    values[1].value = TokenValue::String(b"1".to_vec().into());
     values[2].value = TokenValue::Integer(1);
     values[6].value = TokenValue::Integer(5);
     values[8].value = TokenValue::Integer(7);

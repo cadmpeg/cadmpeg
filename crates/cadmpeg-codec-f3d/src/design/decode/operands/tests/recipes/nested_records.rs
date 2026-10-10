@@ -1243,7 +1243,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         record_index: 1,
         frame_length: 4,
         prefix_offset: 0,
-        prefix_bytes: vec![1],
+        prefix_bytes: vec![1].into(),
         references: Vec::new(),
         program_offset: 0,
         program: embedded_program,

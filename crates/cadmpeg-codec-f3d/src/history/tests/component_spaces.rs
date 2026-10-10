@@ -8,7 +8,7 @@
 
 use crate::history::{
     bind_historical_recipe_reference_candidates, direct_face_recipe_candidates,
-    historical_recipe_faces, recipe_reference_common_vertex,
+    historical_recipe_faces, recipe_index::RecipeTopologyCache, recipe_reference_common_vertex,
     selection::bind_extrude_selection_history,
 };
 use crate::history_records::{
@@ -205,7 +205,12 @@ fn historical_recipe_join_unions_fragments_without_raw_selector_equality() {
     };
 
     crate::test_support::with_decode_context(|decode_ctx| {
-        bind_historical_recipe_reference_candidates(decode_ctx, &mut reference, &topology)
+        bind_historical_recipe_reference_candidates(
+            decode_ctx,
+            &mut reference,
+            &topology,
+            &mut RecipeTopologyCache::default(),
+        )
     })
     .unwrap();
 
@@ -322,8 +327,13 @@ fn historical_recipe_live_faces_refuse_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        bind_historical_recipe_reference_candidates(&ctx, &mut reference, &topology).unwrap_err();
+    let error = bind_historical_recipe_reference_candidates(
+        &ctx,
+        &mut reference,
+        &topology,
+        &mut RecipeTopologyCache::default(),
+    )
+    .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D live recipe faces")
@@ -338,8 +348,13 @@ fn historical_recipe_live_edges_refuse_collection_limit() {
     policy.limits.max_collection_items = 1;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        bind_historical_recipe_reference_candidates(&ctx, &mut reference, &topology).unwrap_err();
+    let error = bind_historical_recipe_reference_candidates(
+        &ctx,
+        &mut reference,
+        &topology,
+        &mut RecipeTopologyCache::default(),
+    )
+    .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D live recipe edges")
@@ -351,11 +366,17 @@ fn historical_recipe_face_candidates_refuse_collection_limit() {
     let (topology, mut reference) = recipe_limit_case();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
+    // Seven slots hold two live identities, the token/reference index, and snapshot cache.
+    policy.limits.max_collection_items = 7;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        bind_historical_recipe_reference_candidates(&ctx, &mut reference, &topology).unwrap_err();
+    let error = bind_historical_recipe_reference_candidates(
+        &ctx,
+        &mut reference,
+        &topology,
+        &mut RecipeTopologyCache::default(),
+    )
+    .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D recipe reference faces")
@@ -367,11 +388,17 @@ fn historical_recipe_edge_candidates_refuse_collection_limit() {
     let (topology, mut reference) = recipe_limit_case();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
+    // Seven index slots plus one face candidate precede the edge candidate.
+    policy.limits.max_collection_items = 8;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        bind_historical_recipe_reference_candidates(&ctx, &mut reference, &topology).unwrap_err();
+    let error = bind_historical_recipe_reference_candidates(
+        &ctx,
+        &mut reference,
+        &topology,
+        &mut RecipeTopologyCache::default(),
+    )
+    .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D recipe reference edges")
@@ -392,7 +419,12 @@ fn historical_recipe_identity_refuses_retained_limit() {
             policy.limits.max_retained_bytes = cap;
             let (ctx, _) =
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            bind_historical_recipe_reference_candidates(&ctx, &mut reference, &topology)
+            bind_historical_recipe_reference_candidates(
+                &ctx,
+                &mut reference,
+                &topology,
+                &mut RecipeTopologyCache::default(),
+            )
         },
     ) {
         cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
@@ -400,8 +432,13 @@ fn historical_recipe_identity_refuses_retained_limit() {
     };
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        bind_historical_recipe_reference_candidates(&ctx, &mut reference, &topology).unwrap_err();
+    let error = bind_historical_recipe_reference_candidates(
+        &ctx,
+        &mut reference,
+        &topology,
+        &mut RecipeTopologyCache::default(),
+    )
+    .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D historical face identity")
@@ -413,10 +450,12 @@ fn historical_recipe_face_list_refuses_collection_limit() {
     let (topology, _) = recipe_limit_case();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
+    // Nine slots include the live identities, token/reference index, lazy face index, and cache.
+    policy.limits.max_collection_items = 9;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = historical_recipe_faces(&ctx, 301, &topology).unwrap_err();
+    let error = historical_recipe_faces(&ctx, 301, &topology, &mut RecipeTopologyCache::default())
+        .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D historical recipe faces")
@@ -535,7 +574,10 @@ fn corner_recipe_intersects_vertex_sets_across_fragment_unions() {
 
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| recipe_reference_common_vertex(
-            decode_ctx, &recipe, &topology
+            decode_ctx,
+            &recipe,
+            &topology,
+            &mut crate::history::topology_cache::TopologyQueryCache::default()
         ))
         .unwrap(),
         Some(3)

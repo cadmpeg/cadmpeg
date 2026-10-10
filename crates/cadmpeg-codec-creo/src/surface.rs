@@ -1100,7 +1100,7 @@ pub(crate) struct SurfaceParameterScalarFrame {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SurfaceParameterOpaqueSpan {
     /// Exact source bytes in the span.
-    pub(crate) raw: Vec<u8>,
+    pub(crate) raw: cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>,
     /// Byte offset relative to the start of the parameter body.
     pub(crate) offset: usize,
 }
@@ -1123,7 +1123,7 @@ pub(crate) struct SurfaceParameterScalar {
     /// structurally framed token whose numeric mapping is not defined.
     pub(crate) value: Option<f64>,
     /// Exact source bytes occupied by the token.
-    pub(crate) raw: Vec<u8>,
+    pub(crate) raw: cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>,
     /// Byte offset relative to the start of the parameter body.
     pub(crate) offset: usize,
 }
@@ -1221,7 +1221,7 @@ pub(crate) struct TabulatedCylinderCurveReplay {
     /// Reference following the control-point-array header.
     pub(crate) successor_reference: u32,
     /// Four individually bounded packed control-point bodies.
-    pub(crate) control_point_bodies: [Vec<u8>; 4],
+    pub(crate) control_point_bodies: [cadmpeg_ir::native::bytes::NativeBytes; 4],
     /// Two-coordinate control points when both scalar tokens consume their
     /// complete packed bodies.
     pub(crate) control_points: [Option<[f64; 2]>; 4],
@@ -2517,7 +2517,7 @@ pub(crate) struct PlaneEnvelopeRecord {
     /// means equality cannot be decided from the scalar token pair.
     pub(crate) corner_coordinate_equal: [Option<bool>; 3],
     /// Exact token bytes for each declared envelope scalar slot.
-    pub(crate) scalar_tokens: Vec<Vec<u8>>,
+    pub(crate) scalar_tokens: Vec<cadmpeg_ir::native::bytes::NativeBytes>,
     /// Byte offset of the plane row in the original stream.
     pub(crate) row_offset: usize,
     /// Byte offset of the envelope body in the original stream.
@@ -2846,7 +2846,9 @@ pub(crate) fn frame_bound_outline_plane(
         && record.scalar_tokens[..8]
             .iter()
             .all(|token| !token.is_empty())
-        && record.scalar_tokens[8..].iter().all(Vec::is_empty)
+        && record.scalar_tokens[8..]
+            .iter()
+            .all(|token| token.is_empty())
         && !record.scalar_tokens[4 + axis].is_empty()
         && record.scalar_tokens[4 + axis] == record.scalar_tokens[7];
     if record.corner_coordinate_equal[axis] != Some(true) && !shortened_held_coordinate {
@@ -3429,7 +3431,12 @@ fn parsed_named_surface_value(
             }
             let mut values = Vec::new();
             for _ in 0..count {
-                let (value, next) = compact_int(body, cursor);
+                let (value, next) = if name == "parent_feats" {
+                    let (value, next) = psb::parent_feature_id(body, cursor)?;
+                    (value, next)
+                } else {
+                    compact_int(body, cursor)
+                };
                 if next == cursor {
                     break;
                 }
@@ -3960,7 +3967,7 @@ fn scalar_tokens(
             ctx.reserve_vec(&mut tokens, 1, "creo surface scalar token items")?;
             tokens.push(SurfaceParameterScalar {
                 value: Some(value),
-                raw,
+                raw: (raw).into(),
                 offset: start,
             });
             cursor = end;
@@ -3992,7 +3999,7 @@ fn scalar_tokens(
                 ctx.reserve_vec(&mut tokens, 1, "creo surface scalar token items")?;
                 tokens.push(SurfaceParameterScalar {
                     value: Some(layout.value.get().get()),
-                    raw,
+                    raw: (raw).into(),
                     offset: layout.start,
                 });
                 cursor = layout.end;
@@ -4029,7 +4036,7 @@ fn scalar_tokens(
             ctx.reserve_vec(&mut tokens, 1, "creo surface scalar token items")?;
             tokens.push(SurfaceParameterScalar {
                 value: Some(value),
-                raw,
+                raw: (raw).into(),
                 offset: cursor,
             });
             cursor = next;
@@ -4097,7 +4104,7 @@ fn opaque_spans(
             )?;
             ctx.reserve_vec(&mut spans, 1, "creo surface opaque span items")?;
             spans.push(SurfaceParameterOpaqueSpan {
-                raw,
+                raw: (raw).into(),
                 offset: cursor,
             });
         }
@@ -4107,7 +4114,7 @@ fn opaque_spans(
         let raw = ctx.copy_retained(&body[cursor..], "creo surface opaque span bytes")?;
         ctx.reserve_vec(&mut spans, 1, "creo surface opaque span items")?;
         spans.push(SurfaceParameterOpaqueSpan {
-            raw,
+            raw: (raw).into(),
             offset: cursor,
         });
     }
@@ -4132,7 +4139,7 @@ fn scalar_frames(
         for token in &tokens[start..end] {
             slots.push(SurfaceParameterScalar {
                 value: token.value,
-                raw: ctx.copy_retained(&token.raw, "creo surface scalar frame bytes")?,
+                raw: (ctx.copy_retained(&token.raw, "creo surface scalar frame bytes")?).into(),
                 offset: token.offset,
             });
         }
@@ -5322,7 +5329,7 @@ fn parameter_records_for_rows(
         let scalar_frames = scalar_frames(ctx, &scalar_tokens)?;
         let mut record = SurfaceParameterRecord {
             surface_id: row.id,
-            scalar_tokens,
+            scalar_tokens: scalar_tokens.into_iter().collect(),
             opaque_spans,
             scalar_frames,
             carrier: SurfaceParameterCarrier::Unresolved(row.kind),
@@ -6061,7 +6068,7 @@ pub(crate) fn tabulated_cylinder_curve_replays(
                 last_control_point,
             ],
             successor_reference,
-            control_point_bodies,
+            control_point_bodies: control_point_bodies.map(Into::into),
             control_points,
             terminal_reference,
             offset: replay_offset,
@@ -7521,7 +7528,7 @@ fn plane_envelopes_for_rows(
             body,
             envelope,
             corner_coordinate_equal,
-            scalar_tokens,
+            scalar_tokens: scalar_tokens.into_iter().map(Into::into).collect(),
             row_offset: row.offset,
             offset: body_start,
         });
@@ -7592,7 +7599,7 @@ fn plane_envelopes_for_rows(
                 slot_equality(&slots.slots[1], &slots.slots[4]),
                 slot_equality(&slots.slots[2], &slots.slots[5]),
             ],
-            scalar_tokens,
+            scalar_tokens: scalar_tokens.into_iter().map(Into::into).collect(),
             row_offset: row.offset,
             offset: scalar_start,
         });

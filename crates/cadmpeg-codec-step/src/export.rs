@@ -32,6 +32,9 @@ use crate::loss::StepLossCode;
 use crate::options::{StepSchema, StepWriteOptions};
 use crate::writer::{refs, string, Emitter, Ref};
 
+mod ownership;
+mod wire;
+
 const EPS_IDENTITY: f64 = 1.0e-12;
 
 /// Serializes an IR document as an ISO 10303-21 STEP Part 21 file declaring
@@ -85,6 +88,20 @@ pub(crate) fn write_step_outcome(
     schema: StepSchema,
     opts: &StepWriteOptions,
 ) -> Result<StepWriteOutcome, cadmpeg_core::CodecError> {
+    let definitions = ir
+        .model
+        .product_definitions
+        .iter()
+        .map(|product| &product.id)
+        .collect::<BTreeSet<_>>();
+    let missing_definitions = ir.model.occurrences.iter().filter(|occurrence| {
+        matches!(&occurrence.prototype, PrototypeReference::Local { definition } if !definitions.contains(definition))
+    }).count();
+    if missing_definitions != 0 {
+        return Err(cadmpeg_core::CodecError::malformed(format_args!(
+            "STEP cannot write {missing_definitions} occurrence record(s) whose local product definition is missing"
+        )));
+    }
     for surface in &ir.model.surfaces {
         if let Some(half_angle) = surface
             .geometry
@@ -97,7 +114,7 @@ pub(crate) fn write_step_outcome(
             )));
         }
     }
-    let mut b = Builder::new(ir, schema);
+    let mut b = Builder::new(ir, schema)?;
     b.build();
     let outcome = b.finish_outcome();
     let lines = b.emitter.into_lines()?;
@@ -290,10 +307,12 @@ pub(crate) struct Builder<'a> {
     angle_unit: Option<Ref>,
     ratio_unit: Option<Ref>,
     geometry_emission_depth: usize,
+    construction_supports: BTreeSet<String>,
 }
 
 impl<'a> Builder<'a> {
-    pub(crate) fn new(ir: &'a CadIr, schema: StepSchema) -> Self {
+    pub(crate) fn new(ir: &'a CadIr, schema: StepSchema) -> Result<Self, cadmpeg_core::CodecError> {
+        let construction_supports = ownership::construction_supports(ir)?;
         let loop_faces = ir
             .model
             .faces
@@ -328,7 +347,7 @@ impl<'a> Builder<'a> {
                 ));
             }
         }
-        Builder {
+        Ok(Builder {
             ir,
             schema,
             emitter: Emitter::new(),
@@ -449,7 +468,8 @@ impl<'a> Builder<'a> {
             angle_unit: None,
             ratio_unit: None,
             geometry_emission_depth: 0,
-        }
+            construction_supports,
+        })
     }
 
     fn loss(&mut self, code: StepLossCode, message: String) {
@@ -463,6 +483,49 @@ impl<'a> Builder<'a> {
     }
 
     pub(crate) fn build(&mut self) {
+        if !self.ir.model.product_definitions.is_empty() {
+            let owned = self
+                .ir
+                .model
+                .product_definitions
+                .iter()
+                .flat_map(|product| &product.bodies)
+                .collect::<BTreeSet<_>>();
+            let count = self
+                .ir
+                .model
+                .bodies
+                .iter()
+                .filter(|body| !owned.contains(&body.id))
+                .count();
+            if count != 0 {
+                self.loss(StepLossCode::BodyWithoutProductRepresentation, format!(
+                    "{count} body record(s) have no product representation; their shape items are not attached to a representation"
+                ));
+            }
+        }
+        let surface_regions = self
+            .ir
+            .model
+            .bodies
+            .iter()
+            .filter(|body| matches!(body.kind, BodyKind::Solid | BodyKind::Sheet))
+            .flat_map(|body| &body.regions)
+            .collect::<BTreeSet<_>>();
+        let mut wire_edges = BTreeSet::new();
+        let mut free_vertices = BTreeSet::new();
+        for shell in &self.ir.model.shells {
+            if surface_regions.contains(&shell.region) {
+                wire_edges.extend(shell.wire_edges());
+                free_vertices.extend(shell.free_vertices());
+            }
+        }
+        if !wire_edges.is_empty() || !free_vertices.is_empty() {
+            self.loss(StepLossCode::SurfaceShellWireTopologyOmitted, format!(
+                "{} wire edge record(s) and {} free vertex record(s) in solid or sheet shells are not written",
+                wire_edges.len(), free_vertices.len()
+            ));
+        }
         let context = self.emit_context();
 
         let shape_items = self.emit_shape_items(context);
@@ -1839,12 +1902,15 @@ impl<'a> Builder<'a> {
             let edges = shell
                 .wire_edges()
                 .iter()
-                .filter_map(|edge| self.emit_edge(edge.as_str()))
+                .filter_map(|id| {
+                    let emitted = self.emit_edge(id.as_str())?;
+                    self.edges.get(id.as_str()).map(|edge| (emitted, *edge))
+                })
                 .collect::<Vec<_>>();
-            if !edges.is_empty() {
+            for component in wire::connected_components(&edges) {
                 connected_sets.push(
                     self.emitter
-                        .emit("CONNECTED_EDGE_SET", &format!("'',{}", refs(&edges))),
+                        .emit("CONNECTED_EDGE_SET", &format!("'',{}", refs(&component))),
                 );
             }
         }
@@ -1858,18 +1924,120 @@ impl<'a> Builder<'a> {
     }
 
     fn emit_standalone_geometry(&mut self) -> Vec<Ref> {
+        // Ownership is a property of the source/model graph, not of successful
+        // emission. A failed face must never expose its full support as a root.
+        let owned_surfaces: BTreeSet<_> = self
+            .ir
+            .model
+            .faces
+            .iter()
+            .map(|face| face.surface.as_str())
+            .collect();
+        let owned_curves: BTreeSet<_> = self
+            .ir
+            .model
+            .edges
+            .iter()
+            .filter_map(|edge| edge.carrier.curve())
+            .map(cadmpeg_ir::ids::CurveId::as_str)
+            .chain(
+                self.ir
+                    .model
+                    .coedges
+                    .iter()
+                    .filter_map(|coedge| coedge.use_curve.as_ref())
+                    .map(|use_| use_.curve.as_str()),
+            )
+            .collect();
+        let owned_points: BTreeSet<_> = self
+            .ir
+            .model
+            .vertices
+            .iter()
+            .map(|vertex| vertex.point.as_str())
+            .collect();
+        for surface in &self.ir.model.surfaces {
+            if !self.surface_refs.contains_key(surface.id.as_str())
+                && (owned_surfaces.contains(surface.id.as_str())
+                    || ownership::is_support(
+                        surface.id.as_str(),
+                        surface.source_object.as_ref(),
+                        &self.construction_supports,
+                    ))
+            {
+                self.unwritten_geometry_carriers
+                    .insert(surface.id.as_str().to_owned());
+            }
+        }
+        for curve in &self.ir.model.curves {
+            if !self.curve_refs.contains_key(curve.id.as_str())
+                && (owned_curves.contains(curve.id.as_str())
+                    || ownership::is_support(
+                        curve.id.as_str(),
+                        curve.source_object.as_ref(),
+                        &self.construction_supports,
+                    ))
+            {
+                self.unwritten_geometry_carriers
+                    .insert(curve.id.as_str().to_owned());
+            }
+        }
+        for point in &self.ir.model.points {
+            if !self.point_refs.contains_key(point.id.as_str())
+                && (owned_points.contains(point.id.as_str())
+                    || ownership::is_support(
+                        point.id.as_str(),
+                        point.source_object.as_ref(),
+                        &self.construction_supports,
+                    ))
+            {
+                self.unwritten_geometry_carriers
+                    .insert(point.id.as_str().to_owned());
+            }
+        }
         let surface_ids = self
             .ir
             .model
             .surfaces
             .iter()
-            .filter(|surface| !self.surface_refs.contains_key(surface.id.as_str()))
+            .filter(|surface| {
+                !self.surface_refs.contains_key(surface.id.as_str())
+                    && !owned_surfaces.contains(surface.id.as_str())
+                    && !ownership::is_support(
+                        surface.id.as_str(),
+                        surface.source_object.as_ref(),
+                        &self.construction_supports,
+                    )
+            })
             .map(|surface| surface.id.as_str().to_owned())
             .collect::<Vec<_>>();
         let mut members = Vec::new();
         let mut has_surfaces = false;
         for surface_id in surface_ids {
             if let Some(reference) = self.emit_surface(&surface_id) {
+                let ranges =
+                    self.procedural_surfaces
+                        .get(surface_id.as_str())
+                        .and_then(|procedural| match procedural.definition() {
+                            ProceduralSurfaceDefinition::Exact(payload) => match payload.spline() {
+                                cadmpeg_ir::geometry::ExactSpline::Legacy { ranges, .. } => {
+                                    Some(ranges.map(|range| {
+                                        range.map(cadmpeg_ir::scalar::FiniteReal::get)
+                                    }))
+                                }
+                                cadmpeg_ir::geometry::ExactSpline::Revision { .. } => None,
+                            },
+                            _ => None,
+                        });
+                let reference = match ranges {
+                    Some(ranges) => self.emit_rectangular_trim(
+                        reference,
+                        ranges,
+                        [true, true],
+                        self.surface_chart_reversed(&surface_id),
+                    ),
+                    None => reference,
+                };
                 members.push(reference);
                 has_surfaces = true;
             } else {
@@ -1881,11 +2049,29 @@ impl<'a> Builder<'a> {
             .model
             .curves
             .iter()
-            .filter(|curve| !self.curve_refs.contains_key(curve.id.as_str()))
+            .filter(|curve| {
+                !self.curve_refs.contains_key(curve.id.as_str())
+                    && !owned_curves.contains(curve.id.as_str())
+                    && !ownership::is_support(
+                        curve.id.as_str(),
+                        curve.source_object.as_ref(),
+                        &self.construction_supports,
+                    )
+            })
             .map(|curve| curve.id.as_str().to_owned())
             .collect::<Vec<_>>();
         for curve_id in curve_ids {
             if let Some(reference) = self.emit_curve(&curve_id) {
+                let reference = if let Some(range) = self
+                    .curves
+                    .get(curve_id.as_str())
+                    .and_then(|curve| curve.parameter_range)
+                {
+                    let [start, end] = range.endpoints();
+                    self.emitter.emit("TRIMMED_CURVE", &format!("'',{reference},(PARAMETER_VALUE({})),(PARAMETER_VALUE({})),.T.,.PARAMETER.", self.emitter.real(start), self.emitter.real(end)))
+                } else {
+                    reference
+                };
                 members.push(reference);
             } else {
                 self.unwritten_geometry_carriers.insert(curve_id);
@@ -1896,7 +2082,15 @@ impl<'a> Builder<'a> {
             .model
             .points
             .iter()
-            .filter(|point| !self.point_refs.contains_key(point.id.as_str()))
+            .filter(|point| {
+                !self.point_refs.contains_key(point.id.as_str())
+                    && !owned_points.contains(point.id.as_str())
+                    && !ownership::is_support(
+                        point.id.as_str(),
+                        point.source_object.as_ref(),
+                        &self.construction_supports,
+                    )
+            })
             .map(|point| point.id.as_str().to_owned())
             .collect::<Vec<_>>();
         for point_id in point_ids {
@@ -2148,23 +2342,15 @@ impl<'a> Builder<'a> {
             if let Some(r) = self.emit_face(fid) {
                 face_refs.push(r);
             } else {
-                let outer = self.faces.get(fid.as_str()).is_some_and(|face| {
-                    face.loops
-                        .iter()
-                        .any(|loop_id| face.loop_role(loop_id) == LoopBoundaryRole::Outer)
-                        || face.loops.iter().next().is_some_and(|loop_id| {
-                            !face.loops.iter().any(|candidate| {
-                                face.loop_role(candidate) == LoopBoundaryRole::Outer
-                            }) && self.loops.contains_key(loop_id.as_str())
-                        })
-                });
+                let code = match self.faces.get(fid.as_str()).map(|face| &face.loops) {
+                    Some(cadmpeg_ir::topology::FaceLoops::Classified { .. }) => {
+                        StepLossCode::ShellOmittedOuterFace
+                    }
+                    _ => StepLossCode::ShellOmittedUnclassifiedFace,
+                };
                 self.topology_relation_loss(
                     format!("shell:{shell_id}:face:{fid}"),
-                    if outer {
-                        StepLossCode::ShellOmittedOuterFace
-                    } else {
-                        StepLossCode::ShellOmittedInnerFace
-                    },
+                    code,
                     format!(
                         "shell {shell_id} omitted face {fid} because the face has no writable topology"
                     ),
@@ -2182,36 +2368,21 @@ impl<'a> Builder<'a> {
 
     fn emit_face(&mut self, face_id: &str) -> Option<Ref> {
         let face = self.faces.get(face_id).copied()?;
-        let surface_id = face.surface.as_str().to_owned();
-        // A face resting on an unknown (opaque) surface cannot become an
-        // ADVANCED_FACE: STEP requires a real surface. Skip it and aggregate the
-        // loss rather than fabricate placeholder geometry.
-        if let Some(surf) = self.surfaces.get(surface_id.as_str()) {
-            if !geometry::surface_is_supported(surf.geometry.solved()?) {
-                self.unknown_surface_faces.insert(face_id.to_string());
-                return None;
-            }
-        }
-        let face_loops = face.loops.to_vec();
-        let loop_ids: Vec<String> = face_loops.iter().map(|l| l.as_str().to_owned()).collect();
+        let surface_id = face.surface.as_str();
         let same_sense = matches!(face.sense, Sense::Forward);
 
-        let Some(surf_ref) = self.emit_surface(&surface_id) else {
+        // Surface emission admits either a writable construction or a solved
+        // carrier. An absent or opaque solved cache cannot veto a construction.
+        let Some(surf_ref) = self.emit_surface(surface_id) else {
             self.unknown_surface_faces.insert(face_id.to_string());
             return None;
         };
 
         let mut bound_refs = Vec::new();
-        for (i, lid) in loop_ids.iter().enumerate() {
-            let loop_id = &face_loops[i];
+        for loop_id in &face.loops {
+            let lid = loop_id.as_str();
             if let Some(loop_ref) = self.emit_loop(lid) {
-                let kind = if face.loop_role(loop_id) == LoopBoundaryRole::Outer
-                    || (i == 0
-                        && !face
-                            .loops
-                            .iter()
-                            .any(|id| face.loop_role(id) == LoopBoundaryRole::Outer))
-                {
+                let kind = if face.loop_role(loop_id) == LoopBoundaryRole::Outer {
                     "FACE_OUTER_BOUND"
                 } else {
                     "FACE_BOUND"
@@ -2219,19 +2390,14 @@ impl<'a> Builder<'a> {
                 let b = self.emitter.emit(kind, &format!("'',{loop_ref},.T."));
                 bound_refs.push(b);
             } else {
-                let outer = face.loop_role(loop_id) == LoopBoundaryRole::Outer
-                    || (i == 0
-                        && !face
-                            .loops
-                            .iter()
-                            .any(|id| face.loop_role(id) == LoopBoundaryRole::Outer));
+                let code = match face.loop_role(loop_id) {
+                    LoopBoundaryRole::Outer => StepLossCode::FaceOmittedOuterLoop,
+                    LoopBoundaryRole::Inner => StepLossCode::FaceOmittedInnerLoop,
+                    LoopBoundaryRole::Unspecified => StepLossCode::FaceOmittedUnclassifiedLoop,
+                };
                 self.topology_relation_loss(
                     format!("face:{face_id}:loop:{lid}"),
-                    if outer {
-                        StepLossCode::FaceOmittedOuterLoop
-                    } else {
-                        StepLossCode::FaceOmittedInnerLoop
-                    },
+                    code,
                     format!(
                         "face {face_id} omitted loop {lid} because the loop has no writable topology"
                     ),
@@ -2759,38 +2925,18 @@ impl<'a> Builder<'a> {
             }
             ProceduralSurfaceDefinition::Subset(payload) => {
                 let support = payload.support();
-                let mut parameter_ranges = payload
+                let parameter_ranges = payload
                     .parameter_ranges()
                     .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints);
                 let u_sense = payload.u_sense().as_ref()?;
                 let v_sense = payload.v_sense().as_ref()?;
                 let support = self.emit_surface(support.as_str())?;
                 let reverse_chart = self.surface_chart_reversed(payload.support().as_str());
-                if reverse_chart {
-                    for range in &mut parameter_ranges {
-                        range[0] = -range[0];
-                        range[1] = -range[1];
-                    }
-                }
-                Some(self.emitter.emit(
-                    "RECTANGULAR_TRIMMED_SURFACE",
-                    &format!(
-                        "'',{support},{},{},{},{},{},{}",
-                        self.emitter.real(parameter_ranges[0][0]),
-                        self.emitter.real(parameter_ranges[0][1]),
-                        self.emitter.real(parameter_ranges[1][0]),
-                        self.emitter.real(parameter_ranges[1][1]),
-                        if *u_sense == reverse_chart {
-                            ".F."
-                        } else {
-                            ".T."
-                        },
-                        if *v_sense == reverse_chart {
-                            ".F."
-                        } else {
-                            ".T."
-                        },
-                    ),
+                Some(self.emit_rectangular_trim(
+                    support,
+                    parameter_ranges,
+                    [*u_sense, *v_sense],
+                    reverse_chart,
                 ))
             }
             ProceduralSurfaceDefinition::Replica { source, transform } => {
@@ -2826,6 +2972,41 @@ impl<'a> Builder<'a> {
             }
             _ => None,
         }
+    }
+
+    fn emit_rectangular_trim(
+        &mut self,
+        support: Ref,
+        mut ranges: [[f64; 2]; 2],
+        senses: [bool; 2],
+        reverse_chart: bool,
+    ) -> Ref {
+        if reverse_chart {
+            for range in &mut ranges {
+                range[0] = -range[0];
+                range[1] = -range[1];
+            }
+        }
+        self.emitter.emit(
+            "RECTANGULAR_TRIMMED_SURFACE",
+            &format!(
+                "'',{support},{},{},{},{},{},{}",
+                self.emitter.real(ranges[0][0]),
+                self.emitter.real(ranges[0][1]),
+                self.emitter.real(ranges[1][0]),
+                self.emitter.real(ranges[1][1]),
+                if senses[0] == reverse_chart {
+                    ".F."
+                } else {
+                    ".T."
+                },
+                if senses[1] == reverse_chart {
+                    ".F."
+                } else {
+                    ".T."
+                },
+            ),
+        )
     }
 
     pub(crate) fn emit_curve(&mut self, curve_id: &str) -> Option<Ref> {
@@ -3940,6 +4121,11 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
+        self.unwritten_geometry_carriers.retain(|id| {
+            !self.surface_refs.contains_key(id.as_str())
+                && !self.curve_refs.contains_key(id.as_str())
+                && !self.point_refs.contains_key(id.as_str())
+        });
         if !self.unwritten_geometry_carriers.is_empty() {
             let carriers = self
                 .unwritten_geometry_carriers
@@ -4422,19 +4608,15 @@ impl<'a> Builder<'a> {
                 // schema gate is why they were dropped. A target that supports
                 // semantic PMI and still left annotations unwritten dropped them for
                 // some other reason, and pointing at another target would misdirect.
-                if !self.schema.supports_semantic_pmi() {
-                    return self.loss(
-                    StepLossCode::PmiAnnotationNotWritten,
+                let message = if self.schema.supports_semantic_pmi() {
+                    format!("{unwritten_pmi} PMI annotation(s) were not written to STEP")
+                } else {
                     format!(
                         "{unwritten_pmi} PMI annotation(s) were not written to STEP; {} does not carry semantic PMI, which requires an AP242 edition target",
                         self.schema.file_schema()
-                    ),
-                );
-                }
-                self.loss(
-                    StepLossCode::PmiAnnotationNotWritten,
-                    format!("{unwritten_pmi} PMI annotation(s) were not written to STEP"),
-                );
+                    )
+                };
+                self.loss(StepLossCode::PmiAnnotationNotWritten, message);
             }
         }
         // STEP-native source associations identify records already represented
@@ -4624,7 +4806,29 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        let procedural_surface_count = self
+        let reduced_surfaces: BTreeSet<_> = self
+            .procedural_surfaces
+            .iter()
+            .filter(|(owner, procedural)| {
+                self.surface_refs.contains_key::<str>(owner)
+                    && !self
+                        .written_procedural_surfaces
+                        .contains(procedural.id.as_str())
+            })
+            .map(|(_, procedural)| procedural.id.as_str())
+            .collect();
+        let reduced_curves: BTreeSet<_> = self
+            .procedural_curves
+            .iter()
+            .filter(|(owner, procedural)| {
+                self.curve_refs.contains_key::<str>(owner)
+                    && !self
+                        .written_procedural_curves
+                        .contains(procedural.id.as_str())
+            })
+            .map(|(_, procedural)| procedural.id.as_str())
+            .collect();
+        let omitted_surface_count = self
             .ir
             .model
             .procedural_surfaces
@@ -4633,9 +4837,10 @@ impl<'a> Builder<'a> {
                 !self
                     .written_procedural_surfaces
                     .contains(procedural.id.as_str())
+                    && !reduced_surfaces.contains(procedural.id.as_str())
             })
             .count();
-        let procedural_curve_count = self
+        let omitted_curve_count = self
             .ir
             .model
             .procedural_curves
@@ -4644,14 +4849,23 @@ impl<'a> Builder<'a> {
                 !self
                     .written_procedural_curves
                     .contains(procedural.id.as_str())
+                    && !reduced_curves.contains(procedural.id.as_str())
             })
             .count();
+        let procedural_surface_count = reduced_surfaces.len();
+        let procedural_curve_count = reduced_curves.len();
         if procedural_surface_count > 0 || procedural_curve_count > 0 {
             self.loss(
                 StepLossCode::ProceduralReducedToCarrier,
                 format!(
                     "{procedural_surface_count} procedural surface definition(s) and {procedural_curve_count} procedural curve definition(s) were reduced to their solved STEP carriers"
                 ),
+            );
+        }
+        if omitted_surface_count > 0 || omitted_curve_count > 0 {
+            self.loss(
+                StepLossCode::ProceduralDefinitionNotWritten,
+                format!("{omitted_surface_count} procedural surface definition(s) and {omitted_curve_count} procedural curve definition(s) had no emitted STEP construction or solved carrier"),
             );
         }
         let source_native_records: usize = self
@@ -4706,3 +4920,8 @@ fn is_identity(rows: &[[f64; 4]; 4]) -> bool {
     }
     true
 }
+
+#[cfg(test)]
+mod accounting_tests;
+#[cfg(test)]
+mod construction_tests;

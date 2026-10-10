@@ -1611,10 +1611,9 @@
           "id": "fcstd:model:occurrence#BracketPrototype:container",
           "name": "fcstd:native:object#BracketPrototype",
           "native_ref": "fcstd:native:object#BracketPrototype",
-          "ordinal": 0,
+          "ordinal": 9,
           "parent": {
-            "kind": "occurrence",
-            "occurrence": "fcstd:model:occurrence#PrototypeGroup:container"
+            "kind": "root"
           },
           "prototype": {
             "definition": "fcstd:model:product_definition#BracketPrototype:definition",
@@ -1650,7 +1649,7 @@
           "id": "fcstd:model:occurrence#ExternalOccurrence:container",
           "name": "fcstd:native:object#ExternalOccurrence",
           "native_ref": "fcstd:native:object#ExternalOccurrence",
-          "ordinal": 9,
+          "ordinal": 10,
           "parent": {
             "kind": "root"
           },
@@ -1806,7 +1805,7 @@
           "id": "fcstd:model:occurrence#NestedBracketOccurrence:container",
           "name": "fcstd:native:object#NestedBracketOccurrence",
           "native_ref": "fcstd:native:object#NestedBracketOccurrence",
-          "ordinal": 10,
+          "ordinal": 11,
           "parent": {
             "kind": "root"
           },
@@ -2195,7 +2194,7 @@
           "id": "fcstd:model:occurrence#PinArray:container",
           "name": "fcstd:native:object#PinArray",
           "native_ref": "fcstd:native:object#PinArray",
-          "ordinal": 11,
+          "ordinal": 12,
           "parent": {
             "kind": "root"
           },
@@ -2233,7 +2232,7 @@
           "id": "fcstd:model:occurrence#PinArray_i0:container",
           "name": "fcstd:native:object#PinArray_i0",
           "native_ref": "fcstd:native:object#PinArray_i0",
-          "ordinal": 12,
+          "ordinal": 13,
           "parent": {
             "kind": "root"
           },
@@ -2342,7 +2341,7 @@
           "id": "fcstd:model:occurrence#PinArray_i1:container",
           "name": "fcstd:native:object#PinArray_i1",
           "native_ref": "fcstd:native:object#PinArray_i1",
-          "ordinal": 13,
+          "ordinal": 14,
           "parent": {
             "kind": "root"
           },
@@ -2451,7 +2450,7 @@
           "id": "fcstd:model:occurrence#PinArray_i2:container",
           "name": "fcstd:native:object#PinArray_i2",
           "native_ref": "fcstd:native:object#PinArray_i2",
-          "ordinal": 14,
+          "ordinal": 15,
           "parent": {
             "kind": "root"
           },
@@ -2636,10 +2635,9 @@
           "id": "fcstd:model:occurrence#PinPrototype:container",
           "name": "fcstd:native:object#PinPrototype",
           "native_ref": "fcstd:native:object#PinPrototype",
-          "ordinal": 1,
+          "ordinal": 16,
           "parent": {
-            "kind": "occurrence",
-            "occurrence": "fcstd:model:occurrence#PrototypeGroup:container"
+            "kind": "root"
           },
           "prototype": {
             "definition": "fcstd:model:product_definition#PinPrototype:definition",
@@ -2675,7 +2673,7 @@
           "id": "fcstd:model:occurrence#PrototypeGroup:container",
           "name": "fcstd:native:object#PrototypeGroup",
           "native_ref": "fcstd:native:object#PrototypeGroup",
-          "ordinal": 15,
+          "ordinal": 17,
           "parent": {
             "kind": "root"
           },
@@ -4116,14 +4114,14 @@
       "__arena_sha256": {
         "fcstd": {
           "annotations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "applications": "5d08166b7d951f605f23469416dced370a67f8bcbc3ed5a7df1dc4202e5b3ae7",
+          "applications": "d63921b0b06cb20563c2329b6db67ed64c6b4c9d7d7ac4fa62bb541089e40270",
           "byte_coverage": "4dcb2878738b6cf90ea1d82d393a9fdf905f4f0ee35ad44ee9faf414fbf8c2cd",
           "carrier_census": "147c6dc0f6c52fb287bc431cb8451c904e4a9e6834b24a996e86a6b776197264",
           "design_census": "a7f1a87f62897a0cd530a881acb52e097f226fa6ae6716eeb15dd839768489cf",
           "document": "d27a09450e1f85f171efe00a3e8b3cc2e08a19a28dc61be032372c38722ab377",
           "drawings": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "element_maps": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "entries": "5d8a6ee00c7773cec3a4053c1c2c656ef0b349e3733c5a8d8f41acf9333a686e",
+          "entries": "c262ed4a9b02aa6fddc3c3f74c41af8bb8341bdcf5e97f267b1db2cd29139392",
           "extensions": "c4c1a58cdde3bc5f87398e024e7a77ee8d075dc6dd6bcf62bb92201c0e5b3ade",
           "gui_documents": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_properties": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
@@ -6053,6 +6051,7 @@
         "application_domains": "App,Assembly,Part",
         "archive_entry_count": "13",
         "document_kind": "assembly",
+        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
         "object_count": "24",
         "physical_archive_bytes": "7109",

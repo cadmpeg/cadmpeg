@@ -54,6 +54,8 @@ pub(crate) enum F3dLossCode {
     FeatureDefinitionIncomplete,
     /// Decoded feature scopes have no neutral construction-history feature.
     FeatureScopeUnprojected,
+    /// A decoded native feature envelope has no interpreted specialized payload.
+    FeatureScopePayloadUninterpreted,
     /// Decoded Design parameters have no neutral parameter.
     ParameterUnprojected,
     /// Design parameter owner bindings have no recognized feature scope.
@@ -68,6 +70,8 @@ pub(crate) enum F3dLossCode {
     HistoryDependencyUnprojected,
     /// Feature history-state dependency links have multiple source scopes.
     HistoryDependencyAmbiguous,
+    /// A historical face selection cannot bind uniquely to emitted input topology members.
+    HistoricalFaceSelectionUnbound,
     /// Sketch relations retain native operands; no unique neutral relation.
     SketchRelationNativeRetained,
     /// Sketch dimensions retain native operands; no unique neutral dimension.
@@ -167,6 +171,8 @@ pub(crate) enum F3dLossCode {
     /// The document was read with a grammar its own declarations do not select.
     SourceDialectUnverified,
     /// The selected write target differs from the same-format source dialect.
+    /// Export omits records named by the counted loss message.
+    WriterAppearancePropertiesOmitted,
     SourceDialectDisplaced,
     /// An embedded kernel carrier was read with an unverified ACIS grammar.
     KernelDialectUnverified,
@@ -174,6 +180,16 @@ pub(crate) enum F3dLossCode {
     KernelCarrierUnparseable,
     /// Two F3Z member layers resolved to the same core dialect identity.
     DialectLayerCollision,
+    /// A framed text B-rep carries malformed header metadata or tolerances.
+    TextHeaderNoncanonical,
+    /// An optional kernel tolerance cannot enter the canonical document units.
+    KernelHeaderToleranceUnresolved,
+    /// An independently framed binary kernel product string is unreadable.
+    KernelHeaderMetadataUnresolved,
+    /// A bounded descriptive manifest payload is unreadable.
+    ManifestMetadataUnresolved,
+    /// An optional bounded archive payload is unreadable.
+    ArchiveEntryUnreadable,
 }
 
 impl F3dLossCode {
@@ -195,6 +211,7 @@ impl F3dLossCode {
         Self::EdgeReferenceLostUnrepaired,
         Self::FeatureDefinitionIncomplete,
         Self::FeatureScopeUnprojected,
+        Self::FeatureScopePayloadUninterpreted,
         Self::ParameterUnprojected,
         Self::ParameterOwnerUnrecognized,
         Self::ParameterUnitUntyped,
@@ -202,6 +219,7 @@ impl F3dLossCode {
         Self::ParameterExpressionUnbound,
         Self::HistoryDependencyUnprojected,
         Self::HistoryDependencyAmbiguous,
+        Self::HistoricalFaceSelectionUnbound,
         Self::SketchRelationNativeRetained,
         Self::SketchDimensionNativeRetained,
         Self::SketchPlacementUnprojected,
@@ -251,10 +269,16 @@ impl F3dLossCode {
         Self::TsplineCageUndecoded,
         Self::SourcePreservedImageUnavailable,
         Self::SourceDialectUnverified,
+        Self::WriterAppearancePropertiesOmitted,
         Self::SourceDialectDisplaced,
         Self::KernelDialectUnverified,
         Self::KernelCarrierUnparseable,
         Self::DialectLayerCollision,
+        Self::TextHeaderNoncanonical,
+        Self::KernelHeaderToleranceUnresolved,
+        Self::KernelHeaderMetadataUnresolved,
+        Self::ManifestMetadataUnresolved,
+        Self::ArchiveEntryUnreadable,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -279,6 +303,7 @@ impl F3dLossCode {
             Self::DecalNativeRetained => "appearance.decal-native",
             Self::EdgeReferenceLostUnrepaired => "feature.edge-reference-lost",
             Self::FeatureDefinitionIncomplete => "feature.definition-incomplete",
+            Self::FeatureScopePayloadUninterpreted => "feature.scope-payload-uninterpreted",
             Self::FeatureScopeUnprojected => "feature.scope-unprojected",
             Self::ParameterUnprojected => "parameter.unprojected",
             Self::ParameterOwnerUnrecognized => "parameter.owner-unrecognized",
@@ -286,6 +311,7 @@ impl F3dLossCode {
             Self::MaterialDistanceUnitUntyped => "material.distance-unit-untyped",
             Self::ParameterExpressionUnbound => "parameter.expression-unbound",
             Self::HistoryDependencyUnprojected => "history.dependency-unprojected",
+            Self::HistoricalFaceSelectionUnbound => "history.face-selection-unbound",
             Self::HistoryDependencyAmbiguous => "history.dependency-ambiguous",
             Self::SketchRelationNativeRetained => "sketch.relation-native",
             Self::SketchDimensionNativeRetained => "sketch.dimension-native",
@@ -338,10 +364,16 @@ impl F3dLossCode {
             Self::TsplineCageUndecoded => "tspline.cage-undecoded",
             Self::SourcePreservedImageUnavailable => "source.preserved-image-unavailable",
             Self::SourceDialectUnverified => "source.dialect-unverified",
+            Self::WriterAppearancePropertiesOmitted => "writer.appearance-properties-omitted",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
             Self::KernelCarrierUnparseable => "source.kernel-carrier-unparseable",
             Self::DialectLayerCollision => "source.dialect-layer-collision",
+            Self::TextHeaderNoncanonical => "brep.text-header-noncanonical",
+            Self::KernelHeaderToleranceUnresolved => "brep.header-tolerance-unresolved",
+            Self::KernelHeaderMetadataUnresolved => "brep.header-metadata-unresolved",
+            Self::ManifestMetadataUnresolved => "source.manifest-metadata-unresolved",
+            Self::ArchiveEntryUnreadable => "source.archive-entry-unreadable",
         }
     }
 
@@ -349,6 +381,7 @@ impl F3dLossCode {
     #[must_use]
     const fn severity(self) -> Severity {
         match self {
+            Self::WriterAppearancePropertiesOmitted => Severity::Warning,
             Self::BodylessDesignCarrier
             | Self::AssemblyComponentsExternal
             | Self::NurbsSurfaceCarrier
@@ -378,6 +411,7 @@ impl F3dLossCode {
             | Self::EdgeReferenceLostUnrepaired
             | Self::FeatureDefinitionIncomplete
             | Self::FeatureScopeUnprojected
+            | Self::FeatureScopePayloadUninterpreted
             | Self::ParameterUnprojected
             | Self::ParameterOwnerUnrecognized
             | Self::ParameterUnitUntyped
@@ -385,6 +419,7 @@ impl F3dLossCode {
             | Self::ParameterExpressionUnbound
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
+            | Self::HistoricalFaceSelectionUnbound
             | Self::SketchRelationNativeRetained
             | Self::SketchDimensionNativeRetained
             | Self::SketchPlacementUnprojected
@@ -423,13 +458,19 @@ impl F3dLossCode {
             | Self::SourceDialectDisplaced
             | Self::KernelDialectUnverified
             | Self::KernelCarrierUnparseable
-            | Self::DialectLayerCollision => Severity::Warning,
+            | Self::DialectLayerCollision
+            | Self::TextHeaderNoncanonical
+            | Self::KernelHeaderToleranceUnresolved
+            | Self::KernelHeaderMetadataUnresolved
+            | Self::ManifestMetadataUnresolved
+            | Self::ArchiveEntryUnreadable => Severity::Warning,
         }
     }
 
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::WriterAppearancePropertiesOmitted => LossTaxonomy::AppearanceReduced,
             Self::DimensionCompanionUntyped
             | Self::HistoryRecordFramingFailed
             | Self::SolvedRecordUntyped
@@ -451,12 +492,14 @@ impl F3dLossCode {
             Self::HistoryBindingBudgetExceeded
             | Self::FeatureDefinitionIncomplete
             | Self::FeatureScopeUnprojected
+            | Self::FeatureScopePayloadUninterpreted
             | Self::ParameterUnprojected
             | Self::ParameterOwnerUnrecognized
             | Self::ParameterUnitUntyped
             | Self::ParameterExpressionUnbound
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
+            | Self::HistoricalFaceSelectionUnbound
             | Self::SketchRelationNativeRetained
             | Self::SketchDimensionNativeRetained
             | Self::SketchPlacementUnprojected
@@ -509,6 +552,11 @@ impl F3dLossCode {
                 LossTaxonomy::SourceDialectUnverified
             }
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
+            Self::TextHeaderNoncanonical => LossTaxonomy::NoncanonicalSourceSyntax,
+            Self::KernelHeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
+            Self::KernelHeaderMetadataUnresolved => LossTaxonomy::NoncanonicalSourceSyntax,
+            Self::ManifestMetadataUnresolved => LossTaxonomy::NoncanonicalSourceSyntax,
+            Self::ArchiveEntryUnreadable => LossTaxonomy::RecordNotTyped,
         }
     }
 
@@ -559,6 +607,7 @@ mod tests {
                 "feature.edge-reference-lost",
                 "feature.definition-incomplete",
                 "feature.scope-unprojected",
+                "feature.scope-payload-uninterpreted",
                 "parameter.unprojected",
                 "parameter.owner-unrecognized",
                 "parameter.unit-untyped",
@@ -566,6 +615,7 @@ mod tests {
                 "parameter.expression-unbound",
                 "history.dependency-unprojected",
                 "history.dependency-ambiguous",
+                "history.face-selection-unbound",
                 "sketch.relation-native",
                 "sketch.dimension-native",
                 "sketch.placement-unprojected",
@@ -615,10 +665,16 @@ mod tests {
                 "tspline.cage-undecoded",
                 "source.preserved-image-unavailable",
                 "source.dialect-unverified",
+                "writer.appearance-properties-omitted",
                 "target.source-dialect-displaced",
                 "source.kernel-dialect-unverified",
                 "source.kernel-carrier-unparseable",
                 "source.dialect-layer-collision",
+                "brep.text-header-noncanonical",
+                "brep.header-tolerance-unresolved",
+                "brep.header-metadata-unresolved",
+                "source.manifest-metadata-unresolved",
+                "source.archive-entry-unreadable",
             ]
         );
     }

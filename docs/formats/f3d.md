@@ -187,7 +187,7 @@ Each listed base resolves to exactly one archive folder: either `<base>` or `<ba
 
 Revisions 11, 12, 13, 14, 15, 19, and 20 carry a u32 capability count, repeated nonempty unique LP-ASCII capability names with u32 values, LP-ASCII `Neutron3DAssetType`, u8 zero, and an LP-ASCII subtype. The subtype is empty for the root Design asset and names a derived Fusion asset otherwise.
 
-Revision 10 carries the same named capability registry and kind token, followed by u8 zero. Each linked document stores u32 `2`, an LP-UTF16 composite locator containing a version URN, and two LP-UTF16 GUIDs. The root tail starts with u32 values `2, 5, 1, 0` and continues with two LP-ASCII `Design` tokens. Revision 0 instead stores u32 values `3, 1`, LP-ASCII `Neutron3DAssetType`, u8 zero, u32 values `0, 6, 1, 0`, and two LP-ASCII `Design` tokens. These revision-0 and revision-10 root tails end the manifest.
+Revision 10 carries the same named capability registry and kind token, followed by u8 zero. Each linked document stores u32 `2`, an LP-UTF16 composite locator containing a version URN, and two LP-UTF16 GUIDs. The root tail starts with u32 values `0, root_revision, 1, 0`, or `2, 5, 1, 0`, and continues with two LP-ASCII `Design` tokens. `root_revision` is descriptive metadata and does not change the tail grammar. Revision 0 instead stores u32 values `3, 1`, LP-ASCII `Neutron3DAssetType`, u8 zero, u32 values `0, 6, 1, 0`, and two LP-ASCII `Design` tokens. These revision-0 and revision-10 root tails end the manifest.
 
 The unique listed root `FusionAssetType` folder is the Design asset folder. Folder-run order, archive-entry order, the active-asset GUID, and B-rep presence do not select the Design asset.
 

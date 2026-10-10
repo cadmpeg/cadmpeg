@@ -109,83 +109,79 @@ pub(super) fn infer_edge_parameter_ranges(
     ir: &mut CadIr,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    let mut points = HashMap::new();
-    for point in &ir.model.points {
-        ctx.reserve_map(&mut points, 1, "step_parameter_inference_points")?;
-        points.insert(point.id.as_str(), point.position().get());
-    }
-    let mut vertices = HashMap::new();
-    for vertex in &ir.model.vertices {
-        if let Some(point) = points.get(vertex.point.as_str()).copied() {
-            ctx.reserve_map(&mut vertices, 1, "step_parameter_inference_vertices")?;
-            vertices.insert(vertex.id.as_str(), point);
+    let mut needed = false;
+    for edge in &ir.model.edges {
+        ctx.charge_work(1, "step_parameter_inference_scan")?;
+        if edge.param_range().is_none() && edge.curve().is_some() {
+            needed = true;
+            break;
         }
     }
-    let mut candidates = Vec::new();
-    for (index, edge) in ir.model.edges.iter().enumerate() {
+    if !needed {
+        return Ok(());
+    }
+    let model_index = cadmpeg_ir::index::ModelIndex::build(ir, ctx)?;
+    let mut inferred = Vec::new();
+    for (edge_index, edge) in ir.model.edges.iter().enumerate() {
+        ctx.charge_work(1, "step_parameter_inference_scan")?;
         if edge.param_range().is_some() {
             continue;
         }
-        let Some((curve, start, end)) = edge.curve().and_then(|curve| {
-            Some((
-                curve,
-                vertices.get(edge.start.as_str()).copied()?,
-                vertices.get(edge.end.as_str()).copied()?,
-            ))
-        }) else {
+        let Some(curve) = edge.curve() else {
             continue;
         };
-        ctx.reserve_vec(&mut candidates, 1, "step_parameter_inference_candidates")?;
-        candidates.push((index, curve, start, end));
+        let Some(start_vertex) = model_index.vertices(edge.start.as_str(), ctx)? else {
+            continue;
+        };
+        let Some(end_vertex) = model_index.vertices(edge.end.as_str(), ctx)? else {
+            continue;
+        };
+        let Some(start) = model_index.points(start_vertex.point.as_str(), ctx)? else {
+            continue;
+        };
+        let Some(end) = model_index.points(end_vertex.point.as_str(), ctx)? else {
+            continue;
+        };
+        ctx.charge_work(RANGE_INFERENCE_WORK_UNITS, "step_edge_parameter_inference")?;
+        let Some(geometry) = model_index
+            .curves(curve.as_str(), ctx)?
+            .map(|curve| &curve.geometry)
+        else {
+            continue;
+        };
+        let Some(solved) = geometry.solved() else {
+            continue;
+        };
+        let start_seed = curve_endpoint_seed(solved, false, 0.0);
+        let Some(start_parameter) = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
+            ctx,
+            &model_index,
+            curve,
+            start.position().get(),
+            start_seed,
+        )?
+        else {
+            continue;
+        };
+        let end_seed = curve_endpoint_seed(solved, true, start_parameter.get());
+        let Some(end_parameter) = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
+            ctx,
+            &model_index,
+            curve,
+            end.position().get(),
+            end_seed,
+        )?
+        else {
+            continue;
+        };
+        if let Some(range) = edge_parameter_range(solved, start_parameter, end_parameter) {
+            ctx.push_vec(
+                &mut inferred,
+                (edge_index, range),
+                "step_parameter_inference_ranges",
+            )?;
+        }
     }
-    let work = u64_from_index(candidates.len())
-        .checked_mul(RANGE_INFERENCE_WORK_UNITS)
-        .ok_or_else(|| ctx.refuse_codec_limit("step_edge_parameter_inference", 0, 1))?;
-    ctx.charge_work(work, "step_edge_parameter_inference")?;
-
-    let model_index = cadmpeg_ir::index::ModelIndex::build(ir, ctx)?;
-    let inferred = candidates.into_iter().try_fold(
-        Vec::new(),
-        |mut inferred, (edge_index, curve, start, end)| {
-            let Some(geometry) = model_index
-                .curves(curve.as_str(), ctx)?
-                .map(|curve| &curve.geometry)
-            else {
-                return Ok(inferred);
-            };
-            let Some(solved) = geometry.solved() else {
-                return Ok(inferred);
-            };
-            let start_seed = curve_endpoint_seed(solved, false, 0.0);
-            let Some(start_parameter) =
-                cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
-                    ctx,
-                    &model_index,
-                    curve,
-                    start,
-                    start_seed,
-                )?
-            else {
-                return Ok(inferred);
-            };
-            let end_seed = curve_endpoint_seed(solved, true, start_parameter.get());
-            let Some(end_parameter) = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
-                ctx,
-                &model_index,
-                curve,
-                end,
-                end_seed,
-            )?
-            else {
-                return Ok(inferred);
-            };
-            if let Some(range) = edge_parameter_range(solved, start_parameter, end_parameter) {
-                ctx.reserve_vec(&mut inferred, 1, "step_parameter_inference_ranges")?;
-                inferred.push((edge_index, range));
-            }
-            Ok::<_, CodecError>(inferred)
-        },
-    )?;
     drop(model_index);
 
     for (index, range) in inferred {
@@ -332,10 +328,12 @@ fn source_curve_parameter_scale(
         if active.contains(&id) {
             return Ok(None);
         }
-        ctx.insert_btree_set(active, id, "step_source_curve_parameter_active")?;
         match source_curve_parameter_scale_value(id, exchange, unit_scales) {
             CurveParameterStep::Scale(scale) => return Ok(Some(scale)),
-            CurveParameterStep::Parent(parent) => id = parent,
+            CurveParameterStep::Parent(parent) => {
+                ctx.insert_btree_set(active, id, "step_source_curve_parameter_active")?;
+                id = parent;
+            }
             CurveParameterStep::Absent => return Ok(None),
         }
     }
@@ -418,7 +416,11 @@ pub(super) fn decode(
     exchange: &Exchange,
     ir: &mut CadIr,
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<StageOutcome<GeometryData>, CodecError> {
+) -> Result<(StageOutcome<GeometryData>, CarrierIndex), CodecError> {
+    // This scope appends carriers and preserves their identity and construction links.
+    let mut procedural_admission =
+        cadmpeg_ir::document::procedural::ProceduralAdmission::new(ctx, &ir.model)?;
+
     let mut losses = Vec::new();
     let scale = match length_scale(exchange, ctx)? {
         Some(scale) => scale,
@@ -1041,6 +1043,7 @@ pub(super) fn decode(
             ctx.push_vec(
                 &mut ir.model.curves,
                 Curve {
+                    parameter_range: None,
                     id: CurveId::from(ids::data(kind!("curve"), id)),
                     geometry,
                     source_object: None,
@@ -1068,6 +1071,7 @@ pub(super) fn decode(
             ctx.push_vec(
                 &mut ir.model.curves,
                 Curve {
+                    parameter_range: None,
                     id: CurveId::from(ids::data(kind!("curve"), id)),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
                     source_object: None,
@@ -1173,13 +1177,14 @@ pub(super) fn decode(
             ctx.push_vec(
                 &mut ir.model.curves,
                 Curve {
+                    parameter_range: None,
                     id: curve.try_clone_for_decode(ctx, "step_curve_identity_copy")?,
                     geometry: CurveGeometry::Solved(geometry),
                     source_object: None,
                 },
                 "step_geometry_ir_curves",
             )?;
-            let _attached = ir.model.add_procedural_curve(ctx, &curve, procedural)?;
+            let _attached = procedural_admission.add_curve(&mut ir.model, &curve, procedural)?;
             ctx.insert_hash_map(
                 &mut carrier_index.curves,
                 id,
@@ -1313,6 +1318,7 @@ pub(super) fn decode(
             ctx.push_vec(
                 &mut ir.model.curves,
                 Curve {
+                    parameter_range: None,
                     id: curve.try_clone_for_decode(ctx, "step_curve_identity_copy")?,
                     geometry: CurveGeometry::Solved(copied_geometry),
                     source_object: None,
@@ -1320,7 +1326,7 @@ pub(super) fn decode(
                 "step_geometry_ir_curves",
             )?;
 
-            let _attached = ir.model.add_procedural_curve(ctx, &curve, procedural)?;
+            let _attached = procedural_admission.add_curve(&mut ir.model, &curve, procedural)?;
 
             ctx.insert_hash_map(
                 &mut carrier_index.curves,
@@ -1398,6 +1404,7 @@ pub(super) fn decode(
             ctx.push_vec(
                 &mut ir.model.curves,
                 Curve {
+                    parameter_range: None,
                     id: curve.try_clone_for_decode(ctx, "step_curve_identity_copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
                         segments,
@@ -1496,13 +1503,14 @@ pub(super) fn decode(
         ctx.push_vec(
             &mut ir.model.curves,
             Curve {
+                parameter_range: None,
                 id: curve.try_clone_for_decode(ctx, "step_curve_identity_copy")?,
                 geometry: CurveGeometry::Solved(copied_geometry),
                 source_object: None,
             },
             "step_geometry_ir_curves",
         )?;
-        let _attached = ir.model.add_procedural_curve(ctx, &curve, procedural)?;
+        let _attached = procedural_admission.add_curve(&mut ir.model, &curve, procedural)?;
         ctx.insert_hash_map(
             &mut carrier_index.curves,
             id,
@@ -1526,7 +1534,10 @@ pub(super) fn decode(
             "step_deferred_curve_queue",
         )?;
     }
-    for (id, _) in exchange.entities("CURVE_REPLICA") {
+    for (id, _) in exchange
+        .entities("CURVE_REPLICA")
+        .filter(|(id, _)| !pcurve_geometry_records.contains(id))
+    {
         if !carrier_index.curves.contains_key(&id) {
             ctx.push_vec(
                 &mut losses,
@@ -1539,6 +1550,7 @@ pub(super) fn decode(
             ctx.push_vec(
                 &mut ir.model.curves,
                 Curve {
+                    parameter_range: None,
                     id: CurveId::from(ids::data(kind!("curve"), id)),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                         record: exchange
@@ -1614,6 +1626,7 @@ pub(super) fn decode(
             ctx.push_vec(
                 &mut ir.model.curves,
                 Curve {
+                    parameter_range: None,
                     id: curve.try_clone_for_decode(ctx, "step_curve_identity_copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                         record: exchange
@@ -1744,8 +1757,8 @@ pub(super) fn decode(
             },
             "step_geometry_ir_surfaces",
         )?;
-        let _attached = ir.model.add_procedural_surface(
-            ctx,
+        let _attached = procedural_admission.add_surface(
+            &mut ir.model,
             &surface,
             ProceduralSurface::new(
                 ProceduralSurfaceId::from(ids::construction(kind!("swept_surface"), id)),
@@ -1899,7 +1912,7 @@ pub(super) fn decode(
     // Surface constructors form the same kind of dependency graph as curves.
     // Resolve replicas in the same fixpoint as trims, bounded surfaces, and
     // offsets so a forward or nested replica cannot become an opaque carrier.
-    carrier_index = CarrierIndex::from_ir(ir, ctx)?;
+    carrier_index.refresh_surfaces(ir, ctx)?;
     let mut deferred_surface_ids = Vec::new();
     for (id, _) in exchange.entities_any(&[
         "CURVE_BOUNDED_SURFACE",
@@ -2034,7 +2047,7 @@ pub(super) fn decode(
                 },
                 "step_geometry_ir_surfaces",
             )?;
-            let _attached = ir.model.add_procedural_surface(ctx, &surface, match (|| {
+            let _attached = procedural_admission.add_surface(&mut ir.model, &surface, match (|| {
                     let ranges = parameter_ranges.map(|range| {
                         DirectedParameterRange::from_finite_endpoints(range).map_err(|_| {
                             ProceduralGeometryError::Payload(
@@ -2162,8 +2175,8 @@ pub(super) fn decode(
                 },
                 "step_geometry_ir_surfaces",
             )?;
-            let _attached = ir.model.add_procedural_surface(
-                ctx,
+            let _attached = procedural_admission.add_surface(
+                &mut ir.model,
                 &surface,
                 ProceduralSurface::new(
                     ProceduralSurfaceId::from(ids::construction(
@@ -2227,7 +2240,7 @@ pub(super) fn decode(
                 },
                 "step_geometry_ir_surfaces",
             )?;
-            let _attached = ir.model.add_procedural_surface(ctx, &surface, match cadmpeg_ir::geometry::surface_payloads::ParallelOffsetSurfaceConstruction::try_new(support, distance * record_scale, self_intersect).map(|admitted_payload| ProceduralSurface::new(
+            let _attached = procedural_admission.add_surface(&mut ir.model, &surface, match cadmpeg_ir::geometry::surface_payloads::ParallelOffsetSurfaceConstruction::try_new(support, distance * record_scale, self_intersect).map(|admitted_payload| ProceduralSurface::new(
                     ProceduralSurfaceId::from(ids::construction(kind!("offset_surface"), id)),
                     ProceduralSurfaceDefinition::ParallelOffset(admitted_payload),
                     None,
@@ -2304,8 +2317,8 @@ pub(super) fn decode(
                 },
                 "step_geometry_ir_surfaces",
             )?;
-            let _attached = ir.model.add_procedural_surface(
-                ctx,
+            let _attached = procedural_admission.add_surface(
+                &mut ir.model,
                 &surface,
                 ProceduralSurface::new(
                     ProceduralSurfaceId::from(ids::construction(kind!("surface_replica"), id)),
@@ -2416,6 +2429,7 @@ pub(super) fn decode(
             ctx.push_vec(
                 &mut ir.model.curves,
                 Curve {
+                    parameter_range: None,
                     id: CurveId::from(ids::data(kind!("curve"), curve_step)),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                         record: exchange
@@ -2657,8 +2671,8 @@ pub(super) fn decode(
         if !carrier_index.surfaces.contains_key(&id) {
             continue;
         }
-        let _attached = ir.model.add_procedural_surface(
-            ctx,
+        let _attached = procedural_admission.add_surface(
+            &mut ir.model,
             &surface,
             ProceduralSurface::new(
                 ProceduralSurfaceId::from(ids::construction(kind!("degenerate_torus"), id)),
@@ -2690,16 +2704,19 @@ pub(super) fn decode(
             ctx.insert_hash_set(&mut typed, id, "step_geometry_typed_ids")?;
         }
     }
-    Ok(StageOutcome {
-        value: GeometryData {
-            placements,
-            transformation_operators,
-            units: unit_scales,
+    Ok((
+        StageOutcome {
+            value: GeometryData {
+                placements,
+                transformation_operators,
+                units: unit_scales,
+            },
+            claims: typed,
+            losses,
+            notes: Vec::new(),
         },
-        claims: typed,
-        losses,
-        notes: Vec::new(),
-    })
+        carrier_index,
+    ))
 }
 
 fn decode_tessellated_curve_sets(
@@ -2806,6 +2823,7 @@ fn decode_tessellated_curve_sets(
             ctx.push_vec(
                 &mut ir.model.curves,
                 Curve {
+                    parameter_range: None,
                     id: CurveId::from(ids::data(kind!("curve"), curve_key)),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)),
                     source_object: Some(super::step_source_association(id, source_name)),
@@ -3809,8 +3827,42 @@ fn resolve_unit_scales(
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
 ) -> Result<UnitScales, CodecError> {
-    let mut length_candidates = BTreeMap::<u64, Vec<PositiveReal>>::new();
-    let mut angle_candidates = BTreeMap::<u64, Vec<PositiveReal>>::new();
+    let mut contexts = BTreeMap::new();
+    let mut needs_length_scope = false;
+    let mut needs_angle_scope = false;
+    for representation in exchange
+        .records()
+        .values()
+        .filter(|record| is_representation_record(record))
+    {
+        let Some(context_id) = representation_context(representation) else {
+            continue;
+        };
+        if contexts.contains_key(&context_id) {
+            continue;
+        }
+        let scales = context_unit_scales(context_id, exchange, ctx)?;
+        needs_length_scope |= scales.0.is_some_and(|scale| scale != default_length);
+        needs_angle_scope |= scales.1.is_some_and(|scale| scale != default_angle);
+        ctx.insert_btree_map(
+            &mut contexts,
+            context_id,
+            scales,
+            "step_unit_context_scales",
+        )?;
+    }
+    if !needs_length_scope && !needs_angle_scope {
+        // Every declared scale is already the document default. There is no
+        // scope-specific scale or conflict to propagate through geometry.
+        return Ok(UnitScales {
+            default_length,
+            default_angle,
+            length: BTreeMap::new(),
+            angle: BTreeMap::new(),
+        });
+    }
+    let mut length_candidates = BTreeMap::<u64, Option<PositiveReal>>::new();
+    let mut angle_candidates = BTreeMap::<u64, Option<PositiveReal>>::new();
     for (&representation_id, representation) in exchange.records() {
         if !is_representation_record(representation) {
             continue;
@@ -3818,7 +3870,11 @@ fn resolve_unit_scales(
         let Some(context_id) = representation_context(representation) else {
             continue;
         };
-        let (length, angle) = context_unit_scales(context_id, exchange, ctx)?;
+        let Some(&(length, angle)) = contexts.get(&context_id) else {
+            continue;
+        };
+        let length = length.filter(|_| needs_length_scope);
+        let angle = angle.filter(|_| needs_angle_scope);
         if length.is_none() && angle.is_none() {
             continue;
         }
@@ -3829,7 +3885,6 @@ fn resolve_unit_scales(
                 length,
                 ctx,
                 "step_length_candidate_groups",
-                "step_length_candidate_values",
             )?;
         }
         if let Some(angle) = angle {
@@ -3839,7 +3894,6 @@ fn resolve_unit_scales(
                 angle,
                 ctx,
                 "step_angle_candidate_groups",
-                "step_angle_candidate_values",
             )?;
         }
         let Some(items) = representation_items(representation) else {
@@ -3847,7 +3901,7 @@ fn resolve_unit_scales(
         };
         let mut members = BTreeSet::new();
         for item in items {
-            collect_unit_scope_members(item, exchange, &mut members, &mut BTreeSet::new(), ctx)?;
+            collect_unit_scope_members(item, exchange, &mut members, ctx)?;
         }
         for member in members {
             if let Some(length) = length {
@@ -3857,7 +3911,6 @@ fn resolve_unit_scales(
                     length,
                     ctx,
                     "step_length_candidate_groups",
-                    "step_length_candidate_values",
                 )?;
             }
             if let Some(angle) = angle {
@@ -3867,7 +3920,6 @@ fn resolve_unit_scales(
                     angle,
                     ctx,
                     "step_angle_candidate_groups",
-                    "step_angle_candidate_values",
                 )?;
             }
         }
@@ -3884,21 +3936,30 @@ fn resolve_unit_scales(
     })
 }
 
+/// A missing key has no candidate; `None` marks a final scale conflict.
 fn add_unit_candidate(
-    candidates: &mut BTreeMap<u64, Vec<PositiveReal>>,
+    candidates: &mut BTreeMap<u64, Option<PositiveReal>>,
     id: u64,
     scale: PositiveReal,
     ctx: &DecodeContext<'_>,
-    group_operation: &'static str,
-    value_operation: &'static str,
+    operation: &'static str,
 ) -> Result<(), CodecError> {
-    ctx.admit_btree_entry(candidates, &id, group_operation)?;
-    let values = candidates.entry(id).or_default();
-    ctx.push_vec(values, scale, value_operation)
+    ctx.charge_work(1, operation)?;
+    if let Some(candidate) = candidates.get_mut(&id) {
+        // Every candidate is compared with the first stored scale.
+        // Conflict is final; later scales cannot make the set unambiguous.
+        if candidate.is_some_and(|first| !same_scale(first, scale)) {
+            *candidate = None;
+        }
+        Ok(())
+    } else {
+        ctx.insert_btree_map(candidates, id, Some(scale), operation)?;
+        Ok(())
+    }
 }
 
 fn finalize_unit_candidates(
-    candidates: BTreeMap<u64, Vec<PositiveReal>>,
+    candidates: BTreeMap<u64, Option<PositiveReal>>,
     default: PositiveReal,
     dimension: &str,
     losses: &mut Vec<LossNote>,
@@ -3906,8 +3967,8 @@ fn finalize_unit_candidates(
 ) -> Result<BTreeMap<u64, PositiveReal>, CodecError> {
     let mut selected = BTreeMap::new();
     let mut ambiguous = 0;
-    for (id, values) in candidates {
-        match unique_scale(&values) {
+    for (id, candidate) in candidates {
+        match candidate {
             Some(scale) if scale != default => {
                 ctx.insert_btree_map(&mut selected, id, scale, "step_unit_selected_scales")?;
             }
@@ -3988,60 +4049,54 @@ fn collect_unit_scope_members(
     id: u64,
     exchange: &Exchange,
     members: &mut BTreeSet<u64>,
-    active: &mut BTreeSet<u64>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let _root_depth = ctx.enter_nested("step_unit_scope_walk")?;
     let mut pending = Vec::new();
     let mut next = Some(id);
-    while let Some(current) = next {
+    while let Some(current) = next.take().or_else(|| pending.pop()) {
+        ctx.charge_work(1, "step_unit_scope_walk")?;
         let _nested = (current != id)
             .then(|| ctx.enter_nested("step_unit_scope_walk"))
             .transpose()?;
-        if ctx.insert_btree_set(active, current, "step_unit_scope_active")? {
-            if let Some(record) = exchange.records().get(&current) {
-                if !is_unit_record(record) && !is_representation_context_record(record) {
-                    ctx.insert_btree_set(members, current, "step_unit_scope_members")?;
-                    if record.partial("PCURVE").is_none() {
-                        if let Some(mapped) = record.partial("MAPPED_ITEM") {
-                            // The mapping source keeps the units of its mapped representation.
-                            // Only the mapping target belongs to this context.
-                            if let Some(target) =
-                                mapped.parameters.last().and_then(Value::reference)
-                            {
-                                ctx.push_vec(&mut pending, target, "step_unit_scope_pending")?;
-                            }
-                        } else {
-                            for parameter in record
-                                .partials
-                                .iter()
-                                .flat_map(|partial| &partial.parameters)
-                            {
-                                for reference in super::reference::references(parameter, ctx) {
-                                    let reference = reference?;
-                                    let Some(referenced) = exchange.records().get(&reference)
-                                    else {
-                                        continue;
-                                    };
-                                    if is_representation_record(referenced)
-                                        || is_unit_record(referenced)
-                                        || is_representation_context_record(referenced)
-                                    {
-                                        continue;
-                                    }
-                                    ctx.push_vec(
-                                        &mut pending,
-                                        reference,
-                                        "step_unit_scope_pending",
-                                    )?;
-                                }
-                            }
-                        }
-                    }
+        let Some(record) = exchange.records().get(&current) else {
+            continue;
+        };
+        if is_unit_record(record) || is_representation_context_record(record) {
+            continue;
+        }
+        if !ctx.insert_btree_set(members, current, "step_unit_scope_members")?
+            || record.partial("PCURVE").is_some()
+        {
+            continue;
+        }
+        if let Some(mapped) = record.partial("MAPPED_ITEM") {
+            // The mapping source keeps the units of its mapped representation.
+            // Only the mapping target belongs to this context.
+            if let Some(target) = mapped.parameters.last().and_then(Value::reference) {
+                ctx.push_vec(&mut pending, target, "step_unit_scope_pending")?;
+            }
+            continue;
+        }
+        for parameter in record
+            .partials
+            .iter()
+            .flat_map(|partial| &partial.parameters)
+        {
+            for reference in super::reference::references(parameter, ctx) {
+                let reference = reference?;
+                let Some(referenced) = exchange.records().get(&reference) else {
+                    continue;
+                };
+                if is_representation_record(referenced)
+                    || is_unit_record(referenced)
+                    || is_representation_context_record(referenced)
+                {
+                    continue;
                 }
+                ctx.push_vec(&mut pending, reference, "step_unit_scope_pending")?;
             }
         }
-        next = pending.pop();
     }
     Ok(())
 }
@@ -5276,7 +5331,7 @@ fn default_nurbs_knots(
                 let index = geometry_or_none!(cadmpeg_core::convert::f64_from_index(index));
                 let degree = geometry_or_none!(cadmpeg_core::convert::f64_from_index(degree));
                 let knot = geometry_or_none!(FiniteReal::new(index - degree));
-                ctx.push_vec(&mut knots, knot, "step_default_nurbs_knots")?;
+                ctx.push_vec(&mut knots, knot.get(), "step_default_nurbs_knots")?;
             }
         }
         DefaultNurbsKnotKind::QuasiUniform => {
@@ -5293,7 +5348,7 @@ fn default_nurbs_knots(
                     cadmpeg_core::convert::f64_from_index(index)
                 )));
                 for _ in 0..multiplicity {
-                    ctx.push_vec(&mut knots, knot, "step_default_nurbs_knots")?;
+                    ctx.push_vec(&mut knots, knot.get(), "step_default_nurbs_knots")?;
                 }
             }
         }
@@ -5317,7 +5372,7 @@ fn default_nurbs_knots(
                     cadmpeg_core::convert::f64_from_index(index)
                 )));
                 for _ in 0..multiplicity {
-                    ctx.push_vec(&mut knots, knot, "step_default_nurbs_knots")?;
+                    ctx.push_vec(&mut knots, knot.get(), "step_default_nurbs_knots")?;
                 }
             }
         }
@@ -5325,7 +5380,7 @@ fn default_nurbs_knots(
     if knots.len() != expected {
         return Ok(None);
     }
-    Ok(KnotVector::from_finite_lanes(ctx, knots)?.ok())
+    Ok(KnotVector::new(ctx, knots)?.ok())
 }
 
 fn nurbs_curve(
@@ -6423,9 +6478,9 @@ fn expand_knots(
             return Ok(None);
         }
         ctx.reserve_vec(&mut knots, count, "step_expanded_nurbs_knots")?;
-        knots.extend(std::iter::repeat_with(|| knot).take(count));
+        knots.extend(std::iter::repeat_with(|| knot.get()).take(count));
     }
-    Ok(KnotVector::from_finite_lanes(ctx, knots)?.ok())
+    Ok(KnotVector::new(ctx, knots)?.ok())
 }
 
 fn references(value: &Value, ctx: &DecodeContext<'_>) -> Result<Option<Vec<u64>>, CodecError> {

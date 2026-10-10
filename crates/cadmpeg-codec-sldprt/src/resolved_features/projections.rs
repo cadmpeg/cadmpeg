@@ -1257,10 +1257,10 @@ fn variable_fillet_radius_groups<'a>(
                     }) else {
                         return Ok(None);
                     };
-                    if !vertex_radii.contains_key(&vertex.type_signature) {
+                    if !vertex_radii.contains_key(&*vertex.type_signature) {
                         ctx.reserve_map(&mut vertex_radii, 1, OPERATION)?;
                     }
-                    match vertex_radii.entry(vertex.type_signature) {
+                    match vertex_radii.entry(*vertex.type_signature) {
                         std::collections::hash_map::Entry::Vacant(entry) => {
                             entry.insert(radius);
                         }
@@ -1402,7 +1402,7 @@ fn variable_fillet_radius_groups<'a>(
             .flat_map(|reference| reference.iter())
         {
             ctx.charge_work(1, OPERATION)?;
-            if component.instance == Some(0x8083) && component.type_signature == *signature {
+            if component.instance == Some(0x8083) && component.type_signature == (*signature) {
                 found = true;
                 break;
             }
@@ -1430,7 +1430,7 @@ fn variable_fillet_radius_groups<'a>(
         match (first, second, third) {
             (Some(first), Some(second), None) => {
                 let (Some(first_radius), Some(second_radius)) =
-                    (vertex_radii.get(&first), vertex_radii.get(&second))
+                    (vertex_radii.get(&*first), vertex_radii.get(&*second))
                 else {
                     return Ok(None);
                 };

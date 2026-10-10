@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
 use std::num::NonZeroU16;
 
+mod accounting;
 pub(crate) mod target;
 
 use crate::native::SldprtNative;
@@ -12,6 +13,7 @@ use cadmpeg_core::convert::{f32_from_f64, truncate_f64_to_u8};
 use cadmpeg_core::decode::{index_from_u32, DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
+use cadmpeg_ir::codec::write::{ArenaDisposition, ArenaDispositions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
@@ -37,18 +39,40 @@ pub(crate) const SWOBJECTS_METADATA_IDENTITY_LOCAL_DIGEST_ATTRIBUTE: &str =
     "sldprt_swobjects_metadata_identity_local_sha256";
 pub(crate) const PMI_LOCAL_DIGEST_ATTRIBUTE: &str = "sldprt_pmi_local_sha256";
 
-/// Writes a semantic document and returns the dialect it wrote.
-///
-/// The returned id is classified from the final section payloads through the
-/// same `swSolidWorks` envelope parser that decode uses, so a re-decode of
-/// these bytes classifies exactly the dialect stored in the serialized export
-/// report's `identity.target` field.
+/// Opaque solved carriers require a retained native partition.
+pub(crate) fn requires_native_partition(ir: &CadIr) -> bool {
+    ir.model.curves.iter().any(|curve| {
+        matches!(
+            curve.geometry,
+            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
+        )
+    }) || ir.model.surfaces.iter().any(|surface| {
+        matches!(
+            surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+        )
+    })
+}
+
+/// What one semantic write produced.
+pub(crate) struct SemanticOutput {
+    /// The dialect classified from the final section payloads through the same
+    /// `swSolidWorks` envelope parser that decode uses, so a re-decode of the
+    /// bytes classifies exactly the dialect stored in the serialized export
+    /// report's `identity.target` field.
+    pub(crate) dialect: cadmpeg_core::dialect::DialectId,
+    /// Which model arenas the written document carries.
+    pub(crate) coverage: ArenaDispositions,
+}
+
+/// Writes a semantic document and returns the dialect and arena coverage it
+/// wrote.
 pub(crate) fn write_semantic_with_records(
     ir: &CadIr,
     annotations: &Annotations,
     retained_records: &[SourceRecord<'_>],
     writer: &mut dyn Write,
-) -> Result<cadmpeg_core::dialect::DialectId, CodecError> {
+) -> Result<SemanticOutput, CodecError> {
     let digest_arena = DecodeArena::new();
     let (digest_ctx, _) =
         DecodeContext::from_root_bytes(&[], &digest_arena, &DecodePolicy::desktop())?;
@@ -132,7 +156,13 @@ pub(crate) fn write_semantic_with_records(
     } else {
         None
     };
+    let coverage = semantic_coverage(!retained_records.is_empty(), retained_partition.is_some());
     let retain_native_brep = retained_partition.is_some() || patched_partition.is_some();
+    if !retain_native_brep && requires_native_partition(ir) {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT cannot regenerate opaque curve or surface records without a retained native partition".into(),
+        ));
+    }
     let partition_sections = if let Some(retained) = retained_partition {
         vec![retained]
     } else if let Some(patched) = patched_partition {
@@ -289,7 +319,70 @@ pub(crate) fn write_semantic_with_records(
     for entry in section_directory_entries(source_scan.as_ref(), &sections, &type_ids)? {
         writer.write_all(&entry)?;
     }
-    Ok(written_dialect)
+    Ok(SemanticOutput {
+        dialect: written_dialect,
+        coverage,
+    })
+}
+
+/// What the semantic writer does with each model arena.
+///
+/// `patched` states that retained source records fed the write; `retained_brep`
+/// states that the retained Parasolid partition was replayed because
+/// `brep_local_sha256` still matches. Only that partition carries pcurves and
+/// procedural constructions: the generated and patched partitions do not
+/// encode them. Retained semantic PMI is carried only by the retained
+/// `PMISemanticDataDB` block, which exists only on the patched path;
+/// `check_semantic_support` refuses PMI that differs from its baseline. Design
+/// records reach the output through the native history lanes, synchronized
+/// from the neutral arenas declared `Written`; the other document arenas are
+/// not read.
+fn semantic_coverage(patched: bool, retained_brep: bool) -> ArenaDispositions {
+    use ArenaDisposition::{Omitted, Reported, Written};
+    let brep_carried = if retained_brep { Written } else { Omitted };
+    ArenaDispositions {
+        bodies: Written,
+        regions: Written,
+        shells: Written,
+        faces: Written,
+        loops: Written,
+        coedges: Written,
+        edges: Written,
+        vertices: Written,
+        points: Written,
+        surfaces: Written,
+        curves: Written,
+        subds: Reported,
+        pcurves: brep_carried,
+        procedural_surfaces: brep_carried,
+        procedural_curves: brep_carried,
+        assets: Omitted,
+        features: Written,
+        feature_input_topologies: Omitted,
+        feature_result_topologies: Omitted,
+        configurations: Written,
+        parameters: Written,
+        sketches: Written,
+        sketch_entities: Written,
+        sketch_constraints: Written,
+        spatial_sketches: Written,
+        spatial_sketch_entities: Written,
+        spatial_sketch_constraints: Omitted,
+        spreadsheets: Omitted,
+        product_definitions: Omitted,
+        occurrences: Omitted,
+        assembly_joints: Omitted,
+        drawings: Omitted,
+        semantic_annotations: Omitted,
+        presentation_documents: Omitted,
+        view_presentations: Omitted,
+        tessellations: Written,
+        appearances: Written,
+        appearance_bindings: Written,
+        attributes: Written,
+        pmi: if patched { Written } else { Omitted },
+        presentation_layers: Omitted,
+    }
 }
 
 fn assign_configuration_indices(
@@ -1497,7 +1590,7 @@ fn resolved_feature_payload(
         }
         payload.splice(start..end, replacement);
     }
-    Ok(payload)
+    Ok(payload.into_inner())
 }
 
 /// The record position a `sldprt:metadata:*` identifier carries: the ordinal of
@@ -2395,20 +2488,33 @@ fn body_material<'ir>(
     ctx: &DecodeContext<'_>,
     ir: &'ir CadIr,
 ) -> Result<Option<(&'ir str, Color)>, CodecError> {
-    let mut appearances = HashMap::new();
+    let mut appearances =
+        HashMap::<&cadmpeg_ir::ids::AppearanceId, &cadmpeg_ir::appearance::Appearance>::new();
     for appearance in &ir.model.appearances {
-        let work = cadmpeg_core::decode::u64_from_index(appearances.len())
-            .checked_add(2)
-            .and_then(|count| {
-                count.checked_mul(
-                    cadmpeg_core::decode::u64_from_index(appearance.id.as_str().len())
-                        .checked_add(1)?,
-                )
-            })
+        let work = cadmpeg_core::decode::u64_from_index(appearance.id.as_str().len())
+            .checked_add(1)
+            .and_then(|bytes| bytes.checked_mul(4))
             .ok_or_else(|| {
                 ctx.refuse_codec_limit("index SLDPRT material appearances", u64::MAX - 1, u64::MAX)
             })?;
         ctx.charge_work(work, "index SLDPRT material appearances")?;
+        if appearances.len() == appearances.capacity() && !appearances.contains_key(&appearance.id)
+        {
+            for id in appearances.keys() {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(id.as_str().len())
+                        .checked_add(1)
+                        .ok_or_else(|| {
+                            ctx.refuse_codec_limit(
+                                "index SLDPRT material appearances",
+                                u64::MAX - 1,
+                                u64::MAX,
+                            )
+                        })?,
+                    "index SLDPRT material appearances",
+                )?;
+            }
+        }
         ctx.insert_hash_map(
             &mut appearances,
             &appearance.id,
@@ -2423,14 +2529,9 @@ fn body_material<'ir>(
         let AppearanceTarget::Body(_) = &binding.target else {
             continue;
         };
-        let work = cadmpeg_core::decode::u64_from_index(appearances.len())
-            .checked_add(2)
-            .and_then(|count| {
-                count.checked_mul(
-                    cadmpeg_core::decode::u64_from_index(binding.appearance.as_str().len())
-                        .checked_add(1)?,
-                )
-            })
+        let work = cadmpeg_core::decode::u64_from_index(binding.appearance.as_str().len())
+            .checked_add(1)
+            .and_then(|bytes| bytes.checked_mul(2))
             .ok_or_else(|| {
                 ctx.refuse_codec_limit(
                     "find SLDPRT body material appearance",
@@ -2588,6 +2689,17 @@ pub(crate) fn brep_body(
     length_scale: f64,
     schema_32001: bool,
 ) -> Result<Vec<u8>, CodecError> {
+    if let Some(body) = ir
+        .model
+        .bodies
+        .iter()
+        .find(|body| matches!(body.kind, BodyKind::Wire | BodyKind::General))
+    {
+        return Err(CodecError::NotImplemented(format!(
+            "SLDPRT cannot write {:?} body {} as a solid lump",
+            body.kind, body.id
+        )));
+    }
     let mut next = 2u16;
     let derived_sphere_seam_curves = ir
         .model
@@ -3259,7 +3371,9 @@ fn fixed_refs(values: &[u16], message: &str) -> Result<[u16; 6], CodecError> {
     Ok(refs)
 }
 
-fn face_colors(ir: &CadIr) -> Result<HashMap<cadmpeg_ir::ids::FaceId, Color>, CodecError> {
+pub(crate) fn face_colors(
+    ir: &CadIr,
+) -> Result<HashMap<cadmpeg_ir::ids::FaceId, Color>, CodecError> {
     let appearances = ir
         .model
         .appearances

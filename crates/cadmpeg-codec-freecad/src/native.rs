@@ -15,6 +15,7 @@ use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::IdentityKey;
+use cadmpeg_ir::native::bytes::NativeBytes;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::num::NonZeroU64;
@@ -530,7 +531,15 @@ mod tests {
     fn string_tables_admit_numeric_positions_from_canonical_native_order() {
         let records = (0..12)
             .map(|index| {
-                super::StringTableRecord::try_new(index, None, false, 0, None, Vec::new()).unwrap()
+                super::StringTableRecord::try_new(
+                    index,
+                    None,
+                    Some(false),
+                    Some(0),
+                    None,
+                    Some(Vec::new()),
+                )
+                .unwrap()
             })
             .collect::<Vec<_>>();
         let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
@@ -588,8 +597,15 @@ mod tests {
             let records = indices
                 .into_iter()
                 .map(|index| {
-                    super::StringTableRecord::try_new(index, None, false, 0, None, Vec::new())
-                        .unwrap()
+                    super::StringTableRecord::try_new(
+                        index,
+                        None,
+                        Some(false),
+                        Some(0),
+                        None,
+                        Some(Vec::new()),
+                    )
+                    .unwrap()
                 })
                 .collect::<Vec<_>>();
             assert!(super::StringTables::try_from(records.clone()).is_err());
@@ -705,18 +721,17 @@ mod tests {
     }
 
     #[test]
-    fn file_version_preserves_spelling_and_rejects_invalid_wire() {
+    fn file_version_preserves_spelling_and_unverified_declarations() {
         let wire = serde_json::json!({"id":"document", "file_version":"+001", "program_version":null, "root_name":"Document", "object_count":0, "domains":[], "document_kind":"empty"});
         let record = serde_json::from_value::<super::DocumentFacts>(wire.clone()).unwrap();
-        assert_eq!(record.file_version.value(), 1);
+        assert_eq!(record.file_version.value(), Some(1));
         assert_eq!(serde_json::to_value(record).unwrap(), wire);
         for spelling in ["-1", "", "abc", "184467440737095516160"] {
             let mut invalid = wire.clone();
             invalid["file_version"] = serde_json::json!(spelling);
-            assert!(serde_json::from_value::<super::DocumentFacts>(invalid)
-                .unwrap_err()
-                .to_string()
-                .contains("file_version"));
+            let record = serde_json::from_value::<super::DocumentFacts>(invalid.clone()).unwrap();
+            assert_eq!(record.file_version.value(), None);
+            assert_eq!(serde_json::to_value(record).unwrap(), invalid);
         }
     }
 
@@ -1052,19 +1067,90 @@ mod tests {
             "byte_len": 3,
             "sha256": "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
             "referenced_by": ["fcstd:native:property#A:Shape"],
-            "data": [1, 2, 3]
+            "data": "010203"
         });
         let record = serde_json::from_value::<super::EntryRecord>(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(&record).unwrap(), wire);
+
+        let json = serde_json::to_string(&record).unwrap();
+        assert_eq!(
+            serde_json::from_str::<super::EntryRecord>(&json).unwrap(),
+            record
+        );
 
         let mut empty = wire;
         empty["byte_len"] = serde_json::json!(0);
         empty["sha256"] =
             serde_json::json!("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
         empty["referenced_by"] = serde_json::json!([]);
-        empty["data"] = serde_json::json!([]);
+        empty["data"] = serde_json::json!("");
         let record = serde_json::from_value::<super::EntryRecord>(empty.clone()).unwrap();
         assert_eq!(serde_json::to_value(record).unwrap(), empty);
+    }
+
+    #[test]
+    fn entry_hex_rejects_odd_nonhex_uppercase_and_array_payloads() {
+        let record = crate::test_support::entry_record(
+            "fcstd:native:entry#Payload.bin".into(),
+            "Payload.bin".into(),
+            cadmpeg_core::container::ContainerRole::Auxiliary,
+            Vec::new(),
+            vec![0xab],
+        );
+        let wire = serde_json::to_value(record).unwrap();
+        for data in [
+            serde_json::json!("a"),
+            serde_json::json!("ag"),
+            serde_json::json!("AB"),
+            serde_json::json!([171]),
+        ] {
+            let mut invalid = wire.clone();
+            invalid["data"] = data;
+            let json = serde_json::to_string(&invalid).unwrap();
+            assert!(serde_json::from_str::<super::EntryRecord>(&json).is_err());
+            assert!(serde_json::from_value::<super::EntryRecord>(invalid).is_err());
+        }
+        for field in ["byte_len", "sha256"] {
+            let mut invalid = wire.clone();
+            invalid[field] = if field == "byte_len" {
+                serde_json::json!(0)
+            } else {
+                serde_json::json!(cadmpeg_ir::hash::sha256_hex(&[]))
+            };
+            assert!(serde_json::from_value::<super::EntryRecord>(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains("entry byte_len/sha256 disagrees with data"));
+        }
+    }
+
+    #[test]
+    fn entry_hex_storage_uses_metadata_items_instead_of_payload_items() {
+        let bytes: Vec<u8> = (0..=255).cycle().take(256 * 1024).collect();
+        let record = crate::test_support::entry_record(
+            "fcstd:native:entry#Payload.bin".into(),
+            "Payload.bin".into(),
+            cadmpeg_core::container::ContainerRole::Auxiliary,
+            Vec::new(),
+            bytes.clone(),
+        );
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 256;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
+        namespace
+            .set_arena(&ctx, "entries", &[record])
+            .expect("metadata item budget admits payload");
+        let records = namespace.arena_as::<super::EntryRecord>("entries").unwrap();
+        assert_eq!(records[0].data(), bytes);
+        let wire = namespace.arena_as::<serde_json::Value>("entries").unwrap();
+        assert_eq!(wire[0]["data"].as_str().unwrap().len(), bytes.len() * 2);
+        assert!(wire[0]["data"]
+            .as_str()
+            .unwrap()
+            .starts_with("000102030405060708090a0b0c0d0e0f"));
     }
 
     #[test]
@@ -2697,23 +2783,20 @@ impl DocumentKind {
     }
 }
 
-/// Parsed file version with its exact source spelling.
+/// File-version declaration with its exact spelling and optional interpretation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FileVersion {
     spelling: String,
-    value: usize,
+    value: Option<usize>,
 }
-impl TryFrom<String> for FileVersion {
-    type Error = String;
-    fn try_from(spelling: String) -> Result<Self, Self::Error> {
-        let value = spelling
-            .parse()
-            .map_err(|_| "file_version must parse as usize".to_owned())?;
-        Ok(Self { spelling, value })
+impl From<String> for FileVersion {
+    fn from(spelling: String) -> Self {
+        let value = spelling.parse().ok();
+        Self { spelling, value }
     }
 }
 impl FileVersion {
-    pub(crate) fn value(&self) -> usize {
+    pub(crate) fn value(&self) -> Option<usize> {
         self.value
     }
     pub(crate) fn as_str(&self) -> &str {
@@ -2799,7 +2882,7 @@ impl TryFrom<DocumentFactsWire> for DocumentFacts {
     fn try_from(wire: DocumentFactsWire) -> Result<Self, Self::Error> {
         let value = Self {
             id: wire.id,
-            file_version: wire.file_version.try_into()?,
+            file_version: wire.file_version.into(),
             program_version: wire.program_version,
             root_name: wire.root_name,
             object_count: wire.object_count,
@@ -3190,6 +3273,8 @@ pub(crate) struct ValueRecord {
 /// Persisted values of a property, or a status-only transient declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum PropertyBody {
+    /// Persisted payload is unreadable; only its exact XML is authoritative.
+    Unreadable(String),
     /// Status-only transient property declaration.
     Transient,
     /// Persisted property payload.
@@ -3287,6 +3372,13 @@ pub(crate) fn parse_bool(value: &str) -> Option<bool> {
 }
 
 impl PropertyRecord {
+    fn payload_error(&self) -> Option<&str> {
+        match &self.body {
+            PropertyBody::Unreadable(detail) => Some(detail),
+            _ => None,
+        }
+    }
+
     /// Whether this is a status-only transient property declaration.
     pub(crate) fn is_transient(&self) -> bool {
         matches!(self.body, PropertyBody::Transient)
@@ -3296,7 +3388,7 @@ impl PropertyRecord {
     pub(crate) fn values(&self) -> &[ValueRecord] {
         match &self.body {
             PropertyBody::Persisted { values, .. } => values,
-            PropertyBody::Transient => &[],
+            PropertyBody::Transient | PropertyBody::Unreadable(_) => &[],
         }
     }
 
@@ -3304,7 +3396,7 @@ impl PropertyRecord {
     pub(crate) fn links(&self) -> &[Option<LinkTarget>] {
         match &self.body {
             PropertyBody::Persisted { links, .. } => links,
-            PropertyBody::Transient => &[],
+            PropertyBody::Transient | PropertyBody::Unreadable(_) => &[],
         }
     }
 
@@ -3312,7 +3404,7 @@ impl PropertyRecord {
     pub(crate) fn side_entries(&self) -> &[String] {
         match &self.body {
             PropertyBody::Persisted { side_entries, .. } => side_entries,
-            PropertyBody::Transient => &[],
+            PropertyBody::Transient | PropertyBody::Unreadable(_) => &[],
         }
     }
 
@@ -3320,14 +3412,14 @@ impl PropertyRecord {
     fn dynamic(&self) -> Option<&DynamicPropertyMeta> {
         match &self.body {
             PropertyBody::Persisted { dynamic, .. } => dynamic.as_ref(),
-            PropertyBody::Transient => None,
+            PropertyBody::Transient | PropertyBody::Unreadable(_) => None,
         }
     }
 
     pub(crate) fn values_mut(&mut self) -> Option<&mut Vec<ValueRecord>> {
         match &mut self.body {
             PropertyBody::Persisted { values, .. } => Some(values),
-            PropertyBody::Transient => None,
+            PropertyBody::Transient | PropertyBody::Unreadable(_) => None,
         }
     }
 }
@@ -3341,6 +3433,7 @@ struct PropertyRecordWire {
     family: PropertyFamily,
     status: Option<u64>,
     transient: bool,
+    payload_error: Option<String>,
     dynamic: Option<DynamicPropertyMeta>,
     order: usize,
     values: Vec<ValueRecord>,
@@ -3360,6 +3453,8 @@ struct PropertyRecordOut<'a> {
     family: PropertyFamily,
     status: Option<u64>,
     transient: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    payload_error: Option<&'a str>,
     dynamic: Option<&'a DynamicPropertyMeta>,
     order: usize,
     values: &'a [ValueRecord],
@@ -3380,6 +3475,7 @@ impl Serialize for PropertyRecord {
             family: self.family,
             status: self.status,
             transient: self.is_transient(),
+            payload_error: self.payload_error(),
             // A transient declaration writes no payload: the accessors state its
             // empty tables and absent metadata.
             dynamic: self.dynamic(),
@@ -3399,7 +3495,20 @@ impl TryFrom<PropertyRecordWire> for PropertyRecord {
     type Error = String;
 
     fn try_from(wire: PropertyRecordWire) -> Result<Self, Self::Error> {
-        let body = if wire.transient {
+        let body = if let Some(detail) = wire.payload_error {
+            if detail.trim().is_empty()
+                || wire.transient
+                || !wire.values.is_empty()
+                || !wire.links.is_empty()
+                || !wire.side_entries.is_empty()
+                || wire.dynamic.is_some()
+            {
+                return Err(
+                    "unreadable property requires a diagnostic and no admitted payload".to_owned(),
+                );
+            }
+            PropertyBody::Unreadable(detail)
+        } else if wire.transient {
             if !wire.values.is_empty()
                 || !wire.links.is_empty()
                 || !wire.side_entries.is_empty()
@@ -3477,7 +3586,7 @@ pub(crate) struct EntryRecord {
     name: ArchiveEntryName,
     pub(crate) role: cadmpeg_core::container::ContainerRole,
     referenced_by: EntryReferences,
-    data: Vec<u8>,
+    data: NativeBytes,
     sha256: String,
 }
 
@@ -3558,7 +3667,7 @@ impl EntryRecord {
             name,
             role,
             referenced_by,
-            data,
+            data: data.into(),
             sha256,
         })
     }
@@ -3573,7 +3682,7 @@ impl EntryRecord {
         &self.referenced_by.0
     }
     pub(crate) fn data(&self) -> &[u8] {
-        &self.data
+        self.data.as_ref()
     }
     pub(crate) fn byte_len(&self) -> u64 {
         cadmpeg_core::decode::u64_from_index(self.data.len())
@@ -3612,8 +3721,21 @@ impl EntryRecord {
     #[cfg(test)]
     pub(crate) fn replace_data(&mut self, bytes: Vec<u8>) {
         self.sha256 = sha256_hex(&bytes);
-        self.data = bytes;
+        self.data = bytes.into();
     }
+}
+
+/// Read a [`NativeBytes`] payload, requiring the lowercase spelling the writer emits.
+pub(crate) fn deserialize_lowercase_native_bytes<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<NativeBytes, D::Error> {
+    let text = String::deserialize(deserializer)?;
+    if text.bytes().any(|byte| byte.is_ascii_uppercase()) {
+        return Err(serde::de::Error::custom(
+            "entry data hex requires lowercase hexadecimal digits",
+        ));
+    }
+    NativeBytes::deserialize(serde::de::value::StrDeserializer::<D::Error>::new(&text))
 }
 
 #[derive(Deserialize)]
@@ -3624,7 +3746,8 @@ struct EntryRecordWire {
     byte_len: u64,
     sha256: String,
     referenced_by: Vec<String>,
-    data: Vec<u8>,
+    #[serde(deserialize_with = "deserialize_lowercase_native_bytes")]
+    data: NativeBytes,
 }
 
 #[derive(Serialize)]
@@ -3635,7 +3758,7 @@ struct EntryRecordOut<'a> {
     byte_len: u64,
     sha256: &'a str,
     referenced_by: &'a [String],
-    data: &'a [u8],
+    data: NativeBytes<&'a [u8]>,
 }
 
 impl Serialize for EntryRecord {
@@ -3647,7 +3770,7 @@ impl Serialize for EntryRecord {
             byte_len: self.byte_len(),
             sha256: self.sha256(),
             referenced_by: self.referenced_by(),
-            data: self.data(),
+            data: NativeBytes::new(self.data()),
         }
         .serialize(serializer)
     }
@@ -3847,27 +3970,27 @@ pub(crate) struct StringTableRecord {
     pub(crate) index: usize,
     /// Owning property when the table is serialized beside its first use.
     pub(crate) owner_property: Option<String>,
-    /// Whether all strings, rather than only marked strings, were persisted.
-    save_all: bool,
-    /// Native hashing threshold.
-    threshold: i64,
+    /// Whether all strings were persisted; `None` for unreadable metadata.
+    save_all: Option<bool>,
+    /// Native hashing threshold; `None` for unreadable metadata.
+    threshold: Option<i64>,
     /// Referenced side entry, or `None` for inline data.
     pub(crate) source_entry: Option<String>,
-    /// Parsed records in serialized order.
-    entries: Vec<StringTableEntry>,
+    /// Parsed records in serialized order; `None` when the payload is source-only.
+    entries: Option<Vec<StringTableEntry>>,
 }
 
 impl StringTableRecord {
     pub(crate) fn try_new(
         index: usize,
         owner_property: Option<String>,
-        save_all: bool,
-        threshold: i64,
+        save_all: Option<bool>,
+        threshold: Option<i64>,
         source_entry: Option<String>,
-        entries: Vec<StringTableEntry>,
+        entries: Option<Vec<StringTableEntry>>,
     ) -> Result<Self, String> {
         let mut seen = std::collections::HashSet::new();
-        for entry in &entries {
+        for entry in entries.as_deref().unwrap_or_default() {
             if entry.components.iter().any(|id| !seen.contains(id)) {
                 return Err("entries.components must reference earlier string_id values".to_owned());
             }
@@ -3890,13 +4013,13 @@ impl StringTableRecord {
         native_id("string-table", self.index.to_string())
     }
 
-    pub(crate) fn entries(&self) -> &[StringTableEntry] {
-        &self.entries
+    pub(crate) fn entries(&self) -> Option<&[StringTableEntry]> {
+        self.entries.as_deref()
     }
 
-    /// Declared number of serialized entries, equal to `entries.len()`.
-    fn declared_count(&self) -> usize {
-        self.entries().len()
+    /// Admitted serialized count; absent exactly when the table is unreadable.
+    fn declared_count(&self) -> Option<usize> {
+        self.entries().map(<[StringTableEntry]>::len)
     }
 }
 
@@ -3905,11 +4028,11 @@ struct StringTableRecordWire {
     id: String,
     index: usize,
     owner_property: Option<String>,
-    save_all: bool,
-    threshold: i64,
-    declared_count: usize,
+    save_all: Option<bool>,
+    threshold: Option<i64>,
+    declared_count: Option<usize>,
     source_entry: Option<String>,
-    entries: Vec<StringTableEntry>,
+    entries: Option<Vec<StringTableEntry>>,
 }
 
 #[derive(Serialize)]
@@ -3917,11 +4040,11 @@ struct StringTableRecordOut<'a> {
     id: String,
     index: usize,
     owner_property: Option<&'a str>,
-    save_all: bool,
-    threshold: i64,
-    declared_count: usize,
+    save_all: Option<bool>,
+    threshold: Option<i64>,
+    declared_count: Option<usize>,
     source_entry: Option<&'a str>,
-    entries: &'a [StringTableEntry],
+    entries: Option<&'a [StringTableEntry]>,
 }
 
 impl Serialize for StringTableRecord {
@@ -3952,7 +4075,7 @@ impl TryFrom<StringTableRecordWire> for StringTableRecord {
                 wire.index
             ));
         }
-        if wire.declared_count != wire.entries.len() {
+        if wire.declared_count != wire.entries.as_ref().map(Vec::len) {
             return Err("string table declared_count must equal entries.len()".to_owned());
         }
         Self::try_new(

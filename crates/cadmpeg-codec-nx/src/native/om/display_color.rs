@@ -231,7 +231,7 @@ mod admission_tests {
     use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
-    const ROW: &str = r#"{"id":"nx:rm-display-color-assignments:assignment#0","ordinal":0,"encoding":{"kind":"target","target_index":2,"raw_target_index":[2],"target_index_source_offset":15,"indices":[3,4,5],"raw_indices":[[3],[4],[5]],"index_source_offsets":[20,21,22],"mode":7},"color_index":128,"color_definition":"definition","raw_color_index":[128,128],"source_entry":"entry","source_offset":8,"row_source_offset":10}"#;
+    const ROW: &str = r#"{"id":"nx:rm-display-color-assignments:assignment#0","ordinal":0,"encoding":{"kind":"target","target_index":2,"raw_target_index":"02","target_index_source_offset":15,"indices":[3,4,5],"raw_indices":["03","04","05"],"index_source_offsets":[20,21,22],"mode":7},"color_index":128,"color_definition":"definition","raw_color_index":"8080","source_entry":"entry","source_offset":8,"row_source_offset":10}"#;
 
     #[test]
     fn display_color_assignment_refuses_collection_limit() {
@@ -286,9 +286,19 @@ mod admission_tests {
 
     #[test]
     fn display_color_finalization_refuses_scoped_limit() {
-        // The stable sort reserves scratch only above 20 values.
+        // Twenty-one descending offsets require the stable sort's index scratch.
         let rows: Vec<RmDisplayColorAssignment> = (0..21)
-            .map(|_| serde_json::from_str(ROW).unwrap())
+            .rev()
+            .map(|index| {
+                let mut wire: serde_json::Value = serde_json::from_str(ROW).unwrap();
+                wire["source_offset"] = serde_json::json!(100 * index + 8);
+                wire["row_source_offset"] = serde_json::json!(100 * index + 10);
+                wire["encoding"]["target_index_source_offset"] =
+                    serde_json::json!(100 * index + 15);
+                wire["encoding"]["index_source_offsets"] =
+                    serde_json::json!([100 * index + 20, 100 * index + 21, 100 * index + 22]);
+                serde_json::from_value(wire).unwrap()
+            })
             .collect();
         let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
             policy.limits.max_materialized_bytes = 0;

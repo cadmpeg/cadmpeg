@@ -242,7 +242,7 @@ fn type214_forms_share_count_driven_boundary() {
         TokenValue::Integer(0),
     ];
     let mut wrong_field = n1.clone();
-    wrong_field[7] = TokenValue::String(b"1HX".to_vec());
+    wrong_field[7] = TokenValue::String(b"1HX".to_vec().into());
 
     for form in 1_i64..=12 {
         let mut source = directory_target(1, 214);
@@ -671,7 +671,7 @@ fn type406_form1_entity_table_boundary_follows_level_list() {
         vec![
             TokenValue::Integer(406),
             TokenValue::Integer(1),
-            TokenValue::String(b"5".to_vec()),
+            TokenValue::String(b"5".to_vec().into()),
             TokenValue::Integer(1),
             TokenValue::Integer(3),
             TokenValue::Integer(0),
@@ -845,7 +845,7 @@ fn type406_drawing_properties_share_fixed_primary_boundary() {
                 TokenValue::Integer(406),
                 TokenValue::Integer(2),
                 TokenValue::Integer(2),
-                TokenValue::String(b"MM".to_vec()),
+                TokenValue::String(b"MM".to_vec().into()),
                 TokenValue::Integer(1),
                 TokenValue::Integer(3),
                 TokenValue::Integer(0),
@@ -856,7 +856,7 @@ fn type406_drawing_properties_share_fixed_primary_boundary() {
             vec![
                 TokenValue::Integer(406),
                 TokenValue::Integer(2),
-                TokenValue::String(b"X".to_vec()),
+                TokenValue::String(b"X".to_vec().into()),
                 TokenValue::Integer(20),
                 TokenValue::Integer(1),
                 TokenValue::Integer(3),
@@ -1033,7 +1033,7 @@ fn type406_drawing_property_malformed_np_or_span_does_not_enable_generic_recover
                     TokenValue::Integer(406),
                     TokenValue::real(2.0),
                     TokenValue::Integer(2),
-                    TokenValue::String(b"MM".to_vec()),
+                    TokenValue::String(b"MM".to_vec().into()),
                     TokenValue::Integer(1),
                     TokenValue::Integer(3),
                     TokenValue::Integer(0),
@@ -1042,7 +1042,7 @@ fn type406_drawing_property_malformed_np_or_span_does_not_enable_generic_recover
                     TokenValue::Integer(406),
                     TokenValue::Omitted,
                     TokenValue::Integer(2),
-                    TokenValue::String(b"MM".to_vec()),
+                    TokenValue::String(b"MM".to_vec().into()),
                     TokenValue::Integer(1),
                     TokenValue::Integer(3),
                     TokenValue::Integer(0),
@@ -1051,7 +1051,7 @@ fn type406_drawing_property_malformed_np_or_span_does_not_enable_generic_recover
                     TokenValue::Integer(406),
                     TokenValue::Integer(0),
                     TokenValue::Integer(2),
-                    TokenValue::String(b"MM".to_vec()),
+                    TokenValue::String(b"MM".to_vec().into()),
                     TokenValue::Integer(1),
                     TokenValue::Integer(3),
                     TokenValue::Integer(0),

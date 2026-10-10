@@ -67,68 +67,7 @@
       "creo": {
         "feature_definitions": [
           {
-            "body": [
-              102,
-              101,
-              97,
-              116,
-              95,
-              100,
-              101,
-              102,
-              115,
-              95,
-              52,
-              48,
-              0,
-              118,
-              97,
-              114,
-              95,
-              97,
-              114,
-              114,
-              0,
-              248,
-              2,
-              247,
-              1,
-              251,
-              226,
-              115,
-              99,
-              104,
-              101,
-              109,
-              97,
-              241,
-              247,
-              1,
-              226,
-              1,
-              7,
-              228,
-              15,
-              1,
-              0,
-              3,
-              226,
-              2,
-              7,
-              70,
-              8,
-              0,
-              0,
-              0,
-              0,
-              0,
-              0,
-              15,
-              1,
-              0,
-              4,
-              226
-            ],
+            "body": "666561745f646566735f3430007661725f61727200f802f701fbe2736368656d61f1f701e20107e40f010003e2020746080000000000000f010004e2",
             "definition_id": 40,
             "id": "creo:featdefs:feature_definition#40",
             "offset": 86,
@@ -187,9 +126,7 @@
               {
                 "dimension_driven": false,
                 "guess": 0.0,
-                "guess_body": [
-                  15
-                ],
+                "guess_body": "0f",
                 "guess_dimension_driven": false,
                 "homogeneity": 0,
                 "key": 7,
@@ -198,17 +135,13 @@
                 "resolved_value": 1.0,
                 "uvar_id": 3,
                 "value": 1.0,
-                "value_body": [
-                  228
-                ],
+                "value_body": "e4",
                 "variable_type": 1
               },
               {
                 "dimension_driven": false,
                 "guess": 0.0,
-                "guess_body": [
-                  15
-                ],
+                "guess_body": "0f",
                 "guess_dimension_driven": false,
                 "homogeneity": 0,
                 "key": 7,
@@ -217,16 +150,7 @@
                 "resolved_value": 3.0,
                 "uvar_id": 4,
                 "value": 3.0,
-                "value_body": [
-                  70,
-                  8,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0
-                ],
+                "value_body": "4608000000000000",
                 "variable_type": 2
               }
             ]

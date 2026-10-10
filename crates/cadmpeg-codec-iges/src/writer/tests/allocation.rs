@@ -56,7 +56,7 @@ fn nurbs_surface_writer_weights_refuse_one_below_collection_need() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 3;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let error = super::super::encode_nurbs_surface(&ctx, &surface)
+    let error = super::super::encode_nurbs_surface(&ctx, &surface, None)
         .err()
         .expect("four weights exceed three slots");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
@@ -64,7 +64,7 @@ fn nurbs_surface_writer_weights_refuse_one_below_collection_need() {
             && limit.operation == "iges NURBS surface weights"));
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).expect("root");
-    assert!(super::super::encode_nurbs_surface(&ctx, &surface).is_ok());
+    assert!(super::super::encode_nurbs_surface(&ctx, &surface, None).is_ok());
 }
 
 #[test]

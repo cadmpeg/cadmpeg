@@ -81,6 +81,22 @@ fn treatment_radius_candidates_require_a_new_radius_carrier_and_deleted_support_
         ],
         ..AsmHistoricalTopology::default()
     };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // The transition index is built once; each query admits one deleted edge and two output rows.
+    policy.limits.max_collection_items = 4_000;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut cache = crate::history::treatment_index::TreatmentCache::default();
+    for _ in 0..1_000 {
+        let (radii, edges) =
+            treatment_edge_candidates(&ctx, None, &[20], &result, &preceding, &[17], &mut cache)
+                .unwrap();
+        assert_eq!(edges, [17]);
+        assert_eq!(radii.len(), 1);
+        assert_eq!(radii[0].radius.get(), 3.0);
+    }
+    ctx.finish_session().unwrap();
     let candidates = crate::test_support::with_decode_context(|decode_ctx| {
         treatment_radius_candidates(
             decode_ctx,
@@ -89,6 +105,7 @@ fn treatment_radius_candidates_require_a_new_radius_carrier_and_deleted_support_
             &result,
             &preceding,
             &[17],
+            &mut crate::history::treatment_index::TreatmentCache::default(),
         )
     })
     .unwrap();
@@ -102,7 +119,8 @@ fn treatment_radius_candidates_require_a_new_radius_carrier_and_deleted_support_
             &[20],
             &result,
             &preceding,
-            &[17]
+            &[17],
+            &mut crate::history::treatment_index::TreatmentCache::default()
         ))
         .unwrap()
         .1,
@@ -118,7 +136,8 @@ fn treatment_radius_candidates_require_a_new_radius_carrier_and_deleted_support_
             &[20],
             &result,
             &existing_carrier,
-            &[17]
+            &[17],
+            &mut crate::history::treatment_index::TreatmentCache::default()
         ))
         .unwrap()
         .is_empty()
@@ -130,7 +149,8 @@ fn treatment_radius_candidates_require_a_new_radius_carrier_and_deleted_support_
             &[20],
             &result,
             &preceding,
-            &[18]
+            &[18],
+            &mut crate::history::treatment_index::TreatmentCache::default()
         ))
         .unwrap()
         .1
@@ -143,7 +163,8 @@ fn treatment_radius_candidates_require_a_new_radius_carrier_and_deleted_support_
             &[20],
             &result,
             &preceding,
-            &[18]
+            &[18],
+            &mut crate::history::treatment_index::TreatmentCache::default()
         ))
         .unwrap()
         .is_empty()

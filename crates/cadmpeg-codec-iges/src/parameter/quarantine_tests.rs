@@ -2,12 +2,9 @@
 //! Parameter Data quarantine: ownership order, arena records, and accounting.
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_test_support::wire;
-
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::report::decode::TransferDisposition;
 
 use crate::loss::IgesLossCode;
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
@@ -118,72 +115,34 @@ fn set_second_card_field(bytes: &[u8], field: usize, value: [u8; 8]) -> Vec<u8> 
 }
 
 #[test]
-fn a_token_that_is_not_a_number_quarantines_only_that_parameter_data() {
+fn an_unreadable_literal_retains_the_other_fields_and_refuses_required_geometry() {
     let bytes = point_file("116,1,2,3x4,0;");
-    let card_offset = parameter_card_offset(&bytes);
-    let expected_bytes = bytes[card_offset..card_offset + 80].to_vec();
-
-    let result = decode(bytes);
-
+    let result = decode(bytes.clone());
     let native = result.ir().native.namespace("iges").unwrap();
     let entity = &native.arenas()["entities"][0];
-    assert_eq!(entity.id(), "iges:entity:directory#1");
-    assert_eq!(entity.fields()["entity_type"], 116);
-    assert!(entity.fields()["parameter_bytes"]
-        .as_array()
+    assert!(!entity.fields()["parameter_bytes"]
+        .as_str()
         .unwrap()
         .is_empty());
-    assert!(entity.fields()["parameters"].as_array().unwrap().is_empty());
+    assert_eq!(entity.fields()["parameters"].as_array().unwrap().len(), 5);
+    assert_eq!(
+        entity.fields()["parameters"][3]["value"]["kind"],
+        "unreadable"
+    );
+    assert!(native.arenas()["quarantined_parameter_records"].is_empty());
     assert!(result.ir().model.points.is_empty());
-
-    let quarantined = &native.arenas()["quarantined_parameter_records"];
-    assert_eq!(quarantined.len(), 1);
-    assert_eq!(quarantined[0].id(), "iges:quarantine:parameter#1");
-    let fields = quarantined[0].fields();
-    assert_eq!(fields["section"], "parameter-data");
-    assert_eq!(fields["sequence"], 1);
-    assert_eq!(fields["source_offset"], card_offset);
-    assert_eq!(fields["cards"], 1);
-    assert_eq!(fields["defect"], "token-not-a-number");
     assert_eq!(
-        fields["bytes"].as_array().unwrap(),
-        &expected_bytes
-            .iter()
-            .map(|byte| serde_json::Value::from(*byte))
-            .collect::<Vec<_>>()
+        code_count(result.report(), IgesLossCode::ParameterLiteralUnusable),
+        1
     );
-
-    assert_eq!(result.report().losses.len(), 1);
-    let loss = &result.report().losses[0];
-    assert_eq!(loss.code, IgesLossCode::ParameterDataQuarantined.kind());
     assert_eq!(
-        loss.provenance
-            .as_ref()
-            .and_then(|provenance| provenance.tag.as_deref()),
-        Some("D1:parameter")
+        code_count(result.report(), IgesLossCode::GeometryNotProjected),
+        1
     );
-    let ledger = &result.report().transfer_ledger.entries;
-    let entity_row = ledger
-        .iter()
-        .find(|entry| entry.source == "D1")
-        .expect("typed entity ledger row");
-    assert_eq!(entity_row.target(), Some("iges:entity:directory#1"));
-    assert_eq!(
-        wire::field_or_default::<Option<String>>(&(entity_row.outcome), "note").as_deref(),
-        Some("native record retained; semantic projection omitted with an attributed loss")
-    );
-    let quarantine_row = ledger
-        .iter()
-        .find(|entry| entry.source == "D1:parameter")
-        .expect("quarantined parameter ledger row");
-    assert_eq!(quarantine_row.target(), Some("iges:quarantine:parameter#1"));
-    assert_eq!(
-        wire::field::<cadmpeg_ir::report::decode::TransferDisposition>(
-            &(quarantine_row.outcome),
-            "disposition"
-        ),
-        TransferDisposition::Retained
-    );
+    assert!(matches!(
+        IgesCodec.decode(&mut Cursor::new(bytes), &strict_options()),
+        Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. })
+    ));
 }
 
 #[test]
@@ -233,7 +192,7 @@ fn a_non_null_entity_declaring_zero_cards_gets_a_zero_card_quarantine_record() {
     assert_eq!(quarantined[0].id(), "iges:quarantine:parameter#3");
     let fields = quarantined[0].fields();
     assert_eq!(fields["cards"], 0);
-    assert!(fields["bytes"].as_array().unwrap().is_empty());
+    assert!(fields["bytes"].as_str().unwrap().is_empty());
     assert_eq!(fields["defect"], "declared-count-zero");
     assert_eq!(result.report().losses.len(), 1);
     assert_eq!(
@@ -307,8 +266,6 @@ fn every_token_defect_key_names_its_own_failure() {
         ),
         ("116,1,2,64Hshort;", "hollerith-payload-truncated"),
         ("116,1,2,0H;", "hollerith-count-zero"),
-        ("116,1,2,3x4,0;", "token-not-a-number"),
-        ("116,1,2,3 ,0;", "numeric-contains-blanks"),
         ("116,1,2,3,0", "delimiter-missing"),
     ] {
         let result = decode(point_file(parameters));
@@ -367,22 +324,22 @@ fn an_entity_owning_no_card_under_either_rule_is_quarantined() {
 }
 
 #[test]
-fn a_non_ascii_token_byte_quarantines_the_parameter_data() {
+fn a_non_ascii_literal_retains_its_framed_record() {
     let mut bytes = point_file("116,1,2,3,0;");
     let card_offset = parameter_card_offset(&bytes);
     bytes[card_offset + 4] = 0xff;
-
     let result = decode(bytes);
-
-    let native = result.ir().native.namespace("iges").unwrap();
-    let quarantined = &native.arenas()["quarantined_parameter_records"];
-    assert_eq!(quarantined.len(), 1);
-    assert_eq!(quarantined[0].fields()["defect"], "token-not-ascii");
+    assert!(result.ir().native.namespace("iges").unwrap().arenas()
+        ["quarantined_parameter_records"]
+        .is_empty());
     assert_eq!(
-        code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
+        code_count(result.report(), IgesLossCode::ParameterLiteralUnusable),
         1
     );
-    assert_eq!(result.report().losses.len(), 1);
+    assert_eq!(
+        code_count(result.report(), IgesLossCode::GeometryNotProjected),
+        1
+    );
 }
 
 #[test]
@@ -448,7 +405,7 @@ fn two_declared_ranges_claiming_one_card_quarantine_both_records() {
 
 #[test]
 fn a_quarantined_parameter_record_refuses_strict_and_survives_container_only() {
-    let bytes = point_file("116,1,2,3x4,0;");
+    let bytes = point_file("116,1,2,64Hshort;");
 
     let container_only = IgesCodec
         .decode(

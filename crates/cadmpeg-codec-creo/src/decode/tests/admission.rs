@@ -400,9 +400,8 @@ fn decode_propagates_spline_grid_collection_limit() {
         policy: DecodePolicy::service(),
         ..DecodeOptions::default()
     };
-    // Input byte slots precede the parser's fixed 45-item allowance.
-    options.policy.limits.max_collection_items =
-        45 + cadmpeg_core::decode::u64_from_index(data.len());
+    // Five scalar slots remain after the parser's fixed 40-item storage.
+    options.policy.limits.max_collection_items = 45;
     let error = CreoCodec
         .decode(&mut Cursor::new(data.clone()), &options)
         .expect_err("six scalar slots exceed the five-item limit");
@@ -438,9 +437,8 @@ fn decode_propagates_counted_scalar_array_collection_limit() {
         policy: DecodePolicy::service(),
         ..DecodeOptions::default()
     };
-    // Input byte slots precede the parser's fixed 43-item allowance.
-    options.policy.limits.max_collection_items =
-        43 + cadmpeg_core::decode::u64_from_index(data.len());
+    // Three scalar slots remain after the parser's fixed 40-item storage.
+    options.policy.limits.max_collection_items = 43;
     let error = CreoCodec
         .decode(&mut Cursor::new(data.clone()), &options)
         .expect_err("four scalar slots exceed the three-item limit");
@@ -760,12 +758,7 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
     assert_eq!(feature_40[0].fields()["current"], false);
     assert_eq!(feature_40[0].fields()["stored_name"], "xProtrusion id 40");
     assert_eq!(
-        feature_40[0].fields()["stored_name_bytes"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|byte| u8::try_from(byte.as_u64().unwrap()).expect("fixture value fits u8"))
-            .collect::<Vec<_>>(),
+        crate::test_support::native_bytes(&feature_40[0].fields()["stored_name_bytes"]),
         b"xProtrusion id 40"
     );
     assert_eq!(feature_40[0].fields()["identifier_keyword"], "id");

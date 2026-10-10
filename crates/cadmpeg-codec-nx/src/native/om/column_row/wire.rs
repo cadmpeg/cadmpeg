@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Existing flat wire fields for complete column-row frames.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::{
     DataBlockIndexRow, DataBlockLinkedIndexRow, DataBlockTargetIndexRow, Deserialize, IndexRow,
     LinkedRow, Serialize, TargetRow,
@@ -19,13 +21,13 @@ pub(super) struct DataBlockIndexRowWire {
     /// First non-null compact index.
     first_index: u32,
     /// Exact serialized leading-index token.
-    raw_first_index: Vec<u8>,
+    raw_first_index: NativeBytes<Vec<u8>>,
     /// Serialized `03` or `07` row flag.
     flag: u8,
     /// Four ordered non-null compact indices after the row flag.
     indices: [u32; 4],
     /// Exact serialized four-index tokens in row order.
-    raw_indices: [Vec<u8>; 4],
+    raw_indices: [NativeBytes<Vec<u8>>; 4],
     /// Four same-section blocks addressed by the compact indices.
     data_blocks: [String; 4],
     /// Directory entry containing the offset-only store.
@@ -103,10 +105,11 @@ impl From<DataBlockIndexRow> for DataBlockIndexRowWire {
             opening_block_offset: value.opening_block_offset,
             source_offset: value.frame.offset(),
             first_index: value.frame.first_index().atom.value(),
-            raw_first_index: value.frame.first_index().atom.raw().to_vec(),
+            raw_first_index: (value.frame.first_index().atom.raw().to_vec()).into(),
             first_index_source_offset: value.frame.first_index().offset,
             indices: value.frame.indices().map(|index| index.atom.value()),
-            raw_indices: value.frame.indices().map(|index| index.atom.raw().to_vec()),
+            raw_indices: (value.frame.indices().map(|index| index.atom.raw().to_vec()))
+                .map(Into::into),
             index_source_offsets: value.frame.indices().map(|index| index.offset),
             data_blocks: value.frame.indices().map(|index| index.target.clone()),
             flag: u8::from(value.frame.flag()),
@@ -125,17 +128,17 @@ pub(super) struct DataBlockLinkedIndexRowWire {
     /// Unresolved leading compact index.
     first_index: u32,
     /// Exact serialized leading-index token.
-    raw_first_index: Vec<u8>,
+    raw_first_index: NativeBytes<Vec<u8>>,
     /// Serialized `16`, `17`, or `18` discriminator.
     discriminator: crate::om::discriminators::LinkedIndexDiscriminator,
     /// Target compact block index.
     target_index: u32,
     /// Exact serialized target-index token.
-    raw_target_index: Vec<u8>,
+    raw_target_index: NativeBytes<Vec<u8>>,
     /// Three compact block indices after `ff ff 90 fe`.
     indices: [u32; 3],
     /// Exact serialized post-marker tokens in row order.
-    raw_indices: [Vec<u8>; 3],
+    raw_indices: [NativeBytes<Vec<u8>>; 3],
     /// Target block followed by the three post-marker blocks.
     data_blocks: [String; 4],
     /// Serialized `03` or `07` flag.
@@ -232,13 +235,14 @@ impl From<DataBlockLinkedIndexRow> for DataBlockLinkedIndexRowWire {
             opening_block_offset: value.opening_block_offset,
             source_offset: value.frame.offset(),
             first_index: value.frame.first_index().atom.value(),
-            raw_first_index: value.frame.first_index().atom.raw().to_vec(),
+            raw_first_index: (value.frame.first_index().atom.raw().to_vec()).into(),
             first_index_source_offset: value.frame.first_index().offset,
             target_index: value.frame.target_index().atom.value(),
-            raw_target_index: value.frame.target_index().atom.raw().to_vec(),
+            raw_target_index: (value.frame.target_index().atom.raw().to_vec()).into(),
             target_index_source_offset: value.frame.target_index().offset,
             indices: value.frame.indices().map(|index| index.atom.value()),
-            raw_indices: value.frame.indices().map(|index| index.atom.raw().to_vec()),
+            raw_indices: (value.frame.indices().map(|index| index.atom.raw().to_vec()))
+                .map(Into::into),
             index_source_offsets: value.frame.indices().map(|index| index.offset),
             data_blocks: [
                 value.frame.target_index().target.clone(),
@@ -264,11 +268,11 @@ pub(super) struct DataBlockTargetIndexRowWire {
     /// Target compact block index.
     target_index: u32,
     /// Exact serialized target-index token.
-    raw_target_index: Vec<u8>,
+    raw_target_index: NativeBytes<Vec<u8>>,
     /// Three compact block indices after `ff ff 90 fe`.
     indices: [u32; 3],
     /// Exact serialized post-marker tokens in row order.
-    raw_indices: [Vec<u8>; 3],
+    raw_indices: [NativeBytes<Vec<u8>>; 3],
     /// Target block followed by the three post-marker blocks.
     data_blocks: [String; 4],
     /// Serialized `04` or `07` mode.
@@ -345,10 +349,11 @@ impl From<DataBlockTargetIndexRow> for DataBlockTargetIndexRowWire {
             opening_block_offset: value.opening_block_offset,
             source_offset: value.frame.offset(),
             target_index: value.frame.target_index().atom.value(),
-            raw_target_index: value.frame.target_index().atom.raw().to_vec(),
+            raw_target_index: (value.frame.target_index().atom.raw().to_vec()).into(),
             target_index_source_offset: value.frame.target_index().offset,
             indices: value.frame.indices().map(|index| index.atom.value()),
-            raw_indices: value.frame.indices().map(|index| index.atom.raw().to_vec()),
+            raw_indices: (value.frame.indices().map(|index| index.atom.raw().to_vec()))
+                .map(Into::into),
             index_source_offsets: value.frame.indices().map(|index| index.offset),
             data_blocks: [
                 value.frame.target_index().target.clone(),
@@ -371,19 +376,19 @@ mod tests {
     #[test]
     fn column_rows_keep_wire_order_and_reject_mismatched_tokens() {
         check_wire::<DataBlockIndexRow>(
-            r#"{"id":"row","section_ordinal":0,"ordinal":0,"first_index":1,"raw_first_index":[1],"flag":3,"indices":[2,3,4,5],"raw_indices":[[2],[3],[4],[5]],"data_blocks":["a","b","c","d"],"source_entry":"entry","opening_data_block":"opening","opening_block_offset":0,"source_offset":10,"first_index_source_offset":13,"index_source_offsets":[17,18,19,20]}"#,
+            r#"{"id":"row","section_ordinal":0,"ordinal":0,"first_index":1,"raw_first_index":"01","flag":3,"indices":[2,3,4,5],"raw_indices":["02","03","04","05"],"data_blocks":["a","b","c","d"],"source_entry":"entry","opening_data_block":"opening","opening_block_offset":0,"source_offset":10,"first_index_source_offset":13,"index_source_offsets":[17,18,19,20]}"#,
             "raw_first_index",
-            serde_json::json!([255]),
+            serde_json::json!("ff"),
         );
         check_wire::<DataBlockLinkedIndexRow>(
-            r#"{"id":"row","section_ordinal":0,"ordinal":0,"first_index":1,"raw_first_index":[1],"discriminator":22,"target_index":2,"raw_target_index":[2],"indices":[3,4,5],"raw_indices":[[3],[4],[5]],"data_blocks":["a","b","c","d"],"flag":3,"mode":4,"source_entry":"entry","opening_data_block":"opening","opening_block_offset":0,"source_offset":10,"first_index_source_offset":12,"target_index_source_offset":16,"index_source_offsets":[21,22,23]}"#,
+            r#"{"id":"row","section_ordinal":0,"ordinal":0,"first_index":1,"raw_first_index":"01","discriminator":22,"target_index":2,"raw_target_index":"02","indices":[3,4,5],"raw_indices":["03","04","05"],"data_blocks":["a","b","c","d"],"flag":3,"mode":4,"source_entry":"entry","opening_data_block":"opening","opening_block_offset":0,"source_offset":10,"first_index_source_offset":12,"target_index_source_offset":16,"index_source_offsets":[21,22,23]}"#,
             "raw_target_index",
-            serde_json::json!([3]),
+            serde_json::json!("03"),
         );
         check_wire::<DataBlockTargetIndexRow>(
-            r#"{"id":"row","section_ordinal":0,"ordinal":0,"target_index":2,"raw_target_index":[2],"indices":[3,4,5],"raw_indices":[[3],[4],[5]],"data_blocks":["a","b","c","d"],"mode":7,"source_entry":"entry","opening_data_block":"opening","opening_block_offset":0,"source_offset":10,"target_index_source_offset":15,"index_source_offsets":[20,21,22]}"#,
+            r#"{"id":"row","section_ordinal":0,"ordinal":0,"target_index":2,"raw_target_index":"02","indices":[3,4,5],"raw_indices":["03","04","05"],"data_blocks":["a","b","c","d"],"mode":7,"source_entry":"entry","opening_data_block":"opening","opening_block_offset":0,"source_offset":10,"target_index_source_offset":15,"index_source_offsets":[20,21,22]}"#,
             "raw_indices",
-            serde_json::json!([[3], [4], [6]]),
+            serde_json::json!(["03", "04", "06"]),
         );
     }
 }

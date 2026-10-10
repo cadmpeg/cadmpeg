@@ -1422,6 +1422,8 @@ pub(crate) fn project_marker_backed_sketches(
                     object_markers.push(marker);
                 }
             }
+            let object_markers =
+                super::endpoints::coordinate_rosters::CoordinateRosters::new(ctx, object_markers)?;
             let context_start = object_index
                 .checked_sub(1)
                 .and_then(|index| objects.get(index))
@@ -4202,7 +4204,7 @@ mod detached_legacy_sketch_tests {
         let lane = FeatureInputLane {
             id: "lane".into(),
             configuration: None,
-            native_payload: vec![0; 32],
+            native_payload: vec![0; 32].into(),
             classes: Vec::new(),
             names: vec![crate::records::FeatureInputName {
                 id: "name".into(),
@@ -4377,7 +4379,7 @@ mod detached_legacy_sketch_tests {
         let lane = FeatureInputLane {
             id: "lane#1".into(),
             configuration: None,
-            native_payload: payload,
+            native_payload: payload.into(),
             classes: Vec::new(),
             names: vec![crate::records::FeatureInputName {
                 id: "name".into(),
@@ -4586,7 +4588,7 @@ mod detached_legacy_sketch_tests {
         let lane = FeatureInputLane {
             id: lane_id.into(),
             configuration: None,
-            native_payload: current_terminal_relation_payload(),
+            native_payload: current_terminal_relation_payload().into(),
             classes: vec![FeatureInputClass {
                 id: class_id.into(),
                 parent: lane_id.into(),
@@ -4658,7 +4660,7 @@ mod detached_legacy_sketch_tests {
         let mut lane = FeatureInputLane {
             id: "sldprt:feature-input:config-objects#1".into(),
             configuration: None,
-            native_payload: vec![0; 512],
+            native_payload: vec![0; 512].into(),
             classes: Vec::new(),
             names: Vec::new(),
             scalars: Vec::new(),
@@ -4704,7 +4706,7 @@ mod detached_legacy_sketch_tests {
         let lane = FeatureInputLane {
             id: lane_id.into(),
             configuration: None,
-            native_payload: vec![0; 64],
+            native_payload: vec![0; 64].into(),
             classes: Vec::new(),
             names: vec![crate::records::FeatureInputName {
                 id: "name".into(),
@@ -4804,7 +4806,7 @@ mod detached_legacy_sketch_tests {
         let lane = FeatureInputLane {
             id: lane_id.into(),
             configuration: None,
-            native_payload: vec![0; 64],
+            native_payload: vec![0; 64].into(),
             classes: Vec::new(),
             names: vec![crate::records::FeatureInputName {
                 id: "name".into(),
@@ -4992,7 +4994,7 @@ mod detached_legacy_sketch_tests {
         let lane = FeatureInputLane {
             id: "sldprt:feature-input:config-objects#1".into(),
             configuration: None,
-            native_payload: payload,
+            native_payload: payload.into(),
             classes: Vec::new(),
             names: Vec::new(),
             scalars: Vec::new(),
@@ -5076,7 +5078,7 @@ mod detached_legacy_sketch_tests {
         let lane = FeatureInputLane {
             id: lane_id.into(),
             configuration: None,
-            native_payload: Vec::new(),
+            native_payload: Vec::new().into(),
             classes: Vec::new(),
             names: vec![crate::records::FeatureInputName {
                 id: "name".into(),
@@ -5211,7 +5213,7 @@ mod detached_legacy_sketch_tests {
         let lane = FeatureInputLane {
             id: lane_id.into(),
             configuration: None,
-            native_payload: vec![0; 64],
+            native_payload: vec![0; 64].into(),
             classes: Vec::new(),
             names: vec![crate::records::FeatureInputName {
                 id: "name".into(),

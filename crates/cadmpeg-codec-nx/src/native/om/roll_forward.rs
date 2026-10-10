@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native roll-forward metadata and flat wire admission.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use super::state_index_wire;
 use crate::om::roll_forward::{GroupTableFooter, OperationStateGroup, OperationStateGroupRow};
 use crate::om::state_group::{
@@ -56,18 +58,18 @@ enum RollForwardRowRef<'a> {
     List {
         ordinal: u32,
         object_index: u32,
-        raw_object_index: &'a [u8],
+        raw_object_index: NativeBytes<&'a [u8]>,
         position: u32,
-        raw_position: &'a [u8],
+        raw_position: NativeBytes<&'a [u8]>,
         source_offset: u64,
     },
     Pair {
         ordinal: u32,
         tag: crate::om::discriminators::OperationStatePairTag,
         first: u32,
-        raw_first: &'a [u8],
+        raw_first: NativeBytes<&'a [u8]>,
         second: u32,
-        raw_second: &'a [u8],
+        raw_second: NativeBytes<&'a [u8]>,
         source_offset: u64,
     },
 }
@@ -81,18 +83,18 @@ impl<'a> RollForwardRowRef<'a> {
             } => Self::List {
                 ordinal,
                 object_index: object_index.value(),
-                raw_object_index: object_index.raw(),
+                raw_object_index: object_index.raw().into(),
                 position: position.value(),
-                raw_position: position.raw(),
+                raw_position: position.raw().into(),
                 source_offset,
             },
             OperationStateGroupRow::Pair { tag, first, second } => Self::Pair {
                 ordinal,
                 tag: *tag,
                 first: first.value(),
-                raw_first: first.raw(),
+                raw_first: first.raw().into(),
                 second: second.value(),
-                raw_second: second.raw(),
+                raw_second: second.raw().into(),
                 source_offset,
             },
         }
@@ -120,7 +122,7 @@ impl Serialize for OmRollForwardStateGroup {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         RollForwardGroupWireRef {
             id: &self.id,
-            opener: self.frame.opener().bytes(),
+            opener: (self.frame.opener().bytes()).into(),
             count_prefix: self.frame.members().count().prefix(),
             declared_count: self.frame.members().count().declared_count(),
             rows: RollForwardRows(&self.frame),
@@ -133,7 +135,7 @@ impl Serialize for OmRollForwardStateGroup {
 #[derive(Serialize)]
 struct RollForwardGroupWireRef<'a> {
     id: &'a str,
-    opener: [u8; 2],
+    opener: NativeBytes<[u8; 2]>,
     count_prefix: Option<u8>,
     declared_count: u8,
     rows: RollForwardRows<'a>,
@@ -145,7 +147,7 @@ struct OmRollForwardStateGroupWire {
     /// Globally unique group identity.
     id: String,
     /// Exact two-byte group opener.
-    opener: [u8; 2],
+    opener: NativeBytes<[u8; 2]>,
     /// Whether the count used the nonempty `01 count` form.
     count_prefix: Option<u8>,
     /// Serialized member count including the implicit owner slot.
@@ -160,7 +162,7 @@ struct OmRollForwardStateGroupWire {
 impl From<OmRollForwardStateGroup> for OmRollForwardStateGroupWire {
     fn from(value: OmRollForwardStateGroup) -> Self {
         Self {
-            opener: value.frame.opener().bytes(),
+            opener: (value.frame.opener().bytes()).into(),
             count_prefix: value.frame.members().count().prefix(),
             declared_count: value.frame.members().count().declared_count(),
             id: value.id,
@@ -194,7 +196,7 @@ impl TryFrom<OmRollForwardStateGroupWire> for OmRollForwardStateGroup {
         })?;
         let frame = OperationStateGroup::new(
             wire.source_offset,
-            OperationStateGroupOpener::try_from(wire.opener)?,
+            OperationStateGroupOpener::try_from(wire.opener.into_inner())?,
             members,
         )?;
         Ok(Self { id: wire.id, frame })
@@ -216,7 +218,7 @@ pub(in crate::native) struct OmRollForwardStateTable {
 struct RollForwardTableRef<'a> {
     section_link: &'a str,
     source_entry: &'a str,
-    table_trailing_bytes: &'static [u8],
+    table_trailing_bytes: NativeBytes<&'static [u8]>,
     table_end_offset: u64,
     groups: &'a [OmRollForwardStateGroup],
 }
@@ -226,7 +228,7 @@ impl Serialize for OmRollForwardStateTable {
         RollForwardTableRef {
             section_link: &self.section_link,
             source_entry: &self.source_entry,
-            table_trailing_bytes: self.table_footer.bytes(),
+            table_trailing_bytes: (self.table_footer.bytes()).into(),
             table_end_offset: self.table_end_offset,
             groups: &self.groups,
         }
@@ -241,7 +243,7 @@ struct OmRollForwardStateTableWire {
     /// Directory entry containing the feature-history section.
     source_entry: String,
     /// Exact bytes between the final group and the counter-map boundary.
-    table_trailing_bytes: Vec<u8>,
+    table_trailing_bytes: NativeBytes<Vec<u8>>,
     /// Absolute file offset of the counter-map boundary.
     table_end_offset: u64,
     /// Ordered groups of the table.
@@ -304,7 +306,7 @@ impl From<OmRollForwardStateTable> for OmRollForwardStateTableWire {
         Self {
             section_link: table.section_link,
             source_entry: table.source_entry,
-            table_trailing_bytes: table.table_footer.bytes().to_vec(),
+            table_trailing_bytes: (table.table_footer.bytes().to_vec()).into(),
             table_end_offset: table.table_end_offset,
             groups: table.groups,
         }
@@ -333,7 +335,7 @@ mod tests {
     fn roll_forward_frame_conversion_refuses_collection_limit() {
         use cadmpeg_core::decode::ResourceDimension;
         let group: OmRollForwardStateGroup = serde_json::from_str(
-            r#"{"id":"group","opener":[1,0],"count_prefix":null,"declared_count":0,"rows":[],"source_offset":0}"#,
+            r#"{"id":"group","opener":"0100","count_prefix":null,"declared_count":0,"rows":[],"source_offset":0}"#,
         ).unwrap();
 
         crate::test_support::with_decode_context_over(
@@ -363,13 +365,13 @@ mod tests {
     #[test]
     fn table_wire_carries_the_table_facts_once() {
         let group = serde_json::json!({
-            "id": "group", "opener": [1, 0], "count_prefix": null, "declared_count": 0,
+            "id": "group", "opener": "0100", "count_prefix": null, "declared_count": 0,
             "rows": [], "source_offset": 0
         });
         let wire = serde_json::json!({
             "section_link": "section",
             "source_entry": "om",
-            "table_trailing_bytes": [],
+            "table_trailing_bytes": "",
             "table_end_offset": 8,
             "groups": [group.clone(), group],
         });
@@ -382,7 +384,7 @@ mod tests {
         );
 
         let mut invalid = wire;
-        invalid["table_trailing_bytes"] = serde_json::json!([1]);
+        invalid["table_trailing_bytes"] = serde_json::json!("01");
         assert!(
             serde_json::from_value::<super::OmRollForwardStateTable>(invalid)
                 .unwrap_err()
@@ -393,7 +395,7 @@ mod tests {
 
     #[test]
     fn wire_rows_follow_group_header_and_preceding_tokens() {
-        let json = r#"{"id":"group","opener":[1,0],"count_prefix":1,"declared_count":3,"rows":[{"List":{"ordinal":0,"object_index":1,"raw_object_index":[1],"position":1,"raw_position":[1],"source_offset":4}},{"Pair":{"ordinal":1,"tag":79,"first":2,"raw_first":[2],"second":3,"raw_second":[3],"source_offset":8}}],"source_offset":0}"#;
+        let json = r#"{"id":"group","opener":"0100","count_prefix":1,"declared_count":3,"rows":[{"List":{"ordinal":0,"object_index":1,"raw_object_index":"01","position":1,"raw_position":"01","source_offset":4}},{"Pair":{"ordinal":1,"tag":79,"first":2,"raw_first":"02","second":3,"raw_second":"03","source_offset":8}}],"source_offset":0}"#;
         let group: OmRollForwardStateGroup = serde_json::from_str(json).unwrap();
         assert_eq!(group.frame.end_offset(), 13);
         assert_eq!(serde_json::to_string(&group).unwrap(), json);
@@ -420,7 +422,7 @@ mod tests {
 
     #[test]
     fn roll_forward_group_native_limit_refuses_before_row_copy() {
-        let json = r#"{"id":"nx:om:roll-forward-state-group#0","opener":[1,0],"count_prefix":1,"declared_count":2,"rows":[{"List":{"ordinal":0,"object_index":1,"raw_object_index":[1],"position":1,"raw_position":[1],"source_offset":4}}],"source_offset":0}"#;
+        let json = r#"{"id":"nx:om:roll-forward-state-group#0","opener":"0100","count_prefix":1,"declared_count":2,"rows":[{"List":{"ordinal":0,"object_index":1,"raw_object_index":"01","position":1,"raw_position":"01","source_offset":4}}],"source_offset":0}"#;
         let group: OmRollForwardStateGroup = serde_json::from_str(json).unwrap();
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &group,
@@ -439,8 +441,8 @@ mod tests {
         let wire = serde_json::json!({
             "id": "nx:om:roll-forward-table#0",
             "section_link": "section", "source_entry": "om",
-            "table_trailing_bytes": [], "table_end_offset": 8,
-            "groups": [{"id": "nx:om:roll-forward-state-group#0", "opener": [1, 0],
+            "table_trailing_bytes": "", "table_end_offset": 8,
+            "groups": [{"id": "nx:om:roll-forward-state-group#0", "opener": "0100",
                 "count_prefix": null, "declared_count": 0,
                 "rows": [], "source_offset": 0}]
         });

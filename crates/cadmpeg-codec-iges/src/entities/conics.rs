@@ -3,7 +3,7 @@
 
 use super::curve_conversion::angularly_equal;
 use super::geometry::{resolve_transform, source_object, WireProjectionOutcome};
-use super::push_entity_loss;
+use super::push_geometry_loss;
 
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
@@ -36,7 +36,7 @@ fn admit_conic<T>(
     match result {
         Ok(value) => Ok(Some(value)),
         Err(message) => {
-            push_entity_loss(ctx, losses, entry, format_args!("{message}"))?;
+            push_geometry_loss(ctx, losses, entry, format_args!("{message}"))?;
             Ok(None)
         }
     }
@@ -106,6 +106,7 @@ fn add_bounded_curve(
     ctx.reserve_vec(&mut ir.model.curves, 1, "iges conic neutral curves")?;
     ctx.charge_entities(1, "iges_geometry_conics")?;
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: curve.try_clone_for_decode(ctx, "iges conics identity copy")?,
         geometry,
         source_object: Some(source_object(entry, ctx)?),
@@ -168,7 +169,7 @@ pub(super) fn project(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            push_entity_loss(
+            push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -181,7 +182,7 @@ pub(super) fn project(
         let [Some(coeff_a), Some(coeff_b), Some(coeff_c), Some(coeff_d), Some(coeff_e), Some(coeff_f), Some(plane_z), Some(start_x), Some(start_y), Some(end_x), Some(end_y)] =
             values
         else {
-            push_entity_loss(
+            push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -206,7 +207,7 @@ pub(super) fn project(
             value.abs() <= coefficient_scale * CONIC_STANDARD_POSITION_RELATIVE_EPSILON
         };
         if !zero(coeff_b) || (!zero(coeff_d) && !zero(coeff_e)) {
-            push_entity_loss(
+            push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -226,7 +227,7 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                push_geometry_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                 continue;
             }
         };
@@ -239,7 +240,7 @@ pub(super) fn project(
                 Some((UnitVector3::normalized_nonzero(v)?, n))
             })
         else {
-            push_entity_loss(
+            push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -256,7 +257,7 @@ pub(super) fn project(
                 Some((UnitVector3::normalized_nonzero(v)?, n))
             })
         else {
-            push_entity_loss(
+            push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -265,7 +266,7 @@ pub(super) fn project(
             continue;
         };
         if basis_x.as_raw().dot(*basis_y.as_raw()).abs() > EPS_CONIC_DEGENERATE {
-            push_entity_loss(
+            push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -279,7 +280,7 @@ pub(super) fn project(
             (n.is_finite() && n > 0.0)
                 .then(|| (UnitVector3::normalized_by_reciprocal(v), v.scale(1.0 / n)))
         }) else {
-            push_entity_loss(
+            push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -289,7 +290,7 @@ pub(super) fn project(
         };
         let Some(plane_origin) = transform.apply_point(Point3::new(0.0, 0.0, plane_z * factor))
         else {
-            push_entity_loss(
+            push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -302,7 +303,7 @@ pub(super) fn project(
             start_y * factor,
             plane_z * factor,
         )) else {
-            push_entity_loss(
+            push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -315,7 +316,7 @@ pub(super) fn project(
             end_y * factor,
             plane_z * factor,
         )) else {
-            push_entity_loss(
+            push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -496,7 +497,7 @@ pub(super) fn project(
                 [4.0, coeff_a, scale_y],
             )
             .map(cadmpeg_ir::scalar::FiniteReal::abs) else {
-                push_entity_loss(
+                push_geometry_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -520,7 +521,7 @@ pub(super) fn project(
             let (Some(mut start_parameter), Some(mut end_parameter)) =
                 (parameter(start, axis_raw), parameter(end, axis_raw))
             else {
-                push_entity_loss(
+                push_geometry_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -568,7 +569,7 @@ pub(super) fn project(
                 [4.0, coeff_c, scale_x],
             )
             .map(cadmpeg_ir::scalar::FiniteReal::abs) else {
-                push_entity_loss(
+                push_geometry_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -592,7 +593,7 @@ pub(super) fn project(
             let (Some(mut start_parameter), Some(mut end_parameter)) =
                 (parameter(start, axis_raw), parameter(end, axis_raw))
             else {
-                push_entity_loss(
+                push_geometry_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -633,7 +634,7 @@ pub(super) fn project(
         };
 
         let Some((geometry, parameter_range)) = geometry_and_range else {
-            push_entity_loss(
+            push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -647,7 +648,7 @@ pub(super) fn project(
             cadmpeg_ir::eval::decode::curve_point(ctx, &geometry, parameter_range[0]),
         )?)?
         else {
-            push_entity_loss(
+            push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -659,7 +660,7 @@ pub(super) fn project(
             cadmpeg_ir::eval::decode::curve_point(ctx, &geometry, parameter_range[1]),
         )?)?
         else {
-            push_entity_loss(
+            push_geometry_loss(
                 ctx,
                 &mut losses,
                 entry,
@@ -671,16 +672,16 @@ pub(super) fn project(
         // does not prescribe an endpoint-consistency test or receiver action.
         let resolution = global.minimum_resolution_mm();
         if !endpoint_agrees_with_coefficient_carrier(start, evaluated_start.get(), resolution) {
-            push_entity_loss(ctx, &mut losses, entry, format_args!("conic start point disagrees with the evaluated carrier beyond the minimum resolution"))?;
+            push_geometry_loss(ctx, &mut losses, entry, format_args!("conic start point disagrees with the evaluated carrier beyond the minimum resolution"))?;
             continue;
         }
         if !endpoint_agrees_with_coefficient_carrier(end, evaluated_end.get(), resolution) {
-            push_entity_loss(ctx, &mut losses, entry, format_args!("conic terminate point disagrees with the evaluated carrier beyond the minimum resolution"))?;
+            push_geometry_loss(ctx, &mut losses, entry, format_args!("conic terminate point disagrees with the evaluated carrier beyond the minimum resolution"))?;
             continue;
         }
         let tolerance = if resolution > 0.0 {
             let Some(value) = cadmpeg_ir::scalar::PositiveReal::new(resolution) else {
-                push_entity_loss(
+                push_geometry_loss(
                     ctx,
                     &mut losses,
                     entry,
@@ -708,7 +709,7 @@ pub(super) fn project(
             Ok(edge) => edge,
             Err(error) => {
                 let message = super::non_resource_error(error, ctx)?;
-                push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                push_geometry_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                 continue;
             }
         };

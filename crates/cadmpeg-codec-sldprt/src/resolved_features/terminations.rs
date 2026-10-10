@@ -5,7 +5,7 @@ use super::component_paths::{
 };
 use super::is_class_token;
 use super::parameters::value_only_scalar_offset;
-use super::scalars::feature_object_name;
+use super::scalars::{feature_object_name, FeatureObjectNames};
 use super::selections::{
     compact_general_curve_ref_at, compact_heterogeneous_component_path,
     compact_mixed_component_path, compact_profile_general_curve_ref_at,
@@ -202,6 +202,27 @@ pub(crate) fn enrich_history_extrusion_terminations(
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
     const OPERATION: &str = "enrich SLDPRT extrusion terminations";
+    let (features_by_id, feature_storage) = ctx.with_scoped_storage(OPERATION, || {
+        let mut indexed = HashMap::<&str, &crate::records::Feature>::new();
+        for feature in histories.iter().flat_map(|history| &history.features) {
+            ctx.charge_work(
+                u64_from_index(feature.id.len())
+                    .checked_mul(4)
+                    .and_then(|work| work.checked_add(1))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+                OPERATION,
+            )?;
+            if indexed.len() == indexed.capacity() && !indexed.contains_key(feature.id.as_str()) {
+                for id in indexed.keys() {
+                    ctx.charge_work(u64_from_index(id.len()), OPERATION)?;
+                }
+            }
+            ctx.admit_hash_map_entry(&mut indexed, &feature.id.as_str(), OPERATION)?;
+            // Preserve the first feature selected by the history-order lookup.
+            indexed.entry(feature.id.as_str()).or_insert(feature);
+        }
+        Ok::<_, cadmpeg_core::CodecError>(indexed)
+    })?;
     let mut terminations = HashMap::<String, Vec<Option<TerminationVote>>>::new();
     for lane in lanes {
         let mut names_by_id = HashMap::new();
@@ -222,14 +243,19 @@ pub(crate) fn enrich_history_extrusion_terminations(
         };
         ctx.charge_work(
             u64_from_index(scan_end)
-                .checked_mul(64)
+                .checked_mul(20)
                 .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
             OPERATION,
         )?;
         let mut grouped_blind = HashMap::<String, usize>::new();
-        for offset in
-            (0..scan_end).filter(|offset| compact_extrusion_blind_at(&lane.native_payload, *offset))
-        {
+        for offset in 0..scan_end {
+            if !compact_end_spec_identity_at(&lane.native_payload, offset) {
+                continue;
+            }
+            ctx.charge_work(64, OPERATION)?;
+            if !compact_extrusion_blind_at(&lane.native_payload, offset) {
+                continue;
+            }
             ctx.charge_work(u64_from_index(lane.scalars.len()), OPERATION)?;
             let Some(scalar) = lane
                 .scalars
@@ -290,60 +316,27 @@ pub(crate) fn enrich_history_extrusion_terminations(
         }
         let objects = history_object_offsets(ctx, histories, lane, OPERATION)?;
         for (index, (start, feature_id)) in objects.iter().enumerate() {
-            for feature in histories.iter().flat_map(|history| &history.features) {
-                let work = u64_from_index(feature.id.len())
-                    .checked_add(u64_from_index(feature_id.len()))
-                    .and_then(|work| {
-                        work.checked_add(u64_from_index(
-                            feature.input_class.as_ref().map_or(0, String::len),
-                        ))
-                    })
-                    .and_then(|work| work.checked_add(u64_from_index(feature.xml_tag.len())))
+            ctx.charge_work(
+                u64_from_index(feature_id.len())
+                    .checked_mul(2)
                     .and_then(|work| work.checked_add(1))
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                ctx.charge_work(work, OPERATION)?;
-            }
-            let Some(feature) = histories
-                .iter()
-                .flat_map(|history| &history.features)
-                .find(|feature| feature.id == *feature_id)
-            else {
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+                OPERATION,
+            )?;
+            let Some(&feature) = features_by_id.get(feature_id.as_str()) else {
                 continue;
             };
+            ctx.charge_work(
+                u64_from_index(feature.input_class.as_ref().map_or(0, String::len))
+                    .checked_add(u64_from_index(feature.xml_tag.len()))
+                    .and_then(|work| work.checked_add(u64_from_index(feature.kind.len())))
+                    .and_then(|work| work.checked_add(1))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+                OPERATION,
+            )?;
             if !is_extrusion_end_spec_owner(feature) {
                 continue;
             }
-            for (_, next_id) in &objects[index + 1..] {
-                let work = u64_from_index(next_id.len())
-                    .checked_add(u64_from_index(feature_id.len()))
-                    .and_then(|work| work.checked_add(1))
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                ctx.charge_work(
-                    work.checked_mul(2)
-                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
-                    OPERATION,
-                )?;
-                for candidate in histories.iter().flat_map(|history| &history.features) {
-                    let work = u64_from_index(candidate.id.len())
-                        .checked_add(u64_from_index(next_id.len()))
-                        .and_then(|work| {
-                            work.checked_add(u64_from_index(
-                                candidate.input_class.as_ref().map_or(0, String::len),
-                            ))
-                        })
-                        .and_then(|work| work.checked_add(u64_from_index(candidate.xml_tag.len())))
-                        .and_then(|work| work.checked_add(u64_from_index(candidate.kind.len())))
-                        .and_then(|work| work.checked_add(u64_from_index(candidate.name.len())))
-                        .and_then(|work| work.checked_add(1))
-                        .and_then(|work| work.checked_mul(2))
-                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                    ctx.charge_work(work, OPERATION)?;
-                }
-            }
-            let is_cosmetic_thread = |candidate: &crate::records::Feature| {
-                native_object_class(candidate.input_class.as_deref().unwrap_or_default())
-                    == NativeClassKind::CosmeticThread
-            };
             let has_depth =
                 feature.parameters.contains_key("Depth") || feature.parameters.contains_key("D1");
             let Ok(start) = usize::try_from(*start) else {
@@ -352,35 +345,70 @@ pub(crate) fn enrich_history_extrusion_terminations(
             // Cosmetic-thread children may be serialized between an extrusion
             // object and its end spec. Other following objects still delimit
             // the scan so a later feature cannot supply the termination.
-            let end_spec_end = objects[index + 1..]
-                .iter()
-                .find(|(_, next_id)| {
-                    if next_id == feature_id {
-                        return false;
-                    }
-                    !histories
-                        .iter()
-                        .flat_map(|history| &history.features)
-                        .find(|candidate| candidate.id == *next_id)
-                        .is_some_and(is_cosmetic_thread)
-                })
-                .and_then(|object| usize::try_from(object.0).ok())
-                .unwrap_or(lane.native_payload.len());
+            let mut end_spec_end = lane.native_payload.len();
+            for (offset, next_id) in &objects[index + 1..] {
+                ctx.charge_work(
+                    u64_from_index(next_id.len())
+                        .checked_mul(4)
+                        .and_then(|work| work.checked_add(u64_from_index(feature_id.len())))
+                        .and_then(|work| work.checked_add(1))
+                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+                    OPERATION,
+                )?;
+                if next_id == feature_id {
+                    continue;
+                }
+                let cosmetic = if let Some(candidate) = features_by_id.get(next_id.as_str()) {
+                    ctx.charge_work(
+                        u64_from_index(candidate.input_class.as_ref().map_or(0, String::len))
+                            .checked_add(1)
+                            .ok_or_else(|| {
+                                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+                            })?,
+                        OPERATION,
+                    )?;
+                    native_object_class(candidate.input_class.as_deref().unwrap_or_default())
+                        == NativeClassKind::CosmeticThread
+                } else {
+                    false
+                };
+                if !cosmetic {
+                    end_spec_end = usize::try_from(*offset).unwrap_or(lane.native_payload.len());
+                    break;
+                }
+            }
             let mut end_index = index + 1;
             while let Some((_, next_id)) = objects.get(end_index) {
+                ctx.charge_work(
+                    u64_from_index(next_id.len())
+                        .checked_mul(4)
+                        .and_then(|work| work.checked_add(u64_from_index(feature_id.len())))
+                        .and_then(|work| work.checked_add(1))
+                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+                    OPERATION,
+                )?;
                 if next_id == feature_id {
                     end_index += 1;
                     continue;
                 }
-                let skip = histories
-                    .iter()
-                    .flat_map(|history| &history.features)
-                    .find(|feature| feature.id == *next_id)
-                    .is_some_and(|feature| {
-                        let class = feature.input_class.as_deref().unwrap_or_default();
-                        is_profile_feature_object(feature)
-                            || native_object_class(class) == NativeClassKind::CosmeticThread
-                    });
+                let skip = if let Some(candidate) = features_by_id.get(next_id.as_str()) {
+                    ctx.charge_work(
+                        u64_from_index(candidate.input_class.as_ref().map_or(0, String::len))
+                            .checked_add(u64_from_index(candidate.xml_tag.len()))
+                            .and_then(|work| work.checked_add(u64_from_index(candidate.kind.len())))
+                            .and_then(|work| work.checked_add(u64_from_index(candidate.name.len())))
+                            .and_then(|work| work.checked_add(1))
+                            .ok_or_else(|| {
+                                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+                            })?,
+                        OPERATION,
+                    )?;
+                    is_profile_feature_object(candidate)
+                        || native_object_class(candidate.input_class.as_deref().unwrap_or_default())
+                            == NativeClassKind::CosmeticThread
+                } else {
+                    false
+                };
                 if !skip {
                     break;
                 }
@@ -397,6 +425,12 @@ pub(crate) fn enrich_history_extrusion_terminations(
             let mut candidates = Vec::new();
             let scan_end = (103..end_spec_end).len();
             for offset in start..scan_end {
+                ctx.charge_work(22, OPERATION)?;
+                if !compact_end_spec_identity_at(&lane.native_payload, offset)
+                    && lane.native_payload.get(offset..offset + 2) != Some(&[3, 0])
+                {
+                    continue;
+                }
                 ctx.charge_work(64, OPERATION)?;
                 let candidate =
                     (|| -> Result<Option<TerminationVote>, cadmpeg_core::CodecError> {
@@ -542,6 +576,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
             votes.push(vote);
         }
     }
+    drop((features_by_id, feature_storage));
     for feature in histories
         .iter_mut()
         .flat_map(|history| &mut history.features)
@@ -1159,17 +1194,11 @@ fn history_object_offsets(
     lane: &FeatureInputLane,
     operation: &'static str,
 ) -> Result<Vec<(u64, String)>, cadmpeg_core::CodecError> {
+    let (names, _storage) = FeatureObjectNames::new(ctx, &lane.names, operation)?;
     let mut objects = Vec::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         ctx.charge_work(1, operation)?;
-        for name in &lane.names {
-            let work = u64_from_index(name.value.len())
-                .checked_add(u64_from_index(feature.name.len()))
-                .and_then(|work| work.checked_add(2))
-                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-            ctx.charge_work(work, operation)?;
-        }
-        let Some(name) = feature_object_name(feature, lane) else {
+        let Some(name) = names.get(ctx, feature.source_value(), &feature.name, operation)? else {
             continue;
         };
         let id = copy_termination_text(ctx, &feature.id, operation)?;
@@ -2365,7 +2394,7 @@ impl LegacyFacePathSearch<'_, '_> {
             && signature[0..2] != [0, 0])
         .then(|| FeatureInputComponentPathEntry {
             instance: View::u16_le_at(instance, 0),
-            type_signature: signature,
+            type_signature: signature.into(),
             local_id: None,
         })
     }

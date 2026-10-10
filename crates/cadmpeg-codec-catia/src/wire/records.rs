@@ -6,6 +6,8 @@
 //! degree-5 UV jet decoder (`parse_consolidated_pcurve`). Nothing here depends
 //! on a `families` module; the family decoders consume it downward.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use cadmpeg_core::decode::u64_from_index;
 
 type NativePcurveLanesOutput = Result<
@@ -404,7 +406,7 @@ pub(crate) struct ConsolidatedRawFrame<Offset = usize> {
     /// Independent framing flag.
     pub(crate) flag: ConsolidatedFrameFlag,
     /// Complete class-specific payload.
-    pub(crate) payload: Vec<u8>,
+    pub(crate) payload: cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>,
 }
 
 #[derive(Deserialize)]
@@ -413,7 +415,7 @@ struct RawFrameWire<Offset> {
     width: ConsolidatedFrameWidth,
     flag: ConsolidatedFrameFlag,
     header_token: u32,
-    payload: Vec<u8>,
+    payload: NativeBytes<Vec<u8>>,
 }
 
 impl<Offset> ConsolidatedRawFrame<Offset> {
@@ -428,7 +430,7 @@ impl<Offset> ConsolidatedRawFrame<Offset> {
             pos,
             token: WidthCodedToken::new(width, header_token)?,
             flag,
-            payload,
+            payload: (payload).into(),
         })
     }
     pub(crate) fn width(&self) -> ConsolidatedFrameWidth {
@@ -460,7 +462,7 @@ impl<'de, Offset: Deserialize<'de>> Deserialize<'de> for ConsolidatedRawFrame<Of
             wire.width,
             wire.flag,
             wire.header_token,
-            wire.payload,
+            wire.payload.into_inner(),
         )
         .map_err(serde::de::Error::custom)
     }
@@ -488,7 +490,7 @@ impl From<ConsolidatedRawFrame> for ConsolidatedRawFrame<u64> {
             pos: u64_from_index(frame.pos),
             token: frame.token,
             flag: frame.flag,
-            payload: frame.payload,
+            payload: (frame.payload),
         }
     }
 }
@@ -1148,7 +1150,7 @@ mod tests {
         .expect("frame");
         assert_eq!(
             serde_json::to_string(&frame).expect("frame bytes"),
-            r#"{"byte_offset":12,"width":1,"flag":3,"header_token":5,"payload":[1]}"#
+            r#"{"byte_offset":12,"width":1,"flag":3,"header_token":5,"payload":"01"}"#
         );
     }
 

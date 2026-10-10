@@ -38,6 +38,7 @@ fn fixture(scale: f64) -> (crate::CadIr, SurfaceId) {
     let mut ir = CadIr::empty();
     ir.model.curves = vec![
         Curve {
+            parameter_range: None,
             id: profile_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
@@ -54,6 +55,7 @@ fn fixture(scale: f64) -> (crate::CadIr, SurfaceId) {
             source_object: None,
         },
         Curve {
+            parameter_range: None,
             id: spine_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(

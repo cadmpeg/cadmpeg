@@ -1914,6 +1914,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             id: subd_id_charged(ctx, name, source_key)?,
             scheme: SubdScheme::CatmullClark,
             source_object: Some(SourceObjectAssociation {
+                geometry_role: None,
                 format: cadmpeg_ir::CodecFormat::F3d,
                 object_id: cadmpeg_core::text::NonBlankString::new(
                     ctx.copy_retained_text(name, "retain T-spline source object ID")?,

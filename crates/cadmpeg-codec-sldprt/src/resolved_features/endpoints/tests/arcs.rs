@@ -743,7 +743,7 @@ fn extended_compact_indexed_curves_own_their_endpoint_trailers() {
     let mut lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: normalized_payload,
+        native_payload: normalized_payload.into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -954,7 +954,7 @@ fn wide_indexed_curve_owns_its_endpoint_trailer_in_all_generations() {
     let mut lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: payload.clone(),
+        native_payload: payload.clone().into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -1201,6 +1201,35 @@ fn current_wide_arc_uses_direct_point_ids_with_an_arc_center_carrier() {
         .unwrap(),
         Some(center)
     );
+    let unrelated = (100u32..1100)
+        .map(|index| {
+            let mut marker = entity(
+                "unrelated",
+                Some(index),
+                Some([2.0, 0.0]),
+                SketchInputKind::Point,
+            );
+            marker.feature_ref = Some("unrelated-owner".repeat(64));
+            marker
+        })
+        .collect::<Vec<_>>();
+    let expanded = markers
+        .iter()
+        .copied()
+        .chain(unrelated.iter())
+        .collect::<Vec<_>>();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 20_000;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let crate::resolved_features::endpoints::CurrentWideArc(endpoints, center) =
+        current_wide_arc_direct_markers(&ctx, &payload, &entities[0], &expanded)
+            .unwrap()
+            .unwrap();
+    assert_eq!(endpoints.map(SketchInputEntity::id), ["start", "end"]);
+    assert_eq!(center, [0.0, 0.0]);
+    assert!(ctx.resource_refusal().is_none());
 }
 
 #[test]

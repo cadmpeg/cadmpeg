@@ -1,6 +1,6 @@
 //! Compact reference plane record index.
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -11,18 +11,19 @@ const COMPACT_REFERENCE_PLANE_CLASS: &[u8] = b"moCompRefPlane_c";
 const COMPACT_REFERENCE_PLANE_RECORD_LEN: usize = 67;
 const COMPACT_COMPONENT_PLANE_RECORD_LEN: usize = 138;
 
+type PlaneFrame = (Point3, Vector3, Vector3);
+
 pub(super) struct CompactReferencePlaneIndex {
     payload_len: usize,
     class_offsets: Vec<usize>,
     declared: Vec<(usize, u32)>,
     components: Vec<(usize, u32)>,
+    component_frames: Vec<(usize, PlaneFrame)>,
 }
 
 impl CompactReferencePlaneIndex {
     pub(super) fn new(ctx: &DecodeContext<'_>, payload: &[u8]) -> Result<Self, CodecError> {
-        let scan_len = u64::try_from(payload.len()).map_err(|_| {
-            ctx.refuse_codec_limit("index compact reference planes", u64::MAX - 1, u64::MAX)
-        })?;
+        let scan_len = u64_from_index(payload.len());
         let work = scan_len.checked_mul(3).ok_or_else(|| {
             ctx.refuse_codec_limit("index compact reference planes", u64::MAX - 1, u64::MAX)
         })?;
@@ -30,6 +31,7 @@ impl CompactReferencePlaneIndex {
         let mut class_offsets = Vec::new();
         let mut declared = Vec::new();
         let mut components = Vec::new();
+        let mut component_frames = Vec::new();
         for (offset, byte) in payload.iter().enumerate() {
             if *byte == COMPACT_REFERENCE_PLANE_CLASS[0]
                 && payload.get(offset..offset + COMPACT_REFERENCE_PLANE_CLASS.len())
@@ -65,6 +67,7 @@ impl CompactReferencePlaneIndex {
                     if let Some(bytes) =
                         payload.get(start..start + COMPACT_COMPONENT_PLANE_RECORD_LEN)
                     {
+                        ctx.charge_work(256, "decode indexed compact component plane")?;
                         if let Some(source) = compact_component_reference_plane_record(bytes) {
                             ctx.reserve_vec(
                                 &mut components,
@@ -72,6 +75,13 @@ impl CompactReferencePlaneIndex {
                                 "collect component compact reference planes",
                             )?;
                             components.push((start, source));
+                        }
+                        if let Some(frame) = compact_component_plane_frame_record(bytes) {
+                            ctx.push_vec(
+                                &mut component_frames,
+                                (start, frame),
+                                "index compact component plane frames",
+                            )?;
                         }
                     }
                 }
@@ -82,82 +92,172 @@ impl CompactReferencePlaneIndex {
             class_offsets,
             declared,
             components,
+            component_frames,
         })
     }
 
-    fn declared_source(&self, start: usize, end: usize) -> Option<u32> {
-        if start > end || end > self.payload_len {
-            return None;
+    fn declared_source(
+        &self,
+        ctx: &DecodeContext<'_>,
+        start: usize,
+        end: usize,
+    ) -> Result<Option<u32>, CodecError> {
+        let classes = records_in_range(
+            ctx,
+            &self.class_offsets,
+            start,
+            end,
+            COMPACT_REFERENCE_PLANE_CLASS.len(),
+            |offset| *offset,
+        )?;
+        if classes.len() != 1 {
+            return Ok(None);
         }
-        let class_count = self
-            .class_offsets
-            .iter()
-            .filter(|offset| {
-                **offset >= start
-                    && offset
-                        .checked_add(COMPACT_REFERENCE_PLANE_CLASS.len())
-                        .is_some_and(|stop| stop <= end)
-            })
-            .count();
-        if class_count != 1 {
-            return None;
-        }
-        unique_reference_plane_source(
-            self.declared
-                .iter()
-                .filter(|(offset, _)| {
-                    *offset >= start
-                        && offset
-                            .checked_add(COMPACT_REFERENCE_PLANE_RECORD_LEN)
-                            .is_some_and(|stop| stop <= end)
-                })
-                .map(|(_, source)| *source),
+        unique_indexed_value(
+            ctx,
+            records_in_range(
+                ctx,
+                &self.declared,
+                start,
+                end,
+                COMPACT_REFERENCE_PLANE_RECORD_LEN,
+                |(offset, _)| *offset,
+            )?,
         )
     }
 
-    fn reference_source(&self, start: usize, end: usize) -> Option<u32> {
+    fn reference_source(
+        &self,
+        ctx: &DecodeContext<'_>,
+        start: usize,
+        end: usize,
+    ) -> Result<Option<u32>, CodecError> {
         if start > end || end > self.payload_len {
-            return None;
+            return Ok(None);
         }
-        unique_reference_plane_source(
-            self.declared_source(start, end).into_iter().chain(
-                self.components
-                    .iter()
-                    .filter(|(offset, _)| {
-                        *offset >= start
-                            && offset
-                                .checked_add(COMPACT_COMPONENT_PLANE_RECORD_LEN)
-                                .is_some_and(|stop| stop <= end)
-                    })
-                    .map(|(_, source)| *source),
-            ),
-        )
+        let declared = self.declared_source(ctx, start, end)?;
+        let components = records_in_range(
+            ctx,
+            &self.components,
+            start,
+            end,
+            COMPACT_COMPONENT_PLANE_RECORD_LEN,
+            |(offset, _)| *offset,
+        )?;
+        let mut unique = declared;
+        for (_, source) in components {
+            ctx.charge_work(1, "compare indexed compact reference planes")?;
+            match unique {
+                Some(first) if first != *source => return Ok(None),
+                None => unique = Some(*source),
+                Some(_) => {}
+            }
+        }
+        Ok(unique)
     }
 
-    fn lane_source(&self) -> Option<u32> {
-        self.declared_source(0, self.payload_len)
-            .or_else(|| self.reference_source(0, self.payload_len))
+    fn lane_source(&self, ctx: &DecodeContext<'_>) -> Result<Option<u32>, CodecError> {
+        match self.declared_source(ctx, 0, self.payload_len)? {
+            Some(source) => Ok(Some(source)),
+            None => self.reference_source(ctx, 0, self.payload_len),
+        }
     }
 
     /// Return the reference plane source for a profile.
     pub(super) fn profile_source(
         &self,
+        ctx: &DecodeContext<'_>,
         context_start: usize,
         profile_start: usize,
         profile_end: usize,
-    ) -> Option<u32> {
-        self.reference_source(profile_start, profile_end)
-            .or_else(|| self.reference_source(context_start, profile_end))
-            .or_else(|| self.lane_source())
+    ) -> Result<Option<u32>, CodecError> {
+        if let Some(source) = self.reference_source(ctx, profile_start, profile_end)? {
+            return Ok(Some(source));
+        }
+        if let Some(source) = self.reference_source(ctx, context_start, profile_end)? {
+            return Ok(Some(source));
+        }
+        self.lane_source(ctx)
+    }
+
+    /// Component frames use the profile interval before its enclosing context.
+    pub(super) fn profile_component_frame(
+        &self,
+        ctx: &DecodeContext<'_>,
+        context_start: usize,
+        profile_start: usize,
+        profile_end: usize,
+    ) -> Result<Option<PlaneFrame>, CodecError> {
+        if profile_start > profile_end || profile_end > self.payload_len {
+            return Ok(None);
+        }
+        let frame = unique_indexed_value(
+            ctx,
+            records_in_range(
+                ctx,
+                &self.component_frames,
+                profile_start,
+                profile_end,
+                COMPACT_COMPONENT_PLANE_RECORD_LEN,
+                |(offset, _)| *offset,
+            )?,
+        )?;
+        if frame.is_some() || context_start > profile_end {
+            return Ok(frame);
+        }
+        unique_indexed_value(
+            ctx,
+            records_in_range(
+                ctx,
+                &self.component_frames,
+                context_start,
+                profile_end,
+                COMPACT_COMPONENT_PLANE_RECORD_LEN,
+                |(offset, _)| *offset,
+            )?,
+        )
     }
 }
 
-fn unique_reference_plane_source(sources: impl IntoIterator<Item = u32>) -> Option<u32> {
-    let mut sources = sources.into_iter();
-    let source = sources.next()?;
-    sources
-        .all(|candidate| candidate == source)
-        .then_some(source)
+/// Index entries are in byte order. Both ends include only complete records.
+fn records_in_range<'a, T>(
+    ctx: &DecodeContext<'_>,
+    records: &'a [T],
+    start: usize,
+    end: usize,
+    width: usize,
+    offset: impl Fn(&T) -> usize,
+) -> Result<&'a [T], CodecError> {
+    let Some(last) = end.checked_sub(width).filter(|last| start <= *last) else {
+        return Ok(&records[..0]);
+    };
+    if records.is_empty() {
+        return Ok(records);
+    }
+    // Each partition search performs at most floor(log2(n)) + 1 comparisons.
+    ctx.charge_work(
+        u64::from(records.len().ilog2() + 1) * 2,
+        "locate indexed compact reference planes",
+    )?;
+    let first = records.partition_point(|record| offset(record) < start);
+    let stop = records.partition_point(|record| offset(record) <= last);
+    Ok(&records[first..stop])
+}
+
+fn unique_indexed_value<T: Copy + PartialEq>(
+    ctx: &DecodeContext<'_>,
+    records: &[(usize, T)],
+) -> Result<Option<T>, CodecError> {
+    let Some((_, first)) = records.first() else {
+        return Ok(None);
+    };
+    for (_, candidate) in &records[1..] {
+        ctx.charge_work(1, "compare indexed compact reference planes")?;
+        if candidate != first {
+            return Ok(None);
+        }
+    }
+    Ok(Some(*first))
 }
 
 fn compact_component_reference_plane_record(bytes: &[u8]) -> Option<u32> {
@@ -234,75 +334,60 @@ fn compact_reference_plane_source(payload: &[u8]) -> Option<u32> {
     .ok()?;
     CompactReferencePlaneIndex::new(&ctx, payload)
         .ok()?
-        .reference_source(0, payload.len())
+        .reference_source(&ctx, 0, payload.len())
+        .ok()?
 }
 
-fn compact_component_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
-    const RECORD_LEN: usize = 138;
+fn compact_component_plane_frame_record(bytes: &[u8]) -> Option<PlaneFrame> {
     const NATIVE_TO_IR: f64 = 1000.0;
-
-    let mut frames = payload.windows(RECORD_LEN).filter_map(|bytes| {
-        // Cheap byte-pattern guards run before any float is read; every
-        // guard is side-effect free, so rejecting early keeps the accept
-        // set identical while skipping the frame math at almost every
-        // window offset.
-        let source = View::u32_le_at(bytes, 0)?;
-        if source == 0
-            || bytes.get(8..14) != Some(&[0; 6])
-            || bytes.get(14) != Some(&1)
-            || bytes.get(119..122) != Some(&[0; 3])
-            || bytes.get(122..126) != Some(&4u32.to_le_bytes())
-            || bytes.get(126..130) != Some(&[0xff; 4])
-        {
-            return None;
-        }
-        let scalar = |index: usize| {
-            let offset = 15 + index * 8;
-            let value = View::f64_le_at(bytes, offset)?;
-            value.is_finite().then_some(value)
-        };
-        let u_axis = Vector3::new(scalar(0)?, scalar(1)?, scalar(2)?);
-        let v_axis = Vector3::new(scalar(3)?, scalar(4)?, scalar(5)?);
-        let normal = Vector3::new(scalar(6)?, scalar(7)?, scalar(8)?);
-        let expected_normal = u_axis.cross(v_axis);
-        if (u_axis.dot(u_axis) - 1.0).abs()
+    // Cheap byte-pattern guards run before any float is read; every
+    // guard is side-effect free, so rejecting early keeps the accept
+    // set identical while skipping the frame math at almost every
+    // window offset.
+    let source = View::u32_le_at(bytes, 0)?;
+    if source == 0
+        || bytes.get(8..14) != Some(&[0; 6])
+        || bytes.get(14) != Some(&1)
+        || bytes.get(119..122) != Some(&[0; 3])
+        || bytes.get(122..126) != Some(&4u32.to_le_bytes())
+        || bytes.get(126..130) != Some(&[0xff; 4])
+    {
+        return None;
+    }
+    let scalar = |index: usize| {
+        let offset = 15 + index * 8;
+        let value = View::f64_le_at(bytes, offset)?;
+        value.is_finite().then_some(value)
+    };
+    let u_axis = Vector3::new(scalar(0)?, scalar(1)?, scalar(2)?);
+    let v_axis = Vector3::new(scalar(3)?, scalar(4)?, scalar(5)?);
+    let normal = Vector3::new(scalar(6)?, scalar(7)?, scalar(8)?);
+    let expected_normal = u_axis.cross(v_axis);
+    if (u_axis.dot(u_axis) - 1.0).abs()
+        > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
+        || (v_axis.dot(v_axis) - 1.0).abs()
             > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
-            || (v_axis.dot(v_axis) - 1.0).abs()
-                > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
-            || (normal.dot(normal) - 1.0).abs()
-                > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
-            || (expected_normal.x - normal.x).abs()
-                > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
-            || (expected_normal.y - normal.y).abs()
-                > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
-            || (expected_normal.z - normal.z).abs()
-                > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
-            || scalar(12)? != 1.0
-        {
-            return None;
-        }
-        Some((
-            Point3::new(
-                scalar(9)? * NATIVE_TO_IR,
-                scalar(10)? * NATIVE_TO_IR,
-                scalar(11)? * NATIVE_TO_IR,
-            ),
-            normal,
-            u_axis,
-        ))
-    });
-    let frame = frames.next()?;
-    frames.all(|candidate| candidate == frame).then_some(frame)
-}
-
-pub(super) fn compact_profile_component_plane_frame(
-    payload: &[u8],
-    context_start: usize,
-    profile_start: usize,
-    profile_end: usize,
-) -> Option<(Point3, Vector3, Vector3)> {
-    compact_component_plane_frame(payload.get(profile_start..profile_end)?)
-        .or_else(|| compact_component_plane_frame(payload.get(context_start..profile_end)?))
+        || (normal.dot(normal) - 1.0).abs()
+            > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
+        || (expected_normal.x - normal.x).abs()
+            > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
+        || (expected_normal.y - normal.y).abs()
+            > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
+        || (expected_normal.z - normal.z).abs()
+            > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
+        || scalar(12)? != 1.0
+    {
+        return None;
+    }
+    Some((
+        Point3::new(
+            scalar(9)? * NATIVE_TO_IR,
+            scalar(10)? * NATIVE_TO_IR,
+            scalar(11)? * NATIVE_TO_IR,
+        ),
+        normal,
+        u_axis,
+    ))
 }
 
 pub(crate) fn principal_sketch_frame(

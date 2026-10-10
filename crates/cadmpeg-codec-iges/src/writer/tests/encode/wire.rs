@@ -18,6 +18,53 @@ fn reversed_composite_with_shared_vertex() -> EditableDecodeResult {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
+    // Add an independently owned use of the retained child carrier. The source
+    // composite still declares its constituents physically dependent.
+    {
+        use cadmpeg_ir::{
+            ids::{EdgeId, PointId, VertexId},
+            topology::{Edge, EdgeCarrier, Point, Vertex},
+        };
+        let mut ir = decoded.ir_mut();
+        let curve = ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
+            .unwrap();
+        let curve_id = curve.id.clone();
+        let range = curve.parameter_range.unwrap().endpoints();
+        let positions = range.map(|parameter| {
+            cadmpeg_ir::eval::decode::curve_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &curve.geometry,
+                parameter,
+            )
+            .unwrap()
+        });
+        let vertices = ["start", "end"]
+            .map(|suffix| VertexId::mint(format!("test:model:vertex#child-{suffix}")).unwrap());
+        for (index, position) in positions.into_iter().enumerate() {
+            let point = PointId::mint(format!("test:model:point#child-{index}")).unwrap();
+            ir.model
+                .points
+                .push(Point::new(point.clone(), position, None));
+            ir.model.vertices.push(Vertex {
+                id: vertices[index].clone(),
+                point,
+                tolerance: None,
+            });
+        }
+        let edge = EdgeId::mint("test:model:edge#child").unwrap();
+        ir.model.shells[0].add_wire_edge(edge.clone());
+        ir.model.edges.push(Edge {
+            id: edge,
+            carrier: EdgeCarrier::new(Some(curve_id), Some(range)).unwrap(),
+            start: vertices[0].clone(),
+            end: vertices[1].clone(),
+            tolerance: None,
+        });
+    }
     let second_start = decoded
         .ir()
         .model

@@ -140,19 +140,20 @@ fn source_entry(entity_type: i64, form: i64) -> DirectoryEntry {
         entity_type,
         parameter_start: 1,
         structure: 0,
-        line_font: 0,
-        level: 0,
-        view: 0,
+        line_font: Some(0),
+        level: Some(0),
+        view: Some(0),
         transform: 0,
-        label_display: 0,
+        label_display: Some(0),
+        status_padding_recovered: false,
         status: SourceStatus::from_codes([0, 1, 0, 0]),
-        line_weight: 0,
-        color: 0,
+        line_weight: Some(0),
+        color: Some(0),
         parameter_line_count: 1,
         form,
         reserved: [[b' '; 8]; 2],
         label: *b"SOURCE  ",
-        subscript: 0,
+        subscript: Some(0),
     }
 }
 
@@ -269,6 +270,7 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
     let source_id = CurveId::mint("test:model:curve#source").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: source_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(

@@ -22,6 +22,7 @@ fn parser<'input, 'ctx, 'arena>(
         depth: 0,
         diagnostics: Vec::new(),
         omitted_entity_names: None,
+        defer_lexical_errors: false,
         budget: ctx,
     };
     parser.current = parser.lex_next().expect("fixture lexes");
@@ -53,7 +54,7 @@ fn moved_record_name_keeps_its_single_byte_admission() {
     policy.limits.max_retained_bytes = 4;
     with_policy_context(b"ITEM()", &policy, |source, ctx| {
         let partial = parser(source, ctx)
-            .partial()
+            .partial(true)
             .expect("four-byte name fits once");
         assert_eq!(partial.name, "ITEM");
         assert!(partial.parameters.is_empty());
@@ -68,7 +69,7 @@ fn parameter_and_list_slots_have_one_storage_admission() {
         policy.limits.max_retained_bytes = 4 + u64_from_index(slots * size_of::<Value>());
         with_policy_context(source, &policy, |source, ctx| {
             parser(source, ctx)
-                .partial()
+                .partial(true)
                 .expect("name plus container slots fit exactly");
         });
     }
@@ -123,7 +124,7 @@ fn anchor_memo_retrieval_text_has_one_storage_admission() {
         resolver.memo.insert("a", (anchors["a"].clone(), 1));
         assert_eq!(
             resolver
-                .resolve_root(&Value::Resource("a".into()))
+                .resolve_root(&Value::Resource("#a".into()))
                 .expect("one four-byte memo copy"),
             anchors["a"]
         );
@@ -139,7 +140,7 @@ fn anchor_memo_population_text_has_one_storage_admission() {
         let mut resolver = AnchorResolver::new(&anchors, ctx).expect("empty resolver scope fits");
         assert_eq!(
             resolver
-                .resolve_root(&Value::Resource("a".into()))
+                .resolve_root(&Value::Resource("#a".into()))
                 .expect("leaf and memo buffers fit once each"),
             anchors["a"]
         );
@@ -174,7 +175,7 @@ fn binding_and_reference_snapshot_text_are_admitted_once_per_copy() {
         let (exchange, _) = crate::parse::parse_with_context(source, ctx)
             .expect("six text buffers plus fixed structures fit");
         assert_eq!(
-            exchange.records()[&1].partials[0].parameters,
+            exchange.records()[&1].partials[0].parameters.as_slice(),
             [Value::Enumeration(text.clone())]
         );
     });

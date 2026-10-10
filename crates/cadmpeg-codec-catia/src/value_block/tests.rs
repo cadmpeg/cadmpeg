@@ -55,7 +55,7 @@ fn parse(bytes: &[u8]) -> Vec<ValueBlock> {
 #[test]
 fn copied_value_fields_refuse_nested_retained_and_outer_collection_limits() {
     let fields = [ValueField::Inline {
-        bytes: InlineBytes(vec![1, 2]),
+        bytes: InlineBytes(vec![1, 2].into()),
         offset: 0,
     }];
     let retained =
@@ -180,7 +180,7 @@ fn length_framed_byte_strings_hide_marker_shaped_payload_bytes() {
         tokenize(&payload),
         vec![
             ValueField::ByteString {
-                bytes: vec![0x32, 0xe8, 0x37, 0xfe, 0x80],
+                bytes: vec![0x32, 0xe8, 0x37, 0xfe, 0x80].into(),
                 offset: 0,
             },
             ValueField::Terminator { offset: 10 },
@@ -320,6 +320,6 @@ fn serialized_inline_code_must_match_the_inline_byte_count() {
 
 #[test]
 fn inline_bytes_serialization_refuses_wrapped_length() {
-    let bytes = InlineBytes(vec![0; 256]);
+    let bytes = InlineBytes(vec![0; 256].into());
     assert!(serde_json::to_value(&bytes).is_err());
 }

@@ -38,7 +38,7 @@ fn line_extrusion_parameter_record(
 ) -> SurfaceParameterRecord {
     let slot = |value, offset| SurfaceParameterScalar {
         value: Some(value),
-        raw: vec![0x18],
+        raw: vec![0x18].into(),
         offset,
     };
     let direction_slots = direction
@@ -62,7 +62,7 @@ fn line_extrusion_parameter_record(
         body: vec![0; 12],
         scalar_tokens,
         opaque_spans: vec![SurfaceParameterOpaqueSpan {
-            raw: vec![0x00, 0x0c, 0x9a],
+            raw: vec![0x00, 0x0c, 0x9a].into(),
             offset: 3,
         }],
         scalar_frames: vec![
@@ -181,7 +181,7 @@ fn split_cylinder_outline_requires_the_exact_terminal_layout() {
     .into_iter()
     .map(|(value, offset, raw)| SurfaceParameterScalar {
         value: Some(value),
-        raw,
+        raw: raw.into(),
         offset,
     })
     .collect::<Vec<_>>();

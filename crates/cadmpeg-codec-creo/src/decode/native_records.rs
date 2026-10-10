@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native-arena nested record types moved from `decode.rs`.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use serde::Serialize;
 
 use crate::feature::definitions::{DecodedField, DimensionValue, ReferencePlanes, ScalarLane};
@@ -306,7 +308,7 @@ pub(super) struct CreoSketchSectionOrientation {
 #[derive(Serialize)]
 pub(super) struct CreoFeatureParameterFrame<'a> {
     pub(super) kind: &'static str,
-    pub(super) body: &'a [u8],
+    pub(super) body: NativeBytes<&'a [u8]>,
     pub(super) decoded_values: Option<[f64; 12]>,
     pub(super) offset: usize,
 }
@@ -332,7 +334,11 @@ fn serialize_feature_outline_bodies<S: serde::Serializer>(
     fields: &[crate::feature::definitions::DecodedField<Option<f64>>],
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
-    serializer.collect_seq(fields.iter().map(|field| &field.body))
+    serializer.collect_seq(
+        fields
+            .iter()
+            .map(|field| NativeBytes::from(field.body.as_slice())),
+    )
 }
 
 #[derive(Serialize)]
@@ -367,9 +373,9 @@ pub(super) enum CreoSketchSavedEntity<'a> {
     Line {
         entity_id: u32,
         references: &'a [u32],
-        attributes: &'a [[u8; 5]],
+        attributes: &'a [NativeBytes<[u8; 5]>],
         endpoints: [[Option<f64>; 3]; 2],
-        body: &'a [u8],
+        body: NativeBytes<&'a [u8]>,
         offset: usize,
     },
     Arc {
@@ -378,14 +384,14 @@ pub(super) enum CreoSketchSavedEntity<'a> {
         radius: Option<f64>,
         endpoints: [[Option<f64>; 3]; 2],
         parameters: [Option<f64>; 2],
-        body: &'a [u8],
+        body: NativeBytes<&'a [u8]>,
         offset: usize,
     },
     Circle {
         entity_id: u32,
         center: [Option<f64>; 3],
         radius: Option<f64>,
-        body: &'a [u8],
+        body: NativeBytes<&'a [u8]>,
         offset: usize,
     },
     Conic {
@@ -394,14 +400,14 @@ pub(super) enum CreoSketchSavedEntity<'a> {
         parameters: [Option<f64>; 2],
         coefficients: [Option<f64>; 2],
         local_system: Option<[f64; 12]>,
-        body: &'a [u8],
+        body: NativeBytes<&'a [u8]>,
         offset: usize,
     },
     Spline {
         entity_id: Option<u32>,
         declared_point_count: Option<u32>,
         interpolation_points: &'a [[f64; 3]],
-        interpolation_points_body: &'a [u8],
+        interpolation_points_body: NativeBytes<&'a [u8]>,
         #[serde(flatten)]
         endpoint_tangents: SplineTangents<'a>,
         #[serde(flatten)]
@@ -410,7 +416,7 @@ pub(super) enum CreoSketchSavedEntity<'a> {
     },
     Dummy {
         entity_id: Option<u32>,
-        body: &'a [u8],
+        body: NativeBytes<&'a [u8]>,
         offset: usize,
     },
 }
@@ -424,7 +430,10 @@ fn serialize_spline_field<T: Serialize, S: serde::Serializer>(
     use serde::ser::SerializeMap;
     let mut map = serializer.serialize_map(Some(2))?;
     map.serialize_entry(value_key, &field.map(|field| &field.value))?;
-    map.serialize_entry(body_key, &field.map(|field| &field.body))?;
+    map.serialize_entry(
+        body_key,
+        &field.map(|field| NativeBytes::from(field.body.as_slice())),
+    )?;
     map.end()
 }
 
@@ -459,7 +468,7 @@ fn serialize_dimension_value<S: serde::Serializer>(
     let mut map = serializer.serialize_map(None)?;
     map.serialize_entry("value", &value.resolved())?;
     if let Some(token) = value.unresolved_token() {
-        map.serialize_entry("unresolved_value_token", token)?;
+        map.serialize_entry("unresolved_value_token", &NativeBytes::from(token))?;
     }
     map.end()
 }
@@ -470,12 +479,12 @@ pub(super) struct CreoSketchVariable {
     pub(super) key: u32,
     #[serde(flatten, serialize_with = "serialize_variable_value")]
     pub(super) value: ScalarLane,
-    pub(super) value_body: Vec<u8>,
+    pub(super) value_body: NativeBytes<Vec<u8>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) resolved_value: Option<f64>,
     #[serde(flatten, serialize_with = "serialize_variable_guess")]
     pub(super) guess: ScalarLane,
-    pub(super) guess_body: Vec<u8>,
+    pub(super) guess_body: NativeBytes<Vec<u8>>,
     pub(super) known: Option<u32>,
     pub(super) homogeneity: Option<u32>,
     pub(super) uvar_id: Option<u32>,
@@ -513,9 +522,9 @@ pub(super) struct CreoSketchEquation {
     pub(super) function_id: u32,
     pub(super) explicit_argument_count: Option<u32>,
     pub(super) arguments: Vec<Option<u32>>,
-    pub(super) arguments_body: Vec<u8>,
-    pub(super) auxiliary_body: Vec<u8>,
-    pub(super) body: Vec<u8>,
+    pub(super) arguments_body: NativeBytes<Vec<u8>>,
+    pub(super) auxiliary_body: NativeBytes<Vec<u8>>,
+    pub(super) body: NativeBytes<Vec<u8>>,
     pub(super) offset: usize,
 }
 
@@ -530,7 +539,7 @@ pub(super) struct CreoSketchSegment {
     pub(super) vertical_horizontal_constraint: Option<u32>,
     pub(super) radius_dimension_id: Option<u32>,
     pub(super) secondary_radius_dimension_id: Option<u32>,
-    pub(super) body: Vec<u8>,
+    pub(super) body: NativeBytes<Vec<u8>>,
     pub(super) offset: usize,
 }
 
@@ -598,7 +607,7 @@ pub(super) struct CreoSketchOpaqueSegment {
     pub(super) vertical_horizontal_constraint: Option<u32>,
     pub(super) radius_dimension_id: Option<u32>,
     pub(super) secondary_radius_dimension_id: Option<u32>,
-    pub(super) body: Vec<u8>,
+    pub(super) body: NativeBytes<Vec<u8>>,
     pub(super) offset: usize,
 }
 
@@ -608,11 +617,11 @@ pub(super) struct CreoSketchDimension {
     pub(super) dimension_type: u32,
     #[serde(flatten, serialize_with = "serialize_dimension_value")]
     pub(super) value: DimensionValue,
-    pub(super) value_body: Vec<u8>,
+    pub(super) value_body: NativeBytes<Vec<u8>>,
     pub(super) unit: &'static str,
     pub(super) direction_byte: u8,
     pub(super) auxiliary_value: Option<f64>,
-    pub(super) auxiliary_body: Vec<u8>,
+    pub(super) auxiliary_body: NativeBytes<Vec<u8>>,
     pub(super) references: Option<CreoSketchDimensionReferenceTable>,
     pub(super) offset: usize,
 }
@@ -637,12 +646,12 @@ pub(super) struct CreoSketchDimensionReference {
 pub(super) struct CreoSketchRelation {
     pub(super) relation_id: u32,
     pub(super) used: u32,
-    pub(super) operands: Vec<u8>,
+    pub(super) operands: NativeBytes<Vec<u8>>,
     pub(super) operand_vectors: Option<[[Option<u32>; 4]; 3]>,
     pub(super) sign: u32,
     pub(super) dimension_id: u32,
     pub(super) relation_type: u32,
-    pub(super) body: Vec<u8>,
+    pub(super) body: NativeBytes<Vec<u8>>,
     pub(super) offset: usize,
 }
 
@@ -677,7 +686,7 @@ pub(super) struct CreoSketchRelationTriple {
 pub(super) struct CreoCurveExpressionLocalSystem<'a> {
     pub(super) dimensions: u32,
     pub(super) count: u32,
-    pub(super) body: &'a [u8],
+    pub(super) body: NativeBytes<&'a [u8]>,
     pub(super) explicit_slots: Option<[f64; 12]>,
     pub(super) offset: usize,
 }
@@ -756,7 +765,7 @@ pub(super) struct CreoFeatureOperationState<'a> {
 pub(super) struct CreoOperationNameRecord<'a> {
     pub(super) display_name_stored: bool,
     pub(super) stored_name: Option<String>,
-    pub(super) stored_name_bytes: Option<&'a [u8]>,
+    pub(super) stored_name_bytes: Option<NativeBytes<&'a [u8]>>,
     pub(super) identifier_keyword: Option<&'a str>,
     pub(super) stored_name_prefix: Option<String>,
 }
@@ -789,11 +798,11 @@ pub(super) enum CreoFeatureFieldValue<'a> {
     ScalarArray {
         dimensions: u32,
         count: u32,
-        body: &'a [u8],
+        body: NativeBytes<&'a [u8]>,
         decoded_values: Option<&'a [f64]>,
     },
     Raw {
-        bytes: &'a [u8],
+        bytes: NativeBytes<&'a [u8]>,
     },
 }
 
@@ -896,7 +905,7 @@ pub(super) enum CreoPlaneEnvelope {
 #[derive(Serialize)]
 pub(super) struct CreoTabulatedCylinderFrame {
     pub(super) values: [f64; 6],
-    pub(super) prefixes: [u8; 6],
+    pub(super) prefixes: NativeBytes<[u8; 6]>,
 }
 
 #[derive(Serialize)]

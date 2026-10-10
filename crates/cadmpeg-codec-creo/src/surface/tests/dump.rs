@@ -182,7 +182,8 @@ fn decode_transfers_lane_specific_tabulated_line_extrusion_plane() {
         2
     );
     assert_eq!(
-        record.fields()["tabulated_cylinder_frame"]["prefixes"][0],
+        crate::test_support::native_bytes(&record.fields()["tabulated_cylinder_frame"]["prefixes"])
+            [0],
         0x4a
     );
     assert_eq!(
@@ -296,7 +297,10 @@ fn decode_preserves_surface_parameter_slots_in_native_ir() {
         .into_iter()
         .enumerate()
     {
-        assert_eq!(records[0].fields()["slots"][0]["raw"][index], expected);
+        assert_eq!(
+            crate::test_support::native_bytes(&records[0].fields()["slots"][0]["raw"])[index],
+            expected
+        );
     }
     assert_eq!(records[0].fields()["slots"][0]["length"], 7);
     assert_eq!(
@@ -595,7 +599,10 @@ fn decode_preserves_unframed_surface_parameter_spans() {
     assert_eq!(record.fields()["slots"][0]["offset"], 1);
     assert_eq!(record.fields()["slots"][1]["offset"], 4);
     assert_eq!(record.fields()["opaque_spans"][0]["offset"], 0);
-    assert_eq!(record.fields()["opaque_spans"][0]["raw"][0], 0x11);
+    assert_eq!(
+        crate::test_support::native_bytes(&record.fields()["opaque_spans"][0]["raw"])[0],
+        0x11
+    );
     assert_eq!(record.fields()["opaque_spans"][1]["offset"], 2);
     assert_eq!(record.fields()["opaque_spans"][1]["length"], 2);
     assert_eq!(record.fields()["terminal_scalar_frame"]["offset"], 4);

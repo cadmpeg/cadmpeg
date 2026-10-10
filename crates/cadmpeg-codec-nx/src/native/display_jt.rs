@@ -13,6 +13,8 @@ mod scene_admission_tests;
 mod segment_admission_tests;
 mod version;
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::ser::SerializeSeq;
@@ -286,7 +288,7 @@ pub(in crate::native) struct DisplayJtDocument {
     /// Payload-relative table-of-contents offset.
     toc_offset: u32,
     /// Exact 16-byte logical scene-graph segment identifier.
-    lsg_segment_id: [u8; 16],
+    lsg_segment_id: NativeBytes<[u8; 16]>,
     /// Ordered table-of-contents entries.
     pub(super) toc_entries: Vec<DisplayJtTocEntry>,
     /// Physical byte length ending at the next indexed header or stream boundary.
@@ -309,7 +311,7 @@ impl Clone for DisplayJtDocument {
             index_row: self.index_row.clone(),
             version: self.version.clone(),
             toc_offset: self.toc_offset,
-            lsg_segment_id: self.lsg_segment_id,
+            lsg_segment_id: (self.lsg_segment_id),
             toc_entries: self.toc_entries.clone(),
             physical_byte_len: self.physical_byte_len,
             source_offset: self.source_offset,
@@ -326,7 +328,7 @@ struct DisplayJtDocumentRef<'a> {
     format_minor: u16,
     byte_order: u8,
     toc_offset: u32,
-    lsg_segment_id: &'a [u8; 16],
+    lsg_segment_id: NativeBytes<&'a [u8]>,
     toc_entries: &'a [DisplayJtTocEntry],
     physical_byte_len: u64,
     source_offset: u64,
@@ -342,7 +344,7 @@ impl Serialize for DisplayJtDocument {
             format_minor: self.version.minor(),
             byte_order: 0,
             toc_offset: self.toc_offset,
-            lsg_segment_id: &self.lsg_segment_id,
+            lsg_segment_id: (&self.lsg_segment_id).into(),
             toc_entries: &self.toc_entries,
             physical_byte_len: self.physical_byte_len,
             source_offset: self.source_offset,
@@ -361,7 +363,7 @@ struct DisplayJtDocumentWire {
     format_minor: u16,
     byte_order: u8,
     toc_offset: u32,
-    lsg_segment_id: [u8; 16],
+    lsg_segment_id: NativeBytes<[u8; 16]>,
     toc_entries: Vec<DisplayJtTocEntry>,
     physical_byte_len: u64,
     source_offset: u64,
@@ -380,7 +382,7 @@ impl From<DisplayJtDocument> for DisplayJtDocumentWire {
             format_minor,
             byte_order: 0,
             toc_offset: value.toc_offset,
-            lsg_segment_id: value.lsg_segment_id,
+            lsg_segment_id: (value.lsg_segment_id),
             toc_entries: value.toc_entries,
             physical_byte_len: value.physical_byte_len,
             source_offset: value.source_offset,
@@ -403,7 +405,7 @@ impl TryFrom<DisplayJtDocumentWire> for DisplayJtDocument {
             index_row: wire.index_row,
             version,
             toc_offset: wire.toc_offset,
-            lsg_segment_id: wire.lsg_segment_id,
+            lsg_segment_id: (wire.lsg_segment_id),
             toc_entries: wire.toc_entries,
             physical_byte_len: wire.physical_byte_len,
             source_offset: wire.source_offset,
@@ -419,13 +421,13 @@ pub(in crate::native) struct DisplayJtTocEntry {
     /// Zero-based serialized entry order.
     ordinal: u32,
     /// Exact 16-byte segment identifier.
-    segment_id: [u8; 16],
+    segment_id: NativeBytes<[u8; 16]>,
     /// Document-relative segment offset.
     segment_offset: u32,
     /// Physical segment byte length.
     segment_byte_len: u32,
     /// Exact four-byte segment attribute field.
-    attributes: [u8; 4],
+    attributes: NativeBytes<[u8; 4]>,
     /// Absolute source offset of the TOC entry.
     pub(super) source_offset: u64,
 }
@@ -440,7 +442,7 @@ pub(super) struct DisplayJtSegment {
     /// Owning table-of-contents entry.
     toc_entry: String,
     /// Exact 16-byte segment identifier.
-    segment_id: [u8; 16],
+    segment_id: NativeBytes<[u8; 16]>,
     /// Segment type repeated by the table-of-contents attribute word.
     segment_type: u32,
     /// Physical segment byte length, including its 24-byte header.
@@ -571,7 +573,7 @@ pub(super) struct DisplayJtShapeLodElement {
     /// Zero-based serialized element order.
     ordinal: u32,
     /// Exact 16-byte object-type identifier.
-    object_type_id: [u8; 16],
+    object_type_id: NativeBytes<[u8; 16]>,
     /// Serialized object identifier.
     object_id: u32,
     /// Bytes following the common element header.
@@ -587,7 +589,7 @@ struct DisplayJtShapeLodElementRef<'a> {
     id: &'a str,
     segment: &'a str,
     ordinal: u32,
-    object_type_id: &'a [u8; 16],
+    object_type_id: NativeBytes<&'a [u8]>,
     object_base_type: u8,
     object_id: u32,
     body_byte_len: u32,
@@ -601,7 +603,7 @@ impl Serialize for DisplayJtShapeLodElement {
             id: &self.id,
             segment: &self.segment,
             ordinal: self.ordinal,
-            object_type_id: &self.object_type_id,
+            object_type_id: (&self.object_type_id).into(),
             object_base_type: 4,
             object_id: self.object_id,
             body_byte_len: self.body_byte_len,
@@ -618,7 +620,7 @@ struct DisplayJtShapeLodElementWire {
     id: String,
     segment: String,
     ordinal: u32,
-    object_type_id: [u8; 16],
+    object_type_id: NativeBytes<[u8; 16]>,
     object_base_type: u8,
     object_id: u32,
     body_byte_len: u32,
@@ -636,7 +638,7 @@ impl TryFrom<DisplayJtShapeLodElementWire> for DisplayJtShapeLodElement {
             id: wire.id,
             segment: wire.segment,
             ordinal: wire.ordinal,
-            object_type_id: wire.object_type_id,
+            object_type_id: (wire.object_type_id),
             object_id: wire.object_id,
             body_byte_len: wire.body_byte_len,
             body_sha256: wire.body_sha256,
@@ -652,7 +654,7 @@ impl From<DisplayJtShapeLodElement> for DisplayJtShapeLodElementWire {
             id: value.id,
             segment: value.segment,
             ordinal: value.ordinal,
-            object_type_id: value.object_type_id,
+            object_type_id: (value.object_type_id),
             object_base_type: 4,
             object_id: value.object_id,
             body_byte_len: value.body_byte_len,
@@ -963,7 +965,7 @@ pub(super) struct DisplayJtVertexCoordinateArrayHeader {
     /// Inclusive component ranges as minimum and maximum pairs for X, Y, and Z.
     component_ranges: [QuantizedRange; 3],
     /// Quantization bits for X, Y, and Z.
-    component_quantization_bits: [u8; 3],
+    component_quantization_bits: NativeBytes<[u8; 3]>,
     /// Remaining compressed component-data length.
     compressed_components_byte_len: u32,
     /// Digest of the remaining compressed component data.
@@ -1500,7 +1502,7 @@ pub(super) struct DisplayJtCompressedElement {
     /// Zero-based serialized element order.
     ordinal: u32,
     /// Exact 16-byte object-type identifier.
-    object_type_id: [u8; 16],
+    object_type_id: NativeBytes<[u8; 16]>,
     /// Serialized object-base-type discriminator.
     object_base_type: u8,
     /// Serialized object identifier.
@@ -1529,7 +1531,7 @@ struct DisplayJtCompressedElementWire {
     segment: String,
     segment_type: u32,
     ordinal: u32,
-    object_type_id: [u8; 16],
+    object_type_id: NativeBytes<[u8; 16]>,
     object_base_type: u8,
     object_id: u32,
     body_byte_len: u32,
@@ -1551,7 +1553,7 @@ impl TryFrom<DisplayJtCompressedElementWire> for DisplayJtCompressedElement {
             segment: wire.segment,
             segment_type: wire.segment_type,
             ordinal: wire.ordinal,
-            object_type_id: wire.object_type_id,
+            object_type_id: (wire.object_type_id),
             object_base_type: wire.object_base_type,
             object_id: wire.object_id,
             body_byte_len: wire.body_byte_len,
@@ -1571,7 +1573,7 @@ impl From<DisplayJtCompressedElement> for DisplayJtCompressedElementWire {
             segment: value.segment,
             segment_type: value.segment_type,
             ordinal: value.ordinal,
-            object_type_id: value.object_type_id,
+            object_type_id: (value.object_type_id),
             object_base_type: value.object_base_type,
             object_id: value.object_id,
             body_byte_len: value.body_byte_len,
@@ -1597,7 +1599,7 @@ pub(super) struct DisplayJtCompressedElementSequence {
     /// Inflated byte length through the end-object marker.
     framed_byte_len: u32,
     /// Exact bytes following the end-object marker.
-    tail: Vec<u8>,
+    tail: NativeBytes<Vec<u8>>,
     /// SHA-256 of the exact post-marker tail.
     tail_sha256: Sha256Digest,
     /// Absolute source offset of the owning compressed envelope.
@@ -1623,7 +1625,7 @@ struct DisplayJtCompressedElementSequenceRef<'a> {
     segment_type: u32,
     elements: &'a [String],
     framed_byte_len: u32,
-    tail: &'a [u8],
+    tail: NativeBytes<&'a [u8]>,
     tail_sha256: &'a Sha256Digest,
     source_offset: u64,
 }
@@ -1636,7 +1638,7 @@ impl Serialize for DisplayJtCompressedElementSequence {
             segment_type: self.segment_type,
             elements: &self.elements,
             framed_byte_len: self.framed_byte_len,
-            tail: &self.tail,
+            tail: (&self.tail).into(),
             tail_sha256: &self.tail_sha256,
             source_offset: self.source_offset,
         }
@@ -1652,7 +1654,7 @@ struct DisplayJtCompressedElementSequenceWire {
     segment_type: u32,
     elements: Vec<String>,
     framed_byte_len: u32,
-    tail: Vec<u8>,
+    tail: NativeBytes<Vec<u8>>,
     tail_sha256: Sha256Digest,
     source_offset: u64,
 }
@@ -1676,7 +1678,7 @@ impl TryFrom<DisplayJtCompressedElementSequenceWire> for DisplayJtCompressedElem
             segment_type: wire.segment_type,
             elements: wire.elements,
             framed_byte_len: wire.framed_byte_len,
-            tail: wire.tail,
+            tail: (wire.tail),
             tail_sha256: wire.tail_sha256,
             source_offset: wire.source_offset,
         })
@@ -1699,7 +1701,7 @@ impl From<DisplayJtCompressedElementSequence> for DisplayJtCompressedElementSequ
             segment_type: value.segment_type,
             elements: value.elements,
             framed_byte_len: value.framed_byte_len,
-            tail: value.tail,
+            tail: (value.tail),
             tail_sha256,
             source_offset: value.source_offset,
         }
@@ -1844,7 +1846,7 @@ pub(super) struct DisplayJtBaseNodeData {
     /// Owning compressed element.
     element: String,
     /// Exact 16-byte object-type identifier of the owning element.
-    object_type_id: [u8; 16],
+    object_type_id: NativeBytes<[u8; 16]>,
     /// Serialized node object identifier.
     object_id: u32,
     /// Common node-data version.
@@ -3213,10 +3215,10 @@ pub(super) fn display_jt_documents(
                         cadmpeg_core::decode::u64_from_index(ordinal),
                     )
                 })?,
-                segment_id,
+                segment_id: (segment_id).into(),
                 segment_offset,
                 segment_byte_len,
-                attributes,
+                attributes: (attributes).into(),
                 source_offset: stream_source_offset
                     + cadmpeg_core::decode::u64_from_index(document_start)
                     + cadmpeg_core::decode::u64_from_index(offset),
@@ -3239,7 +3241,7 @@ pub(super) fn display_jt_documents(
             index_row: row.id.clone(),
             version,
             toc_offset,
-            lsg_segment_id,
+            lsg_segment_id: (lsg_segment_id).into(),
             toc_entries,
             physical_byte_len: cadmpeg_core::decode::u64_from_index(document.len()),
             source_offset: stream_source_offset
@@ -3294,10 +3296,10 @@ pub(super) fn display_jt_segments(
             let Some(header_byte_len) = View::u32_le_at(segment, 20) else {
                 return Ok(Vec::new());
             };
-            let Some(attribute_type) = View::u32_be_at(&entry.attributes, 0) else {
+            let Some(attribute_type) = View::u32_be_at(entry.attributes.as_ref(), 0) else {
                 return Ok(Vec::new());
             };
-            if segment_id != entry.segment_id
+            if segment_id != *entry.segment_id
                 || segment_type != attribute_type
                 || header_byte_len != entry.segment_byte_len
             {
@@ -3373,7 +3375,7 @@ pub(super) fn display_jt_segments(
                 id: format!("nx:display-jt:segment#{document_key}-{}", entry.ordinal),
                 document: document.id.clone(),
                 toc_entry: entry.id.clone(),
-                segment_id,
+                segment_id: (segment_id).into(),
                 segment_type,
                 segment_byte_len: header_byte_len,
                 payload_sha256: Sha256Digest::digest_for_decode(
@@ -3441,7 +3443,7 @@ pub(super) fn display_jt_shape_lod_elements(
                         cadmpeg_core::decode::u64_from_index(ordinal),
                     )
                 })?,
-                object_type_id: element.object_type_id,
+                object_type_id: (element.object_type_id).into(),
                 object_id: element.object_id,
                 body_byte_len: u32::try_from(element.body.len()).map_err(|_| {
                     ctx.refuse_codec_limit(
@@ -3798,7 +3800,7 @@ pub(super) fn display_jt_topology_packet_sequences(
                 unique_vertex_count,
                 component_count,
                 component_ranges,
-                component_quantization_bits,
+                component_quantization_bits: (component_quantization_bits).into(),
                 compressed_components_byte_len,
                 compressed_components_sha256: Sha256Digest::digest_for_decode(
                     ctx,
@@ -3882,7 +3884,7 @@ pub(super) fn display_jt_vertex_coordinates(
             bytes,
             cadmpeg_core::decode::index_from_u32(header.unique_vertex_count),
             header.component_ranges,
-            header.component_quantization_bits,
+            *header.component_quantization_bits,
         )?
         else {
             return Ok(Vec::new());
@@ -4550,7 +4552,7 @@ pub(super) fn display_jt_compressed_element_sequences(
                     segment_type: segment.segment_type,
                     ordinal: u32::try_from(ordinal)
                         .map_err(|_| display_jt_framing_error("ordinal exceeds u32"))?,
-                    object_type_id: element.object_type_id,
+                    object_type_id: (element.object_type_id).into(),
                     object_id: element.object_id,
                     object_base_type: element.object_base_type,
                     body_byte_len: u32::try_from(element.body.len())
@@ -4597,7 +4599,7 @@ pub(super) fn display_jt_compressed_element_sequences(
                 elements: element_ids,
                 framed_byte_len: u32::try_from(framed_end)
                     .map_err(|_| display_jt_framing_error("framed_byte_len exceeds u32"))?,
-                tail: retained_tail,
+                tail: (retained_tail).into(),
                 tail_sha256: Sha256Digest::digest_for_decode(
                     ctx,
                     tail,
@@ -4865,7 +4867,7 @@ pub(super) fn display_jt_shape_lod_bindings(
                     };
                     let mut targets = segments.iter().filter(|segment| {
                         segment.document == scene_segment.document
-                            && segment.segment_id == *segment_id
+                            && segment.segment_id == (*segment_id)
                             && segment.segment_type == *segment_type
                     });
                     let Some(target) = targets.next() else {
@@ -5006,7 +5008,7 @@ pub(super) fn display_jt_base_node_data(
             nodes.push(DisplayJtBaseNodeData {
                 id: format!("{}-base-node-{ordinal}", segment.id),
                 element: format!("{}-inflated-element-{ordinal}", segment.id),
-                object_type_id: element.object_type_id,
+                object_type_id: (element.object_type_id).into(),
                 object_id: element.object_id,
                 version,
                 flags,
@@ -6545,6 +6547,7 @@ fn display_jt_tessellation_rows(
                 }))?;
             tessellations.push((
                 tessellation.with_source_object(Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Nx,
                     object_id: required!(cadmpeg_core::text::NonBlankString::new(
                         (ctx.join_retained(

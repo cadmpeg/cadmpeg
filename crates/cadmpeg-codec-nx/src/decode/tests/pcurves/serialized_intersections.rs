@@ -36,6 +36,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         let procedural = ProceduralCurveId::mint("test:model:entity#nx:test:intersection")
             .expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Procedural {
                 construction: procedural.clone(),
@@ -440,6 +441,7 @@ fn closed_serialized_pcurve_uses_carrier_tangent_for_orientation() {
         let support = SurfaceId::mint("test:model:entity#nx:test:closed-orientation-support")
             .expect("identity grammar");
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::try_new(

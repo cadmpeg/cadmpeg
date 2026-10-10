@@ -348,6 +348,7 @@ fn emit_carrier_surface(
                     ctx,
                     out.curves,
                     Curve {
+                        parameter_range: None,
                         id: reference_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(reference)),
                         source_object: None,
@@ -407,6 +408,7 @@ fn emit_carrier_surface(
                     ctx,
                     out.curves,
                     Curve {
+                        parameter_range: None,
                         id: first_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(first)),
                         source_object: None,
@@ -416,6 +418,7 @@ fn emit_carrier_surface(
                     ctx,
                     out.curves,
                     Curve {
+                        parameter_range: None,
                         id: second_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(second)),
                         source_object: None,
@@ -449,6 +452,7 @@ fn emit_carrier_surface(
                     ctx,
                     out.curves,
                     Curve {
+                        parameter_range: None,
                         id: first_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                         geometry: first,
                         source_object: None,
@@ -458,6 +462,7 @@ fn emit_carrier_surface(
                     ctx,
                     out.curves,
                     Curve {
+                        parameter_range: None,
                         id: second_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                         geometry: second,
                         source_object: None,
@@ -491,6 +496,7 @@ fn emit_carrier_surface(
                     ctx,
                     out.curves,
                     Curve {
+                        parameter_range: None,
                         id: directrix_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                         geometry: directrix,
                         source_object: None,
@@ -578,6 +584,7 @@ fn emit_carrier_surface(
                     ctx,
                     out.curves,
                     Curve {
+                        parameter_range: None,
                         id: directrix_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)),
                         source_object: None,
@@ -771,6 +778,7 @@ fn emit_deformable_surface(
                 ctx,
                 out.curves,
                 Curve {
+                    parameter_range: None,
                     id: curve_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                     source_object: None,
@@ -830,6 +838,7 @@ fn emit_deformable_surface(
                 ctx,
                 out.curves,
                 Curve {
+                    parameter_range: None,
                     id: curve_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                     source_object: None,
@@ -988,6 +997,7 @@ fn emit_loft_path_curve(
         ctx,
         out.curves,
         Curve {
+            parameter_range: None,
             id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(geometry)),
             source_object: None,
@@ -1051,6 +1061,7 @@ fn emit_loft_surface(
                                         ctx,
                                         out.curves,
                                         Curve {
+                                            parameter_range: None,
                                             id: curve.try_clone_for_decode(
                                                 ctx,
                                                 "ASM emitted identity copy"
@@ -1106,6 +1117,7 @@ fn emit_loft_surface(
                                         ctx,
                                         out.curves,
                                         Curve {
+                                            parameter_range: None,
                                             id: id.try_clone_for_decode(
                                                 ctx,
                                                 "ASM emitted identity copy"
@@ -1216,6 +1228,7 @@ fn emit_compound_loft_surface(
                             ctx,
                             out.curves,
                             Curve {
+                                parameter_range: None,
                                 id: curve.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                                     member.curve
@@ -1275,6 +1288,7 @@ fn emit_compound_loft_surface(
             ctx,
             out.curves,
             Curve {
+                parameter_range: None,
                 id: path.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(scale.path)),
                 source_object: None,
@@ -1309,6 +1323,7 @@ fn emit_compound_loft_surface(
                             ctx,
                             out.curves,
                             Curve {
+                                parameter_range: None,
                                 id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                                     geometry
@@ -1362,6 +1377,7 @@ fn emit_compound_loft_surface(
                 ctx,
                 out.curves,
                 Curve {
+                    parameter_range: None,
                     id: curve_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                     source_object: None,
@@ -1426,6 +1442,7 @@ fn emit_compound_loft_surface(
                         ctx,
                         out.curves,
                         Curve {
+                            parameter_range: None,
                             id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                             source_object: None,
@@ -1505,6 +1522,7 @@ fn emit_scaled_compound_loft_surface(
                             ctx,
                             out.curves,
                             Curve {
+                                parameter_range: None,
                                 id: curve.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                                     member.curve
@@ -1564,6 +1582,7 @@ fn emit_scaled_compound_loft_surface(
             ctx,
             out.curves,
             Curve {
+                parameter_range: None,
                 id: path.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(scale.path)),
                 source_object: None,
@@ -1598,6 +1617,7 @@ fn emit_scaled_compound_loft_surface(
                             ctx,
                             out.curves,
                             Curve {
+                                parameter_range: None,
                                 id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                                     geometry
@@ -1648,6 +1668,7 @@ fn emit_scaled_compound_loft_surface(
                         ctx,
                         out.curves,
                         Curve {
+                            parameter_range: None,
                             id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                             source_object: None,
@@ -1697,6 +1718,7 @@ fn emit_scaled_compound_loft_surface(
                 ctx,
                 out.curves,
                 Curve {
+                    parameter_range: None,
                     id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                     source_object: None,
@@ -1735,6 +1757,7 @@ fn emit_scaled_compound_loft_surface(
         ctx,
         out.curves,
         Curve {
+            parameter_range: None,
             id: tail_curve.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(embedded.tail_curve)),
             source_object: None,
@@ -1854,6 +1877,7 @@ fn map_law_expression(
                 ctx,
                 out.curves,
                 Curve {
+                    parameter_range: None,
                     id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                     source_object: None,
@@ -1987,6 +2011,7 @@ fn emit_skin_surface(
                 ctx,
                 out.curves,
                 Curve {
+                    parameter_range: None,
                     id: curve_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                     source_object: None,
@@ -2002,6 +2027,7 @@ fn emit_skin_surface(
                 ctx,
                 out.curves,
                 Curve {
+                    parameter_range: None,
                     id: secondary_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(secondary_curve)),
                     source_object: None,
@@ -2035,6 +2061,7 @@ fn emit_skin_surface(
                                 ctx,
                                 out.curves,
                                 Curve {
+                                    parameter_range: None,
                                     id: curve
                                         .try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -2074,6 +2101,7 @@ fn emit_skin_surface(
                 ctx,
                 out.curves,
                 Curve {
+                    parameter_range: None,
                     id: path_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(path)),
                     source_object: None,
@@ -2096,6 +2124,7 @@ fn emit_skin_surface(
         ctx,
         out.curves,
         Curve {
+            parameter_range: None,
             id: parameter_curve.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(embedded.parameter_curve)),
             source_object: None,
@@ -2193,6 +2222,7 @@ fn emit_net_surface(
                                         ctx,
                                         out.curves,
                                         Curve {
+                                            parameter_range: None,
                                             id: curve.try_clone_for_decode(
                                                 ctx,
                                                 "ASM emitted identity copy"
@@ -2248,6 +2278,7 @@ fn emit_net_surface(
                                         ctx,
                                         out.curves,
                                         Curve {
+                                            parameter_range: None,
                                             id: id.try_clone_for_decode(
                                                 ctx,
                                                 "ASM emitted identity copy"
@@ -2448,6 +2479,7 @@ fn emit_sweep_surface(
                         ctx,
                         out.curves,
                         Curve {
+                            parameter_range: None,
                             id: guide_curve_id
                                 .try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -2510,6 +2542,7 @@ fn emit_sweep_surface(
                                     ctx,
                                     out.curves,
                                     Curve {
+                                        parameter_range: None,
                                         id: id.try_clone_for_decode(
                                             ctx,
                                             "ASM emitted identity copy"
@@ -2614,6 +2647,7 @@ fn emit_sweep_surface(
         ctx,
         out.curves,
         Curve {
+            parameter_range: None,
             id: profile.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(profile_geometry)),
             source_object: None,
@@ -2629,6 +2663,7 @@ fn emit_sweep_surface(
         ctx,
         out.curves,
         Curve {
+            parameter_range: None,
             id: spine.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(spine_geometry)),
             source_object: None,
@@ -2697,6 +2732,7 @@ fn emit_g2_blend_surface(
             ctx,
             out.curves,
             Curve {
+                parameter_range: None,
                 id: curve.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(side.curve)),
                 source_object: None,
@@ -2788,6 +2824,7 @@ fn emit_g2_blend_surface(
         ctx,
         out.curves,
         Curve {
+            parameter_range: None,
             id: center_curve.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(embedded.center_curve)),
             source_object: None,
@@ -2866,6 +2903,7 @@ fn emit_rolling_ball_side(
                 ctx,
                 out.curves,
                 Curve {
+                    parameter_range: None,
                     id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                     geometry: support.curve,
                     source_object: None,
@@ -2927,6 +2965,7 @@ fn emit_variable_blend_surface(
             ctx,
             out.curves,
             Curve {
+                parameter_range: None,
                 id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                 geometry,
                 source_object: None,
@@ -3026,6 +3065,7 @@ fn emit_revision_compound_loft_surface(
                                 ctx,
                                 out.curves,
                                 Curve {
+                                    parameter_range: None,
                                     id: curve
                                         .try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -3110,6 +3150,7 @@ fn emit_revision_compound_loft_surface(
                             ctx,
                             out.curves,
                             Curve {
+                                parameter_range: None,
                                 id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                                     geometry
@@ -3170,6 +3211,7 @@ fn emit_revision_compound_loft_surface(
                 ctx,
                 out.curves,
                 Curve {
+                    parameter_range: None,
                     id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                     source_object: None,
@@ -3202,6 +3244,7 @@ fn emit_revision_compound_loft_surface(
                 ctx,
                 out.curves,
                 Curve {
+                    parameter_range: None,
                     id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                     source_object: None,
@@ -3264,6 +3307,7 @@ fn emit_revision_g2_blend_surface(
         ctx,
         out.curves,
         Curve {
+            parameter_range: None,
             id: center_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
             geometry: construction.center,
             source_object: None,
@@ -3335,6 +3379,7 @@ fn emit_vertex_blend_surface(
                     ctx,
                     out.curves,
                     Curve {
+                        parameter_range: None,
                         id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                         geometry: curve,
                         source_object: None,
@@ -3404,6 +3449,7 @@ fn emit_vertex_blend_surface(
                     ctx,
                     out.curves,
                     Curve {
+                        parameter_range: None,
                         id: id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                         geometry: curve,
                         source_object: None,
@@ -3498,6 +3544,7 @@ fn emit_blend_surface(
                     ctx,
                     out.curves,
                     Curve {
+                        parameter_range: None,
                         id: spine_id.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(spine)),
                         source_object: None,
@@ -3551,6 +3598,7 @@ fn emit_blend_surface(
                     ctx,
                     out.curves,
                     Curve {
+                        parameter_range: None,
                         id: slice.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                         geometry: native.slice,
                         source_object: None,
@@ -3598,6 +3646,7 @@ fn emit_blend_surface(
                                 ctx,
                                 out.curves,
                                 Curve {
+                                    parameter_range: None,
                                     id: curve
                                         .try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -3730,6 +3779,7 @@ fn emit_carrier_curve(
                 ctx,
                 out.curves,
                 Curve {
+                    parameter_range: None,
                     id: brep_id!(format, CurveId, "entity", brep_key!(i, ":reversed")),
                     geometry: reversed,
                     source_object: None,
@@ -3743,6 +3793,7 @@ fn emit_carrier_curve(
         ctx,
         out.curves,
         Curve {
+            parameter_range: None,
             id: <CurveId>::from(id(format, i)),
             geometry,
             source_object: None,
@@ -3770,6 +3821,7 @@ fn emit_carrier_curve(
                             ctx,
                             out.curves,
                             Curve {
+                                parameter_range: None,
                                 id: source_id
                                     .try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(source)),
@@ -3794,6 +3846,7 @@ fn emit_carrier_curve(
                             ctx,
                             out.curves,
                             Curve {
+                                parameter_range: None,
                                 id: source_id
                                     .try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(source)),
@@ -4018,6 +4071,7 @@ fn emit_carrier_curve(
                                 brep_key!(i, ":deformable_source")
                             );
                             charged_push!(ctx, out.curves, Curve {
+                                parameter_range: None,
                                 id: curve.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
                                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(geometry)),
                                 source_object: None,
@@ -4107,6 +4161,7 @@ fn emit_carrier_curve(
                                             ctx,
                                             out.curves,
                                             Curve {
+                                                parameter_range: None,
                                                 id: id.try_clone_for_decode(
                                                     ctx,
                                                     "ASM emitted identity copy"
@@ -4410,6 +4465,7 @@ fn emit_surface_offset_curve(
         ctx,
         out.curves,
         Curve {
+            parameter_range: None,
             id: base.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(embedded.base)),
             source_object: None,
@@ -4598,6 +4654,7 @@ fn emit_projection_curve(
         ctx,
         out.curves,
         Curve {
+            parameter_range: None,
             id: source.try_clone_for_decode(ctx, "ASM emitted identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(embedded.source)),
             source_object: None,
@@ -4904,6 +4961,25 @@ pub(super) fn emit_points(
     Ok(())
 }
 
+/// The evaluated tolerant-vertex slot, in the normalized record grammar.
+fn evaluated_vertex_tolerance(record: &Record) -> Option<f64> {
+    if record.head() != "tvertex" {
+        return None;
+    }
+    let slot = if matches!(record.chunk(4), Some(Token::Long(_))) {
+        8
+    } else {
+        5
+    };
+    double_at(record, slot)
+}
+
+fn invalid_vertex_tolerance(record: &Record) -> bool {
+    evaluated_vertex_tolerance(record).is_some_and(|value| {
+        value != -1.0 && cadmpeg_ir::scalar::PositiveReal::new(value * LEN_TO_MM).is_none()
+    })
+}
+
 /// Emit reachable vertices with their tolerant tails and ownership records.
 pub(super) fn emit_vertices(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -4937,39 +5013,16 @@ pub(super) fn emit_vertices(
                             id: <VertexId>::from(id(format, i)),
                             point: <PointId>::from(id(format, pi)),
                             // The last of the three f64 tolerance slots is the
-                            // evaluated tolerance. A negative value is the unset
+                            // evaluated tolerance. The -1 value is the unset
                             // sentinel, a marker rather than a length: the
                             // neutral vertex carries no tolerance and the native
                             // tail keeps the unset fact.
-                            tolerance: matches!(r.head(), "tvertex")
-                                .then(|| -> Result<_, cadmpeg_core::CodecError> {
-                                    // The save-format 700 layout stores one
-                                    // tolerance directly after the point.
-                                    let slot = if matches!(r.chunk(4), Some(Token::Long(_))) {
-                                        8
-                                    } else {
-                                        5
-                                    };
-                                    Ok(match r.chunk(slot) {
-                                        Some(Token::Double(value)) if *value < 0.0 => None,
-                                        Some(Token::Double(value)) => Some(
-                                            cadmpeg_ir::scalar::PositiveReal::new(
-                                                *value * LEN_TO_MM,
-                                            )
-                                            .ok_or_else(|| {
-                                                cadmpeg_core::CodecError::malformed(
-                                                    "vertex tolerance must be positive and finite",
-                                                )
-                                            })?,
-                                        ),
-                                        _ => None,
-                                    })
-                                })
-                                .transpose()?
-                                .flatten(),
+                            tolerance: evaluated_vertex_tolerance(r).and_then(|value| {
+                                cadmpeg_ir::scalar::PositiveReal::new(value * LEN_TO_MM)
+                            }),
                         }
                     );
-                    if r.head() == "tvertex" {
+                    if r.head() == "tvertex" && !invalid_vertex_tolerance(r) {
                         if let (Some(Token::Double(first)), Some(Token::Double(second))) =
                             (r.chunk(6), r.chunk(7))
                         {
@@ -5052,6 +5105,19 @@ pub(super) fn emit_vertices(
         }
     }
     Ok(())
+}
+
+/// Model-space tolerance following a tolerant edge's optional continuity.
+fn edge_tolerance(record: &Record) -> Option<f64> {
+    if record.head() != "tedge" {
+        return None;
+    }
+    let slot = if matches!(record.chunk(10), Some(Token::Double(_))) {
+        10
+    } else {
+        11
+    };
+    double_at(record, slot)
 }
 
 /// Emit reachable edges with parameter ranges, tolerant tails, ownership, and
@@ -5149,17 +5215,32 @@ pub(super) fn emit_edges(
             // present when the stream's full format version (save format
             // x 100 + header revision) is at least 2250003. All forms are
             // retained verbatim.
-            let tolerant_tail = match (r.head(), r.chunk(11), r.chunk(12)) {
-                ("tedge", Some(Token::Double(tolerance)), Some(Token::Long(revision))) => {
-                    cadmpeg_ir::scalar::NonNegativeReal::new(*tolerance).map(|tolerance| {
-                        let trailing = match r.chunk(13) {
-                            Some(Token::Long(second)) => Some(*second),
-                            _ => None,
-                        };
-                        (tolerance, *revision, trailing)
-                    })
+            let tolerance = edge_tolerance(r)
+                .and_then(|value| cadmpeg_ir::scalar::PositiveReal::new(value * LEN_TO_MM));
+            if edge_tolerance(r).is_some() && tolerance.is_none() {
+                count_kind(
+                    ctx,
+                    &mut out.stats.other_record_kinds,
+                    "tedge-tolerance-unresolved",
+                )?;
+            }
+            let tolerant_tail = if tolerance.is_some() {
+                match (r.chunk(12), r.chunk(13)) {
+                    (Some(Token::Long(revision)), trailing)
+                        if matches!(r.chunk(11), Some(Token::Double(_))) =>
+                    {
+                        Some((
+                            *revision,
+                            match trailing {
+                                Some(Token::Long(value)) => Some(*value),
+                                _ => None,
+                            },
+                        ))
+                    }
+                    _ => None,
                 }
-                _ => None,
+            } else {
+                None
             };
             charged_push!(
                 ctx,
@@ -5170,19 +5251,10 @@ pub(super) fn emit_edges(
                         .map_err(cadmpeg_core::CodecError::malformed)?,
                     start: VertexId::from(id(format, start)),
                     end: VertexId::from(id(format, end)),
-                    tolerance: tolerant_tail
-                        .map(|(tolerance, _, _)| {
-                            cadmpeg_ir::scalar::PositiveReal::new(tolerance.get() * LEN_TO_MM)
-                                .ok_or_else(|| {
-                                    cadmpeg_core::CodecError::malformed(
-                                        "edge tolerance must be positive and finite",
-                                    )
-                                })
-                        })
-                        .transpose()?,
+                    tolerance,
                 }
             );
-            if let Some((_, entity_revision, trailing_field)) = tolerant_tail {
+            if let Some((entity_revision, trailing_field)) = tolerant_tail {
                 charged_push!(
                     ctx,
                     out.tolerant_edge_tails,
@@ -5291,7 +5363,12 @@ pub(super) fn emit_coedges(
             }
             let partner = r.ref_at(5).filter(|p| kept_coedges.contains(p));
             let tolerant = if r.head() == "tcoedge" {
-                match (r.chunk(11), r.chunk(12)) {
+                let parameter_start = if matches!(r.chunk(9), Some(Token::Long(_))) {
+                    11
+                } else {
+                    10
+                };
+                match (r.chunk(parameter_start), r.chunk(parameter_start + 1)) {
                     (Some(Token::Double(start)), Some(Token::Double(end))) => {
                         let extension = match save_format_major {
                             Some(major) if major > 219 => tolerant_coedge_extension(r),
@@ -5327,27 +5404,56 @@ pub(super) fn emit_coedges(
                         parameter_range,
                         ..
                     },
-                )) => match nurbs::core::curve_cache_resolving_refs(ctx, &r.tokens, token_table) {
-                    Some(Ok(mut curve)) => {
-                        if *curve_reversed {
-                            curve.reverse_parameterization(ctx)?;
-                        }
-                        let curve_id = brep_id!(format, CurveId, "tolerant-coedge-curve", i);
-                        charged_push!(
-                            ctx,
-                            out.curves,
-                            Curve {
-                                id: curve_id
-                                    .try_clone_for_decode(ctx, "ASM emitted identity copy")?,
-                                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
-                                source_object: None,
+                )) => {
+                    match cadmpeg_ir::topology::ParameterInterval::from_finite_endpoints(
+                        parameter_range.unwrap_or(*range),
+                    ) {
+                        Ok(parameter_range) => {
+                            match nurbs::core::curve_cache_resolving_refs(
+                                ctx,
+                                &r.tokens,
+                                token_table,
+                            ) {
+                                Some(Ok(mut curve)) => {
+                                    if *curve_reversed {
+                                        curve.reverse_parameterization(ctx)?;
+                                    }
+                                    let curve_id =
+                                        brep_id!(format, CurveId, "tolerant-coedge-curve", i);
+                                    charged_push!(
+                                        ctx,
+                                        out.curves,
+                                        Curve {
+                                            parameter_range: None,
+                                            id: curve_id.try_clone_for_decode(
+                                                ctx,
+                                                "ASM emitted identity copy"
+                                            )?,
+                                            geometry: CurveGeometry::Solved(
+                                                SolvedCurveGeometry::Nurbs(curve)
+                                            ),
+                                            source_object: None,
+                                        }
+                                    );
+                                    Some(cadmpeg_ir::topology::CoedgeUseCurve {
+                                        curve: curve_id,
+                                        parameter_range,
+                                    })
+                                }
+                                Some(Err(error)) => return Err(error),
+                                None => None,
                             }
-                        );
-                        Some((curve_id, parameter_range.unwrap_or(*range)))
+                        }
+                        Err(_) => {
+                            count_kind(
+                                ctx,
+                                &mut out.stats.other_record_kinds,
+                                super::stats::INVALID_USE_CURVE_INTERVAL,
+                            )?;
+                            None
+                        }
                     }
-                    Some(Err(error)) => return Err(error),
-                    None => None,
-                },
+                }
                 _ => None,
             };
             charged_push!(
@@ -5381,18 +5487,7 @@ pub(super) fn emit_coedges(
                             .into_iter(),
                         "ASM coedge pcurve use"
                     )?,
-                    use_curve: use_curve
-                        .map(|(curve, parameter_range)| {
-                            Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::topology::CoedgeUseCurve {
-                            curve,
-                            parameter_range:
-                                cadmpeg_ir::topology::ParameterInterval::from_finite_endpoints(
-                                    parameter_range,
-                                )
-                                .map_err(cadmpeg_core::CodecError::malformed)?,
-                        })
-                        })
-                        .transpose()?,
+                    use_curve,
                 }
             );
             if let Some((parameter_range, extension)) = tolerant {
@@ -5577,12 +5672,11 @@ pub(super) fn emit_faces(
     Ok(())
 }
 
-/// Emit shells, regions, and bodies for every record so back-references
-/// resolve, filtering child lists to reachable entities.
 /// Source records and decode settings for emitting shell containers.
 #[derive(Clone, Copy)]
 pub(super) struct ContainerInputs<'a, 'record> {
     pub(super) records: &'record [Record],
+    pub(super) bytes: &'a [u8],
     pub(super) by_index: &'a HashMap<i64, &'record Record>,
     pub(super) reach: &'a Reachable,
     pub(super) wire: &'a WireShellTopology,
@@ -5598,6 +5692,7 @@ pub(super) fn emit_containers(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let ContainerInputs {
         records,
+        bytes,
         by_index,
         reach,
         wire,
@@ -5615,7 +5710,56 @@ pub(super) fn emit_containers(
     } = wire;
     let attribute_color = |entity: &Record| attribute_chain_color(entity, by_index);
     let attribute_name = |entity: &Record| attribute_chain_name(ctx, entity, by_index);
-    for r in records {
+    let mut emitted_shells = HashSet::new();
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(records.len()),
+        "ASM shell admission pass",
+    )?;
+    for r in records.iter().filter(|record| record.head() == "shell") {
+        let i = i64::try_from(r.index).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "ASM record index",
+                9_223_372_036_854_775_807,
+                cadmpeg_core::decode::u64_from_index(r.index),
+            )
+        })?;
+        let Some(owner) = r.ref_at(7) else {
+            retain_record(ctx, out, r, bytes, format)?;
+            continue;
+        };
+        let faces = shell_faces(ctx, r, by_index, kept_faces, format)?;
+        let wire_edges = ctx.collect_vec(
+            wire_edges_by_shell
+                .get(&i)
+                .into_iter()
+                .flatten()
+                .map(|edge| EdgeId::from(id(format, *edge))),
+            "ASM shell wire edges",
+        )?;
+        let free_vertices = ctx.collect_vec(
+            free_vertices_by_shell
+                .get(&i)
+                .into_iter()
+                .flatten()
+                .map(|vertex| VertexId::from(id(format, *vertex))),
+            "ASM shell free vertices",
+        )?;
+        if faces.is_empty() && wire_edges.is_empty() && free_vertices.is_empty() {
+            retain_record(ctx, out, r, bytes, format)?;
+            continue;
+        }
+        let shell = Shell::new(
+            ShellId::from(id(format, i)),
+            RegionId::from(id(format, owner)),
+            faces,
+            wire_edges,
+            free_vertices,
+        )
+        .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?;
+        charged_push!(ctx, out.shells, shell);
+        ctx.insert_hash_set(&mut emitted_shells, i, "ASM emitted shells")?;
+    }
+    for r in records.iter().filter(|record| record.head() != "shell") {
         let i = i64::try_from(r.index).map_err(|_| {
             ctx.refuse_codec_limit(
                 "ASM record index",
@@ -5624,41 +5768,11 @@ pub(super) fn emit_containers(
             )
         })?;
         match r.head() {
-            "shell" => {
-                let Some(owner) = r.ref_at(7) else { continue };
-                let faces = shell_faces(ctx, r, by_index, kept_faces, format)?;
-                charged_push!(
-                    ctx,
-                    out.shells,
-                    Shell::new(
-                        <ShellId>::from(id(format, i)),
-                        <RegionId>::from(id(format, owner)),
-                        faces,
-                        ctx.collect_vec(
-                            wire_edges_by_shell
-                                .get(&i)
-                                .into_iter()
-                                .flatten()
-                                .map(|edge| EdgeId::from(id(format, *edge))),
-                            "ASM shell wire edges"
-                        )?,
-                        ctx.collect_vec(
-                            free_vertices_by_shell
-                                .get(&i)
-                                .into_iter()
-                                .flatten()
-                                .map(|vertex| VertexId::from(id(format, *vertex))),
-                            "ASM shell free vertices"
-                        )?,
-                    )
-                    .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
-                );
-            }
             // Save-format 231 names this record `region`; format-227 streams
             // carry the original ACIS head `lump`. Same layout in both.
             "region" | "lump" => {
                 let Some(owner) = r.ref_at(5) else { continue };
-                let shells = shell_chain(ctx, r, by_index, format)?;
+                let shells = shell_chain(ctx, r, by_index, &emitted_shells, format)?;
                 charged_push!(
                     ctx,
                     out.regions,
@@ -5910,6 +6024,39 @@ pub(super) fn emit_attributes(
     Ok(emitted_attributes)
 }
 
+fn retain_record(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    out: &mut AsmBrep,
+    r: &Record,
+    bytes: &[u8],
+    format: IdFormat,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let end = r.offset.checked_add(r.len).ok_or_else(|| {
+        cadmpeg_core::CodecError::malformed(format_args!(
+            "record {} at byte {} declares a length of {} bytes, which leaves the address space",
+            r.index, r.offset, r.len
+        ))
+    })?;
+    let retained = bytes.get(r.offset..end).ok_or_else(|| {
+        cadmpeg_core::CodecError::malformed(format_args!(
+            "record {} declares bytes {}..{end}, but the stream holds {} bytes",
+            r.index,
+            r.offset,
+            bytes.len()
+        ))
+    })?;
+    let retained = ctx.copy_retained(retained, "retain ASM unknown record")?;
+
+    ctx.reserve_vec(&mut out.unknowns, 1, "retain ASM unknown record")?;
+    out.unknowns.push(UnknownRecord::retained(
+        unknown_record_id(ctx, r, format)?,
+        cadmpeg_core::decode::u64_from_index(r.offset),
+        retained,
+        Vec::new(),
+    ));
+    Ok(())
+}
+
 /// Preserve undecoded carriers and opaque cached procedural surfaces referenced
 /// by real topology as passthrough unknown records.
 pub(super) fn emit_passthrough_unknowns(
@@ -5933,30 +6080,16 @@ pub(super) fn emit_passthrough_unknowns(
                 cadmpeg_core::decode::u64_from_index(r.index),
             )
         })?;
-        if undecoded_carriers.contains(&i) || cached_unknown_procedural_surfaces.contains(&i) {
-            let end = r.offset.checked_add(r.len).ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed(format_args!(
-                    "record {} at byte {} declares a length of {} bytes, which leaves the address space",
-                    r.index, r.offset, r.len
-                ))
-            })?;
-            let retained = bytes.get(r.offset..end).ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed(format_args!(
-                    "record {} declares bytes {}..{end}, but the stream holds {} bytes",
-                    r.index,
-                    r.offset,
-                    bytes.len()
-                ))
-            })?;
-            let retained = ctx.copy_retained(retained, "retain ASM unknown record")?;
-
-            ctx.reserve_vec(&mut out.unknowns, 1, "retain ASM unknown record")?;
-            out.unknowns.push(UnknownRecord::retained(
-                unknown_record_id(ctx, r, format)?,
-                cadmpeg_core::decode::u64_from_index(r.offset),
-                retained,
-                Vec::new(),
-            ));
+        if undecoded_carriers.contains(&i)
+            || cached_unknown_procedural_surfaces.contains(&i)
+            || invalid_vertex_tolerance(r)
+            || edge_tolerance(r).is_some_and(|value| {
+                cadmpeg_ir::scalar::PositiveReal::new(value * LEN_TO_MM).is_none()
+            })
+            || r.head().is_empty()
+            || (r.head() == "face" && r.ref_at(5).is_none())
+        {
+            retain_record(ctx, out, r, bytes, format)?;
         }
     }
     Ok(())

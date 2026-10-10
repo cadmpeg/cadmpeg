@@ -320,6 +320,21 @@ impl From<DesignFaceRecipeKind> for ConstructionRecipeKind {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct DesignNativeFeatureName(std::sync::Arc<str>);
 
+/// Optional payloads can be uninterpreted; a counted collection is decoded even when empty.
+trait ScopePayloadCompleteness {
+    fn is_uninterpreted(&self) -> bool;
+}
+impl<T> ScopePayloadCompleteness for Option<T> {
+    fn is_uninterpreted(&self) -> bool {
+        self.is_none()
+    }
+}
+impl<T> ScopePayloadCompleteness for Vec<T> {
+    fn is_uninterpreted(&self) -> bool {
+        false
+    }
+}
+
 macro_rules! design_feature_kinds {
     (data { $($variant:ident => $lit:literal : $payload:ty),+ $(,)? }
      fixed { $($fixed:ident => $fixed_lit:literal : $fixed_payload:ty),+ $(,)? }
@@ -425,6 +440,17 @@ macro_rules! design_feature_kinds {
         }
 
         impl DesignScopePayload {
+            /// The source envelope is decoded, but its optional family-specific data is not.
+            pub(crate) fn is_uninterpreted(&self) -> bool {
+                match self {
+                    $(Self::$variant(value) => ScopePayloadCompleteness::is_uninterpreted(value),)+
+                    $(Self::$fixed(value) => ScopePayloadCompleteness::is_uninterpreted(value),)+
+                    $(Self::$required(_) => false,)+
+                    $(Self::$unit => false,)+
+                    Self::Native(_) => false,
+                }
+            }
+
             fn fields_mut(&mut self) -> DesignScopePayloadMut<'_> {
                 match self {
                     $(Self::$variant(value) => DesignScopePayloadMut::$variant(value),)+

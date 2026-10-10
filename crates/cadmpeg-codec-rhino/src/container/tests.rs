@@ -545,13 +545,9 @@ pub(crate) fn structural_framing_errors_keep_diagnostics() {
 }
 
 #[test]
-fn requires_properties_settings_and_object_tables() {
+fn requires_settings_and_object_tables() {
     let archive = ArchiveVersion::V5;
     for tables in [
-        vec![
-            table(archive, 0x1000_0015, &[]),
-            table(archive, 0x1000_0013, &[]),
-        ],
         vec![
             table(archive, 0x1000_0014, &[]),
             table(archive, 0x1000_0013, &[]),
@@ -565,7 +561,7 @@ fn requires_properties_settings_and_object_tables() {
         assert!(matches!(
             RhinoCodec.inspect(&mut Cursor::new(bytes), &InspectOptions::default()),
             Err(CodecError::Malformed(message))
-                if message.contains("properties, settings, and object tables")
+                if message.contains("settings and object tables")
         ));
     }
 }
@@ -1042,7 +1038,8 @@ fn historical_settings_record_is_bounded_and_retained_as_a_setting() {
     assert!(!scan
         .warnings
         .iter()
-        .any(|warning| warning.contains("unknown bounded record 0x2000803e")));
+        .any(|warning| warning
+            .contains("unknown bounded record or inadmissible metadata 0x2000803e")));
     assert_eq!(scan.metadata.settings.unsupported.len(), 1);
     assert_eq!(scan.metadata.settings.unsupported[0].typecode, 0x2000_803e);
 }
@@ -1199,4 +1196,118 @@ fn a_table_framing_wider_than_u32_is_rejected() {
         std::collections::BTreeMap::new()
     )
     .is_none());
+}
+
+#[test]
+fn optional_properties_tables_do_not_control_independent_objects() {
+    for (version, archive) in [
+        ("4", ArchiveVersion::V4),
+        ("50", ArchiveVersion::V5),
+        ("80", ArchiveVersion::V8),
+    ] {
+        let properties = table(archive, 0x1000_0014, &[]);
+        let units = crate::test_support::test_dump::units_record(archive, 2);
+        let settings = table(archive, 0x1000_0015, std::slice::from_ref(&units));
+        let objects = table(
+            archive,
+            0x1000_0013,
+            &[object_record_with_payload(
+                archive,
+                1,
+                POINT_CLASS,
+                &point_payload([1., 2., 3.]),
+            )],
+        );
+        let baseline = minimal_document(
+            version,
+            &[properties.clone(), settings.clone(), objects.clone()],
+        );
+        let expected = RhinoCodec
+            .decode(&mut Cursor::new(baseline), &DecodeOptions::default())
+            .expect("baseline point");
+        assert_eq!(expected.ir().model.points.len(), 1, "{version}");
+        for tables in [
+            vec![settings.clone(), objects.clone()],
+            vec![
+                properties.clone(),
+                properties.clone(),
+                settings.clone(),
+                objects.clone(),
+            ],
+            vec![settings.clone(), properties.clone(), objects.clone()],
+            vec![settings.clone(), objects.clone(), properties.clone()],
+        ] {
+            let bytes = minimal_document(version, &tables);
+            let decoded = RhinoCodec
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .expect("framed optional tables");
+            let canonical = serde_json::to_string(&expected.ir().model).expect("model");
+            let actual = serde_json::to_string(&decoded.ir().model).expect("model");
+            let expected_offset = expected.ir().model.points[0]
+                .id
+                .as_str()
+                .rsplit_once("offset-")
+                .expect("source offset")
+                .1;
+            let actual_offset = decoded.ir().model.points[0]
+                .id
+                .as_str()
+                .rsplit_once("offset-")
+                .expect("source offset")
+                .1;
+            assert_eq!(
+                actual.replace(&format!("offset-{actual_offset}"), "offset-SOURCE"),
+                canonical.replace(&format!("offset-{expected_offset}"), "offset-SOURCE")
+            );
+            assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+                .expect("validation")
+                .is_ok());
+        }
+        let notes = crc_chunk(archive, 0x2000_8022, &[]);
+        let bytes = minimal_document(
+            version,
+            &[
+                properties,
+                table(archive, 0x1000_0015, &[units, notes]),
+                objects,
+            ],
+        );
+        let decoded = RhinoCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("misplaced metadata is opaque");
+        let canonical = serde_json::to_string(&expected.ir().model).expect("model");
+        let actual = serde_json::to_string(&decoded.ir().model).expect("model");
+        let expected_offset = expected.ir().model.points[0]
+            .id
+            .as_str()
+            .rsplit_once("offset-")
+            .expect("source offset")
+            .1;
+        let actual_offset = decoded.ir().model.points[0]
+            .id
+            .as_str()
+            .rsplit_once("offset-")
+            .expect("source offset")
+            .1;
+        assert_eq!(
+            actual.replace(&format!("offset-{actual_offset}"), "offset-SOURCE"),
+            canonical.replace(&format!("offset-{expected_offset}"), "offset-SOURCE")
+        );
+        let scan = super::scan_owned(minimal_document(
+            version,
+            &[
+                table(archive, 0x1000_0014, &[]),
+                table(
+                    archive,
+                    0x1000_0014,
+                    &[short_chunk(archive, 0xa000_0026, 201_000_000)],
+                ),
+                settings,
+                table(archive, 0x1000_0013, &[]),
+            ],
+        ))
+        .expect("duplicate properties");
+        assert_eq!(scan.metadata.properties.writer_version, None);
+        assert!(!scan.opaque_records.is_empty());
+    }
 }

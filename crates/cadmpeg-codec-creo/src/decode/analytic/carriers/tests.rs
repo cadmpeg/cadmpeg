@@ -183,6 +183,7 @@ fn topology_bound_curve_input() -> (crate::container::ContainerScan<'static>, Ca
     ));
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: CurveId::mint("creo:visibgeom:curve#11").expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
@@ -822,6 +823,7 @@ fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
     ));
 
     let curve = Curve {
+        parameter_range: None,
         id: CurveId::mint("creo:visibgeom:curve#11".to_string()).expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             cadmpeg_ir::geometry::analytic::CircleCurve::try_new(

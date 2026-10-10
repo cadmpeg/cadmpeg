@@ -70,6 +70,7 @@ fn profile_closure_rejects_conflicting_edge_occurrences() {
     let curve_id = CurveId::mint("iges:model:curve#D1").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -407,7 +408,7 @@ fn decode_requires_direct_brep_operand_for_boolean_form_one() {
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+        .filter(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind())
         .map(|loss| {
             loss.provenance
                 .as_ref()

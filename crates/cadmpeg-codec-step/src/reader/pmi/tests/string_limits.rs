@@ -22,7 +22,7 @@ fn pmi_result(records: &str, retained_limit: u64) -> Result<(), CodecError> {
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("root fits retained policy");
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let geometry = crate::reader::geometry::decode(&exchange, &mut ir, &ctx)?;
+    let (geometry, _) = crate::reader::geometry::decode(&exchange, &mut ir, &ctx)?;
     let index = crate::reader::index::CarrierIndex::from_ir(&ir, &ctx)?;
     let topology = crate::reader::topology::decode(&exchange, &mut ir, &index, &ctx)?;
     super::super::decode(&exchange, &geometry.value, &topology.value, &mut ir, &ctx)?;
@@ -278,7 +278,7 @@ fn characteristic_value_map_refuses_collection_limit() {
         let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
             .expect("root fits collection policy");
         let mut ir = cadmpeg_ir::document::CadIr::empty();
-        let Ok(geometry) = crate::reader::geometry::decode(&exchange, &mut ir, &ctx) else {
+        let Ok((geometry, _)) = crate::reader::geometry::decode(&exchange, &mut ir, &ctx) else {
             return false;
         };
         let mut losses = Vec::new();

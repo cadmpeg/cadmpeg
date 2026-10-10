@@ -738,11 +738,9 @@ fn decode_types_template_and_visible_blank_line_fonts() {
     assert_eq!(line_fonts[1].fields()["kind"], "visible_blank_pattern");
     assert_eq!(line_fonts[1].fields()["segment_count"], 5);
     assert_eq!(
-        line_fonts[1].fields()["hexadecimal_pattern"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|value| value.as_u64().unwrap())
+        crate::test_support::native_bytes(&line_fonts[1].fields()["hexadecimal_pattern"])
+            .into_iter()
+            .map(u64::from)
             .collect::<Vec<_>>(),
         vec![49, 54]
     );

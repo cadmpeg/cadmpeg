@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Outer `7C08` feature and object-ownership graph decoder.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
@@ -117,7 +119,7 @@ enum ObjectRecordBody {
 #[derive(Serialize, Deserialize)]
 enum ObjectRecordBodyWire {
     /// Complete alternate inline body when the record has no nested `7C0A`.
-    Inline(Vec<u8>),
+    Inline(cadmpeg_ir::native::bytes::NativeBytes),
     /// Nested head tokens and `7C0A` payload.
     Nested {
         /// Decoded head tokens.
@@ -135,7 +137,7 @@ enum ObjectRecordBodyWire {
 impl From<ObjectRecordBody> for ObjectRecordBodyWire {
     fn from(body: ObjectRecordBody) -> Self {
         match body {
-            ObjectRecordBody::Inline(bytes) => Self::Inline(bytes),
+            ObjectRecordBody::Inline(bytes) => Self::Inline(bytes.into()),
             ObjectRecordBody::Nested { head, payload } => Self::Nested {
                 subtype: classify(&payload.fields),
                 repeated_reference_suffix: repeated_reference_suffix(&payload),
@@ -149,7 +151,7 @@ impl TryFrom<ObjectRecordBodyWire> for ObjectRecordBody {
     type Error = &'static str;
     fn try_from(wire: ObjectRecordBodyWire) -> Result<Self, Self::Error> {
         match wire {
-            ObjectRecordBodyWire::Inline(bytes) => Ok(Self::Inline(bytes)),
+            ObjectRecordBodyWire::Inline(bytes) => Ok(Self::Inline(bytes.into_inner())),
             ObjectRecordBodyWire::Nested {
                 head,
                 payload,
@@ -236,7 +238,7 @@ impl ObjectPayload {
         for field in &self.fields {
             let copy = match field {
                 PayloadField::Blob { bytes, offset } => PayloadField::Blob {
-                    bytes: ctx.copy_slice(bytes, "catia_native_payload_blob")?,
+                    bytes: ctx.copy_slice(bytes, "catia_native_payload_blob")?.into(),
                     offset: *offset,
                 },
                 PayloadField::BulkTable {
@@ -362,8 +364,7 @@ pub(crate) enum PayloadField {
     /// Length-framed `0xe5` binary descriptor.
     Blob {
         /// Complete blob bytes.
-        #[serde(with = "cadmpeg_ir::bytes")]
-        bytes: Vec<u8>,
+        bytes: NativeBytes<Vec<u8>>,
         /// Byte offset within the payload.
         offset: usize,
     },
@@ -411,8 +412,7 @@ enum PayloadFieldWire {
     },
     Blob {
         declared_len: usize,
-        #[serde(with = "cadmpeg_ir::bytes")]
-        bytes: Vec<u8>,
+        bytes: NativeBytes<Vec<u8>>,
         offset: usize,
     },
     BulkTable {
@@ -449,8 +449,7 @@ enum PayloadFieldWireRef<'a> {
     },
     Blob {
         declared_len: usize,
-        #[serde(with = "cadmpeg_ir::bytes")]
-        bytes: &'a [u8],
+        bytes: NativeBytes<&'a [u8]>,
         offset: usize,
     },
     BulkTable {
@@ -491,7 +490,7 @@ impl Serialize for PayloadField {
             },
             Self::Blob { bytes, offset } => PayloadFieldWireRef::Blob {
                 declared_len: bytes.len(),
-                bytes,
+                bytes: bytes.into(),
                 offset: *offset,
             },
             Self::BulkTable {
@@ -665,8 +664,7 @@ pub(crate) struct AliasGroupMembership {
     /// Four-byte allocation slot beginning in F1's third byte.
     pub(crate) target_slot: u32,
     /// Complete bounded storage prefix between the group header and alias marker.
-    #[serde(with = "cadmpeg_ir::bytes")]
-    pub(crate) storage_prefix: Vec<u8>,
+    pub(crate) storage_prefix: NativeBytes<Vec<u8>>,
 }
 
 /// Fixed 20-byte core of an outer `01 00 04 00` surface-alias row.
@@ -907,7 +905,7 @@ fn alias_group_membership(
         prototype,
         group_id,
         target_slot,
-        storage_prefix: ctx.copy_slice(storage, "catia_alias_group_storage")?,
+        storage_prefix: (ctx.copy_slice(storage, "catia_alias_group_storage")?).into(),
     }))
 }
 
@@ -1733,7 +1731,8 @@ fn decode_payload(
                         PayloadField::Blob {
                             bytes: admitted!(
                                 ctx.copy_slice(&bytes[at + 5..end], "catia_object_payload_blob")
-                            ),
+                            )
+                            .into(),
                             offset,
                         },
                         "catia_object_payload_fields"
@@ -2114,7 +2113,7 @@ mod repeated_reference_suffix_tests {
             fields: vec![
                 atom(44, 0),
                 PayloadField::Blob {
-                    bytes: vec![0; 59],
+                    bytes: vec![0; 59].into(),
                     offset: 1,
                 },
                 atom(5, 65),
@@ -2157,7 +2156,7 @@ mod repeated_reference_suffix_tests {
                 atom(19, 1),
                 atom(34, 2),
                 PayloadField::Blob {
-                    bytes: vec![0; 59],
+                    bytes: vec![0; 59].into(),
                     offset: 3,
                 },
                 atom(5, 67),

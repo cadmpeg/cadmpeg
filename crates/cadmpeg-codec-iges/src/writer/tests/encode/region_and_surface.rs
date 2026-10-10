@@ -26,13 +26,7 @@ fn emitted_label(ir: &CadIr, entity_type: i64) -> String {
             record.field("entity_type").and_then(|value| value.as_i64()) == Some(entity_type)
         })
         .expect("owning entity");
-    let bytes = record
-        .field("label")
-        .and_then(|value| value.as_array().cloned())
-        .expect("Directory label")
-        .iter()
-        .map(|value| u8::try_from(value.as_u64().expect("label byte")).expect("ASCII byte"))
-        .collect::<Vec<_>>();
+    let bytes = crate::test_support::native_bytes(&record.field("label").expect("Directory label"));
     String::from_utf8(bytes)
         .expect("ASCII label")
         .trim()
@@ -626,6 +620,7 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
     for (name, nurbs, expected) in cases {
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
+            parameter_range: None,
             id: CurveId::mint(format!("test:model:curve#{name}")).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
             source_object: None,

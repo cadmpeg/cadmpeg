@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Persistent object frames with exact non-null compact identity tokens.
 
+use cadmpeg_ir::native::bytes::NativeBytes;
+
 use crate::om::compact::{CompactIndexAtom, LocatedCompactIndex};
 use serde::{Deserialize, Serialize};
 
@@ -19,7 +21,7 @@ struct ObjectFrameRef<'a> {
     data_block: &'a str,
     ordinal: u32,
     object_id: u32,
-    raw_object_id: &'a [u8],
+    raw_object_id: NativeBytes<&'a [u8]>,
     source_offset: u64,
 }
 
@@ -30,7 +32,7 @@ impl Serialize for DataBlockObjectFrame {
             data_block: &self.data_block,
             ordinal: self.ordinal,
             object_id: self.object.atom.value(),
-            raw_object_id: self.object.atom.raw(),
+            raw_object_id: (self.object.atom.raw()).into(),
             source_offset: self.object.offset,
         }
         .serialize(serializer)
@@ -43,7 +45,7 @@ struct ObjectFrameWire {
     data_block: String,
     ordinal: u32,
     object_id: u32,
-    raw_object_id: Vec<u8>,
+    raw_object_id: NativeBytes<Vec<u8>>,
     source_offset: u64,
 }
 
@@ -55,7 +57,7 @@ impl From<DataBlockObjectFrame> for ObjectFrameWire {
             data_block: value.data_block,
             ordinal: value.ordinal,
             object_id: value.object.atom.value(),
-            raw_object_id: value.object.atom.raw().to_vec(),
+            raw_object_id: (value.object.atom.raw().to_vec()).into(),
             source_offset: value.object.offset,
         }
     }
@@ -87,11 +89,11 @@ mod tests {
     #[test]
     fn object_frames_derive_identity_from_the_exact_non_null_token() {
         for (value, raw) in [
-            (0, "[0]"),
-            (115, "[115]"),
-            (370, "[129,114]"),
-            (0, "[128,0]"),
-            (32511, "[254,255]"),
+            (0, "\"00\""),
+            (115, "\"73\""),
+            (370, "\"8172\""),
+            (0, "\"8000\""),
+            (32511, "\"feff\""),
         ] {
             let wire = format!(
                 r#"{{"id":"frame","data_block":"block","ordinal":1,"object_id":{value},"raw_object_id":{raw},"source_offset":100}}"#
@@ -110,7 +112,7 @@ mod tests {
                 .to_string()
                 .contains("object_id/raw_object_id"));
         }
-        for raw in ["[]", "[255]", "[128]", "[0,0]"] {
+        for raw in ["\"\"", "\"ff\"", "\"80\"", "\"0000\""] {
             let wire = format!(
                 r#"{{"id":"frame","data_block":"block","ordinal":1,"object_id":0,"raw_object_id":{raw},"source_offset":100}}"#
             );
@@ -125,7 +127,7 @@ mod tests {
     fn object_frame_native_limit_refuses_before_raw_token_copy() {
         let wire = serde_json::json!({
             "id": "nx:feature:object-frame#0", "data_block": "nx:om:data-block#0",
-            "ordinal": 1, "object_id": 370, "raw_object_id": [129, 114],
+            "ordinal": 1, "object_id": 370, "raw_object_id": "8172",
             "source_offset": 100
         });
         let frame: DataBlockObjectFrame = serde_json::from_value(wire.clone()).unwrap();

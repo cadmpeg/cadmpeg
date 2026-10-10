@@ -159,17 +159,20 @@ fn scan_decodes_featdefs_feature_local_outlines() {
     assert_eq!(outlines[0]["local_values"].as_array().unwrap().len(), 6);
     assert_eq!(outlines[0]["local_values"][0], 3.0);
     assert_eq!(
-        outlines[0]["local_value_bodies"][0]
-            .as_array()
-            .unwrap()
-            .len(),
+        crate::test_support::native_bytes(&outlines[0]["local_value_bodies"][0]).len(),
         8
     );
-    assert_eq!(outlines[0]["local_value_bodies"][0][0], 0x46);
+    assert_eq!(
+        crate::test_support::native_bytes(&outlines[0]["local_value_bodies"][0])[0],
+        0x46
+    );
     assert_eq!(outlines[1]["phase"], "post_rollback");
     assert_eq!(outlines[1]["local_values"].as_array().unwrap().len(), 6);
     assert_eq!(outlines[1]["local_values"][0], 1.0);
-    assert_eq!(outlines[1]["local_value_bodies"][0][0], 0xe4);
+    assert_eq!(
+        crate::test_support::native_bytes(&outlines[1]["local_value_bodies"][0])[0],
+        0xe4
+    );
 }
 
 #[test]
@@ -427,12 +430,7 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
         .expect("decode");
     let native_sketch = &result.ir().native.namespace("creo").unwrap().arenas()["sketches"][0];
     assert_eq!(
-        native_sketch.fields()["segments"][0]["body"]
-            .as_array()
-            .expect("segment body")
-            .iter()
-            .map(|byte| byte.as_u64().expect("byte"))
-            .collect::<Vec<_>>(),
+        crate::test_support::native_bytes(&native_sketch.fields()["segments"][0]["body"]),
         [2, 0, 0, 0, 7, 8, 246, 0, 0, 246, 246, 42, 226]
     );
     let sketch = result
@@ -1156,12 +1154,7 @@ fn scan_decodes_featdefs_saved_line_prototype_and_replay() {
         .iter()
         .zip([&first.body, &second.body])
     {
-        let body = native["body"]
-            .as_array()
-            .expect("saved line body")
-            .iter()
-            .map(|byte| u8::try_from(byte.as_u64().expect("byte")).expect("fixture value fits u8"))
-            .collect::<Vec<_>>();
+        let body = crate::test_support::native_bytes(&native["body"]);
         assert_eq!(&body, expected);
     }
 }
@@ -1225,12 +1218,7 @@ fn scan_decodes_featdefs_saved_circular_and_dummy_entities() {
         &circle.body,
         &dummy.body,
     ]) {
-        let body = native["body"]
-            .as_array()
-            .expect("saved entity body")
-            .iter()
-            .map(|byte| u8::try_from(byte.as_u64().expect("byte")).expect("fixture value fits u8"))
-            .collect::<Vec<_>>();
+        let body = crate::test_support::native_bytes(&native["body"]);
         assert_eq!(&body, expected);
     }
 }

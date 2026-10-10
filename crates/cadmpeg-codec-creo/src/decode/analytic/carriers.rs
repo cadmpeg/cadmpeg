@@ -221,6 +221,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
                 id,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: crate::identity::source_object_id_checked(
                         ctx,
@@ -314,6 +315,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                         record: geometry_section_record(ctx, scan, row.offset)?,
                     }),
                     source_object: Some(SourceObjectAssociation {
+                        geometry_role: None,
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: crate::identity::source_object_id_checked(
                             ctx,
@@ -362,11 +364,13 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
             ctx,
             ir,
             Curve {
+                parameter_range: None,
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                     record: geometry_section_record(ctx, scan, row.offset)?,
                 }),
                 source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: crate::identity::source_object_id_checked(
                         ctx,

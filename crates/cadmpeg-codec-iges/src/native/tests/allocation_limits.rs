@@ -291,7 +291,7 @@ fn native_display_definition_refuses_retained_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         super::super::resolve_display_ref(
-            &ctx, &graph, 1, -3, crate::graph::ReferenceKind::Color, "color"
+            &ctx, &graph, 1, Some(-3), crate::graph::ReferenceKind::Color, "color"
         ),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
@@ -304,7 +304,7 @@ fn native_display_definition_refuses_retained_limit() {
         &ctx,
         &graph,
         1,
-        -3,
+        Some(-3),
         crate::graph::ReferenceKind::Color,
         "color",
     )

@@ -515,3 +515,164 @@ fn omitted_delimiter_fields_select_the_specification_defaults() {
         assert!(losses.is_empty(), "{losses:#?}");
     }
 }
+
+// Keep every trustworthy prefix token on a card without splitting its numeric
+// spelling. Malformed Hollerith cannot be passed through the normal packer.
+fn geometry_with_global_fields(geometry: &[u8], fields: &[String]) -> Vec<u8> {
+    let cards = geometry.chunks_exact(CARD_LINE_BYTES).collect::<Vec<_>>();
+    let mut bytes = cards
+        .iter()
+        .filter(|line| line[72] == b'S')
+        .flat_map(|line| line.iter().copied())
+        .collect::<Vec<_>>();
+    for (index, field) in fields.iter().enumerate() {
+        let delimiter = if index + 1 == fields.len() { ';' } else { ',' };
+        bytes.extend(card(
+            format!("{field}{delimiter}").as_bytes(),
+            b'G',
+            u32::try_from(index + 1).unwrap(),
+        ));
+    }
+    for line in cards.iter().filter(|line| matches!(line[72], b'D' | b'P')) {
+        bytes.extend_from_slice(line);
+    }
+    let count = |section| cards.iter().filter(|line| line[72] == section).count();
+    bytes.extend(card(
+        format!(
+            "S{:07}G{:07}D{:07}P{:07}",
+            count(b'S'),
+            fields.len(),
+            count(b'D'),
+            count(b'P')
+        )
+        .as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
+#[test]
+fn unreadable_global_metadata_suffix_keeps_geometry_and_exact_source() {
+    use crate::test_support::test_solids_and_structure::explicit_tetrahedron_solid_file;
+    for geometry in [point_file(), explicit_tetrahedron_solid_file()] {
+        let original = geometry_with_global_fields(&geometry, &valid_global_fields());
+        let expected = IgesCodec
+            .decode(&mut Cursor::new(&original), &DecodeOptions::default())
+            .unwrap();
+        assert!(!expected.ir().model.points.is_empty() || !expected.ir().model.faces.is_empty());
+        for field in 23..=26 {
+            for value in ["999999999999999999999999999999999999H", "70Hx"] {
+                let mut fields = valid_global_fields();
+                if field == fields.len() {
+                    fields.push("0H".into());
+                }
+                fields[field] = value.into();
+                let source = geometry_with_global_fields(&geometry, &fields);
+                let recovered = cadmpeg_test_support::EditableDecodeResult::from(
+                    IgesCodec
+                        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+                        .unwrap(),
+                );
+                assert_eq!(
+                    recovered.ir().model,
+                    expected.ir().model,
+                    "field {field}: {value}"
+                );
+                assert_eq!(
+                    recovered
+                        .source_fidelity()
+                        .retained_record(crate::SOURCE_IMAGE_ID)
+                        .unwrap()
+                        .data(),
+                    Some(source.as_slice())
+                );
+                assert!(
+                    recovered
+                        .report()
+                        .losses
+                        .iter()
+                        .any(|loss| loss.code == IgesLossCode::GlobalNoncanonicalFraming.kind()),
+                    "field {field}: {value}"
+                );
+                assert!(cadmpeg_ir::validate_neutral(recovered.ir(), Vec::new())
+                    .unwrap()
+                    .is_ok());
+            }
+        }
+        let mut fields = valid_global_fields();
+        fields[22] = "999999999999999999999999999999999999H".into();
+        let source = geometry_with_global_fields(&geometry, &fields);
+        assert!(IgesCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .is_err());
+    }
+}
+
+#[test]
+fn leading_global_padding_preserves_delimiters_and_field_values() {
+    for first in ["1H,", ""] {
+        let mut fields = valid_global_fields();
+        fields[0] = first.into();
+        let global = format!("{};", fields.join(","));
+        let canonical = fixed_ascii_with_global(global.as_bytes());
+        let mut cards = vec![b"".as_slice(), b"".as_slice()];
+        cards.extend(canonical.chunks(CARD_LINE_BYTES).filter_map(|line| {
+            (line[CARD_DATA_COLUMNS] == b'G').then_some(&line[..CARD_DATA_COLUMNS])
+        }));
+        let (parsed, losses) = crate::test_support::parse_global(
+            &crate::test_support::scan(&fixed_ascii_with_global_cards(&cards)).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(parsed.parameter_delimiter, b',');
+        assert_eq!(parsed.record_delimiter, b';');
+        assert_eq!(parsed.sender_product(), Some("product"));
+        assert_eq!(parsed.native_file_name(), Some("part.igs"));
+        assert!(losses.is_empty(), "{losses:#?}");
+        let mut padded = " ".repeat(CARD_DATA_COLUMNS * 2 + 3);
+        padded.push_str(&global);
+        let expected_next = CARD_DATA_COLUMNS * 2 + 3 + first.len() + 1;
+        assert_eq!(
+            crate::global::first_delimiter(padded.as_bytes()).unwrap(),
+            (b',', expected_next)
+        );
+    }
+}
+
+#[test]
+fn empty_global_record_retains_independent_directory_and_source() {
+    let mut global = " ".repeat(CARD_DATA_COLUMNS * 3);
+    global.push(';');
+    let source = point_file_with_global(global.as_bytes());
+    let recovered = cadmpeg_test_support::EditableDecodeResult::from(
+        IgesCodec
+            .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+            .unwrap(),
+    );
+    assert_eq!(
+        recovered
+            .source_fidelity()
+            .retained_record(crate::SOURCE_IMAGE_ID)
+            .unwrap()
+            .data(),
+        Some(source.as_slice())
+    );
+    assert_eq!(
+        report_code_count(recovered.report(), IgesLossCode::GlobalNoncanonicalFraming),
+        1,
+    );
+    assert!(recovered.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::GlobalNoncanonicalFraming.kind()
+            && loss.message.contains("default comma and semicolon grammar")
+    }));
+    let namespace = recovered.ir().native.namespace("iges").unwrap();
+    assert_eq!(namespace.arenas()["entities"].len(), 1);
+    assert_eq!(
+        recovered.ir().source.as_ref().unwrap().attributes["parameter_delimiter"],
+        ","
+    );
+    assert_eq!(
+        recovered.ir().source.as_ref().unwrap().attributes["record_delimiter"],
+        ";"
+    );
+}

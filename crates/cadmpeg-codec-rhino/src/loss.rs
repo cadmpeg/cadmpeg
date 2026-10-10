@@ -261,6 +261,8 @@ pub(crate) enum RhinoLossCode {
     MeshVertexPrecisionReduced,
     /// Mesh normals are written at reduced (f32) precision.
     MeshNormalPrecisionReduced,
+    /// Standalone support points and curves cannot keep their dependency.
+    WriterSupportGeometryWithheld,
     /// A field was read under the legacy reading because the archive carries no
     /// openNURBS writer-version stamp to verify that record against.
     ///
@@ -332,6 +334,7 @@ impl RhinoLossCode {
         Self::HistoryGeometryNotTransferred,
         Self::MeshVertexPrecisionReduced,
         Self::MeshNormalPrecisionReduced,
+        Self::WriterSupportGeometryWithheld,
         Self::SourceWriterStampUnverified,
         Self::SourceDialectUnverified,
         Self::SourceDialectDisplaced,
@@ -379,6 +382,7 @@ impl RhinoLossCode {
             Self::ReferenceMemberAmbiguous => "reference.member-ambiguous",
             Self::HistoryGeometryNotTransferred => "history.geometry-not-transferred",
             Self::MeshVertexPrecisionReduced => "mesh.vertex-precision-reduced",
+            Self::WriterSupportGeometryWithheld => "writer.support-geometry-withheld",
             Self::MeshNormalPrecisionReduced => "mesh.normal-precision-reduced",
             Self::SourceWriterStampUnverified => "source.writer-stamp-unverified",
             Self::SourceDialectUnverified => "source.dialect-unverified",
@@ -446,6 +450,7 @@ impl RhinoLossCode {
             Self::SourceWriterStampUnverified | Self::SourceDialectUnverified => {
                 LossTaxonomy::SourceDialectUnverified
             }
+            Self::WriterSupportGeometryWithheld => LossTaxonomy::GeometryNotTransferred,
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::TopologyBodyKindGaugeSubstituted => LossTaxonomy::TopologyGaugeSubstituted,
         }
@@ -615,6 +620,7 @@ mod tests {
                 "history.geometry-not-transferred",
                 "mesh.vertex-precision-reduced",
                 "mesh.normal-precision-reduced",
+                "writer.support-geometry-withheld",
                 "source.writer-stamp-unverified",
                 "source.dialect-unverified",
                 "target.source-dialect-displaced",

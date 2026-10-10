@@ -99,6 +99,7 @@ fn fallback_discards_topology_and_unknown_record_self_link() {
         ..BrepDraft::default()
     };
     staged.draft.model_mut().curves.push(Curve {
+        parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
@@ -135,12 +136,73 @@ fn fallback_discards_topology_and_unknown_record_self_link() {
 }
 
 #[test]
+fn failed_brep_retains_its_mathematics_as_support_geometry() {
+    let (data, raw) = source_shaped_plane_brep();
+    let brep = with_expand_bytes(&data, |expand| {
+        crate::brep::ValidatedRawBrep::try_new(expand.ctx(), raw)
+    })
+    .expect("source Brep");
+    let association = SourceObjectAssociation {
+        format: cadmpeg_ir::CodecFormat::Rhino,
+        geometry_role: None,
+        object_id: cadmpeg_core::nonblank_literal!("failed-brep"),
+        name: Some("source name".into()),
+        color: None,
+        visible: Some(true),
+        layer: None,
+        instance_path: Vec::new(),
+    };
+    let unknown = "rhino:object:record#failed".try_into().expect("identity");
+    let staged = with_expand_bytes(&data, |expand| {
+        stage_brep(BrepTransferInput {
+            expand,
+            data: &data,
+            archive: ArchiveVersion::V5,
+            writer_version: Some(200_206_180),
+            brep: &brep,
+            key: "failed",
+            association: &association,
+            unknown: &unknown,
+            scale: crate::test_support::millimeter_scale(1.0),
+            mesh_budget: &mut crate::mesh::MeshBudget::new(),
+        })
+    })
+    .expect("stage source Brep");
+    assert!(staged.draft.model().surfaces.iter().all(|surface| {
+        surface
+            .source_object
+            .as_ref()
+            .expect("source")
+            .geometry_role
+            == Some(cadmpeg_ir::SourceGeometryRole::Support)
+    }));
+    let geometry = staged.draft.model().surfaces[0].geometry.clone();
+    let staged = staged
+        .free_carrier_fallback(
+            &cadmpeg_test_support::service_decode_context(),
+            "unreadable trim",
+        )
+        .expect("bounded fallback");
+    let retained = &staged.draft.model().surfaces[0];
+    assert_eq!(retained.geometry, geometry);
+    let source = retained.source_object.as_ref().expect("source metadata");
+    assert_eq!(
+        source.geometry_role,
+        Some(cadmpeg_ir::SourceGeometryRole::Support)
+    );
+    assert_eq!(source.object_id.as_str(), "failed-brep");
+    assert_eq!(source.name.as_deref(), Some("source name"));
+    assert_eq!(source.visible, Some(true));
+}
+
+#[test]
 fn brep_fallback_set_refuses_collection_limit_before_insertion() {
     let curve_id: cadmpeg_ir::ids::CurveId = "rhino:object:curve#fallback"
         .try_into()
         .expect("valid identity");
     let mut staged = BrepDraft::default();
     staged.draft.model_mut().curves.push(Curve {
+        parameter_range: None,
         id: curve_id,
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
@@ -179,6 +241,7 @@ fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
         ..BrepDraft::default()
     };
     staged.draft.model_mut().curves.push(Curve {
+        parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false))),
         source_object: None,
@@ -215,6 +278,7 @@ fn colliding_staged_ids_are_rejected_without_mutating_the_candidate() {
         .try_into()
         .expect("valid identity");
     let curve = Curve {
+        parameter_range: None,
         id: curve_id,
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false))),
         source_object: None,
@@ -245,6 +309,7 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
     })
     .expect("validate source-shaped Brep");
     let association = SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Rhino,
         object_id: cadmpeg_core::text::NonBlankString::new("plane-brep".to_string())
             .expect("nonempty source identity"),
@@ -360,6 +425,7 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
     })
     .expect("validate Brep");
     let association = SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Rhino,
         object_id: cadmpeg_core::text::NonBlankString::new("free-vertex-brep".to_string())
             .expect("nonempty source identity"),
@@ -430,6 +496,7 @@ fn failed_trim_pcurve_does_not_discard_brep_topology() {
     })
     .expect("validate source-shaped Brep");
     let association = SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Rhino,
         object_id: cadmpeg_core::text::NonBlankString::new("plane-brep".to_string())
             .expect("nonempty source identity"),
@@ -774,6 +841,7 @@ fn staged_brep_collections_refuse_just_below_each_required_count() {
     })
     .expect("validate source-shaped Brep");
     let association = SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Rhino,
         object_id: cadmpeg_core::text::NonBlankString::new("plane-brep".to_string())
             .expect("nonempty source identity"),
@@ -871,6 +939,7 @@ fn staged_brep_retained_copies_refuse_before_allocation() {
     })
     .expect("validate source-shaped Brep");
     let association = SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Rhino,
         object_id: cadmpeg_core::text::NonBlankString::new("plane-brep".to_string())
             .expect("nonempty source identity"),
@@ -977,6 +1046,7 @@ fn brep_mesh_cache_retention_refusal_reaches_the_caller() {
     })
     .expect("validate Brep with one mesh cache slot");
     let association = SourceObjectAssociation {
+        geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Rhino,
         object_id: cadmpeg_core::text::NonBlankString::new("plane-brep".to_string())
             .expect("nonempty source identity"),
@@ -1176,4 +1246,43 @@ fn a_dropped_brep_mesh_cache_slot_carries_the_mesh_cache_code() {
             "invalid render mesh cache slot 2: payload is truncated"
         )]
     );
+}
+
+#[test]
+fn fallback_exactness_lookup_admits_thousands_of_free_carriers() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 192_000_000;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut staged = BrepDraft::default();
+    for index in 0..4096 {
+        let id: cadmpeg_ir::ids::CurveId =
+            format!("rhino:object:curve#{index:08}").try_into().unwrap();
+        staged.draft.model_mut().curves.push(Curve {
+            id: id.clone(),
+            parameter_range: None,
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            source_object: None,
+        });
+        staged.links.push(id.to_string());
+        staged
+            .draft
+            .exactness(&ctx, &id, cadmpeg_ir::Exactness::Derived)
+            .unwrap();
+    }
+    let staged = staged
+        .free_carrier_fallback(&ctx, "synthetic topology rejection")
+        .unwrap();
+    assert_eq!(staged.draft.model().curves.len(), 4096);
+    assert_eq!(staged.links.len(), 4096);
+    let old_lookup_work = 4096_u64 * 4096 * 27;
+    assert!(old_lookup_work > policy.limits.max_work_units);
+    ctx.finish_session().unwrap();
 }
