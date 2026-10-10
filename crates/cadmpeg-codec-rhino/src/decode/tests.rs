@@ -1075,7 +1075,7 @@ fn cap_boundary(points: &[Point3]) -> crate::extrusion::ExtrusionBoundary {
     }
 }
 
-fn cap_extrusion(caps: [bool; 2]) -> crate::extrusion::DecodedExtrusion<'static> {
+fn cap_extrusion(caps: [bool; 2]) -> crate::extrusion::DecodedExtrusion {
     let outer = cap_boundary(&[
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(4.0, 0.0, 0.0),
@@ -1097,7 +1097,7 @@ fn cap_extrusion(caps: [bool; 2]) -> crate::extrusion::DecodedExtrusion<'static>
         cap_normals: [cadmpeg_ir::units::UnitVector3::Z_AXIS; 2],
         cap_u_axes: [cadmpeg_ir::units::UnitVector3::X_AXIS; 2],
         caps,
-        meshes: crate::extrusion::ScopedMeshList::empty(),
+        meshes: Vec::new(),
         warnings: Diagnostics::new(),
     }
 }

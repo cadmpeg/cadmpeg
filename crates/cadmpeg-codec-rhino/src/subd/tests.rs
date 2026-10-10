@@ -1265,27 +1265,30 @@ fn rejected_mesh_proxy_does_not_retain_the_candidate_cage() {
     let (bytes, descriptor) = proxy_userdata(&payload(Fixture::default()), fingerprint, true);
     let mut wrong_hash = fingerprint;
     wrong_hash.face_sha1[0] ^= 1;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "Rhino SubD vertices",
-        None,
-    );
-    let result = decode_mesh_proxy_with_ctx(
-        &ctx,
-        &bytes,
-        &descriptor,
-        ArchiveVersion::V5,
-        MillimeterScale::IDENTITY,
-        "rhino:test:proxy-subd#0".try_into().unwrap(),
-        wrong_hash,
-    )
-    .unwrap();
-    assert!(result.is_none());
-    assert!(ctx.finish_session().is_ok());
+    for operation in ["Rhino SubD vertices", "Rhino SubD mesh proxy candidate"] {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::MAX;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            operation,
+            None,
+        );
+        let result = decode_mesh_proxy_with_ctx(
+            &ctx,
+            &bytes,
+            &descriptor,
+            ArchiveVersion::V5,
+            MillimeterScale::IDENTITY,
+            "rhino:test:proxy-subd#0".try_into().unwrap(),
+            wrong_hash,
+        )
+        .unwrap();
+        assert!(result.is_none());
+        assert!(ctx.finish_session().is_ok());
+    }
 }
 
 #[test]
@@ -1338,3 +1341,36 @@ fn mesh_proxy_candidate_refuses_speculative_and_retained_boundaries() {
 }
 
 mod fallible_prefix;
+
+mod texture_work;
+
+#[test]
+fn direct_subd_cage_retained_probe_is_active() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let bytes = payload(Fixture::default());
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "Rhino SubD vertices",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+            let result = decode_with_ctx(
+                &ctx,
+                &bytes,
+                0..bytes.len(),
+                ArchiveVersion::V5,
+                MillimeterScale::IDENTITY,
+                "rhino:test:proxy-subd#0".try_into().unwrap(),
+            );
+            if let Err(SubdError::Resource(limit)) = &result {
+                assert_eq!(ctx.resource_refusal(), Some(*limit));
+            }
+            result.map_err(|error| match error {
+                SubdError::Resource(limit) => cadmpeg_core::CodecError::ResourceLimit(limit),
+                error => panic!("valid SubD: {error:?}"),
+            })
+        },
+    );
+}

@@ -536,7 +536,7 @@ fn parse_xml(
                 )?))
             })?;
     let document = admitted_document.document();
-    let root = document.root_element();
+    let root = ctx.xml_root_element(document, "Rhino XML root element search")?;
     if !root.tag_name().name().eq_ignore_ascii_case("xml") {
         return Err(FramingError::unpositioned(ctx.format_retained(
             format_args!(
@@ -605,7 +605,7 @@ fn parse_edge_softening_xml(
                 )?))
             })?;
     let document = admitted_document.document();
-    let root = document.root_element();
+    let root = ctx.xml_root_element(document, "Rhino XML root element search")?;
     if !root.tag_name().name().eq_ignore_ascii_case("xml") {
         return Err(FramingError::unpositioned(ctx.format_retained(
             format_args!(
@@ -650,7 +650,7 @@ fn parse_thickening_xml(
                 )?))
             })?;
     let document = admitted_document.document();
-    let root = document.root_element();
+    let root = ctx.xml_root_element(document, "Rhino XML root element search")?;
     if !root.tag_name().name().eq_ignore_ascii_case("xml") {
         return Err(FramingError::unpositioned(ctx.format_retained(
             format_args!(
@@ -692,7 +692,7 @@ fn parse_curve_piping_xml(
                 )?))
             })?;
     let document = admitted_document.document();
-    let root = document.root_element();
+    let root = ctx.xml_root_element(document, "Rhino XML root element search")?;
     if !root.tag_name().name().eq_ignore_ascii_case("xml") {
         return Err(FramingError::unpositioned(ctx.format_retained(
             format_args!(
@@ -735,7 +735,7 @@ fn parse_shut_lining_xml(
                 )?))
             })?;
     let document = admitted_document.document();
-    let root = document.root_element();
+    let root = ctx.xml_root_element(document, "Rhino XML root element search")?;
     if !root.tag_name().name().eq_ignore_ascii_case("xml") {
         return Err(FramingError::unpositioned(ctx.format_retained(
             format_args!(
@@ -1162,8 +1162,11 @@ fn parse_uuid(
     let mut source = raw[start..end].iter();
     ctx.charge_work(0, "Rhino XML UUID digits")?;
     for _ in 0..source.len() {
-        let byte = ctx.next_charged(&mut source, "Rhino XML UUID digits")?
-            .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino XML UUID source ended early"))?;
+        let byte = ctx
+            .next_charged(&mut source, "Rhino XML UUID digits")?
+            .ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("Rhino XML UUID source ended early")
+            })?;
         if *byte == b'-' {
             continue;
         }
@@ -1185,6 +1188,7 @@ fn parse_uuid(
 #[cfg(test)]
 mod tests {
     mod case_equality;
+    mod root_search;
     mod uuid_prefix;
     #[test]
     fn shut_lining_profile_refuses_positive_overflow() {
