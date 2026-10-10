@@ -65,7 +65,7 @@ fn legacy_name_index_waits_for_a_unique_value() {
         bytes.extend_from_slice(NAMED_SCALAR_OPEN);
         bytes.push(0xe7);
     }
-    for value in [b'x', b'y'] {
+    for value in *b"xy" {
         bytes.extend_from_slice(STRING_OPEN);
         bytes.extend_from_slice(&[2, value]);
     }
