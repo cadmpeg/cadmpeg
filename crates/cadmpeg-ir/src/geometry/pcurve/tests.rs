@@ -942,3 +942,5 @@ mod line_parameters;
 mod budget;
 
 mod decode_cost;
+
+mod polar_serialization;
