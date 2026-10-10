@@ -4320,11 +4320,10 @@ pub(crate) fn bind_vertex_recipe_history(
         // The input topology and its index are found for the first recipe.
         let mut topology = None;
         let mut index = None;
-        // A work point has a fixed number of inputs.
-        for recipe in construction.rule.vertex_recipes_mut() {
+        construction.rule.for_each_vertex_recipe_for_decode(ctx, "visit F3D WorkPoint vertex history inputs", |recipe| {
             recipe.resolution = None;
             let Some(state_id) = state_id else {
-                continue;
+                return Ok(());
             };
             let found = match topology {
                 Some(found) => found,
@@ -4334,7 +4333,7 @@ pub(crate) fn bind_vertex_recipe_history(
                 ),
             };
             let Some(topology) = found else {
-                continue;
+                return Ok(());
             };
             let index = match &mut index {
                 Some(index) => index,
@@ -4342,15 +4341,16 @@ pub(crate) fn bind_vertex_recipe_history(
             };
             let Some((vertex, position)) = vertex_recipe_candidate(ctx, recipe, topology, index)?
             else {
-                continue;
+                return Ok(());
             };
             if !point_matches(position, solved_position) {
-                continue;
+                return Ok(());
             }
             recipe.resolution = crate::records::feature::work_geometry::DesignVertexResolution::new(
                 state_id, vertex,
             );
-        }
+            Ok(())
+        })?;
     }
 
     for (scope, &state_id) in ctx

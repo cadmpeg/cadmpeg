@@ -1012,15 +1012,15 @@ pub(crate) fn bind_vertex_recipe_candidates(
         let Some(construction) = scope.work_point_construction_mut() else {
             continue;
         };
-        // A WorkPoint rule has at most three inputs.
-        for recipe in construction.rule.vertex_recipes_mut() {
+        construction.rule.for_each_vertex_recipe_for_decode(ctx, "visit F3D WorkPoint candidate inputs", |recipe| {
             for reference in ctx.admit_iter(&(0..recipe.recipe_references.len()), OPERATION)? {
                 let Some(reference) = recipe.recipe_references.get_mut(reference) else {
                     continue;
                 };
                 bind_recipe_reference_candidates_charged(ctx, reference, tags, Some(&scope_id))?;
             }
-        }
+            Ok(())
+        })?;
     }
     Ok(())
 }
