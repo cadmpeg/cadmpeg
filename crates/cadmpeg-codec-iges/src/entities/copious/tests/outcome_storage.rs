@@ -318,3 +318,146 @@ fn copious_point_final_decoded_node_refuses_one_byte_short_after_source_release(
 fn copious_point_final_decoded_node_accepts_exact_after_source_release() {
     point_projection_final_allocation(true);
 }
+
+fn presentation_fixture(form: i64, count: usize, truncated: bool)
+    -> (crate::directory::DirectoryEntry, ParameterRecord, crate::global::ProjectedGlobal, LossNote) {
+    let bytes = crate::test_support::test_owned::owned_test_file(&[]);
+    let global = crate::test_support::with_service_context(&bytes, |setup| {
+        let scan = crate::card::scan_with_context(&bytes, setup).unwrap();
+        let (global, _, _) = crate::global::parse(&scan, setup).unwrap();
+        global.length_context().unwrap()
+    });
+    assert_eq!(global.length_factor_mm(), 1.0);
+    let mut entry = crate::test_support::directory_target(1, 106);
+    entry.form = form;
+    entry.status.set_use_flag(1);
+    let mut values = vec![106, 1, i64::try_from(count).unwrap(), 0];
+    for index in 0..count {
+        values.extend([i64::try_from(index).unwrap(), 0]);
+    }
+    if truncated {
+        values.pop();
+    }
+    let record = ParameterRecord::from_test_tokens(1, 1..2, Vec::new(), values.len(),
+        values.into_iter().map(|value| Token {
+            value: TokenValue::Integer(value), span: 0..0,
+        }).collect(), Vec::new());
+    let code = if truncated { crate::loss::IgesLossCode::EntityNotProjected }
+        else { crate::loss::IgesLossCode::DisplayDataNotProjected };
+    let message = if truncated {
+        format!("IGES entity type 106 form {form} was not projected: tuple array is truncated or non-finite")
+    } else {
+        format!("IGES entity type 106 form {form} display data was not projected: copious presentation tuples have no neutral display carrier")
+    };
+    let expected = code.note(message).with_provenance(entry.loss_provenance());
+    (entry, record, global, expected)
+}
+
+#[test]
+fn copious_presentation_tuples_need_only_the_loss_collection_slot() {
+    for form in [20, 21, 31, 32, 33, 34, 35, 36, 37, 38, 40] {
+        for count in if form == 40 { [3, 65] } else { [2, 64] } {
+            for truncated in [false, true] {
+                let (entry, record, global, expected) = presentation_fixture(form, count, truncated);
+                let directory = [entry];
+                let entries = BTreeMap::from([(1, &directory[0])]);
+                let records = BTreeMap::from([(1, &record)]);
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                // Presentation positions have no consumer. Only the
+                // attributed loss occupies a collection slot or output.
+                policy.limits.max_collection_items = 1;
+                policy.limits.max_entities = 0;
+                policy.limits.max_retained_bytes = 0;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let mut output = ctx.reserve_scoped(0, "test presentation output").unwrap();
+                let mut sequences = SourceSequences::new(&ctx).unwrap();
+                let mut ir = CadIr::empty();
+                let outcome = output.with_storage(||
+                    project(&mut ir, &directory, &entries, &records, &global, &ctx, &mut sequences)).unwrap();
+                assert_eq!(ir, CadIr::empty());
+                assert_eq!(outcome.losses, [expected]);
+                assert!(outcome.decoded.is_empty());
+                assert!(outcome.wire_edges.is_empty());
+                assert!(outcome.free_vertices.is_empty());
+                drop(outcome);
+                drop(ir);
+                drop(sequences);
+                drop(output);
+                let released = ctx.reserve_scoped(EMPTY_INPUT_MATERIALIZED_ALLOWANCE,
+                    "test presentation output released").unwrap();
+                drop(released);
+                ctx.finish_session().unwrap();
+            }
+        }
+    }
+}
+
+fn presentation_source_boundary(completed: bool, last: bool) {
+    for form in [20, 21, 31, 32, 33, 34, 35, 36, 37, 38, 40] {
+        for count in if form == 40 { [3, 65] } else { [2, 64] } {
+            for truncated in [false, true] {
+                let (entry, record, global, _) = presentation_fixture(form, count, truncated);
+                let directory = [entry];
+                let entries = BTreeMap::from([(1, &directory[0])]);
+                let records = BTreeMap::from([(1, &record)]);
+                // Directory visit1, one-key u32 parameter lookup4, and
+                // exactly one visit per tuple. Scalar validation is fixed.
+                let visited = if completed { count } else if last { count - 1 } else { 0 };
+                let cap = 5 + u64::try_from(visited).unwrap();
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                policy.limits.max_collection_items = 0;
+                policy.limits.max_entities = 0;
+                policy.limits.max_retained_bytes = 0;
+                policy.limits.max_materialized_bytes = 0;
+                policy.limits.max_recursion_depth = 0;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let mut sequences = SourceSequences::new(&ctx).unwrap();
+                let mut ir = CadIr::empty();
+                let result = project(&mut ir, &directory, &entries, &records, &global, &ctx, &mut sequences);
+                let first = match result.as_ref() {
+                    Err(CodecError::ResourceLimit(first)) => *first,
+                    _ => panic!("expected presentation boundary refusal"),
+                };
+                drop(result);
+                if completed {
+                    assert_eq!(first.dimension, ResourceDimension::CollectionItems);
+                    assert_eq!(first.operation, "iges entity loss slots");
+                    assert_eq!((first.limit, first.used, first.additional), (0, 0, 1));
+                } else {
+                    assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+                    assert_eq!(first.operation, "iges copious tuple traversal");
+                    assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
+                }
+                assert_eq!(ir, CadIr::empty());
+                for _ in 0..64 {
+                    for source in [&directory[..], &[][..]] {
+                        assert!(matches!(project(&mut ir, source, &entries, &records, &global,
+                            &ctx, &mut sequences), Err(CodecError::ResourceLimit(last)) if last == first));
+                        assert_eq!(ir, CadIr::empty());
+                    }
+                }
+                drop(ir);
+                drop(sequences);
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+            }
+        }
+    }
+}
+
+#[test]
+fn copious_presentation_first_tuple_visit_refuses_without_storage() {
+    presentation_source_boundary(false, false);
+}
+
+#[test]
+fn copious_presentation_last_tuple_visit_refuses_without_storage() {
+    presentation_source_boundary(false, true);
+}
+
+#[test]
+fn copious_presentation_exact_whole_tuples_reach_loss_admission_without_storage() {
+    presentation_source_boundary(true, false);
+}
