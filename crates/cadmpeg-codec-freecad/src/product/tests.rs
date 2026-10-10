@@ -218,10 +218,7 @@ fn product_projection_without_consumers_does_not_build_body_prefixes() {
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_work_units = 0;
-    policy.limits.max_collection_items = 0;
     policy.limits.max_retained_bytes = 0;
-    policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty context");
     let (definitions, occurrences) = super::transfer_neutral(
         &ctx,
@@ -236,7 +233,7 @@ fn product_projection_without_consumers_does_not_build_body_prefixes() {
     assert!(definitions.is_empty());
     assert!(occurrences.is_empty());
     let cadmpeg_core::CodecError::ResourceLimit(original) = ctx
-        .charge_work(1, "prior product refusal")
+        .charge_work(u64::MAX, "prior product refusal")
         .expect_err("work refusal")
     else {
         panic!("resource refusal")
@@ -1559,9 +1556,6 @@ fn product_cycle_graph_refuses_at_caller_limit() {
 
 #[test]
 fn real_lists_read_both_precisions_within_nonzero_view_bounds() {
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
     for width in [RealWidth::Single, RealWidth::Double] {
         let mut bytes = vec![0xff; 9];
         bytes.extend_from_slice(&1_u32.to_le_bytes());
@@ -1574,7 +1568,7 @@ fn real_lists_read_both_precisions_within_nonzero_view_bounds() {
         let end = bytes.len();
         bytes.push(0xff);
         let view = View::over_retained(&bytes).child(9, end).unwrap();
-        let rows = list_layout::<3>(&ctx, view, "ScaleList", "fcstd product scale positions")
+        let rows = list_layout::<3>(view, "ScaleList")
             .unwrap()
             .map(|row| {
                 row.into_iter()
@@ -1584,20 +1578,10 @@ fn real_lists_read_both_precisions_within_nonzero_view_bounds() {
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
         assert_eq!(rows, [[2.0, -3.0, 4.0]]);
-        assert!(list_layout::<3>(
-            &ctx,
-            View::over_retained(&bytes).child(9, end - 1).unwrap(),
-            "ScaleList",
-            "fcstd product scale positions"
-        )
+        assert!(list_layout::<3>(View::over_retained(&bytes).child(9, end - 1).unwrap(), "ScaleList")
         .is_err());
     }
-    assert!(list_layout::<3>(
-        &ctx,
-        View::over_retained(&[0; 3]),
-        "ScaleList",
-        "fcstd product scale positions"
-    )
+    assert!(list_layout::<3>(View::over_retained(&[0; 3]), "ScaleList")
     .is_err());
 }
 

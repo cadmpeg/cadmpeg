@@ -22,17 +22,6 @@ fn product_element_decimal_ordinal_is_scoped_and_keeps_identity() {
             scale: None,
         })),
     };
-    crate::test_support::materialized_refusal_at("fcstd product occurrence ordinal", |ctx| {
-        crate::product::transfer_neutral(
-            ctx,
-            std::slice::from_ref(&record),
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-        )
-    });
     crate::test_support::with_service_context(&[], |ctx| {
         let (_, occurrences) = crate::product::transfer_neutral(
             ctx,
@@ -48,4 +37,9 @@ fn product_element_decimal_ordinal_is_scoped_and_keeps_identity() {
         assert_eq!(occurrences[0].id.as_str(), "fcstd:model:occurrence#Link:0");
         assert_eq!(occurrences[1].id.as_str(), "fcstd:model:occurrence#Link:1");
     });
+    let error = crate::test_support::materialized_refusal_at("released product projection", |ctx| {
+        crate::product::transfer_neutral(ctx, std::slice::from_ref(&record), &[], &[], &[], &[], &[])?;
+        ctx.reserve_scoped(u64::MAX, "released product projection").map(|_| ())
+    });
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.used == 0));
 }
