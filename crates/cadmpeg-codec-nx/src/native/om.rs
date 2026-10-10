@@ -592,8 +592,8 @@ pub(super) fn operation_state_slot_lanes(
             else {
                 continue;
             };
-            let (slots, _slots_storage) = slots.into_parts();
-            let Ok(frame) = crate::om::state_slot_lane::StateSlotLane::new(source_offset, slots)
+            let (slots, slots_storage) = slots.into_parts();
+            let Ok(frame) = crate::om::state_slot_lane::StateSlotLane::from_wire(ctx, source_offset, slots)?
             else {
                 continue;
             };
@@ -608,7 +608,7 @@ pub(super) fn operation_state_slot_lanes(
                 )?,
                 section_link: ctx.copy_retained_text(&link.id, "NX state slot section link")?,
                 ordinal: lane_ordinal,
-                frame,
+                frame: slots_storage.commit_value(frame)?,
                 source_entry: ctx.copy_retained_text(&entry.name, "NX state slot source entry")?,
             });
         }
