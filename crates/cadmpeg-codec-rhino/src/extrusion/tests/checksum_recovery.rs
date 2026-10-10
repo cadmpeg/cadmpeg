@@ -142,3 +142,25 @@ fn profile_uuid_crc_warning_refuses_before_message_storage() {
         Err(CodecError::ResourceLimit(sticky)) if sticky == first
     ));
 }
+
+
+#[test]
+fn profile_uuid_crc_warning_copy_admits_retained_message_storage() {
+    let bytes = bad_profile_uuid_crc();
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes,
+        "Rhino diagnostic copy text", |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+            let result = super::super::decode(MeshExpand::new(&ctx, root), &bytes,
+                0..bytes.len(), format(), &[], &mut MeshBudget::new());
+            if let Err(GeometryError::Codec(CodecError::ResourceLimit(limit))) = &result {
+                assert!(limit.additional > 0);
+                assert_eq!(ctx.resource_refusal(), Some(*limit));
+            }
+            result.map(|_| ()).map_err(|error| match error {
+                GeometryError::Codec(error) => error, error => panic!("recoverable profile CRC: {error:?}"),
+            })
+        });
+}

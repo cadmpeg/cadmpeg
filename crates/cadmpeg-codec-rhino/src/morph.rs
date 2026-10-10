@@ -337,7 +337,9 @@ pub(crate) fn decode(
     range: Range<usize>,
     scale: MillimeterScale,
     archive: ArchiveVersion,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<Morph, GeometryError> {
+    storage.with_storage(|| {
     let data = expand.data();
     let (mut outer, _next, major, minor) = anonymous(
         expand.ctx(),
@@ -456,6 +458,7 @@ pub(crate) fn decode(
         tolerance,
         quick_preview,
         preserve_structure,
+    })
     })
 }
 
@@ -997,6 +1000,7 @@ pub(crate) fn project(
 #[cfg(test)]
 mod tests {
     mod fallible_prefix;
+    mod storage;
     use super::{
         captive_ids, decode, localizer, localizers, project, Control, LocalizerKind, ANONYMOUS,
     };
@@ -1126,11 +1130,13 @@ mod tests {
         let bytes = anonymous(2, 2, &content);
 
         let morph = crate::decode::with_expand_bytes(&bytes, |expand| {
+            let mut storage = expand.ctx().reserve_scoped(0, "Rhino morph raw controls")?;
             decode(
                 expand,
                 0..bytes.len(),
                 crate::test_support::millimeter_scale(10.0),
                 ArchiveVersion::V8,
+                &mut storage,
             )
         })
         .expect("required invariant");
@@ -1283,11 +1289,13 @@ mod tests {
     fn rejects_unknown_morph_control_major() {
         let bytes = anonymous(3, 0, &[]);
         let result = crate::decode::with_expand_bytes(&bytes, |expand| {
+            let mut storage = expand.ctx().reserve_scoped(0, "Rhino morph raw controls")?;
             decode(
                 expand,
                 0..bytes.len(),
                 MillimeterScale::IDENTITY,
                 ArchiveVersion::V8,
+                &mut storage,
             )
         });
         assert!(matches!(
@@ -1321,11 +1329,13 @@ mod tests {
         let bytes = anonymous(2, 1, &content);
 
         let morph = crate::decode::with_expand_bytes(&bytes, |expand| {
+            let mut storage = expand.ctx().reserve_scoped(0, "Rhino morph raw controls")?;
             decode(
                 expand,
                 0..bytes.len(),
                 crate::test_support::millimeter_scale(10.0),
                 ArchiveVersion::V8,
+                &mut storage,
             )
         })
         .expect("required invariant");
