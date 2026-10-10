@@ -123,3 +123,5 @@ mod zero_offset;
 mod cache;
 
 mod sweep_normal;
+
+mod rounded_normal;
