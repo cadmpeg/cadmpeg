@@ -6,6 +6,7 @@ mod dump;
 mod envelope_admission;
 mod inline;
 mod plane_corner_suffix;
+mod plane_envelope_close_bound;
 mod planes;
 mod positional;
 mod positional_mixed;
