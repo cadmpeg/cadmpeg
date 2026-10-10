@@ -210,7 +210,7 @@ impl Brep {
     > {
         let mut storage = ctx.reserve_scoped(0, "stage F3D selected BREP bodies")?;
         let mut resolved = BTreeMap::new();
-        ctx.charge_work(0, "scan F3D body selectors")?;
+
         if selectors.is_empty() {
             return Ok((resolved, storage));
         }

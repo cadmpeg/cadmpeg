@@ -318,3 +318,30 @@ fn corner_shaded_mesh_preserves_unshaded_and_malformed_lane_results() {
         ));
     });
 }
+
+#[test]
+fn unused_mesh_feature_scopes_need_no_index_storage_or_work() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let scopes: Vec<_> = (0..128)
+        .map(|i| {
+            DesignParameterScope::empty(
+                &format!("f3d:Design/BulkStream.dat:design-parameter-scope#{i}"),
+                crate::records::feature::scope::DesignFeatureKind::BaseMeshFeature,
+                i,
+            )
+        })
+        .collect();
+    let projection = MeshProjection {
+        count: 0,
+        tessellations_by_scope: Default::default(),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    bind_mesh_feature_definitions(&ctx, &mut [], &scopes, &projection).unwrap();
+    ctx.finish_session().unwrap();
+}

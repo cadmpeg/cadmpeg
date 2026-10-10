@@ -55,7 +55,7 @@ fn assert_original_refusal(
     assert_eq!(limit.operation, operation);
     assert_eq!(ctx.resource_refusal(), Some(limit));
     assert!(
-        matches!(ctx.charge_work(0, "later texture query"), Err(CodecError::ResourceLimit(original)) if original == limit)
+        matches!(ctx.charge_work(1, "later texture query"), Err(CodecError::ResourceLimit(original)) if original == limit)
     );
     assert!(
         matches!(super::super::appearances_from_schema_records(ctx, &[]), Err(CodecError::ResourceLimit(original)) if original == limit)

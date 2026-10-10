@@ -124,7 +124,7 @@ fn point_companion_validation_refuses_original_dimensions_before_mutation() {
         assert_eq!(original.used, 0);
         assert_eq!(original.operation, "index F3D sketch point incident curves");
         assert_eq!(ctx.resource_refusal(), Some(original));
-        let Err(CodecError::ResourceLimit(later)) = ctx.charge_work(0, "after validation refusal")
+        let Err(CodecError::ResourceLimit(later)) = ctx.charge_work(1, "after validation refusal")
         else {
             panic!("the original refusal must remain sticky");
         };
@@ -133,25 +133,25 @@ fn point_companion_validation_refuses_original_dimensions_before_mutation() {
 }
 
 #[test]
-fn point_companion_validation_empty_set_observes_original_context_fuse() {
-    let arena = DecodeArena::new();
+fn point_companion_duplicate_does_not_reserve_another_item_or_visit_tail() {
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    policy.limits.max_retained_bytes = 0;
-    policy.limits.max_materialized_bytes = 0;
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let companion = SketchPointCompanion {
-        incident_curves: Vec::new(),
-    };
-    companion.validate_charged(&ctx).unwrap();
-    let Err(CodecError::ResourceLimit(original)) =
-        ctx.charge_work(1, "original point validation fuse")
-    else {
-        panic!("zero work context must refuse");
-    };
-    let Err(CodecError::ResourceLimit(later)) = companion.validate_charged(&ctx) else {
-        panic!("empty validation must observe its original session refusal");
-    };
-    assert_eq!(later, original);
+    policy.limits.max_collection_items = 1;
+    for tail in [0, 4096] {
+        let mut incident_curves = vec![7, 7];
+        incident_curves.extend(0..tail);
+        let companion = SketchPointCompanion { incident_curves };
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            assert!(
+                matches!(companion.validate_charged(ctx), Err(CodecError::Malformed(message)) if message == "sketch point companion.incident_curves must be distinct")
+            );
+            assert!(ctx.resource_refusal().is_none());
+        });
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            "scan F3D sketch point incident curves",
+            1,
+            |ctx| companion.validate_charged(ctx),
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.additional == 1));
+    }
 }

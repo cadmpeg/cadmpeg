@@ -11,10 +11,9 @@ pub(in crate::brep) fn position<T>(
     query: &str,
     key: impl Fn(&T) -> &str,
 ) -> Result<Result<usize, usize>, CodecError> {
-    ctx.charge_work(0, "compare F3D BREP graph ID")?;
     ctx.binary_search_by(
         rows,
-        |row| Ok(compare(ctx, key(row), query, "compare F3D BREP graph ID")?),
+        |row| compare(ctx, key(row), query, "compare F3D BREP graph ID").map_err(CodecError::from),
         "compare F3D BREP graph ID",
     )
 }

@@ -58,9 +58,8 @@ fn construct(owner: &str, native: &str, ctx: &DecodeContext<'_>) -> Result<Strin
             super::super::neutral_parameter_id_charged(ctx, &parameter)
                 .map(|id| cadmpeg_ir::ids::Identity::from(id).into_string())
         }
-        "sketch" => {
-            super::super::neutral_sketch_id_charged(ctx, &placement).map(|id| id.into_string())
-        }
+        "sketch" => super::super::neutral_sketch_id_charged(ctx, &placement)
+            .map(cadmpeg_ir::SketchId::into_string),
         "spatial" => super::super::neutral_spatial_sketch_id_charged(ctx, &placement)
             .map(|id| cadmpeg_ir::ids::Identity::from(id).into_string()),
         "constraint" => super::super::neutral_sketch_constraint_id_charged(ctx, native, 4)
