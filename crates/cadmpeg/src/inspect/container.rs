@@ -217,7 +217,7 @@ fn near_name(
 
 fn missing_compound_member_message(
     ctx: &DecodeContext<'_>,
-    snapshot: &CompoundSnapshot<'_>,
+    snapshot: &CompoundSnapshot<'_, '_>,
     name: &str,
 ) -> Result<String, CodecError> {
     let (lowercase_name, name_storage) = ctx

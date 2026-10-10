@@ -83,6 +83,13 @@ impl From<ResourceLimit> for CodecError {
     }
 }
 
+/// An admission that never refuses converts into every codec error type.
+impl From<std::convert::Infallible> for CodecError {
+    fn from(never: std::convert::Infallible) -> Self {
+        match never {}
+    }
+}
+
 impl CodecError {
     /// Builds a malformed-container error from a displayable message.
     pub fn malformed(message: impl std::fmt::Display) -> Self {
