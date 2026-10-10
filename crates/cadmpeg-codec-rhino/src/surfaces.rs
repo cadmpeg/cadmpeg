@@ -818,9 +818,10 @@ pub(crate) fn extrusion_nurbs(
     offset: usize,
 ) -> Result<NurbsSurface, GeometryError> {
     if start.degree() != end.degree()
-        || !ctx.equal(
-            start.knots().as_slice(),
-            end.knots().as_slice(),
+        || start.knots().len() != end.knots().len()
+        || !ctx.all_by(
+            start.knots().as_slice().iter().zip(end.knots().as_slice()),
+            |(first, second)| Ok(first == second),
             "Rhino extrusion knot equality",
         )?
         || start.pole_count() != end.pole_count()
@@ -921,20 +922,13 @@ fn extrusion_rows<T: Copy>(
 ) -> Result<Vec<Vec<T>>, GeometryError> {
     let operation = "Rhino extrusion surface rows";
     let row_count = start.len();
-    row_count.checked_mul(3).ok_or_else(|| {
-        GeometryError::not_implemented("Rhino extrusion surface row count exceeds address space")
-    })?;
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(row_count), operation)?;
-    let mut rows = Vec::new();
-    ctx.reserve_capacity(&mut rows, row_count, operation)?;
+    let mut rows = ctx.collection_vec(row_count, operation)?;
     let mut points = start.iter().copied().zip(end.iter().copied());
     for _ in 0..row_count {
         let (first, second) = ctx
             .next_charged(&mut points, "Rhino extrusion rows traversal")?
             .ok_or_else(|| GeometryError::unpositioned("extrusion row source ended early"))?;
-        ctx.charge_collection_items(2, operation)?;
-        let mut row = Vec::new();
-        ctx.reserve_capacity(&mut row, 2, operation)?;
+        let mut row = ctx.collection_vec(2, operation)?;
         row.push(first);
         row.push(second);
         rows.push(row);

@@ -806,6 +806,7 @@ pub(crate) fn exact_nurbs(
             end_parameter,
             ..
         } => {
+            let _depth = ctx.enter_nested("Rhino exact NURBS compound nesting")?;
             let mut segment_storage = ctx.reserve_scoped(0, "Rhino exact NURBS segment scratch")?;
             let mut segments = segment_storage.with_storage(|| {
                 ctx.collection_vec(children.len(), "Rhino exact NURBS segments")
@@ -3911,17 +3912,59 @@ mod tests {
             end_parameter: finite(5.0),
             warnings: Diagnostics::new(),
         };
-        let converted = with_test_context(|ctx| {
+        let converted = with_test_context(|ctx| exact_nurbs(ctx, &nested, 0))
+            .expect("required invariant");
+        for operation in ["Rhino diagnostics", "Rhino diagnostic message"] {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = u64::MAX;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("context");
             let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-                cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-                "Rhino diagnostics",
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                operation,
                 None,
             );
-            exact_nurbs(ctx, &nested, 0)
-        })
-        .expect("required invariant");
+            exact_nurbs(&ctx, &nested, 0).expect("discarded diagnostics have no retained admission");
+            ctx.finish_session().expect("no discarded diagnostic refusal");
+        }
         assert_eq!(converted.knots().as_slice(), vec![2.0, 2.0, 3.0, 5.0, 5.0]);
         assert_eq!(converted.control_points().len(), 3);
+    }
+
+    #[test]
+    fn exact_nurbs_nested_compound_refuses_recursion_limit() {
+        let line = NurbsCurve::from_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        ).expect("admitted fixture").expect("valid line");
+        let mut nested = DecodedCurve::leaf(
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(line)),
+            Diagnostics::new(),
+        );
+        for _ in 0..3 {
+            nested = DecodedCurve::Compound {
+                children: vec![(FiniteReal::ZERO, nested)],
+                end_parameter: FiniteReal::ONE,
+                warnings: Diagnostics::new(),
+            };
+        }
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_recursion_depth = 2;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("context");
+        let GeometryError::Codec(CodecError::ResourceLimit(limit)) =
+            exact_nurbs(&ctx, &nested, 0).expect_err("third compound descent refuses")
+        else { panic!("recursion resource refusal"); };
+        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::RecursionDepth);
+        assert_eq!(limit.operation, "Rhino exact NURBS compound nesting");
+        assert_eq!((limit.used, limit.additional), (2, 1));
+        assert_eq!(ctx.resource_refusal(), Some(limit));
     }
 
     #[test]

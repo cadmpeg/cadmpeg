@@ -9,8 +9,8 @@ use cadmpeg_ir::units::FiniteVector;
 
 const INPUT_BYTES: u64 = 4 * std::mem::size_of::<f64>() as u64;
 const PROFILE_OUTPUT_BYTES: u64 =
-    (4 * std::mem::size_of::<Vec<FinitePoint3>>()
-        + 8 * std::mem::size_of::<FinitePoint3>()
+    (2 * std::mem::size_of::<Vec<FinitePoint3>>()
+        + 4 * std::mem::size_of::<FinitePoint3>()
         + 4 * std::mem::size_of::<f64>()) as u64;
 
 fn surface(ctx: &DecodeContext<'_>) -> Result<NurbsSurface, crate::curves::GeometryError> {
