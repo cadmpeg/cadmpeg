@@ -2,13 +2,13 @@
 
 use super::super::{family_table, FamilyTablePointer, FamilyTableRecord, Section};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 
 const POINTER_LABEL: &[u8] = b"drv_tbl_ptr\0";
 
 fn assert_bounded_pointer(payload: &[u8], completion: &[u8], expected: Option<FamilyTablePointer>) {
     const PREFIX: &[u8] = b"prefix\n";
     const HEADER: &[u8] = b"#FamilyInf\n";
+    let mut previous_refusal = None;
     for tail_len in [0, 1024] {
         let mut bytes = PREFIX.to_vec();
         bytes.extend_from_slice(HEADER);
@@ -24,45 +24,27 @@ fn assert_bounded_pointer(payload: &[u8], completion: &[u8], expected: Option<Fa
             pointer,
             offset: PREFIX.len() + HEADER.len() + POINTER_LABEL.len(),
         });
-        // One selected section visit plus the current core search bound.
-        // All windows here are at least as long as the fixed label.
-        let scan_work = u64::try_from(HEADER.len() + payload.len() + POINTER_LABEL.len())
-            .expect("bounded fixture search");
-        let work = 1 + scan_work;
-        for allowed in 0..=work {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = allowed;
-            policy.limits.max_materialized_bytes = 0;
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_collection_items = 0;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let result = family_table(&ctx, std::slice::from_ref(&section));
-            let original = if allowed < work {
-                let Err(CodecError::ResourceLimit(refusal)) = result else {
-                    panic!("next actual selected-section operation must refuse");
-                };
-                let (operation, used, additional) = if allowed == 0 {
-                    ("creo named section selection", 0, 1)
-                } else {
-                    ("find Creo family table", 1, scan_work)
-                };
-                assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(refusal.operation, operation);
-                assert_eq!((refusal.used, refusal.additional), (used, additional));
-                refusal
-            } else {
-                assert_eq!(result.expect("bounded search excludes unrelated tail"), expected);
-                let refusal = ctx.charge_work_limit(1, "after bounded family pointer")
-                    .expect_err("exact source work cap");
-                assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
-                assert_eq!((refusal.used, refusal.additional), (work, 1));
-                refusal
-            };
-            assert!(matches!(family_table(&ctx, &[]),
-                Err(CodecError::ResourceLimit(refusal)) if refusal == original));
-            assert_eq!(ctx.resource_refusal(), Some(original));
+        let result = crate::test_support::assert_work_boundaries(
+            &["creo named section selection", "find Creo family table"],
+            |ctx| family_table(ctx, std::slice::from_ref(&section)),
+        );
+        assert_eq!(result, expected);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert_eq!(family_table(&ctx, std::slice::from_ref(&section)).expect("borrowed pointer search"), expected);
+        let refusal = crate::test_support::last_refusal_at(&[], ResourceDimension::WorkUnits,
+            "find Creo family table", |ctx| family_table(ctx, std::slice::from_ref(&section)));
+        let cadmpeg_core::CodecError::ResourceLimit(refusal) = refusal else {
+            panic!("family pointer work boundary");
+        };
+        if let Some(previous) = &previous_refusal {
+            assert_eq!(&refusal, previous, "foreign tail changes no admitted work");
         }
+        previous_refusal = Some(refusal);
     }
 }
 

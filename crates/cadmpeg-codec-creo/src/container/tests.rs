@@ -1260,7 +1260,7 @@ fn toc_header_utf8_refuses_before_invalid_header() {
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo UTF-8 validation",
-        |ctx| super::toc_sections(ctx, b"#UGC_TOC\xff\n", 0),
+        |ctx| super::toc_sections(ctx, &mut ctx.reserve_scoped(0, "test section roster storage").expect("empty storage"), b"#UGC_TOC\xff\n", 0),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -1335,7 +1335,7 @@ fn section_name_utf8_refuses_work() {
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo UTF-8 validation",
-        |ctx| super::scan_sections(ctx, b"\n#Body\n", 0),
+        |ctx| super::scan_sections(ctx, &mut ctx.reserve_scoped(0, "test section roster storage").expect("empty storage"), b"\n#Body\n", 0),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -1350,7 +1350,7 @@ fn legacy_toc_value_utf8_refuses_before_invalid_fields() {
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo UTF-8 validation",
-        |ctx| super::legacy_toc_sections(ctx, b"\n@Toc 1 0\n\xff\n", 0),
+        |ctx| super::legacy_toc_sections(ctx, &mut ctx.reserve_scoped(0, "test section roster storage").expect("empty storage"), b"\n@Toc 1 0\n\xff\n", 0),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
@@ -1365,7 +1365,7 @@ fn legacy_toc_array_utf8_refuses_before_invalid_fields() {
         &[],
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
         "creo UTF-8 validation",
-        |ctx| super::legacy_toc_sections(ctx, b"\n@Toc 1 0\n0 1 ->\n@entry 2 1\n\xff\n", 0),
+        |ctx| super::legacy_toc_sections(ctx, &mut ctx.reserve_scoped(0, "test section roster storage").expect("empty storage"), b"\n@Toc 1 0\n0 1 ->\n@entry 2 1\n\xff\n", 0),
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)

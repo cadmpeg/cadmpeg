@@ -218,18 +218,8 @@ pub(super) struct CreoSketchBucketHeader {
     pub(super) index: u32,
     /// Number of entries the bucket array opener declares.
     pub(super) declared_entry_count: u32,
-    /// Number of structurally complete entries decoded within the bucket
-    /// frame.
-    ///
-    /// `None` states that the scan decoded more entries than the `u32` the
-    /// declared count is stored in can name, so the two counts cannot be
-    /// compared and the bucket states no completeness. It is copied from
-    /// `crate::feature::definitions::FeatureTrimBucket::decoded_entry_count`,
-    /// whose one producer is `trim_bucket_entry_count`
-    /// (`feature/definitions.rs:2745`): it counts decoded rows over the bucket
-    /// frame and answers `None` from `u32::try_from` when that count passes
-    /// the stored width. `FeatureTrimBucket::is_complete` is the reader that
-    /// acts on it, and `None` is not complete.
+    /// Number of structurally complete entries decoded within the bucket frame.
+    /// `None` means the count exceeds u32 and cannot establish completeness.
     pub(super) decoded_entry_count: Option<u32>,
     /// Byte offset of the stored bucket index.
     pub(super) offset: usize,
@@ -512,7 +502,8 @@ pub(super) fn serialize_sketch_equations<S: serde::Serializer>(
     table: &Option<crate::feature::definitions::FeatureEquationTable>,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
-    serializer.collect_seq(table.as_ref().into_iter().flat_map(|table| &table.rows).map(|equation| {
+    let rows = table.as_ref().map(|table| table.rows.as_slice()).unwrap_or_default();
+    serializer.collect_seq(rows.iter().map(|equation| {
         CreoSketchEquation {
             equation_id: equation.equation_id,
             function_id: equation.function_id,

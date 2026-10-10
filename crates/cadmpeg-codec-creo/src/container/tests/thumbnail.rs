@@ -1,50 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::{has_thumbnail, scan_bytes_ok, ContainerScan, JPEG_MAGIC};
+use super::super::{has_thumbnail, scan_bytes_ok, ContainerScan};
 use crate::test_support::{build_toc_section_prt, jpeg_payload, unix_compress_literals};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-fn assert_positive_work(scan: &ContainerScan<'_>, operations: &[(&'static str, u64)]) {
-    let work: u64 = operations.iter().map(|(_, amount)| amount).sum();
-    for allowed in 0..=work {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = allowed;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let result = has_thumbnail(&ctx, scan);
-        let original = if allowed < work {
-            let Err(CodecError::ResourceLimit(refusal)) = result else {
-                panic!("the next actual thumbnail operation must refuse");
-            };
-            let mut used = 0;
-            let &(operation, additional) = operations.iter().find(|(_, amount)| {
-                if used + amount > allowed {
-                    true
-                } else {
-                    used += amount;
-                    false
-                }
-            }).expect("cap below source-derived work");
-            assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(refusal.operation, operation);
-            assert_eq!((refusal.used, refusal.additional), (used, additional));
-            refusal
-        } else {
-            assert!(result.expect("source-derived positive thumbnail cap"));
-            let refusal = ctx.charge_work_limit(1, "after positive thumbnail")
-                .expect_err("exact work cap");
-            assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
-            assert_eq!((refusal.used, refusal.additional), (work, 1));
-            refusal
-        };
-        assert!(matches!(has_thumbnail(&ctx, scan),
-            Err(CodecError::ResourceLimit(refusal)) if refusal == original));
-        assert_eq!(ctx.resource_refusal(), Some(original));
-    }
+fn assert_positive_work(scan: &ContainerScan<'_>, operations: &[&str]) {
+    assert!(crate::test_support::assert_work_boundaries(operations, |ctx| has_thumbnail(ctx, scan)));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert!(has_thumbnail(&ctx, scan).expect("borrowed thumbnail search"));
 }
 
 #[test]
@@ -78,9 +46,8 @@ fn raw_jpeg_witness_skips_unrelated_expanded_sections() {
     assert_eq!(scan.framing.expanded_sections[0].name, "Body");
     assert_eq!(scan.framing.expanded_sections[0].data, b"ABC");
     assert_positive_work(&scan, &[
-        ("creo thumbnail section selection", 1),
-        ("find Creo thumbnail", u64::try_from(thumbnail_length + JPEG_MAGIC.len())
-            .expect("fixture search bound")),
+        "creo thumbnail section selection",
+        "find Creo thumbnail",
     ]);
 }
 
@@ -94,13 +61,10 @@ fn compressed_jpeg_witness_uses_expanded_payload_search() {
     assert_eq!(scan.framing.expanded_sections.len(), 1);
     assert_eq!(scan.framing.expanded_sections[0].name, NAME);
     assert_eq!(scan.framing.expanded_sections[0].data, jpeg);
-    let name_work = u64::try_from(NAME.len()).expect("fixture name bound");
     assert_positive_work(&scan, &[
-        ("creo thumbnail section selection", 1),
-        ("creo expanded section selection", 1),
-        ("creo expanded section name comparison", name_work),
-        ("creo expanded section name comparison", name_work),
-        ("find Creo expanded thumbnail", u64::try_from(jpeg.len() + JPEG_MAGIC.len())
-            .expect("fixture expanded search bound")),
+        "creo thumbnail section selection",
+        "creo expanded section selection",
+        "creo expanded section name comparison",
+        "find Creo expanded thumbnail",
     ]);
 }

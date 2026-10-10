@@ -2,7 +2,7 @@
 
 use super::admission_pcurve;
 use crate::decode::source_carriers::SourceUnitCarriers;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 
@@ -21,16 +21,16 @@ fn pcurve_normalization_propagates_owned_scaling_work_refusal() {
         .expect("fixture pcurve construction admission")
         .expect("curve"),
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::WorkUnits,
+        "IR pcurve pole coordinate scaling work", |ctx| {
+            let mut ir = CadIr::empty();
+            let result = SourceUnitCarriers::push_pcurve(ctx, &mut ir, pcurve.clone(), Some([2.0, 3.0]));
+            if result.is_err() { assert!(ir.model.pcurves.is_empty()); }
+            result
+        });
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.operation == "IR pcurve pole coordinate scaling work"));
     let mut ir = CadIr::empty();
-    assert!(
-        matches!(SourceUnitCarriers::push_pcurve(&ctx, &mut ir, pcurve.clone(), Some([2.0, 3.0])),
-        Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR pcurve pole coordinate scaling work")
-    );
-    assert!(ir.model.pcurves.is_empty());
     let mut expected = pcurve.clone();
     expected
         .geometry

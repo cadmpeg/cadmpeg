@@ -431,7 +431,6 @@ impl Serialize for StringPayload {
                 values,
                 complete,
                 accepted_value_indices,
-                ..
             } => {
                 wire.serialize_field("form", "array")?;
                 wire.serialize_field("dimensions", dimensions)?;
@@ -687,11 +686,7 @@ impl Persistence {
             {
                 Some(object) => {
                     object.parent.is_none()
-                        && ctx.eq_ignore_ascii_case(
-                            &object.name,
-                            "solid",
-                            "creo legacy root object name",
-                        )?
+                        && object.name.eq_ignore_ascii_case("solid")
                 }
                 None => false,
             };
@@ -748,7 +743,7 @@ impl Persistence {
             };
             let text = ctx.trim_text(text, "creo legacy source model name trim")?;
             if text.is_empty()
-                || ctx.eq_ignore_ascii_case(text, "NULL", "creo legacy null source model name")?
+                || text.eq_ignore_ascii_case("NULL")
             {
                 continue;
             }
@@ -1227,6 +1222,7 @@ fn array_dimensions(
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
+    let mut storage = ctx.reserve_scoped(0, "creo legacy array dimension storage")?;
     let mut dimensions = Vec::new();
     let mut cursor = 0;
     while bytes.get(cursor) == Some(&b'[') {
@@ -1236,11 +1232,14 @@ fn array_dimensions(
         if dimension == 0 || bytes.get(after_dimension) != Some(&b']') {
             return Ok(None);
         }
-        ctx.reserve_vec(&mut dimensions, 1, "creo legacy array dimensions")?;
+        ctx.reserve_scoped_vec(&mut storage, &mut dimensions, 1, "creo legacy array dimensions")?;
         dimensions.push(dimension);
         cursor = after_dimension + 1;
     }
-    Ok((!dimensions.is_empty() && cursor == bytes.len()).then_some(dimensions))
+    if dimensions.is_empty() || cursor != bytes.len() {
+        return Ok(None);
+    }
+    storage.commit_value(dimensions).map(Some)
 }
 
 fn numeric_run<T>(
@@ -1274,6 +1273,7 @@ fn continuation_numeric_runs<T>(
     bytes: &[u8],
     scalar: fn(&DecodeContext<'_>, &[u8]) -> Result<Option<T>, CodecError>,
 ) -> Result<Option<Vec<NumericRun<T>>>, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "creo legacy numeric continuation storage")?;
     let mut runs = Vec::new();
     let mut remaining = bytes;
     loop {
@@ -1302,7 +1302,7 @@ fn continuation_numeric_runs<T>(
                 let Some(run) = numeric_run(ctx, token, scalar)? else {
                     return Ok(None);
                 };
-                ctx.reserve_vec(&mut runs, 1, "creo legacy continuation numeric runs")?;
+                ctx.reserve_scoped_vec(&mut storage, &mut runs, 1, "creo legacy continuation numeric runs")?;
                 runs.push(run);
             }
             let Some(comma) = comma else {
@@ -1315,7 +1315,7 @@ fn continuation_numeric_runs<T>(
         };
         remaining = &remaining[newline + 1..];
     }
-    Ok(Some(runs))
+    storage.commit_value(runs).map(Some)
 }
 
 #[cfg(test)]
@@ -1514,12 +1514,11 @@ fn object_records(
                 }
                 let complete = object_array_is_complete(ctx, &dimensions, &elements)?;
                 incomplete_arrays += usize::from(!complete);
-                let payload = ObjectPayload::Array {
+                ObjectPayload::Array {
                     dimensions,
                     elements,
                     complete,
-                };
-                payload
+                }
             } else {
                 unresolved += 1;
                 ObjectPayload::Opaque {
@@ -1820,14 +1819,16 @@ where
                 unresolved += 1;
                 continue;
             };
-            let payload = if let Some(dimensions) = array_dimensions(ctx, payload_bytes)? {
+            let mut payload_storage = ctx.reserve_scoped(0, "creo legacy numeric payload storage")?;
+            let dimensions = payload_storage.with_storage(|| array_dimensions(ctx, payload_bytes))?;
+            let payload = if let Some(dimensions) = dimensions {
                 let mut next_index = index + 1;
                 let runs = if let Some(continuation) = &value.continuation {
                     let Some(bytes) = data.get(continuation.rows.clone()) else {
                         unresolved += 1;
                         continue;
                     };
-                    let Some(runs) = continuation_numeric_runs(ctx, bytes, scalar)? else {
+                    let Some(runs) = payload_storage.with_storage(|| continuation_numeric_runs(ctx, bytes, scalar))? else {
                         unresolved += 1;
                         continue;
                     };
@@ -1857,7 +1858,7 @@ where
                         let Some(run) = run else {
                             break;
                         };
-                        ctx.reserve_vec(&mut runs, 1, "creo legacy numeric child runs")?;
+                        ctx.reserve_scoped_vec(&mut payload_storage, &mut runs, 1, "creo legacy numeric child runs")?;
                         runs.push(run);
                         next_index = position + 1;
                         pending = probe;
@@ -1885,6 +1886,7 @@ where
                     value: scalar_value,
                 }
             };
+            let payload = payload_storage.commit_value(payload)?;
             let name =
                 ctx.copy_retained_text(&declaration.name, "creo legacy numeric record names")?;
             ctx.reserve_vec(&mut records, 1, "creo legacy numeric records")?;
@@ -2031,10 +2033,8 @@ fn scan_scope(
     ctx.retain_vec(
         &mut candidates,
         |value| {
-            Ok({
-                declaration_indices.contains_key(&value.attribute_id)
-                    && !conflicting_ids.contains(&value.attribute_id)
-            })
+            Ok(declaration_indices.contains_key(&value.attribute_id)
+                && !conflicting_ids.contains(&value.attribute_id))
         },
         "creo legacy candidate retain",
     )?;

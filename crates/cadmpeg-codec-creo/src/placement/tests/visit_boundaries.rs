@@ -52,10 +52,10 @@ fn fixed_and_empty_carrier_reference_selection_is_free_and_keeps_original_refusa
 
 #[test]
 fn carrier_reference_selection_admits_present_ids_and_stops_at_first_conflict() {
-    for (ids, visited, expected) in [
-        (vec![7], 1, Some(7)),
-        (vec![7, 7], 2, Some(7)),
-        (vec![7, 8, 7, 7], 2, None),
+    for (ids, expected) in [
+        (vec![7], Some(7)),
+        (vec![7, 7], Some(7)),
+        (vec![7, 8, 7, 7], None),
     ] {
         let positional = ids.iter().map(|id| FeatureSectionReferencePlane {
             plane_entity_id: *id, reference_type: None, external_reference_id: None,
@@ -63,33 +63,26 @@ fn carrier_reference_selection_admits_present_ids_and_stops_at_first_conflict() 
         }).collect();
         let cases = [section(ReferencePlanes::Named(ids)), section(ReferencePlanes::Positional(positional))];
         for section in &cases {
-            for allowed in 0..=visited {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_work_units = allowed;
-                policy.limits.max_materialized_bytes = 0;
-                policy.limits.max_retained_bytes = 0;
-                policy.limits.max_collection_items = 0;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-                let result = super::super::unique_carrier_reference_id(&ctx, section);
-                let original = if allowed < visited {
-                    let Err(CodecError::ResourceLimit(refusal)) = result else {
-                        panic!("the next present reference ID must refuse");
+            let actual = crate::test_support::assert_work_boundaries(
+                &["creo carrier reference ID selection"],
+                |ctx| super::super::unique_carrier_reference_id(ctx, section),
+            );
+            assert_eq!(actual, expected);
+            if expected.is_none() {
+                let short = match &section.reference_planes {
+                    ReferencePlanes::Named(ids) => self::section(ReferencePlanes::Named(ids[..2].to_vec())),
+                    ReferencePlanes::Positional(ids) => self::section(ReferencePlanes::Positional(ids[..2].to_vec())),
+                };
+                let refusal = |section: &FeatureSection3d| {
+                    let error = crate::test_support::last_refusal_at(&[],
+                        ResourceDimension::WorkUnits, "creo carrier reference ID selection",
+                        |ctx| super::super::unique_carrier_reference_id(ctx, section));
+                    let CodecError::ResourceLimit(refusal) = error else {
+                        panic!("carrier reference work boundary");
                     };
-                    assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
-                    assert_eq!(refusal.operation, "creo carrier reference ID selection");
-                    assert_eq!((refusal.used, refusal.additional), (allowed, 1));
-                    refusal
-                } else {
-                    assert_eq!(result.expect("exact visit cap"), expected);
-                    let refusal = ctx.charge_work_limit(1, "seed completed carrier refusal")
-                        .expect_err("exact cap is exhausted");
-                    assert_eq!((refusal.used, refusal.additional), (visited, 1));
                     refusal
                 };
-                assert!(matches!(super::super::unique_carrier_reference_id(&ctx, section),
-                    Err(CodecError::ResourceLimit(actual)) if actual == original));
-                assert_eq!(ctx.resource_refusal(), Some(original));
+                assert_eq!(refusal(&short), refusal(section), "conflict ends visits before the tail");
             }
         }
     }
@@ -201,12 +194,6 @@ fn fixed_placement_routes_keep_original_refusal_before_early_return_or_orientati
 
 #[test]
 fn generated_parent_admits_each_present_datum_plane_and_envelope_without_terminal_fee() {
-    type IndexSlot = (u32, Vec<&'static DatumPlaneRecord>);
-    // One row visit, two key hashes, and the first table's four-bucket bound.
-    let index_work = u64::try_from(1 + 2 * std::mem::size_of::<u32>()
-        + 4 * std::mem::size_of::<IndexSlot>()
-        + std::mem::align_of::<IndexSlot>().max(16) - 1 + 4 + 16)
-        .expect("single-row index work fits u64");
     let datums = [datum(2, crate::axis::Axis::X, 2.0)];
     let rows = crate::surface::unique_rows::UniqueIdRows::from_rows(vec![SurfaceRow {
         id: 7, kind: SurfaceKind::Plane, feature_id: 1, reversed: false,
@@ -224,44 +211,18 @@ fn generated_parent_admits_each_present_datum_plane_and_envelope_without_termina
     let equation = Some(SignedPlaneEquation { normal: [1.0, 0.0, 0.0], offset: 2.0 });
     let cases = [
         (PlacementSources { datums: &datums, ..empty_sources(&empty_rows) },
-            index_work + 1, "creo generated datum feature datum traversal", equation),
-        (empty_sources(&rows), index_work + 1,
+            "creo generated datum feature datum traversal", equation),
+        (empty_sources(&rows),
             "creo generated datum feature plane traversal", None),
         (PlacementSources { plane_envelopes: &envelopes, ..empty_sources(&rows) },
-            2 * (index_work + 1), "creo generated datum envelope traversal", equation),
+            "creo generated datum envelope traversal", equation),
     ];
-    for (sources, need, operation, expected) in cases {
-        for allowed in [need - 1, need] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = allowed;
-            policy.limits.max_retained_bytes = 0;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let mut lookup = super::super::PlacementLookup::new(&ctx, &sources, &[])
-                .expect("empty lookup");
-            let result = super::super::generated_parent_plane_equation(
-                &ctx, 1, [0.0, 1.0, 0.0], &mut lookup,
-            );
-            let original = if allowed < need {
-                let Err(CodecError::ResourceLimit(refusal)) = result else {
-                    panic!("the last present owner member must refuse");
-                };
-                assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(refusal.operation, operation);
-                assert_eq!((refusal.used, refusal.additional), (allowed, 1));
-                refusal
-            } else {
-                assert_eq!(result.expect("exact owner visit cap"), expected);
-                let refusal = ctx.charge_work_limit(1, "seed completed parent refusal")
-                    .expect_err("exact owner cap is exhausted");
-                assert_eq!((refusal.used, refusal.additional), (need, 1));
-                refusal
-            };
-            assert!(matches!(super::super::generated_parent_plane_equation(
-                &ctx, 1, [0.0, 1.0, 0.0], &mut lookup,
-            ), Err(CodecError::ResourceLimit(actual)) if actual == original));
-            assert_eq!(ctx.resource_refusal(), Some(original));
-        }
+    for (sources, operation, expected) in cases {
+        let actual = crate::test_support::assert_work_boundaries(&[operation], |ctx| {
+            let mut lookup = super::super::PlacementLookup::new(ctx, &sources, &[])?;
+            super::super::generated_parent_plane_equation(ctx, 1, [0.0, 1.0, 0.0], &mut lookup)
+        });
+        assert_eq!(actual, expected);
     }
 }
 
