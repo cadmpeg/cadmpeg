@@ -2231,11 +2231,9 @@ pub(crate) fn attribute_table_definition_width(
     operation: &'static str,
 ) -> Result<Result<usize, AttributeWidthDefect>, CodecError> {
     let mut values_per_row = 0_usize;
-    let mut attributes = 0..attribute_count;
-    while !attributes.is_empty() {
-        let Some(attribute) = ctx.next_charged(&mut attributes, operation)? else {
-            break;
-        };
+    let defect = ctx.find_map(
+        0..attribute_count,
+        |attribute| {
         let descriptor = attribute
             .checked_mul(3)
             .and_then(|span| span.checked_add(4));
@@ -2251,12 +2249,18 @@ pub(crate) fn attribute_table_definition_width(
             .and_then(|value| usize::try_from(value).ok())
         });
         let Some(declared) = declared else {
-            return Ok(Err(AttributeWidthDefect::ValueCount { attribute }));
+            return Ok(Some(AttributeWidthDefect::ValueCount { attribute }));
         };
         let Some(total) = values_per_row.checked_add(declared) else {
-            return Ok(Err(AttributeWidthDefect::ValueTotal));
+            return Ok(Some(AttributeWidthDefect::ValueTotal));
         };
         values_per_row = total;
+        Ok(None)
+        },
+        operation,
+    )?;
+    if let Some(defect) = defect {
+        return Ok(Err(defect));
     }
     Ok(Ok(values_per_row))
 }
