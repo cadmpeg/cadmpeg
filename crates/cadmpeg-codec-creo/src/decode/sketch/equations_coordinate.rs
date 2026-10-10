@@ -1077,6 +1077,12 @@ fn next_section_component(
     remaining: &mut BTreeSet<usize>,
     adjacency: &[BTreeSet<usize>],
 ) -> Result<Option<BTreeSet<usize>>, CodecError> {
+    if let Some(original) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(original));
+    }
+    if remaining.is_empty() {
+        return Ok(None);
+    }
     let Some(seed) = ctx.find_map(
         &*remaining,
         |seed| Ok(Some(*seed)),
