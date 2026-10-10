@@ -299,7 +299,10 @@ fn endpoint_pair_candidates_with_budget(
                     .with_storage(|| ctx.push_vec(&mut stack, start, "catia_zero_pair_stack"))?;
                 visited[start] = true;
                 let mut by_face_component = BTreeMap::<usize, Vec<usize>>::new();
-                while let Some(index) = stack.pop() {
+                while let Some(index) = ctx.next_charged(
+                    &mut std::iter::from_fn(|| stack.pop()),
+                    "catia_zero_pair_component_steps",
+                )? {
                     let component = face_components.find(ctx, face_index(index)?)?;
                     ctx.push_btree_group(
                         &mut by_face_component,
@@ -494,7 +497,10 @@ pub(super) fn endpoint_locus_candidates_with_budget(
                 stack_storage
                     .with_storage(|| ctx.push_vec(&mut stack, start, "catia_zero_locus_stack"))?;
                 visited[start] = true;
-                while let Some(index) = stack.pop() {
+                while let Some(index) = ctx.next_charged(
+                    &mut std::iter::from_fn(|| stack.pop()),
+                    "catia_zero_locus_component_steps",
+                )? {
                     ctx.push_vec(&mut component, index, "catia_zero_locus_component")?;
                     for neighbor in
                         ctx.admit_iter(&neighbors[index], "catia_zero_locus_neighbor_visits")?

@@ -1521,6 +1521,7 @@ fn standard_freeform_tag_resolves_direct_and_face_carriers() {
             &std::collections::BTreeSet::from([100, 501]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
+            &mut crate::families::standard::decode::LimitCurveIndex::new(ctx).expect("empty index"),
         )
     })
     .expect("service resource budget");
@@ -1546,6 +1547,7 @@ fn standard_freeform_tag_resolves_standalone_a8_carrier() {
             &std::collections::BTreeSet::from([100, 501]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
+            &mut crate::families::standard::decode::LimitCurveIndex::new(ctx).expect("empty index"),
         )
     })
     .expect("service resource budget");
@@ -1576,6 +1578,7 @@ fn standard_freeform_tag_rejects_conflicting_standalone_a8_carriers() {
             &std::collections::BTreeSet::from([100]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
+            &mut crate::families::standard::decode::LimitCurveIndex::new(ctx).expect("empty index"),
         )
     })
     .expect("service resource budget");
@@ -1595,6 +1598,7 @@ fn standard_freeform_tag_collapses_repeated_standalone_a8_carrier() {
             &std::collections::BTreeSet::from([100]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
+            &mut crate::families::standard::decode::LimitCurveIndex::new(ctx).expect("empty index"),
         )
     })
     .expect("service resource budget");
@@ -1613,6 +1617,7 @@ fn standard_freeform_tag_resolves_standalone_a8_rolling_ball() {
             &std::collections::BTreeSet::from([0x1234_5678]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
+            &mut crate::families::standard::decode::LimitCurveIndex::new(ctx).expect("empty index"),
         )
     })
     .expect("service resource budget");
@@ -1645,6 +1650,7 @@ fn standard_object_evidence_rejects_cross_stream_edge_owner_conflicts() {
             &std::collections::BTreeSet::new(),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
+            &mut crate::families::standard::decode::LimitCurveIndex::new(ctx).expect("empty index"),
         )
     })
     .expect("service resource budget");
@@ -1674,6 +1680,7 @@ fn standard_object_evidence_keeps_face_owner_from_unresolved_surface() {
             &std::collections::BTreeSet::new(),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
+            &mut crate::families::standard::decode::LimitCurveIndex::new(ctx).expect("empty index"),
         )
     })
     .expect("service resource budget");
@@ -1691,6 +1698,7 @@ fn standard_object_evidence_rejects_repeated_topology_namespaces() {
             &std::collections::BTreeSet::new(),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
+            &mut crate::families::standard::decode::LimitCurveIndex::new(ctx).expect("empty index"),
         )
     })
     .expect("service resource budget");
@@ -1722,6 +1730,7 @@ fn standard_object_evidence_does_not_join_topology_across_runs() {
             &std::collections::BTreeSet::new(),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
+            &mut crate::families::standard::decode::LimitCurveIndex::new(ctx).expect("empty index"),
         )
     })
     .expect("service resource budget");
@@ -1754,6 +1763,7 @@ fn standard_face_resolves_a_rolling_ball_result_carrier() {
             &std::collections::BTreeSet::from([501]),
             &HashSet::new(),
             &mut crate::nurbs::LaneRefusals::new(),
+            &mut crate::families::standard::decode::LimitCurveIndex::new(ctx).expect("empty index"),
         )
     })
     .expect("service resource budget");

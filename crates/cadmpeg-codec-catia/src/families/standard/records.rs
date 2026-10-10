@@ -404,8 +404,9 @@ pub(super) fn standard_surface_record_groups(
         let mut group_storage = ctx.reserve_scoped(0, "catia_surface_group_candidate")?;
         let mut current = Some(start);
         let mut group = Vec::new();
+        let mut steps = std::iter::repeat(());
         while let Some(index) = current {
-            ctx.charge_work(1, "catia_surface_group_records")?;
+            ctx.next_charged(&mut steps, "catia_surface_group_records")?;
             group_storage.with_storage(|| {
                 ctx.push_vec(
                     &mut group,
@@ -618,8 +619,9 @@ pub(super) fn standard_vertex_roster(
     let mut solution_storage = ctx.reserve_scoped(0, "catia_vertex_roster_solutions")?;
     let mut solutions = Vec::new();
     let mut position = 0usize;
+    let mut steps = std::iter::repeat(());
     while position + vertex_roster::LEN <= source.len() {
-        ctx.charge_work(1, "catia_vertex_roster_scan")?;
+        ctx.next_charged(&mut steps, "catia_vertex_roster_scan")?;
         if source[position + vertex_roster::MARKER] != 0x54
             || source[position + vertex_roster::ZERO_RUN..position + vertex_roster::LEN]
                 != [0, 0, 0]
@@ -646,7 +648,7 @@ pub(super) fn standard_vertex_roster(
             if position + vertex_roster::LEN > source.len() {
                 break;
             }
-            ctx.charge_work(1, "catia_vertex_roster_scan")?;
+            ctx.next_charged(&mut steps, "catia_vertex_roster_scan")?;
             if source[position + vertex_roster::MARKER] != 0x54
                 || source[position + vertex_roster::ZERO_RUN..position + vertex_roster::LEN]
                     != [0, 0, 0]
@@ -937,8 +939,9 @@ fn standard_curve_supports_at(
     let mut storage = ctx.reserve_scoped(0, "catia_curve_support_row_candidate")?;
     let rows = storage.with_storage(|| {
         let mut rows = Vec::new();
+        let mut steps = std::iter::repeat(());
         loop {
-            ctx.charge_work(1, "catia_curve_support_rows")?;
+            ctx.next_charged(&mut steps, "catia_curve_support_rows")?;
             if brep.get(position) != Some(&0x60) {
                 break;
             }

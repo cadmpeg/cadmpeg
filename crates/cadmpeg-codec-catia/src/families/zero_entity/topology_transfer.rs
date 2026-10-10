@@ -10,7 +10,7 @@ use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
-    SurfaceId, VertexId,
+    VertexId,
 };
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
@@ -86,8 +86,8 @@ struct OccurrencePcurve {
 pub(super) struct ZeroEntityClosedTopology<'a> {
     /// Support runs in record order.
     pub(super) support_runs: &'a [ZeroEntitySupportRun],
-    /// Surface id emitted for each carrier position.
-    pub(super) surface_ids_by_position: &'a HashMap<usize, SurfaceId>,
+    /// Model surface index emitted for each carrier position.
+    pub(super) surface_indices_by_position: &'a HashMap<usize, usize>,
     /// Curve id emitted for each support.
     pub(super) support_curve_ids: &'a HashMap<u32, CurveId>,
     /// Ownership root ordering the face slots, when the source states one.
@@ -101,6 +101,7 @@ pub(super) fn transfer_closed_face_topology(
     solved: ZeroEntityClosedTopology<'_>,
     topology_budget: &WorkBudget<'_>,
     refusal: &mut crate::nurbs::LaneRefusals,
+    topology_storage: &mut cadmpeg_core::decode::ProvisionalReservation<'_>,
 ) -> Result<Option<ZeroEntityTopologyCounts>, cadmpeg_core::CodecError> {
     (|| -> Option<Result<ZeroEntityTopologyCounts, cadmpeg_core::CodecError>> {
         macro_rules! admitted {
@@ -119,7 +120,7 @@ pub(super) fn transfer_closed_face_topology(
         }
         let ZeroEntityClosedTopology {
             support_runs,
-            surface_ids_by_position,
+            surface_indices_by_position,
             support_curve_ids,
             ownership_root,
         } = solved;
@@ -145,73 +146,49 @@ pub(super) fn transfer_closed_face_topology(
                 return None;
             }
         }
-        let mut occurrences = Vec::new();
-        let mut occurrence_by_support = HashMap::<u32, usize>::new();
-        let mut face_ids = Vec::new();
-        if let Err(error) = admission.context().reserve_vec(
-            &mut face_ids,
-            support_runs.len(),
-            "catia_zero_topology_face_ids",
-        ) {
-            return Some(Err(error));
-        }
-        let mut face_ordinals = std::collections::HashSet::<u32>::new();
         // Identity indexes, occurrence rows and copied identities that only
         // link the emitted records are scratch for this transfer.
         let mut scratch = admitted!(ctx.reserve_scoped(0, "catia_zero_topology_workspace"));
+        let mut occurrences = Vec::new();
+        let mut occurrence_by_support = HashMap::<u32, usize>::new();
+        let mut face_ids = Vec::new();
+        if let Err(error) = topology_storage.with_storage(|| {
+            admission.context().reserve_vec(
+                &mut face_ids,
+                support_runs.len(),
+                "catia_zero_topology_face_ids",
+            )
+        }) {
+            return Some(Err(error));
+        }
+        let mut face_ordinals = std::collections::HashSet::<u32>::new();
         let positions = admitted!(crate::families::ModelCurvePositions::new(
             ctx,
             &ir.model.curves,
-            &ir.model.procedural_curves
+            &[]
         ));
-        let surface_positions = admitted!(scratch.with_storage(|| {
-            let mut surface_positions = std::collections::BTreeMap::new();
-            for (position, surface) in ctx
-                .admit_iter(&ir.model.surfaces, "catia_zero_topology_surface_positions")?
-                .enumerate()
-            {
-                if !ctx.contains_key_btree_map(
-                    &surface_positions,
-                    &surface.id,
-                    "catia_zero_topology_surface_positions",
-                )? {
-                    ctx.insert_btree_map(
-                        &mut surface_positions,
-                        surface
-                            .id
-                            .try_clone_for_decode(ctx, "catia_zero_topology_surface_positions")?,
-                        position,
-                        "catia_zero_topology_surface_positions",
-                    )?;
-                }
-            }
-            Ok::<_, cadmpeg_core::CodecError>(surface_positions)
-        }));
-
         for run in admitted!(admission
             .context()
             .admit_iter(support_runs, "catia_zero_topology_source_visits")
             .map_err(cadmpeg_core::CodecError::from))
         {
             let face = run.face.as_ref()?;
-            let surface_id = admitted!(ctx.get_hash_map(
-                surface_ids_by_position,
+            let surface_index = *admitted!(ctx.get_hash_map(
+                surface_indices_by_position,
                 &run.carrier_pos,
                 "catia_zero_topology_surface_lookup"
             ))?;
-            let surface_index = *admitted!(ctx.get_btree_map(
-                &surface_positions,
-                surface_id,
-                "catia_zero_topology_surface_lookup"
-            ))?;
             let surface_geometry = &ir.model.surfaces.get(surface_index)?.geometry;
-            let face_id = admitted!(crate::resource::compose_u32_id(
-                admission.context(),
-                &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-face"),
-                face.record_ordinal,
-                FaceId::mint,
-                "catia_zero_topology_face_id"
-            ));
+            let face_id =
+                admitted!(
+                    topology_storage.with_storage(|| crate::resource::compose_u32_id(
+                        admission.context(),
+                        &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-face"),
+                        face.record_ordinal,
+                        FaceId::mint,
+                        "catia_zero_topology_face_id"
+                    ))
+                );
             let inserted = admitted!(scratch.with_storage(|| ctx.insert_hash_set(
                 &mut face_ordinals,
                 face.record_ordinal,
@@ -283,32 +260,36 @@ pub(super) fn transfer_closed_face_topology(
                     let oriented_endpoints = loop_record.oriented_model_endpoints[member_index];
                     let pcurve = match support.pcurve.as_ref() {
                         Some(pcurve) => {
-                            let geometry = match super::records::zero_entity_neutral_pcurve(
-                                admission.context(),
-                                surface_geometry,
-                                pcurve,
-                                &format_args!(
-                                    "zero-entity support record #{support_record_ordinal}"
-                                ),
-                                refusal,
-                            ) {
+                            let geometry = match scratch.with_storage(|| {
+                                super::records::zero_entity_neutral_pcurve(
+                                    admission.context(),
+                                    surface_geometry,
+                                    pcurve,
+                                    &format_args!(
+                                        "zero-entity support record #{support_record_ordinal}"
+                                    ),
+                                    refusal,
+                                )
+                            }) {
                                 Ok(Some(geometry)) => geometry,
                                 Ok(None) => return None,
                                 Err(error) => return Some(Err(error)),
                             };
                             let parameter_range = pcurve_parameter_range(&geometry)?;
                             Some(OccurrencePcurve {
-                                id: admitted!(crate::resource::compose_u32_id(
-                                    admission.context(),
-                                    &cadmpeg_ir::identity_namespace!(
-                                        "catia",
-                                        "zero-entity",
-                                        "topology-pcurve"
-                                    ),
-                                    support_record_ordinal,
-                                    PcurveId::mint,
-                                    "catia_zero_topology_pcurve_id"
-                                )),
+                                id: admitted!(scratch.with_storage(|| {
+                                    crate::resource::compose_u32_id(
+                                        admission.context(),
+                                        &cadmpeg_ir::identity_namespace!(
+                                            "catia",
+                                            "zero-entity",
+                                            "topology-pcurve"
+                                        ),
+                                        support_record_ordinal,
+                                        PcurveId::mint,
+                                        "catia_zero_topology_pcurve_id",
+                                    )
+                                })),
                                 geometry,
                                 parameter_range,
                             })
@@ -361,10 +342,7 @@ pub(super) fn transfer_closed_face_topology(
             )
             .map_err(cadmpeg_core::CodecError::from))
         {
-            let curve_geometry = admitted!(scratch
-                .with_storage(|| ir.model.curves[occurrence.curve_position]
-                    .geometry
-                    .try_clone_for_decode(ctx, "catia_zero_wire_curve_copy")));
+            let curve_geometry = &ir.model.curves[occurrence.curve_position].geometry;
             let source_range = occurrence
                 .model_parameters
                 .and_then(increasing_range)
@@ -377,7 +355,7 @@ pub(super) fn transfer_closed_face_topology(
             let source_range = match source_range {
                 Some(range) => match canonical_model_curve_range(
                     admission.context(),
-                    &curve_geometry,
+                    curve_geometry,
                     range,
                     refusal,
                     "zero-entity edge curve source parameter range",
@@ -390,7 +368,7 @@ pub(super) fn transfer_closed_face_topology(
             let raw_indices =
                 endpoint_indices(occurrence.oriented_endpoints, occurrence.raw_endpoints)?;
             let direct_orientation = if matches!(
-                &curve_geometry,
+                curve_geometry,
                 cadmpeg_ir::geometry::CurveGeometry::Procedural { .. }
             ) {
                 source_range.map(|range| (range, false))
@@ -398,7 +376,7 @@ pub(super) fn transfer_closed_face_topology(
                 match source_range {
                     Some(range) => match curve_orientation(
                         admission.context(),
-                        &curve_geometry,
+                        curve_geometry,
                         range,
                         occurrence.raw_endpoints.map(FinitePoint3::get),
                     ) {
@@ -414,13 +392,13 @@ pub(super) fn transfer_closed_face_topology(
                     let needs_reverse = reversed == raw_is_oriented;
                     if needs_reverse
                         && !matches!(
-                            &curve_geometry,
+                            curve_geometry,
                             cadmpeg_ir::geometry::CurveGeometry::Procedural { .. }
                         )
                     {
                         let reversed_geometry = crate::nurbs::reverse_curve_geometry(
                             admission.context(),
-                            &curve_geometry,
+                            curve_geometry,
                             parameter_range,
                             refusal,
                             "zero-entity edge curve reversed onto its coedge",
@@ -451,7 +429,15 @@ pub(super) fn transfer_closed_face_topology(
                                         &occurrence.curve,
                                         "geometry",
                                     ));
-                                    (copied_id!(occurrence.curve, CurveId), parameter_range)
+                                    (
+                                        admitted!(scratch.with_storage(|| occurrence
+                                            .curve
+                                            .try_clone_for_decode(
+                                                ctx,
+                                                "catia_zero_topology_identity_copy"
+                                            ))),
+                                        parameter_range,
+                                    )
                                 } else {
                                     curve.geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(
                                         SolvedCurveGeometry::Unknown { record: None },
@@ -462,7 +448,15 @@ pub(super) fn transfer_closed_face_topology(
                                         &occurrence.curve,
                                         "geometry",
                                     ));
-                                    (copied_id!(occurrence.curve, CurveId), parameter_range)
+                                    (
+                                        admitted!(scratch.with_storage(|| occurrence
+                                            .curve
+                                            .try_clone_for_decode(
+                                                ctx,
+                                                "catia_zero_topology_identity_copy"
+                                            ))),
+                                        parameter_range,
+                                    )
                                 }
                             }
                             None => {
@@ -475,11 +469,24 @@ pub(super) fn transfer_closed_face_topology(
                                     &occurrence.curve,
                                     "geometry",
                                 ));
-                                (copied_id!(occurrence.curve, CurveId), parameter_range)
+                                (
+                                    admitted!(scratch.with_storage(|| occurrence
+                                        .curve
+                                        .try_clone_for_decode(
+                                            ctx,
+                                            "catia_zero_topology_identity_copy"
+                                        ))),
+                                    parameter_range,
+                                )
                             }
                         }
                     } else {
-                        (copied_id!(occurrence.curve, CurveId), parameter_range)
+                        (
+                            admitted!(scratch.with_storage(|| occurrence
+                                .curve
+                                .try_clone_for_decode(ctx, "catia_zero_topology_identity_copy"))),
+                            parameter_range,
+                        )
                     }
                 } else {
                     let parameter_range = source_range.or_else(|| {
@@ -503,7 +510,12 @@ pub(super) fn transfer_closed_face_topology(
                         &occurrence.curve,
                         "geometry",
                     ));
-                    (copied_id!(occurrence.curve, CurveId), parameter_range)
+                    (
+                        admitted!(scratch.with_storage(|| occurrence
+                            .curve
+                            .try_clone_for_decode(ctx, "catia_zero_topology_identity_copy"))),
+                        parameter_range,
+                    )
                 };
             occurrence.oriented_curve = Some((oriented_curve, oriented_curve_parameter_range));
         }
@@ -519,11 +531,13 @@ pub(super) fn transfer_closed_face_topology(
             return None;
         }
 
-        let edge_candidates = match zero_entity_endpoint_pair_candidates_with_budget(
-            admission.context(),
-            support_runs,
-            topology_budget,
-        ) {
+        let edge_candidates = match scratch.with_storage(|| {
+            zero_entity_endpoint_pair_candidates_with_budget(
+                admission.context(),
+                support_runs,
+                topology_budget,
+            )
+        }) {
             Ok(Some(candidates)) => candidates,
             Ok(None) => return None,
             Err(error) => return Some(Err(error)),
@@ -566,11 +580,13 @@ pub(super) fn transfer_closed_face_topology(
             return None;
         }
 
-        let endpoint_loci = match endpoint_locus_candidates_with_budget(
-            admission.context(),
-            &edge_candidates,
-            topology_budget,
-        ) {
+        let endpoint_loci = match scratch.with_storage(|| {
+            endpoint_locus_candidates_with_budget(
+                admission.context(),
+                &edge_candidates,
+                topology_budget,
+            )
+        }) {
             Ok(Some(candidates)) => candidates,
             Ok(None) => return None,
             Err(error) => return Some(Err(error)),
@@ -615,938 +631,958 @@ pub(super) fn transfer_closed_face_topology(
             return None;
         }
 
-        let first_face = support_runs.first()?.face.as_ref()?;
-        let body_id = if let Some(root) = ownership_root {
-            admitted!(crate::resource::compose_u32_id(
-                admission.context(),
-                &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-body"),
-                admitted!(root.body_record_ordinal()),
-                BodyId::mint,
-                "catia_zero_topology_body_id"
-            ))
-        } else {
-            admitted!(BodyId::mint(admitted!(admission.context().format_retained(
-                format_args!(
-                    "catia:zero-entity:topology-body#inferred-{}-{}",
-                    first_face.record_ordinal,
-                    support_runs.len()
-                ),
-                "catia_zero_topology_body_id"
-            )))
-            .map_err(cadmpeg_core::CodecError::malformed))
-        };
-        let region_id = if let Some(root) = ownership_root {
-            admitted!(crate::resource::compose_u32_id(
-                admission.context(),
-                &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-region"),
-                admitted!(root.body_record_ordinal()),
-                RegionId::mint,
-                "catia_zero_topology_region_id"
-            ))
-        } else {
-            admitted!(
-                RegionId::mint(admitted!(admission.context().format_retained(
-                    format_args!(
-                        "catia:zero-entity:topology-region#inferred-{}-{}",
-                        first_face.record_ordinal,
-                        support_runs.len()
-                    ),
-                    "catia_zero_topology_region_id"
-                )))
-                .map_err(cadmpeg_core::CodecError::malformed)
-            )
-        };
-        let shell_id = if let Some(root) = ownership_root {
-            admitted!(crate::resource::compose_u32_id(
-                admission.context(),
-                &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-shell"),
-                admitted!(root.shell_record_ordinal()),
-                ShellId::mint,
-                "catia_zero_topology_shell_id"
-            ))
-        } else {
-            admitted!(ShellId::mint(admitted!(admission.context().format_retained(
-                format_args!(
-                    "catia:zero-entity:topology-shell#inferred-{}-{}",
-                    first_face.record_ordinal,
-                    support_runs.len()
-                ),
-                "catia_zero_topology_shell_id"
-            )))
-            .map_err(cadmpeg_core::CodecError::malformed))
-        };
-
-        let mut point_ids = Vec::new();
-        let mut vertex_ids = Vec::new();
-        for (index, _) in admitted!(admission
-            .context()
-            .admit_iter(&endpoint_loci, "catia_zero_topology_locus_ids")
-            .map_err(cadmpeg_core::CodecError::from))
-        .enumerate()
-        {
-            let point_id = admitted!(crate::resource::compose_index_id(
-                admission.context(),
-                &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-point"),
-                index,
-                PointId::mint,
-                "catia_zero_topology_point_id"
-            ));
-            let vertex_id = admitted!(crate::resource::compose_index_id(
-                admission.context(),
-                &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-vertex"),
-                index,
-                VertexId::mint,
-                "catia_zero_topology_vertex_id"
-            ));
-            if let Err(error) = ctx.push_scoped_vec(
-                &mut scratch,
-                &mut point_ids,
-                point_id,
-                "catia_zero_topology_point_ids",
-            ) {
-                return Some(Err(error));
-            }
-            if let Err(error) = ctx.push_scoped_vec(
-                &mut scratch,
-                &mut vertex_ids,
-                vertex_id,
-                "catia_zero_topology_vertex_ids",
-            ) {
-                return Some(Err(error));
-            }
-        }
-
-        for (index, locus) in admitted!(admission
-            .context()
-            .admit_iter(&endpoint_loci, "catia_zero_topology_source_visits")
-            .map_err(cadmpeg_core::CodecError::from))
-        .enumerate()
-        {
-            admitted!(annotate(
-                admission.context(),
-                annotations,
-                &point_ids[index],
-                "zero_entity_a9_03",
-                u64_from_index(ownership_root.map_or(first_face.pos, |root| root.face_roster_pos)),
-                "endpoint_locus_point",
-                Exactness::Inferred
-            ));
-            admitted!(crate::resource::derived_annotation(
-                admission.context(),
-                annotations,
-                &point_ids[index],
-                "position",
-            ));
-            if let Err(error) = admission.charge() {
-                return Some(Err(error));
-            }
-            if let Err(error) = admission.context().push_vec(
-                &mut ir.model.points,
-                Point::new(
-                    copied_id!(point_ids[index], PointId),
-                    locus.representative_point,
-                    None,
-                ),
-                "catia_zero_topology_points",
-            ) {
-                return Some(Err(error));
-            }
-            admitted!(annotate(
-                admission.context(),
-                annotations,
-                &vertex_ids[index],
-                "zero_entity_a9_03",
-                u64_from_index(ownership_root.map_or(first_face.pos, |root| root.face_roster_pos)),
-                "endpoint_locus_vertex",
-                Exactness::Inferred
-            ));
-            admitted!(crate::resource::derived_annotation(
-                admission.context(),
-                annotations,
-                &vertex_ids[index],
-                "point",
-            ));
-            if let Err(error) = admission.charge() {
-                return Some(Err(error));
-            }
-            let vertex = Vertex {
-                id: copied_id!(vertex_ids[index], VertexId),
-                point: copied_id!(point_ids[index], PointId),
-                tolerance: Some(MODEL_POINT_TOLERANCE),
-            };
-            if let Err(error) = admission.context().push_vec(
-                &mut ir.model.vertices,
-                vertex,
-                "catia_zero_topology_vertices",
-            ) {
-                return Some(Err(error));
-            }
-        }
-
-        for occurrence in admitted!(admission
-            .context()
-            .admit_iter(&occurrences, "catia_zero_topology_source_visits")
-            .map_err(cadmpeg_core::CodecError::from))
-        {
-            let Some(pcurve) = &occurrence.pcurve else {
-                continue;
-            };
-            admitted!(annotate(
-                admission.context(),
-                annotations,
-                &pcurve.id,
-                "zero_entity_a9_03",
-                u64::from(occurrence.support_record_ordinal),
-                "topology_pcurve",
-                Exactness::Derived
-            ));
-            admitted!(crate::resource::derived_annotation(
-                admission.context(),
-                annotations,
-                &pcurve.id,
-                "geometry",
-            ));
-            if let Err(error) = admission.charge() {
-                return Some(Err(error));
-            }
-            let pcurve = Pcurve {
-                id: copied_id!(pcurve.id, PcurveId),
-                geometry: admitted!(pcurve
-                    .geometry
-                    .try_clone_for_decode(admission.context(), "catia_zero_topology_pcurve_copy")),
-                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
-                    None,
-                    Some(cadmpeg_ir::units::FiniteVector::new(
-                        pcurve.parameter_range,
-                    )?),
-                    None,
-                ),
-            };
-            if let Err(error) = admission.context().push_vec(
-                &mut ir.model.pcurves,
-                pcurve,
-                "catia_zero_topology_pcurves",
-            ) {
-                return Some(Err(error));
-            }
-        }
-
-        let mut occurrence_vertex_pairs = Vec::new();
-        for occurrence in admitted!(admission
-            .context()
-            .admit_iter(&occurrences, "catia_zero_topology_source_visits")
-            .map_err(cadmpeg_core::CodecError::from))
-        {
-            let edge_index = *admitted!(ctx.get_hash_map(
-                &edge_for_support,
-                &occurrence.support_record_ordinal,
-                "catia_zero_topology_edge_lookup"
-            ))?;
-            let candidate = &edge_candidates[edge_index];
-            let oriented_indices =
-                endpoint_indices(candidate.model_endpoints, occurrence.oriented_endpoints)?;
-            let raw_indices =
-                endpoint_indices(occurrence.oriented_endpoints, occurrence.raw_endpoints)?;
-            // Each occurrence keeps the vertex indexes of its oriented and raw ends.
-            let vertex = |endpoint: usize| -> Option<Result<usize, cadmpeg_core::CodecError>> {
-                match ctx.get_hash_map(
-                    &vertex_for_endpoint,
-                    &(edge_index, endpoint),
-                    "catia_zero_topology_vertex_lookup",
-                ) {
-                    Ok(vertex) => vertex.copied().map(Ok),
-                    Err(error) => Some(Err(error)),
-                }
-            };
-            let pair = (
-                [
-                    admitted!(vertex(oriented_indices[0])?),
-                    admitted!(vertex(oriented_indices[1])?),
-                ],
-                [
-                    admitted!(vertex(oriented_indices[raw_indices[0]])?),
-                    admitted!(vertex(oriented_indices[raw_indices[1]])?),
-                ],
-                raw_indices == [0, 1],
-            );
-            if let Err(error) = ctx.push_scoped_vec(
-                &mut scratch,
-                &mut occurrence_vertex_pairs,
-                pair,
-                "catia_zero_topology_occurrence_vertices",
-            ) {
-                return Some(Err(error));
-            }
-        }
-
-        let mut edge_ids = Vec::new();
-        let mut coedges_by_support = HashMap::<u32, usize>::new();
-        // Each candidate pushes exactly one edge id and the loop has no `continue`,
-        // so `edge_ids[i]` is the edge of `edge_candidates[i]` by construction.
-        for candidate in admitted!(admission
-            .context()
-            .admit_iter(&edge_candidates, "catia_zero_topology_source_visits")
-            .map_err(cadmpeg_core::CodecError::from))
-        {
-            let first_occurrence_index = *admitted!(ctx.get_hash_map(
-                &occurrence_by_support,
-                &candidate.support_record_ordinals[0],
-                "catia_zero_topology_occurrence_lookup"
-            ))?;
-            let first_occurrence = &occurrences[first_occurrence_index];
-            let edge_id = admitted!(EdgeId::mint(admitted!(admission.context().format_retained(
-                format_args!(
-                    "catia:zero-entity:topology-edge#{}-{}",
-                    candidate.support_record_ordinals[0], candidate.support_record_ordinals[1]
-                ),
-                "catia_zero_topology_edge_id"
-            )))
-            .map_err(cadmpeg_core::CodecError::malformed));
-            let (oriented_curve, parameter_range) = first_occurrence.oriented_curve.as_ref()?;
-            let param_range = Some(*parameter_range);
-            let oriented_vertices = &occurrence_vertex_pairs[first_occurrence_index].0;
-            admitted!(annotate(
-                admission.context(),
-                annotations,
-                &edge_id,
-                "zero_entity_a9_03",
-                u64::from(first_occurrence.support_record_ordinal),
-                "topology_physical_edge_candidate",
-                Exactness::Inferred
-            ));
-            admitted!(crate::resource::derived_annotation(
-                admission.context(),
-                annotations,
-                &edge_id,
-                "curve",
-            ));
-            admitted!(crate::resource::derived_annotation(
-                admission.context(),
-                annotations,
-                &edge_id,
-                "start",
-            ));
-            admitted!(crate::resource::derived_annotation(
-                admission.context(),
-                annotations,
-                &edge_id,
-                "end",
-            ));
-            if param_range.is_some() {
-                admitted!(crate::resource::derived_annotation(
-                    admission.context(),
-                    annotations,
-                    &edge_id,
-                    "param_range",
-                ));
-            }
-            if let Err(error) = admission.charge() {
-                return Some(Err(error));
-            }
-            let edge = Edge {
-                id: copied_id!(edge_id, EdgeId),
-                carrier: cadmpeg_ir::topology::EdgeCarrier::new(
-                    Some(copied_id!(oriented_curve, CurveId)),
-                    param_range,
-                )
-                .ok()?,
-                start: copied_id!(vertex_ids[oriented_vertices[0]], VertexId),
-                end: copied_id!(vertex_ids[oriented_vertices[1]], VertexId),
-                tolerance: Some(MODEL_POINT_TOLERANCE),
-            };
-            if let Err(error) =
-                admission
-                    .context()
-                    .push_vec(&mut ir.model.edges, edge, "catia_zero_topology_edges")
-            {
-                return Some(Err(error));
-            }
-            admitted!(scratch.with_storage(|| ctx.push_vec(
-                &mut edge_ids,
-                edge_id,
-                "catia_zero_topology_edge_ids"
-            )));
-        }
-
-        for (run_index, run) in admitted!(admission
-            .context()
-            .admit_iter(support_runs, "catia_zero_topology_source_visits")
-            .map_err(cadmpeg_core::CodecError::from))
-        .enumerate()
-        {
-            let face = run.face.as_ref()?;
-            let face_id = &face_ids[run_index];
-            let mut loop_ids = Vec::new();
-            for loop_record in admitted!(admission
-                .context()
-                .admit_iter(
-                    match face.loops.as_deref() {
-                        Some(loops) => loops,
-                        None => &[],
-                    },
-                    "catia_zero_topology_source_visits"
-                )
-                .map_err(cadmpeg_core::CodecError::from))
-            {
-                let id = admitted!(crate::resource::compose_u32_id(
-                    admission.context(),
-                    &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-loop"),
-                    loop_record.record_ordinal,
-                    LoopId::mint,
-                    "catia_zero_topology_loop_id"
-                ));
-                if let Err(error) = ctx.push_scoped_vec(
-                    &mut scratch,
-                    &mut loop_ids,
-                    id,
-                    "catia_zero_topology_loop_ids",
-                ) {
-                    return Some(Err(error));
-                }
-            }
-            let outer_sense = match face
-                .loops
-                .as_ref()
-                .and_then(|loops| loops.first())?
-                .loop_class
-            {
-                ZeroEntityLoopClass::Outer41 => Sense::Forward,
-                ZeroEntityLoopClass::ReversedC1 => Sense::Reversed,
-                ZeroEntityLoopClass::Bound50 => return None,
-            };
-            admitted!(annotate(
-                admission.context(),
-                annotations,
-                face_id,
-                "zero_entity_a9_03",
-                u64::from(face.record_ordinal),
-                "topology_face",
-                Exactness::Inferred
-            ));
-            admitted!(crate::resource::derived_annotation(
-                admission.context(),
-                annotations,
-                face_id,
-                "shell",
-            ));
-            admitted!(crate::resource::derived_annotation(
-                admission.context(),
-                annotations,
-                face_id,
-                "surface",
-            ));
-            admitted!(crate::resource::derived_annotation(
-                admission.context(),
-                annotations,
-                face_id,
-                "sense",
-            ));
-            admitted!(crate::resource::derived_annotation(
-                admission.context(),
-                annotations,
-                face_id,
-                "loops",
-            ));
-            if let Err(error) = admission.charge() {
-                return Some(Err(error));
-            }
-            let face_record = Face {
-                id: copied_id!(face_id, FaceId),
-                shell: copied_id!(shell_id, ShellId),
-                surface: copied_id!(
-                    admitted!(ctx.get_hash_map(
-                        surface_ids_by_position,
-                        &run.carrier_pos,
-                        "catia_zero_topology_surface_lookup"
-                    ))?,
-                    SurfaceId
-                ),
-                sense: outer_sense,
-                loops: match loop_ids.split_first() {
-                    // The source states the outer boundary first.
-                    Some((outer, inner)) => {
-                        let inner = admitted!(admission.context().try_collect_vec(
-                            inner.iter().map(|id| id.try_clone_for_decode(
-                                admission.context(),
-                                "catia_zero_topology_inner_loop_id"
-                            )),
-                            "catia_zero_topology_inner_loops"
-                        ));
-                        cadmpeg_ir::topology::FaceLoops::classified(
-                            copied_id!(outer, LoopId),
-                            inner,
-                        )
-                    }
-                    None => cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
-                },
-                name: None,
-                color: None,
-                tolerance: None,
-            };
-            if let Err(error) = admission.context().push_vec(
-                &mut ir.model.faces,
-                face_record,
-                "catia_zero_topology_faces",
-            ) {
-                return Some(Err(error));
-            }
-
-            for (loop_index, loop_record) in admitted!(admission
-                .context()
-                .admit_iter(
-                    match face.loops.as_deref() {
-                        Some(loops) => loops,
-                        None => &[],
-                    },
-                    "catia_zero_topology_source_visits"
-                )
-                .map_err(cadmpeg_core::CodecError::from))
-            .enumerate()
-            {
-                let loop_id = &loop_ids[loop_index];
-                let mut coedge_ids = Vec::new();
-                let mut vertex_uses = Vec::new();
-                for (member_index, support_record_ordinal) in admitted!(admission
-                    .context()
-                    .admit_iter(
-                        &loop_record.support_record_ordinals,
-                        "catia_zero_topology_source_visits"
-                    )
-                    .map_err(cadmpeg_core::CodecError::from))
-                .enumerate()
-                {
-                    let id = admitted!(crate::resource::compose_u32_id(
+        match topology_storage.with_storage(|| {
+            (|| -> Option<Result<ZeroEntityTopologyCounts, cadmpeg_core::CodecError>> {
+                let first_face = support_runs.first()?.face.as_ref()?;
+                let body_id = if let Some(root) = ownership_root {
+                    admitted!(crate::resource::compose_u32_id(
                         admission.context(),
-                        &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-coedge"),
-                        *support_record_ordinal,
-                        CoedgeId::mint,
-                        "catia_zero_topology_coedge_id"
-                    ));
+                        &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-body"),
+                        admitted!(root.body_record_ordinal()),
+                        BodyId::mint,
+                        "catia_zero_topology_body_id"
+                    ))
+                } else {
+                    admitted!(BodyId::mint(admitted!(admission.context().format_retained(
+                        format_args!(
+                            "catia:zero-entity:topology-body#inferred-{}-{}",
+                            first_face.record_ordinal,
+                            support_runs.len()
+                        ),
+                        "catia_zero_topology_body_id"
+                    )))
+                    .map_err(cadmpeg_core::CodecError::malformed))
+                };
+                let region_id = if let Some(root) = ownership_root {
+                    admitted!(crate::resource::compose_u32_id(
+                        admission.context(),
+                        &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-region"),
+                        admitted!(root.body_record_ordinal()),
+                        RegionId::mint,
+                        "catia_zero_topology_region_id"
+                    ))
+                } else {
+                    admitted!(
+                        RegionId::mint(admitted!(admission.context().format_retained(
+                            format_args!(
+                                "catia:zero-entity:topology-region#inferred-{}-{}",
+                                first_face.record_ordinal,
+                                support_runs.len()
+                            ),
+                            "catia_zero_topology_region_id"
+                        )))
+                        .map_err(cadmpeg_core::CodecError::malformed)
+                    )
+                };
+                let shell_id = if let Some(root) = ownership_root {
+                    admitted!(crate::resource::compose_u32_id(
+                        admission.context(),
+                        &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-shell"),
+                        admitted!(root.shell_record_ordinal()),
+                        ShellId::mint,
+                        "catia_zero_topology_shell_id"
+                    ))
+                } else {
+                    admitted!(ShellId::mint(admitted!(admission.context().format_retained(
+                        format_args!(
+                            "catia:zero-entity:topology-shell#inferred-{}-{}",
+                            first_face.record_ordinal,
+                            support_runs.len()
+                        ),
+                        "catia_zero_topology_shell_id"
+                    )))
+                    .map_err(cadmpeg_core::CodecError::malformed))
+                };
+
+                let mut point_ids = Vec::new();
+                let mut vertex_ids = Vec::new();
+                let mut visits = endpoint_loci.iter().enumerate();
+                while let Some((index, _)) =
+                    admitted!(ctx.next_charged(&mut visits, "catia_zero_topology_locus_ids"))
+                {
+                    let point_id =
+                        admitted!(scratch.with_storage(|| crate::resource::compose_index_id(
+                            admission.context(),
+                            &cadmpeg_ir::identity_namespace!(
+                                "catia",
+                                "zero-entity",
+                                "topology-point"
+                            ),
+                            index,
+                            PointId::mint,
+                            "catia_zero_topology_point_id"
+                        )));
+                    let vertex_id =
+                        admitted!(scratch.with_storage(|| crate::resource::compose_index_id(
+                            admission.context(),
+                            &cadmpeg_ir::identity_namespace!(
+                                "catia",
+                                "zero-entity",
+                                "topology-vertex"
+                            ),
+                            index,
+                            VertexId::mint,
+                            "catia_zero_topology_vertex_id"
+                        )));
                     if let Err(error) = ctx.push_scoped_vec(
                         &mut scratch,
-                        &mut coedge_ids,
-                        id,
-                        "catia_zero_topology_coedge_ids",
+                        &mut point_ids,
+                        point_id,
+                        "catia_zero_topology_point_ids",
                     ) {
                         return Some(Err(error));
                     }
-                    let occurrence_index = *admitted!(ctx.get_hash_map(
-                        &occurrence_by_support,
-                        support_record_ordinal,
-                        "catia_zero_topology_occurrence_lookup"
-                    ))?;
-                    let vertex_use = AnchoredVertexUse {
-                        vertex: copied_id!(
-                            vertex_ids[occurrence_vertex_pairs[occurrence_index].0[1]],
-                            VertexId
-                        ),
-                        after: copied_id!(coedge_ids[member_index], CoedgeId),
-                        pcurves: Vec::new(),
-                    };
-                    if let Err(error) = admission.context().push_vec(
-                        &mut vertex_uses,
-                        vertex_use,
-                        "catia_zero_topology_vertex_uses",
+                    if let Err(error) = ctx.push_scoped_vec(
+                        &mut scratch,
+                        &mut vertex_ids,
+                        vertex_id,
+                        "catia_zero_topology_vertex_ids",
                     ) {
                         return Some(Err(error));
                     }
-                }
-                admitted!(annotate(
-                    admission.context(),
-                    annotations,
-                    loop_id,
-                    "zero_entity_a9_03",
-                    u64::from(loop_record.record_ordinal),
-                    "topology_loop",
-                    Exactness::Inferred
-                ));
-                admitted!(crate::resource::derived_annotation(
-                    admission.context(),
-                    annotations,
-                    loop_id,
-                    "face",
-                ));
-                admitted!(crate::resource::derived_annotation(
-                    admission.context(),
-                    annotations,
-                    loop_id,
-                    "coedges",
-                ));
-                admitted!(crate::resource::derived_annotation(
-                    admission.context(),
-                    annotations,
-                    loop_id,
-                    "vertex_uses",
-                ));
-                let ring = admitted!(cadmpeg_ir::topology::LoopRing::new(
-                    admission.context(),
-                    admitted!(admission.context().try_collect_vec(
-                        coedge_ids.iter().map(|id| id.try_clone_for_decode(
-                            admission.context(),
-                            "catia_zero_topology_ring_coedge_id"
-                        )),
-                        "catia_zero_topology_ring_coedges"
-                    )),
-                    vertex_uses
-                )
-                .map_err(cadmpeg_core::CodecError::from))
-                .ok()?;
-                if let Err(error) = admission.charge() {
-                    return Some(Err(error));
-                }
-                let loop_entity = Loop {
-                    id: copied_id!(loop_id, LoopId),
-                    face: copied_id!(face_id, FaceId),
-                    boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
-                };
-                if let Err(error) = admission.context().push_vec(
-                    &mut ir.model.loops,
-                    loop_entity,
-                    "catia_zero_topology_loops",
-                ) {
-                    return Some(Err(error));
                 }
 
-                for (member_index, support_record_ordinal) in admitted!(admission
-                    .context()
-                    .admit_iter(
-                        &loop_record.support_record_ordinals,
-                        "catia_zero_topology_source_visits"
-                    )
-                    .map_err(cadmpeg_core::CodecError::from))
-                .copied()
-                .enumerate()
+                let mut visits = endpoint_loci.iter().enumerate();
+                while let Some((index, locus)) =
+                    admitted!(ctx.next_charged(&mut visits, "catia_zero_topology_source_visits"))
                 {
-                    let occurrence_index = *admitted!(ctx.get_hash_map(
-                        &occurrence_by_support,
-                        &support_record_ordinal,
-                        "catia_zero_topology_occurrence_lookup"
-                    ))?;
-                    let occurrence = &occurrences[occurrence_index];
-                    let edge_index = *admitted!(ctx.get_hash_map(
-                        &edge_for_support,
-                        &support_record_ordinal,
-                        "catia_zero_topology_edge_lookup"
-                    ))?;
-                    let oriented_vertices = occurrence_vertex_pairs[occurrence_index].0;
-                    let edge = &edge_candidates[edge_index];
-                    let first_occurrence_index = *admitted!(ctx.get_hash_map(
-                        &occurrence_by_support,
-                        &edge.support_record_ordinals[0],
-                        "catia_zero_topology_occurrence_lookup"
-                    ))?;
-                    let first_occurrence = &occurrences[first_occurrence_index];
-                    let first_oriented_vertices = occurrence_vertex_pairs[first_occurrence_index].0;
-                    let sense = if oriented_vertices == first_oriented_vertices {
-                        Sense::Forward
-                    } else if oriented_vertices[0] == first_oriented_vertices[1]
-                        && oriented_vertices[1] == first_oriented_vertices[0]
-                    {
-                        Sense::Reversed
-                    } else {
-                        return None;
-                    };
-                    let (curve, parameter_range) = occurrence.oriented_curve.as_ref()?;
-                    let (first_curve, _) = first_occurrence.oriented_curve.as_ref()?;
-                    let use_curve = if admitted!(ctx.equal(
-                        curve,
-                        first_curve,
-                        "catia_zero_topology_use_curve_comparison"
-                    )) {
-                        None
-                    } else {
-                        Some(cadmpeg_ir::topology::CoedgeUseCurve {
-                            curve: copied_id!(curve, CurveId),
-                            parameter_range: cadmpeg_ir::topology::ParameterInterval::new(
-                                *parameter_range,
-                            )
-                            .ok()?,
-                        })
-                    };
-                    let pcurve_use = if let Some(pcurve) = occurrence.pcurve.as_ref() {
-                        let range = if occurrence_vertex_pairs[occurrence_index].2 {
-                            pcurve.parameter_range
-                        } else {
-                            [pcurve.parameter_range[1], pcurve.parameter_range[0]]
-                        };
-                        Some(PcurveUse {
-                            pcurve: copied_id!(pcurve.id, PcurveId),
-                            isoparametric: None,
-                            parameter_range: Some(
-                                cadmpeg_ir::geometry::DirectedParameterRange::new(range).ok()?,
-                            ),
-                        })
-                    } else {
-                        None
-                    };
-                    let mut pcurves = Vec::new();
-                    if let Some(pcurve_use) = pcurve_use {
-                        if let Err(error) = admission.context().push_vec(
-                            &mut pcurves,
-                            pcurve_use,
-                            "catia_zero_topology_coedge_pcurves",
-                        ) {
-                            return Some(Err(error));
-                        }
-                    }
-                    let coedge_id = copied_id!(coedge_ids[member_index], CoedgeId);
                     admitted!(annotate(
                         admission.context(),
                         annotations,
-                        &coedge_id,
+                        &point_ids[index],
                         "zero_entity_a9_03",
-                        u64::from(occurrence.support_record_ordinal),
-                        "topology_coedge",
+                        u64_from_index(
+                            ownership_root.map_or(first_face.pos, |root| root.face_roster_pos)
+                        ),
+                        "endpoint_locus_point",
                         Exactness::Inferred
                     ));
                     admitted!(crate::resource::derived_annotation(
                         admission.context(),
                         annotations,
-                        &coedge_id,
-                        "owner_loop",
+                        &point_ids[index],
+                        "position",
+                    ));
+                    if let Err(error) = admission.charge() {
+                        return Some(Err(error));
+                    }
+                    if let Err(error) = admission.context().push_vec(
+                        &mut ir.model.points,
+                        Point::new(
+                            copied_id!(point_ids[index], PointId),
+                            locus.representative_point,
+                            None,
+                        ),
+                        "catia_zero_topology_points",
+                    ) {
+                        return Some(Err(error));
+                    }
+                    admitted!(annotate(
+                        admission.context(),
+                        annotations,
+                        &vertex_ids[index],
+                        "zero_entity_a9_03",
+                        u64_from_index(
+                            ownership_root.map_or(first_face.pos, |root| root.face_roster_pos)
+                        ),
+                        "endpoint_locus_vertex",
+                        Exactness::Inferred
                     ));
                     admitted!(crate::resource::derived_annotation(
                         admission.context(),
                         annotations,
-                        &coedge_id,
-                        "edge",
+                        &vertex_ids[index],
+                        "point",
+                    ));
+                    if let Err(error) = admission.charge() {
+                        return Some(Err(error));
+                    }
+                    let vertex = Vertex {
+                        id: copied_id!(vertex_ids[index], VertexId),
+                        point: copied_id!(point_ids[index], PointId),
+                        tolerance: Some(MODEL_POINT_TOLERANCE),
+                    };
+                    if let Err(error) = admission.context().push_vec(
+                        &mut ir.model.vertices,
+                        vertex,
+                        "catia_zero_topology_vertices",
+                    ) {
+                        return Some(Err(error));
+                    }
+                }
+
+                let mut visits = occurrences.iter();
+                while let Some(occurrence) =
+                    admitted!(ctx.next_charged(&mut visits, "catia_zero_topology_source_visits"))
+                {
+                    let Some(pcurve) = &occurrence.pcurve else {
+                        continue;
+                    };
+                    admitted!(annotate(
+                        admission.context(),
+                        annotations,
+                        &pcurve.id,
+                        "zero_entity_a9_03",
+                        u64::from(occurrence.support_record_ordinal),
+                        "topology_pcurve",
+                        Exactness::Derived
                     ));
                     admitted!(crate::resource::derived_annotation(
                         admission.context(),
                         annotations,
-                        &coedge_id,
-                        "radial_next",
+                        &pcurve.id,
+                        "geometry",
+                    ));
+                    if let Err(error) = admission.charge() {
+                        return Some(Err(error));
+                    }
+                    let pcurve = Pcurve {
+                        id: copied_id!(pcurve.id, PcurveId),
+                        geometry: admitted!(pcurve.geometry.try_clone_for_decode(
+                            admission.context(),
+                            "catia_zero_topology_pcurve_copy"
+                        )),
+                        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
+                            None,
+                            Some(cadmpeg_ir::units::FiniteVector::new(
+                                pcurve.parameter_range,
+                            )?),
+                            None,
+                        ),
+                    };
+                    if let Err(error) = admission.context().push_vec(
+                        &mut ir.model.pcurves,
+                        pcurve,
+                        "catia_zero_topology_pcurves",
+                    ) {
+                        return Some(Err(error));
+                    }
+                }
+
+                let mut occurrence_vertex_pairs = Vec::new();
+                let mut visits = occurrences.iter();
+                while let Some(occurrence) =
+                    admitted!(ctx.next_charged(&mut visits, "catia_zero_topology_source_visits"))
+                {
+                    let edge_index = *admitted!(ctx.get_hash_map(
+                        &edge_for_support,
+                        &occurrence.support_record_ordinal,
+                        "catia_zero_topology_edge_lookup"
+                    ))?;
+                    let candidate = &edge_candidates[edge_index];
+                    let oriented_indices =
+                        endpoint_indices(candidate.model_endpoints, occurrence.oriented_endpoints)?;
+                    let raw_indices =
+                        endpoint_indices(occurrence.oriented_endpoints, occurrence.raw_endpoints)?;
+                    // Each occurrence keeps the vertex indexes of its oriented and raw ends.
+                    let vertex =
+                        |endpoint: usize| -> Option<Result<usize, cadmpeg_core::CodecError>> {
+                            match ctx.get_hash_map(
+                                &vertex_for_endpoint,
+                                &(edge_index, endpoint),
+                                "catia_zero_topology_vertex_lookup",
+                            ) {
+                                Ok(vertex) => vertex.copied().map(Ok),
+                                Err(error) => Some(Err(error)),
+                            }
+                        };
+                    let pair = (
+                        [
+                            admitted!(vertex(oriented_indices[0])?),
+                            admitted!(vertex(oriented_indices[1])?),
+                        ],
+                        [
+                            admitted!(vertex(oriented_indices[raw_indices[0]])?),
+                            admitted!(vertex(oriented_indices[raw_indices[1]])?),
+                        ],
+                        raw_indices == [0, 1],
+                    );
+                    if let Err(error) = ctx.push_scoped_vec(
+                        &mut scratch,
+                        &mut occurrence_vertex_pairs,
+                        pair,
+                        "catia_zero_topology_occurrence_vertices",
+                    ) {
+                        return Some(Err(error));
+                    }
+                }
+
+                let mut edge_ids = Vec::new();
+                let mut coedges_by_support = HashMap::<u32, usize>::new();
+                // Each candidate pushes exactly one edge id and the loop has no `continue`,
+                // so `edge_ids[i]` is the edge of `edge_candidates[i]` by construction.
+                let mut visits = edge_candidates.iter();
+                while let Some(candidate) =
+                    admitted!(ctx.next_charged(&mut visits, "catia_zero_topology_source_visits"))
+                {
+                    let first_occurrence_index = *admitted!(ctx.get_hash_map(
+                        &occurrence_by_support,
+                        &candidate.support_record_ordinals[0],
+                        "catia_zero_topology_occurrence_lookup"
+                    ))?;
+                    let first_occurrence = &occurrences[first_occurrence_index];
+                    let edge_id = admitted!(scratch.with_storage(|| EdgeId::mint(
+                        admission.context().format_retained(
+                            format_args!(
+                                "catia:zero-entity:topology-edge#{}-{}",
+                                candidate.support_record_ordinals[0],
+                                candidate.support_record_ordinals[1]
+                            ),
+                            "catia_zero_topology_edge_id"
+                        )?
+                    )
+                    .map_err(cadmpeg_core::CodecError::malformed)));
+                    let (oriented_curve, parameter_range) =
+                        first_occurrence.oriented_curve.as_ref()?;
+                    let param_range = Some(*parameter_range);
+                    let oriented_vertices = &occurrence_vertex_pairs[first_occurrence_index].0;
+                    admitted!(annotate(
+                        admission.context(),
+                        annotations,
+                        &edge_id,
+                        "zero_entity_a9_03",
+                        u64::from(first_occurrence.support_record_ordinal),
+                        "topology_physical_edge_candidate",
+                        Exactness::Inferred
                     ));
                     admitted!(crate::resource::derived_annotation(
                         admission.context(),
                         annotations,
-                        &coedge_id,
-                        "sense",
+                        &edge_id,
+                        "curve",
                     ));
                     admitted!(crate::resource::derived_annotation(
                         admission.context(),
                         annotations,
-                        &coedge_id,
-                        "pcurves",
+                        &edge_id,
+                        "start",
                     ));
-                    if use_curve.is_some() {
+                    admitted!(crate::resource::derived_annotation(
+                        admission.context(),
+                        annotations,
+                        &edge_id,
+                        "end",
+                    ));
+                    if param_range.is_some() {
                         admitted!(crate::resource::derived_annotation(
                             admission.context(),
                             annotations,
-                            &coedge_id,
-                            "use_curve",
-                        ));
-                        admitted!(crate::resource::derived_annotation(
-                            admission.context(),
-                            annotations,
-                            &coedge_id,
-                            "use_curve_parameter_range",
+                            &edge_id,
+                            "param_range",
                         ));
                     }
                     if let Err(error) = admission.charge() {
                         return Some(Err(error));
                     }
-                    let coedge = Coedge {
-                        id: copied_id!(coedge_id, CoedgeId),
-                        owner_loop: copied_id!(loop_id, LoopId),
-                        edge: copied_id!(edge_ids[edge_index], EdgeId),
-                        radial_next: copied_id!(coedge_id, CoedgeId),
-                        sense,
-                        pcurves,
-                        use_curve,
+                    let edge = Edge {
+                        id: copied_id!(edge_id, EdgeId),
+                        carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                            Some(copied_id!(oriented_curve, CurveId)),
+                            param_range,
+                        )
+                        .ok()?,
+                        start: copied_id!(vertex_ids[oriented_vertices[0]], VertexId),
+                        end: copied_id!(vertex_ids[oriented_vertices[1]], VertexId),
+                        tolerance: Some(MODEL_POINT_TOLERANCE),
                     };
-                    let coedge_position = ir.model.coedges.len();
                     if let Err(error) = admission.context().push_vec(
-                        &mut ir.model.coedges,
-                        coedge,
-                        "catia_zero_topology_coedges",
+                        &mut ir.model.edges,
+                        edge,
+                        "catia_zero_topology_edges",
                     ) {
                         return Some(Err(error));
                     }
-                    if let Err(error) = scratch.with_storage(|| {
-                        ctx.insert_hash_map(
-                            &mut coedges_by_support,
-                            support_record_ordinal,
-                            coedge_position,
-                            "catia_zero_topology_coedges_by_support",
-                        )
-                    }) {
+                    admitted!(scratch.with_storage(|| ctx.push_vec(
+                        &mut edge_ids,
+                        edge_id,
+                        "catia_zero_topology_edge_ids"
+                    )));
+                }
+
+                let mut visits = support_runs.iter().enumerate();
+                while let Some((run_index, run)) =
+                    admitted!(ctx.next_charged(&mut visits, "catia_zero_topology_source_visits"))
+                {
+                    let face = run.face.as_ref()?;
+                    let face_id = &face_ids[run_index];
+                    let mut loop_ids = Vec::new();
+                    let mut visits = (match face.loops.as_deref() {
+                        Some(loops) => loops,
+                        None => &[],
+                    })
+                    .iter();
+                    while let Some(loop_record) = admitted!(
+                        ctx.next_charged(&mut visits, "catia_zero_topology_source_visits")
+                    ) {
+                        let id =
+                            admitted!(scratch.with_storage(|| crate::resource::compose_u32_id(
+                                admission.context(),
+                                &cadmpeg_ir::identity_namespace!(
+                                    "catia",
+                                    "zero-entity",
+                                    "topology-loop"
+                                ),
+                                loop_record.record_ordinal,
+                                LoopId::mint,
+                                "catia_zero_topology_loop_id"
+                            )));
+                        if let Err(error) = ctx.push_scoped_vec(
+                            &mut scratch,
+                            &mut loop_ids,
+                            id,
+                            "catia_zero_topology_loop_ids",
+                        ) {
+                            return Some(Err(error));
+                        }
+                    }
+                    let outer_sense = match face
+                        .loops
+                        .as_ref()
+                        .and_then(|loops| loops.first())?
+                        .loop_class
+                    {
+                        ZeroEntityLoopClass::Outer41 => Sense::Forward,
+                        ZeroEntityLoopClass::ReversedC1 => Sense::Reversed,
+                        ZeroEntityLoopClass::Bound50 => return None,
+                    };
+                    admitted!(annotate(
+                        admission.context(),
+                        annotations,
+                        face_id,
+                        "zero_entity_a9_03",
+                        u64::from(face.record_ordinal),
+                        "topology_face",
+                        Exactness::Inferred
+                    ));
+                    admitted!(crate::resource::derived_annotation(
+                        admission.context(),
+                        annotations,
+                        face_id,
+                        "shell",
+                    ));
+                    admitted!(crate::resource::derived_annotation(
+                        admission.context(),
+                        annotations,
+                        face_id,
+                        "surface",
+                    ));
+                    admitted!(crate::resource::derived_annotation(
+                        admission.context(),
+                        annotations,
+                        face_id,
+                        "sense",
+                    ));
+                    admitted!(crate::resource::derived_annotation(
+                        admission.context(),
+                        annotations,
+                        face_id,
+                        "loops",
+                    ));
+                    if let Err(error) = admission.charge() {
                         return Some(Err(error));
                     }
+                    let face_record = Face {
+                        id: copied_id!(face_id, FaceId),
+                        shell: copied_id!(shell_id, ShellId),
+                        surface: copied_id!(
+                            &ir.model.surfaces[*admitted!(ctx.get_hash_map(
+                                surface_indices_by_position,
+                                &run.carrier_pos,
+                                "catia_zero_topology_surface_lookup"
+                            ))?]
+                            .id,
+                            SurfaceId
+                        ),
+                        sense: outer_sense,
+                        loops: match loop_ids.split_first() {
+                            // The source states the outer boundary first.
+                            Some((outer, inner)) => {
+                                let inner = admitted!(admission.context().try_collect_vec(
+                                    inner.iter().map(|id| id.try_clone_for_decode(
+                                        admission.context(),
+                                        "catia_zero_topology_inner_loop_id"
+                                    )),
+                                    "catia_zero_topology_inner_loops"
+                                ));
+                                cadmpeg_ir::topology::FaceLoops::classified(
+                                    copied_id!(outer, LoopId),
+                                    inner,
+                                )
+                            }
+                            None => cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+                        },
+                        name: None,
+                        color: None,
+                        tolerance: None,
+                    };
+                    if let Err(error) = admission.context().push_vec(
+                        &mut ir.model.faces,
+                        face_record,
+                        "catia_zero_topology_faces",
+                    ) {
+                        return Some(Err(error));
+                    }
+
+                    let mut visits = (match face.loops.as_deref() {
+                        Some(loops) => loops,
+                        None => &[],
+                    })
+                    .iter()
+                    .enumerate();
+                    while let Some((loop_index, loop_record)) = admitted!(
+                        ctx.next_charged(&mut visits, "catia_zero_topology_source_visits")
+                    ) {
+                        let loop_id = &loop_ids[loop_index];
+                        let mut coedge_ids = Vec::new();
+                        let mut vertex_uses = Vec::new();
+                        let mut visits = (loop_record.support_record_ordinals).iter().enumerate();
+                        while let Some((member_index, support_record_ordinal)) = admitted!(
+                            ctx.next_charged(&mut visits, "catia_zero_topology_source_visits")
+                        ) {
+                            let id =
+                                admitted!(scratch.with_storage(
+                                    || crate::resource::compose_u32_id(
+                                        admission.context(),
+                                        &cadmpeg_ir::identity_namespace!(
+                                            "catia",
+                                            "zero-entity",
+                                            "topology-coedge"
+                                        ),
+                                        *support_record_ordinal,
+                                        CoedgeId::mint,
+                                        "catia_zero_topology_coedge_id"
+                                    )
+                                ));
+                            if let Err(error) = ctx.push_scoped_vec(
+                                &mut scratch,
+                                &mut coedge_ids,
+                                id,
+                                "catia_zero_topology_coedge_ids",
+                            ) {
+                                return Some(Err(error));
+                            }
+                            let occurrence_index = *admitted!(ctx.get_hash_map(
+                                &occurrence_by_support,
+                                support_record_ordinal,
+                                "catia_zero_topology_occurrence_lookup"
+                            ))?;
+                            let vertex_use = AnchoredVertexUse {
+                                vertex: copied_id!(
+                                    vertex_ids[occurrence_vertex_pairs[occurrence_index].0[1]],
+                                    VertexId
+                                ),
+                                after: copied_id!(coedge_ids[member_index], CoedgeId),
+                                pcurves: Vec::new(),
+                            };
+                            if let Err(error) = admission.context().push_vec(
+                                &mut vertex_uses,
+                                vertex_use,
+                                "catia_zero_topology_vertex_uses",
+                            ) {
+                                return Some(Err(error));
+                            }
+                        }
+                        admitted!(annotate(
+                            admission.context(),
+                            annotations,
+                            loop_id,
+                            "zero_entity_a9_03",
+                            u64::from(loop_record.record_ordinal),
+                            "topology_loop",
+                            Exactness::Inferred
+                        ));
+                        admitted!(crate::resource::derived_annotation(
+                            admission.context(),
+                            annotations,
+                            loop_id,
+                            "face",
+                        ));
+                        admitted!(crate::resource::derived_annotation(
+                            admission.context(),
+                            annotations,
+                            loop_id,
+                            "coedges",
+                        ));
+                        admitted!(crate::resource::derived_annotation(
+                            admission.context(),
+                            annotations,
+                            loop_id,
+                            "vertex_uses",
+                        ));
+                        let ring = admitted!(cadmpeg_ir::topology::LoopRing::new(
+                            admission.context(),
+                            admitted!(admission.context().try_collect_vec(
+                                coedge_ids.iter().map(|id| id.try_clone_for_decode(
+                                    admission.context(),
+                                    "catia_zero_topology_ring_coedge_id"
+                                )),
+                                "catia_zero_topology_ring_coedges"
+                            )),
+                            vertex_uses
+                        )
+                        .map_err(cadmpeg_core::CodecError::from))
+                        .ok()?;
+                        if let Err(error) = admission.charge() {
+                            return Some(Err(error));
+                        }
+                        let loop_entity = Loop {
+                            id: copied_id!(loop_id, LoopId),
+                            face: copied_id!(face_id, FaceId),
+                            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
+                        };
+                        if let Err(error) = admission.context().push_vec(
+                            &mut ir.model.loops,
+                            loop_entity,
+                            "catia_zero_topology_loops",
+                        ) {
+                            return Some(Err(error));
+                        }
+
+                        let mut visits = (loop_record.support_record_ordinals)
+                            .iter()
+                            .copied()
+                            .enumerate();
+                        while let Some((member_index, support_record_ordinal)) = admitted!(
+                            ctx.next_charged(&mut visits, "catia_zero_topology_source_visits")
+                        ) {
+                            let occurrence_index = *admitted!(ctx.get_hash_map(
+                                &occurrence_by_support,
+                                &support_record_ordinal,
+                                "catia_zero_topology_occurrence_lookup"
+                            ))?;
+                            let occurrence = &occurrences[occurrence_index];
+                            let edge_index = *admitted!(ctx.get_hash_map(
+                                &edge_for_support,
+                                &support_record_ordinal,
+                                "catia_zero_topology_edge_lookup"
+                            ))?;
+                            let oriented_vertices = occurrence_vertex_pairs[occurrence_index].0;
+                            let edge = &edge_candidates[edge_index];
+                            let first_occurrence_index = *admitted!(ctx.get_hash_map(
+                                &occurrence_by_support,
+                                &edge.support_record_ordinals[0],
+                                "catia_zero_topology_occurrence_lookup"
+                            ))?;
+                            let first_occurrence = &occurrences[first_occurrence_index];
+                            let first_oriented_vertices =
+                                occurrence_vertex_pairs[first_occurrence_index].0;
+                            let sense = if oriented_vertices == first_oriented_vertices {
+                                Sense::Forward
+                            } else if oriented_vertices[0] == first_oriented_vertices[1]
+                                && oriented_vertices[1] == first_oriented_vertices[0]
+                            {
+                                Sense::Reversed
+                            } else {
+                                return None;
+                            };
+                            let (curve, parameter_range) = occurrence.oriented_curve.as_ref()?;
+                            let (first_curve, _) = first_occurrence.oriented_curve.as_ref()?;
+                            let use_curve = if admitted!(ctx.equal(
+                                curve,
+                                first_curve,
+                                "catia_zero_topology_use_curve_comparison"
+                            )) {
+                                None
+                            } else {
+                                Some(cadmpeg_ir::topology::CoedgeUseCurve {
+                                    curve: copied_id!(curve, CurveId),
+                                    parameter_range: cadmpeg_ir::topology::ParameterInterval::new(
+                                        *parameter_range,
+                                    )
+                                    .ok()?,
+                                })
+                            };
+                            let pcurve_use = if let Some(pcurve) = occurrence.pcurve.as_ref() {
+                                let range = if occurrence_vertex_pairs[occurrence_index].2 {
+                                    pcurve.parameter_range
+                                } else {
+                                    [pcurve.parameter_range[1], pcurve.parameter_range[0]]
+                                };
+                                Some(PcurveUse {
+                                    pcurve: copied_id!(pcurve.id, PcurveId),
+                                    isoparametric: None,
+                                    parameter_range: Some(
+                                        cadmpeg_ir::geometry::DirectedParameterRange::new(range)
+                                            .ok()?,
+                                    ),
+                                })
+                            } else {
+                                None
+                            };
+                            let mut pcurves = Vec::new();
+                            if let Some(pcurve_use) = pcurve_use {
+                                if let Err(error) = admission.context().push_vec(
+                                    &mut pcurves,
+                                    pcurve_use,
+                                    "catia_zero_topology_coedge_pcurves",
+                                ) {
+                                    return Some(Err(error));
+                                }
+                            }
+                            let coedge_id = &coedge_ids[member_index];
+                            admitted!(annotate(
+                                admission.context(),
+                                annotations,
+                                coedge_id,
+                                "zero_entity_a9_03",
+                                u64::from(occurrence.support_record_ordinal),
+                                "topology_coedge",
+                                Exactness::Inferred
+                            ));
+                            admitted!(crate::resource::derived_annotation(
+                                admission.context(),
+                                annotations,
+                                coedge_id,
+                                "owner_loop",
+                            ));
+                            admitted!(crate::resource::derived_annotation(
+                                admission.context(),
+                                annotations,
+                                coedge_id,
+                                "edge",
+                            ));
+                            admitted!(crate::resource::derived_annotation(
+                                admission.context(),
+                                annotations,
+                                coedge_id,
+                                "radial_next",
+                            ));
+                            admitted!(crate::resource::derived_annotation(
+                                admission.context(),
+                                annotations,
+                                coedge_id,
+                                "sense",
+                            ));
+                            admitted!(crate::resource::derived_annotation(
+                                admission.context(),
+                                annotations,
+                                coedge_id,
+                                "pcurves",
+                            ));
+                            if use_curve.is_some() {
+                                admitted!(crate::resource::derived_annotation(
+                                    admission.context(),
+                                    annotations,
+                                    coedge_id,
+                                    "use_curve",
+                                ));
+                                admitted!(crate::resource::derived_annotation(
+                                    admission.context(),
+                                    annotations,
+                                    coedge_id,
+                                    "use_curve_parameter_range",
+                                ));
+                            }
+                            if let Err(error) = admission.charge() {
+                                return Some(Err(error));
+                            }
+                            let coedge = Coedge {
+                                id: copied_id!(coedge_id, CoedgeId),
+                                owner_loop: copied_id!(loop_id, LoopId),
+                                edge: copied_id!(edge_ids[edge_index], EdgeId),
+                                radial_next: copied_id!(coedge_id, CoedgeId),
+                                sense,
+                                pcurves,
+                                use_curve,
+                            };
+                            let coedge_position = ir.model.coedges.len();
+                            if let Err(error) = admission.context().push_vec(
+                                &mut ir.model.coedges,
+                                coedge,
+                                "catia_zero_topology_coedges",
+                            ) {
+                                return Some(Err(error));
+                            }
+                            if let Err(error) = scratch.with_storage(|| {
+                                ctx.insert_hash_map(
+                                    &mut coedges_by_support,
+                                    support_record_ordinal,
+                                    coedge_position,
+                                    "catia_zero_topology_coedges_by_support",
+                                )
+                            }) {
+                                return Some(Err(error));
+                            }
+                        }
+                    }
                 }
-            }
-        }
 
-        for candidate in admitted!(admission
-            .context()
-            .admit_iter(&edge_candidates, "catia_zero_topology_source_visits")
-            .map_err(cadmpeg_core::CodecError::from))
-        {
-            let first_index = *admitted!(ctx.get_hash_map(
-                &coedges_by_support,
-                &candidate.support_record_ordinals[0],
-                "catia_zero_topology_radial_coedge_lookup"
-            ))?;
-            let second_index = *admitted!(ctx.get_hash_map(
-                &coedges_by_support,
-                &candidate.support_record_ordinals[1],
-                "catia_zero_topology_radial_coedge_lookup"
-            ))?;
-            let second_copy = copied_id!(ir.model.coedges.get(second_index)?.id, CoedgeId);
-            ir.model.coedges.get_mut(first_index)?.radial_next = second_copy;
-            let first_copy = copied_id!(ir.model.coedges.get(first_index)?.id, CoedgeId);
-            ir.model.coedges.get_mut(second_index)?.radial_next = first_copy;
-        }
+                let mut visits = edge_candidates.iter();
+                while let Some(candidate) =
+                    admitted!(ctx.next_charged(&mut visits, "catia_zero_topology_source_visits"))
+                {
+                    let first_index = *admitted!(ctx.get_hash_map(
+                        &coedges_by_support,
+                        &candidate.support_record_ordinals[0],
+                        "catia_zero_topology_radial_coedge_lookup"
+                    ))?;
+                    let second_index = *admitted!(ctx.get_hash_map(
+                        &coedges_by_support,
+                        &candidate.support_record_ordinals[1],
+                        "catia_zero_topology_radial_coedge_lookup"
+                    ))?;
+                    let second_copy = copied_id!(ir.model.coedges.get(second_index)?.id, CoedgeId);
+                    ir.model.coedges.get_mut(first_index)?.radial_next = second_copy;
+                    let first_copy = copied_id!(ir.model.coedges.get(first_index)?.id, CoedgeId);
+                    ir.model.coedges.get_mut(second_index)?.radial_next = first_copy;
+                }
 
-        admitted!(annotate(
-            admission.context(),
-            annotations,
-            &body_id,
-            "zero_entity_a9_03",
-            u64_from_index(ownership_root.map_or(first_face.pos, |root| root.body_pos)),
-            "topology_body",
-            Exactness::Derived
-        ));
-        admitted!(crate::resource::derived_annotation(
-            admission.context(),
-            annotations,
-            &body_id,
-            "kind",
-        ));
-        admitted!(crate::resource::derived_annotation(
-            admission.context(),
-            annotations,
-            &body_id,
-            "regions",
-        ));
-        if let Err(error) = admission.charge() {
-            return Some(Err(error));
-        }
-        let mut regions = Vec::new();
-        if let Err(error) = admission.context().push_vec(
-            &mut regions,
-            copied_id!(region_id, RegionId),
-            "catia_zero_topology_body_regions",
-        ) {
-            return Some(Err(error));
-        }
-        let body = Body {
-            id: copied_id!(body_id, BodyId),
-            kind: BodyKind::Solid,
-            regions,
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        };
-        if let Err(error) =
-            admission
-                .context()
-                .push_vec(&mut ir.model.bodies, body, "catia_zero_topology_bodies")
-        {
-            return Some(Err(error));
-        }
-        admitted!(annotate(
-            admission.context(),
-            annotations,
-            &region_id,
-            "zero_entity_a9_03",
-            u64_from_index(ownership_root.map_or(first_face.pos, |root| root.shell_pos)),
-            "topology_region",
-            Exactness::Derived
-        ));
-        admitted!(crate::resource::derived_annotation(
-            admission.context(),
-            annotations,
-            &region_id,
-            "body",
-        ));
-        admitted!(crate::resource::derived_annotation(
-            admission.context(),
-            annotations,
-            &region_id,
-            "shells",
-        ));
-        if let Err(error) = admission.charge() {
-            return Some(Err(error));
-        }
-        let mut shells = Vec::new();
-        if let Err(error) = admission.context().push_vec(
-            &mut shells,
-            copied_id!(shell_id, ShellId),
-            "catia_zero_topology_region_shells",
-        ) {
-            return Some(Err(error));
-        }
-        let region = Region {
-            id: copied_id!(region_id, RegionId),
-            body: body_id,
-            shells,
-        };
-        if let Err(error) = admission.context().push_vec(
-            &mut ir.model.regions,
-            region,
-            "catia_zero_topology_regions",
-        ) {
-            return Some(Err(error));
-        }
-        admitted!(annotate(
-            admission.context(),
-            annotations,
-            &shell_id,
-            "zero_entity_a9_03",
-            u64_from_index(ownership_root.map_or(first_face.pos, |root| root.shell_pos)),
-            "topology_shell",
-            Exactness::Derived
-        ));
-        admitted!(crate::resource::derived_annotation(
-            admission.context(),
-            annotations,
-            &shell_id,
-            "region",
-        ));
-        admitted!(crate::resource::derived_annotation(
-            admission.context(),
-            annotations,
-            &shell_id,
-            "faces",
-        ));
-        if let Err(error) = admission.charge() {
-            return Some(Err(error));
-        }
-        let shell = Shell::new(shell_id, region_id, face_ids, Vec::new(), Vec::new()).ok()?;
-        if let Err(error) =
-            admission
-                .context()
-                .push_vec(&mut ir.model.shells, shell, "catia_zero_topology_shells")
-        {
-            return Some(Err(error));
-        }
+                admitted!(annotate(
+                    admission.context(),
+                    annotations,
+                    &body_id,
+                    "zero_entity_a9_03",
+                    u64_from_index(ownership_root.map_or(first_face.pos, |root| root.body_pos)),
+                    "topology_body",
+                    Exactness::Derived
+                ));
+                admitted!(crate::resource::derived_annotation(
+                    admission.context(),
+                    annotations,
+                    &body_id,
+                    "kind",
+                ));
+                admitted!(crate::resource::derived_annotation(
+                    admission.context(),
+                    annotations,
+                    &body_id,
+                    "regions",
+                ));
+                if let Err(error) = admission.charge() {
+                    return Some(Err(error));
+                }
+                let mut regions = Vec::new();
+                if let Err(error) = admission.context().push_vec(
+                    &mut regions,
+                    copied_id!(region_id, RegionId),
+                    "catia_zero_topology_body_regions",
+                ) {
+                    return Some(Err(error));
+                }
+                let body = Body {
+                    id: copied_id!(body_id, BodyId),
+                    kind: BodyKind::Solid,
+                    regions,
+                    transform: None,
+                    name: None,
+                    color: None,
+                    visible: None,
+                };
+                if let Err(error) = admission.context().push_vec(
+                    &mut ir.model.bodies,
+                    body,
+                    "catia_zero_topology_bodies",
+                ) {
+                    return Some(Err(error));
+                }
+                admitted!(annotate(
+                    admission.context(),
+                    annotations,
+                    &region_id,
+                    "zero_entity_a9_03",
+                    u64_from_index(ownership_root.map_or(first_face.pos, |root| root.shell_pos)),
+                    "topology_region",
+                    Exactness::Derived
+                ));
+                admitted!(crate::resource::derived_annotation(
+                    admission.context(),
+                    annotations,
+                    &region_id,
+                    "body",
+                ));
+                admitted!(crate::resource::derived_annotation(
+                    admission.context(),
+                    annotations,
+                    &region_id,
+                    "shells",
+                ));
+                if let Err(error) = admission.charge() {
+                    return Some(Err(error));
+                }
+                let mut shells = Vec::new();
+                if let Err(error) = admission.context().push_vec(
+                    &mut shells,
+                    copied_id!(shell_id, ShellId),
+                    "catia_zero_topology_region_shells",
+                ) {
+                    return Some(Err(error));
+                }
+                let region = Region {
+                    id: copied_id!(region_id, RegionId),
+                    body: body_id,
+                    shells,
+                };
+                if let Err(error) = admission.context().push_vec(
+                    &mut ir.model.regions,
+                    region,
+                    "catia_zero_topology_regions",
+                ) {
+                    return Some(Err(error));
+                }
+                admitted!(annotate(
+                    admission.context(),
+                    annotations,
+                    &shell_id,
+                    "zero_entity_a9_03",
+                    u64_from_index(ownership_root.map_or(first_face.pos, |root| root.shell_pos)),
+                    "topology_shell",
+                    Exactness::Derived
+                ));
+                admitted!(crate::resource::derived_annotation(
+                    admission.context(),
+                    annotations,
+                    &shell_id,
+                    "region",
+                ));
+                admitted!(crate::resource::derived_annotation(
+                    admission.context(),
+                    annotations,
+                    &shell_id,
+                    "faces",
+                ));
+                if let Err(error) = admission.charge() {
+                    return Some(Err(error));
+                }
+                let shell =
+                    Shell::new(shell_id, region_id, face_ids, Vec::new(), Vec::new()).ok()?;
+                if let Err(error) = admission.context().push_vec(
+                    &mut ir.model.shells,
+                    shell,
+                    "catia_zero_topology_shells",
+                ) {
+                    return Some(Err(error));
+                }
 
-        Some(Ok(ZeroEntityTopologyCounts {
-            bodies: 1,
-            faces: support_runs.len(),
-            loops: admitted!(admission
-                .context()
-                .admit_iter(support_runs, "catia_zero_topology_source_visits")
-                .map_err(cadmpeg_core::CodecError::from))
-            .map(|run| {
-                run.face
-                    .as_ref()
-                    .map_or(0, |face| face.loops.as_ref().map_or(0, Vec::len))
-            })
-            .sum(),
-            coedges: occurrences.len(),
-            edges: edge_candidates.len(),
-            vertices: endpoint_loci.len(),
-            points: endpoint_loci.len(),
-            pcurves: admitted!(admission
-                .context()
-                .admit_iter(&occurrences, "catia_zero_topology_source_visits")
-                .map_err(cadmpeg_core::CodecError::from))
-            .filter(|occurrence| occurrence.pcurve.is_some())
-            .count(),
-        }))
+                Some(Ok(ZeroEntityTopologyCounts {
+                    bodies: 1,
+                    faces: support_runs.len(),
+                    loops: admitted!(admission
+                        .context()
+                        .admit_iter(support_runs, "catia_zero_topology_source_visits")
+                        .map_err(cadmpeg_core::CodecError::from))
+                    .map(|run| {
+                        run.face
+                            .as_ref()
+                            .map_or(0, |face| face.loops.as_ref().map_or(0, Vec::len))
+                    })
+                    .sum(),
+                    coedges: occurrences.len(),
+                    edges: edge_candidates.len(),
+                    vertices: endpoint_loci.len(),
+                    points: endpoint_loci.len(),
+                    pcurves: admitted!(admission
+                        .context()
+                        .admit_iter(&occurrences, "catia_zero_topology_source_visits")
+                        .map_err(cadmpeg_core::CodecError::from))
+                    .filter(|occurrence| occurrence.pcurve.is_some())
+                    .count(),
+                }))
+            })()
+            .transpose()
+        }) {
+            Ok(counts) => counts.map(Ok),
+            Err(error) => Some(Err(error)),
+        }
     })()
     .transpose()
 }
@@ -1619,6 +1655,7 @@ fn endpoint_indices(reference: [FinitePoint3; 2], target: [FinitePoint3; 2]) -> 
 
 #[cfg(test)]
 mod tests {
+    mod candidate_storage;
     mod work_admission;
     use std::collections::HashMap;
 
@@ -1757,7 +1794,7 @@ mod tests {
         ];
         let support_runs = vec![run(1, 10, points, false)];
         let surface_id = SurfaceId::mint("catia:test:surface#0").expect("identity grammar");
-        let surface_ids = HashMap::from([(100, surface_id.clone())]);
+        let surface_ids = HashMap::from([(100, 0usize)]);
         let curve_ids = HashMap::new();
         let run_with = |ctx: &DecodeContext<'_>| {
             let mut ir = CadIr::empty();
@@ -1775,19 +1812,42 @@ mod tests {
             });
             let mut annotations = AnnotationBuilder::new();
             let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-            transfer_closed_face_topology(
-                &mut admission,
-                &mut ir,
-                &mut annotations,
-                ZeroEntityClosedTopology {
-                    support_runs: &support_runs,
-                    surface_ids_by_position: &surface_ids,
-                    support_curve_ids: &curve_ids,
-                    ownership_root: None,
-                },
-                &WorkBudget::new(100),
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
+            {
+                let mut candidate_storage = ctx
+                    .provisional_retained("closed topology test candidate")
+                    .expect("scope");
+                let outcome = transfer_closed_face_topology(
+                    &mut admission,
+                    &mut ir,
+                    &mut annotations,
+                    ZeroEntityClosedTopology {
+                        support_runs: &support_runs,
+                        surface_indices_by_position: &surface_ids,
+                        support_curve_ids: &curve_ids,
+                        ownership_root: None,
+                    },
+                    &WorkBudget::new(100),
+                    &mut crate::nurbs::LaneRefusals::new(),
+                    &mut candidate_storage,
+                );
+                if outcome.is_ok() {
+                    candidate_storage
+                        .commit()
+                        .expect("accepted mutation storage");
+                } else {
+                    ir.model.bodies = Vec::new();
+                    ir.model.regions = Vec::new();
+                    ir.model.shells = Vec::new();
+                    ir.model.faces = Vec::new();
+                    ir.model.loops = Vec::new();
+                    ir.model.coedges = Vec::new();
+                    ir.model.edges = Vec::new();
+                    ir.model.vertices = Vec::new();
+                    ir.model.points = Vec::new();
+                    ir.model.pcurves = Vec::new();
+                }
+                outcome
+            }
         };
 
         let service_arena = DecodeArena::new();
@@ -1819,7 +1879,7 @@ mod tests {
         ];
         let support_runs = vec![run(1, 10, points, false)];
         let surface_id = SurfaceId::mint("catia:test:surface#0").expect("identity grammar");
-        let surface_ids = HashMap::from([(100, surface_id.clone())]);
+        let surface_ids = HashMap::from([(100, 0usize)]);
         let curve_ids = HashMap::new();
         let run_with = |ctx: &DecodeContext<'_>| {
             let mut ir = CadIr::empty();
@@ -1835,19 +1895,42 @@ mod tests {
                 )),
                 source_object: None,
             });
-            transfer_closed_face_topology(
-                &mut crate::families::FamilyEntityAdmission::new(ctx),
-                &mut ir,
-                &mut AnnotationBuilder::new(),
-                ZeroEntityClosedTopology {
-                    support_runs: &support_runs,
-                    surface_ids_by_position: &surface_ids,
-                    support_curve_ids: &curve_ids,
-                    ownership_root: None,
-                },
-                &WorkBudget::new(100),
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
+            {
+                let mut candidate_storage = ctx
+                    .provisional_retained("closed topology test candidate")
+                    .expect("scope");
+                let outcome = transfer_closed_face_topology(
+                    &mut crate::families::FamilyEntityAdmission::new(ctx),
+                    &mut ir,
+                    &mut AnnotationBuilder::new(),
+                    ZeroEntityClosedTopology {
+                        support_runs: &support_runs,
+                        surface_indices_by_position: &surface_ids,
+                        support_curve_ids: &curve_ids,
+                        ownership_root: None,
+                    },
+                    &WorkBudget::new(100),
+                    &mut crate::nurbs::LaneRefusals::new(),
+                    &mut candidate_storage,
+                );
+                if outcome.is_ok() {
+                    candidate_storage
+                        .commit()
+                        .expect("accepted mutation storage");
+                } else {
+                    ir.model.bodies = Vec::new();
+                    ir.model.regions = Vec::new();
+                    ir.model.shells = Vec::new();
+                    ir.model.faces = Vec::new();
+                    ir.model.loops = Vec::new();
+                    ir.model.coedges = Vec::new();
+                    ir.model.edges = Vec::new();
+                    ir.model.vertices = Vec::new();
+                    ir.model.points = Vec::new();
+                    ir.model.pcurves = Vec::new();
+                }
+                outcome
+            }
         };
         let service = crate::test_support::with_service_context(run_with);
         assert!(service.expect("service budget").is_none());
@@ -1919,22 +2002,42 @@ mod tests {
             WorkBudget::new(super::super::topology::MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS);
         let no_root_counts = crate::test_support::with_service_context(|ctx| {
             let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-            transfer_closed_face_topology(
-                &mut admission,
-                &mut no_root_ir,
-                &mut no_root_annotations,
-                ZeroEntityClosedTopology {
-                    support_runs: &runs,
-                    surface_ids_by_position: &HashMap::from([(
-                        100,
-                        SurfaceId::mint("catia:test:surface#0").expect("identity grammar"),
-                    )]),
-                    support_curve_ids: &curve_ids,
-                    ownership_root: None,
-                },
-                &topology_budget,
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
+            {
+                let mut candidate_storage = ctx
+                    .provisional_retained("closed topology test candidate")
+                    .expect("scope");
+                let outcome = transfer_closed_face_topology(
+                    &mut admission,
+                    &mut no_root_ir,
+                    &mut no_root_annotations,
+                    ZeroEntityClosedTopology {
+                        support_runs: &runs,
+                        surface_indices_by_position: &HashMap::from([(100, 0usize)]),
+                        support_curve_ids: &curve_ids,
+                        ownership_root: None,
+                    },
+                    &topology_budget,
+                    &mut crate::nurbs::LaneRefusals::new(),
+                    &mut candidate_storage,
+                );
+                if outcome.is_ok() {
+                    candidate_storage
+                        .commit()
+                        .expect("accepted mutation storage");
+                } else {
+                    no_root_ir.model.bodies = Vec::new();
+                    no_root_ir.model.regions = Vec::new();
+                    no_root_ir.model.shells = Vec::new();
+                    no_root_ir.model.faces = Vec::new();
+                    no_root_ir.model.loops = Vec::new();
+                    no_root_ir.model.coedges = Vec::new();
+                    no_root_ir.model.edges = Vec::new();
+                    no_root_ir.model.vertices = Vec::new();
+                    no_root_ir.model.points = Vec::new();
+                    no_root_ir.model.pcurves = Vec::new();
+                }
+                outcome
+            }
             .expect("service entity admission")
         })
         .expect("complete topology without native ownership root");
@@ -1956,22 +2059,42 @@ mod tests {
         };
         let counts = crate::test_support::with_service_context(|ctx| {
             let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-            transfer_closed_face_topology(
-                &mut admission,
-                &mut ir,
-                &mut annotations,
-                ZeroEntityClosedTopology {
-                    support_runs: &runs,
-                    surface_ids_by_position: &HashMap::from([(
-                        100,
-                        SurfaceId::mint("catia:test:surface#0").expect("identity grammar"),
-                    )]),
-                    support_curve_ids: &curve_ids,
-                    ownership_root: Some(&root),
-                },
-                &topology_budget,
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
+            {
+                let mut candidate_storage = ctx
+                    .provisional_retained("closed topology test candidate")
+                    .expect("scope");
+                let outcome = transfer_closed_face_topology(
+                    &mut admission,
+                    &mut ir,
+                    &mut annotations,
+                    ZeroEntityClosedTopology {
+                        support_runs: &runs,
+                        surface_indices_by_position: &HashMap::from([(100, 0usize)]),
+                        support_curve_ids: &curve_ids,
+                        ownership_root: Some(&root),
+                    },
+                    &topology_budget,
+                    &mut crate::nurbs::LaneRefusals::new(),
+                    &mut candidate_storage,
+                );
+                if outcome.is_ok() {
+                    candidate_storage
+                        .commit()
+                        .expect("accepted mutation storage");
+                } else {
+                    ir.model.bodies = Vec::new();
+                    ir.model.regions = Vec::new();
+                    ir.model.shells = Vec::new();
+                    ir.model.faces = Vec::new();
+                    ir.model.loops = Vec::new();
+                    ir.model.coedges = Vec::new();
+                    ir.model.edges = Vec::new();
+                    ir.model.vertices = Vec::new();
+                    ir.model.points = Vec::new();
+                    ir.model.pcurves = Vec::new();
+                }
+                outcome
+            }
             .expect("service entity admission")
         })
         .expect("complete topology");
@@ -2070,22 +2193,42 @@ mod tests {
         let budget = WorkBudget::new(super::super::topology::MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS);
         let counts = crate::test_support::with_service_context(|ctx| {
             let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-            transfer_closed_face_topology(
-                &mut admission,
-                &mut ir,
-                &mut annotations,
-                ZeroEntityClosedTopology {
-                    support_runs: &runs,
-                    surface_ids_by_position: &HashMap::from([(
-                        100,
-                        SurfaceId::mint("catia:test:surface#0").expect("identity grammar"),
-                    )]),
-                    support_curve_ids: &curve_ids,
-                    ownership_root: None,
-                },
-                &budget,
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
+            {
+                let mut candidate_storage = ctx
+                    .provisional_retained("closed topology test candidate")
+                    .expect("scope");
+                let outcome = transfer_closed_face_topology(
+                    &mut admission,
+                    &mut ir,
+                    &mut annotations,
+                    ZeroEntityClosedTopology {
+                        support_runs: &runs,
+                        surface_indices_by_position: &HashMap::from([(100, 0usize)]),
+                        support_curve_ids: &curve_ids,
+                        ownership_root: None,
+                    },
+                    &budget,
+                    &mut crate::nurbs::LaneRefusals::new(),
+                    &mut candidate_storage,
+                );
+                if outcome.is_ok() {
+                    candidate_storage
+                        .commit()
+                        .expect("accepted mutation storage");
+                } else {
+                    ir.model.bodies = Vec::new();
+                    ir.model.regions = Vec::new();
+                    ir.model.shells = Vec::new();
+                    ir.model.faces = Vec::new();
+                    ir.model.loops = Vec::new();
+                    ir.model.coedges = Vec::new();
+                    ir.model.edges = Vec::new();
+                    ir.model.vertices = Vec::new();
+                    ir.model.points = Vec::new();
+                    ir.model.pcurves = Vec::new();
+                }
+                outcome
+            }
             .expect("service entity admission")
         })
         .expect("topology remains transferable");

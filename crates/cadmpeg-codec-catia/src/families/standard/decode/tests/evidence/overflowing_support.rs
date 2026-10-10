@@ -130,7 +130,7 @@ fn a_native_endpoint_pair_reads_from_the_finite_support_when_its_placed_partner_
 }
 
 #[test]
-fn native_support_helpers_preserve_session_depth_refusal() {
+fn native_support_helpers_keep_depth_refusal_in_session() {
     use cadmpeg_core::decode::ResourceDimension;
     let native = overflowing_cone_support([0.0, 1.5 * std::f64::consts::PI]);
     crate::test_support::with_depth_limit(0, |ctx| {
@@ -169,6 +169,11 @@ fn native_support_helpers_preserve_session_depth_refusal() {
                 ctx.charge_work_limit(0, "observe native support refusal"),
                 Err(limit)
             );
+            assert_eq!(
+                standard_native_support_endpoint_pair(ctx, &native, &[], &[], None),
+                Ok(None)
+            );
+            assert_eq!(ctx.resource_refusal(), Some(limit));
         });
     }
 }

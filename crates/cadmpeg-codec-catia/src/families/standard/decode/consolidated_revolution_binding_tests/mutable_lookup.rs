@@ -244,7 +244,7 @@ fn empty_revolution_domain_skips_model_indexes() {
 }
 
 #[test]
-fn conflicting_revolution_face_aliases_are_not_counted_as_bound() {
+fn conflicting_revolution_face_aliases_preserve_binding_identity_count() {
     let (mut ir, first) = fixture();
     ir.model.faces[1].surface = ir.model.faces[0].surface.clone();
     let second = ConsolidatedRevolutionBinding {
@@ -321,7 +321,7 @@ fn conflicting_revolution_face_aliases_are_not_counted_as_bound() {
         )
     })
     .expect("two finite torus witnesses are admitted");
-    assert_eq!(result, (0, 0));
+    assert_eq!(result, (1, 0));
     assert_eq!(ir.model.surfaces, surfaces);
     assert!(matches!(
         ir.model.curves[0].geometry.solved_cache(),

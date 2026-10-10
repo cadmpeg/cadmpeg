@@ -6,7 +6,6 @@ use std::sync::OnceLock;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use std::num::NonZeroUsize;
 
 #[derive(Debug, Clone)]
 pub(crate) struct TrimPacket {
@@ -142,23 +141,19 @@ impl TrimPacket {
         let mut triangles = Vec::new();
         ctx.reserve_vec(&mut triangles, self.triangle_count, "catia_trim_triangles")?;
         let (independent, mut remaining) = self.handles.split_at(3 * self.independent_count);
-        let Some(triple_width) = NonZeroUsize::new(3) else {
-            return Err(ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX));
-        };
-        for triple in ctx.admit_iter(independent, operation)?.chunks(triple_width) {
-            let [first, second, third] = triple else {
-                return Err(ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX));
-            };
-            triangles.push([*first, *second, *third]);
+        for index in ctx.admit_iter(0..self.independent_count, operation)? {
+            let offset = 3 * index;
+            triangles.push([
+                independent[offset],
+                independent[offset + 1],
+                independent[offset + 2],
+            ]);
         }
         for &length in ctx.admit_iter(&self.strip_lengths, operation)? {
             let (strip, tail) = remaining.split_at(length);
             remaining = tail;
-            for (index, triple) in ctx
-                .admit_iter(strip, operation)?
-                .windows(triple_width)
-                .enumerate()
-            {
+            for index in ctx.admit_iter(0..length.saturating_sub(2), operation)? {
+                let triple = &strip[index..index + 3];
                 triangles.push(if index % 2 == 0 {
                     [triple[0], triple[1], triple[2]]
                 } else {
@@ -169,14 +164,11 @@ impl TrimPacket {
         for &length in ctx.admit_iter(&self.fan_lengths, operation)? {
             let (fan, tail) = remaining.split_at(length);
             remaining = tail;
-            let Some(pair_width) = NonZeroUsize::new(2) else {
-                return Err(ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX));
-            };
             let Some((&center, rim)) = fan.split_first() else {
                 continue;
             };
-            for pair in ctx.admit_iter(rim, operation)?.windows(pair_width) {
-                triangles.push([center, pair[0], pair[1]]);
+            for index in ctx.admit_iter(0..length.saturating_sub(2), operation)? {
+                triangles.push([center, rim[index], rim[index + 1]]);
             }
         }
         Ok(triangles)
@@ -315,13 +307,34 @@ mod tests {
     #[test]
     fn trim_expansion_reuses_validated_count_without_rescanning_lengths() {
         let packet = packet((0, vec![4], vec![], vec![10, 11, 12, 13]));
-        // Expansion visits one strip length and four strip handles. The
-        // partition constructor has already derived the output length.
-        crate::test_support::with_work_limit(5, |ctx| {
+        // One strip length and two triangle windows require three visits.
+        crate::test_support::with_work_limit(3, |ctx| {
             assert_eq!(
-                packet.triangles(ctx).expect("five input visits"),
+                packet.triangles(ctx).expect("three input visits"),
                 [[10, 11, 12], [12, 11, 13]]
             );
         });
+    }
+    #[test]
+    fn trim_short_strips_and_fans_visit_no_triangle_windows() {
+        for length in 0..=2 {
+            for fan in [false, true] {
+                let packet = packet((
+                    0,
+                    if fan { vec![] } else { vec![length] },
+                    if fan { vec![length] } else { vec![] },
+                    (0..u32::try_from(length).expect("fixed strip length")).collect(),
+                ));
+                crate::test_support::with_work_limit(1, |ctx| {
+                    assert!(packet.triangles(ctx).expect("one length visit").is_empty());
+                    let CodecError::ResourceLimit(limit) =
+                        ctx.charge_work(1, "probe").expect_err("exact work")
+                    else {
+                        panic!("resource refusal required")
+                    };
+                    assert_eq!(limit.used, 1);
+                });
+            }
+        }
     }
 }
