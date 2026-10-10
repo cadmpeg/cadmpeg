@@ -1,27 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Source-link fixture mutation for refusal controls.
-
-pub(super) fn append_link_to_record(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    id: &str,
-    links: &mut Vec<String>,
-    link: &str,
-) -> Result<bool, cadmpeg_core::CodecError> {
-    if ctx.equal(link, id, "Rhino source link equality")? {
-        return Ok(false);
-    }
-    let Err(first) = ctx.binary_search_by(
-        links,
-        |existing| ctx.compare(existing.as_str(), link, "Rhino source link comparison"),
-        "Rhino source link search",
-    )?
-    else {
-        return Ok(true);
-    };
-    let copy = ctx.copy_retained_text(link, "Rhino unknown record link copy")?;
-    ctx.insert_vec(links, first, copy, "Rhino unknown record links")?;
-    Ok(true)
-}
 
 use super::*;
 
@@ -211,3 +188,43 @@ fn seeded_malformed_links_keep_canonical_validation_order_after_append() {
     });
 }
 
+
+#[test]
+fn unknown_record_link_insertion_refuses_collection_limit() {
+    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "Rhino unknown record links",
+        |cap| with_transaction_limits(&scan, cap, None, None, |expand| {
+            let mut transaction = DecodeContext::new(&scan, expand)?;
+            let result = transaction.append_link(0, "rhino:curve#1");
+            assert!(transaction.unknown(0).unwrap().links().is_empty());
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(expand.ctx().resource_refusal(), Some(*refusal));
+            }
+            result
+        }),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        if refusal.operation == "Rhino unknown record links"));
+}
+
+#[test]
+fn unknown_record_link_copy_refuses_retained_limit() {
+    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "Rhino unknown record link copy",
+        |cap| with_transaction_limits(&scan, u64::MAX, Some(cap), None, |expand| {
+            let mut transaction = DecodeContext::new(&scan, expand)?;
+            let result = transaction.append_link(0, "rhino:curve#1");
+            assert!(transaction.unknown(0).unwrap().links().is_empty());
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
+                assert_eq!(expand.ctx().resource_refusal(), Some(*refusal));
+            }
+            result
+        }),
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        if refusal.operation == "Rhino unknown record link copy"));
+}
