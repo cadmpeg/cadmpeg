@@ -857,3 +857,124 @@ fn dynamic_relation_tags_are_admitted_by_family_scope() {
     );
     assert!(relation_uses_dynamic_operands(relation));
 }
+
+#[test]
+fn declaration_signature_rejection_leaves_feature_probe_armed() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let classes = [class(10, "sgPntPntDist")];
+    let mut candidate = scalar(20, FeatureInputScalarRole::Driving);
+    for operand in &mut candidate.operands { operand.kind = FeatureInputOperandKind::E1; }
+    let scalars = [candidate];
+    let intervals = [(0, None, "sketch".to_owned())];
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let index = super::super::DeclarationIndex::new(&ctx, &classes, &scalars, &intervals).unwrap();
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits, "compare SLDPRT relation declaration feature references", None,
+    );
+    assert!(index.declaration(&ctx, &classes[0], false).unwrap().is_none());
+    assert_eq!(ctx.resource_refusal(), None);
+    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "compare SLDPRT relation declaration feature references")
+    else { panic!("wrong signature must leave feature comparison probe armed"); };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "compare SLDPRT relation declaration feature references");
+    assert_eq!(limit.additional, 1);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert!(matches!(ctx.charge_work(0, "after unused declaration feature"),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    drop(probe);
+}
+
+#[test]
+fn relation_group_fixed_rejection_skips_operand_signature() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    for trigger in 0..3 {
+        let first = scalar(20, FeatureInputScalarRole::Display);
+        let mut second = scalar(40, FeatureInputScalarRole::Driving);
+        let mut input = lane(vec![class(10, "sgPntPntDist")], vec![first.clone()]);
+        match trigger {
+            0 => {
+                let mut intervening = scalar(30, FeatureInputScalarRole::Native);
+                intervening.feature_ref = None;
+                input.scalars.push(intervening);
+            }
+            1 => second.role = FeatureInputScalarRole::Native,
+            2 => input.classes.push(class(30, "sgCircleDim")),
+            _ => unreachable!(),
+        }
+        input.scalars.push(second);
+        let expected = crate::records::FeatureInputRelationInstance {
+            id: "sldprt:feature-input:relation-instance#lane:20".into(),
+            parent: "lane".into(), ordinal: 0, offset: 20,
+            family: FeatureInputRelationFamily::PointPointDistance,
+            class_ref: "class-10".into(), feature_ref: "sketch".into(),
+            scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+                vec![first.id.clone()], None, Some(first.id.clone()),
+            ).unwrap(),
+            operands: first.operands.clone(),
+        };
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits, "compare SLDPRT relation operand signatures", None,
+        );
+        let relations = relation_instances(&ctx, &sketch_history(), &input).unwrap();
+        assert_eq!(relations, [expected]);
+        assert_eq!(ctx.resource_refusal(), None);
+        let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "compare SLDPRT relation operand signatures")
+        else { panic!("fixed group rejection must leave signature probe armed"); };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "compare SLDPRT relation operand signatures");
+        assert_eq!(limit.additional, 1);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert!(matches!(ctx.charge_work(0, "after unused group signature"),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        drop(probe);
+    }
+}
+
+#[test]
+fn promoted_group_reuses_proved_class_difference() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let first = scalar(20, FeatureInputScalarRole::Display);
+    let second = scalar(40, FeatureInputScalarRole::Driving);
+    let input = lane(vec![class(10, "sgPntPntDist"), class(30, "sgPntPntDist")], vec![first.clone(), second.clone()]);
+    let expected = crate::records::FeatureInputRelationInstance {
+        id: "sldprt:feature-input:relation-instance#lane:20".into(),
+        parent: "lane".into(), ordinal: 0, offset: 20,
+        family: FeatureInputRelationFamily::PointPointDistance,
+        class_ref: "class-30".into(), feature_ref: "sketch".into(),
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            vec![first.id.clone(), second.id.clone()], Some(second.id.clone()), Some(first.id.clone()),
+        ).unwrap(),
+        operands: first.operands.clone(),
+    };
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits, "compare SLDPRT relation group classes", None,
+    );
+    assert_eq!(relation_instances(&ctx, &sketch_history(), &input).unwrap(), [expected]);
+    assert_eq!(ctx.resource_refusal(), None);
+    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "compare SLDPRT relation group classes")
+    else { panic!("proved promotion must leave duplicate class comparison probe armed"); };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "compare SLDPRT relation group classes");
+    assert_eq!(limit.additional, 1);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert!(matches!(ctx.charge_work(0, "after unused promoted class comparison"),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    drop(probe);
+}

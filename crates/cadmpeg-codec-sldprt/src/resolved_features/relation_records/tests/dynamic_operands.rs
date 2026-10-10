@@ -720,3 +720,86 @@ fn equal_line_index_clear_refusal_stays_fused() {
         assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
     }
 }
+
+#[test]
+fn explicit_point_reference_work_requires_finite_point_kind() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    for (kind, coordinates) in [
+        (crate::records::SketchInputKind::LineOrCircle, Some([0.0, 0.0])),
+        (crate::records::SketchInputKind::Point, None),
+    ] {
+        let marker = sketch_marker("a", 0, 0, kind, coordinates);
+        let (_, relation) = explicit_point_relation();
+        let operand = &relation.operands[0];
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 64;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        for _ in 0..64 {
+            assert!(super::super::dynamic_point_candidates(&ctx, &[&marker], operand, true).unwrap().is_empty());
+        }
+        assert_eq!(ctx.resource_refusal(), None);
+        policy.limits.max_work_units = u64::MAX;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits, "compare SLDPRT explicit point references", None,
+        );
+        assert!(super::super::dynamic_point_candidates(&ctx, &[&marker], operand, true).unwrap().is_empty());
+        let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "compare SLDPRT explicit point references")
+        else { panic!("ineligible point must leave reference probe armed"); };
+        assert_eq!(limit.operation, "compare SLDPRT explicit point references");
+        assert_eq!(limit.used, 1);
+        assert_eq!(limit.additional, 1);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        drop(probe);
+        policy.limits.max_work_units = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let Err(CodecError::ResourceLimit(limit)) = super::super::dynamic_point_candidates(&ctx, &[&marker], operand, true)
+        else { panic!("point roster visit must remain admitted"); };
+        assert_eq!(limit.operation, "find SLDPRT explicit point references");
+        assert_eq!(limit.used, 0);
+        assert_eq!(limit.additional, 1);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert!(matches!(ctx.charge_work(0, "after point roster refusal"),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    }
+}
+
+#[test]
+fn curve_reference_work_requires_curve_kind() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    for kind in [crate::records::SketchInputKind::Point, crate::records::SketchInputKind::ConstrainedPoint] {
+        let marker = sketch_marker("a", 0, 0, kind, Some([0.0, 0.0]));
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits, "compare SLDPRT relation curve references", None,
+        );
+        assert!(!super::super::dynamic_curve_reference_is_valid(&ctx, &[&marker], Some("a")).unwrap());
+        assert_eq!(ctx.resource_refusal(), None);
+        let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "compare SLDPRT relation curve references")
+        else { panic!("ineligible native curve must leave reference probe armed"); };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "compare SLDPRT relation curve references");
+        assert_eq!(limit.additional, 1);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert!(matches!(ctx.charge_work(0, "after unused curve reference"),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        drop(probe);
+    }
+}

@@ -282,6 +282,14 @@ impl<'a, 'i> DeclarationIndex<'a, 'i> {
                     // Past the scope: the search ends with no declaration.
                     return Ok(Some(None));
                 }
+                let signature = if allow_dynamic {
+                    relation_signature_for_declaration(family, scalar)
+                } else {
+                    relation_signature(family, &scalar.operands)
+                };
+                if !signature {
+                    return Ok(None);
+                }
                 if let Some(feature) = class_feature {
                     let Some(scalar_feature) = scalar.feature_ref.as_deref() else {
                         return Ok(None);
@@ -294,12 +302,7 @@ impl<'a, 'i> DeclarationIndex<'a, 'i> {
                         return Ok(None);
                     }
                 }
-                let signature = if allow_dynamic {
-                    relation_signature_for_declaration(family, scalar)
-                } else {
-                    relation_signature(family, &scalar.operands)
-                };
-                Ok(signature.then_some(Some(scalar)))
+                Ok(Some(Some(scalar)))
             },
             OPERATION,
         )?;
@@ -588,12 +591,12 @@ pub(super) fn relation_instances(
             let Some((last_index, last_scalar)) = group.scalars.last() else {
                 continue;
             };
-            let same_scope_feature = ctx.equal(
-                group.feature_ref,
-                feature_ref,
-                "compare SLDPRT relation group features",
-            )?;
-            let same_scope_prefix = same_scope_feature && *last_index + 1 == scalar_index;
+            let same_scope_prefix = *last_index + 1 == scalar_index
+                && ctx.equal(
+                    group.feature_ref,
+                    feature_ref,
+                    "compare SLDPRT relation group features",
+                )?;
             let has_intervening_class = if same_scope_prefix {
                 let after = ctx.partition_point(
                     &relation_class_offsets,
@@ -607,12 +610,6 @@ pub(super) fn relation_instances(
                 false
             };
             let same_scope = same_scope_prefix && !has_intervening_class;
-            let same_operands = same_relation_operand_signature(
-                ctx,
-                group.operands,
-                &scalar.operands,
-                "compare SLDPRT relation operand signatures",
-            )?;
             let mut repeated_circle_display = same_scope
                 && group.family == FeatureInputRelationFamily::CircleDiameter
                 && scalar.role == FeatureInputScalarRole::Display
@@ -655,7 +652,13 @@ pub(super) fn relation_instances(
                     )
                 })?;
                 group.scalars.push((scalar_index, scalar));
-            } else if same_scope && same_operands && scalar.role == FeatureInputScalarRole::Driving
+            } else if same_scope && scalar.role == FeatureInputScalarRole::Driving
+                && same_relation_operand_signature(
+                    ctx,
+                    group.operands,
+                    &scalar.operands,
+                    "compare SLDPRT relation operand signatures",
+                )?
             {
                 if group.scalars.len() == 1 {
                     temporary_storage.with_storage(|| {
@@ -692,30 +695,32 @@ pub(super) fn relation_instances(
         // driving scalar. The driving scalar's declaration is authoritative for
         // that pair; display-only scalars still stop at a class declaration.
         let promote_class = if let Some(group) = groups.last() {
-            !ctx.equal(
-                group.class_ref,
-                class_ref,
-                "compare SLDPRT promoted relation classes",
-            )? && group.scalars.len() == 1
+            group.scalars.len() == 1
                 && group.scalars[0].1.role == FeatureInputScalarRole::Display
                 && scalar.role == FeatureInputScalarRole::Driving
                 && *class_offset > group.scalars[0].1.offset
                 && *class_offset < scalar.offset
+                && !ctx.equal(
+                    group.class_ref,
+                    class_ref,
+                    "compare SLDPRT promoted relation classes",
+                )?
         } else {
             false
         };
         let append = if let Some(group) = groups.last() {
-            ctx.equal(
-                group.feature_ref,
-                feature_ref,
-                "compare SLDPRT relation group features",
-            )? && (group.family == *family || promote_class)
-                && (ctx.equal(
+            (group.family == *family || promote_class)
+                && matches!(group.scalars.as_slice(), [(index, _)] if *index + 1 == scalar_index)
+                && ctx.equal(
+                    group.feature_ref,
+                    feature_ref,
+                    "compare SLDPRT relation group features",
+                )?
+                && (promote_class || ctx.equal(
                     group.class_ref,
                     class_ref,
                     "compare SLDPRT relation group classes",
-                )? || promote_class)
-                && matches!(group.scalars.as_slice(), [(index, _)] if *index + 1 == scalar_index)
+                )?)
                 && same_relation_operand_signature(
                     ctx,
                     group.operands,
@@ -1100,14 +1105,16 @@ pub(super) fn bind_circle_dimension_centers(
                     operand.entity_ref.as_deref(),
                 );
                 let same_center = if let Some((kind, entity_index, entity_ref)) = center {
-                    let same_ref = match (entity_ref, candidate.2) {
+                    if kind != candidate.0 || entity_index != candidate.1 {
+                        return Ok(false);
+                    }
+                    match (entity_ref, candidate.2) {
                         (Some(left), Some(right)) => {
                             ctx.equal(left, right, "compare SLDPRT circle center references")?
                         }
                         (None, None) => true,
                         _ => false,
-                    };
-                    kind == candidate.0 && entity_index == candidate.1 && same_ref
+                    }
                 } else {
                     center = Some(candidate);
                     true
@@ -1188,6 +1195,9 @@ fn same_scalar_operands(
     if !ctx.all_by(
         left.operands.iter().zip(right.operands.iter()),
         |(left, right)| {
+            if left.kind != right.kind || left.entity_index != right.entity_index {
+                return Ok(false);
+            }
             let same_ref = match (left.entity_ref.as_deref(), right.entity_ref.as_deref()) {
                 (Some(left), Some(right)) => {
                     ctx.equal(left, right, "compare SLDPRT relation scalar references")?
@@ -1195,11 +1205,7 @@ fn same_scalar_operands(
                 (None, None) => true,
                 _ => false,
             };
-            if left.kind != right.kind || left.entity_index != right.entity_index || !same_ref {
-                return Ok(false);
-            }
-
-            Ok(true)
+            Ok(same_ref)
         },
         "compare SLDPRT relation scalar operands",
     )? {
@@ -1291,7 +1297,12 @@ pub(super) fn circle_dimension_handle_driver<'a>(
         let declared_handle = handle_offsets
             .first()
             .is_some_and(|offset| *offset < display.offset);
-        let same_feature = match (
+        let qualified_pair = declared_handle
+            && display.role == FeatureInputScalarRole::Display
+            && driving.role == FeatureInputScalarRole::Driving
+            && first.offset < display.offset
+            && next_relation_offset.is_none_or(|limit| driving.offset < limit)
+            && match (
             display.feature_ref.as_deref(),
             first.feature_ref.as_deref(),
             driving.feature_ref.as_deref(),
@@ -1303,12 +1314,9 @@ pub(super) fn circle_dimension_handle_driver<'a>(
             (None, None, None) => true,
             _ => false,
         };
-        if declared_handle
-            && same_feature
+        if qualified_pair
             && same_scalar_operands(ctx, display, first)?
             && same_scalar_operands(ctx, driving, first)?
-            && display.role == FeatureInputScalarRole::Display
-            && driving.role == FeatureInputScalarRole::Driving
         {
             let names = match &mut names {
                 Some(index) => index,
@@ -1332,9 +1340,7 @@ pub(super) fn circle_dimension_handle_driver<'a>(
                 }
                 _ => false,
             };
-            let in_relation = first.offset < display.offset
-                && next_relation_offset.is_none_or(|limit| driving.offset < limit);
-            if same_name && in_relation {
+            if same_name {
                 if candidate.is_some() {
                     ambiguous = true;
                 } else {
@@ -1738,11 +1744,11 @@ fn dynamic_point_candidates<'a>(
     if let Some(entity_ref) = operand.entity_ref.as_deref().filter(|_| use_explicit) {
         let mut candidates = Vec::new();
         for entity in ctx.admit_iter(entities, "find SLDPRT explicit point references")? {
-            if !ctx.equal(
+            if !is_finite_point(entity) || !ctx.equal(
                 entity.id(),
                 entity_ref,
                 "compare SLDPRT explicit point references",
-            )? || !is_finite_point(entity)
+            )?
             {
                 continue;
             }
@@ -1924,16 +1930,16 @@ fn dynamic_curve_reference_is_valid(
     ctx.any_by(
         entities,
         |entity| {
-            Ok(ctx.equal(
-                entity.id(),
-                entity_ref,
-                "compare SLDPRT relation curve references",
-            )? && matches!(
+            Ok(matches!(
                 entity.kind(),
                 crate::records::SketchInputKind::LineOrCircle
                     | crate::records::SketchInputKind::Arc
                     | crate::records::SketchInputKind::Relation(_)
-            ))
+            ) && ctx.equal(
+                entity.id(),
+                entity_ref,
+                "compare SLDPRT relation curve references",
+            )?)
         },
         "find SLDPRT relation curve reference",
     )
