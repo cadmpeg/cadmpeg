@@ -173,9 +173,10 @@ pub(crate) fn dialect_loss(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     matched: &DialectMatch,
 ) -> Result<Option<LossNote>, cadmpeg_core::CodecError> {
-    cadmpeg_asm::dialect::unverified_message(ctx, "the stream", matched)?
-        .map(|message| SatLossCode::SourceDialectUnverified.note(ctx, message))
-        .transpose()
+    Ok(
+        cadmpeg_asm::dialect::unverified_message(ctx, "the stream", matched)?
+            .map(|message| SatLossCode::SourceDialectUnverified.note(message)),
+    )
 }
 
 /// Host-framing declarations, verbatim, under keys pinned above.
@@ -258,6 +259,26 @@ fn kernel_layer(
         StreamEvidence::Text(None) => cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
     };
     cadmpeg_asm::dialect::classify(ctx, header)
+}
+
+/// The report's dialect layers: the host match first, then the kernel match.
+pub(crate) fn dialect_layers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    host: DialectMatch,
+    kernel: DialectMatch,
+) -> Result<cadmpeg_core::dialect::DialectLayers, cadmpeg_core::CodecError> {
+    cadmpeg_core::dialect::DialectLayers::of(host)
+        .with_for_decode(ctx, kernel, "collect SAT dialect layers")
+        .map_err(|rejected| match rejected {
+            cadmpeg_core::dialect::DialectLayerError::Duplicate(layer) => {
+                cadmpeg_core::CodecError::malformed(format_args!(
+                    "SAT repeated dialect layer key: {layer:?}"
+                ))
+            }
+            cadmpeg_core::dialect::DialectLayerError::ResourceLimit(limit) => {
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+            }
+        })
 }
 
 /// Classifies the host and kernel layers from one evidence value.

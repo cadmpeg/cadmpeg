@@ -289,7 +289,9 @@ pub(in crate::native) fn attach_expression_parameters(
                 .map_err(cadmpeg_core::CodecError::from)?;
             let mut dependencies = Vec::new();
             if ordinal < ordered_count {
-                for name in crate::native::om::expression_parameter_names(ctx, &expression.expression) {
+                for name in
+                    crate::native::om::expression_parameter_names(ctx, &expression.expression)
+                {
                     let name = name?;
                     ctx.charge_work(
                         cadmpeg_core::decode::u64_from_index(parameter_ids.len()),
