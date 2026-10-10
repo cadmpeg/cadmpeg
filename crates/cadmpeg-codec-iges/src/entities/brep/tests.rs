@@ -1226,3 +1226,5 @@ mod directory_visits;
 mod invalid_loop_storage;
 
 mod candidate_storage;
+
+mod source_geometry;

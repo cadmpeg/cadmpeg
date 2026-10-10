@@ -1683,6 +1683,7 @@ fn indicator_normal(
     ir: &CadIr,
     surface: &SurfaceId,
     lookups: &OffsetLookups,
+    (sources, storage): (&mut Option<super::evaluation_sources::EvaluationSources>, &mut cadmpeg_core::decode::ScopedReservation<'_>),
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vector3>, CodecError> {
     let procedural = ctx
@@ -1697,7 +1698,13 @@ fn indicator_normal(
     let parameters = parameters.unwrap_or([0.0, 0.0]);
     let partials = match procedural {
         Some(_) => {
-            let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
+            if sources.is_none() {
+                *sources = Some(storage.with_storage(|| super::evaluation_sources::EvaluationSources::new(ir, ctx))?);
+            }
+            let sources = sources.as_ref().ok_or_else(|| CodecError::malformed("offset evaluation sources are absent"))?;
+            let mut support_storage = ctx.reserve_scoped(0, "iges offset evaluation support storage")?;
+            let support_model = support_storage.with_storage(|| sources.surface_model(ir, surface.as_str(), ctx))?;
+            let index = cadmpeg_ir::index::ModelIndex::new_model_only(&support_model, ctx)?;
             finite_or_refusal(cadmpeg_ir::eval::model_surface_partials_by_id(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
                 &index,
@@ -4237,10 +4244,12 @@ pub(super) fn project<'ctx>(
         )?;
     }
 
-    // These position maps accept each appended offset. The immutable ModelIndex
-    // needed for procedural evaluation cannot borrow across a model append.
+    // Position lookups admit each appended offset. Evaluation copies only the
+    // reachable supports, so unrelated model records are not reindexed.
     let mut offset_storage = ctx.reserve_scoped(0, "iges offset lookup storage")?;
     let mut offset_lookups = None;
+    let mut evaluation_storage = ctx.reserve_scoped(0, "iges offset evaluation source storage")?;
+    let mut evaluation_sources = None;
     let mut directory_entries = directory.iter();
     while !directory_entries.as_slice().is_empty() {
         let Some(entry) =
@@ -4347,7 +4356,7 @@ pub(super) fn project<'ctx>(
             continue;
         };
         let distance = distance * factor;
-        let Some(normal) = indicator_normal(ir, &support_id, lookups, ctx)? else {
+        let Some(normal) = indicator_normal(ir, &support_id, lookups, (&mut evaluation_sources, &mut evaluation_storage), ctx)? else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -4492,6 +4501,15 @@ pub(super) fn project<'ctx>(
             }
             Ok::<_, CodecError>(())
         })?;
+        if let Some(sources) = evaluation_sources.as_mut() {
+            evaluation_storage.with_storage(|| {
+                sources.extend_surfaces(ir, ctx)?;
+                if let Some(positions) = ctx.get_btree_map(&lookups.surfaces, &surface_id, "iges offset carrier lookup")? {
+                    sources.observe_surface(&ir.model.surfaces[positions.0], positions.0, ctx)?;
+                }
+                Ok::<_, CodecError>(())
+            })?;
+        }
         ctx.insert_scoped_btree_set(
             &mut decoded_storage,
             &mut decoded,
