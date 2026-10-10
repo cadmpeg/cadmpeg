@@ -373,11 +373,8 @@ fn conic_conic_intersections(
         };
         let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(line));
         let mut points = line_conic_intersections(ctx, &line, first)?;
-        ctx.retain_vec(
-            &mut points,
-            |point| Ok(curve_contains_points(second, [*point, *point])),
-            "creo line-conic candidate retention",
-        )?;
+        // A line has at most two intersections with this conic.
+        points.retain(|point| curve_contains_points(second, [*point, *point]));
         return Ok(points);
     }
     let delta: [f64; 3] = std::array::from_fn(|coordinate| {
@@ -417,7 +414,7 @@ fn conic_conic_intersections(
         parameters.len(),
         "creo conic model intersections",
     )?;
-    for coordinates in ctx.admit_iter(&parameters, "creo conic intersection parameters")? {
+    for coordinates in &parameters {
         let [u, v] = *coordinates;
         let point = std::array::from_fn(|coordinate| {
             first_equation.origin[coordinate]
@@ -474,10 +471,7 @@ fn incident_analytic_vertex_domain(
                 })?;
                 candidates.push(point);
             }
-            for point in ctx.admit_iter(
-                &first_line_conic_points,
-                "creo incident line-conic candidates",
-            )? {
+            for point in &first_line_conic_points {
                 scratch.with_storage(|| {
                     ctx.reserve_vec(&mut candidates, 1, "creo incident analytic candidates")
                 })?;
@@ -485,10 +479,7 @@ fn incident_analytic_vertex_domain(
             }
             drop(first_line_conic_points);
             drop(first_line_conic_points_storage);
-            for point in ctx.admit_iter(
-                &second_line_conic_points,
-                "creo incident conic-line candidates",
-            )? {
+            for point in &second_line_conic_points {
                 scratch.with_storage(|| {
                     ctx.reserve_vec(&mut candidates, 1, "creo incident analytic candidates")
                 })?;
@@ -496,7 +487,7 @@ fn incident_analytic_vertex_domain(
             }
             drop(second_line_conic_points);
             drop(second_line_conic_points_storage);
-            for point in ctx.admit_iter(&conic_points, "creo incident conic candidates")? {
+            for point in &conic_points {
                 scratch.with_storage(|| {
                     ctx.reserve_vec(&mut candidates, 1, "creo incident analytic candidates")
                 })?;

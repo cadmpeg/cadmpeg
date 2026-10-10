@@ -108,39 +108,29 @@ pub(super) fn point_pair_alignments(
     ]
 }
 
-pub(super) fn try_fold_nurbs_points<T>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    nurbs: &NurbsCurve,
-    initial: T,
-    mut fold: impl FnMut(T, FinitePoint3) -> Result<T, cadmpeg_core::CodecError>,
-) -> Result<T, cadmpeg_core::CodecError> {
-    match nurbs.pole_rows() {
-        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => ctx
-            .admit_iter(points, "creo NURBS polynomial poles")?
-            .try_fold(initial, |value, point| fold(value, *point)),
-        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => ctx
-            .admit_iter(points, "creo NURBS rational poles")?
-            .try_fold(initial, |value, pole| fold(value, pole.point)),
-    }
-}
-
 pub(super) fn nurbs_control_extent(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     nurbs: &NurbsCurve,
 ) -> Result<f64, cadmpeg_core::CodecError> {
-    let bounds = try_fold_nurbs_points(
-        ctx,
-        nurbs,
-        [[f64::INFINITY; 3], [f64::NEG_INFINITY; 3]],
-        |mut bounds, point| {
-            let point = point.get();
-            for (index, coordinate) in [point.x, point.y, point.z].into_iter().enumerate() {
-                bounds[0][index] = bounds[0][index].min(coordinate);
-                bounds[1][index] = bounds[1][index].max(coordinate);
-            }
-            Ok(bounds)
-        },
-    )?;
+    let initial = [[f64::INFINITY; 3], [f64::NEG_INFINITY; 3]];
+    let extend = |mut bounds: [[f64; 3]; 2], point: FinitePoint3| {
+        let point = point.get();
+        for (index, coordinate) in [point.x, point.y, point.z].into_iter().enumerate() {
+            bounds[0][index] = bounds[0][index].min(coordinate);
+            bounds[1][index] = bounds[1][index].max(coordinate);
+        }
+        Ok(bounds)
+    };
+    let bounds = match nurbs.pole_rows() {
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => ctx.fold(
+            points, initial, |bounds, point| extend(bounds, *point),
+            "creo NURBS polynomial poles",
+        )?,
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => ctx.fold(
+            points, initial, |bounds, pole| extend(bounds, pole.point),
+            "creo NURBS rational poles",
+        )?,
+    };
     Ok((0..3)
         .map(|index| bounds[1][index] - bounds[0][index])
         .fold(1.0, f64::max))

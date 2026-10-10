@@ -69,12 +69,13 @@ fn assert_visits(
     query: impl Fn(&DecodeContext<'_>) -> Result<bool, CodecError>,
 ) {
     let visits = operations.len() as u64;
-    for cap in 0..=visits {
+    crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, operations, |cap| {
         let arena = DecodeArena::new();
         let policy = visit_policy(cap);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let result = query(&ctx);
-        let original = if cap == visits {
+        let original = if result.is_ok() {
+            assert_eq!(cap, visits);
             assert_eq!(result.expect("present comparisons"), expected);
             let original = ctx.charge_work_limit(1, "after carrier comparisons").expect_err("exact visits");
             assert_eq!((original.dimension, original.used, original.additional), (ResourceDimension::WorkUnits, visits, 1));
@@ -88,7 +89,8 @@ fn assert_visits(
         };
         assert!(matches!(query(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original));
         assert_eq!(ctx.resource_refusal(), Some(original));
-    }
+        if cap == visits { Ok(()) } else { Err(CodecError::ResourceLimit(original)) }
+    });
 }
 
 #[test]

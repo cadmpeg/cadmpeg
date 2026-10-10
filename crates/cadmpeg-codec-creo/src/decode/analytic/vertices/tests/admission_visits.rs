@@ -80,12 +80,13 @@ fn vertex_ambiguity_visits_only_present_comparisons_until_first_disagreement() {
         (vec![same, same], 1, false), (vec![same, same, same], 2, false),
         (first, 1, true), (second, 2, true),
     ] {
-        for cap in 0..=visits {
+        crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &vec!["creo pcurve endpoint ambiguity search"; visits as usize], |cap| {
             let arena = DecodeArena::new();
             let policy = visit_policy(cap);
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             let result = pcurve_endpoint_is_ambiguous(&ctx, &points);
-            let original = if cap == visits {
+            let original = if result.is_ok() {
+                assert_eq!(cap, visits);
                 assert_eq!(result.expect("present comparisons"), expected);
                 let original = ctx.charge_work_limit(1, "after vertex ambiguity").expect_err("exact visits");
                 assert_eq!((original.dimension, original.used, original.additional), (ResourceDimension::WorkUnits, visits, 1));
@@ -99,6 +100,7 @@ fn vertex_ambiguity_visits_only_present_comparisons_until_first_disagreement() {
             };
             assert!(matches!(pcurve_endpoint_is_ambiguous(&ctx, &points), Err(CodecError::ResourceLimit(actual)) if actual == original));
             assert_eq!(ctx.resource_refusal(), Some(original));
-        }
+            if cap == visits { Ok(()) } else { Err(CodecError::ResourceLimit(original)) }
+        });
     }
 }

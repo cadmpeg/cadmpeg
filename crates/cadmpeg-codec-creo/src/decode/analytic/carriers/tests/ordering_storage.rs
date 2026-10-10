@@ -44,7 +44,7 @@ fn accepted_face_ordering_promotes_only_surviving_reference_backing() {
     let plane = super::super::PlaneEquation {
         origin: [0.0, 0.0, 0.0], normal: [0.0, 0.0, 1.0],
     };
-    for cap in 0..=bytes {
+    crate::test_support::assert_refusal_order(ResourceDimension::RetainedBytes, &["creo face ordering candidate references"], |cap| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = cap;
@@ -55,7 +55,8 @@ fn accepted_face_ordering_promotes_only_surviving_reference_backing() {
         policy.limits.max_work_units = 1 + std::mem::size_of::<&crate::topology::Loop>() as u64;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let result = super::super::ordered_face_loops(&ctx, &[&lp], Some(plane), &BTreeMap::new(), &BTreeMap::new());
-        let original = if cap == bytes {
+        let original = if result.is_ok() {
+            assert_eq!(cap, bytes);
             let ordered = result.expect("exact retained backing").expect("one loop");
             assert_eq!(ordered.len(), 1);
             assert!(std::ptr::eq(ordered[0], &lp));
@@ -74,7 +75,8 @@ fn accepted_face_ordering_promotes_only_surviving_reference_backing() {
         };
         assert!(matches!(super::super::ordered_face_loops(&ctx, &[&lp], Some(plane), &BTreeMap::new(), &BTreeMap::new()), Err(CodecError::ResourceLimit(actual)) if actual == original));
         assert_eq!(ctx.resource_refusal(), Some(original));
-    }
+        if cap == bytes { Ok(()) } else { Err(CodecError::ResourceLimit(original)) }
+    });
 }
 
 #[test]

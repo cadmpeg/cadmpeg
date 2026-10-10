@@ -1368,7 +1368,7 @@ pub(in crate::decode) fn intersect_plane_with_two_quadrics(
         parameters.len(),
         "creo plane-quadric intersections",
     )?;
-    for [u, v] in ctx.admit_iter(&parameters, "creo plane quadric parameters")? {
+    for [u, v] in &parameters {
         let point = std::array::from_fn(|index| {
             plane.origin[index] + u * u_axis[index] + v * v_axis[index]
         });
