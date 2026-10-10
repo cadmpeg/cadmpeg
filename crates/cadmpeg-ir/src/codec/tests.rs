@@ -477,3 +477,63 @@ fn detection_and_decode_draw_from_one_work_budget() {
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(fused)) if fused == limit)
     );
 }
+
+/// Decodes a model after probing a reading that is refused, and treats the
+/// refusal as "try the next reading" the way dialect probes do.
+struct SwallowedRefusalCodec;
+
+impl CodecBackend for SwallowedRefusalCodec {
+    const FORMAT: FormatId = FormatId::new("test");
+
+    fn detect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _prefix: View<'_>,
+    ) -> Result<Confidence, CodecError> {
+        Ok(Confidence::No)
+    }
+
+    fn inspect_impl(
+        &self,
+        ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        let _probe = ctx.charge_work(u64::MAX, "refused probe");
+        Ok(serde_json::from_value(serde_json::json!({
+            "identity": {"classification": "unclassified", "format": "test"},
+            "container_kind": "flat",
+            "entries": [],
+            "notes": []
+        }))
+        .expect("test inspection fixture"))
+    }
+
+    fn decode_impl(&self, ctx: &DecodeContext<'_>, _root: View<'_>) -> Result<Decoded, CodecError> {
+        let _probe = ctx.charge_work(u64::MAX, "refused probe");
+        Ok(decoded(CadIr::empty()))
+    }
+}
+
+#[test]
+fn a_swallowed_refusal_is_the_session_outcome() {
+    let error = SwallowedRefusalCodec
+        .decode(
+            &mut Cursor::new(vec![1u8, 2, 3, 4]),
+            &DecodeOptions::default(),
+        )
+        .expect_err("the session reports its refusal");
+    let DecodeFailure::Codec(CodecError::ResourceLimit(limit)) = error else {
+        panic!("expected the probe's resource refusal, got {error:?}")
+    };
+    assert_eq!(limit.operation, "refused probe");
+    let error = SwallowedRefusalCodec
+        .inspect(
+            &mut Cursor::new(vec![1u8, 2, 3, 4]),
+            &InspectOptions::default(),
+        )
+        .expect_err("the inspection reports its refusal");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected the probe's resource refusal, got {error:?}")
+    };
+    assert_eq!(limit.operation, "refused probe");
+}

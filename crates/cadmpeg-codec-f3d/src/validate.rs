@@ -3049,8 +3049,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 let compact_scope = scope.class_tag.as_str() == "387"
                     && scope.paired_class_tag.as_str() == "258"
                     && design::decode::scopes::parameter_scope::parameter_scope_payload_length(
-                        ctx.decode,
-                        scope,
+                        ctx.decode, scope,
                     )? == Some(314);
                 let extended_reference_scope = scope.class_tag.as_str() == "329"
                     && scope.paired_class_tag.as_str() == "261"
@@ -8291,11 +8290,9 @@ fn validate_dimension_locus_pairs<'a>(
                     parameter.kind() == records::parameters::DesignParameterKind::Dimension
                 })
         });
-        let governs_following_dimension = governing.governing(
-            ctx.decode,
-            &pair.id,
-            pair.paired_byte_offset(),
-        )? == Some(pair.governing_companion_record_index);
+        let governs_following_dimension =
+            governing.governing(ctx.decode, &pair.id, pair.paired_byte_offset())?
+                == Some(pair.governing_companion_record_index);
         let valid = companion_contains_frame
             && dimension_companion
             && governs_following_dimension
@@ -8740,11 +8737,9 @@ fn validate_dimension_null_locus_pairs<'a>(
                     parameter.kind() == records::parameters::DesignParameterKind::Dimension
                 })
         });
-        let governs_following_dimension = governing.governing(
-            ctx.decode,
-            &pair.id,
-            pair.paired_byte_offset(),
-        )? == Some(pair.governing_companion_record_index);
+        let governs_following_dimension =
+            governing.governing(ctx.decode, &pair.id, pair.paired_byte_offset())?
+                == Some(pair.governing_companion_record_index);
         let companion_has_typed_frame = locus_pair_companions
             .contains(&(native_stream, pair.companion_record_index))
             || locus_group_companions.contains(&(native_stream, pair.companion_record_index));

@@ -648,7 +648,7 @@ pub(super) struct StorageScope<'a> {
     operation: &'static str,
 }
 
-impl<'a> StorageScope<'a> {
+impl StorageScope<'_> {
     fn take_bytes(&self) -> u64 {
         let Some(account) = self.budget.scoped_storage.get() else {
             return 0;
@@ -659,8 +659,10 @@ impl<'a> StorageScope<'a> {
         }));
         account.bytes
     }
+}
 
-    #[cfg(test)]
+#[cfg(test)]
+impl<'a> StorageScope<'a> {
     fn finish(self) -> ScopedReservation<'a> {
         ScopedReservation {
             budget: self.budget,

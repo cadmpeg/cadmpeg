@@ -59,10 +59,14 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         parameter
     };
     let owner = |record_index, scope_record_index, parameter_record_index, local_ordinal| {
-        let mut owner = parse_parameter_owner(&cadmpeg_test_support::service_decode_context(), &parameter_owner_frame()).expect("service decode context")
-            .expect("generated parameter owner is canonical")
-            .into_record("Design/BulkStream.dat", 0)
-            .unwrap();
+        let mut owner = parse_parameter_owner(
+            &cadmpeg_test_support::service_decode_context(),
+            &parameter_owner_frame(),
+        )
+        .expect("service decode context")
+        .expect("generated parameter owner is canonical")
+        .into_record("Design/BulkStream.dat", 0)
+        .unwrap();
         {
             let mut wire = DesignParameterOwnerWire::from(owner.clone());
             wire.id = format!("f3d:native/BulkStream.dat:owner#{record_index}");

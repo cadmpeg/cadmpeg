@@ -604,10 +604,14 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 .unwrap(),
             )
             .unwrap();
-        let mut owner = parse_parameter_owner(&cadmpeg_test_support::service_decode_context(), &parameter_owner_frame()).expect("service decode context")
-            .expect("generated parameter owner is canonical")
-            .into_record("Design/BulkStream.dat", 0)
-            .unwrap();
+        let mut owner = parse_parameter_owner(
+            &cadmpeg_test_support::service_decode_context(),
+            &parameter_owner_frame(),
+        )
+        .expect("service decode context")
+        .expect("generated parameter owner is canonical")
+        .into_record("Design/BulkStream.dat", 0)
+        .unwrap();
         {
             let mut wire =
                 crate::records::parameters::DesignParameterOwnerWire::from(owner.clone());
