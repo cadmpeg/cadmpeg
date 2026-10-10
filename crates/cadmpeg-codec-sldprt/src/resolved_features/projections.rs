@@ -3095,7 +3095,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
             lookup_storage.with_storage(|| feature_object_byte_ranges(ctx, histories, lane))?;
         let mut cylinder_tokens = HashSet::new();
         for class in ctx.admit_iter(&lane.classes, TOKEN_OPERATION)? {
-            if class.name != "moCylinderRef_w" {
+            if !ctx.equal(class.name.as_str(), "moCylinderRef_w", TOKEN_OPERATION)? {
                 continue;
             }
             let token = usize::try_from(class.offset)

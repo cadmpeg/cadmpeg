@@ -18,10 +18,10 @@ enum ScalarUnit {
 }
 
 /// Add unambiguous `ResolvedFeatures` length parameters to a projection copy of history.
-pub(crate) fn enrich_history_parameters<'a>(
+pub(crate) fn enrich_history_parameters(
     ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
-    lanes: &'a [FeatureInputLane],
+    lanes: &[FeatureInputLane],
     replace_existing: bool,
 ) -> Result<(), CodecError> {
     let mut enrichment = ParameterEnrichment::new(ctx, histories)?;
@@ -32,11 +32,13 @@ pub(crate) fn enrich_history_parameters<'a>(
     enrichment.apply(replace_existing)
 }
 
+type ParameterCandidates<'lane> = BTreeMap<(usize, usize, &'lane str), Vec<(f64, ScalarUnit)>>;
+
 /// Cross-lane scalar agreement, with candidate storage held until application.
 pub(crate) struct ParameterEnrichment<'history, 'lane, 'ctx> {
     histories: &'history mut [crate::records::FeatureHistory],
     ctx: &'ctx DecodeContext<'ctx>,
-    candidates: BTreeMap<(usize, usize, &'lane str), Vec<(f64, ScalarUnit)>>,
+    candidates: ParameterCandidates<'lane>,
     storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
@@ -75,7 +77,7 @@ impl<'history, 'lane, 'ctx> ParameterEnrichment<'history, 'lane, 'ctx> {
         let scalar_units = lane_storage.with_storage(|| scalar_units(ctx, lane, &names_by_id))?;
         let mut starts = Vec::<(u64, usize, usize)>::new();
         for (history_index, history) in ctx
-            .admit_iter(&*histories, "collect SLDPRT parameter feature starts")?
+            .admit_iter(histories, "collect SLDPRT parameter feature starts")?
             .enumerate()
         {
             for (feature_index, feature) in ctx
@@ -782,12 +784,10 @@ pub(crate) fn sync_changed_feature_scalars(
                     "SLDPRT scalar offset exceeds address space".into(),
                 )
             })?;
-            let bytes = if let Some(bytes) = offset
+            let Some(bytes) = offset
                 .checked_add(8)
                 .and_then(|end| lane.native_payload.get_mut(offset..end))
-            {
-                bytes
-            } else {
+            else {
                 let message = ctx.format_retained(
                     format_args!("SLDPRT scalar {} lies outside its payload", scalar.id),
                     "format SLDPRT scalar update error",

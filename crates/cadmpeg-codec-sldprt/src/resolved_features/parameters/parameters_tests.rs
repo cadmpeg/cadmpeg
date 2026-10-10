@@ -559,7 +559,7 @@ fn scalar_synchronization_keeps_named_owners_and_strict_offset_ranges() {
 }
 
 #[test]
-fn scalar_update_rejects_max_addressable_offset_with_original_message() {
+fn scalar_update_returns_malformed_for_max_addressable_offset() {
     let (mut histories, mut lane) = parameter_limit_fixture();
     let parameter = cadmpeg_core::nonblank_literal!("D1");
     histories[0].features[0]

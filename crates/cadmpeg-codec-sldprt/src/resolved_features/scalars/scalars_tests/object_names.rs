@@ -257,7 +257,7 @@ fn object_names_source_growth_refusal_preserves_unpublished_state_and_original_f
     assert_eq!(first.operation, "index SLDPRT object names by id");
     assert_eq!(first.used, before);
     assert_eq!(first.additional, growth);
-    assert_eq!(ctx.resource_refusal(), Some(first.clone()));
+    assert_eq!(ctx.resource_refusal(), Some(first));
     assert!(names.by_object.borrow().index.is_none());
     assert!(names.by_value.borrow().is_none());
     let error = names.of(&ctx, &feature(Some(42))).unwrap_err();

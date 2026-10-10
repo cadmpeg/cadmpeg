@@ -123,9 +123,8 @@ fn borrowed_consensus_preserves_original_first_visit_refusal() {
     let mut policy = no_storage_policy();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let refusal = match consensus_termination_vote(&ctx, &votes) {
-        Err(CodecError::ResourceLimit(refusal)) => refusal,
-        _ => panic!("first visit must refuse before comparing identity"),
+    let Err(CodecError::ResourceLimit(refusal)) = consensus_termination_vote(&ctx, &votes) else {
+        panic!("first visit must refuse before comparing identity");
     };
     assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
     assert_eq!(refusal.operation, OPERATION);

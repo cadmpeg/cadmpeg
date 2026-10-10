@@ -147,9 +147,7 @@ fn work_refusal_at_additional(
         .used
         .checked_add(limit.additional)
         .expect("work need fits");
-    let replay = run(need - 1)
-        .err()
-        .expect("one unit below the same boundary refuses");
+    let replay = run(need - 1).expect_err("one unit below the same boundary refuses");
     assert!(
         matches!(
             &replay,
@@ -257,5 +255,3 @@ mod hole_axis;
 mod position;
 mod position_patterns;
 mod writer;
-
-mod child_references;

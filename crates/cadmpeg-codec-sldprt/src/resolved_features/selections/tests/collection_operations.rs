@@ -273,6 +273,8 @@ fn surface_metadata_is_built_only_by_its_consuming_operation() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = u64::MAX;
     policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     {
         let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
@@ -285,7 +287,8 @@ fn surface_metadata_is_built_only_by_its_consuming_operation() {
                 .unwrap()
                 .is_empty()
         );
-        let classes = super::super::OperationSurfaceClasses::new(&ctx, &lane, &[]).unwrap();
+        let classes = super::super::OperationSurfaceClasses::new(&ctx, &[]);
+        assert!(classes.faces.get().is_none());
         assert!(classes.surfaces.get().is_none());
         assert!(classes.split_classes.get().is_none());
         assert!(super::super::operation_surface_selection_candidates(
@@ -299,6 +302,7 @@ fn surface_metadata_is_built_only_by_its_consuming_operation() {
         )
         .unwrap()
         .is_empty());
+        assert!(classes.faces.get().is_none());
         assert!(classes.surfaces.get().is_none());
         assert!(classes.split_classes.get().is_none());
         let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx
@@ -315,7 +319,7 @@ fn surface_metadata_is_built_only_by_its_consuming_operation() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let classes = super::super::OperationSurfaceClasses::new(&ctx, &lane, &[]).unwrap();
+    let classes = super::super::OperationSurfaceClasses::new(&ctx, &[]);
     assert!(classes.has_split_classes(&lane).unwrap());
     {
         let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
@@ -324,6 +328,7 @@ fn surface_metadata_is_built_only_by_its_consuming_operation() {
             None,
         );
         assert!(classes.has_split_classes(&lane).unwrap());
+        assert!(classes.faces.get().is_none());
         assert!(classes.surfaces.get().is_none());
         let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx
             .charge_work(1, OPERATION)
@@ -343,7 +348,7 @@ fn surface_metadata_is_built_only_by_its_consuming_operation() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = limit;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-            let classes = super::super::OperationSurfaceClasses::new(&ctx, &lane, &[])?;
+            let classes = super::super::OperationSurfaceClasses::new(&ctx, &[]);
             classes.has_split_classes(&lane).map(|_| ())
         },
     );
@@ -373,7 +378,7 @@ fn split_object_without_source_does_not_search_split_classes() {
         sketch_entities: Vec::new(),
     };
     let ctx = cadmpeg_test_support::service_decode_context();
-    let classes = super::super::OperationSurfaceClasses::new(&ctx, &lane, &[]).unwrap();
+    let classes = super::super::OperationSurfaceClasses::new(&ctx, &[]);
     assert!(super::super::operation_surface_selection_candidates(
         &ctx,
         crate::classification::FeatureClass::SplitFace,
@@ -483,4 +488,56 @@ fn surface_terminal_explicit_owner_releases_path_storage() {
 #[test]
 fn surface_terminal_fallback_releases_path_storage() {
     surface_terminal_path_storage_control(1, "a", "resolve SLDPRT component path terminal");
+}
+
+#[test]
+fn selection_face_classes_are_built_at_the_first_face_reader() {
+    use crate::records::{FeatureInputClass, FeatureInputLane};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: vec![FeatureInputClass {
+            id: "face-class".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            name: "moCompFace_c".into(),
+        }],
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(
+        super::super::compact_surface_selections(&ctx, &[], &[], &lane, &[])
+            .unwrap()
+            .is_empty()
+    );
+    ctx.finish_session().unwrap();
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "decode SLDPRT selection class intervals",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let classes = super::super::OperationSurfaceClasses::new(&ctx, &[]);
+            classes.faces(&lane).map(|_| ())
+        },
+    );
 }

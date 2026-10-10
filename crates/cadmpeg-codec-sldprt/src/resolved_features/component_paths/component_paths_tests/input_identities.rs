@@ -98,7 +98,9 @@ fn input_feature_projection_retains_only_preceding_identity_bytes() {
 fn input_feature_projection_missing_consumer_keeps_no_identity_bytes() {
     let (features, components) = fixture();
     let arena = DecodeArena::new();
-    let policy = retained_policy(0);
+    let mut policy = retained_policy(0);
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
         super::super::component_path_input_features(&ctx, &components, &features, "absent",)
@@ -263,6 +265,23 @@ fn edge_producer_explicit_owner_reuses_existing_identity() {
         )
         .unwrap(),
         ["b", "a"]
+    );
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn empty_component_inputs_do_not_scan_or_index_history() {
+    let (features, _) = fixture();
+    let arena = DecodeArena::new();
+    let mut policy = retained_policy(0);
+    policy.limits.max_work_units = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(
+        super::super::component_path_input_features(&ctx, &[], &features, "consumer")
+            .unwrap()
+            .is_empty()
     );
     ctx.finish_session().unwrap();
 }

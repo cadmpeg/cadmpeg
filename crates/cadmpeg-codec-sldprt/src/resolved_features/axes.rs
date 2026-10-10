@@ -193,7 +193,11 @@ pub(super) fn linear_pattern_display_directions(
         };
         let record = |name: &&FeatureInputName| {
             Ok(name.object_id == Some(ObjectId::Absent)
-                && name.value == dimension_name
+                && ctx.equal(
+                    name.value.as_str(),
+                    dimension_name,
+                    "compare SLDPRT linear pattern display name",
+                )?
                 && (u64_from_index(object_start)..u64_from_index(end)).contains(&name.offset))
         };
         let mut remaining = names.iter();
@@ -242,7 +246,11 @@ pub(super) fn typed_linear_pattern_dimensions(
         let declared = |class: &&crate::records::FeatureInputClass| {
             Ok(
                 (u64_from_index(object_start)..u64_from_index(object_end)).contains(&class.offset)
-                    && class.name == class_name,
+                    && ctx.equal(
+                        class.name.as_str(),
+                        class_name,
+                        "compare SLDPRT linear pattern class name",
+                    )?,
             )
         };
         let mut classes = lane.classes.iter();
@@ -1426,40 +1434,37 @@ pub(crate) fn bind_profile_revolution_axes(
     surfaces: &[Surface],
 ) -> Result<(), CodecError> {
     const INDEX: &str = "index SLDPRT revolution features";
+    const MODEL_INDEX: &str = "index SLDPRT revolution model features";
+    const SKETCH_INDEX: &str = "index SLDPRT revolution sketches";
+    const OWNER_INDEX: &str = "index SLDPRT revolution sketch owners";
+    const BIND: &str = "bind SLDPRT revolution axes";
+    ctx.charge_work(0, INDEX)?;
+    if model_features.is_empty() {
+        return Ok(());
+    }
+    if !ctx.any_by(
+        &*model_features,
+        |feature| {
+            Ok(matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. })
+                    if construction.axis().is_none() && matches!(construction.profile(),
+                        Some(PlanarProfileRef::Feature(_) | PlanarProfileRef::Sketch(_)))
+            ))
+        },
+        "find SLDPRT unresolved revolution target",
+    )? {
+        return Ok(());
+    }
     let mut storage = ctx.reserve_scoped(0, INDEX)?;
-    let mut native_by_id = HashMap::new();
-    for history in ctx.admit_iter(histories, INDEX)? {
-        for feature in ctx.admit_iter(&history.features, INDEX)? {
-            storage.with_storage(|| {
-                ctx.insert_hash_map(&mut native_by_id, feature.id.as_str(), feature, INDEX)
-            })?;
-        }
-    }
-    let mut model_by_id = HashMap::new();
-    for (index, feature) in ctx.admit_iter(&*model_features, INDEX)?.enumerate() {
-        storage
-            .with_storage(|| ctx.insert_hash_map(&mut model_by_id, &feature.id, index, INDEX))?;
-    }
-    let mut sketch_by_id = HashMap::new();
-    for sketch in ctx.admit_iter(sketches, INDEX)? {
-        storage
-            .with_storage(|| ctx.insert_hash_map(&mut sketch_by_id, &sketch.id, sketch, INDEX))?;
-    }
-    // The one model feature that places each planar sketch.
-    let (sketch_owners, _owner_storage) = ctx.unique_index(
-        ctx.admit_iter(&*model_features, INDEX)?
-            .filter_map(|feature| match feature.evaluation.definition() {
-                FeatureDefinition::Operation(FeatureOperation::Sketch {
-                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-                }) => Some((sketch, feature)),
-                _ => None,
-            }),
-        INDEX,
-    )?;
+    let mut native_by_id = None;
+    let mut model_by_id = None;
+    let mut sketch_by_id = None;
+    let mut sketch_owners = None;
     let mut lane_markers = None;
     let mut assignments = Vec::<(usize, cadmpeg_ir::features::RevolutionAxis)>::new();
 
-    for (feature_index, feature) in ctx.admit_iter(&*model_features, INDEX)?.enumerate() {
+    for (feature_index, feature) in ctx.admit_iter(&*model_features, BIND)?.enumerate() {
         let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) =
             feature.evaluation.definition()
         else {
@@ -1473,7 +1478,29 @@ pub(crate) fn bind_profile_revolution_axes(
         };
         let (profile_native, sketch_id) = match profile {
             PlanarProfileRef::Feature(profile_id) => {
-                let Some(&profile_index) = ctx.get_hash_map(&model_by_id, profile_id, INDEX)?
+                let model_index = match &mut model_by_id {
+                    Some((entries, _)) => entries,
+                    slot @ None => {
+                        let (entries, reservation) =
+                            ctx.with_scoped_storage(MODEL_INDEX, || {
+                                let mut entries = HashMap::new();
+                                for (index, feature) in
+                                    ctx.admit_iter(&*model_features, MODEL_INDEX)?.enumerate()
+                                {
+                                    ctx.insert_hash_map(
+                                        &mut entries,
+                                        &feature.id,
+                                        index,
+                                        MODEL_INDEX,
+                                    )?;
+                                }
+                                Ok::<_, CodecError>(entries)
+                            })?;
+                        &mut slot.insert((entries, reservation)).0
+                    }
+                };
+                let Some(&profile_index) =
+                    ctx.get_hash_map(model_index, profile_id, MODEL_INDEX)?
                 else {
                     continue;
                 };
@@ -1490,7 +1517,28 @@ pub(crate) fn bind_profile_revolution_axes(
                 (native, sketch)
             }
             PlanarProfileRef::Sketch(sketch_id) => {
-                let Some(Some(owner)) = ctx.get_hash_map(&sketch_owners, sketch_id, INDEX)? else {
+                let owner_index = match &mut sketch_owners {
+                    Some((entries, _)) => entries,
+                    slot @ None => {
+                        // The one model feature that places each planar sketch.
+                        let (entries, reservation) = ctx.unique_index(
+                            ctx.admit_iter(&*model_features, OWNER_INDEX)?
+                                .filter_map(|feature| match feature.evaluation.definition() {
+                                    FeatureDefinition::Operation(FeatureOperation::Sketch {
+                                        sketch:
+                                            cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                                                sketch,
+                                            )),
+                                    }) => Some((sketch, feature)),
+                                    _ => None,
+                                }),
+                            OWNER_INDEX,
+                        )?;
+                        &mut slot.insert((entries, reservation)).0
+                    }
+                };
+                let Some(Some(owner)) = ctx.get_hash_map(owner_index, sketch_id, OWNER_INDEX)?
+                else {
                     continue;
                 };
                 let Some(native) = owner.native_ref.as_deref() else {
@@ -1508,13 +1556,44 @@ pub(crate) fn bind_profile_revolution_axes(
             | PlanarProfileRef::Native(_)
             | PlanarProfileRef::Faces(_) => continue,
         };
+        let native_index = match &mut native_by_id {
+            Some((entries, _)) => entries,
+            slot @ None => {
+                let (entries, reservation) = ctx.with_scoped_storage(INDEX, || {
+                    let mut entries = HashMap::new();
+                    for history in ctx.admit_iter(histories, INDEX)? {
+                        for feature in ctx.admit_iter(&history.features, INDEX)? {
+                            ctx.insert_hash_map(&mut entries, feature.id.as_str(), feature, INDEX)?;
+                        }
+                    }
+                    Ok::<_, CodecError>(entries)
+                })?;
+                &mut slot.insert((entries, reservation)).0
+            }
+        };
         if !ctx
-            .get_hash_map(&native_by_id, profile_native, INDEX)?
+            .get_hash_map(native_index, profile_native, INDEX)?
             .is_some_and(|feature| is_profile_feature_object(feature))
         {
             continue;
         }
-        let Some(sketch) = ctx.get_hash_map(&sketch_by_id, sketch_id, INDEX)?.copied() else {
+        let sketch_index = match &mut sketch_by_id {
+            Some((entries, _)) => entries,
+            slot @ None => {
+                let (entries, reservation) = ctx.with_scoped_storage(SKETCH_INDEX, || {
+                    let mut entries = HashMap::new();
+                    for sketch in ctx.admit_iter(sketches, SKETCH_INDEX)? {
+                        ctx.insert_hash_map(&mut entries, &sketch.id, sketch, SKETCH_INDEX)?;
+                    }
+                    Ok::<_, CodecError>(entries)
+                })?;
+                &mut slot.insert((entries, reservation)).0
+            }
+        };
+        let Some(sketch) = ctx
+            .get_hash_map(sketch_index, sketch_id, SKETCH_INDEX)?
+            .copied()
+        else {
             continue;
         };
         if sketch.resolved_placement().is_none() {
@@ -1582,7 +1661,7 @@ pub(crate) fn bind_profile_revolution_axes(
             })?;
         }
     }
-    drop((native_by_id, model_by_id, sketch_owners));
+    drop((native_by_id, model_by_id, sketch_owners, sketch_by_id));
     for (index, axis) in ctx.admit_iter(assignments, "assign SLDPRT revolution axes")? {
         model_features[index].evaluation.edit(|definition, _| {
             if let FeatureDefinition::Operation(FeatureOperation::Revolve {
@@ -1675,8 +1754,7 @@ fn profile_roster_construction_axis_in(
             "collect SLDPRT owned profile markers",
         )?
         .map_or(&[][..], Vec::as_slice);
-    let mut geometry = None;
-    let curve_markers = super::typed_relations::CurveMarkers::new(ctx, markers)?;
+    let mut endpoints = ProfileEndpointQueries::new(ctx, lane, markers)?;
     let mut construction_axis = |marker: &&SketchInputEntity| {
         let Some(offset) = index_from_u64(marker.offset()) else {
             return Ok(None);
@@ -1684,18 +1762,8 @@ fn profile_roster_construction_axis_in(
         if !marker_is_selected_construction_line(&lane.native_payload, offset) {
             return Ok(None);
         }
-        let (_endpoints_storage, endpoints);
-        (endpoints, _endpoints_storage) = ctx.with_scoped_storage(OPERATION, || {
-            roster_curve_endpoint_markers_lazy(
-                ctx,
-                &lane.native_payload,
-                marker,
-                markers,
-                &mut geometry,
-                Some(&curve_markers),
-            )
-        })?;
-        Ok(match endpoints.as_slice() {
+        let endpoints = endpoints.resolve(marker)?;
+        Ok(match endpoints {
             [start, end] => Some([*start, *end]),
             _ => None,
         })
@@ -1715,9 +1783,13 @@ fn profile_roster_construction_axis_in(
             Some([start.get(), end.get()])
         }
         (None, None) => {
-            if let Some(endpoints) =
-                profile_roster_implicit_axis_endpoints(ctx, lane, profile_native, roster)?
-            {
+            if let Some(endpoints) = profile_roster_implicit_axis_endpoints(
+                ctx,
+                lane,
+                profile_native,
+                roster,
+                &mut endpoints,
+            )? {
                 let (Some(start), Some(end)) =
                     (endpoints[0].coordinates_m, endpoints[1].coordinates_m)
                 else {
@@ -1725,11 +1797,19 @@ fn profile_roster_construction_axis_in(
                 };
                 Some([start.get(), end.get()])
             } else {
-                match profile_roster_origin_axis_endpoints(ctx, lane, profile_native, roster)? {
+                match profile_roster_origin_axis_endpoints(
+                    ctx,
+                    profile_native,
+                    roster,
+                    &mut endpoints,
+                )? {
                     Some(endpoints) => Some(endpoints),
-                    None => {
-                        profile_roster_principal_axis_endpoints(ctx, lane, profile_native, roster)?
-                    }
+                    None => profile_roster_principal_axis_endpoints(
+                        ctx,
+                        profile_native,
+                        roster,
+                        &mut endpoints,
+                    )?,
                 }
             }
         }
@@ -1988,55 +2068,110 @@ fn common_generated_surface_axis(
     )
 }
 
-fn profile_curve_endpoint_ids<'a>(
-    ctx: &DecodeContext<'_>,
-    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    lane: &FeatureInputLane,
-    owned: &[&SketchInputEntity],
-    markers: &[&'a SketchInputEntity],
-    indexed_only: bool,
-) -> Result<BTreeSet<&'a str>, CodecError> {
-    let mut geometry = None;
-    let curve_markers = super::typed_relations::CurveMarkers::new(ctx, markers)?;
-    profile_curve_endpoint_ids_with(ctx, storage, owned, indexed_only, |curve| {
-        roster_curve_endpoint_markers_lazy(
-            ctx,
-            &lane.native_payload,
-            curve,
-            markers,
-            &mut geometry,
-            Some(&curve_markers),
-        )
-    })
+/// Endpoint queries for one immutable lane roster. Payload indexes and endpoint
+/// results remain scoped to the complete axis-resolution phase.
+struct ProfileEndpointQueries<'roster, 'a, 'payload, 'ctx> {
+    ctx: &'ctx DecodeContext<'ctx>,
+    lane: &'payload FeatureInputLane,
+    markers: &'roster [&'a SketchInputEntity],
+    geometry: Option<super::endpoints::geometry_index::MarkerGeometryIndex<'a, 'payload, 'ctx>>,
+    curves: super::typed_relations::CurveMarkers<'roster, 'a, 'ctx>,
+    endpoints: HashMap<usize, CachedEndpoints<'a, 'ctx>>,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
-fn profile_curve_endpoint_ids_with<'a>(
-    ctx: &DecodeContext<'_>,
-    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    owned: &[&SketchInputEntity],
-    indexed_only: bool,
-    mut resolve: impl FnMut(&SketchInputEntity) -> Result<Vec<&'a SketchInputEntity>, CodecError>,
-) -> Result<BTreeSet<&'a str>, CodecError> {
-    const OPERATION: &str = "scan SLDPRT profile curve endpoints";
-    let mut ids = BTreeSet::new();
-    for curve in ctx.admit_iter(owned, OPERATION)? {
-        let (endpoints_storage, endpoints);
-        (endpoints, endpoints_storage) = ctx.with_scoped_storage(OPERATION, || resolve(curve))?;
-        for endpoint in ctx.admit_iter(endpoints, OPERATION)? {
-            if indexed_only && endpoint.object_index().is_none() {
-                continue;
-            }
-            storage.with_storage(|| {
-                ctx.insert_btree_set(
-                    &mut ids,
-                    endpoint.id(),
-                    "index SLDPRT profile curve endpoints",
+struct CachedEndpoints<'a, 'ctx> {
+    values: Vec<&'a SketchInputEntity>,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl<'roster, 'a, 'payload, 'ctx> ProfileEndpointQueries<'roster, 'a, 'payload, 'ctx> {
+    fn new(
+        ctx: &'ctx DecodeContext<'ctx>,
+        lane: &'payload FeatureInputLane,
+        markers: &'roster [&'a SketchInputEntity],
+    ) -> Result<Self, CodecError> {
+        Ok(Self {
+            ctx,
+            lane,
+            markers,
+            geometry: None,
+            curves: super::typed_relations::CurveMarkers::new(ctx, markers)?,
+            endpoints: HashMap::new(),
+            storage: ctx.reserve_scoped(0, "cache SLDPRT profile curve endpoints")?,
+        })
+    }
+
+    fn resolve(
+        &mut self,
+        curve: &SketchInputEntity,
+    ) -> Result<&[&'a SketchInputEntity], CodecError> {
+        const OPERATION: &str = "cache SLDPRT profile curve endpoints";
+        if super::endpoints::roster_curve_endpoint_route(&self.lane.native_payload, curve).is_none()
+        {
+            self.ctx.charge_work(0, OPERATION)?;
+            return Ok(&[]);
+        }
+        let key = std::ptr::from_ref(curve).addr();
+        if !self
+            .ctx
+            .contains_key_hash_map(&self.endpoints, &key, OPERATION)?
+        {
+            let endpoint_storage;
+            let endpoints;
+            (endpoints, endpoint_storage) = self.ctx.with_scoped_storage(OPERATION, || {
+                roster_curve_endpoint_markers_lazy(
+                    self.ctx,
+                    &self.lane.native_payload,
+                    curve,
+                    self.markers,
+                    &mut self.geometry,
+                    Some(&self.curves),
+                )
+            })?;
+            self.storage.with_storage(|| {
+                self.ctx.insert_hash_map(
+                    &mut self.endpoints,
+                    key,
+                    CachedEndpoints {
+                        values: endpoints,
+                        _storage: endpoint_storage,
+                    },
+                    OPERATION,
                 )
             })?;
         }
-        drop(endpoints_storage);
+        Ok(self
+            .ctx
+            .get_hash_map(&self.endpoints, &key, OPERATION)?
+            .map_or(&[], |entry| entry.values.as_slice()))
     }
-    Ok(ids)
+
+    fn ids(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+        owned: &[&SketchInputEntity],
+        indexed_only: bool,
+    ) -> Result<BTreeSet<&'a str>, CodecError> {
+        const OPERATION: &str = "scan SLDPRT profile curve endpoints";
+        let mut ids = BTreeSet::new();
+        for curve in ctx.admit_iter(owned, OPERATION)? {
+            for &endpoint in ctx.admit_iter(self.resolve(curve)?, OPERATION)? {
+                if indexed_only && endpoint.object_index().is_none() {
+                    continue;
+                }
+                storage.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut ids,
+                        endpoint.id(),
+                        "index SLDPRT profile curve endpoints",
+                    )
+                })?;
+            }
+        }
+        Ok(ids)
+    }
 }
 
 /// The owned, indexed point markers among the curve endpoints: the points an
@@ -2105,13 +2240,12 @@ fn curve_endpoint_points(
 
 fn profile_roster_origin_axis_endpoints(
     ctx: &DecodeContext<'_>,
-    lane: &FeatureInputLane,
     profile_native: &str,
     roster: &LaneMarkerIndex<'_, '_>,
+    queries: &mut ProfileEndpointQueries<'_, '_, '_, '_>,
 ) -> Result<Option<[[f64; 2]; 2]>, CodecError> {
     const OPERATION: &str = "find SLDPRT origin axis";
     let mut storage = ctx.reserve_scoped(0, OPERATION)?;
-    let markers = &roster.all;
     let owned = ctx
         .get_hash_map(
             &roster.by_feature,
@@ -2119,8 +2253,7 @@ fn profile_roster_origin_axis_endpoints(
             "collect SLDPRT owned profile markers",
         )?
         .map_or(&[][..], Vec::as_slice);
-    let curve_endpoints =
-        profile_curve_endpoint_ids(ctx, &mut storage, lane, owned, markers, true)?;
+    let curve_endpoints = queries.ids(ctx, &mut storage, owned, true)?;
     let unreferenced = |marker: &&&SketchInputEntity| {
         Ok(matches!(
             marker.kind(),
@@ -2204,13 +2337,12 @@ fn profile_roster_origin_axis_endpoints(
 
 fn profile_roster_principal_axis_endpoints(
     ctx: &DecodeContext<'_>,
-    lane: &FeatureInputLane,
     profile_native: &str,
     roster: &LaneMarkerIndex<'_, '_>,
+    queries: &mut ProfileEndpointQueries<'_, '_, '_, '_>,
 ) -> Result<Option<[[f64; 2]; 2]>, CodecError> {
     const OPERATION: &str = "collect SLDPRT principal axis candidates";
     let mut storage = ctx.reserve_scoped(0, OPERATION)?;
-    let markers = &roster.all;
     let owned = ctx
         .get_hash_map(
             &roster.by_feature,
@@ -2218,8 +2350,7 @@ fn profile_roster_principal_axis_endpoints(
             "collect SLDPRT owned profile markers",
         )?
         .map_or(&[][..], Vec::as_slice);
-    let curve_endpoints =
-        profile_curve_endpoint_ids(ctx, &mut storage, lane, owned, markers, true)?;
+    let curve_endpoints = queries.ids(ctx, &mut storage, owned, true)?;
     let bounding = profile_bounding_points(ctx, &mut storage, owned, &curve_endpoints)?;
     let endpoint_points = curve_endpoint_points(ctx, &mut storage, roster, &curve_endpoints)?;
     let mut best: Option<(usize, [[f64; 2]; 2], bool)> = None;
@@ -2252,11 +2383,9 @@ fn profile_roster_implicit_axis_endpoints<'a>(
     lane: &FeatureInputLane,
     profile_native: &str,
     roster: &LaneMarkerIndex<'a, '_>,
+    queries: &mut ProfileEndpointQueries<'_, 'a, '_, '_>,
 ) -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
     const OPERATION: &str = "find SLDPRT implicit profile axis";
-    let markers = &roster.all;
-    let mut geometry = None;
-    let curve_markers = super::typed_relations::CurveMarkers::new(ctx, markers)?;
     let mut storage = ctx.reserve_scoped(0, OPERATION)?;
     let owned = ctx
         .get_hash_map(
@@ -2287,17 +2416,7 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         Some(_) => ctx.find_by(&mut remaining, is_curve, OPERATION)?.copied(),
         None => None,
     };
-    let curve_endpoints =
-        profile_curve_endpoint_ids_with(ctx, &mut storage, owned, false, |curve| {
-            roster_curve_endpoint_markers_lazy(
-                ctx,
-                &lane.native_payload,
-                curve,
-                markers,
-                &mut geometry,
-                Some(&curve_markers),
-            )
-        })?;
+    let curve_endpoints = queries.ids(ctx, &mut storage, owned, false)?;
     let bounding = profile_bounding_points(ctx, &mut storage, owned, &curve_endpoints)?;
     let bounded = |endpoints: [&SketchInputEntity; 2]| {
         let [Some(start), Some(end)] = endpoints.map(|endpoint| {
@@ -2399,15 +2518,8 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         }) {
             continue;
         }
-        let endpoints = roster_curve_endpoint_markers_lazy(
-            ctx,
-            &lane.native_payload,
-            candidate,
-            markers,
-            &mut geometry,
-            Some(&curve_markers),
-        )?;
-        let [start, end] = endpoints.as_slice() else {
+        let endpoints = queries.resolve(candidate)?;
+        let [start, end] = endpoints else {
             continue;
         };
         let endpoints = [*start, *end];
@@ -2441,18 +2553,8 @@ fn profile_roster_implicit_axis_endpoints<'a>(
     let (Some(candidate), None) = (first_curve, second_curve) else {
         return Ok(None);
     };
-    let (_endpoints_storage, endpoints);
-    (endpoints, _endpoints_storage) = ctx.with_scoped_storage(OPERATION, || {
-        roster_curve_endpoint_markers_lazy(
-            ctx,
-            &lane.native_payload,
-            candidate,
-            markers,
-            &mut geometry,
-            Some(&curve_markers),
-        )
-    })?;
-    let [start, end] = endpoints.as_slice() else {
+    let endpoints = queries.resolve(candidate)?;
+    let [start, end] = endpoints else {
         return Ok(None);
     };
     let endpoints = [*start, *end];
@@ -2528,3 +2630,6 @@ mod profile_endpoint_cache_tests;
 
 #[cfg(test)]
 mod pattern_class_tests;
+
+#[cfg(test)]
+mod revolution_index_tests;

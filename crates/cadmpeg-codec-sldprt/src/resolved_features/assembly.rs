@@ -208,7 +208,7 @@ fn legacy_sketch_object_stream(
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let mut sketch = false;
     let mut sketch_entity = false;
-    let mut offsets = 0..payload.len().saturating_sub(3);
+    let mut offsets = 0..payload.get(3..).map_or(0, <[u8]>::len);
     while let Some((_, name)) = next_payload_class(ctx, payload, &mut offsets)? {
         sketch |= name == "sgSketch";
         sketch_entity |= native_object_class(name).role() == FeatureInputClassRole::SketchEntity;

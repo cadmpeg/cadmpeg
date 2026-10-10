@@ -152,3 +152,40 @@ fn diameter_interval_index_uses_last_name_and_rejects_duplicate_scalars() {
         None
     );
 }
+
+#[test]
+fn cosmetic_diameter_name_comparison_has_its_own_work_boundary() {
+    let lane = lane();
+    let feature = feature();
+    crate::test_support::work_refusal_at("compare SLDPRT cosmetic diameter name", |ctx| {
+        CosmeticDiameterIndex::new(ctx, &lane)?.tail(ctx, &feature)
+    });
+}
+
+#[test]
+fn variable_fillet_kind_comparisons_refuse_before_class_lookup() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let lane = lane();
+    let mut feature = feature();
+    feature.kind = "vArFiLlEt".into();
+    for (controls, operation) in [
+        (false, "decode SLDPRT variable fillet references"),
+        (true, "collect SLDPRT variable fillet controls"),
+    ] {
+        let error = crate::test_support::work_refusal_at(operation, |ctx| {
+            if controls {
+                super::super::variable_fillet_control_references(ctx, &feature, &lane, 0, 0)
+                    .map(|_| ())
+            } else {
+                super::super::compact_edge_reference_list_for_feature(ctx, &[], 0, &feature.kind)
+                    .map(|_| ())
+            }
+        });
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("kind comparison refusal");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.used, 0);
+        assert_eq!(limit.additional, 9);
+    }
+}

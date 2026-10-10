@@ -613,6 +613,10 @@ fn cosmetic_thread_reads_component_edge_reference_through_edge_ref_child() {
             .collect::<Vec<_>>(),
         [Some(3), Some(4), Some(4), Some(4)]
     );
+    crate::test_support::work_refusal_at(
+        "compare SLDPRT cosmetic edge reference class name",
+        |ctx| cosmetic_thread_component_references(ctx, &lane, 0, lane.native_payload.len()),
+    );
 }
 
 #[test]

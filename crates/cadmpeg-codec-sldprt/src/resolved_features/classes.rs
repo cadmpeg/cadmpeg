@@ -14,6 +14,14 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::records::ObjectId;
 
+/// Whether an object can lie between a profile and the extrusion it feeds.
+pub(super) fn is_sketch_block_object(feature: &Feature) -> bool {
+    matches!(
+        native_object_class(feature.input_class.as_deref().unwrap_or_default()),
+        NativeClassKind::SketchBlockDefinition | NativeClassKind::SketchBlockInstance
+    )
+}
+
 /// The offset of the object name that directly follows a class declaration.
 fn direct_name_offset(class: &FeatureInputClass) -> Option<u64> {
     class
