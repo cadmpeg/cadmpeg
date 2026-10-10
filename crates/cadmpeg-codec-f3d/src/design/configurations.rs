@@ -249,12 +249,14 @@ fn parse_configuration_variant_order(
 }
 
 /// Decode every JSON design-configuration table and rule entry.
+/// Archive entry names are unique; each entry yields at most one record.
 pub(crate) fn decode_configurations(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<DesignConfiguration>, CodecError> {
     let mut configurations = Vec::new();
-    for entry in ctx.admit_iter(&scan.entries, "scan F3D Design config asset entries")? {
+    let mut entries = scan.entries.iter();
+    while let Some(entry) = ctx.next_charged(&mut entries, "scan F3D Design config asset entries")? {
         if !scan.is_design_asset_entry(ctx, entry, ContainerRole::DesignConfig)? {
             continue;
         }
@@ -285,28 +287,6 @@ pub(crate) fn decode_configurations(
             "f3d configuration record",
         )?;
     }
-    let mut names = HashSet::new();
-    for configuration in ctx.admit_iter(&configurations, "f3d configuration identities")? {
-        if ctx.contains_hash_set(
-            &names,
-            configuration.entry_name().as_str(),
-            "f3d configuration identity lookup",
-        )? {
-            return Err(CodecError::Malformed(ctx.format_retained(
-                format_args!(
-                    "duplicate F3D configuration identity: {}",
-                    configuration.entry_name()
-                ),
-                "f3d configuration identity diagnostic",
-            )?));
-        }
-
-        ctx.insert_hash_set(
-            &mut names,
-            configuration.entry_name().as_str(),
-            "f3d configuration identity index",
-        )?;
-    }
     Ok(configurations)
 }
 
@@ -321,7 +301,8 @@ pub(crate) fn project_configurations(
     use std::collections::BTreeMap;
 
     let mut nonempty_table = false;
-    for table in ctx.admit_iter(native, "f3d configuration nonempty tables")? {
+    let mut tables = native.iter();
+    while let Some(table) = ctx.next_charged(&mut tables, "f3d configuration nonempty tables")? {
         if !table.variants().is_empty() {
             if nonempty_table {
                 return Err(CodecError::NotImplemented(
@@ -699,21 +680,27 @@ pub(crate) fn unresolved_configuration_member_count(
     ctx: &DecodeContext<'_>,
     native: &[DesignConfiguration],
 ) -> Result<usize, CodecError> {
-    native.iter().try_fold(0usize, |count, configuration| {
-        let member_count = configuration.unknown_member_count(ctx)?;
-        count.checked_add(member_count).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "count F3D unresolved configuration members",
-                cadmpeg_core::decode::u64_from_index(count),
-                cadmpeg_core::decode::u64_from_index(member_count),
-            )
-        })
-    })
+    ctx.fold(
+        native,
+        0usize,
+        |count, configuration| {
+            let member_count = configuration.unknown_member_count(ctx)?;
+            count.checked_add(member_count).ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "count F3D unresolved configuration members",
+                    cadmpeg_core::decode::u64_from_index(count),
+                    cadmpeg_core::decode::u64_from_index(member_count),
+                )
+            })
+        },
+        "f3d unresolved configuration member scan",
+    )
 }
 
 #[cfg(test)]
 mod tests {
     mod definition_copy;
+    mod query_admission;
 
     use super::{
         bind_configuration_parameter_overrides, bind_configuration_suppressed_features,

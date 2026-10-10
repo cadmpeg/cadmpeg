@@ -200,8 +200,8 @@ fn selected_plane_lifetime_survivor_retains_only_rows_in_source_order() {
                 .unwrap()
                 .unwrap();
             assert_eq!(selected.len(), 2);
-            assert!(std::ptr::eq(selected[0], &planes[1]));
-            assert!(std::ptr::eq(selected[1], &planes[0]));
+            assert!(std::ptr::eq(selected[0], &raw const planes[1]));
+            assert!(std::ptr::eq(selected[1], &raw const planes[0]));
             drop(
                 ctx.reserve_scoped(SCRATCH_ALLOWANCE, "reuse selected plane index scratch")
                     .unwrap(),
@@ -242,7 +242,7 @@ fn selected_plane_lifetime_parent_scratch_keeps_rows_until_data_drop() {
                 )
                 .unwrap(),
             );
-            assert!(std::ptr::eq(selected[0], &planes[0]));
+            assert!(std::ptr::eq(selected[0], &raw const planes[0]));
             drop(selected);
             drop(storage);
             drop(
@@ -272,7 +272,7 @@ fn selected_plane_lifetime_retained_transfer_refuses_one_below_real_rows() {
         assert_eq!(original.dimension, ResourceDimension::RetainedBytes);
         assert_eq!(original.operation, "hold F3D selected work plane rows");
         assert_eq!((original.used, original.additional), (0, row_bytes()));
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
+        assert_eq!(ctx.resource_refusal(), Some(original));
         assert!(
             matches!(super::super::selected_work_planes(ctx, &scope, &group, &[], &planes), Err(CodecError::ResourceLimit(later)) if later == original)
         );

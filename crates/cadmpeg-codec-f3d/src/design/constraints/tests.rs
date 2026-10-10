@@ -1,4 +1,3 @@
-use cadmpeg_core::decode::ResourceDimension;
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
@@ -11,7 +10,7 @@ use crate::records::{
         SketchPatternDefinition, SketchRelation, SketchRelationMember, SketchRelationReturnMember,
     },
 };
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 use cadmpeg_ir::math::Point2;
@@ -53,11 +52,15 @@ fn translated_nurbs_match_borrowed_rational_poles() {
         .unwrap(),
     })
     .unwrap();
-    assert!(translated_sketch_geometry_matches(
-        &source,
-        &shifted,
-        Point2::new(3.0, 5.0)
-    ));
+    assert!(
+        crate::test_support::with_decode_context(|ctx| translated_sketch_geometry_matches(
+            ctx,
+            &source,
+            &shifted,
+            Point2::new(3.0, 5.0)
+        ))
+        .unwrap()
+    );
 }
 
 #[test]
@@ -88,35 +91,16 @@ fn rotated_nurbs_match_borrowed_rational_poles() {
         .unwrap(),
     })
     .unwrap();
-    assert!(super::rotated_sketch_geometry_matches(
-        &source,
-        &rotated,
-        Point2::new(0.0, 0.0),
-        std::f64::consts::FRAC_PI_2
-    ));
-}
-
-#[test]
-fn constraint_index_refuses_each_collection_growth() {
-    for operation in [
-        "f3d sketch constraint placement index",
-        "f3d sketch constraint native record key",
-        "f3d sketch constraint projected entity index",
-        "f3d sketch constraint point reference index",
-        "f3d sketch constraint curve reference index",
-        "f3d sketch constraint text reference index",
-    ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut index = std::collections::HashMap::new();
-        assert!(matches!(
-            ctx.insert_hash_map(&mut index, "input-key", 1, operation).map(|_| ()),
-            Err(CodecError::ResourceLimit(limit)) if limit.operation == operation
-        ));
-        assert!(index.is_empty());
-    }
+    assert!(crate::test_support::with_decode_context(
+        |ctx| super::rotated_sketch_geometry_matches(
+            ctx,
+            &source,
+            &rotated,
+            Point2::new(0.0, 0.0),
+            std::f64::consts::FRAC_PI_2
+        )
+    )
+    .unwrap());
 }
 
 fn projected_constraint_fixture() -> (
@@ -323,35 +307,47 @@ fn rectangular_pattern_instances_require_exact_translated_geometry() {
         end: Point2::new(14.0, 3.0),
     })
     .unwrap();
-    assert!(translated_sketch_geometry_matches(
-        &source,
-        &translated,
-        Point2::new(10.0, -3.0),
-    ));
+    assert!(
+        crate::test_support::with_decode_context(|ctx| translated_sketch_geometry_matches(
+            ctx,
+            &source,
+            &translated,
+            Point2::new(10.0, -3.0),
+        ))
+        .unwrap()
+    );
     let reversed = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: Point2::new(14.0, 3.0),
         end: Point2::new(11.0, -1.0),
     })
     .unwrap();
-    assert!(!translated_sketch_geometry_matches(
-        &source,
-        &reversed,
-        Point2::new(10.0, -3.0),
-    ));
+    assert!(
+        !crate::test_support::with_decode_context(|ctx| translated_sketch_geometry_matches(
+            ctx,
+            &source,
+            &reversed,
+            Point2::new(10.0, -3.0),
+        ))
+        .unwrap()
+    );
     let resized = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
         center: Point2::new(12.0, 0.0),
         radius: cadmpeg_ir::scalar::Length::new(3.1).unwrap(),
     })
     .unwrap();
-    assert!(!translated_sketch_geometry_matches(
-        &SketchGeometry::try_from(SketchGeometryDefinition::Circle {
-            center: Point2::new(2.0, 3.0),
-            radius: cadmpeg_ir::scalar::Length::new(3.0).unwrap(),
-        })
-        .unwrap(),
-        &resized,
-        Point2::new(10.0, -3.0),
-    ));
+    assert!(
+        !crate::test_support::with_decode_context(|ctx| translated_sketch_geometry_matches(
+            ctx,
+            &SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                center: Point2::new(2.0, 3.0),
+                radius: cadmpeg_ir::scalar::Length::new(3.0).unwrap(),
+            })
+            .unwrap(),
+            &resized,
+            Point2::new(10.0, -3.0),
+        ))
+        .unwrap()
+    );
 }
 
 fn point_entity(id: &str, u: f64) -> cadmpeg_ir::sketches::SketchEntity {
@@ -502,7 +498,7 @@ fn rectangular_pattern_projects_adjacent_spacing_and_parameter() {
             exact_rectangular_pattern(
                 &relation,
                 "native",
-                &parameters,
+                &mut crate::design::constraints::PatternParameters::new(decode_ctx, &parameters),
                 &[&seed, &second, &third],
                 decode_ctx,
             )
@@ -535,7 +531,7 @@ fn rectangular_pattern_projects_total_span_and_keeps_span_parameter() {
             exact_rectangular_pattern(
                 &relation,
                 "native",
-                &parameters,
+                &mut crate::design::constraints::PatternParameters::new(decode_ctx, &parameters),
                 &[&seed, &second, &third],
                 decode_ctx,
             )
@@ -568,7 +564,7 @@ fn rectangular_pattern_does_not_change_distance_form_to_match_geometry() {
             crate::test_support::with_decode_context(|decode_ctx| exact_rectangular_pattern(
                 &relation,
                 "native",
-                &parameters,
+                &mut crate::design::constraints::PatternParameters::new(decode_ctx, &parameters),
                 &[&seed, &second, &third],
                 decode_ctx
             ))
@@ -591,7 +587,7 @@ fn rectangular_pattern_requires_the_retained_counted_reference_count() {
         crate::test_support::with_decode_context(|decode_ctx| exact_rectangular_pattern(
             &relation,
             "native",
-            &parameters,
+            &mut crate::design::constraints::PatternParameters::new(decode_ctx, &parameters),
             &[&seed, &second],
             decode_ctx
         ))
@@ -615,7 +611,10 @@ fn rectangular_pattern_transfers_two_instances_in_both_distance_forms() {
                 exact_rectangular_pattern(
                     &relation,
                     "native",
-                    &parameters,
+                    &mut crate::design::constraints::PatternParameters::new(
+                        decode_ctx,
+                        &parameters,
+                    ),
                     &[&seed, &second],
                     decode_ctx,
                 )
@@ -732,7 +731,7 @@ fn circular_pattern_resolves_full_and_partial_instance_distributions() {
             exact_circular_pattern(
                 &relation(std::f64::consts::PI),
                 "native",
-                &[],
+                &mut crate::design::constraints::PatternParameters::new(decode_ctx, &[]),
                 &members,
                 &returned,
                 decode_ctx,
@@ -774,7 +773,7 @@ fn circular_pattern_resolves_full_and_partial_instance_distributions() {
     let full_members = [&center, &seed, &full_middle, &full_last];
     let full_returned = [&seed, &full_middle, &full_last, &center];
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_circular_pattern(&relation(std::f64::consts::TAU), "native", &[], &full_members, &full_returned, decode_ctx)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| exact_circular_pattern(&relation(std::f64::consts::TAU), "native", &mut crate::design::constraints::PatternParameters::new(decode_ctx, &[]), &full_members, &full_returned, decode_ctx)).unwrap(),
         Some(SketchConstraintDefinitionInput::CircularPattern { ref pattern })
             if scalar_close(pattern.instances()[0].angle.get(), std::f64::consts::TAU / 3.0)
     ));
@@ -867,7 +866,14 @@ fn circular_pattern_resolves_independently_of_relation_ordinals() {
     let returned = [&seed, &middle, &last, &center];
     let Some(SketchConstraintDefinitionInput::CircularPattern { pattern }) =
         crate::test_support::with_decode_context(|decode_ctx| {
-            exact_circular_pattern(&relation, "native", &[], &members, &returned, decode_ctx)
+            exact_circular_pattern(
+                &relation,
+                "native",
+                &mut crate::design::constraints::PatternParameters::new(decode_ctx, &[]),
+                &members,
+                &returned,
+                decode_ctx,
+            )
         })
         .unwrap()
     else {
@@ -1001,3 +1007,9 @@ fn text_path_relation_projects_typed_entities_and_scaled_glyph_placements() {
         );
     }
 }
+
+mod geometry_admission;
+
+mod pattern_index;
+
+mod sketch_admission;

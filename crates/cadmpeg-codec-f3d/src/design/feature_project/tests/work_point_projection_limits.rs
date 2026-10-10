@@ -7,7 +7,7 @@ use crate::records::feature::work_geometry::{
     DesignWorkPointRuleForm,
 };
 use crate::records::topology::edge_identity::DesignEdgeOperand;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FeatureId;
 use std::collections::HashMap;
@@ -130,68 +130,32 @@ fn assert_retained_refusal(
     edge_operands: &[DesignEdgeOperand],
     scope_ids: &HashMap<(&str, u32), FeatureId>,
     operation: &'static str,
-    required_bytes: usize,
 ) {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    let preceding = match operation {
-        "f3d WorkPoint historical edge operand id"
-        | "f3d WorkPoint historical vertex recipe id" => {
-            let feature = crate::ids::neutral_feature_id(&scope());
-            let prefix = crate::ids::history_input_prefix(&feature.key(), 4);
-            let state = crate::ids::feature_input_topology_id(&feature, 4);
-            let entity_len = if operation == "f3d WorkPoint historical edge operand id" {
-                crate::ids::history_input_edge_id(&prefix, 7).as_str().len()
-            } else {
-                crate::ids::history_input_vertex_id(&prefix, 43)
-                    .as_str()
-                    .len()
-            };
-            feature.as_str().len() + prefix.as_str().len() + state.as_str().len() + entity_len
-        }
-        _ => 0,
-    };
-    policy.limits.max_retained_bytes = u64::try_from(preceding + required_bytes - 1).unwrap();
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = super::super::project_work_point_construction(
-        &ctx,
-        &scope(),
-        construction,
-        &[],
-        edge_operands,
-        scope_ids,
-    );
-    assert!(
-        matches!(result, Err(CodecError::ResourceLimit(ref failure))
-        if failure.operation == operation && failure.dimension == ResourceDimension::RetainedBytes),
-        "expected {operation} refusal, got {result:?}"
-    );
+    let error = crate::test_support::resource_refusal_at(ResourceDimension::RetainedBytes, operation, 0, |ctx| {
+        super::super::project_work_point_construction(ctx, &scope(), construction, &[], edge_operands, scope_ids)
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(failure) if failure.operation == operation && failure.dimension == ResourceDimension::RetainedBytes));
 }
 
 #[test]
 fn work_point_native_vertex_recipe_id_refuses_retained_limit() {
     let construction = vertex_construction(false);
-    let len = "f3d:native/BulkStream.dat:construction-recipe#vertex".len();
     assert_retained_refusal(
         &construction,
         &[],
         &HashMap::new(),
         "f3d WorkPoint native vertex recipe id",
-        len,
     );
 }
 
 #[test]
 fn work_point_historical_vertex_recipe_id_refuses_retained_limit() {
     let construction = vertex_construction(true);
-    let len = "f3d:native/BulkStream.dat:construction-recipe#vertex".len();
     assert_retained_refusal(
         &construction,
         &[],
         &HashMap::new(),
         "f3d WorkPoint historical vertex recipe id",
-        len,
     );
 }
 
@@ -205,7 +169,6 @@ fn work_point_plane_feature_id_refuses_retained_limit() {
         &[],
         &scope_ids,
         "f3d WorkPoint plane feature id",
-        id.as_str().len(),
     );
 }
 
@@ -225,7 +188,6 @@ fn work_point_native_edge_operand_id_refuses_retained_limit() {
         std::slice::from_ref(&operand),
         &HashMap::new(),
         "f3d WorkPoint native edge operand id",
-        operand.id.len(),
     );
 }
 
@@ -245,7 +207,6 @@ fn work_point_historical_edge_operand_id_refuses_retained_limit() {
         std::slice::from_ref(&operand),
         &HashMap::new(),
         "f3d WorkPoint historical edge operand id",
-        operand.id.len(),
     );
 }
 

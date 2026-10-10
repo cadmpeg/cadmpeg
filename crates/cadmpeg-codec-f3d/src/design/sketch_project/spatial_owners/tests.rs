@@ -85,12 +85,12 @@ fn point(owner: Option<u32>, depth: f64) -> SketchPoint {
     .unwrap()
 }
 
-fn refusal(error: CodecError, operation: &'static str, cap: u64) -> ResourceLimit {
+fn refusal(error: &CodecError, operation: &'static str, cap: u64) -> ResourceLimit {
     let CodecError::ResourceLimit(actual) = error else {
         panic!("expected resource refusal: {error:?}");
     };
     assert_eq!(
-        actual,
+        *actual,
         ResourceLimit {
             dimension: ResourceDimension::WorkUnits,
             reason: ResourceFailure::BudgetExceeded,
@@ -100,11 +100,11 @@ fn refusal(error: CodecError, operation: &'static str, cap: u64) -> ResourceLimi
             operation,
         }
     );
-    actual
+    *actual
 }
 
 #[test]
-fn spatial_curve_constant_geometry_is_free_then_keeps_original_refusal() {
+fn spatial_curve_constant_geometry_needs_no_work() {
     let line = |depth| {
         SketchCurveGeometry::line(
             Point3::new(0.0, 0.0, depth),
@@ -143,20 +143,7 @@ fn spatial_curve_constant_geometry_is_free_then_keeps_original_refusal() {
         assert_eq!(sketch_curve_is_spatial(&ctx, curve).unwrap(), *expected);
     }
     assert_eq!(ctx.resource_refusal(), None);
-    let original = refusal(
-        ctx.charge_work(1, "original spatial refusal").unwrap_err(),
-        "original spatial refusal",
-        0,
-    );
-    for (curve, _) in &curves {
-        assert!(matches!(sketch_curve_is_spatial(&ctx, curve),
-            Err(CodecError::ResourceLimit(actual)) if actual == original));
-    }
-    assert!(matches!(spatial_geometry_owners(&ctx, &[], &[]),
-        Err(CodecError::ResourceLimit(actual)) if actual == original));
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
+
 }
 
 #[test]
@@ -183,9 +170,7 @@ fn spatial_nurbs_classification_pays_only_reached_polynomial_and_rational_poles(
                     ctx.finish_session().unwrap();
                 } else {
                     let original =
-                        refusal(result.unwrap_err(), "classify F3D sketch NURBS poles", cap);
-                    assert!(matches!(spatial_geometry_owners(&ctx, &[], &[]),
-                        Err(CodecError::ResourceLimit(actual)) if actual == original));
+                        refusal(&result.unwrap_err(), "classify F3D sketch NURBS poles", cap);
                     assert!(
                         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
                     );
@@ -264,14 +249,12 @@ fn spatial_point_stream_refuses_before_owner_backing_or_publication() {
     let arena = DecodeArena::new();
     let policy = policy(1);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let original = refusal(
+    let original = refusal(&
         spatial_geometry_owners(&ctx, std::slice::from_ref(&point), &[]).unwrap_err(),
         "resolve F3D spatial point owner stream",
         1,
     );
     assert_eq!(serde_json::to_value(&point).unwrap(), before);
-    assert!(matches!(spatial_geometry_owners(&ctx, &[], &[]),
-        Err(CodecError::ResourceLimit(actual)) if actual == original));
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
     );
@@ -309,7 +292,7 @@ fn spatial_owner_classifies_planar_nurbs_before_unneeded_long_stream_query() {
             assert!(result.unwrap().is_empty());
             ctx.finish_session().unwrap();
         } else {
-            let original = refusal(result.unwrap_err(), "visit F3D spatial owner curve", cap);
+            let original = refusal(&result.unwrap_err(), "visit F3D spatial owner curve", cap);
             assert!(
                 matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
             );
@@ -326,14 +309,12 @@ fn spatial_owner_nurbs_refusal_precedes_stream_search_and_backing() {
     let arena = DecodeArena::new();
     let policy = policy(1);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let original = refusal(
+    let original = refusal(&
         spatial_geometry_owners(&ctx, &[], std::slice::from_ref(&curve)).unwrap_err(),
         "classify F3D sketch NURBS poles",
         1,
     );
     assert_eq!(serde_json::to_value(&curve).unwrap(), before);
-    assert!(matches!(spatial_geometry_owners(&ctx, &[], &[]),
-        Err(CodecError::ResourceLimit(actual)) if actual == original));
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
     );

@@ -151,7 +151,7 @@ fn fixed_fillet_temporary_discarded_radius_proof_does_not_charge_final_retained_
         assert_eq!(original.operation, "f3d feature identifier");
         assert_eq!(original.used, 0);
         assert!(original.additional > 0);
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
+        assert_eq!(ctx.resource_refusal(), Some(original));
         assert!(
             matches!(project_fixed_fillet(&scope, &[], &[], &[], ctx), Err(CodecError::ResourceLimit(later)) if later == original)
         );
@@ -204,7 +204,7 @@ fn fixed_fillet_temporary_each_actual_query_backing_refuses_one_below_its_peak()
             assert_eq!(original.dimension, ResourceDimension::MaterializedBytes);
             assert_eq!(original.operation, operation);
             assert_eq!((original.used, original.additional), (used, backing));
-            assert_eq!(ctx.resource_refusal(), Some(original.clone()));
+            assert_eq!(ctx.resource_refusal(), Some(original));
             assert!(
                 matches!(project_fixed_fillet(&scope, &[], &[], &[], ctx), Err(CodecError::ResourceLimit(later)) if later == original)
             );

@@ -82,27 +82,6 @@ fn edge_reference_source_group_stops_after_two_nonempty_sets() {
 }
 
 #[test]
-fn edge_reference_source_group_empty_source_is_free() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(
-        edge_group_assignment_candidates(&[], std::iter::empty(), &ctx).unwrap(),
-        Some(EdgeAssignmentCandidates::Context)
-    );
-    let Err(CodecError::ResourceLimit(original)) =
-        ctx.charge_work(1, "original reference source refusal")
-    else {
-        panic!("original refusal");
-    };
-    assert!(
-        matches!(edge_group_assignment_candidates(&[], std::iter::empty(), &ctx),
-        Err(CodecError::ResourceLimit(later)) if later == original)
-    );
-}
-
-#[test]
 fn edge_reference_source_direct_empty_and_invalid_meanings_are_distinct() {
     crate::test_support::with_decode_context(|ctx| {
         assert_eq!(

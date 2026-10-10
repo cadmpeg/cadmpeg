@@ -26,8 +26,13 @@ fn flange_group_operand() -> DesignEdgeOperand {
 fn run_case(owner: &str, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
     match owner {
         "identity_uniform" => {
-            let selection_group = group(2, 10);
+            let mut selection_group = group(2, 10);
+            selection_group.try_set_members(vec![
+                crate::records::identity::Located { value: 10, offset: 0 },
+                crate::records::identity::Located { value: 11, offset: 11 },
+            ]).unwrap();
             let operand = identity(10, &[(17, 3.0)]);
+            let second = identity(11, &[(17, 3.0)]);
             let feature =
                 cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#main-edge-group").unwrap();
             resolved_edge_treatment_group_with_corners(
@@ -35,7 +40,7 @@ fn run_case(owner: &str, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
                 EdgeTreatmentInputs {
                     groups: std::slice::from_ref(&selection_group),
                     operands: &[],
-                    identity_operands: &[operand],
+                    identity_operands: &[operand, second],
                     vertex_operands: &[],
                     histories: &[],
                     previous_state_id: Some(7),
@@ -482,28 +487,6 @@ fn edge_membership_flange_scalar_native_candidate_uses_no_storage_or_collection(
         Some(17)
     );
     assert_eq!(ctx.resource_refusal(), None);
-}
-
-#[test]
-fn edge_membership_flange_and_partial_empty_gates_keep_the_original_refusal() {
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let Err(CodecError::ResourceLimit(original)) = ctx.charge_work(
-        policy.limits.max_work_units + 1,
-        "original edge membership refusal",
-    ) else {
-        panic!("creating session refuses excess work");
-    };
-    let empty = recipe_edge_operand(10, &[], &[]);
-    assert!(
-        matches!(edge_flange_updated_edge_candidate(&empty, &ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-    );
-    assert!(matches!(partial_historical_edge_selection(
-        std::iter::empty::<(&str, Option<i64>)>(), 41, "feature",
-        cadmpeg_ir::ids::FeatureInputTopologyId::mint("f3d:history-input:state#feature").unwrap(), "group", &ctx,
-    ), Err(CodecError::ResourceLimit(later)) if later == original));
-    assert_eq!(ctx.resource_refusal(), Some(original));
 }
 
 #[test]

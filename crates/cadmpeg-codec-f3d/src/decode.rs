@@ -1350,7 +1350,7 @@ fn design_projection_gaps(
     })?;
     let mut unprojected_history_dependencies = 0;
     let mut ambiguous_history_dependencies = 0;
-    let scope_history = crate::design::feature_project::ScopeHistoryGraph::new(
+    let (scope_history, _scope_history_storage) = crate::design::feature_project::ScopeHistoryGraph::new(
         ctx,
         &native.design_parameter_scopes,
         &native.design_body_bindings,
@@ -1590,7 +1590,7 @@ fn design_projection_gaps(
                     Some(ordinals) => {
                         let stream = crate::ids::native_stream(&scope.id)
                             .unwrap_or(crate::ids::DEFAULT_STREAM);
-                        ctx.contains_key_hash_map(ordinals, &(stream, scope.record_index), "find F3D authored scope ordinal")?
+                        ctx.contains_key_btree_map(ordinals, &(stream, scope.record_index), "find F3D authored scope ordinal")?
                     },
                 };
                 authored && !ctx.contains_hash_set(&projected_feature_refs, scope.id.as_str(), "find F3D projection projected_feature_refs")?
@@ -1608,8 +1608,9 @@ fn design_projection_gaps(
                 !ctx.contains_hash_set(&resolved_owners, &(stream, owner_record_index), "find F3D parameter owner")?
             }; count.checked_add(usize::from(selected)).ok_or_else(|| ctx.refuse_codec_limit("count F3D projection gaps", u64::MAX - 1, u64::MAX)) })?,
         untyped_parameter_units: crate::design::feature_project::untyped_parameter_unit_count(
+            ctx,
             &native.design_parameters,
-        ),
+        )?,
         unresolved_expression_dependencies:
             crate::design::dimensions::unresolved_parameter_expression_dependency_count(ctx, &native.design_parameters, &ir.model.parameters)?,
         native_sketch_relations,

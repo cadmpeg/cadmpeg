@@ -2016,7 +2016,6 @@ mod scalar_edits;
 
 mod membership;
 
-mod empty_gates;
 
 mod text_comparison;
 
@@ -2039,3 +2038,8 @@ mod fixed_fillet_temporary_lifetimes;
 mod fixed_variable_radius_lifetimes;
 
 mod main_query_lifetimes;
+
+mod incidence_queries;
+mod reference_queries;
+mod terminal_queries;
+mod intersection_tails;

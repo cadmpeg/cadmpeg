@@ -97,7 +97,7 @@ fn fixed_variable_radius_typed_allocation_refuses_one_below_before_conversion() 
             (original.used, original.additional),
             (0, typed_radius_bytes())
         );
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
+        assert_eq!(ctx.resource_refusal(), Some(original));
         assert!(
             matches!(project_fixed_fillet(&scope, &[], &[], &[], ctx), Err(CodecError::ResourceLimit(later)) if later == original)
         );
@@ -133,7 +133,7 @@ fn fixed_variable_radius_order_work_refusal_remains_original_after_candidate_dro
         );
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
         assert_eq!(original.additional, 1);
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
+        assert_eq!(ctx.resource_refusal(), Some(original));
         assert!(
             matches!(project_fixed_fillet(&scope, &[], &[], &[], ctx), Err(CodecError::ResourceLimit(later)) if later == original)
         );

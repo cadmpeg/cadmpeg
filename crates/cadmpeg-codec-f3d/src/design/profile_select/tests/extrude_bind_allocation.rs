@@ -209,6 +209,9 @@ fn assert_extrude_binder_refusal(
                 cadmpeg_core::decode::ResourceDimension::WorkUnits => {
                     policy.limits.max_work_units = cap;
                 }
+                cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                    policy.limits.max_materialized_bytes = cap;
+                }
                 other => panic!("unsupported binder test dimension: {other:?}"),
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
@@ -273,6 +276,11 @@ fn extrude_fallback_group_id_refuses_retained_limit() {
     assert_extrude_binder_refusal(
         "f3d extrude fallback group id",
         1,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+    );
+    assert_extrude_binder_refusal(
+        "f3d extrude group output storage",
+        1,
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
     );
 }
@@ -309,6 +317,11 @@ fn spatial_extrude_group_id_refuses_retained_limit() {
     assert_extrude_binder_refusal(
         "f3d spatial extrude selection group id",
         2,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+    );
+    assert_extrude_binder_refusal(
+        "f3d extrude group output storage",
+        2,
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
     );
 }
@@ -326,6 +339,11 @@ fn spatial_extrude_group_refuses_collection_limit() {
 fn spatial_extrude_sketch_id_refuses_retained_limit() {
     assert_extrude_binder_refusal(
         "f3d profile spatial sketch id",
+        2,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+    );
+    assert_extrude_binder_refusal(
+        "f3d extrude group output storage",
         2,
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
     );

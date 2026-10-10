@@ -124,7 +124,7 @@ fn merged_edge_lifetime_classifier_stops_before_unvisited_suffix() {
             (original.used, original.additional),
             (1, u64::try_from(scope().id.len()).unwrap())
         );
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
+        assert_eq!(ctx.resource_refusal(), Some(original));
         assert!(
             matches!(super::super::merge_edge_selections(ctx, &scope(), &[]), Err(CodecError::ResourceLimit(later)) if later == original)
         );
@@ -156,7 +156,7 @@ fn merged_edge_lifetime_direct_identity_refuses_before_comparing_first_byte() {
             "f3d merged direct edge identity comparison"
         );
         assert_eq!(original.additional, 1);
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
+        assert_eq!(ctx.resource_refusal(), Some(original));
         assert!(
             matches!(super::super::merge_edge_selections(ctx, &scope(), &[]), Err(CodecError::ResourceLimit(later)) if later == original)
         );
@@ -185,7 +185,7 @@ fn merged_edge_lifetime_historical_state_refuses_before_comparing_first_byte() {
             "f3d merged historical state identity comparison"
         );
         assert_eq!(original.additional, 1);
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
+        assert_eq!(ctx.resource_refusal(), Some(original));
         assert!(
             matches!(super::super::merge_edge_selections(ctx, &scope(), &[]), Err(CodecError::ResourceLimit(later)) if later == original)
         );
@@ -217,7 +217,7 @@ fn merged_edge_lifetime_historical_edge_refuses_before_comparing_first_byte() {
             "f3d merged historical edge identity comparison"
         );
         assert_eq!(original.additional, 1);
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
+        assert_eq!(ctx.resource_refusal(), Some(original));
         assert!(
             matches!(super::super::merge_edge_selections(ctx, &scope(), &[]), Err(CodecError::ResourceLimit(later)) if later == original)
         );
@@ -278,11 +278,19 @@ fn merged_edge_lifetime_direct_first_mismatch_does_not_compare_text_suffix() {
         native: scope.id.clone(),
     };
     let mut policy = DecodePolicy::service();
-    // One classifier visit, one duplicate candidate visit, one differing byte;
-    // the two identity copies and final native copy remain paid in full.
-    // Two pushes share the first four-slot vector allocation and move no bytes.
-    let before_native = u64::try_from(first_text.len() + second_text.len()).unwrap() + 3;
-    let work = before_native + u64::try_from(scope.id.len()).unwrap();
+    let short_first = "f3d:brep:edge#a";
+    let short_second = "g3d:brep:edge#a";
+    let short = [EdgeSelection::Edges(vec![EdgeId::mint(short_first).unwrap(), EdgeId::mint(short_second).unwrap()])];
+    let CodecError::ResourceLimit(boundary) = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits, "f3d merged direct native id", 0,
+        |ctx| super::super::merge_edge_selections(ctx, &scope, &short),
+    ) else { panic!("merged direct native-copy boundary"); };
+    // The longer identities add their full copy cost. Their comparison still
+    // stops at the same first differing byte as the short route.
+    let before_native = boundary.used + u64::try_from(
+        first_text.len() - short_first.len() + second_text.len() - short_second.len()
+    ).unwrap();
+    let work = before_native + boundary.additional;
     policy.limits.max_work_units = work;
     crate::test_support::with_decode_policy(&policy, |ctx| {
         assert_eq!(

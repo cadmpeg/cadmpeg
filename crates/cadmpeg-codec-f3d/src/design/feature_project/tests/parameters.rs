@@ -159,14 +159,17 @@ fn parameters_project_all_design_database_unit_tokens() {
             .map(String::as_str),
         Some("2.75")
     );
-    assert_eq!(untyped_parameter_unit_count(&native), 1);
+    assert_eq!(crate::test_support::with_decode_context(|ctx| untyped_parameter_unit_count(ctx, &native).unwrap()), 1);
 }
 
 #[test]
 fn expression_dependencies_preserve_fusion_parameter_name_symbols() {
     let name = "Width$µ°\"A";
     assert_eq!(
-        expression_identifiers(&format!("{name} / 2 + sin(30 deg)")).collect::<Vec<_>>(),
+        crate::test_support::with_decode_context(|ctx| {
+            expression_identifiers(ctx, &format!("{name} / 2 + sin(30 deg)")).collect::<Result<Vec<_>, _>>()
+                .map(|tokens| tokens.into_iter().map(str::to_owned).collect::<Vec<_>>())
+        }).unwrap(),
         [name]
     );
     let parameter = |record_index, source_ordinal, expression: &str, name: &str| {

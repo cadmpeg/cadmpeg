@@ -2,7 +2,8 @@
 //! Resolve edge-selection operands to stable edge identities.
 
 use super::edge_references::edge_operand_reference_edge_sets;
-use crate::ids::{self, native_stream};
+use super::feature_project::unique_feature_match_for_decode;
+use crate::ids::{self, native_stream_charged};
 use crate::records::{
     feature::{scope::DesignParameterScope, work_geometry::DesignEdgeTreatmentVertexOperand},
     topology::{
@@ -12,7 +13,7 @@ use crate::records::{
 };
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 
 const EPS_EDGE_RESOLVE_RADIUS_EDGE_GROUP_CANDIDATES_E9: f64 = 1.0e-9;
 const EPS_EDGE_RESOLVE_RADIUS_EDGE_IDENTITY_GROUP_CANDIDATES_E9: f64 = 1.0e-9;
@@ -31,12 +32,9 @@ fn sorted_transition_slots(
     ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<Vec<i64>, CodecError> {
-    ctx.charge_work(0, "resolve F3D sorted transition slots")?;
+    if slots.is_empty() { return Ok(Vec::new()); }
     let mut storage = ctx.reserve_scoped(0, "hold F3D sorted transition slots")?;
-    let mut sorted = Vec::new();
-    for &slot in slots {
-        ctx.push_scoped_vec(&mut storage, &mut sorted, slot, operation)?;
-    }
+    let mut sorted = storage.with_storage(|| ctx.copy_slice(slots, operation))?;
     ctx.sort_unstable_by(
         &mut sorted,
         |value| value,
@@ -61,7 +59,6 @@ fn shared_recipe_state_id(
     operands: &[&DesignEdgeOperand],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<i64>, CodecError> {
-    ctx.charge_work(0, "resolve F3D shared edge recipe state")?;
     let Some(state_id) = operands.first().and_then(|operand| operand.recipe_state_id) else {
         return Ok(None);
     };
@@ -89,14 +86,19 @@ fn historical_identity_slots(
     (slot_operation, native_operation): (&'static str, &'static str),
 ) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
     let mut edges = Vec::new();
-    for &slot in slots {
+    let mut prefix_storage = ctx.reserve_scoped(0, "f3d historical edge prefix storage")?;
+    if !slots.is_empty() {
+    let prefix = prefix_storage.with_storage(|| crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id))?;
+    let mut slot_source = slots.iter();
+    while let Some(&slot) = ctx.next_charged(&mut slot_source, "f3d edge projection source")? {
         let edge = crate::design::identity::history_input_edge_id(
             ctx,
-            &crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id)?,
+            &prefix,
             slot,
             "f3d historical edge identifier",
         )?;
         ctx.push_vec(&mut edges, edge, slot_operation)?;
+    }
     }
     let native = ctx.copy_retained_text(&group.id, native_operation)?;
     match cadmpeg_ir::features::EdgeSelection::historical(state, edges, native, ctx)? {
@@ -144,7 +146,6 @@ pub(super) fn resolved_surface_patch_edge_group(
     feature_id: &cadmpeg_ir::features::FeatureId,
     ctx: &DecodeContext<'_>,
 ) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
-    ctx.charge_work(0, "resolve F3D resolved surface patch edge group")?;
     let fallback = || {
         resolved_edge_group(
             group,
@@ -156,10 +157,11 @@ pub(super) fn resolved_surface_patch_edge_group(
             ctx,
         )
     };
-    let stream = native_stream(&group.id);
+    let stream = native_stream_charged(ctx, &group.id, "f3d edge native stream")?;
     let mut member_storage = ctx.reserve_scoped(0, "hold F3D surface patch member index")?;
     let mut member_ids = HashSet::new();
-    for member in group.members() {
+    let mut member_source = group.members().iter();
+    while let Some(member) = ctx.next_charged(&mut member_source, "f3d edge projection source")? {
         if !member_storage.with_storage(|| {
             ctx.insert_hash_set(
                 &mut member_ids,
@@ -172,18 +174,14 @@ pub(super) fn resolved_surface_patch_edge_group(
     }
     let mut matched_storage = ctx.reserve_scoped(0, "hold F3D surface patch matched operands")?;
     let mut matched_operands = Vec::new();
-    for member in group.members() {
-        let mut matches = operands.iter().filter(|operand| {
-            native_stream(&operand.id) == stream
+    let mut operand_member_source = group.members().iter();
+    while let Some(member) = ctx.next_charged(&mut operand_member_source, "f3d edge projection source")? {
+        let matches = unique_feature_match_for_decode(ctx, operands.iter(), |operand| Ok(ctx.equal(&native_stream_charged(ctx, &operand.id, "f3d edge native stream")?, &stream, "f3d edge stream comparison")?
                 && operand.scope_record_index == group.scope_record_index
-                && operand.record_index() == member.value
-        });
-        let Some(operand) = matches.next() else {
+                && operand.record_index() == member.value), "f3d unique edge operand")?;
+        let Some(operand) = matches else {
             return fallback();
         };
-        if matches.next().is_some() {
-            return fallback();
-        }
         ctx.push_scoped_vec(
             &mut matched_storage,
             &mut matched_operands,
@@ -213,8 +211,9 @@ pub(super) fn resolved_surface_patch_edge_group(
     };
     let mut slot_storage = ctx.reserve_scoped(0, "hold F3D surface patch stable slots")?;
     let mut edge_slots = Vec::new();
-    for edge in &edges {
-        let Some(slot) = stable_edge_slot(edge) else {
+    let mut selected_edge_source = edges.iter();
+    while let Some(edge) = ctx.next_charged(&mut selected_edge_source, "f3d edge projection source")? {
+        let Some(slot) = stable_edge_slot(edge, ctx)? else {
             return fallback();
         };
         ctx.push_scoped_vec(
@@ -228,10 +227,12 @@ pub(super) fn resolved_surface_patch_edge_group(
     drop(edge_storage);
     let feature_key = crate::design::identity::identity_key(ctx, feature_id.as_str())?;
     let mut historical_edges = Vec::new();
-    for &edge_slot in &edge_slots {
+    let (prefix, _prefix_storage) = ctx.with_scoped_storage("f3d historical edge prefix storage", || crate::design::identity::history_input_prefix(ctx, feature_key, state_id))?;
+    let mut historical_slot_source = edge_slots.iter();
+    while let Some(&edge_slot) = ctx.next_charged(&mut historical_slot_source, "f3d edge projection source")? {
         let id = crate::design::identity::history_input_edge_id(
             ctx,
-            &crate::design::identity::history_input_prefix(ctx, feature_key, state_id)?,
+            &prefix,
             edge_slot,
             "f3d historical edge identifier",
         )?;
@@ -269,7 +270,6 @@ fn surface_patch_grouped_recipe_edges(
     operands: &[&DesignEdgeOperand],
     ctx: &DecodeContext<'_>,
 ) -> Result<SurfacePatchRecipeEdges, CodecError> {
-    ctx.charge_work(0, "resolve F3D surface patch grouped recipe edges")?;
     if operands.is_empty() {
         return Ok(SurfacePatchRecipeEdges::Absent);
     }
@@ -328,7 +328,8 @@ fn surface_patch_grouped_recipe_edges(
     let mut distinct_storage =
         ctx.reserve_scoped(0, "hold F3D surface patch distinct recipe edges")?;
     let mut distinct = HashSet::new();
-    for edge in &edges {
+    let mut distinct_edge_source = edges.iter();
+    while let Some(edge) = ctx.next_charged(&mut distinct_edge_source, "f3d edge projection source")? {
         if !distinct_storage.with_storage(|| {
             ctx.insert_hash_set(
                 &mut distinct,
@@ -342,14 +343,10 @@ fn surface_patch_grouped_recipe_edges(
     candidate_storage.commit_value(SurfacePatchRecipeEdges::Resolved(edges))
 }
 
-fn stable_edge_slot(edge: &cadmpeg_ir::ids::EdgeId) -> Option<i64> {
-    edge.as_str()
-        .rsplit_once('#')?
-        .1
-        .split(':')
-        .next()?
-        .parse::<i64>()
-        .ok()
+fn stable_edge_slot(edge: &cadmpeg_ir::ids::EdgeId, ctx: &DecodeContext<'_>) -> Result<Option<i64>, CodecError> {
+    let Some((_, suffix)) = ctx.rsplit_once(edge.as_str(), "#", "f3d stable edge slot suffix")? else { return Ok(None); };
+    let slot = ctx.split_once(suffix, ":", "f3d stable edge slot prefix")?.map_or(suffix, |(slot, _)| slot);
+    Ok(ctx.parse_text::<i64>(slot, "f3d stable edge slot parse")?.ok())
 }
 
 /// Resolve a selectorless `EdgeFlange` group from its updated source edges.
@@ -385,27 +382,23 @@ pub(super) fn resolved_edge_flange_group(
     let Some(previous_state_id) = previous_state_id else {
         return Ok(selection);
     };
-    let stream = native_stream(&group.id);
+    let stream = native_stream_charged(ctx, &group.id, "f3d edge native stream")?;
     let mut candidate_storage = ctx.reserve_scoped(0, "collect F3D edge flange candidates")?;
     let mut members = HashSet::new();
     let mut candidate_sets = Vec::new();
-    for member in group.members() {
+    let mut flange_member_source = group.members().iter();
+    while let Some(member) = ctx.next_charged(&mut flange_member_source, "f3d edge projection source")? {
         if !candidate_storage.with_storage(|| {
             ctx.insert_hash_set(&mut members, member.value, "f3d edge flange member index")
         })? {
             return Ok(selection);
         }
-        let mut matching = operands.iter().filter(|operand| {
-            native_stream(&operand.id) == stream
+        let matching = unique_feature_match_for_decode(ctx, operands.iter(), |operand| Ok(ctx.equal(&native_stream_charged(ctx, &operand.id, "f3d edge native stream")?, &stream, "f3d edge stream comparison")?
                 && operand.scope_record_index == group.scope_record_index
-                && operand.record_index() == member.value
-        });
-        let Some(operand) = matching.next() else {
+                && operand.record_index() == member.value), "f3d unique edge operand")?;
+        let Some(operand) = matching else {
             return Ok(selection);
         };
-        if matching.next().is_some() {
-            return Ok(selection);
-        }
         let Some(edge_slot) = edge_flange_updated_edge_candidate(operand, ctx)? else {
             return Ok(selection);
         };
@@ -432,10 +425,11 @@ pub(super) fn resolved_edge_flange_group(
     let state =
         crate::design::identity::feature_input_topology_id(ctx, feature_id, previous_state_id)?;
     let mut historical_edges = Vec::new();
+    let (prefix, _prefix_storage) = ctx.with_scoped_storage("f3d historical edge prefix storage", || crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id))?;
     for &edge_slot in ctx.admit_iter(&edges, "scan F3D flange selected native slots")? {
         let id = crate::design::identity::history_input_edge_id(
             ctx,
-            &crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id)?,
+            &prefix,
             edge_slot,
             "f3d historical edge identifier",
         )?;
@@ -456,7 +450,6 @@ fn edge_flange_updated_edge_candidate(
     operand: &DesignEdgeOperand,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<i64>, CodecError> {
-    ctx.charge_work(0, "resolve F3D edge flange updated candidate")?;
     if !operand.recipe_references.is_empty()
         || !operand.recipe_selectors.is_empty()
         || !operand.recipe_reference_contexts.is_empty()
@@ -538,7 +531,6 @@ pub(super) fn resolved_edge_treatment_group_with_corners(
 ) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
     use cadmpeg_ir::features::EdgeSelection;
 
-    ctx.charge_work(0, "resolve F3D resolved edge treatment group with corners")?;
     let EdgeTreatmentInputs {
         groups,
         operands,
@@ -550,12 +542,12 @@ pub(super) fn resolved_edge_treatment_group_with_corners(
         treatment_radius,
     } = input;
 
-    let stream = native_stream(&group.id);
-    let has_group_corner = vertex_operands.iter().any(|operand| {
-        native_stream(&operand.id) == stream
+    let stream = native_stream_charged(ctx, &group.id, "f3d edge native stream")?;
+    let has_group_corner = ctx.any_by(vertex_operands, |operand| Ok(
+        ctx.equal(&native_stream_charged(ctx, &operand.id, "f3d edge native stream")?, &stream, "f3d edge stream comparison")?
             && operand.scope_record_index == group.scope_record_index
             && operand.group_record_index == group.record_index
-    });
+    ), "f3d treatment corner operand source")?;
     if !has_group_corner {
         return resolved_edge_group_with_transition_chain(
             group,
@@ -579,26 +571,27 @@ pub(super) fn resolved_edge_treatment_group_with_corners(
     let mut corner_slots = Vec::new();
     let mut member_storage = ctx.reserve_scoped(0, "hold F3D treatment edge members")?;
     let mut edge_members = Vec::new();
-    for (ordinal, member) in group.members().iter().copied().enumerate() {
-        let edge_count = operands
-            .iter()
-            .filter(|operand| {
-                native_stream(&operand.id) == stream
-                    && operand.scope_record_index == group.scope_record_index
-                    && operand.record_index() == member.value
-            })
-            .count();
-        let corner = u32::try_from(ordinal).ok().and_then(|ordinal| {
-            let mut matches = vertex_operands.iter().filter(|operand| {
-                native_stream(&operand.id) == stream
+    let mut treatment_member_source = group.members().iter().copied().enumerate();
+    while let Some((ordinal, member)) = ctx.next_charged(&mut treatment_member_source, "f3d edge projection source")? {
+        let edge_matches = |operand: &DesignEdgeOperand| -> Result<bool, CodecError> {
+            Ok(ctx.equal(&native_stream_charged(ctx, &operand.id, "f3d edge native stream")?, &stream, "f3d edge stream comparison")?
+                && operand.scope_record_index == group.scope_record_index
+                && operand.record_index() == member.value)
+        };
+        let mut edge_source = operands.iter();
+        let edge_count = if ctx.find_by(&mut edge_source, |operand| edge_matches(operand), "f3d treatment edge operand source")?.is_some() {
+            1 + usize::from(ctx.any_by(edge_source, edge_matches, "f3d treatment edge operand source")?)
+        } else { 0 };
+        let corner = match u32::try_from(ordinal) {
+            Ok(ordinal) => unique_feature_match_for_decode(ctx, vertex_operands.iter(), |operand| Ok(
+                ctx.equal(&native_stream_charged(ctx, &operand.id, "f3d edge native stream")?, &stream, "f3d edge stream comparison")?
                     && operand.scope_record_index == group.scope_record_index
                     && operand.group_record_index == group.record_index
                     && operand.group_member_ordinal == ordinal
                     && operand.recipe.record_index() == member.value
-            });
-            let corner = matches.next()?;
-            matches.next().is_none().then_some(corner)
-        });
+            ), "f3d unique treatment corner operand")?,
+            Err(_) => None,
+        };
         match (edge_count, corner) {
             (1, None) => {
                 ctx.push_scoped_vec(
@@ -656,11 +649,13 @@ pub(super) fn resolved_edge_treatment_group_with_corners(
     };
     let mut topology = None;
     let mut multiple_states = false;
-    'histories: for history in histories {
+    let mut history_source = histories.iter();
+    'histories: while let Some(history) = ctx.next_charged(&mut history_source, "f3d treatment history source")? {
         if !ids::same_native_occurrence(ctx, &history.id, &group.id)? {
             continue;
         }
-        for state in &history.states {
+        let mut state_source = history.states.iter();
+        while let Some(state) = ctx.next_charged(&mut state_source, "f3d treatment history state source")? {
             if state.state_id != state_id {
                 continue;
             }
@@ -679,25 +674,16 @@ pub(super) fn resolved_edge_treatment_group_with_corners(
     };
     let mut endpoint_storage = ctx.reserve_scoped(0, "hold F3D treatment endpoint vertices")?;
     let mut endpoints = HashSet::new();
-    for edge in edges {
-        let Some(edge_slot) = edge
-            .as_str()
-            .rsplit(':')
-            .next()
-            .and_then(|slot| slot.parse::<i64>().ok())
-        else {
+    let mut treatment_edge_source = edges.iter();
+    while let Some(edge) = ctx.next_charged(&mut treatment_edge_source, "f3d edge projection source")? {
+        let slot = ctx.rsplit_once(edge.as_str(), ":", "f3d treatment edge slot suffix")?
+            .map_or(edge.as_str(), |(_, slot)| slot);
+        let Some(edge_slot) = ctx.parse_text::<i64>(slot, "f3d treatment edge slot parse")?.ok() else {
             return native_edge_selection(group, ctx);
         };
-        let mut matches = topology
-            .edge_vertices
-            .iter()
-            .filter(|edge| edge.edge == edge_slot);
-        let Some(edge) = matches.next() else {
+        let Some(edge) = unique_feature_match_for_decode(ctx, topology.edge_vertices.iter(), |edge| Ok(edge.edge == edge_slot), "f3d treatment edge topology source")? else {
             return native_edge_selection(group, ctx);
         };
-        if matches.next().is_some() {
-            return native_edge_selection(group, ctx);
-        }
         endpoint_storage.with_storage(|| {
             ctx.insert_hash_set(
                 &mut endpoints,
@@ -713,7 +699,7 @@ pub(super) fn resolved_edge_treatment_group_with_corners(
             )
         })?;
     }
-    if corner_slots.iter().all(|corner| endpoints.contains(corner)) {
+    if ctx.all_by(&corner_slots, |corner| ctx.contains_hash_set(&endpoints, corner, "f3d treatment corner endpoint lookup"), "f3d treatment corner endpoint source")? {
         Ok(selection)
     } else {
         native_edge_selection(group, ctx)
@@ -760,40 +746,25 @@ fn resolved_edge_group_with_transition_chain(
     };
 
     let feature_key = crate::design::identity::identity_key(ctx, feature_id.as_str())?;
-    let unmatched_selection = |state_id: Option<i64>| -> Result<EdgeSelection, CodecError> {
+    let unmatched_selection = || -> Result<EdgeSelection, CodecError> {
         if group.lost_edge_references.is_empty() {
             native_edge_selection(group, ctx)
         } else {
-            let Some(state_id) = state_id else {
-                return Ok(EdgeSelection::Unresolved);
-            };
-            Ok(partial_historical_edge_selection(
-                group
-                    .lost_edge_references
-                    .iter()
-                    .map(|identity| (identity.as_str(), None)),
-                state_id,
-                feature_key,
-                crate::design::identity::feature_input_topology_id(ctx, feature_id, state_id)?,
-                &group.id,
-                ctx,
-            )?
-            .unwrap_or(EdgeSelection::Unresolved))
+            Ok(EdgeSelection::Unresolved)
         }
     };
-    let stream = native_stream(&group.id);
-    let has_surface_patch_operand = operands.iter().any(|operand| {
-        native_stream(&operand.id) == stream
+    let stream = native_stream_charged(ctx, &group.id, "f3d edge native stream")?;
+    let has_surface_patch_operand = ctx.any_by(operands, |operand| Ok(
+        ctx.equal(&native_stream_charged(ctx, &operand.id, "f3d edge native stream")?, &stream, "f3d edge stream comparison")?
             && operand.scope_record_index == group.scope_record_index
-            && members
-                .iter()
-                .any(|member| member.value == operand.record_index())
+            && ctx.any_by(members, |member| Ok(member.value == operand.record_index()), "f3d surface patch member presence")?
             && operand.surface_patch_recipe_structure.is_some()
-    });
+    ), "f3d surface patch operand presence")?;
     if has_surface_patch_operand {
         let mut member_storage = ctx.reserve_scoped(0, "hold F3D generic surface patch members")?;
         let mut member_ids = HashSet::new();
-        for member in members {
+        let mut surface_member_source = members.iter();
+        while let Some(member) = ctx.next_charged(&mut surface_member_source, "f3d edge projection source")? {
             if !member_storage.with_storage(|| {
                 ctx.insert_hash_set(
                     &mut member_ids,
@@ -801,20 +772,19 @@ fn resolved_edge_group_with_transition_chain(
                     "f3d generic surface patch member index",
                 )
             })? {
-                return unmatched_selection(previous_state_id);
+                return unmatched_selection();
             }
         }
         let mut matched_storage =
             ctx.reserve_scoped(0, "hold F3D generic surface patch operands")?;
         let mut matched_operands = Vec::new();
-        for member in members.iter().map(|member| &member.value) {
-            let mut matches = operands.iter().filter(|operand| {
-                native_stream(&operand.id) == stream
+        let mut surface_operand_member_source = members.iter().map(|member| &member.value);
+        while let Some(member) = ctx.next_charged(&mut surface_operand_member_source, "f3d edge projection source")? {
+            let matches = unique_feature_match_for_decode(ctx, operands.iter(), |operand| Ok(ctx.equal(&native_stream_charged(ctx, &operand.id, "f3d edge native stream")?, &stream, "f3d edge stream comparison")?
                     && operand.scope_record_index == group.scope_record_index
-                    && operand.record_index() == *member
-            });
-            let Some(operand) = matches.next().filter(|_| matches.next().is_none()) else {
-                return unmatched_selection(previous_state_id);
+                    && operand.record_index() == *member), "f3d unique edge operand")?;
+            let Some(operand) = matches else {
+                return unmatched_selection();
             };
             ctx.push_scoped_vec(
                 &mut matched_storage,
@@ -823,24 +793,22 @@ fn resolved_edge_group_with_transition_chain(
                 "f3d generic surface patch matched operand",
             )?;
         }
-        if matched_operands
-            .iter()
-            .any(|operand| operand.surface_patch_recipe_structure.is_none())
-        {
-            return unmatched_selection(previous_state_id);
+        if ctx.any_by(&matched_operands, |operand| Ok(operand.surface_patch_recipe_structure.is_none()), "f3d surface patch recipe presence")? {
+            return unmatched_selection();
         }
         let state_id = match previous_state_id {
             Some(state_id) => Some(state_id),
             None => shared_recipe_state_id(&matched_operands, ctx)?,
         };
         let Some(state_id) = state_id else {
-            return unmatched_selection(previous_state_id);
+            return unmatched_selection();
         };
         let mut edge_storage = ctx.reserve_scoped(0, "hold F3D generic surface patch slots")?;
         let mut edges = Vec::new();
-        for operand in &matched_operands {
+        let mut surface_operand_source = matched_operands.iter();
+        while let Some(operand) = ctx.next_charged(&mut surface_operand_source, "f3d edge projection source")? {
             let Some(edge) = operand.resolved_edge_slot else {
-                return unmatched_selection(Some(state_id));
+                return unmatched_selection();
             };
             ctx.push_scoped_vec(
                 &mut edge_storage,
@@ -852,7 +820,8 @@ fn resolved_edge_group_with_transition_chain(
         let mut resolved_storage =
             ctx.reserve_scoped(0, "hold F3D generic surface patch distinct slots")?;
         let mut resolved_edges = Vec::new();
-        for &edge_slot in &edges {
+        let mut surface_slot_source = edges.iter();
+        while let Some(&edge_slot) = ctx.next_charged(&mut surface_slot_source, "f3d edge projection source")? {
             if !ctx.contains(
                 &resolved_edges,
                 &edge_slot,
@@ -869,13 +838,15 @@ fn resolved_edge_group_with_transition_chain(
         drop(edges);
         drop(edge_storage);
         if resolved_edges.is_empty() {
-            return unmatched_selection(Some(state_id));
+            return unmatched_selection();
         }
         let mut historical_edges = Vec::new();
-        for &edge_slot in &resolved_edges {
+    let (prefix, _prefix_storage) = ctx.with_scoped_storage("f3d historical edge prefix storage", || crate::design::identity::history_input_prefix(ctx, feature_key, state_id))?;
+        let mut surface_historical_slot_source = resolved_edges.iter();
+        while let Some(&edge_slot) = ctx.next_charged(&mut surface_historical_slot_source, "f3d edge projection source")? {
             let edge = crate::design::identity::history_input_edge_id(
                 ctx,
-                &crate::design::identity::history_input_prefix(ctx, feature_key, state_id)?,
+                &prefix,
                 edge_slot,
                 "f3d historical edge identifier",
             )?;
@@ -902,14 +873,13 @@ fn resolved_edge_group_with_transition_chain(
     let mut identity_storage = ctx.reserve_scoped(0, "hold F3D matched edge identities")?;
     let mut identity_matches = Vec::new();
     let mut identities_complete = true;
-    for member in members.iter().map(|member| &member.value) {
-        let mut matches = identity_operands.iter().filter(|operand| {
-            native_stream(&operand.id) == stream
+    let mut identity_member_source = members.iter().map(|member| &member.value);
+    while let Some(member) = ctx.next_charged(&mut identity_member_source, "f3d edge projection source")? {
+        let matches = unique_feature_match_for_decode(ctx, identity_operands.iter(), |operand| Ok(ctx.equal(&native_stream_charged(ctx, &operand.id, "f3d edge native stream")?, &stream, "f3d edge stream comparison")?
                 && operand.scope_record_index == group.scope_record_index
                 && operand.group_record_index == group.record_index
-                && operand.record_index() == *member
-        });
-        let Some(operand) = matches.next().filter(|_| matches.next().is_none()) else {
+                && operand.record_index() == *member), "f3d unique edge operand")?;
+        let Some(operand) = matches else {
             identities_complete = false;
             break;
         };
@@ -927,49 +897,45 @@ fn resolved_edge_group_with_transition_chain(
         drop(identity_storage);
         None
     };
-    let has_recipe_operands = members.iter().map(|member| &member.value).all(|member| {
-        let mut matches = operands.iter().filter(|operand| {
-            native_stream(&operand.id) == stream
+    let has_recipe_operands = ctx.all_by(members, |member| {
+        Ok(unique_feature_match_for_decode(ctx, operands.iter(), |operand| Ok(
+            ctx.equal(&native_stream_charged(ctx, &operand.id, "f3d edge native stream")?, &stream, "f3d edge stream comparison")?
                 && operand.scope_record_index == group.scope_record_index
-                && operand.record_index() == *member
-        });
-        matches.next().is_some() && matches.next().is_none()
-    });
-    let has_unstructured_recipe_operand =
-        members.iter().map(|member| &member.value).any(|member| {
-            operands.iter().any(|operand| {
-                native_stream(&operand.id) == stream
-                    && operand.scope_record_index == group.scope_record_index
-                    && operand.record_index() == *member
-                    && !operand.recipe_program.is_empty()
-                    && operand.recipe_structure.is_none()
-            })
-        });
+                && operand.record_index() == member.value
+        ), "f3d unique edge operand")?.is_some())
+    }, "f3d edge recipe member source")?;
+    let has_unstructured_recipe_operand = ctx.any_by(members, |member| {
+        ctx.any_by(operands, |operand| Ok(
+            ctx.equal(&native_stream_charged(ctx, &operand.id, "f3d edge native stream")?, &stream, "f3d edge stream comparison")?
+                && operand.scope_record_index == group.scope_record_index
+                && operand.record_index() == member.value
+                && !operand.recipe_program.is_empty()
+                && operand.recipe_structure.is_none()
+        ), "f3d unstructured edge operand source")
+    }, "f3d unstructured edge member source")?;
     if has_recipe_operands && has_unstructured_recipe_operand {
-        return unmatched_selection(previous_state_id);
+        return unmatched_selection();
     }
-    let has_standard_recipe_operands = members.iter().map(|member| &member.value).any(|member| {
-        operands.iter().any(|operand| {
-            native_stream(&operand.id) == stream
+    let has_standard_recipe_operands = ctx.any_by(members, |member| {
+        ctx.any_by(operands, |operand| Ok(
+            ctx.equal(&native_stream_charged(ctx, &operand.id, "f3d edge native stream")?, &stream, "f3d edge stream comparison")?
                 && operand.scope_record_index == group.scope_record_index
-                && operand.record_index() == *member
+                && operand.record_index() == member.value
                 && operand.recipe_structure.is_some()
-        })
-    });
-    let has_concrete_recipe_evidence = members.iter().map(|member| &member.value).any(|member| {
-        let mut matches = operands.iter().filter(|operand| {
-            native_stream(&operand.id) == stream
+        ), "f3d standard edge operand source")
+    }, "f3d standard edge member source")?;
+    let has_concrete_recipe_evidence = ctx.any_by(members, |member| {
+        Ok(unique_feature_match_for_decode(ctx, operands.iter(), |operand| Ok(
+            ctx.equal(&native_stream_charged(ctx, &operand.id, "f3d edge native stream")?, &stream, "f3d edge stream comparison")?
                 && operand.scope_record_index == group.scope_record_index
-                && operand.record_index() == *member
-        });
-        matches.next().is_some_and(|operand| {
-            matches.next().is_none()
-                && (operand.resolved_edge_slot.is_some()
-                    || !operand.changed_boundary_edge_slots.is_empty()
-                    || !operand.deleted_boundary_edge_slots.is_empty()
-                    || !operand.treatment_radius_candidates.is_empty())
-        })
-    });
+                && operand.record_index() == member.value
+        ), "f3d unique edge operand")?.is_some_and(|operand| {
+            operand.resolved_edge_slot.is_some()
+                || !operand.changed_boundary_edge_slots.is_empty()
+                || !operand.deleted_boundary_edge_slots.is_empty()
+                || !operand.treatment_radius_candidates.is_empty()
+        }))
+    }, "f3d concrete edge recipe member source")?;
     let mut transition_storage = ctx.reserve_scoped(0, "hold F3D single identity transition")?;
     let identity_transition_slots = if allow_edge_treatment_transition_chain
         && treatment_radius.is_none()
@@ -991,73 +957,42 @@ fn resolved_edge_group_with_transition_chain(
     } else {
         None
     };
-    let mut group_transition_storage =
-        ctx.reserve_scoped(0, "hold F3D group identity transition")?;
-    let identity_group_transition_slots = if let Some(first) = identity_matches
-        .as_ref()
-        .and_then(|matches| matches.first())
-    {
-        let mut first_storage =
-            ctx.reserve_scoped(0, "hold F3D first group identity transition")?;
-        let edges = first_storage.with_storage(|| {
-            sorted_transition_slots(
-                &first.transition_edge_candidates,
-                ctx,
-                "f3d group identity transition slot",
-            )
-        })?;
-        if allow_edge_treatment_transition_chain && !edges.is_empty() {
-            let mut uniform = true;
-            if let Some(matches) = identity_matches.as_ref() {
-                for operand in matches {
-                    if !operand.layout().is_compact() {
-                        uniform = false;
-                        break;
-                    }
-                    let mut comparison_storage =
-                        ctx.reserve_scoped(0, "hold F3D compared identity transition")?;
-                    let candidate = comparison_storage.with_storage(|| {
-                        sorted_transition_slots(
-                            &operand.transition_edge_candidates,
-                            ctx,
-                            "f3d compared identity transition slot",
-                        )
-                    })?;
-                    if candidate.len() != edges.len()
-                        || !ctx.all_by(
-                            candidate.iter().zip(&edges),
-                            |(candidate, edge)| {
-                                ctx.equal(candidate, edge, "compare F3D identity transition edge")
-                            },
-                            "scan F3D identity transition equality",
-                        )?
-                    {
-                        uniform = false;
-                        break;
-                    }
-                }
-            }
-            if uniform {
-                Some(group_transition_storage.with_storage(|| first_storage.commit_value(edges))?)
-            } else {
-                None
-            }
-        } else {
-            None
+    let mut group_transition_storage = ctx.reserve_scoped(0, "hold F3D group identity transition")?;
+    let group_transition_slots = match (
+        allow_edge_treatment_transition_chain,
+        identity_matches.as_ref().and_then(|matches| matches.first()),
+        identity_transition_slots.as_ref(),
+    ) {
+        (true, Some(first), None) if first.layout().is_compact() => {
+            Some(group_transition_storage.with_storage(|| sorted_transition_slots(
+                &first.transition_edge_candidates, ctx, "f3d group identity transition slot",
+            ))?)
         }
-    } else {
-        None
+        _ => None,
+    };
+    let first_transition_slots = identity_transition_slots.as_deref().or(group_transition_slots.as_deref());
+    let identity_group_transition_slots = match (allow_edge_treatment_transition_chain, identity_matches.as_ref(), first_transition_slots) {
+        (true, Some(matches), Some(edges)) if !edges.is_empty() && matches.first().is_some_and(|first| first.layout().is_compact()) => {
+            let uniform = ctx.all_by(&matches[1..], |operand| {
+                if !operand.layout().is_compact() { return Ok(false); }
+                let (candidate, _comparison_storage) = ctx.with_scoped_storage("hold F3D compared identity transition", || {
+                    sorted_transition_slots(&operand.transition_edge_candidates, ctx, "f3d compared identity transition slot")
+                })?;
+                Ok(candidate.len() == edges.len() && ctx.all_by(candidate.iter().zip(edges), |(candidate, edge)| ctx.equal(candidate, edge, "compare F3D identity transition edge"), "scan F3D identity transition equality")?)
+            }, "f3d uniform identity transition source")?;
+            uniform.then_some(edges)
+        }
+        _ => None,
     };
     let recipe_supports_transition_chain = |chain: &[i64]| -> Result<bool, CodecError> {
         let mut recipe_storage = ctx.reserve_scoped(0, "hold F3D transition recipe members")?;
         let mut member_operands = Vec::new();
-        for member in members.iter().map(|member| &member.value) {
-            let mut matches = operands.iter().filter(|operand| {
-                native_stream(&operand.id) == stream
+        let mut recipe_member_source = members.iter().map(|member| &member.value);
+        while let Some(member) = ctx.next_charged(&mut recipe_member_source, "f3d edge projection source")? {
+            let matches = unique_feature_match_for_decode(ctx, operands.iter(), |operand| Ok(ctx.equal(&native_stream_charged(ctx, &operand.id, "f3d edge native stream")?, &stream, "f3d edge stream comparison")?
                     && operand.scope_record_index == group.scope_record_index
-                    && operand.record_index() == *member
-            });
-            let Some(operand) = matches.next().filter(|_| matches.next().is_none()) else {
+                    && operand.record_index() == *member), "f3d unique edge operand")?;
+            let Some(operand) = matches else {
                 return Ok(false);
             };
             ctx.push_scoped_vec(
@@ -1071,7 +1006,7 @@ fn resolved_edge_group_with_transition_chain(
     };
     let identity_transition_is_supported = match identity_transition_slots
         .as_deref()
-        .or(identity_group_transition_slots.as_deref())
+        .or(identity_group_transition_slots)
     {
         Some(chain) => recipe_supports_transition_chain(chain)?,
         None => false,
@@ -1079,7 +1014,7 @@ fn resolved_edge_group_with_transition_chain(
     // A cardinality mismatch is a group-level transition proof, not a
     // member-to-edge assignment. Recipe evidence must therefore cover the
     // complete chain before it can replace the unresolved member identities.
-    let identity_group_transition_is_admitted = match identity_group_transition_slots.as_deref() {
+    let identity_group_transition_is_admitted = match identity_group_transition_slots {
         // A singleton transition and the uniform group transition both use
         // the first identity's sorted slots. Otherwise the selected chain is
         // the group transition itself. Its recipe proof was already computed.
@@ -1092,14 +1027,15 @@ fn resolved_edge_group_with_transition_chain(
             .with_storage(|| radius_edge_identity_group_candidates(matches, radius, ctx))?,
         _ => None,
     };
-    let has_complete_identity_selection = identity_matches.as_ref().is_some_and(|operands| {
-        !operands.is_empty()
-            && (operands.iter().all(|operand| {
-                operand.resolved_edge_slot.is_some() || !operand.resolved_edge_slots.is_empty()
-            }) || identity_transition_slots.is_some()
+    let has_complete_identity_selection = match identity_matches.as_ref() {
+        Some(operands) if !operands.is_empty() => {
+            ctx.all_by(operands, |operand| Ok(operand.resolved_edge_slot.is_some() || !operand.resolved_edge_slots.is_empty()), "f3d complete identity edge source")?
+                || identity_transition_slots.is_some()
                 || identity_group_transition_is_admitted
-                || identity_radius_slots.is_some())
-    });
+                || identity_radius_slots.is_some()
+        }
+        _ => false,
+    };
     let all_member_identities_are_lost =
         !members.is_empty() && group.lost_edge_references.len() == members.len();
     if let Some(identity_matches) = identity_matches.as_ref().filter(|_| {
@@ -1111,40 +1047,33 @@ fn resolved_edge_group_with_transition_chain(
                 || all_member_identities_are_lost)
     }) {
         if identity_matches.is_empty() {
-            return unmatched_selection(previous_state_id);
+            return unmatched_selection();
         }
         let Some(previous_state_id) = previous_state_id else {
-            return unmatched_selection(None);
+            return unmatched_selection();
         };
         let state =
             crate::design::identity::feature_input_topology_id(ctx, feature_id, previous_state_id)?;
-        if identity_matches.iter().all(|operand| {
-            operand.resolved_edge_slot.is_some() || !operand.resolved_edge_slots.is_empty()
-        }) {
+        if ctx.all_by(identity_matches, |operand| Ok(operand.resolved_edge_slot.is_some() || !operand.resolved_edge_slots.is_empty()), "f3d selected identity edge source")? {
             let mut seen_storage = ctx.reserve_scoped(0, "hold F3D identity edge slot index")?;
             let mut seen = HashSet::new();
             let mut edges = Vec::new();
-            for edge_slot in identity_matches.iter().flat_map(|operand| {
-                operand
-                    .resolved_edge_slot
-                    .iter()
-                    .copied()
-                    .chain(operand.resolved_edge_slots.iter().copied())
-            }) {
+    let (prefix, _prefix_storage) = ctx.with_scoped_storage("f3d historical edge prefix storage", || crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id))?;
+            let mut identity_source = identity_matches.iter();
+            while let Some(operand) = ctx.next_charged(&mut identity_source, "f3d identity operand source")? {
+                let mut slot_source = operand.resolved_edge_slot.iter().chain(&operand.resolved_edge_slots).copied();
+                while let Some(edge_slot) = ctx.next_charged(&mut slot_source, "f3d identity resolved slot source")? {
                 if seen_storage.with_storage(|| {
                     ctx.insert_hash_set(&mut seen, edge_slot, "f3d identity edge slot index")
                 })? {
                     let edge = crate::design::identity::history_input_edge_id(
                         ctx,
-                        &crate::design::identity::history_input_prefix(
-                            ctx,
-                            feature_key,
-                            previous_state_id,
-                        )?,
+                        &prefix,
                         edge_slot,
                         "f3d historical edge identifier",
                     )?;
                     ctx.push_vec(&mut edges, edge, "f3d identity historical edge")?;
+                }
                 }
             }
             let native = ctx.copy_retained_text(&group.id, "f3d identity historical group id")?;
@@ -1218,7 +1147,8 @@ fn resolved_edge_group_with_transition_chain(
     let singleton;
     let mut member_storage = ctx.reserve_scoped(0, "hold F3D edge group member identities")?;
     let mut member_identities = HashSet::new();
-    for member in members.iter().map(|member| &member.value) {
+    let mut recipe_operand_member_source = members.iter().map(|member| &member.value);
+    while let Some(member) = ctx.next_charged(&mut recipe_operand_member_source, "f3d edge projection source")? {
         if !member_storage.with_storage(|| {
             ctx.insert_hash_set(
                 &mut member_identities,
@@ -1226,19 +1156,14 @@ fn resolved_edge_group_with_transition_chain(
                 "f3d edge group member identity",
             )
         })? {
-            return unmatched_selection(previous_state_id);
+            return unmatched_selection();
         }
-        let mut matches = operands.iter().filter(|operand| {
-            native_stream(&operand.id) == stream
+        let matches = unique_feature_match_for_decode(ctx, operands.iter(), |operand| Ok(ctx.equal(&native_stream_charged(ctx, &operand.id, "f3d edge native stream")?, &stream, "f3d edge stream comparison")?
                 && operand.scope_record_index == group.scope_record_index
-                && operand.record_index() == *member
-        });
-        let Some(operand) = matches.next() else {
-            return unmatched_selection(previous_state_id);
+                && operand.record_index() == *member), "f3d unique edge operand")?;
+        let Some(operand) = matches else {
+            return unmatched_selection();
         };
-        if matches.next().is_some() {
-            return unmatched_selection(previous_state_id);
-        }
         if members.len() == 1 {
             ctx.charge_collection_items(1, "f3d matched edge group operand")?;
             single_operand = Some(operand);
@@ -1271,12 +1196,13 @@ fn resolved_edge_group_with_transition_chain(
     };
     let state =
         crate::design::identity::feature_input_topology_id(ctx, feature_id, previous_state_id)?;
-    let lost_selection = || unmatched_selection(Some(previous_state_id));
+    let lost_selection = || unmatched_selection();
     let mut resolved_slot_storage = ctx.reserve_scoped(0, "hold F3D resolved edge group slots")?;
     let mut exact_slots = {
         let mut direct_storage = ctx.reserve_scoped(0, "hold F3D direct edge group slots")?;
         let mut direct_slots = Some(Vec::new());
-        for operand in matched_operands {
+        let mut recipe_operand_source = matched_operands.iter();
+        while let Some(operand) = ctx.next_charged(&mut recipe_operand_source, "f3d edge projection source")? {
             let Some(slot) = resolved_edge_operand(operand, ctx)? else {
                 direct_slots = None;
                 break;
@@ -1386,14 +1312,15 @@ fn resolved_edge_group_with_transition_chain(
         }
         let mut combined_storage = ctx.reserve_scoped(0, "hold F3D combined edge slots")?;
         let mut combined_edges = Vec::new();
-        for (index, operand) in matched_operands.iter().enumerate() {
+        let mut combined_operand_source = matched_operands.iter().enumerate();
+        while let Some((index, operand)) = ctx.next_charged(&mut combined_operand_source, "f3d edge projection source")? {
             let recipe = resolved_edge_operand(operand, ctx)?;
             let identity = identity_matches
                 .as_ref()
                 .and_then(|identities| identities[index].resolved_edge_slot);
             let combined = match (recipe, identity) {
                 (Some(recipe), Some(identity)) if recipe != identity => {
-                    return unmatched_selection(Some(previous_state_id));
+                    return unmatched_selection();
                 }
                 (recipe, identity) => recipe.or(identity),
             };
@@ -1404,35 +1331,25 @@ fn resolved_edge_group_with_transition_chain(
                 "f3d combined edge group slot",
             )?;
         }
-        if combined_edges.iter().all(Option::is_some) {
+        if ctx.all_by(&combined_edges, |edge| Ok(edge.is_some()), "f3d combined edge selection source")? {
             let mut edges = Vec::new();
-            for edge_slot in combined_edges.into_iter().flatten() {
+    let mut prefix_storage = ctx.reserve_scoped(0, "f3d historical edge prefix storage")?;
+    if !combined_edges.is_empty() {
+    let prefix = prefix_storage.with_storage(|| crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id))?;
+    let mut seen_storage = ctx.reserve_scoped(0, "f3d combined historical slot storage")?;
+    let mut seen_slots = HashSet::new();
+            let mut combined_slot_source = combined_edges.into_iter().flatten();
+            while let Some(edge_slot) = ctx.next_charged(&mut combined_slot_source, "f3d edge projection source")? {
+        if !seen_storage.with_storage(|| ctx.insert_hash_set(&mut seen_slots, edge_slot, "f3d combined historical slot index"))? { continue; }
                 let edge = crate::design::identity::history_input_edge_id(
                     ctx,
-                    &crate::design::identity::history_input_prefix(
-                        ctx,
-                        feature_key,
-                        previous_state_id,
-                    )?,
+                    &prefix,
                     edge_slot,
                     "f3d historical edge identifier",
                 )?;
-                if edges.is_empty()
-                    || !ctx.any_by(
-                        edges.as_slice(),
-                        |candidate: &cadmpeg_ir::ids::HistoricalEdgeId| {
-                            ctx.equal_bytes(
-                                candidate.as_str().as_bytes(),
-                                edge.as_str().as_bytes(),
-                                "compare F3D combined historical edge identity",
-                            )
-                        },
-                        "scan F3D combined historical edge identities",
-                    )?
-                {
-                    ctx.push_vec(&mut edges, edge, "f3d combined historical edge")?;
-                }
-            }
+        ctx.push_vec(&mut edges, edge, "f3d combined historical edge")?;
+    }
+    }
             drop(combined_storage);
             let native = ctx.copy_retained_text(&group.id, "f3d combined historical group id")?;
             return match cadmpeg_ir::features::EdgeSelection::historical(state, edges, native, ctx)?
@@ -1443,7 +1360,8 @@ fn resolved_edge_group_with_transition_chain(
         }
         let mut partial_storage = ctx.reserve_scoped(0, "hold F3D partial edge members")?;
         let mut partial_members = Vec::new();
-        for (operand, resolved) in matched_operands.iter().zip(combined_edges) {
+        let mut partial_operand_source = matched_operands.iter().zip(combined_edges);
+        while let Some((operand, resolved)) = ctx.next_charged(&mut partial_operand_source, "f3d edge projection source")? {
             let carries_transition_evidence = identity_matches.is_some()
                 || transition_state_id.is_none()
                 || !operand.changed_boundary_edge_slots.is_empty();
@@ -1472,28 +1390,22 @@ fn resolved_edge_group_with_transition_chain(
         };
     };
     let mut edges = Vec::new();
-    for &edge_slot in &resolved_slots {
+    let mut prefix_storage = ctx.reserve_scoped(0, "f3d historical edge prefix storage")?;
+    if !resolved_slots.is_empty() {
+    let prefix = prefix_storage.with_storage(|| crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id))?;
+    let mut seen_storage = ctx.reserve_scoped(0, "f3d resolved historical slot storage")?;
+    let mut seen_slots = HashSet::new();
+    let mut resolved_slot_source = resolved_slots.iter();
+    while let Some(&edge_slot) = ctx.next_charged(&mut resolved_slot_source, "f3d edge projection source")? {
+        if !seen_storage.with_storage(|| ctx.insert_hash_set(&mut seen_slots, edge_slot, "f3d resolved historical slot index"))? { continue; }
         let edge = crate::design::identity::history_input_edge_id(
             ctx,
-            &crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id)?,
+            &prefix,
             edge_slot,
             "f3d historical edge identifier",
         )?;
-        if edges.is_empty()
-            || !ctx.any_by(
-                edges.as_slice(),
-                |candidate: &cadmpeg_ir::ids::HistoricalEdgeId| {
-                    ctx.equal_bytes(
-                        candidate.as_str().as_bytes(),
-                        edge.as_str().as_bytes(),
-                        "compare F3D resolved historical edge identity",
-                    )
-                },
-                "scan F3D resolved historical edge identities",
-            )?
-        {
-            ctx.push_vec(&mut edges, edge, "f3d resolved edge group historical edge")?;
-        }
+ctx.push_vec(&mut edges, edge, "f3d resolved edge group historical edge")?;
+    }
     }
     drop(resolved_slots);
     drop(resolved_slot_storage);
@@ -1538,29 +1450,23 @@ pub(super) fn resolved_hem_edge_group(
     let [crate::records::identity::Located { value: member, .. }] = group.members() else {
         return Ok(selection);
     };
-    let mut matching_operands = operands.iter().filter(|operand| {
-        native_stream(&operand.id) == native_stream(&group.id)
+    let stream = native_stream_charged(ctx, &group.id, "f3d edge native stream")?;
+    let matching_operand = unique_feature_match_for_decode(ctx, operands.iter(), |operand| Ok(ctx.equal(&native_stream_charged(ctx, &operand.id, "f3d edge native stream")?, &stream, "f3d edge stream comparison")?
             && operand.scope_record_index == group.scope_record_index
-            && operand.record_index() == *member
-    });
-    let Some(operand) = matching_operands
-        .next()
-        .filter(|_| matching_operands.next().is_none())
-    else {
+            && operand.record_index() == *member), "f3d unique Hem edge operand")?;
+    let Some(operand) = matching_operand else {
         return Ok(selection);
     };
     let Some(edge) = hem_transition_edge_slot(operand, ctx)? else {
         return Ok(selection);
     };
     let feature_key = crate::design::identity::identity_key(ctx, feature_id.as_str())?;
+    let (prefix, _prefix_storage) = ctx.with_scoped_storage("f3d historical edge prefix storage", || crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id))?;
+    let mut edges = ctx.collection_vec(1, "f3d Hem historical edge")?;
+    edges.push(crate::design::identity::history_input_edge_id(ctx, &prefix, edge, "f3d historical edge identifier")?);
     Ok(cadmpeg_ir::features::EdgeSelection::historical(
         crate::design::identity::feature_input_topology_id(ctx, feature_id, previous_state_id)?,
-        vec![crate::design::identity::history_input_edge_id(
-            ctx,
-            &crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id)?,
-            edge,
-            "f3d historical edge identifier",
-        )?],
+        edges,
         ctx.copy_retained_text(&group.id, "f3d hem historical group id")?,
         ctx,
     )?
@@ -1577,7 +1483,6 @@ pub(super) fn resolved_hem_edge_slot(
     previous_state_id: Option<i64>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<i64>, CodecError> {
-    ctx.charge_work(0, "resolve F3D resolved hem edge slot")?;
     if let Some(edge) = operand.resolved_edge_slot {
         return Ok(Some(edge));
     }
@@ -1604,7 +1509,6 @@ fn transition_chain_is_supported_by_recipe(
     operands: &[&DesignEdgeOperand],
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    ctx.charge_work(0, "resolve F3D transition chain is supported by recipe")?;
     if operands.len() != member_count {
         return Ok(false);
     }
@@ -1703,7 +1607,6 @@ fn hem_transition_edge_slot(
     operand: &DesignEdgeOperand,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<i64>, CodecError> {
-    ctx.charge_work(0, "resolve F3D hem transition edge slot")?;
     let reference_contexts = operand.recipe_reference_contexts.as_slice();
     let mut remaining = reference_contexts.iter();
     let mut has_empty_context = false;
@@ -1744,7 +1647,6 @@ fn unique_hem_transition_edge_candidate<'a>(
     reference_edge_sets_input: impl IntoIterator<Item = &'a [i64]>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<i64>, CodecError> {
-    ctx.charge_work(0, "resolve F3D unique hem transition edge candidate")?;
     let mut storage = ctx.reserve_scoped(0, "hold F3D Hem reference candidates")?;
     let mut reference_edge_sets: Vec<&'a [i64]> = Vec::new();
     let mut source = reference_edge_sets_input.into_iter();
@@ -1849,28 +1751,33 @@ fn partial_historical_edge_selection<'a>(
 ) -> Result<Option<cadmpeg_ir::features::EdgeSelection>, CodecError> {
     use cadmpeg_ir::features::EdgeSelection;
 
-    ctx.charge_work(0, "resolve F3D partial historical edge selection")?;
     let mut slot_storage = ctx.reserve_scoped(0, "hold F3D partial historical scalar slots")?;
     let mut edges = Vec::new();
     let mut unresolved = Vec::new();
-    for (identity, edge) in members {
+    let mut member_source = members.into_iter();
+    while let Some((identity, edge)) = ctx.next_charged(&mut member_source, "f3d edge projection source")? {
         if let Some(edge) = edge {
             if !ctx.contains(&edges, &edge, "find F3D partial edge slot")? {
                 ctx.push_scoped_vec(&mut slot_storage, &mut edges, edge, "f3d partial edge slot")?;
             }
         } else {
-            let id = ctx.copy_retained_text(identity, "f3d partial unresolved id")?;
-            ctx.push_vec(&mut unresolved, id, "f3d partial unresolved member")?;
+            ctx.push_scoped_vec(&mut slot_storage, &mut unresolved, identity, "f3d partial unresolved member")?;
         }
     }
     if unresolved.is_empty() || edges.is_empty() {
         return Ok(None);
     }
+    let unresolved = ctx.try_collect_vec(
+        unresolved.into_iter().map(|identity| ctx.copy_retained_text(identity, "f3d partial unresolved id")),
+        "f3d partial unresolved member",
+    )?;
     let mut historical_edges = Vec::new();
-    for &edge_slot in &edges {
+    let (prefix, _prefix_storage) = ctx.with_scoped_storage("f3d historical edge prefix storage", || crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id))?;
+    let mut historical_slot_source = edges.iter();
+    while let Some(&edge_slot) = ctx.next_charged(&mut historical_slot_source, "f3d edge projection source")? {
         let edge = crate::design::identity::history_input_edge_id(
             ctx,
-            &crate::design::identity::history_input_prefix(ctx, feature_key, previous_state_id)?,
+            &prefix,
             edge_slot,
             "f3d historical edge identifier",
         )?;
@@ -1929,7 +1836,6 @@ fn unique_edge_group_assignment(
     operands: &[&DesignEdgeOperand],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
-    ctx.charge_work(0, "resolve F3D unique edge group assignment")?;
     if operands.is_empty() {
         return Ok(None);
     }
@@ -1974,7 +1880,6 @@ pub(super) fn changed_reference_edge_group_candidates(
     operands: &[&DesignEdgeOperand],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
-    ctx.charge_work(0, "resolve F3D changed reference edge group candidates")?;
     let mut storage = ctx.reserve_scoped(0, "hold F3D changed reference candidates")?;
     let mut candidate_sets = Vec::new();
     let mut source = operands.iter();
@@ -2059,7 +1964,6 @@ fn deleted_reference_edge_group_candidates(
     operands: &[&DesignEdgeOperand],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
-    ctx.charge_work(0, "resolve F3D deleted reference edge group candidates")?;
     let mut storage = ctx.reserve_scoped(0, "hold F3D deleted reference candidates")?;
     let mut reference_candidates = Vec::new();
     let mut deleted_candidates = Vec::new();
@@ -2144,7 +2048,6 @@ fn unique_deleted_reference_assignment(
     deleted_candidates: &[Vec<i64>],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
-    ctx.charge_work(0, "resolve F3D unique deleted reference assignment")?;
     if reference_candidates.len() != deleted_candidates.len() {
         return Ok(None);
     }
@@ -2211,7 +2114,6 @@ fn edge_group_assignment_candidates<'a>(
     reference_edge_sets: impl IntoIterator<Item = Option<&'a [i64]>>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<EdgeAssignmentCandidates>, CodecError> {
-    ctx.charge_work(0, "resolve F3D edge group assignment candidates")?;
     let mut reference_edge_sets = reference_edge_sets
         .into_iter()
         .map(|edges| edges.filter(|edges| !edges.is_empty()));
@@ -2291,7 +2193,6 @@ pub(super) fn radius_edge_group_candidates(
     radius: f64,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
-    ctx.charge_work(0, "resolve F3D radius edge group")?;
     if operands.is_empty() || !radius.is_finite() || radius <= 0.0 {
         return Ok(None);
     }
@@ -2341,7 +2242,6 @@ fn radius_edge_identity_group_candidates(
     radius: f64,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
-    ctx.charge_work(0, "resolve F3D radius edge identity group candidates")?;
     if operands.is_empty() || !radius.is_finite() || radius <= 0.0 {
         return Ok(None);
     }
@@ -2438,48 +2338,18 @@ fn unique_edge_assignment_with_context(
     candidate_sets: &[EdgeAssignmentCandidates],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
-    ctx.charge_work(0, "resolve F3D unique edge assignment with context")?;
-    if matches!(candidate_sets, [] | [EdgeAssignmentCandidates::Context]) {
-        return Ok(None);
-    }
-    let mut storage = ctx.reserve_scoped(0, "hold F3D unique edge assignment candidates")?;
-    let mut edge_candidate_sets = Vec::new();
-    let mut source = candidate_sets.iter();
-    while !source.as_slice().is_empty() {
-        let Some(candidates) =
-            ctx.next_charged(&mut source, "scan F3D unique edge assignment sets")?
-        else {
-            break;
-        };
-        let EdgeAssignmentCandidates::Edges(edges) = candidates else {
-            continue;
-        };
-        if edges.is_empty() {
-            return Ok(None);
-        }
-        let mut copied_edges = Vec::new();
-        let mut edges = edges.iter();
-        while !edges.as_slice().is_empty() {
-            let Some(&edge) =
-                ctx.next_charged(&mut edges, "scan F3D unique edge assignment edges")?
-            else {
-                break;
-            };
-            ctx.push_scoped_vec(
-                &mut storage,
-                &mut copied_edges,
-                edge,
-                "f3d unique edge assignment candidate",
-            )?;
-        }
-        ctx.push_scoped_vec(
-            &mut storage,
-            &mut edge_candidate_sets,
-            copied_edges,
+    if matches!(candidate_sets, [] | [EdgeAssignmentCandidates::Context]) { return Ok(None); }
+    unique_assignment_from_source(
+        candidate_sets.iter().map(|candidates| match candidates {
+            EdgeAssignmentCandidates::Context => None,
+            EdgeAssignmentCandidates::Edges(edges) => Some(edges.as_slice()),
+        }),
+        (
             "f3d unique edge assignment set",
-        )?;
-    }
-    unique_bipartite_assignment(&edge_candidate_sets, ctx)
+            "f3d unique edge assignment candidate",
+        ),
+        ctx,
+    )
 }
 
 fn edge_assignment_candidates<'a>(
@@ -2487,7 +2357,6 @@ fn edge_assignment_candidates<'a>(
     shared_edge_sets: impl IntoIterator<Item = Option<&'a [i64]>>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
-    ctx.charge_work(0, "resolve F3D edge assignment candidates")?;
     let slots = if !selector_contexts.is_empty()
         && ctx.all_by(
             selector_contexts,
@@ -2505,52 +2374,66 @@ fn unique_bipartite_assignment(
     candidate_sets: &[Vec<i64>],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
-    ctx.charge_work(0, "f3d unique edge assignment")?;
-    if candidate_sets.is_empty() {
+    unique_assignment_from_source(
+        candidate_sets.iter().map(|edges| Some(edges.as_slice())),
+        (
+            "f3d edge normalized groups",
+            "f3d edge normalized candidates",
+        ),
+        ctx,
+    )
+}
+
+fn unique_assignment_from_source<'a>(
+    mut candidate_sets: impl ExactSizeIterator<Item = Option<&'a [i64]>>,
+    (group_operation, candidate_operation): (&'static str, &'static str),
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<i64>>, CodecError> {
+    if candidate_sets.len() == 0 {
         return Ok(None);
     }
-    let _normalized_storage;
-    let (normalized, held_storage) =
-        ctx.with_scoped_storage("f3d edge normalized groups", || {
-            let mut normalized = ctx.collect_indexed_vec(
-                candidate_sets.len(),
-                "f3d edge normalized groups",
-                |_| Ok(Vec::<i64>::new()),
+    let mut normalized_storage = ctx.reserve_scoped(0, "f3d edge normalized storage")?;
+    let normalized = normalized_storage.with_storage(|| -> Result<_, CodecError> {
+        let mut normalized = Vec::new();
+        while let Some(edges) =
+            ctx.next_charged(&mut candidate_sets, "f3d edge normalized source")?
+        {
+            let Some(edges) = edges else { continue };
+            if edges.is_empty() { return Ok(None); }
+            let mut candidates = ctx.copy_slice(edges, candidate_operation)?;
+            ctx.sort_unstable_by(
+                &mut candidates,
+                |value| value,
+                Ord::cmp,
+                "f3d edge normalized candidate sort",
             )?;
-            for (source, candidates) in candidate_sets.iter().zip(&mut normalized) {
-                *candidates = ctx.copy_slice(source, "f3d edge normalized candidates")?;
-                ctx.sort_unstable_by(
-                    candidates,
-                    |value| value,
-                    Ord::cmp,
-                    "f3d edge normalized candidate sort",
-                )?;
-                ctx.dedup_vec(candidates, "deduplicate F3D normalized assignment edges")?;
-                if candidates.is_empty() {
-                    return Ok::<_, CodecError>(None);
-                }
+            ctx.dedup_vec(&mut candidates, "f3d edge resolve candidates dedup")?;
+            if candidates.is_empty() {
+                return Ok(None);
             }
-            Ok(Some(normalized))
-        })?;
-    _normalized_storage = held_storage;
+            ctx.push_vec(&mut normalized, candidates, group_operation)?;
+        }
+        Ok((!normalized.is_empty()).then_some(normalized))
+    })?;
     let Some(normalized) = normalized else {
         return Ok(None);
     };
-    let assignment_storage;
-    let (assignment, held_storage) = ctx.with_scoped_storage("f3d edge assignment", || {
-        bipartite_assignment(&normalized, None, ctx)
-    })?;
-    assignment_storage = held_storage;
+    let mut assignment_storage = ctx.reserve_scoped(0, "f3d edge assignment")?;
+    let assignment =
+        assignment_storage.with_storage(|| bipartite_assignment(&normalized, None, ctx))?;
     let Some(assignment) = assignment else {
         return Ok(None);
     };
-    for (member, edge) in assignment.iter().copied().enumerate() {
-        let _alternative_storage;
-        let (alternative, held_storage) = ctx.with_scoped_storage("f3d edge assignment", || {
-            bipartite_assignment(&normalized, Some((member, edge)), ctx)
+    let mut assigned_edges = assignment.iter().copied().enumerate();
+    while let Some((member, edge)) =
+        ctx.next_charged(&mut assigned_edges, "f3d edge assignment uniqueness source")?
+    {
+        let mut alternative_storage =
+            ctx.reserve_scoped(0, "f3d edge alternate assignment storage")?;
+        let alternative = alternative_storage.with_storage(|| -> Result<_, CodecError> {
+            Ok(bipartite_assignment(&normalized, Some((member, edge)), ctx)?.is_some())
         })?;
-        _alternative_storage = held_storage;
-        if alternative.is_some() {
+        if alternative {
             return Ok(None);
         }
     }
@@ -2566,21 +2449,22 @@ fn bipartite_assignment(
         member: usize,
         (candidate_sets, forbidden): (&[Vec<i64>], Option<(usize, i64)>),
         visited: &mut HashSet<i64>,
-        edge_members: &mut HashMap<i64, usize>,
+        edge_members: &mut BTreeMap<i64, usize>,
         ctx: &DecodeContext<'_>,
         members_storage: &mut ScopedReservation<'_>,
     ) -> Result<bool, CodecError> {
-        let _depth = Some((ctx.enter_nested("f3d edge assignment search"))?);
-        for edge in &candidate_sets[member] {
+        let _depth = ctx.enter_nested("f3d edge assignment search")?;
+        let mut source = candidate_sets[member].iter();
+        while let Some(edge) = ctx.next_charged(&mut source, "f3d edge assignment candidate")? {
+            if forbidden == Some((member, *edge))
+                || ctx.contains_hash_set(visited, edge, "f3d edge assignment visited lookup")?
             {
-                ctx.charge_work(1, "f3d edge assignment candidate")?;
-            }
-            if forbidden == Some((member, *edge)) || visited.contains(edge) {
                 continue;
             }
-            ctx.reserve_set(visited, 1, "f3d edge assignment visits")?;
-            visited.insert(*edge);
-            let displaced = edge_members.get(edge).copied();
+            ctx.insert_hash_set(visited, *edge, "f3d edge assignment visits")?;
+            let displaced = ctx
+                .get_btree_map(edge_members, edge, "f3d edge assignment member lookup")?
+                .copied();
             let assignable = match displaced {
                 Some(displaced) => augment(
                     displaced,
@@ -2593,12 +2477,9 @@ fn bipartite_assignment(
                 None => true,
             };
             if assignable {
-                if displaced.is_none() {
-                    members_storage.with_storage(|| {
-                        ctx.reserve_map(edge_members, 1, "f3d edge assignment members")
-                    })?;
-                }
-                edge_members.insert(*edge, member);
+                members_storage.with_storage(|| {
+                    ctx.insert_btree_map(edge_members, *edge, member, "f3d edge assignment members")
+                })?;
                 return Ok(true);
             }
         }
@@ -2606,26 +2487,28 @@ fn bipartite_assignment(
     }
 
     let mut members_storage = ctx.reserve_scoped(0, "f3d edge assignment members")?;
-    let mut edge_members = HashMap::new();
-    for member in 0..candidate_sets.len() {
-        let (assigned, _visited_reservation) =
-            ctx.with_scoped_storage("f3d edge assignment visits", || {
-                let mut visited = HashSet::new();
-                augment(
-                    member,
-                    (candidate_sets, forbidden),
-                    &mut visited,
-                    &mut edge_members,
-                    ctx,
-                    &mut members_storage,
-                )
-            })?;
+    let mut edge_members = BTreeMap::new();
+    let mut members = 0..candidate_sets.len();
+    while let Some(member) = ctx.next_charged(&mut members, "f3d edge assignment member source")? {
+        let mut temporary_visited_reservation =
+            ctx.reserve_scoped(0, "f3d edge assignment visits")?;
+        let assigned = temporary_visited_reservation.with_storage(|| {
+            let mut visited = HashSet::new();
+            augment(
+                member,
+                (candidate_sets, forbidden),
+                &mut visited,
+                &mut edge_members,
+                ctx,
+                &mut members_storage,
+            )
+        })?;
         if !assigned {
             return Ok(None);
         }
     }
     let mut assignment = ctx.alloc_filled(candidate_sets.len(), 0, "f3d edge assignment")?;
-    for (edge, member) in edge_members {
+    for (&edge, &member) in ctx.admit_iter(&edge_members, "f3d edge assignment output source")? {
         assignment[member] = edge;
     }
     Ok(Some(assignment))
@@ -2647,8 +2530,7 @@ fn scope_partition_edge_group_candidates<'a>(
     target_members: &[crate::records::identity::Located<u32>],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
-    ctx.charge_work(0, "resolve F3D scope partition edge group candidates")?;
-    let Some(stream) = native_stream(&target.id) else {
+    let Some(stream) = native_stream_charged(ctx, &target.id, "f3d edge native stream")? else {
         return Ok(None);
     };
     let mut groups_storage = ctx.reserve_scoped(0, "hold F3D scope partition groups")?;
@@ -2661,7 +2543,7 @@ fn scope_partition_edge_group_candidates<'a>(
         else {
             break;
         };
-        if native_stream(&group.id) != Some(stream)
+        if !ctx.equal(&native_stream_charged(ctx, &group.id, "f3d edge native stream")?, &Some(stream), "f3d edge stream comparison")?
             || group.scope_record_index != target.scope_record_index
             || !group.lost_edge_references.is_empty()
         {
@@ -2683,13 +2565,12 @@ fn scope_partition_edge_group_candidates<'a>(
         let mut members_storage = ctx.reserve_scoped(0, "hold F3D scope partition members")?;
         let mut members = Vec::new();
         let mut complete = true;
-        for member in group_members.iter().map(|member| &member.value) {
-            let mut matches = operands.iter().filter(|operand| {
-                native_stream(&operand.id) == Some(stream)
+        let mut partition_member_source = group_members.iter().map(|member| &member.value);
+        while let Some(member) = ctx.next_charged(&mut partition_member_source, "f3d edge projection source")? {
+            let matches = unique_feature_match_for_decode(ctx, operands.iter(), |operand| Ok(ctx.equal(&native_stream_charged(ctx, &operand.id, "f3d edge native stream")?, &Some(stream), "f3d edge stream comparison")?
                     && operand.scope_record_index == group.scope_record_index
-                    && operand.record_index() == *member
-            });
-            let Some(operand) = matches.next().filter(|_| matches.next().is_none()) else {
+                    && operand.record_index() == *member), "f3d unique edge operand")?;
+            let Some(operand) = matches else {
                 complete = false;
                 break;
             };
@@ -2729,7 +2610,6 @@ fn partition_unique_incomplete_edge_group(
     groups: &[Vec<EdgeGroupMember<'_>>],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
-    ctx.charge_work(0, "resolve F3D partition unique incomplete edge group")?;
     if groups.len() < 2 || target_ordinal >= groups.len() {
         return Ok(None);
     }
@@ -2932,7 +2812,6 @@ fn common_deleted_edge_group_candidates<'a>(
     members: impl IntoIterator<Item = (bool, &'a [i64])>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
-    ctx.charge_work(0, "resolve F3D common deleted edge group candidates")?;
     let mut candidate_sets = members.into_iter();
     let mut first = None;
     while candidate_sets.size_hint().1 != Some(0) {
@@ -3043,7 +2922,6 @@ fn deleted_boundary_edge_group_candidates(
     operands: &[&DesignEdgeOperand],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
-    ctx.charge_work(0, "resolve F3D deleted boundary edge group candidates")?;
     if operands.is_empty() {
         return Ok(None);
     }
@@ -3175,7 +3053,6 @@ fn contextual_deleted_edge_group_candidates(
     operands: &[&DesignEdgeOperand],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
-    ctx.charge_work(0, "resolve F3D contextual deleted edge group candidates")?;
     if operands.is_empty() {
         return Ok(None);
     }
@@ -3326,10 +3203,6 @@ fn result_boundary_reference_edge_group_candidates(
     operands: &[&DesignEdgeOperand],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
-    ctx.charge_work(
-        0,
-        "resolve F3D result boundary reference edge group candidates",
-    )?;
     let [operand] = operands else {
         return Ok(None);
     };
@@ -3423,10 +3296,6 @@ fn changed_boundary_count_edge_group_candidates<'a>(
     >,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
-    ctx.charge_work(
-        0,
-        "resolve F3D changed boundary count edge group candidates",
-    )?;
     let mut member_count = 0;
     let mut storage = ctx.reserve_scoped(0, "hold F3D boundary count candidates")?;
     let mut candidates = Vec::new();
@@ -3479,7 +3348,6 @@ pub(super) fn resolved_edge_operand(
     operand: &DesignEdgeOperand,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<i64>, CodecError> {
-    ctx.charge_work(0, "resolve F3D edge operand")?;
     if !operand.recipe_program.is_empty() && operand.recipe_structure.is_none() {
         return Ok(None);
     }
@@ -3495,7 +3363,6 @@ fn primary_terminal_reference_shared_edge(
     operand: &DesignEdgeOperand,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<i64>, CodecError> {
-    ctx.charge_work(0, "resolve F3D primary terminal reference shared edge")?;
     if !operand.recipe_reference_contexts.is_empty() {
         return Ok(None);
     }
@@ -3572,56 +3439,34 @@ pub(crate) fn resolved_edge_candidate_intersection<'a, I>(
 ) -> Result<Option<i64>, CodecError>
 where
     I: IntoIterator<Item = &'a [i64]>,
+    I::IntoIter: Clone,
 {
-    let mut storage = ctx.reserve_scoped(0, "collect F3D shared edge sets")?;
-    let mut sets = Vec::new();
-    let mut first_set = None;
+    let ordered = shared_edge_sets.into_iter();
+    let mut search = ordered.clone();
     let mut has_reference_sets = false;
-    let mut source = shared_edge_sets.into_iter();
-    while let Some(edges) = ctx.next_charged(&mut source, "scan F3D shared edge sets")? {
-        has_reference_sets = true;
-        if !edges.is_empty() {
-            if sets.is_empty() {
-                if let Some(first) = first_set {
-                    ctx.push_scoped_vec(
-                        &mut storage,
-                        &mut sets,
-                        first,
-                        "collect F3D shared edge sets",
-                    )?;
-                    ctx.push_scoped_vec(
-                        &mut storage,
-                        &mut sets,
-                        edges,
-                        "collect F3D shared edge sets",
-                    )?;
-                } else {
-                    first_set = Some(edges);
-                }
-            } else {
-                ctx.push_scoped_vec(
-                    &mut storage,
-                    &mut sets,
-                    edges,
-                    "collect F3D shared edge sets",
-                )?;
-            }
-        }
-    }
-    // A single reference needs no allocated list.
-    let single = [first_set.unwrap_or(&[])];
-    let sets = if sets.is_empty() {
-        if first_set.is_some() {
-            &single[..]
+    let first = ctx.find_by(
+        search.by_ref(),
+        |edges| {
+            has_reference_sets = true;
+            Ok(!edges.is_empty())
+        },
+        "f3d edge intersection reference query",
+    )?;
+    let references_unavailable = has_reference_sets && first.is_none();
+    let reference_candidates = if let Some(first) = first {
+        let rest = search.clone();
+        if ctx
+            .find_by(
+                search,
+                |edges| Ok(!edges.is_empty()),
+                "f3d edge intersection reference query",
+            )?
+            .is_some()
+        {
+            Some(unique_edge_set_intersection(first, &rest, ctx)?)
         } else {
-            &[][..]
+            None
         }
-    } else {
-        sets.as_slice()
-    };
-    let references_unavailable = has_reference_sets && sets.is_empty();
-    let reference_candidates = if sets.len() >= 2 {
-        Some(unique_edge_set_intersection(ctx, sets)?)
     } else {
         None
     };
@@ -3632,23 +3477,25 @@ where
         Some(EdgeSetIntersection::Unique(edge)) => Some(edge),
         _ => None,
     };
-    let (incidence, boundary_count) = if references_unavailable {
-        (None, None)
+    let incidence = if references_unavailable {
+        None
     } else {
-        (
-            corroborated_edge_intersection(ctx, selector_contexts, sets, SelectorSlots::Incidence)?,
-            corroborated_edge_intersection(
-                ctx,
-                selector_contexts,
-                sets,
-                SelectorSlots::BoundaryCount,
-            )?,
-        )
+        corroborated_edge_intersection(selector_contexts, &ordered, SelectorSlots::Incidence, ctx)?
+    };
+    let boundary_count = if references_unavailable {
+        None
+    } else {
+        corroborated_edge_intersection(
+            selector_contexts,
+            &ordered,
+            SelectorSlots::BoundaryCount,
+            ctx,
+        )?
     };
     let common_triplet =
-        corroborated_triplet_intersection(ctx, selector_contexts, sets, TripletProof::Common)?;
+        corroborated_triplet_intersection(ctx, selector_contexts, &ordered, TripletProof::Common)?;
     let cross_clause_triplet =
-        corroborated_triplet_intersection(ctx, selector_contexts, sets, TripletProof::CrossClause)?;
+        corroborated_triplet_intersection(ctx, selector_contexts, &ordered, TripletProof::CrossClause)?;
     let mut proofs = [
         reference,
         incidence,
@@ -3671,67 +3518,46 @@ pub(crate) fn unique_incidence_edge_shared_by_reference_faces<'a, I>(
 ) -> Result<Option<i64>, CodecError>
 where
     I: IntoIterator<Item = &'a [i64]>,
+    I::IntoIter: Clone,
 {
-    let Some(first_selector) = ctx.position_by(
-        selector_contexts,
-        |selector| Ok(!selector.incidence_matching_edge_slots.is_empty()),
-        "find F3D active incidence selector",
-    )?
-    else {
-        return Ok(None);
-    };
-    // Deduplicate support sets once, not once for each incidence candidate.
-    // Equality is set equality: order and repeated slots do not distinguish faces.
-    let mut storage = ctx.reserve_scoped(0, "collect F3D distinct reference edge sets")?;
-    let mut sets = Vec::<&[i64]>::new();
-    let mut source = reference_edge_sets.into_iter();
-    while let Some(edges) = ctx.next_charged(&mut source, "scan F3D reference edge sets")? {
-        if edges.is_empty()
-            || ctx.any_by(
-                &sets,
-                |prior| {
-                    Ok(ctx.all_by(
-                        *prior,
-                        |value| ctx.contains(edges, value, "compare F3D reference edge sets"),
-                        "scan F3D prior reference edges",
-                    )? && ctx.all_by(
-                        edges,
-                        |value| ctx.contains(prior, value, "compare F3D reference edge sets"),
-                        "scan F3D reference edges",
-                    )?)
-                },
-                "find F3D duplicate reference edge set",
-            )?
-        {
-            continue;
-        }
-        ctx.push_scoped_vec(
-            &mut storage,
-            &mut sets,
-            edges,
-            "collect F3D distinct reference edge sets",
-        )?;
-    }
+    let reference_edge_sets = reference_edge_sets.into_iter();
     let mut candidate = None;
-    let mut selectors = selector_contexts[first_selector..].iter();
+    let mut selectors = selector_contexts.iter();
     while let Some(selector) = ctx.next_charged(&mut selectors, "scan F3D incidence selectors")? {
         let mut edges = selector.incidence_matching_edge_slots.iter();
-        while let Some(&edge) =
-            ctx.next_charged(&mut edges, "scan F3D incidence edge candidates")?
-        {
+        while let Some(&edge) = ctx.next_charged(&mut edges, "scan F3D incidence edge candidates")? {
             if candidate == Some(edge) {
                 continue;
             }
             let mut distinct_matches = 0;
-            let mut references = sets.iter();
-            while let Some(set) =
+            let mut references = reference_edge_sets.clone().enumerate();
+            while let Some((index, edges)) =
                 ctx.next_charged(&mut references, "scan F3D incidence reference sets")?
             {
-                if ctx.contains(set, &edge, "find F3D incidence reference edge")? {
-                    distinct_matches += 1;
-                    if distinct_matches == 2 {
-                        break;
-                    }
+                if !ctx.contains(edges, &edge, "find F3D incidence reference edge")? {
+                    continue;
+                }
+                let duplicate = ctx.any_by(
+                    reference_edge_sets.clone().take(index),
+                    |prior| {
+                        Ok(ctx.all_by(
+                            prior,
+                            |value| ctx.contains(edges, value, "compare F3D reference edge sets"),
+                            "scan F3D prior reference edges",
+                        )? && ctx.all_by(
+                            edges,
+                            |value| ctx.contains(prior, value, "compare F3D reference edge sets"),
+                            "scan F3D reference edges",
+                        )?)
+                    },
+                    "find F3D duplicate reference edge set",
+                )?;
+                if duplicate {
+                    continue;
+                }
+                distinct_matches += 1;
+                if distinct_matches == 2 {
+                    break;
                 }
             }
             if distinct_matches == 2 {
@@ -3751,86 +3577,60 @@ enum TripletProof {
     CrossClause,
 }
 
-fn corroborated_triplet_intersection<'a>(
+fn corroborated_triplet_intersection<'a, 'b>(
     ctx: &DecodeContext<'_>,
     selector_contexts: &'a [crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
-    shared_edge_sets: &[&[i64]],
+    shared_edge_sets: &(impl Iterator<Item = &'b [i64]> + Clone),
     proof: TripletProof,
 ) -> Result<Option<i64>, CodecError> {
-    // Keep only borrowed active pairs. Test pair overlap once, before candidate queries.
-    let mut storage = ctx.reserve_scoped(0, "collect F3D active triplet edge pairs")?;
-    let mut pairs = Vec::new();
-    let mut add_pair = |left: &'a [i64], right: &'a [i64]| -> Result<(), CodecError> {
-        if ctx.any_by(
-            left,
-            |edge| ctx.contains(right, edge, "find F3D triplet pair overlap"),
-            "scan F3D triplet pair overlap",
-        )? {
-            ctx.push_scoped_vec(
-                &mut storage,
-                &mut pairs,
-                (left, right),
-                "collect F3D active triplet edge pairs",
-            )?;
+    let mut storage = ctx.reserve_scoped(0, "f3d triplet intersection candidate storage")?;
+    let mut candidates = None::<Vec<i64>>;
+    let mut intersect_pair = |left: &'a [i64], right: &'a [i64]| -> Result<bool, CodecError> {
+        if let Some(candidates) = candidates.as_mut() {
+            if !ctx.any_by(left, |edge| ctx.contains(right, edge, "find F3D triplet pair overlap"), "scan F3D triplet pair overlap")? { return Ok(true); }
+            ctx.retain_vec(candidates, |edge| Ok(
+                ctx.contains(left, edge, "find F3D corroborating triplet edge")?
+                    && ctx.contains(right, edge, "find F3D corroborating triplet edge")?
+            ), "scan F3D corroborating triplet pairs")?;
+            return Ok(!candidates.is_empty());
         }
-        Ok(())
+        let mut first_candidates = Vec::new();
+        let mut edges = left.iter();
+        while let Some(&edge) = ctx.next_charged(&mut edges, "scan F3D triplet edge candidates")? {
+            if ctx.contains(right, &edge, "find F3D triplet second edge")?
+                && !ctx.contains(&first_candidates, &edge, "f3d triplet candidate uniqueness")? {
+                ctx.push_scoped_vec(&mut storage, &mut first_candidates, edge, "f3d triplet intersection candidate")?;
+            }
+        }
+        if !first_candidates.is_empty() { candidates = Some(first_candidates); }
+        Ok(true)
     };
-    for selector in ctx.admit_iter(selector_contexts, "scan F3D triplet selectors")? {
+    let mut selectors = selector_contexts.iter();
+    while let Some(selector) = ctx.next_charged(&mut selectors, "scan F3D triplet selectors")? {
         match proof {
             TripletProof::Common => {
-                for clause in
-                    ctx.admit_iter(&selector.clauses, "scan F3D triplet selector clauses")?
-                {
-                    let Some(clause) = clause else {
-                        continue;
-                    };
-                    if clause.entry.common_incident_edge_ordinal().is_none() {
-                        continue;
-                    }
+                let mut clauses = selector.clauses.iter();
+                while let Some(clause) = ctx.next_charged(&mut clauses, "scan F3D triplet selector clauses")? {
+                    let Some(clause) = clause else { continue; };
+                    if clause.entry.common_incident_edge_ordinal().is_none() { continue; }
                     let [first, second] = &clause.triplet_edge_slots;
-                    add_pair(first, second)?;
+                    if !intersect_pair(first, second)? { return Ok(None); }
                 }
             }
             TripletProof::CrossClause => {
-                let [Some(left), Some(right)] = selector.clauses.as_slice() else {
-                    continue;
-                };
-                for (left, right) in left
-                    .triplet_edge_slots
-                    .iter()
-                    .zip(&right.triplet_edge_slots)
-                {
-                    add_pair(left, right)?;
+                let [Some(left), Some(right)] = selector.clauses.as_slice() else { continue; };
+                for (left, right) in left.triplet_edge_slots.iter().zip(&right.triplet_edge_slots) {
+                    if !intersect_pair(left, right)? { return Ok(None); }
                 }
             }
         }
     }
-    let Some(&(first, second)) = pairs.first() else {
-        return Ok(None);
-    };
+    let Some(candidates) = candidates else { return Ok(None); };
     let mut candidate = None;
-    let mut edges = first.iter();
-    while let Some(&edge) = ctx.next_charged(&mut edges, "scan F3D triplet edge candidates")? {
-        if ctx.contains(second, &edge, "find F3D triplet second edge")?
-            && ctx.all_by(
-                pairs.iter().skip(1),
-                |(left, right)| {
-                    Ok(
-                        ctx.contains(left, &edge, "find F3D corroborating triplet edge")?
-                            && ctx.contains(right, &edge, "find F3D corroborating triplet edge")?,
-                    )
-                },
-                "scan F3D corroborating triplet pairs",
-            )?
-            && ctx.all_by(
-                shared_edge_sets,
-                |set| ctx.contains(set, &edge, "find F3D shared triplet edge"),
-                "scan F3D shared triplet sets",
-            )?
-        {
-            if candidate.is_some_and(|selected| selected != edge) {
-                return Ok(None);
-            }
+    let mut edges = candidates.into_iter();
+    while let Some(edge) = ctx.next_charged(&mut edges, "scan F3D triplet edge candidates")? {
+        if ctx.all_by(shared_edge_sets.clone(), |set| Ok(set.is_empty() || ctx.contains(set, &edge, "find F3D shared triplet edge")?), "scan F3D shared triplet sets")? {
+            if candidate.is_some() { return Ok(None); }
             candidate = Some(edge);
         }
     }
@@ -3844,22 +3644,22 @@ enum EdgeSetIntersection {
     Ambiguous,
 }
 
-fn unique_edge_set_intersection(
+fn unique_edge_set_intersection<'a>(
+    first: &[i64],
+    rest: &(impl Iterator<Item = &'a [i64]> + Clone),
     ctx: &DecodeContext<'_>,
-    edge_sets: &[&[i64]],
 ) -> Result<EdgeSetIntersection, CodecError> {
-    ctx.charge_work(0, "resolve F3D unique edge set intersection")?;
-    let Some(first) = edge_sets.first() else {
-        return Ok(EdgeSetIntersection::Disjoint);
-    };
     let mut candidate = None;
     let mut edges = first.iter();
     while let Some(&edge) =
         ctx.next_charged(&mut edges, "scan F3D reference intersection candidates")?
     {
         if ctx.all_by(
-            edge_sets.iter().skip(1),
-            |set| ctx.contains(set, &edge, "find F3D reference intersection edge"),
+            rest.clone(),
+            |set| {
+                Ok(set.is_empty()
+                    || ctx.contains(set, &edge, "find F3D reference intersection edge")?)
+            },
             "scan F3D reference intersection sets",
         )? {
             if candidate.is_some_and(|selected| selected != edge) {
@@ -3877,13 +3677,12 @@ enum SelectorSlots {
     BoundaryCount,
 }
 
-fn corroborated_edge_intersection(
-    ctx: &DecodeContext<'_>,
+fn corroborated_edge_intersection<'a>(
     selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
-    shared_edge_sets: &[&[i64]],
+    shared_edge_sets: &(impl Iterator<Item = &'a [i64]> + Clone),
     slots: SelectorSlots,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<i64>, CodecError> {
-    ctx.charge_work(0, "resolve F3D corroborated edge intersection")?;
     let Some(first) = selector_contexts.first() else {
         return Ok(None);
     };
@@ -3892,21 +3691,31 @@ fn corroborated_edge_intersection(
     while let Some(&edge) =
         ctx.next_charged(&mut edges, "scan F3D selector intersection candidates")?
     {
-        if !ctx.all_by(
-            selector_contexts.iter().skip(1),
-            |selector| {
-                ctx.contains(
-                    selector_candidate_edges(selector, slots),
-                    &edge,
-                    "find F3D corroborating selector edge",
-                )
-            },
-            "scan F3D corroborating selectors",
-        )? || !ctx.all_by(
-            shared_edge_sets,
-            |set| ctx.contains(set, &edge, "find F3D shared selector edge"),
-            "scan F3D shared selector sets",
-        )? {
+        if !(selector_contexts.len() == 1
+            || ctx.all_by(
+                &selector_contexts[1..],
+                |selector| {
+                    ctx.contains(
+                        selector_candidate_edges(selector, slots),
+                        &edge,
+                        "find F3D corroborating selector edge",
+                    )
+                },
+                "scan F3D corroborating selectors",
+            )?)
+            || !ctx.all_by(
+                shared_edge_sets.clone(),
+                |set| {
+                    Ok(set.is_empty()
+                        || ctx.contains(
+                            set,
+                            &edge,
+                            "find F3D shared selector edge",
+                        )?)
+                },
+                "scan F3D shared selector sets",
+            )?
+        {
             continue;
         }
         if candidate.is_some_and(|selected| selected != edge) {
@@ -3923,7 +3732,6 @@ fn corroborated_edge_candidates<'a>(
     slots: SelectorSlots,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
-    ctx.charge_work(0, "resolve F3D corroborated edge candidates")?;
     let Some(first_selector) = selector_contexts.first() else {
         return Ok(None);
     };
@@ -4043,9 +3851,8 @@ pub(super) fn project_fixed_fillet_with_corners(
     };
     use cadmpeg_ir::scalar::Length;
 
-    ctx.charge_work(0, "resolve F3D project fixed fillet with corners")?;
     let fixed = or_none!(scope.fixed_fillet_parameters());
-    let stream = or_none!(native_stream(&scope.id));
+    let stream = or_none!(native_stream_charged(ctx, &scope.id, "f3d edge native stream")?);
     let radius_spec =
         |group: &crate::records::feature::fixed_parameters::DesignFixedFilletGroup| -> Result<Option<RadiusSpec>, CodecError> { Ok(match group.law() {
             crate::records::feature::fixed_parameters::DesignFixedFilletLaw::Constant(radius) => {
@@ -4066,8 +3873,8 @@ pub(super) fn project_fixed_fillet_with_corners(
                     parameter: 0.0,
                     radius: start_radius,
                 }, "f3d fixed fillet radius point")?;
-                for row in intermediate {
-                    ctx.charge_work(1, "f3d fixed fillet radius conversion")?;
+                let mut sample_source = intermediate.iter();
+                while let Some(row) = ctx.next_charged(&mut sample_source, "f3d edge projection source")? {
                     let Some(radius) = Length::new(row.radius.value.get() * 10.0) else { return Ok(None); };
                     ctx.push_scoped_vec(&mut sample_storage, &mut points, VariableRadius {
                         parameter: row.parameter.value.get(),
@@ -4092,11 +3899,10 @@ pub(super) fn project_fixed_fillet_with_corners(
         }) };
     let mut scope_storage = ctx.reserve_scoped(0, "hold F3D fixed fillet scope groups")?;
     let mut scope_groups = Vec::new();
-    for group in construction_groups.iter().filter(|group| {
-        native_stream(&group.id) == Some(stream)
-            && group.scope_record_index == scope.record_index
-            && !group.members().is_empty()
-    }) {
+    let mut group_source = construction_groups.iter();
+    while let Some(group) = ctx.next_charged(&mut group_source, "f3d fixed fillet construction group source")? {
+        if !ctx.equal(&native_stream_charged(ctx, &group.id, "f3d edge native stream")?, &Some(stream), "f3d edge stream comparison")?
+            || group.scope_record_index != scope.record_index || group.members().is_empty() { continue; }
         ctx.push_scoped_vec(
             &mut scope_storage,
             &mut scope_groups,
@@ -4117,19 +3923,15 @@ pub(super) fn project_fixed_fillet_with_corners(
     )?;
     let mut complete_storage = ctx.reserve_scoped(0, "hold F3D fixed fillet complete groups")?;
     let mut complete_edge_groups = Vec::new();
-    for group in scope_groups.iter().copied().filter(|group| {
-        group
-            .members()
-            .iter()
-            .map(|member| &member.value)
-            .all(|member| {
-                edge_operands.iter().any(|operand| {
-                    native_stream(&operand.id) == Some(stream)
-                        && operand.scope_record_index == scope.record_index
-                        && operand.record_index() == *member
-                })
-            })
-    }) {
+    let mut complete_source = scope_groups.iter().copied();
+    while let Some(group) = ctx.next_charged(&mut complete_source, "f3d fixed fillet complete group source")? {
+        if !ctx.all_by(group.members(), |member| {
+            ctx.any_by(edge_operands, |operand| Ok(
+                ctx.equal(&native_stream_charged(ctx, &operand.id, "f3d edge native stream")?, &Some(stream), "f3d edge stream comparison")?
+                    && operand.scope_record_index == scope.record_index
+                    && operand.record_index() == member.value
+            ), "f3d fixed fillet operand presence")
+        }, "f3d fixed fillet member presence")? { continue; }
         ctx.push_scoped_vec(
             &mut complete_storage,
             &mut complete_edge_groups,
@@ -4164,14 +3966,13 @@ pub(super) fn project_fixed_fillet_with_corners(
             };
             let mut identity_storage = ctx.reserve_scoped(0, "hold F3D fixed fillet identities")?;
             let mut identities = Vec::new();
-            for member in group.members().iter().map(|member| &member.value) {
-                let mut matches = edge_identity_operands.iter().filter(|operand| {
-                    native_stream(&operand.id) == Some(stream)
+            let mut fillet_identity_member_source = group.members().iter().map(|member| &member.value);
+            while let Some(member) = ctx.next_charged(&mut fillet_identity_member_source, "f3d edge projection source")? {
+                let matches = unique_feature_match_for_decode(ctx, edge_identity_operands.iter(), |operand| Ok(ctx.equal(&native_stream_charged(ctx, &operand.id, "f3d edge native stream")?, &Some(stream), "f3d edge stream comparison")?
                         && operand.scope_record_index == scope.record_index
                         && operand.group_record_index == group.record_index
-                        && operand.record_index() == *member
-                });
-                let Some(operand) = matches.next().filter(|_| matches.next().is_none()) else {
+                        && operand.record_index() == *member), "f3d unique edge operand")?;
+                let Some(operand) = matches else {
                     return Ok(None);
                 };
                 if !operand.layout().is_compact() {
@@ -4204,7 +4005,8 @@ pub(super) fn project_fixed_fillet_with_corners(
         return Ok(None);
     };
     let mut groups = Vec::new();
-    for (fixed_group, edge_group) in fixed.groups.iter().zip(edge_groups) {
+    let mut fillet_group_source = fixed.groups.iter().zip(edge_groups);
+    while let Some((fixed_group, edge_group)) = ctx.next_charged(&mut fillet_group_source, "f3d edge projection source")? {
         let radius = or_none!(radius_spec(fixed_group)?);
         let edge_radius = match radius {
             RadiusSpec::Constant { radius } => Some(radius.get()),

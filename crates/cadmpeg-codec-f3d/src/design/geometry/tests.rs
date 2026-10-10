@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::CodecError;
 
 mod cast_limits;
 
@@ -711,12 +712,19 @@ fn coincident_circle_arc_arrangement() -> (Sketch, Vec<SketchEntity>, SketchEnti
 fn coincident_circle_arc_arrangement_resolves_trimmed_faces() {
     let (sketch, entities, line_id, arc_id) = coincident_circle_arc_arrangement();
     let arrangement_budget = local_arrangement_budget();
-    let faces = crate::test_support::with_decode_context(|decode_ctx| {
-        sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &arrangement_budget, decode_ctx)
-    })
-    .expect("arrangement collection admitted")
-    .expect("endpoint arrangement faces");
-    assert_eq!(faces.len(), 2);
+    let face_count = crate::test_support::with_decode_context(|decode_ctx| {
+        let faces = sketch_arrangement_faces(
+            &sketch,
+            &entities,
+            EPS_ARRANGEMENT_SESSION,
+            &arrangement_budget,
+            decode_ctx,
+        )
+        .expect("arrangement collection admitted")
+        .expect("endpoint arrangement faces");
+        faces.len()
+    });
+    assert_eq!(face_count, 2);
     let selected = crate::test_support::with_decode_context(|decode_ctx| {
         arrangement_region_containing_points(
             &sketch,
@@ -832,22 +840,59 @@ fn arrangement_outgoing_refuses_collection_limit() {
 }
 
 #[test]
-fn arrangement_outgoing_entries_refuse_materialized_limit() {
+fn arrangement_outgoing_entries_refuse_collection_limit() {
     let (sketch, entities, _, _) = coincident_circle_arc_arrangement();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_materialized_bytes = 143;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let budget = local_arrangement_budget();
-    let error = sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &budget, &ctx)
-        .err()
-        .expect("six outgoing entries require 144 temporary bytes");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-                && limit.operation == "f3d arrangement outgoing entries"
-    ));
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "f3d arrangement outgoing entry",
+        0,
+        |ctx| {
+            let budget = local_arrangement_budget();
+            sketch_arrangement_faces(&sketch, &entities, EPS_ARRANGEMENT_SESSION, &budget, ctx)
+                .map(|_| ())
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && limit.operation == "f3d arrangement outgoing entry")
+    );
+}
+
+#[test]
+fn arrangement_pending_boundaries_refuse_materialized_limit() {
+    let (mut sketch, mut entities, _, _) = coincident_circle_arc_arrangement();
+    for region in 0..32 {
+        let x = 4.0 + f64::from(region) * 3.0;
+        let points = [Point2::new(x, 0.0), Point2::new(x + 1.0, 0.0), Point2::new(x, 1.0)];
+        let mut boundary = Vec::new();
+        for edge in 0..3 {
+            let id = SketchEntityId::mint(format!("synthetic:test:outgoing#{region}-{edge}")).unwrap();
+            entities.push(SketchEntity::new(
+                id.clone(), sketch.id.clone(),
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                    start: points[edge], end: points[(edge + 1) % 3],
+                }).unwrap(),
+            ));
+            boundary.push(SketchEntityUse { entity: id, reversed: false });
+        }
+        sketch.profiles.try_push(boundary).unwrap();
+    }
+    crate::test_support::with_decode_context(|ctx| {
+        let budget = local_arrangement_budget();
+        assert_eq!(sketch_arrangement_faces(&sketch, &entities, EPS_ARRANGEMENT_SESSION, &budget, ctx).unwrap().unwrap().len(), 34);
+    });
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "f3d arrangement pending boundary", 0,
+        |ctx| {
+            let budget = local_arrangement_budget();
+            sketch_arrangement_faces(&sketch, &entities, EPS_ARRANGEMENT_SESSION, &budget, ctx).map(|_| ())
+        },
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+            && limit.operation == "f3d arrangement pending boundary"));
 }
 
 #[test]
@@ -999,10 +1044,22 @@ fn circular_arc_loop_uses_analytic_containment_and_distance() {
         radius: positive_radius(0.5),
     };
 
-    assert!(boundary.contains_point(Point2::new(-1.0, 0.0)));
-    assert!(!boundary.contains_point(Point2::new(1.0, 0.0)));
-    assert!(!boundary.contains_point(Point2::new(-1.0, -2.0)));
-    assert!(!boundary.contains_point(Point2::new(-1.0, 2.0)));
+    assert!(crate::test_support::with_decode_context(
+        |ctx| boundary.contains_point(Point2::new(-1.0, 0.0), ctx)
+    )
+    .unwrap());
+    assert!(!crate::test_support::with_decode_context(
+        |ctx| boundary.contains_point(Point2::new(1.0, 0.0), ctx)
+    )
+    .unwrap());
+    assert!(!crate::test_support::with_decode_context(
+        |ctx| boundary.contains_point(Point2::new(-1.0, -2.0), ctx)
+    )
+    .unwrap());
+    assert!(!crate::test_support::with_decode_context(
+        |ctx| boundary.contains_point(Point2::new(-1.0, 2.0), ctx)
+    )
+    .unwrap());
     assert!(
         crate::test_support::with_decode_context(|ctx| boundary.strictly_contains(&hole, ctx))
             .unwrap()
@@ -1133,31 +1190,32 @@ fn historical_edge_positions_require_a_complete_state_chain() {
         ],
         ..crate::history_records::AsmHistoricalTopology::default()
     };
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::geometry::historical_entity_positions(
-                crate::records::topology::body_recipe::AsmHistoricalEntityKind::Edge,
-                7,
-                &topology,
-                decode_ctx,
-            )
-        })
-        .unwrap(),
-        Some(vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0),])
-    );
+    crate::test_support::with_decode_context(|decode_ctx| {
+        let value = crate::design::geometry::historical_entity_positions(
+            crate::records::topology::body_recipe::AsmHistoricalEntityKind::Edge,
+            7,
+            &topology,
+            decode_ctx,
+        )?;
+        assert_eq!(
+            value.as_ref().map(AsRef::as_ref),
+            Some([Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0),].as_slice())
+        );
+        Ok::<_, CodecError>(())
+    })
+    .unwrap();
     topology.point_positions.pop();
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::geometry::historical_entity_positions(
-                crate::records::topology::body_recipe::AsmHistoricalEntityKind::Edge,
-                7,
-                &topology,
-                decode_ctx,
-            )
-        })
-        .unwrap(),
-        None
-    );
+    crate::test_support::with_decode_context(|decode_ctx| {
+        let value = crate::design::geometry::historical_entity_positions(
+            crate::records::topology::body_recipe::AsmHistoricalEntityKind::Edge,
+            7,
+            &topology,
+            decode_ctx,
+        )?;
+        assert_eq!(value.as_ref().map(AsRef::as_ref), None);
+        Ok::<_, CodecError>(())
+    })
+    .unwrap();
 }
 
 #[test]
@@ -1187,42 +1245,48 @@ fn historical_region_faces_follow_complete_ownership_hierarchy() {
         ..AsmHistoricalTopology::default()
     };
 
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::geometry::historical_owned_faces(
-                AsmHistoricalEntityKind::Body,
-                1,
-                &topology,
-                decode_ctx,
-            )
-        })
-        .unwrap(),
-        Some(vec![5, 6, 7])
-    );
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::geometry::historical_owned_faces(
-                AsmHistoricalEntityKind::Region,
-                2,
-                &topology,
-                decode_ctx,
-            )
-        })
-        .unwrap(),
-        Some(vec![5, 6, 7])
-    );
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::geometry::historical_owned_faces(
-                AsmHistoricalEntityKind::Shell,
-                3,
-                &topology,
-                decode_ctx,
-            )
-        })
-        .unwrap(),
-        Some(vec![5, 7])
-    );
+    crate::test_support::with_decode_context(|decode_ctx| {
+        let value = crate::design::geometry::historical_owned_faces(
+            AsmHistoricalEntityKind::Body,
+            1,
+            &topology,
+            decode_ctx,
+        )?;
+        assert_eq!(
+            value.as_ref().map(|(faces, _storage)| faces.as_slice()),
+            Some([5, 6, 7].as_slice())
+        );
+        Ok::<_, CodecError>(())
+    })
+    .unwrap();
+    crate::test_support::with_decode_context(|decode_ctx| {
+        let value = crate::design::geometry::historical_owned_faces(
+            AsmHistoricalEntityKind::Region,
+            2,
+            &topology,
+            decode_ctx,
+        )?;
+        assert_eq!(
+            value.as_ref().map(|(faces, _storage)| faces.as_slice()),
+            Some([5, 6, 7].as_slice())
+        );
+        Ok::<_, CodecError>(())
+    })
+    .unwrap();
+    crate::test_support::with_decode_context(|decode_ctx| {
+        let value = crate::design::geometry::historical_owned_faces(
+            AsmHistoricalEntityKind::Shell,
+            3,
+            &topology,
+            decode_ctx,
+        )?;
+        assert_eq!(
+            value.as_ref().map(|(faces, _storage)| faces.as_slice()),
+            Some([5, 7].as_slice())
+        );
+        Ok::<_, CodecError>(())
+    })
+    .unwrap();
 }
 
 #[test]
@@ -1899,21 +1963,24 @@ fn sketch_arrangement_faces_propagates_local_work_refusal() {
 #[test]
 fn arrangement_ring_refuses_unadmitted_cubic_scan() {
     let entity = SketchEntityId::mint("synthetic:test:id#ring").unwrap();
-    let boundary = cadmpeg_ir::features::SketchProfileBoundaryUse {
-        entity,
+    let boundary = super::ArrangementBoundary {
+        entity: &entity,
         parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new([0.0, 1.0]).unwrap(),
         reversed: false,
     };
-    let mut edges: Vec<_> = (0..500)
-        .map(|index| super::SketchArrangementEdge {
-            nodes: [index, (index + 1) % 500],
-            boundary: boundary.clone(),
-            polyline: Vec::new(),
-        })
-        .collect();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 250_000;
     crate::test_support::with_decode_policy(&policy, |ctx| {
+        let mut edges: Vec<_> = (0..500)
+            .map(|index| super::SketchArrangementEdge {
+                nodes: [index, (index + 1) % 500],
+                boundary,
+                polyline: Vec::new(),
+                _polyline_storage: ctx
+                    .reserve_scoped(0, "test arrangement empty polyline storage")
+                    .unwrap(),
+            })
+            .collect();
         let budget = ctx.work_budget(1_000_000_000);
         let error =
             super::arrangement_retain_cycle_edges(&mut edges, 500, &budget, ctx).unwrap_err();
@@ -1925,3 +1992,11 @@ fn arrangement_ring_refuses_unadmitted_cubic_scan() {
         assert_eq!(edges.len(), 500);
     });
 }
+
+mod ordered_profiles;
+
+mod endpoint_walks;
+
+mod containment_admission;
+
+mod graph_admission;

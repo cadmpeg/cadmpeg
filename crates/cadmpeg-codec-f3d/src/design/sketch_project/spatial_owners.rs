@@ -15,7 +15,6 @@ fn sketch_curve_is_spatial(
     ctx: &DecodeContext<'_>,
     curve: &SketchCurveIdentity,
 ) -> Result<bool, CodecError> {
-    ctx.charge_work(0, "classify F3D sketch curve geometry")?;
     Ok(match curve.geometry.as_ref() {
         Some(SketchCurveGeometry::Line { start, end, .. }) => {
             !(planar_point(start.as_raw()) && planar_point(end.as_raw()))
@@ -48,7 +47,6 @@ pub(super) fn spatial_geometry_owners<'a>(
     points: &'a [SketchPoint],
     curves: &'a [SketchCurveIdentity],
 ) -> Result<HashSet<(&'a str, u32)>, CodecError> {
-    ctx.charge_work(0, "find F3D spatial geometry owners")?;
     let mut owners = HashSet::new();
     if !curves.is_empty() {
         let mut input = curves.iter();
@@ -64,10 +62,7 @@ pub(super) fn spatial_geometry_owners<'a>(
             else {
                 continue;
             };
-            if !owners.contains(&(scope, owner)) {
-                ctx.reserve_set(&mut owners, 1, "f3d spatial geometry owner")?;
-                owners.insert((scope, owner));
-            }
+            ctx.insert_hash_set(&mut owners, (scope, owner), "f3d spatial geometry owner")?;
         }
     }
     if !points.is_empty() {
@@ -76,7 +71,7 @@ pub(super) fn spatial_geometry_owners<'a>(
             let Some(owner) = point.owner_reference else {
                 continue;
             };
-            if !(point.depth().abs() > EPS_SPATIAL_OWNER_DEPTH) {
+            if point.depth().abs().partial_cmp(&EPS_SPATIAL_OWNER_DEPTH) != Some(std::cmp::Ordering::Greater) {
                 continue;
             }
             let Some(scope) =
@@ -84,10 +79,7 @@ pub(super) fn spatial_geometry_owners<'a>(
             else {
                 continue;
             };
-            if !owners.contains(&(scope, owner)) {
-                ctx.reserve_set(&mut owners, 1, "f3d spatial geometry owner")?;
-                owners.insert((scope, owner));
-            }
+            ctx.insert_hash_set(&mut owners, (scope, owner), "f3d spatial geometry owner")?;
         }
     }
     Ok(owners)

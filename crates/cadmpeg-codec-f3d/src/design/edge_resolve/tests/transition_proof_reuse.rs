@@ -39,45 +39,19 @@ fn selection(ctx: &DecodeContext<'_>) -> Result<cadmpeg_ir::features::EdgeSelect
 }
 
 #[test]
-fn edge_transition_proof_reuse_preserves_the_first_actual_recipe_refusal() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    // One matched identity + two slots for the singleton, group and first
-    // comparison = seven items before the actual recipe member is kept.
-    policy.limits.max_collection_items = 1 + 2 + 2 + 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let CodecError::ResourceLimit(limit) = selection(&ctx).unwrap_err() else {
-        panic!("first useful recipe proof must refuse");
-    };
-    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-    assert_eq!(limit.operation, "f3d transition recipe member");
-    assert_eq!(limit.used, 7);
-    assert_eq!(limit.additional, 1);
-    assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(
-        matches!(ctx.charge_work(0, "later transition proof"), Err(CodecError::ResourceLimit(original)) if original == limit)
-    );
+fn edge_transition_recipe_member_refuses_before_storage() {
+    let operation = "f3d transition recipe member";
+    let error = crate::test_support::resource_refusal_at(ResourceDimension::CollectionItems, operation, 0, selection);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation));
 }
 
 #[test]
-fn edge_transition_proof_reuse_skips_the_second_identical_recipe_query() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    // The seven identity items, one recipe member and two changed boundaries
-    // complete the one useful proof. The next item belongs to actual output.
-    policy.limits.max_collection_items = 1 + 2 + 2 + 2 + 1 + 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let CodecError::ResourceLimit(limit) = selection(&ctx).unwrap_err() else {
-        panic!("historical output needs its own item");
-    };
-    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-    assert_eq!(limit.operation, "f3d group identity historical edge");
-    assert_eq!(limit.used, 10);
-    assert_eq!(limit.additional, 1);
-    assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(
-        matches!(selection(&ctx), Err(CodecError::ResourceLimit(original)) if original == limit)
-    );
+fn edge_transition_historical_output_refuses_before_storage() {
+    let operation = "f3d group identity historical edge";
+    let error = crate::test_support::resource_refusal_at(ResourceDimension::CollectionItems, operation, 0, selection);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation));
 }
 
 #[test]

@@ -2,8 +2,8 @@
 //! Parse Form cage references and bind committed neutral cages.
 
 use crate::container::ContainerScan;
-use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
-use crate::ids::{self, native_stream};
+use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::ids::{self, native_stream_charged};
 use crate::layout::{
     form_class_325_cage_entry, form_class_325_cage_table, form_class_328_cage_group,
     form_class_328_metadata_group, form_class_328_reference_entry, form_class_328_scope,
@@ -11,7 +11,7 @@ use crate::layout::{
     form_serializer_frame_132,
 };
 use crate::records::feature::scope::DesignParameterScope;
-use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
+use cadmpeg_core::decode::{bounded_len, DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
@@ -20,15 +20,15 @@ fn distinct_form_cage_ids<T: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost>
     ctx: &DecodeContext<'_>,
     ids: &[T],
 ) -> Result<bool, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "F3D form cage uniqueness")?;
     let mut distinct = HashSet::new();
-    for id in ids {
-        if distinct.contains(id) {
+    let mut source = ids.iter();
+    while let Some(id) = ctx.next_charged(&mut source, "f3d form cage uniqueness source")? {
+        if !storage.with_storage(|| {
+            ctx.insert_hash_set(&mut distinct, id, "f3d form cage uniqueness index")
+        })? {
             return Ok(false);
         }
-
-        ctx.reserve_set(&mut distinct, 1, "f3d form cage uniqueness index")?;
-        // discarded-value: the duplicate case returned above.
-        let _ = distinct.insert(id);
     }
     Ok(true)
 }
@@ -54,226 +54,291 @@ pub(crate) fn bind_form_cages(
     features: &mut [cadmpeg_ir::features::Feature],
     cages: &[cadmpeg_ir::subd::SubdSurface],
 ) -> Result<(), CodecError> {
-    'scope: for scope in scopes
-        .iter()
-        .filter(|scope| scope.kind() == crate::records::feature::scope::DesignFeatureKind::Form)
-    {
-        let Some(stream) = native_stream(&scope.id) else {
-            continue;
+    let mut streams_storage = ctx.reserve_scoped(0, "F3D form stream cache")?;
+    let mut streams = HashMap::new();
+    let mut cages_storage = ctx.reserve_scoped(0, "F3D form cage entry index")?;
+    let mut cages_by_entry = HashMap::new();
+    let mut remaining_cages = Some(cages);
+    let mut cage_for_entry =
+        |entry_name: &str| -> Result<Option<Option<&cadmpeg_ir::subd::SubdSurface>>, CodecError> {
+            if let Some(cages) = remaining_cages.take() {
+                for cage in ctx.admit_iter(cages, "f3d form cage entry source")? {
+                    let Some(source) = &cage.source_object else {
+                        continue;
+                    };
+                    let object = source.object_id.as_str();
+                    let name = ctx
+                        .rsplit_once(object, "/", "f3d form cage entry suffix")?
+                        .map_or(object, |(_, name)| name);
+                    if let Some(previous) = ctx.get_mut_hash_map(
+                        &mut cages_by_entry,
+                        name,
+                        "f3d form cage entry duplicate",
+                    )? {
+                        *previous = None;
+                    } else {
+                        cages_storage.with_storage(|| {
+                            ctx.insert_hash_map(
+                                &mut cages_by_entry,
+                                name,
+                                Some(cage),
+                                "f3d form cage entry index",
+                            )
+                        })?;
+                    }
+                }
+            }
+            Ok(ctx
+                .get_hash_map(&cages_by_entry, entry_name, "f3d form cage entry lookup")?
+                .copied())
         };
-        let Some(stream) =
-            ctx.strip_prefix(stream, ids::SCHEME_PREFIX, "f3d form cage stream prefix")?
+    let mut features_storage = ctx.reserve_scoped(0, "F3D form feature index")?;
+    let mut features_by_id = HashMap::new();
+    let mut remaining_features = Some(features);
+    let mut bind_resolved = |scope: &DesignParameterScope,
+                             resolved: &[&cadmpeg_ir::ids::SubdId]|
+     -> Result<(), CodecError> {
+        if let Some(features) = remaining_features.take() {
+            for feature in ctx.admit_iter(features, "f3d form feature source")? {
+                if !ctx.contains_key_hash_map(
+                    &features_by_id,
+                    &feature.id,
+                    "f3d form feature duplicate",
+                )? {
+                    features_storage.with_storage(|| {
+                        ctx.insert_hash_map(
+                            &mut features_by_id,
+                            &feature.id,
+                            &mut feature.evaluation,
+                            "f3d form feature index",
+                        )
+                    })?;
+                }
+            }
+        }
+        let mut identity_storage = ctx.reserve_scoped(0, "F3D form feature identity")?;
+        let feature_id = identity_storage
+            .with_storage(|| crate::design::identity::neutral_feature_id(ctx, scope))?;
+        let Some(evaluation) =
+            ctx.get_mut_hash_map(&mut features_by_id, &feature_id, "f3d form feature lookup")?
         else {
+            return Ok(());
+        };
+        if matches!(
+            evaluation.definition(),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Native { .. }
+            )
+        ) {
+            let mut ids = Vec::new();
+            for id in ctx.admit_iter(resolved, "f3d form cage output source")? {
+                push_form_cage_id(ctx, &mut ids, id)?;
+            }
+            evaluation.set_definition(cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Form { cages: ids },
+            ));
+        }
+        Ok(())
+    };
+    let mut one_form_scope = None;
+    let mut has_one_form_scope = || -> Result<bool, CodecError> {
+        if let Some(unique) = one_form_scope {
+            return Ok(unique);
+        }
+        let mut candidates = scopes.iter();
+        let first = ctx.find_by(
+            candidates.by_ref(),
+            |scope| Ok(scope.kind() == crate::records::feature::scope::DesignFeatureKind::Form),
+            "f3d form scope uniqueness",
+        )?;
+        let unique = first.is_some()
+            && !ctx.any_by(
+                candidates,
+                |scope| Ok(scope.kind() == crate::records::feature::scope::DesignFeatureKind::Form),
+                "f3d form scope uniqueness",
+            )?;
+        one_form_scope = Some(unique);
+        Ok(unique)
+    };
+    'scope: for scope in ctx.admit_iter(scopes, "f3d form scope scan")? {
+        if scope.kind() != crate::records::feature::scope::DesignFeatureKind::Form {
+            continue;
+        }
+        let Some(stream) = native_stream_charged(ctx, &scope.id, "f3d form cage native stream")? else {
             continue;
         };
-        let bytes = scan.entry_bytes(ctx, stream)?;
-        let records = IndexedRecordOffsets::build(ctx, bytes)?;
-        let (cage_lists, cage_counts) = form_cage_lists(
-            ctx,
-            bytes,
-            &records,
-            scope.reference_members().values().copied(),
-            scope.record_index,
-        )?;
-        if scope.class_tag.as_str() == "325" {
-            if let Some(cage_objects) = form_class_325_cage_objects(
+        let Some(stream) = ctx.strip_prefix(stream, ids::SCHEME_PREFIX, "f3d form cage stream prefix")? else {
+            continue;
+        };
+        if !ctx.contains_key_hash_map(&streams, stream, "f3d form stream cache query")? {
+            let bytes = scan.entry_bytes(ctx, stream)?;
+            let scoped_records = IndexedRecordOffsets::build_scoped(ctx, bytes)?;
+            streams_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut streams,
+                    stream,
+                    FormStream {
+                        bytes,
+                        records: scoped_records.0,
+                        serializers: None,
+                        _storage: scoped_records.1,
+                    },
+                    "f3d form stream cache entry",
+                )
+            })?;
+        }
+        let stream_data = ctx
+            .get_mut_hash_map(&mut streams, stream, "f3d form stream cache lookup")?
+            .ok_or_else(|| CodecError::malformed("Form stream cache entry is absent"))?;
+        let bytes = stream_data.bytes;
+        let records = &stream_data.records;
+        let mut parsed_storage = ctx.reserve_scoped(0, "F3D form scope parsing")?;
+        let (cage_lists, cage_counts) = parsed_storage.with_storage(|| {
+            form_cage_lists(
                 ctx,
                 bytes,
-                &records,
-                scope.record_index,
+                records,
                 scope.reference_members().values().copied(),
-            )? {
-                let serializers = form_cage_serializers(ctx, bytes, &records)?;
+                scope.record_index,
+            )
+        })?;
+        if scope.class_tag.as_str() == "325" {
+            if let Some(cage_objects) = parsed_storage.with_storage(|| {
+                form_class_325_cage_objects(
+                    ctx,
+                    bytes,
+                    records,
+                    scope.record_index,
+                    scope.reference_members().values().copied(),
+                )
+            })? {
+                if stream_data.serializers.is_none() {
+                    stream_data.serializers = Some(form_cage_serializers(ctx, bytes, records)?);
+                }
+                let serializers = stream_data
+                    .serializers
+                    .as_ref()
+                    .ok_or_else(|| CodecError::malformed("Form serializers are absent"))?;
                 let mut resolved = Vec::new();
                 let mut valid = true;
-                for object in cage_objects {
-                    let Some(surface) = form_class_325_cage_surface(ctx, bytes, &records, object)?
+                for &object in &cage_objects {
+                    let Some(surface) = form_class_325_cage_surface(ctx, bytes, records, object)?
                     else {
                         valid = false;
                         break;
                     };
-                    let Some(entry_name) = serializers.entry_name(surface) else {
+                    let Some(entry_name) = serializers.entry_name(ctx, surface)? else {
                         valid = false;
                         break;
                     };
-                    let mut matches = cages.iter().filter(|cage| {
-                        cage.source_object
-                            .as_ref()
-                            .and_then(|source| source.object_id.as_str().rsplit('/').next())
-                            == Some(entry_name)
-                    });
-                    let Some(cage) = matches.next() else {
-                        continue;
+                    let cage = match cage_for_entry(entry_name)? {
+                        Some(Some(cage)) => cage,
+                        None => continue,
+                        Some(None) => {
+                            valid = false;
+                            break;
+                        }
                     };
-                    if matches.next().is_some() {
-                        valid = false;
-                        break;
-                    }
-                    push_form_cage_id(ctx, &mut resolved, &cage.id)?;
+                    parsed_storage.with_storage(|| {
+                        ctx.push_vec(&mut resolved, &cage.id, "f3d form candidate cage")
+                    })?;
                 }
                 if valid && !resolved.is_empty() && distinct_form_cage_ids(ctx, &resolved)? {
-                    let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
-                    if let Some(feature) =
-                        features.iter_mut().find(|feature| feature.id == feature_id)
-                    {
-                        if matches!(
-                            feature.evaluation.definition(),
-                            cadmpeg_ir::features::FeatureDefinition::Operation(
-                                cadmpeg_ir::features::FeatureOperation::Native { .. }
-                            )
-                        ) {
-                            feature.evaluation.set_definition(
-                                cadmpeg_ir::features::FeatureDefinition::Operation(
-                                    cadmpeg_ir::features::FeatureOperation::Form {
-                                        cages: resolved,
-                                    },
-                                ),
-                            );
-                        }
-                    }
+                    bind_resolved(scope, &resolved)?;
                 }
                 continue;
             }
         }
         if scope.class_tag.as_str() == "328"
-            && scopes
-                .iter()
-                .filter(|candidate| {
-                    candidate.kind() == crate::records::feature::scope::DesignFeatureKind::Form
-                })
-                .count()
-                == 1
-            && form_class_328_envelope(ctx, bytes, &records, scope)?
+            && has_one_form_scope()?
+            && form_class_328_envelope(ctx, bytes, records, scope)?
         {
-            let serializers = form_cage_serializers(ctx, bytes, &records)?;
+            if stream_data.serializers.is_none() {
+                stream_data.serializers = Some(form_cage_serializers(ctx, bytes, records)?);
+            }
+            let serializers = stream_data
+                .serializers
+                .as_ref()
+                .ok_or_else(|| CodecError::malformed("Form serializers are absent"))?;
             let mut resolved = Vec::new();
             let mut valid = true;
-            for surface in &serializers.ordered {
-                let Some(entry_name) = serializers.entry_name(*surface) else {
+            let mut surface_source = serializers.ordered.iter();
+            while let Some(surface) =
+                ctx.next_charged(&mut surface_source, "f3d form serializer binding source")?
+            {
+                let Some(entry_name) = serializers.entry_name(ctx, *surface)? else {
                     valid = false;
                     break;
                 };
-                let mut matches = cages.iter().filter(|cage| {
-                    cage.source_object
-                        .as_ref()
-                        .and_then(|source| source.object_id.as_str().rsplit('/').next())
-                        == Some(entry_name)
-                });
-                let Some(cage) = matches.next() else {
-                    continue;
+                let cage = match cage_for_entry(entry_name)? {
+                    Some(Some(cage)) => cage,
+                    None => continue,
+                    Some(None) => {
+                        valid = false;
+                        break;
+                    }
                 };
-                if matches.next().is_some() {
-                    valid = false;
-                    break;
-                }
-                push_form_cage_id(ctx, &mut resolved, &cage.id)?;
+                parsed_storage.with_storage(|| {
+                    ctx.push_vec(&mut resolved, &cage.id, "f3d form candidate cage")
+                })?;
             }
             if valid
                 && !resolved.is_empty()
                 && resolved.len() == cages.len()
                 && distinct_form_cage_ids(ctx, &resolved)?
             {
-                let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
-                if let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id)
-                {
-                    if matches!(
-                        feature.evaluation.definition(),
-                        cadmpeg_ir::features::FeatureDefinition::Operation(
-                            cadmpeg_ir::features::FeatureOperation::Native { .. }
-                        )
-                    ) {
-                        feature.evaluation.set_definition(
-                            cadmpeg_ir::features::FeatureDefinition::Operation(
-                                cadmpeg_ir::features::FeatureOperation::Form { cages: resolved },
-                            ),
-                        );
-                    }
-                }
+                bind_resolved(scope, &resolved)?;
             }
             continue;
         }
-        if scopes
-            .iter()
-            .filter(|candidate| {
-                candidate.kind() == crate::records::feature::scope::DesignFeatureKind::Form
-            })
-            .count()
-            == 1
-            && cages.len() == 1
-            && cage_counts.as_slice() == [1]
-        {
-            let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
-            if let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) {
-                if matches!(
-                    feature.evaluation.definition(),
-                    cadmpeg_ir::features::FeatureDefinition::Operation(
-                        cadmpeg_ir::features::FeatureOperation::Native { .. }
-                    )
-                ) {
-                    feature.evaluation.set_definition(
-                        cadmpeg_ir::features::FeatureDefinition::Operation(
-                            cadmpeg_ir::features::FeatureOperation::Form {
-                                cages: {
-                                    let mut ids = Vec::new();
-                                    push_form_cage_id(ctx, &mut ids, &cages[0].id)?;
-                                    ids
-                                },
-                            },
-                        ),
-                    );
-                }
-            }
+        if has_one_form_scope()? && cages.len() == 1 && cage_counts.as_slice() == [1] {
+            bind_resolved(scope, &[&cages[0].id])?;
             continue;
         }
         let [cage_objects] = cage_lists.as_slice() else {
             continue;
         };
-        let Some(surfaces) =
-            form_cage_surfaces(ctx, bytes, &records, cage_objects, scope.record_index)?
+        let Some(surfaces) = parsed_storage.with_storage(|| {
+            form_cage_surfaces(ctx, bytes, records, cage_objects, scope.record_index)
+        })?
         else {
             continue;
         };
-        let serializers = form_cage_serializers(ctx, bytes, &records)?;
+        if stream_data.serializers.is_none() {
+            stream_data.serializers = Some(form_cage_serializers(ctx, bytes, records)?);
+        }
+        let serializers = stream_data
+            .serializers
+            .as_ref()
+            .ok_or_else(|| CodecError::malformed("Form serializers are absent"))?;
         let mut resolved = Vec::new();
-        for surface in &surfaces {
-            let Some(entry_name) = serializers.entry_name(*surface) else {
+        let mut surface_source = surfaces.iter();
+        while let Some(surface) =
+            ctx.next_charged(&mut surface_source, "f3d form surface binding source")?
+        {
+            let Some(entry_name) = serializers.entry_name(ctx, *surface)? else {
                 continue 'scope;
             };
-            let mut matches = cages.iter().filter(|cage| {
-                cage.source_object
-                    .as_ref()
-                    .and_then(|source| source.object_id.as_str().rsplit('/').next())
-                    == Some(entry_name)
-            });
-            let Some(cage) = matches.next() else {
+            let Some(Some(cage)) = cage_for_entry(entry_name)? else {
                 continue 'scope;
             };
-            if matches.next().is_some() {
-                continue 'scope;
-            }
-            push_form_cage_id(ctx, &mut resolved, &cage.id)?;
+            parsed_storage.with_storage(|| {
+                ctx.push_vec(&mut resolved, &cage.id, "f3d form candidate cage")
+            })?;
         }
         if !distinct_form_cage_ids(ctx, &resolved)? {
             continue;
         }
-        let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
-        let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) else {
-            continue;
-        };
-        if matches!(
-            feature.evaluation.definition(),
-            cadmpeg_ir::features::FeatureDefinition::Operation(
-                cadmpeg_ir::features::FeatureOperation::Native { .. }
-            )
-        ) {
-            feature
-                .evaluation
-                .set_definition(cadmpeg_ir::features::FeatureDefinition::Operation(
-                    cadmpeg_ir::features::FeatureOperation::Form { cages: resolved },
-                ));
-        }
+        bind_resolved(scope, &resolved)?;
     }
     Ok(())
+}
+
+struct FormStream<'bytes, 'ctx> {
+    bytes: &'bytes [u8],
+    records: IndexedRecordOffsets,
+    serializers: Option<FormCageSerializers<'ctx>>,
+    _storage: ScopedReservation<'ctx>,
 }
 
 /// Read the one-cage envelopes used by legacy Form record generations.
@@ -290,17 +355,17 @@ fn legacy_form_cage_count(
 ) -> Result<Option<usize>, CodecError> {
     (|| {
         if let Some(count) =
-            match legacy_form_owner_count(ctx, bytes, records, record_index, scope_record_index) {
-                Ok(value) => value,
-                Err(error) => return Some(Err(error)),
-            }
+            legacy_form_owner_count(bytes, records, record_index, scope_record_index)
         {
             return Some(Ok(count));
         }
-        for (start, paired) in match records.frames(ctx, record_index) {
-            Ok(value) => value,
+        let mut frames = records.offsets(record_index).windows(2);
+        while let Some(frame) = match ctx.next_charged(&mut frames, "f3d legacy form frame source")
+        {
+            Ok(frame) => frame,
             Err(error) => return Some(Err(error)),
         } {
+            let [start, paired] = [frame[0], frame[1]];
             if paired.checked_sub(start)? != form_compact_one_cage_list::LEN
                 || bytes.get(
                     start + form_compact_one_cage_list::ZERO_RUN_10
@@ -351,77 +416,66 @@ fn legacy_form_cage_count(
 }
 
 fn legacy_form_owner_count(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
     scope_record_index: u32,
-) -> Result<Option<usize>, CodecError> {
-    (|| {
-        let mut frames = match records.frames(ctx, record_index) {
-            Ok(value) => value,
-            Err(error) => return Some(Err(error)),
-        };
-        let (start, paired) = frames.next()?;
-        if frames.next().is_some() {
-            return None;
-        }
-        let owner_class = bytes.get(start + 4..start + 7)?;
-        let paired_class = bytes.get(paired + 4..paired + 7)?;
-        let nested_class: &[u8] = if owner_class == b"335" && paired_class == b"262" {
-            b"328"
-        } else if owner_class == b"395" && paired_class == b"264" {
-            b"329"
-        } else if owner_class == b"448" && paired_class == b"258" {
-            b"276"
-        } else if owner_class == b"295" && paired_class == b"258" {
-            b"274"
-        } else {
-            return None;
-        };
-        if paired.checked_sub(start)? != form_legacy_one_cage_owner::LEN
-            || View::u64_le_at(bytes, start + 7)? != u64::from(record_index)
-            || bytes.get(
-                start + form_legacy_one_cage_owner::ZERO_RUN_14
-                    ..start + form_legacy_one_cage_owner::OWNER_MARKER,
-            )? != [0; 14]
-            || bytes.get(start + form_legacy_one_cage_owner::OWNER_MARKER) != Some(&1)
-            || View::u64_le_at(
-                bytes,
-                start + form_legacy_one_cage_owner::OWNER_SCOPE_RECORD_INDEX,
-            )? != u64::from(scope_record_index)
-            || bytes.get(
-                start + form_legacy_one_cage_owner::ZERO_RUN_24
-                    ..start + form_legacy_one_cage_owner::NESTED_MARKER,
-            )? != [0; 24]
-            || bytes.get(start + form_legacy_one_cage_owner::NESTED_MARKER) != Some(&1)
-            || bytes.get(
-                start + form_legacy_one_cage_owner::NESTED_ZERO_RUN
-                    ..start + form_legacy_one_cage_owner::OWNER_REPEAT_MARKER,
-            )? != [0; 3]
-            || bytes.get(start + form_legacy_one_cage_owner::OWNER_REPEAT_MARKER) != Some(&1)
-            || View::u64_le_at(
-                bytes,
-                start + form_legacy_one_cage_owner::OWNER_REPEAT_SCOPE,
-            )? != u64::from(scope_record_index)
-            || bytes.get(
-                start + form_legacy_one_cage_owner::TAIL_ZERO_RUN
-                    ..start + form_legacy_one_cage_owner::LEN,
-            )? != [0; 2]
-        {
-            return None;
-        }
-        let nested_record = u32::try_from(View::u64_le_at(
+) -> Option<usize> {
+    let (start, paired) = records.only_frame(record_index)?;
+    let owner_class = bytes.get(start + 4..start + 7)?;
+    let paired_class = bytes.get(paired + 4..paired + 7)?;
+    let nested_class: &[u8] = if owner_class == b"335" && paired_class == b"262" {
+        b"328"
+    } else if owner_class == b"395" && paired_class == b"264" {
+        b"329"
+    } else if owner_class == b"448" && paired_class == b"258" {
+        b"276"
+    } else if owner_class == b"295" && paired_class == b"258" {
+        b"274"
+    } else {
+        return None;
+    };
+    if paired.checked_sub(start)? != form_legacy_one_cage_owner::LEN
+        || View::u64_le_at(bytes, start + 7)? != u64::from(record_index)
+        || bytes.get(
+            start + form_legacy_one_cage_owner::ZERO_RUN_14
+                ..start + form_legacy_one_cage_owner::OWNER_MARKER,
+        )? != [0; 14]
+        || bytes.get(start + form_legacy_one_cage_owner::OWNER_MARKER) != Some(&1)
+        || View::u64_le_at(
             bytes,
-            start + form_legacy_one_cage_owner::NESTED_RECORD_INDEX,
-        )?)
-        .ok()?;
-        let [nested_at] = records.offsets(nested_record) else {
-            return None;
-        };
-        ((bytes.get(nested_at + 4..nested_at + 7) == Some(nested_class)).then_some(1)).map(Ok)
-    })()
-    .transpose()
+            start + form_legacy_one_cage_owner::OWNER_SCOPE_RECORD_INDEX,
+        )? != u64::from(scope_record_index)
+        || bytes.get(
+            start + form_legacy_one_cage_owner::ZERO_RUN_24
+                ..start + form_legacy_one_cage_owner::NESTED_MARKER,
+        )? != [0; 24]
+        || bytes.get(start + form_legacy_one_cage_owner::NESTED_MARKER) != Some(&1)
+        || bytes.get(
+            start + form_legacy_one_cage_owner::NESTED_ZERO_RUN
+                ..start + form_legacy_one_cage_owner::OWNER_REPEAT_MARKER,
+        )? != [0; 3]
+        || bytes.get(start + form_legacy_one_cage_owner::OWNER_REPEAT_MARKER) != Some(&1)
+        || View::u64_le_at(
+            bytes,
+            start + form_legacy_one_cage_owner::OWNER_REPEAT_SCOPE,
+        )? != u64::from(scope_record_index)
+        || bytes.get(
+            start + form_legacy_one_cage_owner::TAIL_ZERO_RUN
+                ..start + form_legacy_one_cage_owner::LEN,
+        )? != [0; 2]
+    {
+        return None;
+    }
+    let nested_record = u32::try_from(View::u64_le_at(
+        bytes,
+        start + form_legacy_one_cage_owner::NESTED_RECORD_INDEX,
+    )?)
+    .ok()?;
+    let [nested_at] = records.offsets(nested_record) else {
+        return None;
+    };
+    (bytes.get(nested_at + 4..nested_at + 7) == Some(nested_class)).then_some(1)
 }
 
 fn form_class_328_envelope(
@@ -430,8 +484,7 @@ fn form_class_328_envelope(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Result<bool, CodecError> {
-    let Some((scope_start, scope_paired)) = one_indexed_frame(ctx, records, scope.record_index)?
-    else {
+    let Some((scope_start, scope_paired)) = records.only_frame(scope.record_index) else {
         return Ok(false);
     };
     if scope_paired.checked_sub(scope_start) != Some(form_class_328_scope::LEN)
@@ -445,10 +498,8 @@ fn form_class_328_envelope(
     }
     let mut group_record = None;
     for record_index in scope.reference_members().values().copied() {
-        if records.frames(ctx, record_index)?.any(|(start, paired)| {
-            bytes.get(start + 4..start + 7) == Some(b"417")
-                && bytes.get(paired + 4..paired + 7) == Some(b"267")
-        }) {
+        if first_frame_with_classes(ctx, bytes, records, record_index, (b"417", b"267"))?.is_some()
+        {
             group_record = Some(record_index);
             break;
         }
@@ -459,10 +510,8 @@ fn form_class_328_envelope(
     let mut metadata_record = None;
     for record_index in scope.reference_members().values().copied() {
         if record_index != group_record
-            && records.frames(ctx, record_index)?.any(|(start, paired)| {
-                bytes.get(start + 4..start + 7) == Some(b"341")
-                    && bytes.get(paired + 4..paired + 7) == Some(b"267")
-            })
+            && first_frame_with_classes(ctx, bytes, records, record_index, (b"341", b"267"))?
+                .is_some()
         {
             metadata_record = Some(record_index);
             break;
@@ -472,10 +521,7 @@ fn form_class_328_envelope(
         return Ok(false);
     };
     let Some((group_start, group_paired)) =
-        records.frames(ctx, group_record)?.find(|(start, paired)| {
-            bytes.get(*start + 4..*start + 7) == Some(b"417")
-                && bytes.get(*paired + 4..*paired + 7) == Some(b"267")
-        })
+        first_frame_with_classes(ctx, bytes, records, group_record, (b"417", b"267"))?
     else {
         return Ok(false);
     };
@@ -565,7 +611,7 @@ fn form_class_328_envelope(
             return Ok(false);
         }
         members[ordinal] = Some(member);
-        let Some((member_start, member_paired)) = one_indexed_frame(ctx, records, member)? else {
+        let Some((member_start, member_paired)) = records.only_frame(member) else {
             return Ok(false);
         };
         if bytes.get(member_start + 4..member_start + 7) != Some(b"350")
@@ -595,12 +641,7 @@ fn form_class_328_envelope(
         }
     }
     let Some((metadata_start, metadata_paired)) =
-        records
-            .frames(ctx, metadata_record)?
-            .find(|(start, paired)| {
-                bytes.get(*start + 4..*start + 7) == Some(b"341")
-                    && bytes.get(*paired + 4..*paired + 7) == Some(b"267")
-            })
+        first_frame_with_classes(ctx, bytes, records, metadata_record, (b"341", b"267"))?
     else {
         return Ok(false);
     };
@@ -722,20 +763,47 @@ fn unique_record_has_class(
     bytes.get(*offset + 4..*offset + 7) == Some(class)
 }
 
-fn one_indexed_frame(
+fn first_frame_with_classes(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    record_index: u32,
+    classes: (&[u8; 3], &[u8; 3]),
+) -> Result<Option<(usize, usize)>, CodecError> {
+    ctx.find_map(
+        records.offsets(record_index).windows(2),
+        |frame| {
+            Ok((bytes.get(frame[0] + 4..frame[0] + 7) == Some(classes.0)
+                && bytes.get(frame[1] + 4..frame[1] + 7) == Some(classes.1))
+            .then_some((frame[0], frame[1])))
+        },
+        "f3d form frame class source",
+    )
+}
+
+fn unique_indexed_frame_by(
     ctx: &DecodeContext<'_>,
     records: &IndexedRecordOffsets,
     record_index: u32,
+    matches: impl Fn(usize, usize) -> bool,
 ) -> Result<Option<(usize, usize)>, CodecError> {
-    (|| {
-        let mut frames = match records.frames(ctx, record_index) {
-            Ok(value) => value,
-            Err(error) => return Some(Err(error)),
-        };
-        let frame = frames.next()?;
-        (frames.next().is_none().then_some(frame)).map(Ok)
-    })()
-    .transpose()
+    let offsets = records.offsets(record_index);
+    let Some(first) = ctx.position_by(
+        offsets.windows(2),
+        |frame| Ok(matches(frame[0], frame[1])),
+        "f3d form frame first source",
+    )?
+    else {
+        return Ok(None);
+    };
+    if ctx.any_by(
+        offsets[first + 1..].windows(2),
+        |frame| Ok(matches(frame[0], frame[1])),
+        "f3d form frame unique suffix",
+    )? {
+        return Ok(None);
+    }
+    Ok(Some((offsets[first], offsets[first + 1])))
 }
 
 fn form_class_325_cage_objects(
@@ -743,20 +811,13 @@ fn form_class_325_cage_objects(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope_record_index: u32,
-    mut owner_record_indices: impl Iterator<Item = u32>,
+    owner_record_indices: impl Iterator<Item = u32>,
 ) -> Result<Option<Vec<u32>>, CodecError> {
     let parsed = (|| {
         const CAGE_COUNT: usize = 32;
         const TYPE_DISCRIMINATOR_FIRST: u32 = 307;
 
-        let mut frames = match records.frames(ctx, scope_record_index) {
-            Ok(value) => value,
-            Err(error) => return Some(Err(error)),
-        };
-        let (start, paired) = frames.next()?;
-        if frames.next().is_some() {
-            return None;
-        }
+        let (start, paired) = records.only_frame(scope_record_index)?;
         if bytes.get(start + 4..start + 7) != Some(b"325")
             || bytes.get(paired + 4..paired + 7) != Some(b"258")
             || paired.checked_sub(start)? != form_class_325_cage_table::LEN
@@ -785,8 +846,14 @@ fn form_class_325_cage_objects(
         let [owner_at, ..] = records.offsets(owner_record) else {
             return None;
         };
-        if !owner_record_indices.any(|index| index == owner_record)
-            || bytes.get(*owner_at + 4..*owner_at + 7) != Some(b"407")
+        if !(match ctx.any_by(
+            owner_record_indices,
+            |index| Ok(index == owner_record),
+            "f3d form cage owner source",
+        ) {
+            Ok(found) => found,
+            Err(error) => return Some(Err(error)),
+        }) || bytes.get(*owner_at + 4..*owner_at + 7) != Some(b"407")
         {
             return None;
         }
@@ -801,10 +868,7 @@ fn form_class_325_cage_objects(
         if count != CAGE_COUNT {
             return None;
         }
-        let mut objects = match ctx.collection_vec(count, "collect F3D class 325 cage objects") {
-            Ok(values) => values,
-            Err(error) => return Some(Err(error)),
-        };
+        let mut objects = Vec::new();
         let mut seen_type_discriminators = [false; CAGE_COUNT];
         for ordinal in 0..count {
             let entry = start
@@ -844,15 +908,12 @@ fn form_class_325_cage_objects(
                 entry + form_class_325_cage_entry::COMPANION_RECORD_INDEX,
             )?)
             .ok()?;
-            let mut object_frames = (match records.frames(ctx, object) {
-                Ok(value) => value,
+            let (object_at, _) = match unique_indexed_frame_by(ctx, records, object, |_, paired| {
+                bytes.get(paired + 4..paired + 7) == Some(b"258")
+            }) {
+                Ok(value) => value?,
                 Err(error) => return Some(Err(error)),
-            })
-            .filter(|(_, paired)| bytes.get(paired + 4..paired + 7) == Some(b"258"));
-            let (object_at, _) = object_frames.next()?;
-            if object_frames.next().is_some() {
-                return None;
-            }
+            };
             let [companion_at, ..] = records.offsets(companion) else {
                 return None;
             };
@@ -861,7 +922,11 @@ fn form_class_325_cage_objects(
             {
                 return None;
             }
-            objects.push(object);
+            if let Err(error) =
+                ctx.push_vec(&mut objects, object, "collect F3D class 325 cage objects")
+            {
+                return Some(Err(error));
+            }
         }
         Some(Ok(objects))
     })();
@@ -875,20 +940,24 @@ fn form_class_325_cage_surface(
     object_record: u32,
 ) -> Result<Option<u32>, CodecError> {
     (|| {
-        let mut frames = (match records.frames(ctx, object_record) {
-            Ok(value) => value,
-            Err(error) => return Some(Err(error)),
-        })
-        .filter(|(_, paired)| bytes.get(paired + 4..paired + 7) == Some(b"258"));
-        let (start, paired) = frames.next()?;
-        if frames.next().is_some() {
-            return None;
-        }
+        let (start, paired) =
+            match unique_indexed_frame_by(ctx, records, object_record, |_, paired| {
+                bytes.get(paired + 4..paired + 7) == Some(b"258")
+            }) {
+                Ok(value) => value?,
+                Err(error) => return Some(Err(error)),
+            };
         if bytes.get(start + 4..start + 7) != Some(b"289") {
             return None;
         }
         let mut surface = None;
-        for at in start.checked_add(11)?..paired {
+        let mut source = start.checked_add(11)?..paired;
+        while let Some(at) =
+            match ctx.next_charged(&mut source, "f3d form cage surface reference source") {
+                Ok(at) => at,
+                Err(error) => return Some(Err(error)),
+            }
+        {
             if bytes.get(at) != Some(&1) {
                 continue;
             }
@@ -915,15 +984,13 @@ fn form_cage_objects(
     scope_record_index: u32,
 ) -> Result<Option<Vec<u32>>, CodecError> {
     let parsed = (|| {
-        let mut frames = (match records.frames(ctx, record_index) {
-            Ok(value) => value,
-            Err(error) => return Some(Err(error)),
-        })
-        .filter(|(_, paired)| matches!(bytes.get(paired + 4..paired + 7), Some(b"258" | b"264")));
-        let (offset, paired) = frames.next()?;
-        if frames.next().is_some() {
-            return None;
-        }
+        let (offset, paired) =
+            match unique_indexed_frame_by(ctx, records, record_index, |_, paired| {
+                matches!(bytes.get(paired + 4..paired + 7), Some(b"258" | b"264"))
+            }) {
+                Ok(value) => value?,
+                Err(error) => return Some(Err(error)),
+            };
         if View::u64_le_at(bytes, offset + 7)? != u64::from(record_index)
             || bytes.get(offset + 15..offset + 21)? != [0; 6]
             || bytes.get(offset + 21) != Some(&1)
@@ -944,8 +1011,11 @@ fn form_cage_objects(
     };
 
     let mut objects = Vec::new();
-    ctx.reserve_vec(&mut objects, count, "f3d form cage object")?;
-    for _ in 0..count {
+    let mut source = 0..count;
+    while ctx
+        .next_charged(&mut source, "f3d form cage object source")?
+        .is_some()
+    {
         if bytes.get(cursor) != Some(&1) {
             return Ok(None);
         }
@@ -954,13 +1024,13 @@ fn form_cage_objects(
         else {
             return Ok(None);
         };
-        objects.push(object);
         if bytes.get(cursor + 9..cursor + 11) != Some(&[0, 0][..]) {
             return Ok(None);
         }
         let Some(next) = cursor.checked_add(11) else {
             return Ok(None);
         };
+        ctx.push_vec(&mut objects, object, "f3d form cage object")?;
         cursor = next;
     }
     Ok(Some(objects))
@@ -970,12 +1040,14 @@ fn form_cage_lists(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
-    references: impl Iterator<Item = u32>,
+    mut references: impl Iterator<Item = u32>,
     scope_record_index: u32,
 ) -> Result<(Vec<Vec<u32>>, Vec<usize>), CodecError> {
     let mut lists = Vec::new();
     let mut counts = Vec::new();
-    for record_index in references {
+    while let Some(record_index) =
+        ctx.next_charged(&mut references, "f3d form cage list reference source")?
+    {
         let objects = form_cage_objects(ctx, bytes, records, record_index, scope_record_index)?;
         let count = match objects.as_ref() {
             Some(objects) => Some(objects.len()),
@@ -991,6 +1063,18 @@ fn form_cage_lists(
     Ok((lists, counts))
 }
 
+fn next_form_header(
+    ctx: &DecodeContext<'_>,
+    records: &IndexedRecordOffsets,
+    bytes: &[u8],
+    start: usize,
+) -> Result<Option<usize>, CodecError> {
+    Ok(records
+        .headers_in(ctx, start, bytes.len())?
+        .first()
+        .copied())
+}
+
 fn form_cage_surface(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -1003,7 +1087,7 @@ fn form_cage_surface(
             return None;
         };
         if bytes.get(object_at + 4..object_at + 7) != Some(b"301")
-            || (match next_indexed_record_offset(ctx, bytes, object_at + 1) {
+            || (match next_form_header(ctx, records, bytes, object_at + 1) {
                 Ok(value) => value,
                 Err(error) => return Some(Err(error)),
             })? != object_at + 200
@@ -1016,7 +1100,7 @@ fn form_cage_surface(
             return None;
         };
         if bytes.get(first_at + 4..first_at + 7) != Some(b"373")
-            || (match next_indexed_record_offset(ctx, bytes, first_at + 1) {
+            || (match next_form_header(ctx, records, bytes, first_at + 1) {
                 Ok(value) => value,
                 Err(error) => return Some(Err(error)),
             })? != first_at + 33
@@ -1031,7 +1115,7 @@ fn form_cage_surface(
             return None;
         };
         if bytes.get(second_at + 4..second_at + 7) != Some(b"362")
-            || (match next_indexed_record_offset(ctx, bytes, second_at + 1) {
+            || (match next_form_header(ctx, records, bytes, second_at + 1) {
                 Ok(value) => value,
                 Err(error) => return Some(Err(error)),
             })? != second_at + 29
@@ -1040,14 +1124,7 @@ fn form_cage_surface(
             return None;
         }
         let carrier = u32::try_from(View::u64_le_at(bytes, second_at + 21)?).ok()?;
-        let mut carrier_frames = match records.frames(ctx, carrier) {
-            Ok(value) => value,
-            Err(error) => return Some(Err(error)),
-        };
-        let (carrier_at, carrier_paired) = carrier_frames.next()?;
-        if carrier_frames.next().is_some() {
-            return None;
-        }
+        let (carrier_at, carrier_paired) = records.only_frame(carrier)?;
         if carrier_paired.checked_sub(carrier_at)? != 665
             || bytes.get(carrier_at + 4..carrier_at + 7) != Some(b"457")
             || bytes.get(carrier_paired + 4..carrier_paired + 7) != Some(b"264")
@@ -1070,7 +1147,8 @@ fn form_cage_surfaces(
     scope_record_index: u32,
 ) -> Result<Option<Vec<u32>>, CodecError> {
     let mut surfaces = Vec::new();
-    for object in objects {
+    let mut source = objects.iter();
+    while let Some(object) = ctx.next_charged(&mut source, "f3d form cage surface object source")? {
         let Some(surface) = form_cage_surface(ctx, bytes, records, *object, scope_record_index)?
         else {
             return Ok(None);
@@ -1080,45 +1158,47 @@ fn form_cage_surfaces(
     Ok(Some(surfaces))
 }
 
-struct FormCageSerializers {
+struct FormCageSerializers<'ctx> {
     ordered: Vec<u32>,
-    entries: HashMap<u32, FormCageEntry>,
+    entries: HashMap<u32, FormCageEntry<'ctx>>,
+    _storage: ScopedReservation<'ctx>,
 }
 
-enum FormCageEntry {
-    Unique(String),
+enum FormCageEntry<'ctx> {
+    Unique {
+        name: String,
+        _storage: ScopedReservation<'ctx>,
+    },
     Duplicate,
 }
 
-impl FormCageSerializers {
-    fn entry_name(&self, surface: u32) -> Option<&str> {
-        match self.entries.get(&surface)? {
-            FormCageEntry::Unique(name) => Some(name),
-            FormCageEntry::Duplicate => None,
-        }
+impl FormCageSerializers<'_> {
+    fn entry_name(
+        &self,
+        ctx: &DecodeContext<'_>,
+        surface: u32,
+    ) -> Result<Option<&str>, CodecError> {
+        Ok(
+            match ctx.get_hash_map(&self.entries, &surface, "f3d form serializer entry lookup")? {
+                Some(FormCageEntry::Unique { name, .. }) => Some(name),
+                Some(FormCageEntry::Duplicate) | None => None,
+            },
+        )
     }
 }
 
-fn form_cage_serializers(
-    ctx: &DecodeContext<'_>,
+fn form_cage_serializers<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
-) -> Result<FormCageSerializers, CodecError> {
-    let mut offsets = Vec::new();
-    for (_, record_offsets) in records.records(ctx)? {
-        for offset in record_offsets {
-            ctx.push_vec(&mut offsets, *offset, "f3d form serializer offset")?;
-        }
-    }
-    ctx.sort_unstable_by(
-        &mut offsets,
-        |value| value,
-        Ord::cmp,
-        "f3d form serializer offset sort",
-    )?;
+) -> Result<FormCageSerializers<'ctx>, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "F3D form serializers")?;
     let mut ordered = Vec::new();
     let mut entries = HashMap::new();
-    for offset in offsets {
+    for &offset in ctx.admit_iter(
+        records.headers_in(ctx, 0, bytes.len())?,
+        "f3d form serializer source",
+    )? {
         let is_class_335 = bytes.get(offset + 4..offset + 7) == Some(b"335");
         if !matches!(
             bytes.get(offset + 4..offset + 7),
@@ -1130,7 +1210,7 @@ fn form_cage_serializers(
         {
             continue;
         }
-        let Some(next) = next_indexed_record_offset(ctx, bytes, offset + 1)? else {
+        let Some(next) = next_form_header(ctx, records, bytes, offset + 1)? else {
             continue;
         };
         if next != offset + form_serializer_frame_132::LEN
@@ -1155,11 +1235,15 @@ fn form_cage_serializers(
         }) else {
             continue;
         };
+        if after_name + 11 > offset + form_serializer_frame_132::LEN
+            || (!is_class_335 && after_name + 11 != offset + form_serializer_frame_132::LEN)
+        {
+            continue;
+        }
         let Some(raw_name) = bytes.get(name_at + 4..after_name) else {
             continue;
         };
-        let name_reservation;
-        let (entry_name, held_storage) = match ctx.utf16le_scoped_text(
+        let parsed_name = match ctx.utf16le_scoped_text(
             raw_name,
             name_units,
             false,
@@ -1169,13 +1253,9 @@ fn form_cage_serializers(
             Err(CodecError::Malformed(_)) => continue,
             Err(error) => return Err(error),
         };
-        name_reservation = held_storage;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(entry_name.len()),
-            "validate f3d form serializer entry name",
-        )?;
+        let entry_name = &parsed_name.0;
         if !entry_name.starts_with("TSpline.")
-            || !std::path::Path::new(&entry_name)
+            || !std::path::Path::new(entry_name)
                 .extension()
                 .is_some_and(|extension| extension.eq_ignore_ascii_case("tsm"))
             || bytes.get(after_name) != Some(&1)
@@ -1192,33 +1272,44 @@ fn form_cage_serializers(
             && (bytes
                 .get(after_name + 11..offset + form_serializer_frame_132::LEN)
                 .is_none_or(|tail| tail.iter().any(|byte| *byte != 0))
-                || !records.offsets(surface).iter().any(|surface_offset| {
-                    bytes.get(*surface_offset + 4..*surface_offset + 7) == Some(b"358")
-                }))
+                || !ctx.any_by(
+                    records.offsets(surface),
+                    |surface_offset| {
+                        Ok(bytes.get(*surface_offset + 4..*surface_offset + 7) == Some(b"358"))
+                    },
+                    "f3d form serializer surface source",
+                )?)
         {
             continue;
         }
-        if !is_class_335 && after_name + 11 != offset + form_serializer_frame_132::LEN {
-            continue;
-        }
-        if let Some(entry) = entries.get_mut(&surface) {
+        if let Some(entry) = ctx.get_mut_hash_map(
+            &mut entries,
+            &surface,
+            "f3d form serializer entry duplicate",
+        )? {
             *entry = FormCageEntry::Duplicate;
         } else {
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(entry_name.len()),
-                "f3d form serializer entry name",
-            )?;
-            drop(name_reservation);
-            ctx.insert_hash_map(
-                &mut entries,
-                surface,
-                FormCageEntry::Unique(entry_name),
-                "f3d form serializer entry index",
-            )?;
-            ctx.push_vec(&mut ordered, surface, "f3d form serializer order")?;
+            storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut entries,
+                    surface,
+                    FormCageEntry::Unique {
+                        name: parsed_name.0,
+                        _storage: parsed_name.1,
+                    },
+                    "f3d form serializer entry index",
+                )
+            })?;
+            storage.with_storage(|| {
+                ctx.push_vec(&mut ordered, surface, "f3d form serializer order")
+            })?;
         }
     }
-    Ok(FormCageSerializers { ordered, entries })
+    Ok(FormCageSerializers {
+        ordered,
+        entries,
+        _storage: storage,
+    })
 }
 
 #[cfg(test)]

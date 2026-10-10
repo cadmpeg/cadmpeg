@@ -21,7 +21,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         crate::design::dimensions::two_locus_distance_dimension(
             ctx,
             &[&first, &second],
-            parameter.clone(),
+            &parameter,
         )
         .transpose()
         .map(|_| ())
