@@ -3445,17 +3445,19 @@ enum ModelCurveRequest {
     Second,
     Third,
     Fourth,
+    Fifth,
 }
 
 impl ModelCurveRequest {
     fn for_surface_partials(request: SurfaceRequest) -> Self {
-        if request.needs_fourth() { Self::Fourth }
+        if request == SurfaceRequest::Fifth { Self::Fifth }
+        else if request.needs_fourth() { Self::Fourth }
         else if request.needs_third() { Self::Third }
         else if request.needs_second() { Self::Second } else { Self::First }
     }
 }
 
-/// A model curve's finite point with its first four derivatives, each
+/// A model curve's finite point with its first five derivatives, each
 /// derivative with its own outcome: a derivative that has no value there, or
 /// that left the finite range, leaves the point and the other derivatives as
 /// they are. A reader fails on the derivatives it reads.
@@ -3466,6 +3468,7 @@ struct ModelCurveDifferential {
     acceleration: Result<FiniteVector3, EvaluationFailure<()>>,
     third: Result<FiniteVector3, EvaluationFailure<()>>,
     fourth: Result<FiniteVector3, EvaluationFailure<()>>,
+    fifth: Result<FiniteVector3, EvaluationFailure<()>>,
 }
 
 impl ModelCurveDifferential {
@@ -3494,6 +3497,7 @@ fn differential_at(
         return Err(EvaluationFailure::ResourceLimit(limit));
     }
     Ok(ModelCurveDifferential {
+        fifth: Err(EvaluationFailure::NoValue),
         third: Err(EvaluationFailure::NoValue),
         fourth: Err(EvaluationFailure::NoValue),
         point,
@@ -3546,6 +3550,7 @@ fn helix_differential(
     ]);
     let acceleration = vector_sum(&[(-radial_scale, radial), (2.0 * scale_first, radial_first)]);
     Ok(ModelCurveDifferential {
+        fifth: Err(EvaluationFailure::NoValue),
         third: Err(EvaluationFailure::NoValue),
         fourth: Err(EvaluationFailure::NoValue),
         point: admit_point(point)?,
@@ -3616,6 +3621,7 @@ fn model_curve_differential_by_id_inner(
                         .apply_point_reaching(differential.point.get())
                         .map_err(EvaluationFailure::NonFinite)?;
                     return Ok(ModelCurveDifferential {
+                        fifth: placed_derivative(*transform, differential.fifth),
                         third: placed_derivative(*transform, differential.third),
                         fourth: placed_derivative(*transform, differential.fourth),
                         point,
@@ -3639,6 +3645,7 @@ fn model_curve_differential_by_id_inner(
                         request,
                     )?;
                     return Ok(ModelCurveDifferential {
+                        fifth: differential.fifth.map(|fifth| if *sense { fifth } else { fifth.negated() }),
                         third: differential.third.map(|third| if *sense { third } else { third.negated() }),
                         fourth: differential.fourth,
                         point: differential.point,
@@ -3654,11 +3661,14 @@ fn model_curve_differential_by_id_inner(
                 }
                 ProceduralCurveDefinition::Helix(_) => {
                     let mut differential = helix_differential(procedural.definition(), parameter)?;
-                    if matches!(request, ModelCurveRequest::Third | ModelCurveRequest::Fourth) {
+                    if matches!(request, ModelCurveRequest::Third | ModelCurveRequest::Fourth | ModelCurveRequest::Fifth) {
                         differential.third = curve_higher::helix_third(procedural.definition(), parameter);
                     }
-                    if request == ModelCurveRequest::Fourth {
+                    if matches!(request, ModelCurveRequest::Fourth | ModelCurveRequest::Fifth) {
                         differential.fourth = curve_higher::helix_fourth(procedural.definition(), parameter);
+                    }
+                    if request == ModelCurveRequest::Fifth {
+                        differential.fifth = curve_higher::helix_fifth(procedural.definition(), parameter);
                     }
                     return Ok(differential);
                 }
@@ -3676,6 +3686,7 @@ fn model_curve_differential_by_id_inner(
         let point = crate::eval::decode::curve_point_solved(admission, solved, parameter);
         if request == ModelCurveRequest::Point {
             return point.map(|point| ModelCurveDifferential {
+                fifth: Err(EvaluationFailure::NoValue),
                 third: Err(EvaluationFailure::NoValue),
                 fourth: Err(EvaluationFailure::NoValue),
                 point,
@@ -3686,20 +3697,24 @@ fn model_curve_differential_by_id_inner(
         let mut differential = differential_at(
             point,
             || curve_derivative_evaluation(&scratch, solved, parameter, CurveDerivative::First),
-            || if matches!(request, ModelCurveRequest::Second | ModelCurveRequest::Third | ModelCurveRequest::Fourth) {
+            || if matches!(request, ModelCurveRequest::Second | ModelCurveRequest::Third | ModelCurveRequest::Fourth | ModelCurveRequest::Fifth) {
                 curve_derivative_evaluation(&scratch, solved, parameter, CurveDerivative::Second)
             } else { Err(EvaluationFailure::NoValue) },
         )?;
-        if matches!(request, ModelCurveRequest::Third | ModelCurveRequest::Fourth) {
+        if matches!(request, ModelCurveRequest::Third | ModelCurveRequest::Fourth | ModelCurveRequest::Fifth) {
             let higher = curve_higher::stored_higher(&scratch, solved,
                 FiniteReal::new(parameter).ok_or(EvaluationFailure::NoValue)?,
                 differential.tangent, differential.acceleration, request);
             differential.third = higher.and_then(|higher| higher.third);
             differential.fourth = higher.and_then(|higher| higher.fourth);
+            differential.fifth = higher.and_then(|higher| higher.fifth);
             if let Err(EvaluationFailure::ResourceLimit(limit)) = differential.third {
                 return Err(EvaluationFailure::ResourceLimit(limit));
             }
             if let Err(EvaluationFailure::ResourceLimit(limit)) = differential.fourth {
+                return Err(EvaluationFailure::ResourceLimit(limit));
+            }
+            if let Err(EvaluationFailure::ResourceLimit(limit)) = differential.fifth {
                 return Err(EvaluationFailure::ResourceLimit(limit));
             }
         }
@@ -3840,7 +3855,18 @@ fn model_axis_revolution_jet(
             rotate_vector_about_axis(differential.fourth?.get(), axis, angle),
         ]))()
     } else { Err(EvaluationFailure::NoValue) };
-    Ok(RequestedJet { jet, higher: HigherPartials::Fourth { third, fourth } })
+    let higher = if request == SurfaceRequest::Fifth {
+        let fifth = (|| admit_lanes([
+            axis.cross(axis.cross(axis.cross(axis.cross(du)))),
+            axis.cross(axis.cross(axis.cross(axis.cross(rotated_tangent?)))),
+            axis.cross(axis.cross(axis.cross(rotated_acceleration?))),
+            axis.cross(axis.cross(rotate_vector_about_axis(differential.third?.get(), axis, angle))),
+            axis.cross(rotate_vector_about_axis(differential.fourth?.get(), axis, angle)),
+            rotate_vector_about_axis(differential.fifth?.get(), axis, angle),
+        ]))();
+        HigherPartials::Fifth { third, fourth, fifth }
+    } else { HigherPartials::Fourth { third, fourth } };
+    Ok(RequestedJet { jet, higher })
 }
 
 /// Map a construction-space directrix parameter to the carrier curve and
@@ -4151,7 +4177,14 @@ fn model_native_extrusion_jet(
             FiniteVector3::ZERO, FiniteVector3::ZERO, FiniteVector3::ZERO, FiniteVector3::ZERO,
         ]))
     } else { Err(EvaluationFailure::NoValue) };
-    Ok(RequestedJet { jet, higher: HigherPartials::Fourth { third, fourth } })
+    let higher = if request == SurfaceRequest::Fifth {
+        let fifth = derivative.and_then(|derivative| Ok([
+            curve_higher::scale_fifth(differential.fifth?, [derivative; 5])?,
+            FiniteVector3::ZERO, FiniteVector3::ZERO, FiniteVector3::ZERO, FiniteVector3::ZERO, FiniteVector3::ZERO,
+        ]));
+        HigherPartials::Fifth { third, fourth, fifth }
+    } else { HigherPartials::Fourth { third, fourth } };
+    Ok(RequestedJet { jet, higher })
 }
 
 fn extrusion_directrix_reversed(
@@ -4358,7 +4391,22 @@ fn model_native_revolution_jet(
             Ok(if transposed { mapped } else { [mapped[4], mapped[3], mapped[2], mapped[1], mapped[0]] })
         })()
     } else { Err(EvaluationFailure::NoValue) };
-    Ok(RequestedJet { jet: SurfaceJet::formed(jet.point, first, second), higher: HigherPartials::Fourth { third, fourth } })
+    let higher = if request == SurfaceRequest::Fifth {
+        let fifth = (|| {
+            let angular = FiniteReal::new(angular_derivative).ok_or(EvaluationFailure::NonFinite(()))?;
+            let carrier = carrier.derivative?;
+            let source = requested.higher.fifth()?;
+            let mut mapped = [FiniteVector3::ZERO; 6];
+            for (v_order, (output, input)) in mapped.iter_mut().zip(source).enumerate() {
+                let factors = std::array::from_fn(|at| if at < 5 - v_order { angular } else { carrier });
+                *output = curve_higher::scale_fifth(input, factors)?;
+            }
+            if !transposed { mapped.reverse(); }
+            Ok(mapped)
+        })();
+        HigherPartials::Fifth { third, fourth, fifth }
+    } else { HigherPartials::Fourth { third, fourth } };
+    Ok(RequestedJet { jet: SurfaceJet::formed(jet.point, first, second), higher })
 }
 
 fn model_curve_point_by_id_inner(
@@ -6051,7 +6099,12 @@ fn model_linear_sweep_jet(
         differential.fourth.map(|fourth| [fourth, FiniteVector3::ZERO,
             FiniteVector3::ZERO, FiniteVector3::ZERO, FiniteVector3::ZERO])
     } else { Err(EvaluationFailure::NoValue) };
-    Ok(RequestedJet { jet, higher: HigherPartials::Fourth { third, fourth } })
+    let higher = if request == SurfaceRequest::Fifth {
+        let fifth = differential.fifth.map(|fifth| [fifth, FiniteVector3::ZERO,
+            FiniteVector3::ZERO, FiniteVector3::ZERO, FiniteVector3::ZERO, FiniteVector3::ZERO]);
+        HigherPartials::Fifth { third, fourth, fifth }
+    } else { HigherPartials::Fourth { third, fourth } };
+    Ok(RequestedJet { jet, higher })
 }
 
 /// The profile differential scaled about `frame_point`. A scaled point
@@ -6072,6 +6125,7 @@ fn scale_sweep_profile(
         )],
     );
     Ok(ModelCurveDifferential {
+        fifth: Err(EvaluationFailure::NoValue),
         third: Err(EvaluationFailure::NoValue),
         fourth: Err(EvaluationFailure::NoValue),
         point: admit_point(point)?,
@@ -6300,6 +6354,7 @@ fn sweep_profile_differential(
     };
     let differential = model_curve_differential_by_id(admission, index, profile, native_parameter, ModelCurveRequest::Second)?;
     Ok(ModelCurveDifferential {
+        fifth: Err(EvaluationFailure::NoValue),
         third: Err(EvaluationFailure::NoValue),
         fourth: Err(EvaluationFailure::NoValue),
         point: differential.point,
@@ -6404,6 +6459,7 @@ fn cacheless_law_sweep_differentials(
     let frame_point = profile_frame.map_or(*origin, |(point, _)| point).get();
     let profile = scale_sweep_profile(profile, frame_point, scale)?;
     let profile = ModelCurveDifferential {
+        fifth: Err(EvaluationFailure::NoValue),
         third: Err(EvaluationFailure::NoValue),
         fourth: Err(EvaluationFailure::NoValue),
         point: rail_transform
@@ -7560,7 +7616,16 @@ fn model_ruled_surface_jet(
             Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0),
         ]))()
     } else { Err(EvaluationFailure::NoValue) };
-    Ok(RequestedJet { jet, higher: HigherPartials::Fourth { third, fourth } })
+    let higher = if request == SurfaceRequest::Fifth {
+        let fifth = (|| admit_lanes([
+            blend(first.fifth?.get(), second.fifth?.get()),
+            vector_sum(&[(-1.0, first.fourth?.get()), (1.0, second.fourth?.get())]),
+            Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0),
+        ]))();
+        HigherPartials::Fifth { third, fourth, fifth }
+    } else { HigherPartials::Fourth { third, fourth } };
+    Ok(RequestedJet { jet, higher })
 }
 
 /// The jet of a sum surface of two model curves, or why its point has none.
@@ -7606,7 +7671,12 @@ fn model_sum_surface_jet(
         first.fourth.and_then(|first| Ok([first, FiniteVector3::ZERO,
             FiniteVector3::ZERO, FiniteVector3::ZERO, second.fourth?]))
     } else { Err(EvaluationFailure::NoValue) };
-    Ok(RequestedJet { jet, higher: HigherPartials::Fourth { third, fourth } })
+    let higher = if request == SurfaceRequest::Fifth {
+        let fifth = first.fifth.and_then(|first| Ok([first, FiniteVector3::ZERO,
+            FiniteVector3::ZERO, FiniteVector3::ZERO, FiniteVector3::ZERO, second.fifth?]));
+        HigherPartials::Fifth { third, fourth, fifth }
+    } else { HigherPartials::Fourth { third, fourth } };
+    Ok(RequestedJet { jet, higher })
 }
 
 /// The two curve differentials a surface arm combines. A curve with no value

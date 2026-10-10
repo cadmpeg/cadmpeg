@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::quotient_fifth_partials;
+use super::{quotient_fifth, quotient_fifth_partials};
 use crate::math::sum::{scaled_finite, ExactSignedSum, ScaledValue};
 use crate::scalar::FiniteReal;
 
@@ -112,4 +112,23 @@ fn fifth_final_subnormal_sign_ties_zero_weight_and_true_overflow() {
     }
     assert!(quotient_fifth_partials([Some(one); 21], [None; 21], [one; 2]).is_none());
     assert_eq!(quotient_fifth_partials([None; 21], [Some(one); 21], [one; 2]), Some([Ok(FiniteReal::ZERO); 6]));
+}
+
+#[test]
+fn pure_fifth_reads_only_real_six_orders_and_matches_independent_leibniz_laws() {
+    let choose = [[1, 0, 0, 0, 0, 0], [1, 1, 0, 0, 0, 0], [1, 2, 1, 0, 0, 0],
+        [1, 3, 3, 1, 0, 0], [1, 4, 6, 4, 1, 0], [1, 5, 10, 10, 5, 1]];
+    for weights in [[2.0, 1.0, -2.0, 3.0, 4.0, -1.0], [-2.0, 3.0, 4.0, -1.0, 2.0, 5.0]] {
+        for impulse in 0..6 {
+            let h = std::array::from_fn(|at| if at == impulse { 1.0 } else { 0.0 });
+            let mut derivatives = [0.0; 6];
+            for n in 0..6 {
+                let correction = (1..=n).map(|k| f64::from(choose[n][k]) * weights[k] * derivatives[n - k]).sum::<f64>();
+                derivatives[n] = (h[n] - correction) / weights[0];
+            }
+            let actual = quotient_fifth(h.map(scaled_finite), weights.map(scaled_finite), scaled_finite(2.0).unwrap()).unwrap().unwrap();
+            // All independent controls are dyadic; physical fifth divides by2^5.
+            assert_eq!(actual.get(), derivatives[5] / 32.0);
+        }
+    }
 }

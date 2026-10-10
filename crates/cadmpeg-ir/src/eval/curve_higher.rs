@@ -8,11 +8,12 @@ use crate::geometry::{ProceduralCurveDefinition, SolvedCurveGeometry};
 use crate::math::sum::ExactSignedSum;
 use crate::scalar::FiniteReal;
 
-/// Independently completed third and requested fourth curve derivatives.
+/// Independently completed third, fourth and fifth curve derivatives.
 #[derive(Clone, Copy)]
 pub(super) struct CurveHigher {
     pub(super) third: Result<FiniteVector3, EvaluationFailure<()>>,
     pub(super) fourth: Result<FiniteVector3, EvaluationFailure<()>>,
+    pub(super) fifth: Result<FiniteVector3, EvaluationFailure<()>>,
 }
 
 // Analytic laws read the completed final frame; NURBS starts in a local frame.
@@ -56,21 +57,26 @@ fn stored_higher_frame(
 ) -> Result<HigherFrame, EvaluationFailure<()>> {
     scratch.unless_refused()?;
     let _depth = scratch.enter().ok_or_else(|| scratch.failure(EvaluationFailure::NoValue))?;
-    let fourth = request == super::ModelCurveRequest::Fourth;
+    let fourth = matches!(request, super::ModelCurveRequest::Fourth | super::ModelCurveRequest::Fifth);
+    let fifth = request == super::ModelCurveRequest::Fifth;
     let result = match geometry {
         SolvedCurveGeometry::Line(_) | SolvedCurveGeometry::Parabola(_) => Ok(HigherFrame::Final(CurveHigher {
+            fifth: if fifth { Ok(FiniteVector3::ZERO) } else { Err(EvaluationFailure::NoValue) },
             third: Ok(FiniteVector3::ZERO),
             fourth: if fourth { Ok(FiniteVector3::ZERO) } else { Err(EvaluationFailure::NoValue) },
         })),
         SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => Ok(HigherFrame::Final(CurveHigher {
+            fifth: if fifth { tangent } else { Err(EvaluationFailure::NoValue) },
             third: tangent.map(FiniteVector3::negated),
             fourth: if fourth { acceleration.map(FiniteVector3::negated) } else { Err(EvaluationFailure::NoValue) },
         })),
         SolvedCurveGeometry::Hyperbola(_) => Ok(HigherFrame::Final(CurveHigher {
+            fifth: if fifth { tangent } else { Err(EvaluationFailure::NoValue) },
             third: tangent,
             fourth: if fourth { acceleration } else { Err(EvaluationFailure::NoValue) },
         })),
         SolvedCurveGeometry::Polyline(_) => Ok(HigherFrame::Final(CurveHigher {
+            fifth: if fifth { tangent.map(|_| FiniteVector3::ZERO) } else { Err(EvaluationFailure::NoValue) },
             third: tangent.map(|_| FiniteVector3::ZERO),
             fourth: if fourth { tangent.map(|_| FiniteVector3::ZERO) } else { Err(EvaluationFailure::NoValue) },
         })),
@@ -81,6 +87,7 @@ fn stored_higher_frame(
             stored_higher_frame(scratch, placed.basis(), parameter, tangent, acceleration, request).map(|frame| match frame {
                 HigherFrame::Final(value) => HigherFrame::Final(value),
                 HigherFrame::Local(value) => HigherFrame::Local(CurveHigher {
+                    fifth: super::placed_derivative(*placed.transform(), value.fifth),
                     third: super::placed_derivative(*placed.transform(), value.third),
                     fourth: super::placed_derivative(*placed.transform(), value.fourth),
                 }),
@@ -88,16 +95,18 @@ fn stored_higher_frame(
         }
         SolvedCurveGeometry::Nurbs(curve) => {
             if matches!(curve.pole_rows(), crate::geometry::nurbs::NurbsPoles3::Rational { .. }) {
-                let higher = super::curve_nurbs::rational_higher(scratch, curve, parameter, fourth);
+                let higher = super::curve_nurbs::rational_higher(scratch, curve, parameter, request);
                 if fourth { return scratch.settle(higher.map(HigherFrame::Local)); }
                 return scratch.settle(Ok(HigherFrame::Local(CurveHigher {
+                    fifth: Err(EvaluationFailure::NoValue),
                     third: higher.and_then(|higher| higher.third),
                     fourth: Err(EvaluationFailure::NoValue),
                 })));
             }
-            let higher = super::curve_nurbs::polynomial_higher(scratch, curve, parameter, fourth);
+            let higher = super::curve_nurbs::polynomial_higher(scratch, curve, parameter, request);
             // Preserve the stored polynomial owner's original local envelope.
             Ok(HigherFrame::Local(higher.unwrap_or_else(|failure| CurveHigher {
+                fifth: if fifth { Err(failure) } else { Err(EvaluationFailure::NoValue) },
                 third: Err(failure), fourth: if fourth { Err(failure) } else { Err(EvaluationFailure::NoValue) },
             })))
         }
@@ -149,6 +158,41 @@ pub(super) fn helix_fourth(
     let radial = vector_sum(&[(cosine, helix.major().get()), (sine, helix.minor().get())]);
     let radial_first = vector_sum(&[(-sine, helix.major().get()), (cosine, helix.minor().get())]);
     admit_derivative(vector_sum(&[(scale, radial), (4.0 * scale_first, radial_first)]))
+}
+
+/// C5=a*r'+5a'*r for the admitted native helix parameter.
+pub(super) fn helix_fifth(
+    definition: &ProceduralCurveDefinition,
+    parameter: f64,
+) -> Result<FiniteVector3, EvaluationFailure<()>> {
+    let ProceduralCurveDefinition::Helix(helix) = definition else {
+        return Err(EvaluationFailure::NoValue);
+    };
+    let parameter = FiniteReal::new(parameter).ok_or(EvaluationFailure::NoValue)?;
+    let fraction = parameter.turns_from(helix.angle_range().finite_components()[0]).get();
+    let scale = 1.0 + helix.apex_factor().get() * fraction;
+    let scale_first = helix.apex_factor().get() * (1.0 / std::f64::consts::TAU);
+    let (sine, cosine) = parameter.get().sin_cos();
+    let radial = vector_sum(&[(cosine, helix.major().get()), (sine, helix.minor().get())]);
+    let radial_first = vector_sum(&[(-sine, helix.major().get()), (cosine, helix.minor().get())]);
+    admit_derivative(vector_sum(&[(scale, radial_first), (5.0 * scale_first, radial)]))
+}
+
+/// Five actual finite chain factors and a coordinate, with no intermediate
+/// binary64 product. The real six-factor owner preserves zero and odd sign.
+pub(super) fn scale_fifth(
+    vector: FiniteVector3,
+    factors: [FiniteReal; 5],
+) -> Result<FiniteVector3, EvaluationFailure<()>> {
+    use crate::math::sum::{scaled_finite, quotient_fifth::product_fifth};
+    let unit = scaled_finite(1.0).ok_or(EvaluationFailure::NoValue)?;
+    let component = |coordinate: FiniteReal| {
+        let [a, b, c, d, e] = factors;
+        product_fifth([coordinate, a, b, c, d, e].map(|value| scaled_finite(value.get())), unit, unit)
+            .ok_or(EvaluationFailure::NoValue)?.map_err(|_| EvaluationFailure::NonFinite(()))
+    };
+    let [x, y, z] = vector.components();
+    Ok(FiniteVector3::from_components(component(x)?, component(y)?, component(z)?))
 }
 
 /// Keep four chain factors and a coordinate in the normalized exponent frame.

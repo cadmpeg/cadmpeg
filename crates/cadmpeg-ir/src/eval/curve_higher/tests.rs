@@ -9,6 +9,8 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 
 mod fourth;
+mod fifth;
+mod nurbs_fifth;
 mod linear_fourth;
 mod nurbs_linear;
 mod nurbs_polynomial;
