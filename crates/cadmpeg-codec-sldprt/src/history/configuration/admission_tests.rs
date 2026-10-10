@@ -581,7 +581,7 @@ fn configuration_sketch_projection_refuses_ownership_collection_limit() {
 fn configuration_sketch_projection_refuses_ownership_retained_limit() {
     assert_projection_refusal(
         ResourceDimension::RetainedBytes,
-        "retain SLDPRT evaluated configuration features",
+        "copy SLDPRT configuration spatial sketch identity",
         run_spatial_ownership,
     );
 }

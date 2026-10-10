@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Composite-curve work boundaries and segment projection.
+//! Curve work boundaries and segment projection.
 
 use crate::history::project::budget_tests::{limited, property};
 use crate::history::tests::feature;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use std::collections::HashMap;
 
@@ -65,4 +66,30 @@ fn empty_composite_segments_do_not_read_closed_flag() {
             .unwrap()
             .is_none()
     );
+}
+
+#[test]
+fn rejected_equation_domain_does_not_read_or_copy_expressions() {
+    let mut source = feature("equation", None, 0);
+    source
+        .properties
+        .insert(cadmpeg_core::nonblank_literal!("Start"), "NaN".into());
+    source
+        .properties
+        .insert(cadmpeg_core::nonblank_literal!("End"), "1".into());
+    for key in ["Parameter", "XEquation", "YEquation", "ZEquation"] {
+        source
+            .properties
+            .insert(key.try_into().unwrap(), "x".repeat(100_000));
+    }
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1_000;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(super::super::project_equation_curve(&ctx, &source)
+        .unwrap()
+        .is_none());
+    ctx.finish_session().unwrap();
 }

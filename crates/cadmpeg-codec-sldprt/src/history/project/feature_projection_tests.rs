@@ -65,29 +65,17 @@ fn plane_in(
     index.principal_plane(&ctx, feature).unwrap()
 }
 
-fn records_by_id(features: &[Feature]) -> HashMap<&str, Option<&Feature>> {
-    let mut records = HashMap::new();
-    for feature in features {
-        records
-            .entry(feature.id.as_str())
-            .and_modify(|record| *record = None)
-            .or_insert(Some(feature));
-    }
-    records
-}
-
 fn definition_of(feature: &Feature) -> FeatureDefinition {
     let ctx = cadmpeg_test_support::service_decode_context();
     let features = std::slice::from_ref(feature);
     let index = HistoryIndex::new(&ctx, features).unwrap();
-    let mut sources = super::solid::SourceFeatures::new(&ctx, &[]).unwrap();
+    let mut sources = super::solid::SourceFeatures::new(&ctx, features).unwrap();
     project_definition(
         &ctx,
         feature,
         &HashMap::new(),
         &HashMap::new(),
         &mut sources,
-        &records_by_id(features),
         &index,
     )
     .unwrap()
@@ -669,11 +657,12 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
         cadmpeg_core::nonblank_literal!("DissectableChildren"),
         native_profile.id.clone(),
     );
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let native_features = [native_owned.clone(), native_profile];
     let projected = project_hole(
-        &cadmpeg_test_support::service_decode_context(),
+        &ctx,
         &native_owned,
-        &BTreeMap::new(),
-        &records_by_id(&[native_owned.clone(), native_profile]),
+        &mut super::solid::SourceFeatures::new(&ctx, &native_features).unwrap(),
     )
     .expect("resource budget")
     .unwrap();
@@ -705,10 +694,9 @@ fn hole_profile_dimension_order_distinguishes_counterbore_and_thread() {
     ]
     .into();
     let projected = project_hole(
-        &cadmpeg_test_support::service_decode_context(),
+        &ctx,
         &canonical,
-        &BTreeMap::new(),
-        &records_by_id(std::slice::from_ref(&canonical)),
+        &mut super::solid::SourceFeatures::new(&ctx, std::slice::from_ref(&canonical)).unwrap(),
     )
     .expect("resource budget")
     .unwrap();

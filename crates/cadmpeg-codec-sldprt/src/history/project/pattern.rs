@@ -111,20 +111,13 @@ fn resolve_pattern(
         Ok(either_parameter(ctx, feature, "Spacing", "D3")?
             .and_then(parse_positive_dimension_length_mm))
     };
-    let parse_count = |value: &str| -> Result<_, CodecError> {
-        let value = ctx.trim_text(value, "trim SLDPRT pattern count")?;
-        Ok(ctx
-            .parse_text::<u32>(value, "parse SLDPRT pattern count")?
-            .ok()
-            .filter(|count| *count > 0))
-    };
     let count = |name, positional| -> Result<_, CodecError> {
         let value = match ctx.get_btree_map(&feature.parameters, name, super::FEATURE_LITERAL)? {
             Some(value) => Some(value),
             None => ctx.get_btree_map(&feature.parameters, positional, super::FEATURE_LITERAL)?,
         };
         value
-            .map(|value| parse_count(value))
+            .map(|value| parse_count(ctx, value))
             .transpose()
             .map(Option::flatten)
     };
@@ -145,7 +138,7 @@ fn resolve_pattern(
                     Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
                         direction: require!(parse_valid_direction(direction)),
                         spacing: require!(parse_positive_dimension_length_mm(spacing)),
-                        count: require!(parse_count(count)?),
+                        count: require!(parse_count(ctx, count)?),
                     })
                 }
                 _ => None,
@@ -167,7 +160,7 @@ fn resolve_pattern(
             ),
             count: require!(ctx
                 .get_btree_map(&feature.parameters, "Count", super::FEATURE_LITERAL)?
-                .map(|value| parse_count(value))
+                .map(|value| parse_count(ctx, value))
                 .transpose()?
                 .flatten()),
         },
@@ -264,8 +257,12 @@ pub(super) fn project_pattern(
     }))
 }
 
-pub(crate) fn parse_count(value: &str) -> Option<u32> {
-    value.trim().parse().ok().filter(|count| *count > 0)
+pub(crate) fn parse_count(ctx: &DecodeContext<'_>, value: &str) -> Result<Option<u32>, CodecError> {
+    let value = ctx.trim_text(value, "trim SLDPRT pattern count")?;
+    Ok(ctx
+        .parse_text::<u32>(value, "parse SLDPRT pattern count")?
+        .ok()
+        .filter(|count| *count > 0))
 }
 
 #[cfg(test)]
@@ -291,5 +288,27 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(b"pattern", &arena, &policy).unwrap();
         let error = project_pattern(&ctx, &feature, &by_source, &HashMap::new()).unwrap_err();
         assert!(matches!(error, CodecError::ResourceLimit(_)));
+    }
+
+    #[test]
+    fn shared_count_parser_preserves_whitespace_sign_range_and_positive_grammar() {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        for (text, expected) in [
+            ("1", Some(1)),
+            (" +2 ", Some(2)),
+            ("\u{2003}3\u{2003}", Some(3)),
+            ("4294967295", Some(u32::MAX)),
+            ("0", None),
+            ("-1", None),
+            ("1.0", None),
+            ("4294967296", None),
+            ("", None),
+        ] {
+            assert_eq!(
+                super::parse_count(&ctx, text).unwrap(),
+                expected,
+                "{text:?}"
+            );
+        }
     }
 }

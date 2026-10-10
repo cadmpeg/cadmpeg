@@ -1059,8 +1059,7 @@ pub(crate) fn bind_pattern_inputs(
         };
         let count = match ctx.get_btree_map(&native.parameters, "Count", PATTERN_INPUTS)? {
             Some(value) => {
-                crate::history::literals::admit_literal(ctx, value, PATTERN_INPUTS)?;
-                parse_count(value)
+                parse_count(ctx, value)?
             }
             None => None,
         };

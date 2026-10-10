@@ -1361,6 +1361,7 @@ impl<'a, 'ctx> ExpressionIdentifier<'a, 'ctx> {
         let Some(inner) = raw
             .strip_prefix('"')
             .and_then(|inner| inner.strip_suffix('"'))
+            .filter(|inner| !inner.is_empty())
         else {
             return Ok(None);
         };
@@ -1452,8 +1453,8 @@ impl<'a, 'ctx> ExpressionIdentifier<'a, 'ctx> {
     /// The text of `tail` that precedes this token, where `tail` is the not-yet-consumed
     /// remainder of the expression this token was cut from.
     pub(super) fn preceding(&self, tail: &'a str) -> Option<&'a str> {
-        tail.strip_suffix(self.following)
-            .and_then(|head| head.strip_suffix(self.raw))
+        let suffix = self.following.len().checked_add(self.raw.len())?;
+        tail.get(..tail.len().checked_sub(suffix)?)
     }
 }
 
