@@ -48,7 +48,7 @@ fn design_distinct_feature_dependencies_refuse_at_collection_limit() {
                 &[],
                 &[],
                 None,
-            )
+            ).map(drop)
         },
     );
 }
@@ -115,7 +115,7 @@ fn design_distinct_feature_outputs_refuse_at_collection_limit() {
                 std::slice::from_ref(&payload),
                 &[],
                 None,
-            )
+            ).map(drop)
         },
     );
 }
@@ -248,11 +248,11 @@ fn design_operation_parameters_require_numeric_scalar_carriers() {
                 0,
             )
             .expect("valid XML");
-            super::super::append_operation_parameters(ctx, &mut parameters, &object, &[&invalid])
+            super::super::append_operation_parameters(ctx, &mut parameters, &object, &cadmpeg_ir::features::FeatureId::mint(format!("fcstd:design:feature#{}", object.name())).expect("owner feature identity"), &[&invalid])
                 .expect("parameter projection");
             assert!(parameters.is_empty());
         }
-        super::super::append_operation_parameters(ctx, &mut parameters, &object, &[&numeric])
+        super::super::append_operation_parameters(ctx, &mut parameters, &object, &cadmpeg_ir::features::FeatureId::mint(format!("fcstd:design:feature#{}", object.name())).expect("owner feature identity"), &[&numeric])
             .expect("numeric parameter");
         assert_eq!(parameters.len(), 1);
         assert_eq!(parameters[0].expression, "3");
