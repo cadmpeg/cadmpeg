@@ -1133,3 +1133,22 @@ fn drawing_source_links_append_to_output() {
         super::append_source_links(ctx, &properties, "Source", &mut Vec::new())
     });
 }
+
+#[test]
+fn drawing_neutral_maps_release_nodes_and_retain_output() {
+    let mut record = resource_drawing_record();
+    record.relationships.insert("Role".into(), vec![None]);
+    record.parameters.insert("Extra".into(), "VALUE".into());
+    let error = crate::test_support::materialized_refusal_at("released drawing maps", |ctx| {
+        let mut model = cadmpeg_ir::document::Model::default();
+        super::transfer_neutral(ctx, &mut model, std::slice::from_ref(&record), &[])?;
+        assert_eq!(model.drawings[0].parameters["Extra"], "VALUE");
+        assert_eq!(
+            model.drawings[0].relationships["Role"][0].target,
+            cadmpeg_ir::ReferenceTarget::Null
+        );
+        ctx.reserve_scoped(u64::MAX, "released drawing maps")
+            .map(|_| ())
+    });
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.used == 0));
+}
