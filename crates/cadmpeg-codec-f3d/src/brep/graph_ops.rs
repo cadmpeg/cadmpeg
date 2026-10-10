@@ -26,13 +26,7 @@ pub(in crate::brep) struct AdjacencyRow {
     pub(in crate::brep) targets: Vec<String>,
 }
 
-fn contains(
-    ctx: &DecodeContext<'_>,
-    values: &[String],
-    value: &str,
-    operation: &'static str,
-) -> Result<bool, CodecError> {
-    ctx.charge_work(0, operation)?;
+fn contains(ctx: &DecodeContext<'_>, values: &[String], value: &str) -> Result<bool, CodecError> {
     Ok(position(ctx, values, value, String::as_str)?.is_ok())
 }
 
@@ -43,7 +37,6 @@ fn insert_id(
     copy_operation: &'static str,
     operation: &'static str,
 ) -> Result<bool, CodecError> {
-    ctx.charge_work(0, operation)?;
     let Err(index) = position(ctx, values, value, String::as_str)? else {
         return Ok(false);
     };
@@ -57,7 +50,6 @@ fn entity_id<'a>(
     value: &'a Value,
     operation: &'static str,
 ) -> Result<Option<&'a str>, CodecError> {
-    ctx.charge_work(0, operation)?;
     let Value::Map(fields) = value else {
         return Ok(None);
     };
@@ -142,7 +134,7 @@ pub(super) fn collect_brep_references(
                 .map(|owner| equal(ctx, id, owner, "match F3D BREP reference owner"))
                 .transpose()?
                 .unwrap_or(false)
-                && contains(ctx, owned, id, "walk F3D BREP references")?
+                && contains(ctx, owned, id)?
             {
                 insert_id(
                     ctx,
@@ -178,7 +170,6 @@ pub(super) fn insert_brep_adjacency(
     source: &str,
     target: &str,
 ) -> Result<(), CodecError> {
-    ctx.charge_work(0, "index F3D BREP adjacency")?;
     let source_index = match position(ctx, adjacency, source, |row| row.source.as_str())? {
         Ok(index) => index,
         Err(index) => {
@@ -294,7 +285,6 @@ fn arena<'a>(
     value: &'a Value,
     name: &str,
 ) -> Result<&'a [Value], CodecError> {
-    ctx.charge_work(0, "find F3D retained arena")?;
     let Value::Map(fields) = value else {
         return Err(CodecError::malformed("BREP projection must be an object"));
     };
@@ -569,11 +559,10 @@ impl Brep {
         })?;
         let mut map =
             IdentityMap::new(ctx, "rewrite F3D qualified BREP fields", |source: &str| {
-                ctx.charge_work(0, "find F3D BREP replacement")?;
                 let replacement = position(ctx, &replacements.0, source, |row| row.0.as_str())?
                     .ok()
                     .map(|index| &replacements.0[index].1);
-                ctx.charge_work(0, "find F3D BREP replacement")?;
+
                 ctx.copy_retained_text(
                     replacement.map_or(source, String::as_str),
                     "copy F3D BREP remapped ID",

@@ -565,6 +565,9 @@ impl DesignBodyBinding {
     pub(crate) fn id(&self) -> &String {
         self.id.text()
     }
+    pub(crate) fn native_stream(&self) -> &str {
+        self.id.stream()
+    }
     pub(crate) fn stream(&self) -> &str {
         self.stream.as_str()
     }

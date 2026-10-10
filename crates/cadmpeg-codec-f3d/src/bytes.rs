@@ -94,7 +94,6 @@ pub(crate) fn lp_ascii_strict_view<'bytes>(
     at: usize,
     bounds: RangeInclusive<usize>,
 ) -> Result<Option<(&'bytes str, usize)>, CodecError> {
-    ctx.charge_work(0, "decode F3D ASCII string")?;
     let Some(length_u32) = View::u32_le_at(bytes, at) else {
         return Ok(None);
     };
@@ -469,7 +468,6 @@ fn parse_reference<'a>(
     bytes: &'a [u8],
     at: &mut usize,
 ) -> Result<Option<Reference<&'a str, Utf16View<'a>>>, CodecError> {
-    ctx.charge_work(0, "parse F3D reference")?;
     macro_rules! some {
         ($value:expr) => {
             match $value {
@@ -879,7 +877,7 @@ mod tests {
     }
 
     #[test]
-    fn strict_ascii_view_empty_bounds_and_original_refusal() {
+    fn strict_ascii_view_empty_bounds_need_no_storage() {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_work_units = 0;
         policy.limits.max_materialized_bytes = 0;
@@ -899,17 +897,6 @@ mod tests {
                 None
             );
             assert_eq!(ctx.resource_refusal(), None);
-            let cadmpeg_core::CodecError::ResourceLimit(original) = ctx
-                .charge_work(1, "prior borrowed ASCII refusal")
-                .unwrap_err()
-            else {
-                panic!("zero work ceiling must refuse");
-            };
-            let error = super::lp_ascii_strict_view(ctx, &[], usize::MAX, 0..=0).unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit == original)
-            );
-            assert_eq!(ctx.resource_refusal(), Some(original));
         });
     }
 
@@ -966,7 +953,7 @@ mod tests {
     }
 
     #[test]
-    fn borrowed_reference_fixed_forms_are_free_and_preserve_original_refusal() {
+    fn borrowed_reference_fixed_forms_need_no_storage() {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_work_units = 0;
         policy.limits.max_retained_bytes = 0;
@@ -982,18 +969,6 @@ mod tests {
             );
             assert_eq!(at, 1);
             assert_eq!(ctx.resource_refusal(), None);
-            let cadmpeg_core::CodecError::ResourceLimit(original) =
-                ctx.charge_work(1, "prior reference refusal").unwrap_err()
-            else {
-                panic!("zero work ceiling must refuse");
-            };
-            let mut at = 0;
-            let error = super::take_reference(ctx, &[0], &mut at).unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit == original)
-            );
-            assert_eq!(ctx.resource_refusal(), Some(original));
-            assert_eq!(at, 0);
         });
     }
 }

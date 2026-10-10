@@ -1026,12 +1026,14 @@ impl SketchPointCompanion {
         let operation = "index F3D sketch point incident curves";
         let mut storage = ctx.reserve_scoped(0, operation)?;
         let mut unique = std::collections::HashSet::new();
-        for curve in ctx.admit_iter(
-            &self.incident_curves,
-            "scan F3D sketch point incident curves",
-        )? {
-            storage.with_storage(|| ctx.reserve_set(&mut unique, 1, operation))?;
-            if !unique.insert(curve) {
+        let mut curves = self.incident_curves.iter();
+        while !curves.as_slice().is_empty() {
+            let Some(curve) =
+                ctx.next_charged(&mut curves, "scan F3D sketch point incident curves")?
+            else {
+                break;
+            };
+            if !storage.with_storage(|| ctx.insert_hash_set(&mut unique, curve, operation))? {
                 return Err(CodecError::Malformed(
                     "sketch point companion.incident_curves must be distinct".into(),
                 ));

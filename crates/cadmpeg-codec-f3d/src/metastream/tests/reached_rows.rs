@@ -91,41 +91,33 @@ fn metastream_reached_rows_record_source_refuses_one_actual_attempt() {
             assert_eq!(original.additional, 1);
             assert_eq!(original.operation, "visit F3D MetaStream record index");
             assert_eq!(at, 0);
-            let Err(CodecError::ResourceLimit(later)) = take_record_index(ctx, &[0; 4], &mut at)
-            else {
-                panic!("known-empty record source must keep original refusal");
-            };
-            assert_eq!(later, original);
             assert_eq!(ctx.resource_refusal(), Some(original));
         });
     }
 }
 
 #[test]
-fn metastream_reached_rows_empty_sources_are_free_and_keep_original_fuse() {
+fn metastream_headers_and_unread_type_tail_need_no_output_storage() {
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    policy.limits.max_collection_items = 0;
-    policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let empty = stream_prefix();
     crate::test_support::with_decode_policy(&policy, |ctx| {
-        let mut at = 0;
-        assert!(take_record_index(ctx, &[0; 4], &mut at)
-            .unwrap()
-            .unwrap()
-            .is_empty());
-        assert_eq!(at, 4);
-        at = 0;
-        assert!(take_version_context(ctx, &[0; 4], &mut at).is_ok());
-        assert_eq!(at, 4);
-        let Err(CodecError::ResourceLimit(original)) =
-            ctx.charge_work(1, "empty MetaStream row source refusal")
-        else {
-            panic!("zero-work original session refusal");
-        };
-        at = 0;
-        assert!(matches!(take_version_context(ctx, &[0; 4], &mut at),
-            Err(ParseIssue::Resource(CodecError::ResourceLimit(later))) if later == original));
-        assert_eq!(ctx.resource_refusal(), Some(original));
+        let parsed = parse_inner(ctx, &empty).unwrap_or_else(|_| panic!("valid empty MetaStream"));
+        assert!(parsed.types.is_empty());
+        assert!(parsed.records.is_empty());
+        assert!(parsed.secondary_records.is_empty());
     });
+    for count in [1_u32, 64] {
+        let mut bytes = empty.clone();
+        let at = bytes.len() - 16;
+        bytes[at..at + 4].copy_from_slice(&count.to_le_bytes());
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            assert!(
+                matches!(parse_inner(ctx, &bytes), Err(ParseIssue::Malformed(failure)) if failure.field == "type GUID" && failure.offset == at + 4)
+            );
+            assert!(ctx.resource_refusal().is_none());
+        });
+    }
 }

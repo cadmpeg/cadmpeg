@@ -193,3 +193,68 @@ fn merge_stack_child_copy_and_push_refusals_preserve_parent() {
         );
     }
 }
+
+#[test]
+fn missing_member_does_not_materialize_an_unused_occurrence_key() {
+    use super::super::MergeSession;
+    use crate::f3z::archive::ArchiveSession;
+    use crate::records::xref::XrefReference;
+    let bytes =
+        crate::test_support::assembly_test::f3z_archive("root.f3d", &[("root.f3d", b"root")]);
+    crate::test_support::with_decode_context(|scan_ctx| {
+        let scan =
+            crate::container::scan(scan_ctx, cadmpeg_core::decode::View::over_retained(&bytes))
+                .unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let archive = ArchiveSession {
+            members: std::collections::BTreeMap::new(),
+            layers: cadmpeg_core::dialect::DialectLayers::of(scan.kind.dialect().clone()),
+            losses: Vec::new(),
+            _members_storage: ctx.reserve_scoped(0, "test empty member index").unwrap(),
+        };
+        let table = crate::xref::XrefTable {
+            references: vec![XrefReference {
+                id: "f3d:xref:reference#1".into(),
+                ordinal: 1,
+                occurrence_ordinal: 0,
+                from: "root.f3d".to_owned().try_into().unwrap(),
+                relative_path: "missing.f3d".to_owned().try_into().unwrap(),
+                neutron_role: "x".repeat(4096).try_into().unwrap(),
+                neutron_data: String::new(),
+                transform: None,
+            }],
+            ..Default::default()
+        };
+        let mut report = cadmpeg_ir::codec::DecodeBody::new(
+            cadmpeg_ir::report::decode::DecodeTransfer::full(false),
+        );
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+        let mut stack_storage = ctx.reserve_scoped(0, "test empty stack").unwrap();
+        let count = MergeSession {
+            ctx: &ctx,
+            scan: &scan,
+            archive: &archive,
+        }
+        .merge(
+            &mut Vec::new(),
+            &mut stack_storage,
+            &mut ir,
+            &mut report,
+            &mut fidelity,
+            &table,
+        )
+        .unwrap();
+        assert_eq!(count, 0);
+        assert_eq!(report.losses.len(), 1);
+        assert_eq!(
+            report.losses[0].code,
+            crate::loss::F3dLossCode::XrefMemberMissing.kind()
+        );
+        drop((stack_storage, archive));
+        ctx.finish_session().unwrap();
+    });
+}

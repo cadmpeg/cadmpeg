@@ -1083,13 +1083,11 @@ fn occurrence_transforms(
 ) -> Result<Vec<Option<[[f64; 4]; 4]>>, CodecError> {
     let mut transforms = Vec::new();
     for placement in ctx.admit_iter(placements, "select F3D structured xref transforms")? {
-        let mut matches_role = false;
-        for name in ctx.admit_iter(&placement.link_names, "match F3D structured placement role")? {
-            if ctx.equal(name.as_str(), role, "compare F3D structured placement role")? {
-                matches_role = true;
-                break;
-            }
-        }
+        let matches_role = ctx.any_by(
+            &placement.link_names,
+            |name| ctx.equal(name.as_str(), role, "compare F3D structured placement role"),
+            "match F3D structured placement role",
+        )?;
         if matches_role {
             ctx.push_vec(
                 &mut transforms,
@@ -1208,18 +1206,16 @@ fn occurrence_placements_with_failures(
         let Some(body) = bytes.get(record.offset..record.end) else {
             continue;
         };
-        if let Some(placement) = occurrence_placement(ctx, body, serializer_magic)? {
-            ctx.reserve_vec(&mut placements, 1, "collect F3D xref placements")?;
-            placements.push(placement);
-        } else if let Some((link_names, _)) = occurrence_path(ctx, body)? {
-            ctx.reserve_vec(&mut failures, 1, "collect F3D xref placement failures")?;
-            failures.push(OccurrencePlacementFailure { link_names });
-        } else if let Some(link_name) = legacy_occurrence_role(ctx, body)? {
-            let link_name = link_name.to_retained(ctx, "retain F3D UTF-16 string")?;
-            let link_names = ctx.collect_vec([link_name], "collect F3D legacy xref role")?;
-
-            ctx.reserve_vec(&mut failures, 1, "collect F3D xref placement failures")?;
-            failures.push(OccurrencePlacementFailure { link_names });
+        match occurrence_placement(ctx, body, serializer_magic)? {
+            OccurrenceRead::Placement(placement) => {
+                ctx.push_vec(&mut placements, placement, "collect F3D xref placements")?;
+            }
+            OccurrenceRead::Failure(failure) => ctx.push_vec(
+                &mut failures,
+                failure,
+                "collect F3D xref placement failures",
+            )?,
+            OccurrenceRead::Unrelated => {}
         }
     }
     Ok((placements, failures))
@@ -1227,60 +1223,100 @@ fn occurrence_placements_with_failures(
 
 /// Parse one record body, header included, requiring the member sequence to end
 /// exactly at the record end.
+#[derive(Debug)]
+enum OccurrenceRead {
+    Placement(OccurrencePlacement),
+    Failure(OccurrencePlacementFailure),
+    Unrelated,
+}
+
+enum PlacementTransform {
+    Identity,
+    Matrix([[f64; 4]; 4]),
+}
+
+/// Select the exact generation before publishing placement or failure text.
 fn occurrence_placement(
     decode: &DecodeContext<'_>,
     body: &[u8],
     serializer_magic: Option<u32>,
-) -> Result<Option<OccurrencePlacement>, CodecError> {
+) -> Result<OccurrenceRead, CodecError> {
     if let Some((role, transform)) = legacy_occurrence_placement(decode, body)? {
         let role = role.to_retained(decode, "retain F3D UTF-16 string")?;
         let link_names = decode.collect_vec([role], "collect F3D legacy xref role")?;
-        return Ok(Some(OccurrencePlacement {
+        return Ok(OccurrenceRead::Placement(OccurrencePlacement {
             link_names,
             transform,
         }));
     }
-    if let Some(placement) = repeated_target_occurrence_placement(decode, body)? {
-        return Ok(Some(placement));
-    }
-    if let Some(placement) = modern_occurrence_placement(decode, body, serializer_magic)? {
-        return Ok(Some(placement));
-    }
-    let Some(record_index) = View::u32_le_at(body, 7) else {
-        return Ok(None);
+    let path = occurrence_path(decode, body, true)?;
+    let transform = if let Some(path) = &path {
+        if let Some(details) =
+            repeated_target_occurrence_placement_details(decode, body, path.after_prefix)?
+        {
+            Some(match details.transform {
+                Some((_, matrix)) => PlacementTransform::Matrix(matrix),
+                None => PlacementTransform::Identity,
+            })
+        } else {
+            modern_occurrence_placement(decode, body, serializer_magic, path.after_prefix)?
+        }
+    } else {
+        None
     };
-    let Some((link_name, _)) =
-        grouped_component_insert_identity(decode, body, 0, body.len(), record_index)?
-    else {
-        return Ok(None);
-    };
-    let mut link_names = decode.collection_vec(1, "collect F3D grouped placement link name")?;
-    link_names.push(link_name.to_retained(decode, "retain F3D UTF-16 string")?);
-    Ok(Some(OccurrencePlacement {
-        link_names,
-        transform: None,
-    }))
-}
-
-/// Parse the placement generation that repeats the target identity after the
-/// standard path and stores the identity flag beside that repeated target.
-fn repeated_target_occurrence_placement(
-    decode: &DecodeContext<'_>,
-    body: &[u8],
-) -> Result<Option<OccurrencePlacement>, CodecError> {
-    Ok(
-        repeated_target_occurrence_placement_details(decode, body)?.map(|details| {
-            OccurrencePlacement {
-                link_names: details.link_names,
-                transform: details.transform.map(|(_, matrix)| matrix),
+    if transform.is_none() {
+        if let Some(record_index) = View::u32_le_at(body, 7) {
+            if let Some((link_name, _)) =
+                grouped_component_insert_identity(decode, body, 0, body.len(), record_index)?
+            {
+                let mut link_names =
+                    decode.collection_vec(1, "collect F3D grouped placement link name")?;
+                link_names.push(link_name.to_retained(decode, "retain F3D UTF-16 string")?);
+                return Ok(OccurrenceRead::Placement(OccurrencePlacement {
+                    link_names,
+                    transform: None,
+                }));
             }
-        }),
-    )
+        }
+    }
+    if let Some(path) = path {
+        let operation = if transform.is_some() {
+            "publish F3D xref placement links"
+        } else {
+            "publish F3D xref failure links"
+        };
+        let mut link_names = Vec::new();
+        for link in decode.admit_iter(path.links, operation)? {
+            let name = link.to_retained(decode, "copy F3D xref placement link name")?;
+            decode.push_vec(
+                &mut link_names,
+                name,
+                "collect F3D xref placement link names",
+            )?;
+        }
+        return Ok(match transform {
+            Some(transform) => OccurrenceRead::Placement(OccurrencePlacement {
+                link_names,
+                transform: match transform {
+                    PlacementTransform::Identity => None,
+                    PlacementTransform::Matrix(matrix) => Some(matrix),
+                },
+            }),
+            None => OccurrenceRead::Failure(OccurrencePlacementFailure { link_names }),
+        });
+    }
+    if let Some(role) = legacy_occurrence_role(decode, body)? {
+        let name = role.to_retained(decode, "retain F3D UTF-16 string")?;
+        let link_names = decode.collect_vec([name], "collect F3D legacy xref role")?;
+        return Ok(OccurrenceRead::Failure(OccurrencePlacementFailure {
+            link_names,
+        }));
+    }
+    Ok(OccurrenceRead::Unrelated)
 }
 
-struct RepeatedTargetPlacementDetails {
-    link_names: Vec<String>,
-    role: String,
+struct RepeatedTargetPlacementDetails<'a> {
+    role: Utf16View<'a>,
     role_offset: usize,
     transform: Option<(usize, [[f64; 4]; 4])>,
 }
@@ -1294,12 +1330,12 @@ macro_rules! xref_some {
     };
 }
 
-fn repeated_target_occurrence_placement_details(
+fn repeated_target_occurrence_placement_details<'a>(
     decode: &DecodeContext<'_>,
-    body: &[u8],
-) -> Result<Option<RepeatedTargetPlacementDetails>, CodecError> {
+    body: &'a [u8],
+    mut at: usize,
+) -> Result<Option<RepeatedTargetPlacementDetails<'a>>, CodecError> {
     const METADATA_MARKER: &[u8] = &[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0];
-    let (link_names, mut at) = xref_some!(occurrence_path(decode, body)?);
     if !matches!(xref_some!(View::u32_le_at(body, at)), 1..=6) {
         return Ok(None);
     }
@@ -1375,9 +1411,7 @@ fn repeated_target_occurrence_placement_details(
     if at != body.len() {
         return Ok(None);
     }
-    let role = role.to_retained(decode, "retain F3D UTF-16 string")?;
     Ok(Some(RepeatedTargetPlacementDetails {
-        link_names,
         transform,
         role,
         role_offset: role_offset + 4,
@@ -1398,7 +1432,12 @@ pub(crate) fn repeated_target_component_insert(
     if xref_some!(View::u64_le_at(body, 7)) != u64::from(carrier_record_index) {
         return Ok(None);
     }
-    let details = xref_some!(repeated_target_occurrence_placement_details(ctx, body)?);
+    let path = xref_some!(occurrence_path(ctx, body, false)?);
+    let details = xref_some!(repeated_target_occurrence_placement_details(
+        ctx,
+        body,
+        path.after_prefix
+    )?);
     let transform = details.transform.map_or(
         [
             [1.0, 0.0, 0.0, 0.0],
@@ -1412,7 +1451,7 @@ pub(crate) fn repeated_target_component_insert(
         return Ok(None);
     }
     Ok(Some((
-        details.role,
+        details.role.to_retained(ctx, "retain F3D UTF-16 string")?,
         carrier_at + details.role_offset,
         details.transform.map(|(offset, _)| carrier_at + offset),
     )))
@@ -1701,16 +1740,14 @@ fn modern_occurrence_placement(
     decode: &DecodeContext<'_>,
     body: &[u8],
     serializer_magic: Option<u32>,
-) -> Result<Option<OccurrencePlacement>, CodecError> {
-    let Some((link_names, at)) = occurrence_path(decode, body)? else {
-        return Ok(None);
-    };
+    at: usize,
+) -> Result<Option<PlacementTransform>, CodecError> {
     // The identity marker is absent in the oldest container generation, which
     // always stores the matrix. Both readings start with a zero byte when the
     // marker is present and the matrix follows, so the record end decides.
     for identity_marker in [true, false] {
         let mut cursor = at;
-        let mut transform = None;
+        let mut transform = PlacementTransform::Identity;
         if identity_marker {
             match body.get(cursor) {
                 Some(1) => cursor += 1,
@@ -1718,7 +1755,7 @@ fn modern_occurrence_placement(
                     let Some(matrix) = decode_rigid_matrix(body, cursor + 1) else {
                         continue;
                     };
-                    transform = Some(matrix);
+                    transform = PlacementTransform::Matrix(matrix);
                     cursor += 129;
                 }
                 _ => continue,
@@ -1727,15 +1764,11 @@ fn modern_occurrence_placement(
             let Some(matrix) = decode_rigid_matrix(body, cursor) else {
                 continue;
             };
-            transform = Some(matrix);
+            transform = PlacementTransform::Matrix(matrix);
             cursor += 128;
         }
         if placement_tail(decode, body, cursor, serializer_magic)?.is_some() {
-            return Ok(Some(OccurrencePlacement {
-                link_names,
-
-                transform,
-            }));
+            return Ok(Some(transform));
         }
     }
     Ok(None)
@@ -1916,11 +1949,20 @@ fn take_legacy_occurrence_reference(body: &[u8], at: &mut usize) -> Option<()> {
     Some(())
 }
 
+/// Borrowed path links and the reservation for their vector backing.
+#[derive(Debug)]
+struct OccurrencePath<'ctx, 'bytes> {
+    links: Vec<Utf16View<'bytes>>,
+    after_prefix: usize,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
 /// Parse the target-path prefix shared by every occurrence-placement form.
-fn occurrence_path(
-    decode: &DecodeContext<'_>,
-    body: &[u8],
-) -> Result<Option<(Vec<String>, usize)>, CodecError> {
+fn occurrence_path<'ctx, 'a>(
+    decode: &'ctx DecodeContext<'_>,
+    body: &'a [u8],
+    collect_links: bool,
+) -> Result<Option<OccurrencePath<'ctx, 'a>>, CodecError> {
     // Header: the LP-ASCII decimal class tag, the u64 entity ID, and the
     // LP-ASCII record name.
     let Some((_, after_tag)) = lp_ascii_strict_view(decode, body, 0, 3..=3)? else {
@@ -1946,14 +1988,24 @@ fn occurrence_path(
     }
     at += 4;
     let mut link_names = Vec::new();
-    for _ in decode.admit_iter(&(0..count), "scan F3D xref occurrence links")? {
+    let mut storage = decode.reserve_scoped(0, "stage F3D xref placement links")?;
+    let mut rows = 0..count;
+    while !rows.is_empty() {
+        let Some(_) = decode.next_charged(&mut rows, "scan F3D xref occurrence links")? else {
+            break;
+        };
         let Some(element) = take_reference(decode, body, &mut at)? else {
             return Ok(None);
         };
         if let crate::bytes::Reference::CrossDocument { link_name, .. } = element {
-            let name = link_name.to_retained(decode, "copy F3D xref placement link name")?;
-            decode.reserve_vec(&mut link_names, 1, "collect F3D xref placement link names")?;
-            link_names.push(name);
+            if collect_links {
+                decode.push_scoped_vec(
+                    &mut storage,
+                    &mut link_names,
+                    link_name,
+                    "stage F3D xref placement links",
+                )?;
+            }
         }
         if View::u32_le_at(body, at).is_none() {
             return Ok(None);
@@ -1964,7 +2016,11 @@ fn occurrence_path(
         return Ok(None);
     }
     at += 1;
-    Ok(Some((link_names, at)))
+    Ok(Some(OccurrencePath {
+        links: link_names,
+        after_prefix: at,
+        _storage: storage,
+    }))
 }
 
 /// Consume the three reference runs that close a placement, returning `Some`
@@ -1981,12 +2037,13 @@ fn placement_tail(
             return None;
         }
         at += 4;
-        let references =
-            match ctx.admit_iter(&(0..count), "scan F3D xref placement tail references") {
-                Ok(references) => references,
-                Err(error) => return Some(Err(CodecError::ResourceLimit(error))),
-            };
-        for _ in references {
+        let mut references = 0..count;
+        while !references.is_empty() {
+            match ctx.next_charged(&mut references, "scan F3D xref placement tail references") {
+                Ok(Some(_)) => {}
+                Ok(None) => break,
+                Err(error) => return Some(Err(error)),
+            }
             match take_reference(ctx, body, &mut at) {
                 Ok(Some(_)) => {}
                 Ok(None) => return None,
