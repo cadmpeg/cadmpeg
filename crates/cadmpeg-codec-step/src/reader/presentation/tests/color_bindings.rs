@@ -374,6 +374,10 @@ fn scalar_conflict_losses_preserve_both_targets() {
         .filter(|loss| loss.code == StepLossCode::ConflictingScalarColors.kind())
         .collect::<Vec<_>>();
     assert_eq!(conflicts.len(), 2);
-    assert!(conflicts.iter().any(|loss| loss.message.contains("face#29")));
-    assert!(conflicts.iter().any(|loss| loss.message.contains("body#31")));
+    assert!(conflicts
+        .iter()
+        .any(|loss| loss.message.contains("face#29")));
+    assert!(conflicts
+        .iter()
+        .any(|loss| loss.message.contains("body#31")));
 }
