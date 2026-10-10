@@ -33,30 +33,60 @@ fn assert_reusable_raw_storage(source: &str, polyline: bool) {
     let mut policy = DecodePolicy::service();
     let output_bytes = 4 * std::mem::size_of::<f64>() + 2 * std::mem::size_of::<FinitePoint2>();
     let raw_bytes = 4 * std::mem::size_of::<Point2>();
-    policy.limits.max_materialized_bytes = (output_bytes + raw_bytes) as u64;
+    policy.limits.max_materialized_bytes =
+        u64::try_from(output_bytes + raw_bytes).expect("test storage fits u64");
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
-    let mut storage = ctx.reserve_scoped(0, "test pcurve output").expect("empty output scope");
+    let mut storage = ctx
+        .reserve_scoped(0, "test pcurve output")
+        .expect("empty output scope");
+    let mut loss_storage = ctx
+        .reserve_scoped(0, "test geometry report backing")
+        .expect("report owner");
     let mut losses = Vec::new();
     let record = &exchange.records()[&1];
     let geometry = if polyline {
-        polyline_pcurve(1, record, &points, &mut losses, &mut storage, &ctx)
+        polyline_pcurve(
+            1,
+            record,
+            &points,
+            (&mut losses, &mut loss_storage),
+            &mut storage,
+            &ctx,
+        )
     } else {
-        nurbs_pcurve(1, record, &points, &mut losses, &mut storage, &ctx)
+        nurbs_pcurve(
+            1,
+            record,
+            &points,
+            (&mut losses, &mut loss_storage),
+            &mut storage,
+            &ctx,
+        )
     }
     .expect("finite pcurve admission")
     .expect("pcurve geometry");
-    let reuse = ctx.reserve_scoped(raw_bytes as u64, "test raw pole reuse")
+    let reuse = ctx
+        .reserve_scoped(
+            u64::try_from(raw_bytes).expect("test storage fits u64"),
+            "test raw pole reuse",
+        )
         .expect("raw poles were destroyed; finite output remains live");
-    let PcurveGeometry::Nurbs { nurbs } = &geometry else { panic!("NURBS pcurve") };
+    let PcurveGeometry::Nurbs { nurbs } = &geometry else {
+        panic!("NURBS pcurve")
+    };
     assert_eq!(nurbs.knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(nurbs.control_points(), [
-        FinitePoint2::new(Point2::new(0.0, 0.0)).expect("finite first pole"),
-        FinitePoint2::new(Point2::new(1.0, 2.0)).expect("finite second pole"),
-    ]);
+    assert_eq!(
+        nurbs.control_points(),
+        [
+            FinitePoint2::new(Point2::new(0.0, 0.0)).expect("finite first pole"),
+            FinitePoint2::new(Point2::new(1.0, 2.0)).expect("finite second pole"),
+        ]
+    );
     assert!(losses.is_empty());
     drop(reuse);
     drop(geometry);
     drop(storage);
+    drop(loss_storage);
     ctx.finish_session().expect("all pcurve scratch released");
 }
 
@@ -77,24 +107,49 @@ fn rational_pcurve_storage_contains_only_knots_and_finite_poles() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
-    let mut storage = ctx.reserve_scoped(0, "test pcurve output").expect("empty output scope");
+    let mut storage = ctx
+        .reserve_scoped(0, "test pcurve output")
+        .expect("empty output scope");
+    let mut loss_storage = ctx
+        .reserve_scoped(0, "test geometry report backing")
+        .expect("report owner");
     let mut losses = Vec::new();
-    let geometry = nurbs_pcurve(1, &exchange.records()[&1], &points, &mut losses, &mut storage, &ctx)
-        .expect("finite pcurve admission").expect("rational pcurve");
+    let geometry = nurbs_pcurve(
+        1,
+        &exchange.records()[&1],
+        &points,
+        (&mut losses, &mut loss_storage),
+        &mut storage,
+        &ctx,
+    )
+    .expect("finite pcurve admission")
+    .expect("rational pcurve");
     let expected = 4 * std::mem::size_of::<f64>()
         + 2 * std::mem::size_of::<cadmpeg_ir::geometry::pcurve::WeightedPole2<FinitePoint2>>();
-    let CodecError::ResourceLimit(first) = ctx.reserve_scoped(u64::MAX, "test pcurve live bytes")
-        .expect_err("observation exceeds materialized limit") else { panic!("resource refusal") };
+    let CodecError::ResourceLimit(first) = ctx
+        .reserve_scoped(u64::MAX, "test pcurve live bytes")
+        .expect_err("observation exceeds materialized limit")
+    else {
+        panic!("resource refusal")
+    };
     assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
-    assert_eq!(first.used, expected as u64);
+    assert_eq!(
+        first.used,
+        u64::try_from(expected).expect("test storage fits u64")
+    );
     assert_eq!(first.additional, u64::MAX);
-    let PcurveGeometry::Nurbs { nurbs } = &geometry else { panic!("NURBS pcurve") };
+    let PcurveGeometry::Nurbs { nurbs } = &geometry else {
+        panic!("NURBS pcurve")
+    };
     assert_eq!(nurbs.knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(nurbs.pole_rows().weights(), Some(vec![1.0, 0.5]));
     assert!(losses.is_empty());
     drop(geometry);
     drop(storage);
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first));
+    drop(loss_storage);
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
+    );
 }
 
 fn assert_raw_pole_refusal(source: &str, polyline: bool) {
@@ -102,28 +157,72 @@ fn assert_raw_pole_refusal(source: &str, polyline: bool) {
     let points = points();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    let used = if polyline { 0 } else { 4 * std::mem::size_of::<f64>() };
+    let used = if polyline {
+        0
+    } else {
+        4 * std::mem::size_of::<f64>()
+    };
     let raw_bytes = 4 * std::mem::size_of::<Point2>();
-    policy.limits.max_materialized_bytes = (used + raw_bytes - 1) as u64;
+    policy.limits.max_materialized_bytes =
+        u64::try_from(used + raw_bytes - 1).expect("test storage fits u64");
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
-    let mut storage = ctx.reserve_scoped(0, "test pcurve output").expect("empty output scope");
+    let mut storage = ctx
+        .reserve_scoped(0, "test pcurve output")
+        .expect("empty output scope");
+    let mut loss_storage = ctx
+        .reserve_scoped(0, "test geometry report backing")
+        .expect("report owner");
     let mut losses = Vec::new();
     let record = &exchange.records()[&1];
     let result = if polyline {
-        polyline_pcurve(1, record, &points, &mut losses, &mut storage, &ctx)
+        polyline_pcurve(
+            1,
+            record,
+            &points,
+            (&mut losses, &mut loss_storage),
+            &mut storage,
+            &ctx,
+        )
     } else {
-        nurbs_pcurve(1, record, &points, &mut losses, &mut storage, &ctx)
+        nurbs_pcurve(
+            1,
+            record,
+            &points,
+            (&mut losses, &mut loss_storage),
+            &mut storage,
+            &ctx,
+        )
     };
     let CodecError::ResourceLimit(first) = result.expect_err("raw pole storage exceeds limit")
-        else { panic!("resource refusal") };
+    else {
+        panic!("resource refusal")
+    };
     assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
-    assert_eq!(first.operation, if polyline { "step_polyline_pcurve_points" } else { "step_nurbs_pcurve_control_points" });
-    assert_eq!(first.used, used as u64);
-    assert_eq!(first.additional, raw_bytes as u64);
+    assert_eq!(
+        first.operation,
+        if polyline {
+            "step_polyline_pcurve_points"
+        } else {
+            "step_nurbs_pcurve_control_points"
+        }
+    );
+    assert_eq!(
+        first.used,
+        u64::try_from(used).expect("test storage fits u64")
+    );
+    assert_eq!(
+        first.additional,
+        u64::try_from(raw_bytes).expect("test storage fits u64")
+    );
     assert!(losses.is_empty());
-    assert!(matches!(ctx.charge_work(0, "later operation"), Err(CodecError::ResourceLimit(sticky)) if sticky == first));
+    assert!(
+        matches!(ctx.charge_work(0, "later operation"), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
+    );
     drop(storage);
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first));
+    drop(loss_storage);
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
+    );
 }
 
 #[test]
@@ -134,4 +233,40 @@ fn polyline_pcurve_raw_poles_preserve_original_refusal() {
 #[test]
 fn nurbs_pcurve_raw_poles_preserve_original_refusal() {
     assert_raw_pole_refusal(POLYNOMIAL, false);
+}
+
+#[test]
+fn nurbs_pcurve_missing_reference_releases_candidate_with_workspace_live() {
+    let exchange =
+        parse("#1=QUASI_UNIFORM_CURVE('',1,(#2,#99),.UNSPECIFIED.,.F.,.F.);#99=UNKNOWN_POINT();");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 4096;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
+    let mut storage = ctx.reserve_scoped(0, "test pcurve output").expect("owner");
+    let mut loss_storage = ctx.reserve_scoped(0, "test report backing").expect("owner");
+    let mut losses = Vec::new();
+    assert!(nurbs_pcurve(
+        1,
+        &exchange.records()[&1],
+        &points(),
+        (&mut losses, &mut loss_storage),
+        &mut storage,
+        &ctx
+    )
+    .expect("candidate admission")
+    .is_none());
+    assert!(losses.is_empty());
+    let reuse = ctx
+        .reserve_scoped(
+            policy.limits.max_materialized_bytes,
+            "test full scratch reuse",
+        )
+        .expect("rejected candidate did not transfer into workspace");
+    drop(reuse);
+    drop(losses);
+    drop(storage);
+    drop(loss_storage);
+    ctx.finish_session().expect("unrefused session");
 }
