@@ -5800,20 +5800,12 @@ pub(super) fn emit_containers(
                         <RegionId>::from(id(format, owner)),
                         faces,
                         ctx.collect_vec(
-                            ctx.admit_iter(
-                                wire_edges_by_shell.get(&i).map_or(&[][..], Vec::as_slice),
-                                "ASM shell wire edge sources"
-                            )?
+                            wire_edges_by_shell.get(&i).map_or(&[][..], Vec::as_slice).iter()
                             .map(|edge| EdgeId::from(id(format, *edge))),
                             "ASM shell wire edges"
                         )?,
                         ctx.collect_vec(
-                            ctx.admit_iter(
-                                free_vertices_by_shell
-                                    .get(&i)
-                                    .map_or(&[][..], Vec::as_slice),
-                                "ASM shell free vertex sources"
-                            )?
+                            free_vertices_by_shell.get(&i).map_or(&[][..], Vec::as_slice).iter()
                             .map(|vertex| VertexId::from(id(format, *vertex))),
                             "ASM shell free vertices"
                         )?,

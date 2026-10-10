@@ -1015,7 +1015,7 @@ pub(super) fn collect_wire_topology(
                             Some(vertex) => WireMembers::Vertex(VertexId::from(id(format, vertex))),
                             None => WireMembers::Edges(
                                 ctx.collect_vec(
-                                    ctx.admit_iter(wire_edges, "ASM wire member sources")?
+                                    wire_edges.into_iter()
                                         .map(|edge| EdgeId::from(id(format, edge))),
                                     "ASM wire member edges",
                                 )?,

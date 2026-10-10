@@ -920,4 +920,6 @@ mod cache_budgets;
 
 mod shared_pcurve;
 
+mod wire_collector;
+
 mod candidate_storage;
