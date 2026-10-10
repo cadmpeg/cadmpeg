@@ -2442,8 +2442,9 @@ impl PcurveGeometry {
                 ))
             }
         };
-        storage.commit().map_err(PcurveCoordinateScaleError::from)?;
-        *self = candidate;
+        *self = storage
+            .commit_value(candidate)
+            .map_err(PcurveCoordinateScaleError::from)?;
         Ok(())
     }
 

@@ -546,9 +546,10 @@ impl SourceFidelity {
             "append retained source records",
         )?;
         if self.retained_records.is_empty() {
-            storage.commit()?;
+            self.retained_records = storage.commit_value(incoming)?;
+        } else {
+            self.retained_records.append(&mut incoming);
         }
-        self.retained_records.append(&mut incoming);
         Ok(())
     }
 
@@ -779,7 +780,7 @@ impl SourceFidelity {
             "append native unknown source records",
         )?;
         if self.retained_records.is_empty() {
-            storage.commit()?;
+            retained = storage.commit_value(retained)?;
         }
         if let Some(namespace) =
             ctx.get_mut_btree_map(&mut ir.native.0, format, "store native unknown namespace")?
@@ -816,7 +817,11 @@ impl SourceFidelity {
                 "store native unknown namespace",
             )?;
         }
-        self.retained_records.append(&mut retained);
+        if self.retained_records.is_empty() {
+            self.retained_records = retained;
+        } else {
+            self.retained_records.append(&mut retained);
+        }
         Ok(())
     }
 }

@@ -115,6 +115,34 @@ fn admitted_hex_coverage_refuses_retained_name_limit() {
 }
 
 #[test]
+fn formatted_occupied_coverage_releases_name_without_retaining_another_key() {
+    use crate::report::decode::{Coverage, HexByteCoverageKey, IndexedCoverageKey};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    const EMPTY_ROOT_MATERIALIZED_ALLOWANCE: u64 = 16 * 1024 * 1024;
+    let indexed = IndexedCoverageKey::decimal("type_", "_count");
+    let hexadecimal = HexByteCoverageKey::new("type_", "_count");
+    let mut coverage = Coverage::default();
+    let prior = cadmpeg_test_support::service_decode_context();
+    coverage.record_indexed(&prior, indexed, 4, 7).unwrap();
+    coverage.record_hex_byte(&prior, hexadecimal, 0x0a, 7).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    for count in [8, 9] {
+        coverage.record_indexed(&ctx, indexed, 4, count).unwrap();
+        coverage.record_hex_byte(&ctx, hexadecimal, 0x0a, count).unwrap();
+        assert_eq!(coverage.get("type_4_count"), Some(&count));
+        assert_eq!(coverage.get("type_0a_count"), Some(&count));
+        let released = ctx.reserve_scoped(EMPTY_ROOT_MATERIALIZED_ALLOWANCE,
+            "check formatted name release").unwrap();
+        drop(released);
+    }
+    ctx.finish_session().unwrap();
+}
+
+#[test]
 fn owned_coverage_record_preserves_declared_key() {
     let key = crate::report::decode::CoverageKey::new("decoded_entities");
     let mut coverage = crate::report::decode::Coverage::default();

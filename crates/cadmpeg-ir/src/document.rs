@@ -1887,8 +1887,13 @@ impl CadIr {
                 }
                 let result = match admit(self) {
                     Ok(Ok(value)) => {
-                        match speculative_parents.map(|(_, storage)| storage.commit()).transpose() {
-                            Ok(_) => Ok(Ok(value)),
+                        match speculative_parents.map(|(_, storage)| {
+                            storage.commit_value(std::mem::take(&mut self.model.feature_regeneration_parents))
+                        }).transpose() {
+                            Ok(parents) => {
+                                if let Some(parents) = parents { self.model.feature_regeneration_parents = parents; }
+                                Ok(Ok(value))
+                            },
                             Err(error) => Err(error),
                         }
                     },
@@ -2023,12 +2028,12 @@ impl CadIr {
             "native unknown namespace lookup",
         )?;
         let key = ctx.copy_retained_text("unknowns", "native unknown arena key")?;
-        records.1.commit()?;
+        let records = records.1.commit_value(records.0)?;
         if let Some(namespace) = self.native.0.get_mut(format) {
             ctx.insert_btree_map(
                 namespace.arenas_mut(),
                 key,
-                records.0,
+                records,
                 "native unknown arena",
             )?;
         } else {
@@ -2037,7 +2042,7 @@ impl CadIr {
             ctx.insert_btree_map(
                 namespace.arenas_mut(),
                 key,
-                records.0,
+                records,
                 "native unknown arena",
             )?;
             ctx.insert_btree_map(
