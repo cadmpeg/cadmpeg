@@ -371,9 +371,7 @@ impl TryFrom<DisplayJtDocumentWire> for DisplayJtDocument {
             return Err("DisplayJtDocument.byte_order must be 0");
         }
         let version =
-            match JtVersionField::new(wire.version_field, Ok::<_, Infallible>, |text, _| {
-                Ok(text.parse())
-            }) {
+            match JtVersionField::new(wire.version_field, Ok::<_, Infallible>) {
                 Ok(version) => version?,
                 Err(error) => match error {},
             };
@@ -3153,8 +3151,11 @@ pub(super) fn display_jt_documents(
         };
         let Ok(version) = JtVersionField::new(
             version_field,
-            |field| ctx.copy_retained_text(field, "retain DisplayJT version text"),
-            |text, operation| ctx.parse_text(text, operation),
+            |field| {
+                let mut text = ctx.retained_string(jt_hdr::BYTE_ORDER, "retain DisplayJT version text")?;
+                text.push_str(field);
+                Ok::<_, CodecError>(text)
+            },
         )?
         else {
             return Ok(Vec::new());

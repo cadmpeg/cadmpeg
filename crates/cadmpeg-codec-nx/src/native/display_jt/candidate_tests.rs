@@ -403,7 +403,7 @@ fn scene_family_candidate_releases_prefix_when_its_next_member_fails() {
     let mut expanded = framed_element([0; 16], 1, &group);
     let mut valid = expanded.clone(); end_marker(&mut valid);
     let (valid_container, valid_segment) = compressed_fixture(&valid, 1);
-    let document = DisplayJtDocument { id: "document".into(), index_row: "row".into(), version: JtVersionField::new(format!("{:<80}", "Version 9.5"), Ok::<_, Infallible>, |text, _| Ok(text.parse())).unwrap().unwrap(), toc_offset: 0, lsg_segment_id: [0; 16], toc_entries: vec![], physical_byte_len: 0, source_offset: 0 };
+    let document = DisplayJtDocument { id: "document".into(), index_row: "row".into(), version: JtVersionField::new(format!("{:<80}", "Version 9.5"), Ok::<_, Infallible>).unwrap().unwrap(), toc_offset: 0, lsg_segment_id: [0; 16], toc_entries: vec![], physical_byte_len: 0, source_offset: 0 };
     crate::test_support::with_decode_context(|ctx| { let result = display_jt_scene_nodes(ctx, &valid_container, &[valid_segment], std::slice::from_ref(&document)).unwrap(); assert_eq!(result.base_nodes.len(), 1); assert_eq!(result.group_nodes.len(), 1); });
     expanded.extend_from_slice(&framed_element([0; 16], 1, &[])); end_marker(&mut expanded);
     let (container, segment) = compressed_fixture(&expanded, 1);
