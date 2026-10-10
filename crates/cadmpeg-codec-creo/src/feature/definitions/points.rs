@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 
 use super::{
@@ -80,6 +80,19 @@ pub(super) struct TrimGeometry {
     radii: HashMap<u32, RadiusAgreement>,
 }
 
+pub(super) struct CheckedTrimGeometry<'ctx> {
+    geometry: TrimGeometry,
+    _storage: ScopedReservation<'ctx>,
+}
+
+impl std::ops::Deref for CheckedTrimGeometry<'_> {
+    type Target = TrimGeometry;
+
+    fn deref(&self) -> &Self::Target {
+        &self.geometry
+    }
+}
+
 impl TrimGeometry {
     pub(super) fn radius(&self, key: u32) -> Result<Option<cadmpeg_ir::scalar::FiniteReal>, ()> {
         self.radii
@@ -97,11 +110,16 @@ impl FeatureVariableTable {
         Ok(self.reconciled_geometry(ctx, false)?.coordinates)
     }
 
-    pub(super) fn reconciled_trim_geometry(
+    pub(super) fn reconciled_trim_geometry<'ctx>(
         &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<TrimGeometry, CodecError> {
-        self.reconciled_geometry(ctx, true)
+        ctx: &'ctx DecodeContext<'_>,
+    ) -> Result<CheckedTrimGeometry<'ctx>, CodecError> {
+        let mut storage = ctx.reserve_scoped(0, "creo trim geometry cache")?;
+        let geometry = storage.with_storage(|| self.reconciled_geometry(ctx, true))?;
+        Ok(CheckedTrimGeometry {
+            geometry,
+            _storage: storage,
+        })
     }
 
     fn reconciled_geometry(
@@ -164,6 +182,8 @@ impl FeatureVariableTable {
 #[cfg(test)]
 mod tests {
     use super::CoordinateAgreement;
+
+    mod cache_storage;
 
     #[test]
     fn coordinate_agreement_preserves_nonfinite_scale_rules() {

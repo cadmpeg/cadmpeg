@@ -137,10 +137,11 @@ fn fixed_trim_bounds_keep_zero_work_and_original_refusal() {
         Err(CodecError::ResourceLimit(actual)) if actual == original));
 }
 
-fn empty_geometry() -> super::super::super::points::TrimGeometry {
+fn empty_geometry<'ctx>(ctx: &'ctx DecodeContext<'_>)
+    -> super::super::super::points::CheckedTrimGeometry<'ctx> {
     let variables = super::FeatureVariableTable { declared_count: 0, entity_ref: None,
         rows: Vec::new(), offset: 0 };
-    crate::decode::with_test_decode_ctx(|ctx| variables.reconciled_trim_geometry(ctx))
+    variables.reconciled_trim_geometry(ctx)
         .expect("empty fixture geometry")
 }
 
@@ -152,7 +153,11 @@ fn isolated_segment() -> super::FeatureSegment {
 
 #[test]
 fn absent_trim_radius_keeps_zero_work_and_original_refusal() {
-    let geometry = empty_geometry();
+    let fixture_arena = DecodeArena::new();
+    let fixture_policy = DecodePolicy::service();
+    let (fixture_ctx, _) = DecodeContext::from_root_bytes(&[], &fixture_arena, &fixture_policy)
+        .expect("fixture root");
+    let geometry = empty_geometry(&fixture_ctx);
     let segment = isolated_segment();
     let arena = DecodeArena::new();
     let policy = zero_policy();
@@ -165,7 +170,11 @@ fn absent_trim_radius_keeps_zero_work_and_original_refusal() {
 
 #[test]
 fn isolated_trim_carrier_keeps_zero_work_and_original_refusal() {
-    let geometry = empty_geometry();
+    let fixture_arena = DecodeArena::new();
+    let fixture_policy = DecodePolicy::service();
+    let (fixture_ctx, _) = DecodeContext::from_root_bytes(&[], &fixture_arena, &fixture_policy)
+        .expect("fixture root");
+    let geometry = empty_geometry(&fixture_ctx);
     let segment = isolated_segment();
     let arena = DecodeArena::new();
     let policy = zero_policy();
@@ -282,8 +291,12 @@ fn trim_intersection_traversals_visit_present_rows_and_unordered_pairs_once() {
             assert!(cap <= policy.limits.max_work_units);
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let mut geometry = Some(crate::decode::with_test_decode_ctx(|fixture_ctx|
-                variables.reconciled_trim_geometry(fixture_ctx)).expect("fixed fixture cache"));
+            let fixture_arena = DecodeArena::new();
+            let fixture_policy = DecodePolicy::service();
+            let (fixture_ctx, _) = DecodeContext::from_root_bytes(&[], &fixture_arena, &fixture_policy)
+                .expect("fixture root");
+            let mut geometry = Some(variables.reconciled_trim_geometry(&fixture_ctx)
+                .expect("fixed fixture cache"));
             match entity_intersection_cached(&ctx, &ids, Some(&segments), Some(&variables), &mut geometry) {
                 Ok(actual) => { assert_eq!(actual, expected); break; }
                 Err(CodecError::ResourceLimit(original)) => {
