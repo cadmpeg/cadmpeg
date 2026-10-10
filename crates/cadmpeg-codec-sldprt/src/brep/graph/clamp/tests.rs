@@ -327,38 +327,29 @@ fn clamp_conversion_transfers_only_surviving_backing_to_scoped_parent() {
 }
 
 #[test]
-fn clamp_conversion_keeps_original_knot_and_ir_pole_refusals() {
+fn clamp_conversion_refuses_at_candidate_publication() {
     let source = conversion_source(false);
-    let knot_bytes = u64::try_from(4 * std::mem::size_of::<f64>()).unwrap();
-    for (retained, operation, used, additional) in [
-        (knot_bytes - 1, "copy clamped NURBS knots", 0, knot_bytes),
-        (
-            converted_bytes(false) - 1,
-            "IR NURBS admitted poles",
-            knot_bytes,
-            converted_bytes(false) - knot_bytes,
-        ),
-    ] {
+    let operation = "hold clamped NURBS output candidate";
+    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, operation, |cap| {
         let arena = DecodeArena::new();
         let mut policy = policy();
-        policy.limits.max_retained_bytes = retained;
+        policy.limits.max_retained_bytes = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = super::clamp_nurbs_curve_to_domain(&ctx, &source, [0.5, 1.5]);
-        let Err(crate::brep::graph::nurbs_pcurves::NurbsPcurveFailure::Resource(
-            CodecError::ResourceLimit(limit),
-        )) = result
-        else {
-            panic!("original output refusal");
+        let Err(crate::brep::graph::nurbs_pcurves::NurbsPcurveFailure::Resource(error)) = result else {
+            return Ok(());
         };
-        assert_eq!(limit.operation, operation);
-        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-        assert_eq!((limit.used, limit.additional), (used, additional));
-        assert_eq!(limit.limit, retained);
+        let CodecError::ResourceLimit(limit) = &error else { panic!("resource refusal"); };
+        let limit = *limit;
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
-        );
-    }
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit));
+        Err(error)
+    });
+    let CodecError::ResourceLimit(limit) = error else { panic!("resource refusal"); };
+    assert_eq!(limit.operation, operation);
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!((limit.used, limit.additional), (0, converted_bytes(false)));
+    assert_eq!(limit.limit, converted_bytes(false) - 1);
 }
 
 #[test]
@@ -475,6 +466,7 @@ fn clamp_finite_rational_source_reaches_original_nonfinite_carrier_refusal() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = SCRATCH_BYTES;
+    policy.limits.max_retained_bytes = u64::try_from("control_points contains a non-finite point".len()).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = super::clamp_nurbs_curve_to_domain(&ctx, &source, [0.25, 0.75]);
     let Err(crate::brep::graph::nurbs_pcurves::NurbsPcurveFailure::Carrier(NurbsError::Structure(
@@ -485,8 +477,8 @@ fn clamp_finite_rational_source_reaches_original_nonfinite_carrier_refusal() {
     };
     assert_eq!(message, "control_points contains a non-finite point");
     assert!(ctx.resource_refusal().is_none());
-    // The escaping diagnostic still lives here. This proves raw and
-    // homogeneous workspace expiry, not diagnostic/output lifetime repair.
+    // Only the escaping diagnostic remains retained; all candidate backing
+    // and raw/homogeneous workspace have expired.
     drop(
         ctx.reserve_scoped(SCRATCH_BYTES, "reuse rejected clamp workspaces")
             .unwrap(),
