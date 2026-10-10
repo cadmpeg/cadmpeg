@@ -484,3 +484,108 @@ fn circle_dimension_groups_repeated_display_scalars_by_name_and_entity() {
     assert!(relation.display_scalar_ref().is_none());
     assert_eq!(relation.operands, first.operands);
 }
+
+fn center_source_fixture() -> (
+    FeatureInputLane,
+    crate::records::FeatureInputRelationInstance,
+    crate::records::FeatureInputRelationInstance,
+) {
+    let display = circle_scalar(20, "name", FeatureInputScalarRole::Display, Some("display"));
+    let mut first = circle_scalar(30, "name", FeatureInputScalarRole::Native, Some("display"));
+    let mut second = circle_scalar(40, "name", FeatureInputScalarRole::Native, Some("display"));
+    let center = |reference_ref: &str| FeatureInputOperand {
+        offset: 50,
+        reference_ref: reference_ref.into(),
+        kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_929D),
+        entity_index: 7,
+        entity_ref: Some("center".into()),
+    };
+    first.operands.push(center("first-center-reference"));
+    second.operands.push(center("second-center-reference"));
+    let before = crate::records::FeatureInputRelationInstance {
+        id: "relation".into(), parent: "lane".into(), ordinal: 0, offset: 20,
+        family: FeatureInputRelationFamily::CircleDiameter,
+        class_ref: "class".into(), feature_ref: "sketch".into(),
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            vec![display.id.clone()], None, Some(display.id.clone()),
+        ).unwrap(),
+        operands: display.operands.clone(),
+    };
+    let mut expected = before.clone();
+    expected.operands = first.operands.clone();
+    expected.scalars = crate::records::relation_scalars::RelationScalars::from_refs(
+        vec![display.id.clone(), first.id.clone(), second.id.clone()], None, Some(display.id.clone()),
+    ).unwrap();
+    let mut input = lane(Vec::new(), vec![display, first, second]);
+    input.names.push(FeatureInputName {
+        id: "name".into(), parent: "lane".into(), ordinal: 0, offset: 0,
+        object_id: None, value: "D1".into(),
+    });
+    (input, before, expected)
+}
+
+#[test]
+fn circle_center_reuses_first_consensus_source_and_leaves_search_probe_armed() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let (input, before, expected) = center_source_fixture();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits, "find SLDPRT circle center source", None,
+    );
+    let mut relations = [before];
+    super::super::bind_circle_dimension_centers(&ctx, &mut relations, &input).unwrap();
+    assert_eq!(relations[0], expected);
+    assert_eq!(ctx.resource_refusal(), None);
+    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "find SLDPRT circle center source")
+    else { panic!("validated center source must leave obsolete search probe armed"); };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "find SLDPRT circle center source");
+    assert_eq!(limit.additional, 1);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert!(matches!(ctx.charge_work(0, "after unused center source search"),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    drop(probe);
+}
+
+#[test]
+fn circle_center_consensus_disagreement_preserves_relation() {
+    let (mut input, before, _) = center_source_fixture();
+    input.scalars[2].operands[1].entity_ref = Some("different-center".into());
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut relations = [before.clone()];
+    super::super::bind_circle_dimension_centers(&ctx, &mut relations, &input).unwrap();
+    assert_eq!(relations[0], before);
+    assert_eq!(ctx.resource_refusal(), None);
+}
+
+#[test]
+fn circle_center_consensus_refusal_precedes_source_publication() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let (input, before, _) = center_source_fixture();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits, "compare SLDPRT circle center references", None,
+    );
+    let mut relations = [before.clone()];
+    let Err(CodecError::ResourceLimit(limit)) =
+        super::super::bind_circle_dimension_centers(&ctx, &mut relations, &input)
+    else { panic!("center reference consensus must admit comparison before publication"); };
+    assert_eq!(relations[0], before);
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "compare SLDPRT circle center references");
+    assert_eq!(limit.additional, 6);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert!(matches!(ctx.charge_work(0, "after center consensus refusal"),
+        Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    drop(probe);
+}

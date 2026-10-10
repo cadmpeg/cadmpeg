@@ -1116,30 +1116,10 @@ pub(super) fn bind_circle_dimension_centers(
             },
             "check SLDPRT circle center operand consensus",
         )?;
-        let Some(center) = center else {
-            continue;
-        };
         if !centers_match {
             continue;
         }
-        let Some((_, source)) = ctx.find_by(
-            candidates,
-            |(_, scalar)| {
-                let Some(operand) = scalar.operands.get(1) else {
-                    return Ok(false);
-                };
-                let same_ref = match (center.2, operand.entity_ref.as_deref()) {
-                    (Some(left), Some(right)) => {
-                        ctx.equal(left, right, "compare SLDPRT circle center references")?
-                    }
-                    (None, None) => true,
-                    _ => false,
-                };
-                Ok(operand.kind == center.0 && operand.entity_index == center.1 && same_ref)
-            },
-            "find SLDPRT circle center source",
-        )?
-        else {
+        let Some((_, source)) = candidates.first() else {
             continue;
         };
         relation.operands = copy_relation_operands(ctx, &source.operands)?;
