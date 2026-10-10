@@ -1197,6 +1197,54 @@ fn ufrx_external_reference_refuses_id_and_state_group_limits_before_creation() {
 }
 
 #[test]
+fn ufrx_external_path_validation_runs_once() {
+    let path = "\u{2003} \tpart.ipt";
+    for document_id in [[0; 16], [1; 16]] {
+        let reference = InventorExternalReference {
+            path: path.into(),
+            library_id: 0,
+            library_name: String::new(),
+            display_name: String::new(),
+            state_groups: Vec::new(),
+            state: [0; 2],
+            document_id,
+            database_id: [0; 16],
+            reference_id: 7,
+            occurrence_count: 1,
+            version: 0,
+            flags: 0,
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Four characters reach the first nonblank one. Copying the path
+        // visits 13 bytes; the 34-byte record id is formatted twice:
+        // 4 + 13 + 2 * 34 = 85. Identifier formatting has fixed extent.
+        policy.limits.max_work_units = 85;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let mut issues = Vec::new();
+        let record = project_ufrx_external_reference(&ctx, 0, &reference, &mut issues)
+            .expect("one path scan fits")
+            .expect("path identity");
+        assert!(issues.is_empty());
+        let value = serde_json::to_value(&record).expect("record");
+        assert_eq!(value["path"], path);
+        assert_eq!(value["reference_id"], 7);
+        assert_eq!(value["document_id"].as_str(),
+            (document_id != [0; 16]).then_some("01010101010101010101010101010101"));
+
+        policy.limits.max_work_units = 84;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("short context");
+        assert!(matches!(
+            project_ufrx_external_reference(&ctx, 0, &reference, &mut Vec::new()),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.used == 84
+                    && limit.additional == 1
+        ));
+    }
+}
+
+#[test]
 fn ufrx_external_conversion_issue_refuses_before_failure_text_creation() {
     let arena = DecodeArena::new();
     let reference = InventorExternalReference {
