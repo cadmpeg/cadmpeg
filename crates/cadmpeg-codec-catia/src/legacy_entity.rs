@@ -644,26 +644,27 @@ fn parse_run_before(
         drop(integers_storage);
     }
     if !scalar_values.is_empty() || !string_values.is_empty() || !integer_values.is_empty() {
-        let mut name_storage = ctx.reserve_scoped(0, "catia_legacy_name_index")?;
-        let names = name_storage
-            .with_storage(|| LegacyNameIndex::new(ctx, data, &role_selectors, &text_fields))?;
+        let mut names = None;
         bind_value_names(
             ctx,
-            &names,
+            &mut names,
+            data,
             &role_selectors,
             &text_fields,
             &mut scalar_values,
         )?;
         bind_value_names(
             ctx,
-            &names,
+            &mut names,
+            data,
             &role_selectors,
             &text_fields,
             &mut string_values,
         )?;
         bind_value_names(
             ctx,
-            &names,
+            &mut names,
+            data,
             &role_selectors,
             &text_fields,
             &mut integer_values,
@@ -1183,11 +1184,12 @@ impl LegacyNameIndex {
     }
 }
 
-/// Bind the unique co-owned `name` text field onto every value packet that is
-/// the sole packet of its stored identity.
-fn bind_value_names<Value: LegacyNamedValue>(
-    ctx: &DecodeContext<'_>,
-    names: &LegacyNameIndex,
+/// Bind the unique co-owned `name` field when a value's identity occurs
+/// once in its scalar, string, or integer collection.
+fn bind_value_names<'ctx, Value: LegacyNamedValue>(
+    ctx: &'ctx DecodeContext<'_>,
+    names: &mut Option<(LegacyNameIndex, ScopedReservation<'ctx>)>,
+    data: &[u8],
     roles: &[LegacyRoleSelector],
     fields: &[LegacyTextField],
     values: &mut [Value],
@@ -1205,7 +1207,13 @@ fn bind_value_names<Value: LegacyNamedValue>(
         if ctx.get_hash_map(&counts, &value.entity_id(), "catia_legacy_name_counts")? != Some(&1) {
             continue;
         }
-        if let Some(name) = names.name(ctx, roles, fields, value.entity_id(), value.offset())? {
+        let (index, _) = match names {
+            Some(index) => index,
+            None => names.insert(ctx.with_scoped_storage("catia_legacy_name_index", || {
+                LegacyNameIndex::new(ctx, data, roles, fields)
+            })?),
+        };
+        if let Some(name) = index.name(ctx, roles, fields, value.entity_id(), value.offset())? {
             value.bind_name(
                 name.offset,
                 ctx.copy_retained_text(&name.value, "catia_legacy_bound_name")?,
