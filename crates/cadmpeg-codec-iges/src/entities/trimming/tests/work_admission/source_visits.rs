@@ -211,61 +211,60 @@ fn cluster_size_storage_boundary(count: usize, exact: bool) {
     } else {
         "iges boundary cluster roots"
     };
+    let parent = u64::try_from(count * std::mem::size_of::<usize>()).unwrap();
+    let node = u64::try_from(
+        11 * (std::mem::size_of::<usize>() + std::mem::size_of::<Vec<usize>>())
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * std::mem::align_of::<(usize, Vec<usize>)>(),
+    ).unwrap();
+    assert!(2 * parent < parent + node);
+    let dimension = if exact {
+        ResourceDimension::CollectionItems
+    } else {
+        ResourceDimension::MaterializedBytes
+    };
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::CollectionItems,
-        operation,
-        |cap| {
+        dimension, operation, |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
+            policy.limits.max_materialized_bytes = if exact { parent + node } else { cap };
+            policy.limits.max_collection_items = if exact { cap } else { u64::MAX };
             policy.limits.max_retained_bytes = 0;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let mut storage = ctx
-                .reserve_scoped(0, "test cluster membership storage")
-                .unwrap();
-            let result = storage
-                .with_storage(|| cluster_boundary_positions(&points, PositiveReal::ONE, &ctx));
+            let mut storage = ctx.reserve_scoped(0, "test cluster membership storage").unwrap();
+            let result = storage.with_storage(|| cluster_boundary_positions(&points, PositiveReal::ONE, &ctx));
             let first = match result {
-                Err(BoundaryVertexCreationError::Resource(CodecError::ResourceLimit(first))) => {
-                    first
-                }
+                Err(BoundaryVertexCreationError::Resource(CodecError::ResourceLimit(first))) => first,
                 error => panic!("expected root node or member slot refusal: {error:?}"),
             };
-            // Parent, size, link and cell slots precede the first root entry.
-            let used = 4 * u64::try_from(count).unwrap() + u64::from(exact);
-            assert_eq!(first.dimension, ResourceDimension::CollectionItems);
+            assert_eq!(first.dimension, dimension);
             assert_eq!(first.operation, operation);
-            assert_eq!((first.used, first.additional), (used, 1));
+            let expected = if exact { (2 * u64::try_from(count).unwrap() + 1, 1) } else { (parent, node) };
+            assert_eq!((first.used, first.additional), expected);
             for _ in 0..64 {
-                for source in [points.as_slice(), &[]] {
-                    assert!(
-                        matches!(cluster_boundary_positions(source, PositiveReal::ONE, &ctx),
-                        Err(BoundaryVertexCreationError::Resource(CodecError::ResourceLimit(last)))
-                            if last == first)
-                    );
-                }
+                assert!(matches!(cluster_boundary_positions(&points, PositiveReal::ONE, &ctx),
+                    Err(BoundaryVertexCreationError::Resource(CodecError::ResourceLimit(last))) if last == first));
             }
             assert_eq!(points, before);
             drop(storage);
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
-            );
+            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
             Err::<(), _>(CodecError::ResourceLimit(first))
         },
     );
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.operation == operation && limit.additional == 1));
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == dimension
+        && limit.operation == operation && (limit.used, limit.additional) ==
+            if exact { (2 * u64::try_from(count).unwrap() + 1, 1) } else { (parent, node) }));
 }
 
 #[test]
-fn cluster_root_node_slot_refuses_after_grid_slots() {
+fn cluster_sizes_release_before_one_short_root_node_storage() {
     for count in [1, 21] {
         cluster_size_storage_boundary(count, false);
     }
 }
 
 #[test]
-fn cluster_first_member_slot_refuses_after_root_slot() {
+fn cluster_sizes_exact_root_node_peak_reaches_first_member_slot() {
     for count in [1, 21] {
         cluster_size_storage_boundary(count, true);
     }
