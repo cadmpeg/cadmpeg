@@ -193,7 +193,11 @@ pub(super) fn linear_pattern_display_directions(
         };
         let record = |name: &&FeatureInputName| {
             Ok(name.object_id == Some(ObjectId::Absent)
-                && name.value == dimension_name
+                && ctx.equal(
+                    name.value.as_str(),
+                    dimension_name,
+                    "compare SLDPRT linear pattern display name",
+                )?
                 && (u64_from_index(object_start)..u64_from_index(end)).contains(&name.offset))
         };
         let mut remaining = names.iter();
@@ -1430,6 +1434,10 @@ pub(crate) fn bind_profile_revolution_axes(
     surfaces: &[Surface],
 ) -> Result<(), CodecError> {
     const INDEX: &str = "index SLDPRT revolution features";
+    const MODEL_INDEX: &str = "index SLDPRT revolution model features";
+    const SKETCH_INDEX: &str = "index SLDPRT revolution sketches";
+    const OWNER_INDEX: &str = "index SLDPRT revolution sketch owners";
+    const BIND: &str = "bind SLDPRT revolution axes";
     ctx.charge_work(0, INDEX)?;
     if model_features.is_empty() {
         return Ok(());
@@ -1449,39 +1457,14 @@ pub(crate) fn bind_profile_revolution_axes(
         return Ok(());
     }
     let mut storage = ctx.reserve_scoped(0, INDEX)?;
-    let mut native_by_id = HashMap::new();
-    for history in ctx.admit_iter(histories, INDEX)? {
-        for feature in ctx.admit_iter(&history.features, INDEX)? {
-            storage.with_storage(|| {
-                ctx.insert_hash_map(&mut native_by_id, feature.id.as_str(), feature, INDEX)
-            })?;
-        }
-    }
-    let mut model_by_id = HashMap::new();
-    for (index, feature) in ctx.admit_iter(&*model_features, INDEX)?.enumerate() {
-        storage
-            .with_storage(|| ctx.insert_hash_map(&mut model_by_id, &feature.id, index, INDEX))?;
-    }
-    let mut sketch_by_id = HashMap::new();
-    for sketch in ctx.admit_iter(sketches, INDEX)? {
-        storage
-            .with_storage(|| ctx.insert_hash_map(&mut sketch_by_id, &sketch.id, sketch, INDEX))?;
-    }
-    // The one model feature that places each planar sketch.
-    let (sketch_owners, _owner_storage) = ctx.unique_index(
-        ctx.admit_iter(&*model_features, INDEX)?
-            .filter_map(|feature| match feature.evaluation.definition() {
-                FeatureDefinition::Operation(FeatureOperation::Sketch {
-                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-                }) => Some((sketch, feature)),
-                _ => None,
-            }),
-        INDEX,
-    )?;
+    let mut native_by_id = None;
+    let mut model_by_id = None;
+    let mut sketch_by_id = None;
+    let mut sketch_owners = None;
     let mut lane_markers = None;
     let mut assignments = Vec::<(usize, cadmpeg_ir::features::RevolutionAxis)>::new();
 
-    for (feature_index, feature) in ctx.admit_iter(&*model_features, INDEX)?.enumerate() {
+    for (feature_index, feature) in ctx.admit_iter(&*model_features, BIND)?.enumerate() {
         let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) =
             feature.evaluation.definition()
         else {
@@ -1495,7 +1478,29 @@ pub(crate) fn bind_profile_revolution_axes(
         };
         let (profile_native, sketch_id) = match profile {
             PlanarProfileRef::Feature(profile_id) => {
-                let Some(&profile_index) = ctx.get_hash_map(&model_by_id, profile_id, INDEX)?
+                let model_index = match &mut model_by_id {
+                    Some((entries, _)) => entries,
+                    slot @ None => {
+                        let (entries, reservation) =
+                            ctx.with_scoped_storage(MODEL_INDEX, || {
+                                let mut entries = HashMap::new();
+                                for (index, feature) in
+                                    ctx.admit_iter(&*model_features, MODEL_INDEX)?.enumerate()
+                                {
+                                    ctx.insert_hash_map(
+                                        &mut entries,
+                                        &feature.id,
+                                        index,
+                                        MODEL_INDEX,
+                                    )?;
+                                }
+                                Ok::<_, CodecError>(entries)
+                            })?;
+                        &mut slot.insert((entries, reservation)).0
+                    }
+                };
+                let Some(&profile_index) =
+                    ctx.get_hash_map(model_index, profile_id, MODEL_INDEX)?
                 else {
                     continue;
                 };
@@ -1512,7 +1517,28 @@ pub(crate) fn bind_profile_revolution_axes(
                 (native, sketch)
             }
             PlanarProfileRef::Sketch(sketch_id) => {
-                let Some(Some(owner)) = ctx.get_hash_map(&sketch_owners, sketch_id, INDEX)? else {
+                let owner_index = match &mut sketch_owners {
+                    Some((entries, _)) => entries,
+                    slot @ None => {
+                        // The one model feature that places each planar sketch.
+                        let (entries, reservation) = ctx.unique_index(
+                            ctx.admit_iter(&*model_features, OWNER_INDEX)?
+                                .filter_map(|feature| match feature.evaluation.definition() {
+                                    FeatureDefinition::Operation(FeatureOperation::Sketch {
+                                        sketch:
+                                            cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                                                sketch,
+                                            )),
+                                    }) => Some((sketch, feature)),
+                                    _ => None,
+                                }),
+                            OWNER_INDEX,
+                        )?;
+                        &mut slot.insert((entries, reservation)).0
+                    }
+                };
+                let Some(Some(owner)) = ctx.get_hash_map(owner_index, sketch_id, OWNER_INDEX)?
+                else {
                     continue;
                 };
                 let Some(native) = owner.native_ref.as_deref() else {
@@ -1530,13 +1556,44 @@ pub(crate) fn bind_profile_revolution_axes(
             | PlanarProfileRef::Native(_)
             | PlanarProfileRef::Faces(_) => continue,
         };
+        let native_index = match &mut native_by_id {
+            Some((entries, _)) => entries,
+            slot @ None => {
+                let (entries, reservation) = ctx.with_scoped_storage(INDEX, || {
+                    let mut entries = HashMap::new();
+                    for history in ctx.admit_iter(histories, INDEX)? {
+                        for feature in ctx.admit_iter(&history.features, INDEX)? {
+                            ctx.insert_hash_map(&mut entries, feature.id.as_str(), feature, INDEX)?;
+                        }
+                    }
+                    Ok::<_, CodecError>(entries)
+                })?;
+                &mut slot.insert((entries, reservation)).0
+            }
+        };
         if !ctx
-            .get_hash_map(&native_by_id, profile_native, INDEX)?
+            .get_hash_map(native_index, profile_native, INDEX)?
             .is_some_and(|feature| is_profile_feature_object(feature))
         {
             continue;
         }
-        let Some(sketch) = ctx.get_hash_map(&sketch_by_id, sketch_id, INDEX)?.copied() else {
+        let sketch_index = match &mut sketch_by_id {
+            Some((entries, _)) => entries,
+            slot @ None => {
+                let (entries, reservation) = ctx.with_scoped_storage(SKETCH_INDEX, || {
+                    let mut entries = HashMap::new();
+                    for sketch in ctx.admit_iter(sketches, SKETCH_INDEX)? {
+                        ctx.insert_hash_map(&mut entries, &sketch.id, sketch, SKETCH_INDEX)?;
+                    }
+                    Ok::<_, CodecError>(entries)
+                })?;
+                &mut slot.insert((entries, reservation)).0
+            }
+        };
+        let Some(sketch) = ctx
+            .get_hash_map(sketch_index, sketch_id, SKETCH_INDEX)?
+            .copied()
+        else {
             continue;
         };
         if sketch.resolved_placement().is_none() {
@@ -1604,7 +1661,7 @@ pub(crate) fn bind_profile_revolution_axes(
             })?;
         }
     }
-    drop((native_by_id, model_by_id, sketch_owners));
+    drop((native_by_id, model_by_id, sketch_owners, sketch_by_id));
     for (index, axis) in ctx.admit_iter(assignments, "assign SLDPRT revolution axes")? {
         model_features[index].evaluation.edit(|definition, _| {
             if let FeatureDefinition::Operation(FeatureOperation::Revolve {
@@ -2573,3 +2630,6 @@ mod profile_endpoint_cache_tests;
 
 #[cfg(test)]
 mod pattern_class_tests;
+
+#[cfg(test)]
+mod revolution_index_tests;
