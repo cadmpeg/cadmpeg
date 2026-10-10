@@ -5,6 +5,7 @@ mod cost;
 mod dump;
 mod envelope_admission;
 mod inline;
+mod inline_visits;
 mod named_value_visits;
 mod plane_corner_suffix;
 mod plane_envelope_close_bound;
