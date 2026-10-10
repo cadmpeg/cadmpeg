@@ -2519,8 +2519,14 @@ fn parse_layer(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(LayerRecord, bool), FramingError> {
     let mut userdata_storage = ctx.reserve_scoped(0, "Rhino layer class userdata")?;
-    let (class, userdata) =
-        parse_class_wrapper_with_scoped_userdata(ctx, &mut userdata_storage, data, record.body(), archive, warnings)?;
+    let (class, userdata) = parse_class_wrapper_with_scoped_userdata(
+        ctx,
+        &mut userdata_storage,
+        data,
+        record.body(),
+        archive,
+        warnings,
+    )?;
     if class.class_uuid != ON_LAYER_UUID {
         return Err(FramingError::Structural {
             offset: record.range.start,

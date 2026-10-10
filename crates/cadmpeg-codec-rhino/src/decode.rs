@@ -1760,7 +1760,10 @@ impl<'a> DecodeContext<'a> {
                 continue;
             };
             let key = key_buffer;
-            let mut dimension_storage = self.expand.ctx().reserve_scoped(0, "Rhino dimension fields")?;
+            let mut dimension_storage = self
+                .expand
+                .ctx()
+                .reserve_scoped(0, "Rhino dimension fields")?;
             match crate::dimensions::decode(
                 self.expand.ctx(),
                 &mut dimension_storage,
@@ -4052,8 +4055,17 @@ impl<'a> DecodeContext<'a> {
             "Rhino commit traversal",
         )?;
         let mut loss_storage = ctx.reserve_scoped(0, "Rhino annotations loss backing")?;
-        let losses = crate::annotations::install(ctx, &mut loss_storage, self.scan, self.session.document_mut()?)?;
-        ctx.extend_vec(&mut self.report.typed_losses, losses, "Rhino typed decode losses")?;
+        let losses = crate::annotations::install(
+            ctx,
+            &mut loss_storage,
+            self.scan,
+            self.session.document_mut()?,
+        )?;
+        ctx.extend_vec(
+            &mut self.report.typed_losses,
+            losses,
+            "Rhino typed decode losses",
+        )?;
         drop(loss_storage);
         let document_data =
             crate::document_data::install(ctx, self.scan, self.session.document_mut()?)?;
@@ -4074,8 +4086,17 @@ impl<'a> DecodeContext<'a> {
             "Rhino presentation source traversal",
         )?;
         let mut loss_storage = ctx.reserve_scoped(0, "Rhino product loss backing")?;
-        let losses = crate::product::install(ctx, &mut loss_storage, self.scan, self.session.document_mut()?)?;
-        ctx.extend_vec(&mut self.report.typed_losses, losses, "Rhino typed decode losses")?;
+        let losses = crate::product::install(
+            ctx,
+            &mut loss_storage,
+            self.scan,
+            self.session.document_mut()?,
+        )?;
+        ctx.extend_vec(
+            &mut self.report.typed_losses,
+            losses,
+            "Rhino typed decode losses",
+        )?;
         drop(loss_storage);
         let views = crate::views::install(ctx, self.scan, self.session.document_mut()?)?;
         append_report_losses(ctx, &mut self.report.typed_losses, views.losses)?;

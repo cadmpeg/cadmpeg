@@ -2,7 +2,7 @@
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::Record;
-use crate::loss::{Diagnostics};
+use crate::loss::Diagnostics;
 use crate::test_support::test_dump::{
     anonymous_chunk, class_userdata, definition_record, definition_record_with_userdata,
     file_reference as file_reference_bytes, long_chunk, v5_definition_payload,
@@ -82,8 +82,8 @@ fn definition_scan_visits_prefix_before_suffix_work_admission() {
     let archive = ArchiveVersion::V5;
     let payload = v5_definition_payload(archive, 6, [7; 16], &[[8; 16]], false);
     let data = definition_record(archive, &payload);
-    let chunk = chunk_at(&data, 0, data.len(), archive, false)
-        .expect("first definition record framing");
+    let chunk =
+        chunk_at(&data, 0, data.len(), archive, false).expect("first definition record framing");
     let mut records = vec![Record::long(chunk.typecode, chunk.range(), chunk.body())];
     let record_count = usize::try_from(WORK_CAP + 1).expect("test record count fits");
     records.resize(record_count, Record::short(chunk.typecode, 0..0, 0));
@@ -94,14 +94,8 @@ fn definition_scan_visits_prefix_before_suffix_work_admission() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
         .expect("definition fixture fits the root limit");
-    let error = crate::instances::parse_definitions(
-        &ctx,
-        &data,
-        &records,
-        archive,
-        0x1000_0021,
-    )
-    .expect_err("first definition reaches its member collection refusal before the suffix");
+    let error = crate::instances::parse_definitions(&ctx, &data, &records, archive, 0x1000_0021)
+        .expect_err("first definition reaches its member collection refusal before the suffix");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -409,7 +403,13 @@ fn file_reference_refusal(limit: u64) -> FramingError {
         ctx.with_scoped_storage("Rhino test file-reference fields", || {
             let mut reader = BoundedReader::new(&data, 0, data.len())?;
             let mut warnings = Diagnostics::new();
-            crate::instances::file_reference(ctx, &data, &mut reader, archive, &mut |code,message| warnings.push_coded_admitted(ctx,code,message))
+            crate::instances::file_reference(
+                ctx,
+                &data,
+                &mut reader,
+                archive,
+                &mut |code, message| warnings.push_coded_admitted(ctx, code, message),
+            )
         })
         .expect_err("file-reference string exceeds materialized limit")
     })
@@ -470,7 +470,6 @@ fn instance_alternative_path_trim_preserves_refusal_without_degradation() {
     );
 }
 
-
 #[test]
 fn scan_definition_diagnostics_stay_scoped_until_report_construction() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -482,13 +481,19 @@ fn scan_definition_diagnostics_stay_scoped_until_report_construction() {
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_materialized_bytes = SCRATCH_BYTES;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let parsed = crate::instances::parse_definitions(&ctx, &[], &records, ArchiveVersion::V5, 0x1000_0021)
-        .expect("scan messages and staging consume no retained storage");
+    let parsed =
+        crate::instances::parse_definitions(&ctx, &[], &records, ArchiveVersion::V5, 0x1000_0021)
+            .expect("scan messages and staging consume no retained storage");
     assert_eq!(parsed.scan.diagnostics().len(), records.len());
     assert_eq!(parsed.opaque_records.len(), records.len());
-    assert!(parsed.scan.diagnostics().iter().all(|note| note.diagnostic.message.starts_with("instance definition retained: ")));
+    assert!(parsed.scan.diagnostics().iter().all(|note| note
+        .diagnostic
+        .message
+        .starts_with("instance definition retained: ")));
     drop(parsed);
-    let reusable = ctx.reserve_scoped(SCRATCH_BYTES, "next scan diagnostics").expect("scan storage released");
+    let reusable = ctx
+        .reserve_scoped(SCRATCH_BYTES, "next scan diagnostics")
+        .expect("scan storage released");
     drop(reusable);
     ctx.finish_session().unwrap();
 }
