@@ -40,14 +40,5 @@ pub(super) fn child_tokens<'value, 'ctx, 'arena>(
     })
 }
 
-
 #[cfg(test)]
-mod tests {
-    #[test]
-    fn child_tokens_preserve_leading_repeated_and_trailing_delimiters() {
-        let ctx = cadmpeg_test_support::service_decode_context();
-        let tokens = super::child_tokens(&ctx, ",7,,9,", "test SLDPRT child delimiters").collect::<Result<Vec<_>, _>>().unwrap();
-        assert_eq!(tokens, ["", "7", "", "9", ""]);
-        ctx.finish_session().unwrap();
-    }
-}
+mod tests;
