@@ -5,22 +5,14 @@ use super::admission;
 use super::cacheless_constant_rolling_ball_first_order;
 use super::cacheless_constant_rolling_ball_point;
 use super::cacheless_law_sweep_point;
-use super::cacheless_law_sweep_first_order;
-use super::cacheless_ruled_variable_blend_first_order;
 use super::cacheless_variable_blend_point;
 use super::model_axis_revolution_point;
-use super::model_axis_revolution_jet;
 use super::model_linear_sweep_point;
-use super::model_linear_sweep_jet;
 use super::model_native_extrusion_point;
-use super::model_native_extrusion_jet;
 use super::model_native_revolution_point;
-use super::model_native_revolution_jet;
-use super::model_ruled_surface_point;
 use super::model_ruled_surface_jet;
-use super::model_sum_surface_point;
 use super::model_sum_surface_jet;
-use super::surface_request::{model_jet, SurfaceRequest};
+use super::model_surface_jet_by_id;
 use super::model_surface_point;
 use super::offset;
 use super::placed_reach;
@@ -147,18 +139,14 @@ pub(super) fn model_surface_point_by_id_inner(
         })
     }
 
-    /// A stored cache's point and, where the reader needs it, unit normal.
-    /// The normal is that of the cache's first partials.
+    /// A stored cache's point and unit normal. The point is evaluated alone;
+    /// the normal is that of the cache's first partials.
     fn cache_evaluation(
         admission: admission::EvaluationAdmission<'_, '_>,
         geometry: &SurfaceGeometry,
         u: f64,
         v: f64,
-        normal: bool,
     ) -> Option<SurfaceEvaluation> {
-        if !normal {
-            return point_evaluation(crate::eval::decode::surface_point(admission, geometry, u, v));
-        }
         let point = match crate::eval::decode::surface_point(admission, geometry, u, v) {
             Ok(point) => Ok(point),
             Err(EvaluationFailure::NonFinite(point)) => Err(point),
@@ -200,21 +188,7 @@ pub(super) fn model_surface_point_by_id_inner(
                 admission, geometry, u, v,
             ));
         }
-        let reversed = matches!(
-            geometry,
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) if nurbs.normal_reversed()
-        );
-        first_evaluation(surface_first_order(admission, geometry, u, v), reversed)
-    }
-
-    /// Keep the actual selected point separate from its first-order normal.
-    /// A derivative refusal remains the original outer resource error; other
-    /// derivative failures leave this point available to readers of the point.
-    fn first_evaluation(
-        order: Result<super::SurfaceFirstOrder, EvaluationFailure<Point3>>,
-        reversed: bool,
-    ) -> Option<SurfaceEvaluation> {
-        let order = match order {
+        let order = match surface_first_order(admission, geometry, u, v) {
             Ok(order) => order,
             Err(EvaluationFailure::ResourceLimit(limit)) => return Some(resource(limit)),
             Err(EvaluationFailure::NoValue) => return None,
@@ -226,6 +200,10 @@ pub(super) fn model_surface_point_by_id_inner(
                 })
             }
         };
+        let reversed = matches!(
+            geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) if nurbs.normal_reversed()
+        );
         let oriented_normal = oriented_normal(order.first, reversed);
         if let Err(EvaluationFailure::ResourceLimit(limit)) = oriented_normal {
             return Some(resource(limit));
@@ -265,7 +243,6 @@ pub(super) fn model_surface_point_by_id_inner(
         support: &crate::ids::SurfaceId,
         u: f64,
         v: f64,
-        normal: bool,
     ) -> Option<SurfaceEvaluation> {
         let support = match index.surfaces(support.as_str(), admission) {
             Ok(Some(support)) => support,
@@ -315,13 +292,12 @@ pub(super) fn model_surface_point_by_id_inner(
             Err(EvaluationFailure::ResourceLimit(limit)) => return Some(resource(limit)),
             Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_)) => return None,
         };
-        let oriented_normal = if normal {
+        let oriented_normal =
             match oriented_normal(Ok([partials.du, partials.dv]), nurbs.normal_reversed()) {
-                Ok(normal) => Ok(normal),
+                Ok(normal) => normal,
                 Err(EvaluationFailure::ResourceLimit(limit)) => return Some(resource(limit)),
                 Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(())) => return None,
-            }
-        } else { Err(EvaluationFailure::NoValue) };
+            };
         let partials = partials.into_raw();
         let du = u - boundary_u;
         let dv = v - boundary_v;
@@ -331,7 +307,7 @@ pub(super) fn model_surface_point_by_id_inner(
                 partials.point.y + du * partials.du.y + dv * partials.dv.y,
                 partials.point.z + du * partials.du.z + dv * partials.dv.z,
             )),
-            oriented_normal,
+            oriented_normal: Ok(oriented_normal),
             resource: None,
         })
     }
@@ -378,110 +354,51 @@ pub(super) fn model_surface_point_by_id_inner(
             procedural.and_then(|procedural| record_u_interval(procedural.record_bounds()));
         let result = match procedural.map(crate::geometry::ProceduralSurface::definition) {
             Some(ProceduralSurfaceDefinition::AxisRevolution(definition_payload)) => {
-                if normal {
-                    first_evaluation(model_axis_revolution_jet(
-                        admission, index, definition_payload.directrix(),
-                        definition_payload.axis_origin().get(), definition_payload.axis_direction(),
-                        u, v, SurfaceRequest::First,
-                    ).map(|requested| requested.jet.first_order()), false)
-                } else {
-                    point_evaluation(model_axis_revolution_point(
-                        admission,
-                        index,
-                        definition_payload.directrix(),
-                        definition_payload.axis_origin().get(),
-                        definition_payload.axis_direction(),
-                        u,
-                        v,
-                    ))
-                }
+                point_evaluation(model_axis_revolution_point(
+                    admission,
+                    index,
+                    definition_payload.directrix(),
+                    definition_payload.axis_origin().get(),
+                    definition_payload.axis_direction(),
+                    u,
+                    v,
+                ))
             }
             Some(ProceduralSurfaceDefinition::Extrusion(definition_payload)) => {
-                if normal {
-                    first_evaluation(
-                        model_native_extrusion_jet(
-                            admission, index, definition_payload, carrier_interval, u, v,
-                            SurfaceRequest::First,
-                        ).map(|requested| requested.jet.first_order()),
-                        false,
-                    )
-                } else {
-                    point_evaluation(model_native_extrusion_point(
-                        admission,
-                        index,
-                        definition_payload,
-                        carrier_interval,
-                        u,
-                        v,
-                    ))
-                }
+                point_evaluation(model_native_extrusion_point(
+                    admission,
+                    index,
+                    definition_payload,
+                    carrier_interval,
+                    u,
+                    v,
+                ))
             }
-            Some(ProceduralSurfaceDefinition::LinearSweep(definition_payload)) => {
-                if normal {
-                    first_evaluation(model_linear_sweep_jet(
-                        admission, index, definition_payload, u, v, SurfaceRequest::First,
-                    ).map(|requested| requested.jet.first_order()), false)
-                } else {
-                    point_evaluation(model_linear_sweep_point(admission, index, definition_payload, u, v))
-                }
-            }
+            Some(ProceduralSurfaceDefinition::LinearSweep(definition_payload)) => point_evaluation(
+                model_linear_sweep_point(admission, index, definition_payload, u, v),
+            ),
             Some(ProceduralSurfaceDefinition::Revolution(definition_payload)) => {
-                if normal {
-                    first_evaluation(
-                        model_native_revolution_jet(
-                            admission, index, definition_payload, carrier_interval, u, v,
-                            SurfaceRequest::First,
-                        ).map(|requested| requested.jet.first_order()),
-                        false,
-                    )
-                } else {
-                    point_evaluation(model_native_revolution_point(
-                        admission,
-                        index,
-                        definition_payload,
-                        carrier_interval,
-                        u,
-                        v,
-                    ))
-                }
+                point_evaluation(model_native_revolution_point(
+                    admission,
+                    index,
+                    definition_payload,
+                    carrier_interval,
+                    u,
+                    v,
+                ))
             }
-            Some(ProceduralSurfaceDefinition::Ruled { first, second, .. }) => {
-                if normal {
-                    first_evaluation(model_ruled_surface_jet(
-                        admission, index, first, second, u, v, SurfaceRequest::First,
-                    ).map(|requested| requested.jet.first_order()), false)
-                } else {
-                    point_evaluation(model_ruled_surface_point(admission, index, first, second, u, v))
-                }
-            }
-            Some(ProceduralSurfaceDefinition::Sum(definition_payload)) => {
-                if normal {
-                    first_evaluation(model_sum_surface_jet(
-                        admission, index, definition_payload, u, v, SurfaceRequest::First,
-                    ).map(|requested| requested.jet.first_order()), false)
-                } else {
-                    point_evaluation(model_sum_surface_point(admission, index, definition_payload, u, v))
-                }
-            }
+            Some(ProceduralSurfaceDefinition::Ruled { first, second, .. }) => point_evaluation(
+                model_ruled_surface_jet(admission, index, first, second, u, v).map(|jet| jet.point),
+            ),
+            Some(ProceduralSurfaceDefinition::Sum(definition_payload)) => point_evaluation(
+                model_sum_surface_jet(admission, index, definition_payload, u, v)
+                    .map(|jet| jet.point),
+            ),
             Some(ProceduralSurfaceDefinition::Sweep(definition_payload)) => {
                 if let Some(construction) = definition_payload.native() {
                     let profile = definition_payload.profile();
                     let spine = definition_payload.spine();
 
-                    if normal {
-                        return match cacheless_law_sweep_first_order(
-                            admission, index, profile, spine, construction, u, v,
-                        ) {
-                            Ok(order) => first_evaluation(Ok(order), false),
-                            Err(EvaluationFailure::ResourceLimit(limit)) => Some(resource(limit)),
-                            Err(failure) => cache_fallback(
-                                failure,
-                                sweep_has_current_cache(construction)
-                                    .then(|| cache_evaluation(admission, &surface.geometry, u, v, true))
-                                    .flatten(),
-                            ),
-                        };
-                    }
                     match cacheless_law_sweep_point(
                         admission,
                         index,
@@ -500,7 +417,7 @@ pub(super) fn model_surface_point_by_id_inner(
                         Err(failure) => cache_fallback(
                             failure,
                             sweep_has_current_cache(construction)
-                                .then(|| cache_evaluation(admission, &surface.geometry, u, v, normal))
+                                .then(|| cache_evaluation(admission, &surface.geometry, u, v))
                                 .flatten(),
                         ),
                     }
@@ -511,21 +428,6 @@ pub(super) fn model_surface_point_by_id_inner(
             Some(ProceduralSurfaceDefinition::VariableBlend(definition_payload)) => {
                 let construction = definition_payload.construction();
 
-                if normal && matches!(construction.cross_section,
-                    Some(crate::geometry::VariableBlendCrossSection::RoundedChamfer { .. })) {
-                    return match cacheless_ruled_variable_blend_first_order(
-                        admission, index, definition_payload, u, v,
-                    ) {
-                        Ok(order) => first_evaluation(Ok(order), false),
-                        Err(EvaluationFailure::ResourceLimit(limit)) => Some(resource(limit)),
-                        Err(failure) => cache_fallback(
-                            failure,
-                            variable_blend_has_current_cache(construction)
-                                .then(|| cache_evaluation(admission, &surface.geometry, u, v, true))
-                                .flatten(),
-                        ),
-                    };
-                }
                 match cacheless_variable_blend_point(admission, index, definition_payload, u, v) {
                     Err(EvaluationFailure::ResourceLimit(limit)) => Some(resource(limit)),
                     Ok(point) => Some(SurfaceEvaluation {
@@ -536,7 +438,7 @@ pub(super) fn model_surface_point_by_id_inner(
                     Err(failure) => cache_fallback(
                         failure,
                         variable_blend_has_current_cache(construction)
-                            .then(|| cache_evaluation(admission, &surface.geometry, u, v, normal))
+                            .then(|| cache_evaluation(admission, &surface.geometry, u, v))
                             .flatten(),
                     ),
                 }
@@ -577,7 +479,7 @@ pub(super) fn model_surface_point_by_id_inner(
                         Err(failure) => cache_fallback(
                             failure.map(|()| UNREACHED_POINT),
                             revision_surface_tail_has_current_cache(&native.cache)
-                                .then(|| cache_evaluation(admission, &surface.geometry, u, v, normal))
+                                .then(|| cache_evaluation(admission, &surface.geometry, u, v))
                                 .flatten(),
                         ),
                     }
@@ -597,7 +499,7 @@ pub(super) fn model_surface_point_by_id_inner(
                     return Some(evaluation);
                 }
                 if normal {
-                    let placed_normal = model_jet(admission, index, source, u, v, SurfaceRequest::First)
+                    let placed_normal = model_surface_jet_by_id(admission, index, source, u, v)
                         .map_err(|failure| failure.map(|_| ()))
                         .and_then(|jet| {
                             let [du, dv] = placed_vectors(*transform, jet.first?)?;
@@ -670,8 +572,7 @@ pub(super) fn model_surface_point_by_id_inner(
                 let support = definition_payload.support();
                 let distance = definition_payload.distance();
                 {
-                    let support = evaluate(admission, index, support, u, v, normal || distance.get() != 0.0)?;
-                    if distance.get() == 0.0 { return Some(support); }
+                    let support = evaluate(admission, index, support, u, v, true)?;
                     if support.resource.is_some() {
                         return Some(support);
                     }
@@ -693,12 +594,10 @@ pub(super) fn model_surface_point_by_id_inner(
                 let distance = definition_payload.distance();
                 let linear_extension = definition_payload.linear_support_extension();
                 {
-                    let read_normal = normal || distance.get() != 0.0;
                     let support = linear_extension
-                        .then(|| linear_nurbs_support_extension(admission, index, support, u, v, read_normal))
+                        .then(|| linear_nurbs_support_extension(admission, index, support, u, v))
                         .flatten()
-                        .or_else(|| evaluate(admission, index, support, u, v, read_normal))?;
-                    if distance.get() == 0.0 { return Some(support); }
+                        .or_else(|| evaluate(admission, index, support, u, v, true))?;
                     if support.resource.is_some() {
                         return Some(support);
                     }
@@ -744,6 +643,3 @@ pub(super) fn model_surface_point_by_id_inner(
     }
     evaluation.point.map_err(EvaluationFailure::NonFinite)
 }
-
-#[cfg(test)]
-mod tests;

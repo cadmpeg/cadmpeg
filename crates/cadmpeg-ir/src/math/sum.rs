@@ -3,13 +3,6 @@
 
 use crate::scalar::{FiniteReal, NonZeroReal};
 
-pub(crate) mod quotient_second;
-pub(crate) mod quotient_third;
-pub(crate) mod quotient_fourth;
-pub(crate) mod quotient_fifth;
-mod expanded;
-pub(crate) mod contact;
-
 /// A finite dot product with an exact-product fallback for range loss or cancellation.
 ///
 /// A non-finite input, and a sum outside the finite range, leave the dot
@@ -212,32 +205,6 @@ impl ScaledValue {
         super::scale_power_of_two(mantissa, exponent).ok_or(mantissa.signum() * f64::INFINITY)
     }
 
-    /// Multiply up to five normalized values and divide by up to nine
-    /// normalized values, then convert the result to binary64. This holds
-    /// the range of a factored rational derivative without constructing an
-    /// intermediate `ScaledValue` outside its exponent domain. The supplied
-    /// values and each mantissa operation retain their existing rounding.
-    ///
-    /// Five mantissa products stay at least 1/32; nine divisions stay below
-    /// 512. The sum of fourteen bounded exponents stays within `i32`.
-    pub(crate) fn product_quotient<const N: usize, const D: usize>(
-        numerators: [Self; N],
-        denominators: [Self; D],
-    ) -> Result<FiniteReal, f64> {
-        const { assert!(N <= 5 && D <= 9) };
-        let mut mantissa = 1.0;
-        let mut exponent = 0;
-        for numerator in numerators {
-            mantissa *= numerator.sign * numerator.mantissa;
-            exponent += numerator.exponent.0;
-        }
-        for denominator in denominators {
-            mantissa /= denominator.sign * denominator.mantissa;
-            exponent -= denominator.exponent.0;
-        }
-        super::scale_power_of_two(mantissa, exponent).ok_or(mantissa.signum() * f64::INFINITY)
-    }
-
     /// `self / denominator` times `2^exponent_shift`, without rounding either
     /// operand into the binary64 range first: the ratio of the two mantissas
     /// lies in `(0.5, 2)`, and only the final scaling rounds. The caller
@@ -348,7 +315,7 @@ fn finite_significand(value: f64) -> Option<(bool, u64, u16)> {
     }
 }
 
-fn add_word<const N: usize>(words: &mut [u64; N], index: usize, value: u64) {
+fn add_word(words: &mut [u64; EXACT_SUM_WORDS], index: usize, value: u64) {
     let (sum, mut carry) = words[index].overflowing_add(value);
     words[index] = sum;
     let mut index = index + 1;
@@ -360,7 +327,7 @@ fn add_word<const N: usize>(words: &mut [u64; N], index: usize, value: u64) {
     }
 }
 
-fn add_shifted<const N: usize>(words: &mut [u64; N], value: u128, shift: usize) {
+fn add_shifted(words: &mut [u64; EXACT_SUM_WORDS], value: u128, shift: usize) {
     let bytes = value.to_le_bytes();
     // endian-exception: reconstructed-scalar
     let low = u64::from_le_bytes([
@@ -532,10 +499,10 @@ impl ExactSignedSum {
 /// subtraction below, so the minuend is never the smaller side and the loop
 /// cannot leave a borrow in the highest word. Splitting the comparison from the
 /// subtraction would state that relation as an assertion instead of holding it.
-fn signed_difference<const N: usize>(
-    positive: &[u64; N],
-    negative: &[u64; N],
-) -> Option<(bool, [u64; N])> {
+fn signed_difference(
+    positive: &[u64; EXACT_SUM_WORDS],
+    negative: &[u64; EXACT_SUM_WORDS],
+) -> Option<(bool, [u64; EXACT_SUM_WORDS])> {
     let (larger, smaller, is_negative) =
         positive
             .iter()
@@ -546,9 +513,9 @@ fn signed_difference<const N: usize>(
                 std::cmp::Ordering::Less => Some((negative, positive, true)),
                 std::cmp::Ordering::Equal => None,
             })?;
-    let mut magnitude = [0; N];
+    let mut magnitude = [0; EXACT_SUM_WORDS];
     let mut borrow = false;
-    for index in 0..N {
+    for index in 0..EXACT_SUM_WORDS {
         let (difference, first_borrow) = larger[index].overflowing_sub(smaller[index]);
         let (difference, second_borrow) = difference.overflowing_sub(u64::from(borrow));
         magnitude[index] = difference;
@@ -557,7 +524,7 @@ fn signed_difference<const N: usize>(
     Some((is_negative, magnitude))
 }
 
-fn bit_is_set<const N: usize>(words: &[u64; N], bit: usize) -> bool {
+fn bit_is_set(words: &[u64; EXACT_SUM_WORDS], bit: usize) -> bool {
     words[bit / 64] & (1_u64 << (bit % 64)) != 0
 }
 

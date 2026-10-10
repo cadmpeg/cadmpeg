@@ -44,7 +44,7 @@ fn bilinear_surface(weights: Vec<Vec<f64>>, x: [f64; 2]) -> crate::geometry::nur
 #[test]
 fn numerical_audit_rational_points_and_derivatives_ignore_common_weight_scale() {
     crate::eval::test_support::with_policy(cadmpeg_core::decode::DecodePolicy::service(), |ctx| {
-        use super::super::curve_nurbs::{derivative, DerivativePoles};
+        use super::super::nurbs_curve_derivative;
         use super::super::nurbs_surface_isocurve;
         use super::super::nurbs_surface_second_partials;
         use super::super::CurveDerivative;
@@ -77,11 +77,12 @@ fn numerical_audit_rational_points_and_derivatives_ignore_common_weight_scale() 
             );
             let admitted = poles.map(|pole| crate::features::FinitePoint3::new(pole).unwrap());
             assert_eq!(
-                derivative(
+                nurbs_curve_derivative(
                     &super::super::decode::Scratch::new(ctx),
                     1,
                     &knots,
-                    DerivativePoles::Lanes { points: &admitted, weights: Some(&weights) },
+                    &admitted,
+                    Some(&weights),
                     FiniteReal::new(0.5).unwrap(),
                     CurveDerivative::First
                 )
@@ -90,11 +91,12 @@ fn numerical_audit_rational_points_and_derivatives_ignore_common_weight_scale() 
                 Some(Vector3::new(2.0, 0.0, 0.0))
             );
             assert_eq!(
-                derivative(
+                nurbs_curve_derivative(
                     &super::super::decode::Scratch::new(ctx),
                     1,
                     &knots,
-                    DerivativePoles::Lanes { points: &admitted, weights: Some(&weights) },
+                    &admitted,
+                    Some(&weights),
                     FiniteReal::new(0.5).unwrap(),
                     CurveDerivative::Second
                 )

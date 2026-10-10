@@ -48,7 +48,7 @@ use crate::scalar::FiniteReal;
 use crate::transform::Transform;
 use crate::CadIr;
 
-pub(in crate::eval) fn variable_blend_eval_fixture(
+fn variable_blend_eval_fixture(
     second_origin: Point3,
     pcurves: [(Point2, Point2); 2],
     radii: [f64; 2],
@@ -507,7 +507,6 @@ fn circular_variable_blend_skips_non_finite_residual_before_valid_candidate() {
         },
         uv_tangent: Err(crate::eval::EvaluationFailure::NoValue),
         normal_derivative: Err(crate::eval::EvaluationFailure::NoValue),
-        higher: [Err(crate::eval::EvaluationFailure::NoValue); 4],
     };
     let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
     let section = cacheless_circular_variable_blend_section(
@@ -516,7 +515,6 @@ fn circular_variable_blend_skips_non_finite_residual_before_valid_candidate() {
         payload.construction(),
         0.5,
         [track, track],
-        crate::eval::ContactRequest::NormalDerivative,
     )
     .expect("later finite candidate");
     assert_eq!(section.center, Point3::new(0.0, 0.0, 0.0));
@@ -535,7 +533,6 @@ fn contact_track_normal_exists_when_finite_partials_cross_outside_range() {
         },
         uv_tangent: Err(crate::eval::EvaluationFailure::NoValue),
         normal_derivative: Err(crate::eval::EvaluationFailure::NoValue),
-        higher: [Err(crate::eval::EvaluationFailure::NoValue); 4],
     };
     assert_eq!(track.normal(), Ok(Vector3::new(0.0, 0.0, 1.0)));
 }
@@ -604,7 +601,7 @@ fn cacheless_circular_variable_blend_rejects_an_undetermined_center_tangent() {
 
 /// The constant rolling ball of radius 3 between the planes `z = 0` and
 /// `x = 0`, with `slice` as its section-center curve.
-pub(in crate::eval) fn constant_rolling_ball_fixture(slice: CurveGeometry) -> (CadIr, SurfaceId) {
+fn constant_rolling_ball_fixture(slice: CurveGeometry) -> (CadIr, SurfaceId) {
     let (mut ir, blend_surface) = variable_blend_eval_fixture(
         Point3::new(0.0, 0.0, 0.0),
         [
@@ -1436,5 +1433,3 @@ fn a_cacheless_blend_has_the_same_partials_within_a_work_budget() {
         Ok(partials)
     );
 }
-
-mod requested;

@@ -114,36 +114,6 @@ fn weight_sum(weight: Option<crate::math::sum::ScaledValue>) -> Homogeneous {
 }
 
 #[test]
-fn projection_preserves_subnormal_rounding_and_exact_constants() {
-    use crate::math::sum::scaled_finite;
-    use crate::scalar::FiniteReal;
-    let least = f64::from_bits(1);
-    // Each numerator is nonzero. Dividing by two respectively preserves
-    // one subnormal unit, ties to zero, or stays in the normal range.
-    let base = weight_sum(scaled_finite(2.0));
-    for (numerator, expected) in [
-        (2.0 * least, least),
-        (least, 0.0),
-        (2.0 * f64::MIN_POSITIVE, f64::MIN_POSITIVE),
-    ] {
-        let sum = Homogeneous {
-            values: [scaled_finite(numerator), None, None, None],
-            constant: [None; 3],
-        };
-        assert_eq!(sum.project(base, &[]).unwrap()[0].unwrap().get(), expected);
-    }
-    assert_eq!(Homogeneous::zero().project(base, &[]),
-        Some([Ok(FiniteReal::ZERO); 3]));
-    // An unchanged coordinate needs no quotient rounding. Preserve its
-    // actual bits, including a subnormal and negative zero.
-    let constants = [least, -0.0, f64::MAX].map(|value| FiniteReal::new(value).unwrap());
-    let sum = Homogeneous { values: [None; 4], constant: constants.map(Some) };
-    let lanes = sum.project(base, &[]).unwrap().map(Result::unwrap);
-    assert_eq!(lanes.map(|value| value.get().to_bits()), constants.map(|value| value.get().to_bits()));
-    assert!(sum.project(weight_sum(None), &[]).is_none());
-}
-
-#[test]
 fn homogeneous_weights_admit_actual_scans_and_copies() {
     use crate::math::sum::scaled_finite;
     let normal = [
@@ -285,4 +255,3 @@ fn homogeneous_weight_storage_is_scoped_and_slots_are_admitted_once() {
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
     );
 }
-

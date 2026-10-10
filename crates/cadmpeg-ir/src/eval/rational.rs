@@ -6,13 +6,6 @@ use crate::math::sum::{product_sum, ExactSignedSum, ProductSum, ScaledValue};
 use crate::scalar::FiniteReal;
 use cadmpeg_core::decode::ResourceLimit;
 
-pub(super) mod quadratic;
-pub(super) mod pcurve;
-
-mod surface_higher;
-mod surface_fifth;
-pub(in crate::eval) mod tensor;
-
 /// Cloneable pole traversal. Admission precedes each input-dependent advance.
 #[derive(Clone)]
 struct SumTerms<'scratch, 'ctx, 'arena, I> {
@@ -41,109 +34,7 @@ pub(super) struct Homogeneous {
     constant: [Option<FiniteReal>; 3],
 }
 
-/// Completed quotient lanes. An unavailable order does not erase another.
-pub(super) struct HigherLanes {
-    pub(super) third: Option<[Result<FiniteReal, f64>; 3]>,
-    pub(super) fourth: Option<[Result<FiniteReal, f64>; 3]>,
-    pub(super) fifth: Option<[Result<FiniteReal, f64>; 3]>,
-}
-
-impl HigherLanes {
-    fn from_orders<const N: usize>(
-        orders: [[Option<ScaledValue>; 4]; N],
-        constant: [Option<FiniteReal>; 3],
-        width: ScaledValue,
-        fourth_available: bool,
-        fifth_available: bool,
-    ) -> Option<Self> {
-        const { assert!(N == 4 || N == 5 || N == 6) };
-        orders[0][3]?;
-        let third = (|| {
-            let w = std::array::from_fn(|order| orders[order][3]);
-            let mut lanes = [Ok(FiniteReal::ZERO); 3];
-            for (axis, lane) in lanes.iter_mut().enumerate() {
-                if constant[axis].is_some() { continue; }
-                *lane = crate::math::sum::quotient_third::quotient_third(
-                    std::array::from_fn(|order| orders[order][axis]), w, width, [])?;
-            }
-            Some(lanes)
-        })();
-        let fourth = if N >= 5 {
-            (|| {
-                let w = std::array::from_fn(|order| orders[order][3]);
-                let mut lanes = [Ok(FiniteReal::ZERO); 3];
-                for (axis, lane) in lanes.iter_mut().enumerate() {
-                    if constant[axis].is_some() { continue; }
-                    if !fourth_available { return None; }
-                    *lane = crate::math::sum::quotient_fourth::quotient_fourth(
-                        std::array::from_fn(|order| orders[order][axis]), w, width, [])?;
-                }
-                Some(lanes)
-            })()
-        } else { None };
-        let fifth = if N == 6 {
-            (|| {
-                let w = std::array::from_fn(|order| orders[order][3]);
-                let mut lanes = [Ok(FiniteReal::ZERO); 3];
-                for (axis, lane) in lanes.iter_mut().enumerate() {
-                    if constant[axis].is_some() { continue; }
-                    if !fifth_available { return None; }
-                    *lane = crate::math::sum::quotient_fifth::quotient_fifth(
-                        std::array::from_fn(|order| orders[order][axis]), w, width)?;
-                }
-                Some(lanes)
-            })()
-        } else { None };
-        Some(Self { third, fourth, fifth })
-    }
-}
-
 impl Homogeneous {
-    /// Complete selected-support H/W orders. All support poles participate in
-    /// the constant-coordinate theorem, including poles with zero basis at t.
-    pub(super) fn curve_higher<const N: usize>(
-        scratch: &decode::Scratch<'_, '_>,
-        poles: &crate::geometry::nurbs::NurbsPoles3<FinitePoint3>,
-        first: usize,
-        rows: &[[f64; N]],
-        width: ScaledValue,
-        fourth_available: bool,
-        fifth_available: bool,
-    ) -> Result<Option<HigherLanes>, super::EvaluationFailure<()>> {
-        scratch.unless_refused()?;
-        let mut sums: [[ExactSignedSum; 4]; N] =
-            std::array::from_fn(|_| std::array::from_fn(|_| ExactSignedSum::default()));
-        let mut constant = [None; 3];
-        for (local, orders) in rows.iter().enumerate() {
-            if rows.len() > 4 {
-                scratch.admission.independent_cost::<()>(Some(1))?;
-                scratch.admission.work(1, "IR requested curve homogeneous support")?;
-            }
-            let Some(index) = first.checked_add(local) else { return Ok(None); };
-            let Some(point) = poles.point_at(index) else { return Ok(None); };
-            let weight = poles.weight_at(index).unwrap_or(1.0);
-            for (axis, coordinate) in point.coordinates().into_iter().enumerate() {
-                if local == 0 { constant[axis] = Some(coordinate); }
-                else if constant[axis] != Some(coordinate) { constant[axis] = None; }
-            }
-            for (order, (lanes, coefficient)) in sums.iter_mut().zip(orders).enumerate() {
-                if order == 4 && !fourth_available { continue; }
-                if order == 5 && !fifth_available { continue; }
-                for (sum, coordinate) in lanes.iter_mut().zip([point.x, point.y, point.z, 1.0]) {
-                    sum.add_factors([*coefficient, weight, coordinate]);
-                }
-            }
-        }
-        let orders = sums.map(|lanes| lanes.map(ExactSignedSum::finish));
-        Ok(HigherLanes::from_orders(orders, constant, width, fourth_available, fifth_available))
-    }
-
-    /// The identically zero homogeneous derivative of a polynomial whose
-    /// degree is lower than the requested derivative order.
-    pub(super) fn zero() -> Self {
-        Self { values: [None; 4], constant: [None; 3] }
-    }
-
     pub(super) fn sum(
         scratch: &decode::Scratch<'_, '_>,
         terms: impl Iterator<Item = Option<([f64; 2], f64, FinitePoint3)>> + Clone,

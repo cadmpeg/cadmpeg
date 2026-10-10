@@ -558,8 +558,8 @@ pub fn nurbs_surface_point<'ctx, 'arena: 'ctx>(
     let scratch = Scratch::new(admission);
     let result = scratch
         .admission
-        .independent_cost(super::surface_nurbs::nurbs_surface_evaluation_cost(surface))
-        .and_then(|()| super::surface_nurbs::nurbs_surface_local(&scratch, surface, u, v))
+        .independent_cost(super::nurbs_surface_evaluation_cost(surface))
+        .and_then(|()| super::nurbs_surface_local(&scratch, surface, u, v))
         .map(|local| {
             let [point_x, point_y, point_z] = local.point;
             FinitePoint3::from_coordinates(point_x, point_y, point_z)

@@ -2,8 +2,7 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
-use crate::eval::{decode::Scratch, EvaluationFailure};
-use crate::eval::surface_nurbs::nurbs_surface_local;
+use crate::eval::{decode::Scratch, nurbs_surface_local, EvaluationFailure};
 use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
 use crate::math::Point3;
 
@@ -48,7 +47,6 @@ fn surface_derivatives_use_the_existing_scratch_context() {
         local
             .second(&source_scratch, &first)
             .expect("finite second partials")
-            .lanes
             .map(|row| row.map(crate::scalar::FiniteReal::get)),
         [[0.0, 0.0, 2.0], [0.0, 0.0, 0.0], [0.0, 0.0, 2.0]]
     );

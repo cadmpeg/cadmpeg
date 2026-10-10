@@ -1132,8 +1132,7 @@ fn a_contact_track_evaluates_its_support_where_its_offset_pcurve_point_overflows
             crate::eval::admission::EvaluationAdmission::Standard,
             &index,
             &overflowing,
-            0.0,
-            super::super::ContactRequest::NormalDerivative,
+            0.0
         )
         .err(),
         Some(EvaluationFailure::NonFinite(()))
@@ -1144,7 +1143,6 @@ fn a_contact_track_evaluates_its_support_where_its_offset_pcurve_point_overflows
         &index,
         &finite,
         0.0,
-        super::super::ContactRequest::NormalDerivative,
     )
     .expect("a finite contact track");
     assert_eq!(track.point(), Point3::new(1.0, 2.0, 0.0));

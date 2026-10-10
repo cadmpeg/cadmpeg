@@ -121,7 +121,6 @@ fn cacheless_helix_curve_evaluates_point_and_exact_differentials() {
             &index,
             &curve_id,
             parameter,
-            crate::eval::ModelCurveRequest::Second,
         )
         .expect("helix differential");
         assert_point_close(actual_point.get(), expected_point);
@@ -211,8 +210,7 @@ fn cacheless_helix_curve_rejects_parameters_outside_its_native_interval() {
             crate::eval::admission::EvaluationAdmission::Standard,
             &index,
             &curve_id,
-            2.01,
-            crate::eval::ModelCurveRequest::Second,
+            2.01
         ),
         Err(crate::eval::EvaluationFailure::NoValue)
     ));
