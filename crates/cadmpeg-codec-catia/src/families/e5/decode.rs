@@ -1800,6 +1800,91 @@ fn plan_e5_boundary<'a>(
                         &edge_ref,
                         "catia_e5_surface_curve_plan",
                     )?;
+                if reversed && !support.is_intersection() && !needs_surface_curve {
+                    if range[0] >= range[1] {
+                        let record = ctx.format_scoped(
+                            format_args!(
+                                "e5 boundary pcurve of loop record {} member {member_index}",
+                                loop_.record_id
+                            ),
+                            "catia_e5_reverse_pcurve_label",
+                        )?;
+                        // Invalid ranges return before carrier construction.
+                        crate::nurbs::reverse_pcurve_geometry(
+                            ctx, &geometry, range, refusal, &record.0,
+                        )?;
+                        return Ok(None);
+                    }
+                    if let PcurveGeometry::Line(line) = &geometry {
+                        // The lifted carrier does not check the reversed UV line origin.
+                        let origin = line.origin().as_raw();
+                        let direction = line.direction().as_raw();
+                        if !Point2::new(
+                            range[1].mul_add(direction.u, range[0].mul_add(direction.u, origin.u)),
+                            range[1].mul_add(direction.v, range[0].mul_add(direction.v, origin.v)),
+                        )
+                        .is_finite()
+                        {
+                            return Ok(None);
+                        }
+                    }
+                    if let PcurveGeometry::Nurbs { nurbs } = &geometry {
+                        // A reversed lifted NURBS checks the same reflected knots.
+                        if !matches!(
+                            &lifted_curve,
+                            Some((CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_)), _))
+                        ) {
+                            // Normalized poles keep their admission; only knots change.
+                            let [lower, upper] = range;
+                            let mut previous = f64::NEG_INFINITY;
+                            let mut ordered = true;
+                            let finite = ctx.all_by(
+                                nurbs.knots().iter().rev(),
+                                |knot| {
+                                    let reflected =
+                                        if (*knot - lower).abs() <= (upper - *knot).abs() {
+                                            upper - (*knot - lower)
+                                        } else {
+                                            lower + (upper - *knot)
+                                        };
+                                    ordered &= previous <= reflected;
+                                    previous = reflected;
+                                    Ok(reflected.is_finite())
+                                },
+                                "catia_e5_reversed_pcurve_knots",
+                            )?;
+                            let message = if !finite {
+                                Some("knots contains a non-finite value")
+                            } else if !ordered {
+                                Some("knots must be non-decreasing")
+                            } else {
+                                None
+                            };
+                            if let Some(message) = message {
+                                let record = ctx.format_scoped(
+                                    format_args!(
+                                        "e5 boundary pcurve of loop record {} member {member_index}",
+                                        loop_.record_id
+                                    ),
+                                    "catia_e5_reverse_pcurve_label",
+                                )?;
+                                let (message, _message_storage) = ctx.with_scoped_storage(
+                                    "catia_e5_reversal_diagnostic_scratch",
+                                    || ctx.copy_retained_text(message, "IR NURBS refusal text"),
+                                )?;
+                                crate::nurbs::note_refusal::<()>(
+                                    ctx,
+                                    Err(cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                                        message,
+                                    )),
+                                    refusal,
+                                    &record.0,
+                                )?;
+                                return Ok(None);
+                            }
+                        }
+                    }
+                }
                 if support.is_intersection() || needs_surface_curve {
                     let mut oriented_storage =
                         ctx.reserve_scoped(0, "catia_e5_oriented_pcurve_scratch")?;

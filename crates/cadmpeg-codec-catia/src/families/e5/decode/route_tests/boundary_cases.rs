@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! boundary cases tests.
 
+use std::collections::HashMap;
+
 use super::{
-    e5_boundary_curve, e5_circle_carriers_have_same_ordered_sweep,
+    e5_boundary_curve, e5_circle_carriers_have_same_ordered_sweep, e5_loop_members,
     e5_occurrence_intersection_context, equivalent_e5_curve_carriers, finite_lane, finite_pair,
-    fixture_pcurve_on_surface, jet_pcurve, positive, quintic_jet_pcurve, rational_pcurve_arc,
-    CurveGeometry, E5Pcurve, E5Surface, NurbsSurface, PcurveGeometry, PcurveNurbs, Point2, Point3,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry, SurfaceId, Vector3,
-    EPS_E5_DECODE_EXACT_GEOMETRY,
+    fixture_pcurve_on_surface, jet_pcurve, plan_boundary_with_points, positive, quintic_jet_pcurve,
+    rational_pcurve_arc, BTreeMap, CurveGeometry, E5BoundEntry, E5Bounds, E5CurveSupport,
+    E5CurveSupportKind, E5Edge, E5Face, E5Loop, E5OrientedMember, E5Pcurve, E5Surface, E5Topology,
+    NurbsSurface, PcurveGeometry, PcurveNurbs, Point2, Point3, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, SurfaceGeometry, SurfaceId, Vector3, EPS_E5_DECODE_EXACT_GEOMETRY,
 };
 
 #[test]
@@ -1057,4 +1060,309 @@ fn occurrence_intersection_accepts_roundoff_equivalent_side_ranges() {
     assert!(e5_occurrence_intersection_context(&tiny_sides).is_some());
     tiny_sides[1].2 = [0.0, 2.0 * tiny];
     assert!(e5_occurrence_intersection_context(&tiny_sides).is_none());
+}
+
+#[test]
+fn boundary_planning_rejects_overflowing_reversed_uv_origin() {
+    let surface = E5Surface {
+        pos: 0,
+        record_id: 100,
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid PlaneSurface fixture"),
+        )),
+        uv_scale: finite_pair([1.0, 1.0]),
+    };
+    let topology = E5Topology {
+        bodies: Vec::new(),
+        faces: vec![E5Face {
+            record_id: 1,
+            surface: 100,
+            trailer_sign: crate::families::e5::graph::Sign::Positive,
+            loops: vec![E5Loop {
+                record_id: 2,
+                surface: 100,
+                members: e5_loop_members(&[20], &[200], &[false]),
+                oriented_members: Some(vec![E5OrientedMember {
+                    serialized_index: 0,
+                    reversed: false,
+                }]),
+                outer: Some(true),
+                orientation_hint: None,
+            }],
+        }],
+        edges: BTreeMap::from([(
+            200,
+            E5Edge {
+                support: 300,
+                start_vertex: 400,
+                end_vertex: 401,
+                parameter_start: 500,
+                parameter_end: 501,
+                tail: Vec::new(),
+            },
+        )]),
+        pcurves: BTreeMap::from([(
+            20,
+            E5Pcurve::Line {
+                surface: 100,
+                origin: finite_pair([0.0, 0.0]),
+                direction: finite_pair([1.0, 0.0]),
+                range: finite_pair([1e308, 1.1e308]),
+            },
+        )]),
+        bounds: BTreeMap::from([
+            (
+                500,
+                E5Bounds {
+                    entries: vec![E5BoundEntry {
+                        representation: 20,
+                        parameter: crate::test_support::test_b5::finite(0.0),
+                        code: 0,
+                    }],
+                },
+            ),
+            (
+                501,
+                E5Bounds {
+                    entries: vec![E5BoundEntry {
+                        representation: 20,
+                        parameter: crate::test_support::test_b5::finite(0.0),
+                        code: 0,
+                    }],
+                },
+            ),
+        ]),
+        curve_supports: BTreeMap::from([(
+            300,
+            E5CurveSupport {
+                kind: E5CurveSupportKind::Boundary(20),
+                mode: 0,
+                range: finite_pair([1e308, 1.1e308]),
+                tail: Vec::new(),
+            },
+        )]),
+        vertex_refs: vec![400, 401],
+    };
+    let surfaces = HashMap::from([(
+        100,
+        (
+            SurfaceId::mint("catia:test:surface#surface".to_string()).expect("identity grammar"),
+            &surface,
+        ),
+    )]);
+    let points = HashMap::from([
+        (400, Point3::new(1.1e308, 0.0, 0.0)),
+        (401, Point3::new(1e308, 0.0, 0.0)),
+    ]);
+
+    let native = topology.pcurves.get(&20).expect("native line");
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    let (geometry, range, endpoints) = fixture_pcurve_on_surface(native, &surface, &mut refusal)
+        .expect("finite normalized UV endpoints");
+    assert_eq!(endpoints, [points[&401], points[&400]]);
+    let (curve, curve_range) = crate::test_support::with_service_context(|ctx| {
+        e5_boundary_curve(
+            ctx,
+            &surface.geometry,
+            native,
+            &geometry,
+            (range, endpoints),
+            surface.uv_scale,
+            &mut refusal,
+        )
+    })
+    .expect("lift budget")
+    .expect("finite lifted line");
+    assert!(crate::test_support::with_service_context(|ctx| {
+        crate::nurbs::reverse_curve_geometry(ctx, &curve, curve_range, &mut refusal, "lifted line")
+    })
+    .expect("reverse budget")
+    .is_some());
+    let forward_points = HashMap::from([(400, endpoints[0]), (401, endpoints[1])]);
+    assert!(crate::test_support::with_service_context(|ctx| {
+        let mut scratch = ctx.reserve_scoped(0, "catia_e5_test_boundary_scratch")?;
+        Ok::<_, cadmpeg_core::CodecError>(
+            plan_boundary_with_points(
+                ctx,
+                &mut scratch,
+                &topology,
+                &surfaces,
+                &forward_points,
+                &mut crate::nurbs::LaneRefusals::new(),
+            )?
+            .is_some(),
+        )
+    })
+    .expect("forward planning budget"));
+    assert!(crate::test_support::with_service_context(|ctx| {
+        let mut scratch = ctx.reserve_scoped(0, "catia_e5_test_boundary_scratch")?;
+        Ok::<_, cadmpeg_core::CodecError>(
+            plan_boundary_with_points(
+                ctx,
+                &mut scratch,
+                &topology,
+                &surfaces,
+                &points,
+                &mut crate::nurbs::LaneRefusals::new(),
+            )?
+            .is_none(),
+        )
+    })
+    .expect("service resource budget"));
+}
+
+#[test]
+fn boundary_planning_checks_reversal_after_fallback_surface_curve() {
+    let surface = E5Surface {
+        pos: 0,
+        record_id: 100,
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                1.0,
+            )
+            .expect("finite cylinder"),
+        )),
+        uv_scale: finite_pair([1.0, 1.0]),
+    };
+    let pcurve = |reversed, range| {
+        jet_pcurve(
+            100,
+            vec![0.0, 1.0],
+            vec![6, 6],
+            if reversed {
+                vec![[0.0, 1.0], [0.0, 0.0]]
+            } else {
+                vec![[0.0, 0.0], [0.0, 1.0]]
+            },
+            vec![[0.0, 0.0]; 2],
+            vec![[0.0, 0.0]; 2],
+            range,
+        )
+    };
+    let face = |record_id, pcurve| E5Face {
+        record_id,
+        surface: 100,
+        trailer_sign: crate::families::e5::graph::Sign::Positive,
+        loops: vec![E5Loop {
+            record_id: record_id + 10,
+            surface: 100,
+            members: e5_loop_members(&[pcurve], &[200], &[false]),
+            oriented_members: Some(vec![E5OrientedMember {
+                serialized_index: 0,
+                reversed: false,
+            }]),
+            outer: Some(true),
+            orientation_hint: None,
+        }],
+    };
+    let mut topology = E5Topology {
+        bodies: Vec::new(),
+        faces: vec![face(1, 20), face(2, 21)],
+        edges: BTreeMap::from([(
+            200,
+            E5Edge {
+                support: 300,
+                start_vertex: 400,
+                end_vertex: 401,
+                parameter_start: 500,
+                parameter_end: 501,
+                tail: Vec::new(),
+            },
+        )]),
+        pcurves: BTreeMap::from([
+            (20, pcurve(false, [0.0, 1.0])),
+            (21, pcurve(true, [0.0, 1.0])),
+        ]),
+        bounds: BTreeMap::new(),
+        curve_supports: BTreeMap::from([(
+            300,
+            E5CurveSupport {
+                kind: E5CurveSupportKind::Boundary(20),
+                mode: 0,
+                range: finite_pair([0.0, 1.0]),
+                tail: Vec::new(),
+            },
+        )]),
+        vertex_refs: vec![400, 401],
+    };
+    let surfaces = HashMap::from([(
+        100,
+        (
+            SurfaceId::mint("catia:test:surface#cylinder".to_string()).expect("identity grammar"),
+            &surface,
+        ),
+    )]);
+    let points = HashMap::from([
+        (400, Point3::new(1.0, 0.0, 0.0)),
+        (401, Point3::new(1.0, 0.0, 1.0)),
+    ]);
+    assert!(crate::test_support::with_service_context(|ctx| {
+        let mut scratch = ctx.reserve_scoped(0, "test_boundary_scratch")?;
+        Ok::<_, cadmpeg_core::CodecError>(
+            plan_boundary_with_points(
+                ctx,
+                &mut scratch,
+                &topology,
+                &surfaces,
+                &points,
+                &mut crate::nurbs::LaneRefusals::new(),
+            )?
+            .is_some(),
+        )
+    })
+    .expect("finite fallback planning"));
+
+    topology.pcurves.insert(21, pcurve(true, [1e308, 1.1e308]));
+    let native = &topology.pcurves[&21];
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    let (geometry, range, endpoints) = fixture_pcurve_on_surface(native, &surface, &mut refusal)
+        .expect("finite normalized jet samples");
+    assert_eq!(endpoints, [points[&401], points[&400]]);
+    assert!(
+        crate::test_support::with_service_context(|ctx| e5_boundary_curve(
+            ctx,
+            &surface.geometry,
+            native,
+            &geometry,
+            (range, endpoints),
+            surface.uv_scale,
+            &mut refusal,
+        ))
+        .expect("lift budget")
+        .is_none()
+    );
+    assert!(crate::test_support::with_service_context(|ctx| {
+        let mut scratch = ctx.reserve_scoped(0, "test_boundary_scratch")?;
+        Ok::<_, cadmpeg_core::CodecError>(
+            plan_boundary_with_points(
+                ctx,
+                &mut scratch,
+                &topology,
+                &surfaces,
+                &points,
+                &mut refusal,
+            )?
+            .is_none(),
+        )
+    })
+    .expect("fallback planning budget"));
+    assert_eq!(refusal.note_count(), 1);
+    assert!(
+        matches!(crate::test_support::with_work_refusal("catia_e5_reversed_pcurve_knots", |ctx| {
+        let mut scratch = ctx.reserve_scoped(0, "test_boundary_scratch")?;
+        plan_boundary_with_points(
+            ctx, &mut scratch, &topology, &surfaces, &points,
+            &mut crate::nurbs::LaneRefusals::new(),
+        ).map(|plan| plan.is_none())
+    }), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_e5_reversed_pcurve_knots")
+    );
 }
