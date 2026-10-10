@@ -52,13 +52,29 @@ fn attribute_instances_reuse_valid_and_invalid_definition_widths() {
                     if invalid { 2 } else { 1 }
                 );
             }
-            let expected = if invalid { Err(crate::parameter::AttributeWidthDefect::ValueCount { attribute: ATTRIBUTES - 1 }) } else { Ok(0) };
+            let expected = if invalid {
+                Err(crate::parameter::AttributeWidthDefect::ValueCount {
+                    attribute: ATTRIBUTES - 1,
+                })
+            } else {
+                Ok(0)
+            };
             if overflow {
-                assert_eq!(widths.first.map(|(sequence, width)| (sequence, width.values_per_row)), Some((7, Ok(1))));
+                assert_eq!(
+                    widths
+                        .first
+                        .map(|(sequence, width)| (sequence, width.values_per_row)),
+                    Some((7, Ok(1)))
+                );
                 assert_eq!(widths.values.len(), 1);
                 assert_eq!(widths.values[&1].values_per_row, expected);
             } else {
-                assert_eq!(widths.first.map(|(sequence, width)| (sequence, width.values_per_row)), Some((1, expected)));
+                assert_eq!(
+                    widths
+                        .first
+                        .map(|(sequence, width)| (sequence, width.values_per_row)),
+                    Some((1, expected))
+                );
                 assert!(widths.values.is_empty());
             }
             drop(widths);
@@ -143,7 +159,8 @@ fn attribute_width_scan_charges_the_end_probe_after_valid_descriptors() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = crate::parameter::attribute_table_definition_width(&record, 2, &ctx, operation);
+        let result =
+            crate::parameter::attribute_table_definition_width(&record, 2, &ctx, operation);
         if cap == 2 {
             let Err(CodecError::ResourceLimit(limit)) = result else {
                 panic!("expected width scan end refusal");

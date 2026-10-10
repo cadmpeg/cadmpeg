@@ -111,7 +111,9 @@ pub(super) fn build(
     let mut result = Vec::new();
     let mut source = directory.iter();
     while source.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(entry) = ctx.next_charged(&mut source, "iges FEM directory scan")? else { break; };
+        let Some(entry) = ctx.next_charged(&mut source, "iges FEM directory scan")? else {
+            break;
+        };
         if !is_fem(entry) {
             continue;
         }
@@ -966,5 +968,4 @@ mod tests {
         }
         assert_eq!(result_value_count(35), None);
     }
-
 }
