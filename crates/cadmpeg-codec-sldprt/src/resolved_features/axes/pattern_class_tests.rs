@@ -1,6 +1,6 @@
 //! Typed pattern lookup admits traversal and class text comparisons.
 
-use crate::records::{Feature, FeatureInputClass, FeatureInputLane};
+use crate::records::{Feature, FeatureInputClass, FeatureInputLane, FeatureInputName, ObjectId};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
@@ -84,4 +84,48 @@ fn unmatched_pattern_class_lookup_charges_operand_comparisons() {
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(limit.operation, "compare SLDPRT linear pattern class name");
     assert!(limit.additional > 1);
+}
+
+#[test]
+fn linear_pattern_display_name_comparison_has_its_own_work_boundary() {
+    const OPERATION: &str = "compare SLDPRT linear pattern display name";
+    let mut payload = [0_u8; 185];
+    payload[32..40].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[161..169].copy_from_slice(&1.0f64.to_le_bytes());
+    for (value, spacing) in [("D3", [Some(1.0), None]), ("D4", [None, Some(1.0)])] {
+        let names = [FeatureInputName {
+            id: "display-name".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            object_id: Some(ObjectId::Absent),
+            value: value.into(),
+        }];
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let directions = super::linear_pattern_display_directions(
+            &ctx,
+            &payload,
+            0,
+            payload.len(),
+            &names,
+            spacing,
+        )
+        .unwrap();
+        assert_eq!(directions.len(), 1);
+        assert_eq!(
+            *directions[0].as_raw(),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+        );
+        ctx.finish_session().unwrap();
+        crate::test_support::work_refusal_at(OPERATION, |ctx| {
+            super::linear_pattern_display_directions(
+                ctx,
+                &payload,
+                0,
+                payload.len(),
+                &names,
+                spacing,
+            )
+        });
+    }
 }

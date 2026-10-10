@@ -61,7 +61,7 @@ fn enrich_history_revolution_inputs_test(
         .expect("revolution test enrichment succeeds");
 }
 
-fn single_revolution_history() -> [FeatureHistory; 1] {
+pub(super) fn single_revolution_history() -> [FeatureHistory; 1] {
     [FeatureHistory {
         id: "history".into(),
         part_name: None,
@@ -127,7 +127,7 @@ fn revolution_history_enrichment_refuses_work_limit() {
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
 
-fn unresolved_revolution_target() -> cadmpeg_ir::features::Feature {
+pub(super) fn unresolved_revolution_target() -> cadmpeg_ir::features::Feature {
     cadmpeg_ir::features::Feature {
         id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#revolve").unwrap(),
         ordinal: 0,
@@ -161,6 +161,25 @@ fn unresolved_revolution_target() -> cadmpeg_ir::features::Feature {
     }
 }
 
+pub(super) fn revolution_binding_consumer_targets(
+    native_ref: &str,
+) -> [cadmpeg_ir::features::Feature; 2] {
+    let mut owner = unresolved_revolution_target();
+    owner.id = cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#profile-owner").unwrap();
+    owner.ordinal = 1;
+    owner.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                    SketchId::mint("synthetic:test:id#profile").unwrap(),
+                )),
+            },
+        ),
+    );
+    owner.native_ref = Some(native_ref.into());
+    [unresolved_revolution_target(), owner]
+}
+
 #[test]
 fn revolution_axis_binding_refuses_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -175,7 +194,7 @@ fn revolution_axis_binding_refuses_collection_limit() {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
             super::bind_profile_revolution_axes(
                 &ctx,
-                &mut [unresolved_revolution_target()],
+                &mut revolution_binding_consumer_targets(&histories[0].features[0].id),
                 &histories,
                 &[],
                 &[],
@@ -192,7 +211,7 @@ fn revolution_axis_binding_refuses_work_limit() {
     crate::test_support::work_refusal_at("index SLDPRT revolution features", |ctx| {
         super::bind_profile_revolution_axes(
             ctx,
-            &mut [unresolved_revolution_target()],
+            &mut revolution_binding_consumer_targets(&histories[0].features[0].id),
             &histories,
             &[],
             &[],
