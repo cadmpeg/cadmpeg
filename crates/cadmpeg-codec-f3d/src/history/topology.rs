@@ -604,7 +604,8 @@ pub(super) fn historical_face_support_contexts(
                 preceding_face_slots,
                 preceding_face_boundaries,
                 changed_preceding_face_slots,
-            })?;
+            },
+        )?;
         decode.push_vec(
             &mut contexts,
             context,
@@ -2033,7 +2034,8 @@ fn walk_body_closures(
                     let Some(&vertex) = decode.next_charged(
                         &mut free_vertex_source,
                         "scan F3D historical shell vertices",
-                    )? else {
+                    )?
+                    else {
                         break;
                     };
                     visit(body, vertex)?;

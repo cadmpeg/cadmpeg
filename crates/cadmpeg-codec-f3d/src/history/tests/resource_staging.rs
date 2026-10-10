@@ -172,3 +172,35 @@ fn rejected_combine_fallback_rows_release_identity_prefix() {
     .unwrap();
     assert!(rows.is_none());
 }
+
+#[test]
+fn unique_index_preserves_projection_error_and_stops() {
+    let values = [1_u32, 2, 3];
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let index = crate::history::UniqueIndex::new(
+        &values,
+        |_, value| match value {
+            1 => Ok(Some(*value)),
+            2 => Err(cadmpeg_core::CodecError::malformed("projection failed")),
+            _ => panic!("projection continued after failure"),
+        },
+        "project F3D test index",
+    );
+    let error = index.get(&ctx, &1).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(message)
+        if message == "projection failed"));
+}
+
+#[test]
+fn unique_index_tombstones_repeated_keys_and_keeps_unique_keys() {
+    let values = [1_u32, 1, 1, 2];
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let index = crate::history::UniqueIndex::new(
+        &values,
+        |_, value| Ok(Some(*value)),
+        "index F3D test values",
+    );
+    assert!(index.get(&ctx, &1).unwrap().is_none());
+    assert_eq!(index.get(&ctx, &2).unwrap(), Some(&2));
+    assert!(index.get(&ctx, &3).unwrap().is_none());
+}
