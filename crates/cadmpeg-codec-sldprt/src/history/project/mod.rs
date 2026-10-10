@@ -412,7 +412,9 @@ fn project_history<'c>(
             Ok::<_, CodecError>(())
         })?;
     }
-    let (records, _records_storage) = ctx.unique_index(
+    let _records_storage;
+    let records;
+    (records, _records_storage) = ctx.unique_index(
         history
             .features
             .iter()
@@ -444,7 +446,9 @@ fn project_history<'c>(
         let parent = match (record_parent, feature.parent_source_id()) {
             (Some(parent), _) => Some(parent),
             (None, Some(source)) => {
-                let (key, _key_storage) =
+                let _key_storage;
+                let key;
+                (key, _key_storage) =
                     ctx.with_scoped_storage(OPERATION, || source_lookup_key(ctx, source))?;
                 ctx.get_hash_map(&by_source, key.as_str(), OPERATION)?
                     .copied()
