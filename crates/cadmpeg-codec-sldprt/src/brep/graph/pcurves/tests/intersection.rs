@@ -448,3 +448,140 @@ fn nurbs_intersection_chart_requires_a_complete_chord_certificate() {
     .is_some());
 }
 
+
+fn planar_intersection_fixture() -> (
+    cadmpeg_ir::geometry::SurfaceGeometry,
+    cadmpeg_ir::geometry::nurbs::NurbsCurve,
+    crate::brep::intersection::IntersectionSupportData,
+    [cadmpeg_ir::math::Point3; 2],
+) {
+    let endpoints = [cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+        cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0)];
+    let surface = cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            endpoints[0], cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        ).unwrap(),
+    ));
+    // The source carrier is constructed in a separate fixture session.
+    let chart = test_nurbs_curve(1, vec![0.0, 0.0, 1.0, 1.0], endpoints.to_vec(), None);
+    let support = crate::brep::intersection::IntersectionSupportData {
+        supports: [10, 11], fit_tolerance_mm: EPS_INTERSECTION_FIT_MM,
+        support_uv: Some([vec![cadmpeg_ir::math::Point2::new(0.0, 0.0),
+            cadmpeg_ir::math::Point2::new(0.001, 0.001)], Vec::new()]),
+    };
+    (surface, chart, support, endpoints)
+}
+
+#[test]
+fn intersection_pcurve_retains_only_output_and_releases_all_workspace() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let (surface, chart, support, endpoints) = planar_intersection_fixture();
+    let output_bytes = u64::try_from(4 * std::mem::size_of::<f64>()
+        + 2 * std::mem::size_of::<cadmpeg_ir::units::FinitePoint2>()).unwrap();
+    // Core amortized growth reserves four Point3 slots for two lifted points.
+    // Two raw UVs and two errors coexist with that backing. After it dies,
+    // raw UVs coexist with four knots and two admitted poles.
+    let peak = u64::try_from(2 * std::mem::size_of::<cadmpeg_ir::math::Point2>()
+        + 4 * std::mem::size_of::<cadmpeg_ir::math::Point3>()
+        + 2 * std::mem::size_of::<f64>()).unwrap();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = output_bytes;
+    policy.limits.max_materialized_bytes = peak;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut refusals = crate::lane_refusal::scoped::ScopedLaneRefusals::new(&ctx).unwrap();
+    let (geometry, range, source) = crate::brep::graph::pcurves::intersection_support_pcurve(
+        &ctx, &support, &chart, 10, &surface, endpoints,
+        &mut crate::lane_refusal::scoped::RefusalSink::Scoped(&mut refusals),
+    ).unwrap().unwrap();
+    assert_eq!(range, [0.0, 1.0]);
+    assert_eq!(source, crate::brep::graph::pcurves::IntersectionPcurveSource::StoredCache);
+    let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &geometry else {
+        panic!("the valid planar cache produces the original NURBS pcurve");
+    };
+    assert_eq!(nurbs.knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(nurbs.pole_rows().point_at(0).unwrap().get(), cadmpeg_ir::math::Point2::new(0.0, 0.0));
+    assert_eq!(nurbs.pole_rows().point_at(1).unwrap().get(), cadmpeg_ir::math::Point2::new(1.0, 1.0));
+    let reuse = ctx.reserve_scoped(peak, "reuse intersection pcurve workspace with output live").unwrap();
+    drop(reuse);
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx.copy_retained_text(
+        "x", "intersection final backing remains retained").unwrap_err() else {
+        panic!("the actual final geometry consumes its exact output allowance");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.used, output_bytes);
+    assert_eq!(limit.additional, 1);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+}
+
+#[test]
+fn intersection_pcurve_refuses_exact_workspace_and_final_backing_boundaries() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let (surface, chart, support, endpoints) = planar_intersection_fixture();
+    let output_bytes = u64::try_from(4 * std::mem::size_of::<f64>()
+        + 2 * std::mem::size_of::<cadmpeg_ir::units::FinitePoint2>()).unwrap();
+    let raw_bytes = u64::try_from(2 * std::mem::size_of::<cadmpeg_ir::math::Point2>()).unwrap();
+    let lifted_bytes = u64::try_from(4 * std::mem::size_of::<cadmpeg_ir::math::Point3>()).unwrap();
+    let error_bytes = u64::try_from(2 * std::mem::size_of::<f64>()).unwrap();
+    for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::RetainedBytes] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = output_bytes;
+        policy.limits.max_materialized_bytes = raw_bytes + lifted_bytes + error_bytes;
+        if dimension == ResourceDimension::MaterializedBytes {
+            policy.limits.max_materialized_bytes -= 1;
+        } else {
+            policy.limits.max_retained_bytes -= 1;
+        }
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut refusals = crate::lane_refusal::scoped::ScopedLaneRefusals::new(&ctx).unwrap();
+        let error = crate::brep::graph::pcurves::intersection_support_pcurve(
+            &ctx, &support, &chart, 10, &surface, endpoints,
+            &mut crate::lane_refusal::scoped::RefusalSink::Scoped(&mut refusals),
+        ).unwrap_err();
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("one byte below actual workspace or output backing refuses");
+        };
+        assert_eq!(limit.dimension, dimension);
+        if dimension == ResourceDimension::MaterializedBytes {
+            assert_eq!(limit.operation, "check intersection support control errors");
+            assert_eq!(limit.used, raw_bytes + lifted_bytes);
+            assert_eq!(limit.additional, error_bytes);
+        } else {
+            assert_eq!(limit.operation, "hold intersection support pcurve construction");
+            assert_eq!(limit.used, 0);
+            assert_eq!(limit.additional, output_bytes);
+        }
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        let cadmpeg_core::CodecError::ResourceLimit(replay) = ctx.reserve_scoped(
+            0, "replay original intersection pcurve refusal").unwrap_err() else {
+            panic!("original refusal remains sticky after all candidate values die");
+        };
+        assert_eq!(replay, limit);
+    }
+}
+
+#[test]
+fn rejected_intersection_uv_length_releases_raw_controls_without_retained_output() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let (surface, _, support, endpoints) = planar_intersection_fixture();
+    let chart = test_nurbs_curve(1, vec![0.0, 0.0, 0.5, 1.0, 1.0],
+        vec![endpoints[0], cadmpeg_ir::math::Point3::new(0.5, 0.5, 0.0), endpoints[1]], None);
+    let raw_bytes = u64::try_from(2 * std::mem::size_of::<cadmpeg_ir::math::Point2>()).unwrap();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = raw_bytes;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    for _ in 0..64 {
+        let mut refusals = crate::lane_refusal::scoped::ScopedLaneRefusals::new(&ctx).unwrap();
+        assert!(crate::brep::graph::pcurves::intersection_support_pcurve(
+            &ctx, &support, &chart, 10, &surface, endpoints,
+            &mut crate::lane_refusal::scoped::RefusalSink::Scoped(&mut refusals),
+        ).unwrap().is_none());
+        let reuse = ctx.reserve_scoped(raw_bytes, "reuse rejected intersection UV controls").unwrap();
+        drop(reuse);
+    }
+    assert_eq!(ctx.resource_refusal(), None);
+}

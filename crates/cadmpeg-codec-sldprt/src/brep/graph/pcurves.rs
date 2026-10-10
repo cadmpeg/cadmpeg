@@ -1483,9 +1483,13 @@ pub(super) fn intersection_support_pcurve<'ctx>(
         } else {
             [edge_endpoints[1], edge_endpoints[0]]
         };
-        let (mut control_points, source) = if let Some(support_uv) = &support_data.support_uv {
+        let mut control_storage = ctx.reserve_scoped(0, "hold intersection support UV controls")?;
+        let mut control_points = Vec::new();
+        let source = if let Some(support_uv) = &support_data.support_uv {
             let source_points = &support_uv[support_index];
-            let mut control_points = ctx.copy_slice(source_points, "copy intersection support UV controls")?;
+            control_points = control_storage.with_storage(|| {
+                ctx.copy_slice(source_points, "copy intersection support UV controls")
+            })?;
             match surface {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
                     for point in ctx.admit_iter(&mut control_points, "scale intersection support UV controls")? {
@@ -1508,12 +1512,13 @@ pub(super) fn intersection_support_pcurve<'ctx>(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)) => {}
                 _ => return Ok(None),
             }
-            (control_points, IntersectionPcurveSource::StoredCache)
+            IntersectionPcurveSource::StoredCache
         } else {
             match surface {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
-                    let mut control_points = Vec::new();
-                    ctx.reserve_capacity(&mut control_points, chart_points.len(), "solve intersection support UV controls")?;
+                    control_storage.with_storage(|| ctx.reserve_capacity(
+                        &mut control_points, chart_points.len(), "solve intersection support UV controls",
+                    ))?;
                     for point in ctx.admit_iter(chart_points, "scan SLDPRT chart_points values")? {
                         let parameters = match nurbs_surface_parameter_within_tolerance(
                             ctx,
@@ -1526,16 +1531,21 @@ pub(super) fn intersection_support_pcurve<'ctx>(
                             Ok(None) => return Ok(None),
                             Err(limit) => return Err(limit),
                         };
-                        ctx.push_vec(&mut (control_points), parameters.get(), "solve intersection support UV controls")?;
+                        control_storage.with_storage(|| ctx.push_vec(
+                            &mut control_points, parameters.get(), "solve intersection support UV controls",
+                        ))?;
                     }
-                    (control_points, IntersectionPcurveSource::NurbsInverse)
+                    IntersectionPcurveSource::NurbsInverse
                 }
                 _ => {
-                    let mut control_points = Vec::new();
-                    ctx.reserve_capacity(&mut control_points, chart_points.len(), "project intersection analytic controls")?;
+                    control_storage.with_storage(|| ctx.reserve_capacity(
+                        &mut control_points, chart_points.len(), "project intersection analytic controls",
+                    ))?;
                     for point in ctx.admit_iter(chart_points, "scan SLDPRT chart_points values")? {
                         let parameters = some_or_none!(analytic_surface_parameters(surface, point.get()));
-                        ctx.push_vec(&mut (control_points), cadmpeg_ir::math::Point2::from(parameters), "project intersection analytic controls")?;
+                        control_storage.with_storage(|| ctx.push_vec(
+                            &mut control_points, cadmpeg_ir::math::Point2::from(parameters), "project intersection analytic controls",
+                        ))?;
                     }
                     for index in ctx.admit_iter(1..control_points.len(), "unwrap intersection analytic controls")? {
                         let previous = control_points[index - 1];
@@ -1577,7 +1587,7 @@ pub(super) fn intersection_support_pcurve<'ctx>(
                                 * std::f64::consts::TAU;
                         }
                     }
-                    (control_points, IntersectionPcurveSource::AnalyticInverse)
+                    IntersectionPcurveSource::AnalyticInverse
                 }
             }
         };
@@ -1655,14 +1665,18 @@ pub(super) fn intersection_support_pcurve<'ctx>(
             let point = point.get();
             mapped_points_storage.with_storage(|| ctx.push_vec(&mut (mapped_points), point, "map intersection support controls"))?;
         }
-        let control_errors = mapped_points_storage.with_storage(|| {
-            ctx.collect_vec(
+        let control_errors_storage;
+        let control_errors;
+        (control_errors, control_errors_storage) = ctx.with_scoped_storage(
+            "hold intersection support control errors", || ctx.collect_retained_vec(
                 mapped_points.iter().zip(chart_points).map(|(point, target)| {
                     squared_distance(*point, target.get()).sqrt()
                 }),
                 "check intersection support control errors",
-            )
-        })?;
+            ),
+        )?;
+        drop(mapped_points);
+        drop(mapped_points_storage);
         if ctx.any_by(
             &control_errors,
             |error| Ok(!error.is_finite() || *error > support_data.fit_tolerance_mm),
@@ -1696,10 +1710,21 @@ pub(super) fn intersection_support_pcurve<'ctx>(
                 return Ok(None);
             }
         }
-        let knots = ctx.copy_slice(chart.knots().as_slice(), "copy intersection support pcurve knots")?;
-        let nurbs =
-            match PcurveNurbs::from_lanes(ctx, 1, knots, control_points, None, false)? {
-                Ok(nurbs) => nurbs,
+        drop(control_errors);
+        drop(control_errors_storage);
+        let candidate_storage;
+        let candidate;
+        (candidate, candidate_storage) = ctx.with_scoped_storage(
+            "hold intersection support pcurve construction", || {
+                let knots = ctx.copy_slice(chart.knots().as_slice(), "copy intersection support pcurve knots")?;
+                PcurveNurbs::from_lanes(ctx, 1, knots, control_points, None, false)
+            },
+        )?;
+        // IR consumed the raw Point2 lane before returning. The final knot and
+        // finite-pole backing belong only to the actual construction result.
+        drop(control_storage);
+        let nurbs = match candidate {
+                Ok(nurbs) => candidate_storage.commit_value(nurbs)?,
                 Err(error) => {
                     refusal.note(
                         ctx,
@@ -1708,6 +1733,8 @@ pub(super) fn intersection_support_pcurve<'ctx>(
                         ),
                         &error,
                     )?;
+                    drop(error);
+                    drop(candidate_storage);
                     return Ok(None);
                 }
             };
