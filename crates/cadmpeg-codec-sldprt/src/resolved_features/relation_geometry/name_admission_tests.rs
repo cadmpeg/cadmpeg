@@ -32,7 +32,7 @@ fn reference_role_value_equality_is_admitted() {
 
 fn handle_fixture() -> (Vec<FeatureInputLane>, FeatureInputOperand) {
     let mut lane = super::ownership_tests::relation_lane();
-    lane.classes = [("entity-class", "sgEntHandle", 0), ("slot-class", "sgSlotHandle", 10)]
+    lane.classes = [("slot-class", "sgSlotHandle", 10), ("entity-class", "sgEntHandle", 0)]
         .map(|(id, name, offset)| crate::records::FeatureInputClass {
             id: id.into(), parent: "lane".into(), ordinal: 0, offset, name: name.into(),
         }).into();
@@ -74,6 +74,6 @@ fn declared_slot_handle_admits_both_class_names() {
                 |_, _| Ok(Some([0, 0]))),
         ) else { panic!("slot class name must refuse"); };
         assert_eq!(limit.operation, operation);
-        assert_eq!(limit.additional, 11);
+        assert_eq!(limit.additional, 11 + u64::from(operation == "match SLDPRT slot-handle class"));
     }
 }

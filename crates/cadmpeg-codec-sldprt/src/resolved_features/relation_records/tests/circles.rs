@@ -68,6 +68,27 @@ fn circle_handle_admits_class_names_and_skips_singleton_sort() {
     assert_eq!(limit.operation, "match SLDPRT circle handle class");
     assert_eq!(limit.additional, 11);
 
+    // One scalar visit, one lookup visit, two ID bytes, three class visits,
+    // three comparisons of two eleven-byte names, and one driver visit.
+    const WORK: u64 = 74;
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 32;
+    policy.limits.max_collection_items = 64;
+    policy.limits.max_work_units = WORK * 64;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    for _ in 0..64 {
+        assert!(circle_dimension_handle_driver(&ctx, &relation, &input).unwrap().is_none());
+    }
+    assert_eq!(ctx.resource_refusal(), None);
+    let CodecError::ResourceLimit(limit) = crate::test_support::work_refusal_at(
+        "match SLDPRT circle handle driver",
+        |ctx| circle_dimension_handle_driver(ctx, &relation, &input),
+    ) else { panic!("driver visit after class comparisons must refuse"); };
+    assert_eq!(limit.used, WORK - 1);
+    assert_eq!(limit.additional, 1);
+
     // A singleton has no sorting work. Its visits and ID comparison remain admitted.
     let mut singleton = input.clone();
     singleton.classes.clear();
@@ -84,6 +105,14 @@ fn circle_handle_admits_class_names_and_skips_singleton_sort() {
     ) else { panic!("singleton driver visit must refuse"); };
     assert_eq!(limit.used, 4);
     assert_eq!(limit.additional, 1);
+    singleton.scalars.clear();
+    // The empty display search admits its end probe.
+    policy.limits.max_work_units = 1;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(circle_dimension_handle_driver(&ctx, &relation, &singleton).unwrap().is_none());
+    assert_eq!(ctx.resource_refusal(), None);
+
 }
 
 fn detached_driver_with_duplicate_index_key(
