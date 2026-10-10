@@ -48,7 +48,7 @@ pub(super) fn evaluate(
     let higher = if request.needs_fourth() {
         let fourth = higher(4).map(|(mixed, pure)| [FiniteVector3::ZERO, FiniteVector3::ZERO,
             FiniteVector3::ZERO, mixed, pure]);
-        if request == SurfaceRequest::Fifth {
+        if request.needs_fifth() {
             let fifth = higher(5).map(|(mixed, pure)| [FiniteVector3::ZERO, FiniteVector3::ZERO,
                 FiniteVector3::ZERO, FiniteVector3::ZERO, mixed, pure]);
             HigherPartials::Fifth { third, fourth, fifth }

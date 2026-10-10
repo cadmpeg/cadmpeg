@@ -22,7 +22,7 @@ pub(super) fn evaluate(
     if request.needs_second() { result[0] = derivative::<2>(geometry, pcurve, higher, support); }
     if request.needs_third() { result[1] = derivative::<3>(geometry, pcurve, higher, support); }
     if request.needs_fourth() { result[2] = derivative::<4>(geometry, pcurve, higher, support); }
-    if request == SurfaceRequest::Fifth { result[3] = derivative::<5>(geometry, pcurve, higher, support); }
+    if request.needs_fifth() { result[3] = derivative::<5>(geometry, pcurve, higher, support); }
     result
 }
 

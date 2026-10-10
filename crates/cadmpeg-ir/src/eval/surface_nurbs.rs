@@ -451,13 +451,16 @@ pub(super) fn nurbs_surface_requested_jet(
                 first: first.map(|first| first.lanes.map(finite_vector)),
                 second: second.map(|second| second.lanes.map(finite_vector)),
             },
-            higher: if request == SurfaceRequest::Fifth {
-                HigherPartials::Fifth {
-                    third, fourth,
-                    fifth: if polynomial_degree.is_some_and(|degree| degree < 5) {
-                        Ok([FiniteVector3::ZERO; 6])
-                    } else { higher::fifth::evaluate(scratch, &local) },
-                }
+            higher: if request.needs_fifth() {
+                let fifth = if polynomial_degree.is_some_and(|degree| degree < 5) {
+                    Ok([FiniteVector3::ZERO; 6])
+                } else { higher::fifth::evaluate(scratch, &local) };
+                if request == SurfaceRequest::Sixth {
+                    HigherPartials::Sixth { third, fourth, fifth,
+                        sixth: if polynomial_degree.is_some_and(|degree| degree < 6) {
+                            Ok([FiniteVector3::ZERO; 7])
+                        } else { Err(EvaluationFailure::NoValue) } }
+                } else { HigherPartials::Fifth { third, fourth, fifth } }
             } else if request.needs_fourth() { HigherPartials::Fourth { third, fourth } }
                 else { HigherPartials::Third(third) },
         })

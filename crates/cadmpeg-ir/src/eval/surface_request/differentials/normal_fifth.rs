@@ -1,56 +1,50 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Fourth normal partials from actual fifth surface partials.
+//! Fifth normal partials from actual sixth surface partials.
 
-use super::normal_third::{finite_radial, normal_lanes, NormalThird};
+use super::normal_fourth::NormalFourth;
+use super::normal_third::{finite_radial, normal_lanes};
 use super::{dot_scaled, ExactSignedSum, FiniteReal, FiniteVector3};
 use crate::eval::surface_request::HigherPartials;
 use crate::eval::{EvaluationFailure, SurfaceJet};
 
-const BINOMIAL: [[f64; 5]; 5] = [
-    [1.0, 0.0, 0.0, 0.0, 0.0],
-    [1.0, 1.0, 0.0, 0.0, 0.0],
-    [1.0, 2.0, 1.0, 0.0, 0.0],
-    [1.0, 3.0, 3.0, 1.0, 0.0],
-    [1.0, 4.0, 6.0, 4.0, 1.0],
+const BINOMIAL: [[f64; 6]; 6] = [
+    [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    [1.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+    [1.0, 2.0, 1.0, 0.0, 0.0, 0.0],
+    [1.0, 3.0, 3.0, 1.0, 0.0, 0.0],
+    [1.0, 4.0, 6.0, 4.0, 1.0, 0.0],
+    [1.0, 5.0, 10.0, 10.0, 5.0, 1.0],
 ];
 
-// The complete zero-through-third bivariate triangle, in total-order lanes.
+// Zero through Fourth in total-order lanes; no row is a sampled theorem.
 fn index(u: usize, v: usize) -> usize {
     let order = u + v;
     order * (order + 1) / 2 + v
 }
 
-pub(in crate::eval::surface_request) struct NormalFourth {
-    pub(super) third: NormalThird,
-    pub(super) normal: [[FiniteReal; 3]; 5],
-    pub(super) radial: [Option<super::ScaledValue>; 5],
-}
-
-pub(in crate::eval::surface_request) struct OffsetFourth {
-    pub(in crate::eval::surface_request) offset: Result<[FiniteVector3; 5], EvaluationFailure<()>>,
-    pub(in crate::eval::surface_request) normal: Result<NormalFourth, EvaluationFailure<()>>,
-}
-
-pub(in crate::eval::surface_request) fn offset_fourth(
+pub(in crate::eval::surface_request) fn offset_fifth(
     base: SurfaceJet,
     higher: HigherPartials,
     distance: f64,
-    third_normal: NormalThird,
-) -> Result<OffsetFourth, EvaluationFailure<()>> {
+    fourth_normal: NormalFourth,
+) -> Result<[FiniteVector3; 6], EvaluationFailure<()>> {
     let first = base.first?;
     let second = base.second?;
     let third = higher.third()?;
     let fourth = higher.fourth()?;
     let fifth = higher.fifth()?;
-    let partials: [&[FiniteVector3]; 5] = [&first, &second, &third, &fourth, &fifth];
+    let sixth = higher.sixth()?;
+    let partials: [&[FiniteVector3]; 6] = [&first, &second, &third, &fourth, &fifth, &sixth];
+    let third_normal = fourth_normal.third;
     let state = third_normal.second;
-    let mut normals = [[FiniteReal::ZERO; 3]; 10];
+    let mut normals = [[FiniteReal::ZERO; 3]; 15];
     normals[0] = state.normal;
     for (i, derivative) in state.first.into_iter().chain(state.second).enumerate() {
         normals[i + 1] = normal_lanes(derivative)?;
     }
-    normals[6..].copy_from_slice(&third_normal.normal);
-    let mut radials = [FiniteReal::ZERO; 10];
+    normals[6..10].copy_from_slice(&third_normal.normal);
+    normals[10..].copy_from_slice(&fourth_normal.normal);
+    let mut radials = [FiniteReal::ZERO; 15];
     radials[0] = state.finite_magnitude;
     for (i, value) in state.radial_first.into_iter().enumerate() {
         radials[i + 1] = finite_radial(value)?;
@@ -61,17 +55,13 @@ pub(in crate::eval::surface_request) fn offset_fourth(
         sum.add_scaled_product(normal, FiniteReal::ONE).ok_or(EvaluationFailure::NoValue)?;
         radials[i + 3] = finite_radial(sum.finish())?;
     }
-    for (i, value) in third_normal.radial.into_iter().enumerate() {
+    for (i, value) in third_normal.radial.into_iter().chain(fourth_normal.radial).enumerate() {
         radials[i + 6] = finite_radial(value)?;
     }
-    let mut output = [FiniteVector3::ZERO; 5];
-    let mut fourth_normal = [[FiniteReal::ZERO; 3]; 5];
-    let mut fourth_radial = [None; 5];
-    let mut offset_failure = None;
+    let mut output = [FiniteVector3::ZERO; 6];
     for (v, output) in output.iter_mut().enumerate() {
-        let u = 4 - v;
-        let normal_result = (|| {
-        // D^alpha(S_u cross S_v), with actual partials through order five.
+        let u = 5 - v;
+        // D^alpha(S_u cross S_v), from the supplied actual surface rows.
         let cross = std::array::from_fn(|axis| {
             let mut sum = ExactSignedSum::default();
             let left_axis = (axis + 1) % 3;
@@ -92,8 +82,8 @@ pub(in crate::eval::surface_request) fn offset_fourth(
         let mut radial = ExactSignedSum::default();
         radial.add_scaled_product(dot_scaled(cross, state.normal)?, FiniteReal::ONE)
             .ok_or(EvaluationFailure::NoValue)?;
-        // n.n_alpha = -1/2 sum of proper lower-order normal products.
-        // Dot W_alpha=r_alpha*n+r*n_alpha+sum r_beta*n_(alpha-beta).
+        // Differentiate n.n=1 and W=r*n. Both proper lower products
+        // retain their bivariate binomial coefficient and actual order.
         for bu in 0..=u {
             for bv in 0..=v {
                 if (bu == 0 && bv == 0) || (bu == u && bv == v) { continue; }
@@ -107,8 +97,7 @@ pub(in crate::eval::surface_request) fn offset_fourth(
             }
         }
         let radial = radial.finish();
-        fourth_radial[v] = radial;
-        let original = fourth[v].get();
+        let original = fifth[v].get();
         let original = [original.x, original.y, original.z];
         let mut lanes = [FiniteReal::ZERO; 3];
         for (axis, lane) in lanes.iter_mut().enumerate() {
@@ -122,32 +111,15 @@ pub(in crate::eval::surface_request) fn offset_fourth(
                     numerator.add_factors([-coefficient, radials[index(bu, bv)].get(), normals[index(u - bu, v - bv)][axis].get()]);
                 }
             }
-            let normal_fourth = numerator.finish().map_or(Ok(FiniteReal::ZERO), |value| {
+            let normal_fifth = numerator.finish().map_or(Ok(FiniteReal::ZERO), |value| {
                 value.quotient(state.magnitude).ok().filter(|value| value.get().is_normal()).ok_or(EvaluationFailure::NoValue)
             })?;
-            fourth_normal[v][axis] = normal_fourth;
-            // The real normal coefficients survive a separate final offset
-            // overflow. Keep its first error while completing the next source.
-            if offset_failure.is_some() { continue; }
             let mut sum = ExactSignedSum::default();
             sum.add_product(original[axis], 1.0);
-            sum.add_product(distance, normal_fourth.get());
-            match sum.finish().map_or(Ok(FiniteReal::ZERO), |value| value.finite().map_err(|_| EvaluationFailure::NonFinite(()))) {
-                Ok(value) => *lane = value,
-                Err(failure) => offset_failure = Some(failure),
-            }
+            sum.add_product(distance, normal_fifth.get());
+            *lane = sum.finish().map_or(Ok(FiniteReal::ZERO), |value| value.finite().map_err(|_| EvaluationFailure::NonFinite(())))?;
         }
         *output = FiniteVector3::from_components(lanes[0], lanes[1], lanes[2]);
-        Ok(())
-        })();
-        if let Err(failure) = normal_result {
-            return Ok(OffsetFourth {
-                offset: Err(offset_failure.unwrap_or(failure)), normal: Err(failure),
-            });
-        }
     }
-    Ok(OffsetFourth {
-        offset: offset_failure.map_or(Ok(output), Err),
-        normal: Ok(NormalFourth { third: third_normal, normal: fourth_normal, radial: fourth_radial }),
-    })
+    Ok(output)
 }

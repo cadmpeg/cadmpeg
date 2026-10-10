@@ -107,7 +107,8 @@ fn model_requested_higher_preserves_available_offset_orders_and_affine_capabilit
         assert_eq!(fifth.higher.fourth(), fourth.higher.fourth());
         close(fifth.higher.fourth().unwrap(), [Vector3::new(3.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0)]);
-        assert_eq!(fifth.higher.fifth(), Err(EvaluationFailure::NoValue));
+        assert_eq!(fifth.higher.fifth().unwrap(), [FiniteVector3::new(Vector3::new(0.0, 3.0, 0.0)).unwrap(),
+            FiniteVector3::ZERO, FiniteVector3::ZERO, FiniteVector3::ZERO, FiniteVector3::ZERO, FiniteVector3::ZERO]);
         let plane = model_requested_jet(admission, &index, &plane, 0.25, 0.5, SurfaceRequest::Fifth).unwrap();
         assert!(matches!(plane.higher, HigherPartials::Affine));
         assert_eq!(plane.higher.third(), Ok([FiniteVector3::ZERO; 4]));

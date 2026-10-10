@@ -3,6 +3,7 @@
 
 pub(super) mod normal_third;
 pub(super) mod normal_fourth;
+pub(super) mod normal_fifth;
 
 use super::super::{admit_lanes, vector_sum, EvaluationFailure, SurfaceJet};
 use crate::features::FiniteVector3;
@@ -119,6 +120,27 @@ pub(in crate::eval) fn analytic_fifth(
             let uuv = third[1].negated();
             let uvv = third[2].negated();
             [du, uuv, uvv, uuv, uvv, dv]
+        }
+        _ => return Err(EvaluationFailure::NoValue),
+    })
+}
+
+/// Sixth derivatives of the actual analytic chart. The torus mixed
+/// u/v lanes use its minor-only Fourth row, not its major radial row.
+pub(in crate::eval) fn analytic_sixth(
+    geometry: &SolvedSurfaceGeometry,
+    base: SurfaceJet,
+    fourth: Result<[FiniteVector3; 5], EvaluationFailure<()>>,
+) -> Result<[FiniteVector3; 7], EvaluationFailure<()>> {
+    let [uu, uv, vv] = base.second?;
+    let zero = FiniteVector3::ZERO;
+    Ok(match geometry {
+        SolvedSurfaceGeometry::Cylinder(_) => [uu, zero, zero, zero, zero, zero, zero],
+        SolvedSurfaceGeometry::Cone(_) => [uu, uv, zero, zero, zero, zero, zero],
+        SolvedSurfaceGeometry::Sphere(_) => [uu, uv, uu, uv, uu, uv, vv],
+        SolvedSurfaceGeometry::Torus(_) => {
+            let mixed = fourth?[2].negated();
+            [uu, uv, mixed, uv, mixed, uv, vv]
         }
         _ => return Err(EvaluationFailure::NoValue),
     })
