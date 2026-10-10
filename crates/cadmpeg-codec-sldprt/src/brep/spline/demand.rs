@@ -270,8 +270,7 @@ impl<'input, 'ctx, 'arena> Sources<'input, 'ctx, 'arena> {
         )? {
             return Ok(());
         }
-        let mut workspace = ctx.reserve_scoped(0, "hold Parasolid surface array candidates")?;
-        let selected = exact_f64_array(ctx, &mut workspace, self.bytes, &self.arrays, attr, count)?;
+        let selected = exact_f64_array(ctx, self.bytes, &self.arrays, attr, count)?;
         let result = match selected {
             Some(ArrayCandidate::Borrowed(_)) => ControlValues::Framed,
             Some(ArrayCandidate::Owned { values, _storage }) => {
@@ -279,7 +278,6 @@ impl<'input, 'ctx, 'arena> Sources<'input, 'ctx, 'arena> {
             }
             None => ControlValues::Absent,
         };
-        drop(workspace);
         self.shell.with_storage(|| {
             ctx.insert_btree_map(
                 &mut self.controls,

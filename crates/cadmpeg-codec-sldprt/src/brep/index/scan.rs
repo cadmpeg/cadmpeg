@@ -7,20 +7,12 @@ use cadmpeg_core::CodecError;
 use super::publication::{CurveSink, FixedSink, IntersectionSink, LossSink, SurfaceSink};
 use super::stream::{CarrierTable, StreamCarrierIndex, StreamCurve, StreamSurface};
 use super::view::CarrierView;
-#[cfg(test)]
-use super::CarrierIndex;
 use crate::brep::{blend, intersection, offset, parse_carrier, spline, subset, sweep, Carrier};
 
-pub(in crate::brep::index) enum AnalyticSink<'out, 'ctx> {
-    #[cfg(test)]
-    Retained(&'out mut CarrierIndex),
-    Stream(&'out mut StreamCarrierIndex<'ctx>),
-}
-
-pub(in crate::brep::index) fn scan_analytic_carriers<'ctx>(
+fn scan_analytic_carriers<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     body: &[u8],
-    out: &mut AnalyticSink<'_, 'ctx>,
+    out: &mut StreamCarrierIndex<'ctx>,
 ) -> Result<(), CodecError> {
     // Two fixed-width analytic framings at most are parsed at each start.
     let starts = 0..body.len().checked_sub(1).map_or(0, |end| end);
@@ -28,28 +20,23 @@ pub(in crate::brep::index) fn scan_analytic_carriers<'ctx>(
         let Some(carrier) = parse_carrier(body, i) else {
             continue;
         };
-        match out {
-            #[cfg(test)]
-            AnalyticSink::Retained(out) => out.insert(ctx, carrier)?,
-            AnalyticSink::Stream(out) => match carrier {
-                // parse_carrier accepts only fixed analytic geometry. These
-                // zero-byte child owners never wrap an external NURBS value.
-                Carrier::Curve(value) => out.curves.replace(
-                    ctx,
-                    value.attr,
-                    StreamCurve::exact(value, ctx.reserve_scoped(0, "hold SLDPRT analytic curve")?),
-                    "index SLDPRT curve carriers",
-                )?,
-                Carrier::Surface(value) => out.surfaces.replace(
-                    ctx,
-                    value.attr,
-                    StreamSurface::new(
-                        value,
-                        ctx.reserve_scoped(0, "hold SLDPRT analytic surface")?,
-                    ),
-                    "index SLDPRT surface carriers",
-                )?,
-            },
+        match carrier {
+            // parse_carrier accepts fixed analytic geometry only.
+            Carrier::Curve(value) => out.curves.replace(
+                ctx,
+                value.attr,
+                StreamCurve::exact(value, ctx.reserve_scoped(0, "hold SLDPRT analytic curve")?),
+                "index SLDPRT curve carriers",
+            )?,
+            Carrier::Surface(value) => out.surfaces.replace(
+                ctx,
+                value.attr,
+                StreamSurface::new(
+                    value,
+                    ctx.reserve_scoped(0, "hold SLDPRT analytic surface")?,
+                ),
+                "index SLDPRT surface carriers",
+            )?,
         }
     }
     Ok(())
@@ -60,7 +47,7 @@ pub(in crate::brep) fn scan_stream_carriers<'ctx>(
     body: &[u8],
 ) -> Result<StreamCarrierIndex<'ctx>, CodecError> {
     let mut out = StreamCarrierIndex::empty(ctx)?;
-    scan_analytic_carriers(ctx, body, &mut AnalyticSink::Stream(&mut out))?;
+    scan_analytic_carriers(ctx, body, &mut out)?;
     // Spline winner tables start empty. An analytic with the same attr must
     // not suppress descriptor discovery or the first valid spline attempt.
     let mut curves = CarrierTable::empty(ctx, "hold SLDPRT spline curve source")?;
