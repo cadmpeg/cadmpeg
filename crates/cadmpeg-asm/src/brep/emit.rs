@@ -6020,20 +6020,26 @@ pub(super) fn emit_attributes(
     let mut emitted_attributes = HashSet::new();
     let mut attribute_targets = HashMap::new();
     let mut target_storage = ctx.reserve_scoped(0, "ASM attribute target storage")?;
-    let body_ids = target_storage.with_storage(|| {
-        ctx.collect_hash_set(
-            ctx.admit_iter(&out.bodies, "ASM attribute body ids")?
-                .map(|entity| entity.id.as_str()),
-            "ASM attribute body index",
-        )
-    })?;
-    let shell_ids = target_storage.with_storage(|| {
-        ctx.collect_hash_set(
-            ctx.admit_iter(&out.shells, "ASM attribute shell ids")?
-                .map(|entity| entity.id.as_str()),
-            "ASM attribute shell index",
-        )
-    })?;
+    let mut body_ids = HashSet::new();
+    let mut source_values = out.bodies.iter();
+    while !source_values.as_slice().is_empty() {
+        let Some(entity) = ctx.next_charged(&mut source_values, "ASM attribute body ids")? else {
+            break;
+        };
+        target_storage.with_storage(|| {
+            ctx.insert_hash_set(&mut body_ids, entity.id.as_str(), "ASM attribute body index")
+        })?;
+    }
+    let mut shell_ids = HashSet::new();
+    let mut source_values = out.shells.iter();
+    while !source_values.as_slice().is_empty() {
+        let Some(entity) = ctx.next_charged(&mut source_values, "ASM attribute shell ids")? else {
+            break;
+        };
+        target_storage.with_storage(|| {
+            ctx.insert_hash_set(&mut shell_ids, entity.id.as_str(), "ASM attribute shell index")
+        })?;
+    }
     let mut region_bodies = HashMap::new();
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
@@ -6252,24 +6258,36 @@ pub(super) fn count_other_records(
     } = reach;
     // Count remaining record kinds we neither emitted nor preserved.
     let mut reference_storage = ctx.reserve_scoped(0, "ASM record reference indices")?;
-    let kept_transforms: HashSet<i64> = reference_storage.with_storage(|| {
-        ctx.collect_hash_set(
-            ctx.admit_iter(records, "ASM record reference scan")?
-                .filter(|record| record.head() == "body")
-                .filter_map(|record| record.ref_at(5)),
-            "ASM retained transform references",
-        )
-    })?;
-    let pcurve_intcurves: HashSet<i64> = reference_storage.with_storage(|| {
-        ctx.collect_hash_set(
-            ctx.admit_iter(records, "ASM record reference scan")?
-                .filter(|record| {
-                    i64::try_from(record.index).is_ok_and(|index| kept_pcurves.contains(&index))
-                })
-                .filter_map(|record| record.ref_at(4)),
-            "ASM pcurve intcurve references",
-        )
-    })?;
+    let mut kept_transforms = HashSet::new();
+    let mut pcurve_intcurves = HashSet::new();
+    let mut source_values = records.iter();
+    while !source_values.as_slice().is_empty() {
+        let Some(record) = ctx.next_charged(&mut source_values, "ASM record reference scan")? else {
+            break;
+        };
+        if record.head() == "body" {
+            if let Some(reference) = record.ref_at(5) {
+                reference_storage.with_storage(|| {
+                    ctx.insert_hash_set(
+                        &mut kept_transforms,
+                        reference,
+                        "ASM retained transform references",
+                    )
+                })?;
+            }
+        }
+        if i64::try_from(record.index).is_ok_and(|index| kept_pcurves.contains(&index)) {
+            if let Some(reference) = record.ref_at(4) {
+                reference_storage.with_storage(|| {
+                    ctx.insert_hash_set(
+                        &mut pcurve_intcurves,
+                        reference,
+                        "ASM pcurve intcurve references",
+                    )
+                })?;
+            }
+        }
+    }
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
