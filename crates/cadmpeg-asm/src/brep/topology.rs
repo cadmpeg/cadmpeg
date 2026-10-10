@@ -421,6 +421,7 @@ pub(super) fn walk_reachable_topology(
         curve_geo,
         procedural_curve_defs,
         pcurve_geo,
+        pcurve_decodes,
         pcurve_parameter_ranges,
         ..
     } = &mut *carriers;
@@ -518,45 +519,15 @@ pub(super) fn walk_reachable_topology(
                                         "ASM topology kept_pcurves",
                                     )
                                 })?;
-                            } else if let Some(PcurveGeometry::Nurbs { nurbs }) =
-                                pcurve_geo.get(&super::PcurveRecordIndex(pc))
-                            {
-                                let edge =
-                                    ce.ref_at(6).and_then(|edge| by_index.get(&edge)).copied();
-                                if let Some(parameter_range) = pcurve_ranges_on_domain(nurbs, edge)
-                                    .and_then(|ranges| ranges.into_iter().next())
-                                {
-                                    scratch.with_storage(|| {
-                                        ctx.insert_hash_map(
-                                            pcurve_parameter_ranges,
-                                            super::CoedgeRecordIndex(ci),
-                                            parameter_range,
-                                            "ASM topology pcurve_parameter_ranges",
-                                        )
-                                    })?;
-                                    scratch.with_storage(|| {
-                                        ctx.insert_hash_set(
-                                            kept_pcurves,
-                                            pc,
-                                            "ASM topology kept_pcurves",
-                                        )
-                                    })?;
-                                } else {
-                                    count_kind(
-                                        ctx,
-                                        &mut out.stats.undecoded_pcurve_kinds,
-                                        prec.head(),
-                                    )?;
-                                }
                             } else {
                                 // An inline `exp_par_cur` owns its first BS2 field.
                                 // A wrapped subtype ref resolves that same typed
                                 // field. A nonzero-discriminator ref form names one
                                 // of the target intcurve's two pcurve slots; its
                                 // sign composes with the intcurve sense bit.
-                                let mut attempt =
-                                    ctx.reserve_scoped(0, "ASM explicit pcurve attempt")?;
-                                let decoded = attempt.with_storage(|| {
+                                let key = super::PcurveRecordIndex(pc);
+                                if !pcurve_decodes.contains_key(&key) {
+                                    let decoded = scratch.with_storage(|| {
                                 let decoded = match (prec.chunk(3), prec.chunk(4)) {
                                     (Some(Token::Long(0)), Some(Token::True | Token::False)) => {
                                         if let Some(span) = nurbs::toks::payload_subtype_toks(
@@ -609,6 +580,19 @@ pub(super) fn walk_reachable_topology(
                                     }
                                     _ => None,
                                 }.transpose()?;
+                                        Ok::<_, cadmpeg_core::CodecError>(decoded)
+                                    })?;
+                                    scratch.with_storage(|| ctx.insert_hash_map(
+                                        pcurve_decodes, key, decoded, "ASM pcurve decode cache",
+                                    ))?;
+                                }
+                                let mut attempt = ctx.reserve_scoped(0, "ASM explicit pcurve attempt")?;
+                                let decoded = attempt.with_storage(|| {
+                                    let decoded = pcurve_decodes.get(&key).and_then(Option::as_ref)
+                                        .map(|(curve, native_chart)| {
+                                            curve.try_clone_for_decode(ctx, "ASM pcurve face candidate")
+                                                .map(|curve| (curve, *native_chart))
+                                        }).transpose()?;
                                 let edge =
                                     ce.ref_at(6).and_then(|edge| by_index.get(&edge)).copied();
                                 Ok::<_, cadmpeg_core::CodecError>(decoded.map(|(mut decoded, native_chart)| -> Result<_, cadmpeg_core::CodecError> {

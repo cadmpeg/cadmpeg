@@ -612,6 +612,7 @@ struct Carriers {
     curve_geo: HashMap<i64, CurveGeometry>,
     procedural_curve_defs: HashMap<i64, ProceduralCurveSource>,
     pcurve_geo: HashMap<PcurveRecordIndex, PcurveGeometry>,
+    pcurve_decodes: HashMap<PcurveRecordIndex, Option<(cadmpeg_ir::geometry::pcurve::PcurveNurbs, bool)>>,
     pcurve_parameter_ranges: HashMap<CoedgeRecordIndex, [f64; 2]>,
 }
 
