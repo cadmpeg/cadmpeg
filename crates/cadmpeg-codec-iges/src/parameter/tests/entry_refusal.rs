@@ -16,16 +16,27 @@ fn attribute_table_instance_primary_end_refuses_its_definition_lookup() {
     entry.structure = -1;
     let operation = "iges attribute definition directory lookup";
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits, operation, |cap| {
+        ResourceDimension::WorkUnits,
+        operation,
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut widths = super::super::AttributeDefinitionWidths::new(&ctx)?;
-            super::super::attribute_table_instance_primary_end(&record, &entry, &directory, &records, &mut widths, &ctx)
+            super::super::attribute_table_instance_primary_end(
+                &record,
+                &entry,
+                &directory,
+                &records,
+                &mut widths,
+                &ctx,
+            )
         },
     );
-    let CodecError::ResourceLimit(limit) = error else { panic!("expected definition lookup refusal"); };
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected definition lookup refusal");
+    };
     assert_eq!(limit.operation, operation);
     assert_eq!(limit.additional, 4);
 }
@@ -41,16 +52,28 @@ fn entity_primary_end_with_records_for_entry_refuses_its_definition_lookup() {
     entry.structure = -1;
     let operation = "iges attribute definition directory lookup";
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits, operation, |cap| {
+        ResourceDimension::WorkUnits,
+        operation,
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut widths = super::super::AttributeDefinitionWidths::new(&ctx)?;
-            super::super::entity_primary_end_with_records_for_entry(&record, &entry, &directory, &records, GlobalTable::V5Later, &mut widths, &ctx)
+            super::super::entity_primary_end_with_records_for_entry(
+                &record,
+                &entry,
+                &directory,
+                &records,
+                GlobalTable::V5Later,
+                &mut widths,
+                &ctx,
+            )
         },
     );
-    let CodecError::ResourceLimit(limit) = error else { panic!("expected definition lookup refusal"); };
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected definition lookup refusal");
+    };
     assert_eq!(limit.operation, operation);
     assert_eq!(limit.additional, 4);
 }

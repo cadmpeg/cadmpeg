@@ -56,10 +56,7 @@ fn native_entity_links_refuse_slots_and_text_before_copy() {
     use cadmpeg_core::CodecError;
 
     for (dimension, operation) in [
-        (
-            ResourceDimension::WorkUnits,
-            "iges native test link scan",
-        ),
+        (ResourceDimension::WorkUnits, "iges native test link scan"),
         (ResourceDimension::CollectionItems, "iges native test links"),
         (
             ResourceDimension::RetainedBytes,
@@ -111,8 +108,7 @@ fn native_entity_id_builder_steps_sparse_and_unfiltered_sources() {
     let arena = DecodeArena::new();
     let mut sparse_policy = DecodePolicy::service();
     sparse_policy.limits.max_work_units = sparse_work - 1;
-    let (sparse_ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &sparse_policy).unwrap();
+    let (sparse_ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &sparse_policy).unwrap();
     let error = super::native_entity_ids(
         &sparse_ctx,
         [1, 2, 3].into_iter(),
@@ -121,11 +117,13 @@ fn native_entity_id_builder_steps_sparse_and_unfiltered_sources() {
         |sequence| (sequence == 2).then_some(sequence),
     )
     .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "iges native sparse link scan"
             && limit.used == sparse_policy.limits.max_work_units
-            && limit.additional == 1));
+            && limit.additional == 1)
+    );
 
     let arena = DecodeArena::new();
     let mut sparse_exact_policy = DecodePolicy::service();
@@ -157,11 +155,13 @@ fn native_entity_id_builder_steps_sparse_and_unfiltered_sources() {
         Some,
     )
     .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "iges native linked entity id"
             && limit.used == full_policy.limits.max_work_units
-            && limit.additional == 1));
+            && limit.additional == 1)
+    );
 
     let arena = DecodeArena::new();
     let mut full_exact_policy = DecodePolicy::service();
@@ -249,8 +249,7 @@ fn native_ambiguity_and_entity_slots_refuse_after_input_indexes() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (global, _, _global_storage) = crate::global::parse(&scan, &parse_ctx).unwrap();
     let (directory, quarantined_directory) =
-        crate::directory::parse(&scan, global.global_table(), &parse_ctx)
-            .unwrap();
+        crate::directory::parse(&scan, global.global_table(), &parse_ctx).unwrap();
     let assembly = crate::parameter::assemble_with_context(
         &scan,
         &directory,
@@ -346,8 +345,7 @@ fn native_required_back_pointer_member_refuses_node_limit() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (global, _, _global_storage) = crate::global::parse(&scan, &parse_ctx).unwrap();
     let (directory, quarantined_directory) =
-        crate::directory::parse(&scan, global.global_table(), &parse_ctx)
-            .unwrap();
+        crate::directory::parse(&scan, global.global_table(), &parse_ctx).unwrap();
     let assembly = crate::parameter::assemble_with_context(
         &scan,
         &directory,
@@ -412,8 +410,7 @@ fn native_input_cards_refuse_collection_limit() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (global, _, _global_storage) = crate::global::parse(&scan, &parse_ctx).unwrap();
     let (directory, quarantined_directory) =
-        crate::directory::parse(&scan, global.global_table(), &parse_ctx)
-            .unwrap();
+        crate::directory::parse(&scan, global.global_table(), &parse_ctx).unwrap();
     let assembly = crate::parameter::assemble_with_context(
         &scan,
         &directory,
@@ -469,8 +466,7 @@ fn native_quarantine_indexes_refuse_each_collection_limit() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (global, _, _global_storage) = crate::global::parse(&scan, &parse_ctx).unwrap();
     let (directory, parsed_quarantine) =
-        crate::directory::parse(&scan, global.global_table(), &parse_ctx)
-            .unwrap();
+        crate::directory::parse(&scan, global.global_table(), &parse_ctx).unwrap();
     let assembly = crate::parameter::assemble_with_context(
         &scan,
         &directory,

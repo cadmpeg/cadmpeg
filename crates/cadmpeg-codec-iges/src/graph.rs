@@ -331,18 +331,13 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
             &source,
             "iges parameter resolver edge groups",
         )? {
-            self.ctx.reserve_scoped_vec(
-                edge_storage,
-                edges,
-                1,
-                "iges parameter resolver edges",
-            )?;
+            self.ctx
+                .reserve_scoped_vec(edge_storage, edges, 1, "iges parameter resolver edges")?;
             edges.push(edge);
         } else {
             let edge_storage;
-            let (mut edges, result_edge_storage) = self
-                .ctx
-                .temporary_vec(1, "iges parameter resolver edges")?;
+            let (mut edges, result_edge_storage) =
+                self.ctx.temporary_vec(1, "iges parameter resolver edges")?;
             edge_storage = result_edge_storage;
             edges.push(edge);
             self.group_storage.borrow_mut().with_storage(|| {
@@ -476,10 +471,12 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
         let mut storage = self.storage.into_inner();
         let mut sources = self.edges.into_inner().into_iter();
         while sources.len() != 0 || self.ctx.resource_refusal().is_some() {
-            let Some((source, result)) = self.ctx.next_charged(
-            &mut sources,
-            "iges parameter resolver graph sources",
-        )? else { break; };
+            let Some((source, result)) = self
+                .ctx
+                .next_charged(&mut sources, "iges parameter resolver graph sources")?
+            else {
+                break;
+            };
             let edge_storage;
             let (mut edges, result_edge_storage) = result;
             edge_storage = result_edge_storage;
@@ -664,7 +661,11 @@ fn cyclic_transform_nodes(
     let mut next = BTreeMap::new();
     let mut sources = edges.iter();
     while sources.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some((source, values)) = ctx.next_charged(&mut sources, "iges transform cycle sources")? else { break; };
+        let Some((source, values)) =
+            ctx.next_charged(&mut sources, "iges transform cycle sources")?
+        else {
+            break;
+        };
         // Directory graphs have at most seven reference kinds per source.
         if let Some(target) = values
             .iter()
@@ -684,7 +685,9 @@ fn cyclic_transform_nodes(
     let mut completed = BTreeSet::new();
     let mut starts = next.iter();
     while starts.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some((start, _)) = ctx.next_charged(&mut starts, "iges transform cycle starts")? else { break; };
+        let Some((start, _)) = ctx.next_charged(&mut starts, "iges transform cycle starts")? else {
+            break;
+        };
         let mut path_storage = ctx.reserve_scoped(0, "IGES transform cycle path")?;
         let mut path = Vec::new();
         let mut active = BTreeMap::<u32, usize>::new();
@@ -701,7 +704,10 @@ fn cyclic_transform_nodes(
             {
                 let mut nodes = path[position..].iter();
                 while nodes.len() != 0 || ctx.resource_refusal().is_some() {
-                    let Some(node) = ctx.next_charged(&mut nodes, "iges cyclic transform nodes")? else { break; };
+                    let Some(node) = ctx.next_charged(&mut nodes, "iges cyclic transform nodes")?
+                    else {
+                        break;
+                    };
                     ctx.insert_btree_set(&mut cyclic, *node, "iges cyclic transform references")?;
                 }
                 break;
@@ -727,7 +733,9 @@ fn cyclic_transform_nodes(
         }
         let mut nodes = path.into_iter();
         while nodes.len() != 0 || ctx.resource_refusal().is_some() {
-            let Some(node) = ctx.next_charged(&mut nodes, "iges completed transform path")? else { break; };
+            let Some(node) = ctx.next_charged(&mut nodes, "iges completed transform path")? else {
+                break;
+            };
             index_storage.with_storage(|| {
                 ctx.insert_btree_set(&mut completed, node, "iges completed transform references")
             })?;
@@ -745,7 +753,10 @@ pub(crate) fn build<'ctx>(
         let mut graph = BTreeMap::new();
         let mut sources = directory.iter();
         while sources.len() != 0 || ctx.resource_refusal().is_some() {
-            let Some(entry) = ctx.next_charged(&mut sources, "iges directory reference sources")? else { break; };
+            let Some(entry) = ctx.next_charged(&mut sources, "iges directory reference sources")?
+            else {
+                break;
+            };
             let mut edges = Vec::new();
             for candidate in candidates(entry) {
                 let target = match candidate.target_sequence {
@@ -781,7 +792,10 @@ pub(crate) fn build<'ctx>(
         _cycle_storage = result_cycle_storage;
         let mut sources = cyclic.into_iter();
         while sources.len() != 0 || ctx.resource_refusal().is_some() {
-            let Some(source) = ctx.next_charged(&mut sources, "iges cyclic transform sources")? else { break; };
+            let Some(source) = ctx.next_charged(&mut sources, "iges cyclic transform sources")?
+            else {
+                break;
+            };
             let edge = match ctx.get_mut_btree_map(
                 &mut graph,
                 &source,
@@ -826,7 +840,10 @@ pub(crate) fn summary_notes<'ctx>(
     let mut counts = [0_usize; 6];
     let mut sources = graph.iter();
     while sources.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some((_, edges)) = ctx.next_charged(&mut sources, "iges reference summary sources")? else { break; };
+        let Some((_, edges)) = ctx.next_charged(&mut sources, "iges reference summary sources")?
+        else {
+            break;
+        };
         for edge in ctx.admit_iter(edges, "iges reference summary edges")? {
             let index = match edge.resolution {
                 Resolution::Cyclic(_) => 0,
@@ -854,8 +871,10 @@ pub(crate) fn summary_notes<'ctx>(
     .filter(|(_, count)| *count > 0)
     {
         ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges reference summary notes")?;
-        notes.push(ctx.format_retained(format_args!("references.{resolution}={count}"),
-            "iges reference summary text")?);
+        notes.push(ctx.format_retained(
+            format_args!("references.{resolution}={count}"),
+            "iges reference summary text",
+        )?);
     }
     Ok((notes, storage))
 }
@@ -878,11 +897,16 @@ pub(crate) fn losses<'ctx>(
     let mut losses = Vec::new();
     let mut sources = graph.iter();
     while sources.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some((source, edges)) = ctx.next_charged(&mut sources, "iges graph loss sources")? else { break; };
+        let Some((source, edges)) = ctx.next_charged(&mut sources, "iges graph loss sources")?
+        else {
+            break;
+        };
         let mut parameter_record = None;
         let mut edges = edges.iter();
         while edges.len() != 0 || ctx.resource_refusal().is_some() {
-            let Some(edge) = ctx.next_charged(&mut edges, "iges graph loss edge scan")? else { break; };
+            let Some(edge) = ctx.next_charged(&mut edges, "iges graph loss edge scan")? else {
+                break;
+            };
             if matches!(edge.resolution, Resolution::Resolved(_)) {
                 continue;
             }
