@@ -344,3 +344,5 @@ mod procedural_surfaces;
 mod attempt_storage;
 
 mod entry_refusal;
+
+mod block_attempt_storage;
