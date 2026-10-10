@@ -290,14 +290,15 @@ pub(super) fn collect_feature_coverage(
                         }
                     );
                 }
-                let has_generated_surface = if let Some(digits) = ctx.strip_prefix(
-                    feature.id.as_str(),
-                    "creo:model:feature#",
-                    "creo fillet feature ID prefix",
-                )? {
-                    if let Ok(feature_id) =
+                let has_generated_surface = if let Some(digits) =
+                    feature.id.as_str().strip_prefix("creo:model:feature#")
+                {
+                    let parsed = if digits.len() <= 10 {
+                        digits.parse::<u32>()
+                    } else {
                         ctx.parse_text::<u32>(digits, "creo fillet feature ID parsing")?
-                    {
+                    };
+                    if let Ok(feature_id) = parsed {
                         let generated = match &generated_features {
                             Some(generated) => generated,
                             None => {

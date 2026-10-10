@@ -108,15 +108,16 @@ fn refresh_feature_outputs(
         .admit_iter(&ir.model.features, "creo feature output refresh traversal")?
         .enumerate()
     {
-        let Some(digits) = ctx.strip_prefix(
-            feature.id.as_str(),
-            "creo:model:feature#",
-            "creo model feature ID prefix",
-        )?
+        let Some(digits) = feature.id.as_str().strip_prefix("creo:model:feature#")
         else {
             continue;
         };
-        let Ok(feature_id) = ctx.parse_text::<u32>(digits, "creo model feature ID parsing")? else {
+        let parsed = if digits.len() <= 10 {
+            digits.parse::<u32>()
+        } else {
+            ctx.parse_text::<u32>(digits, "creo model feature ID parsing")?
+        };
+        let Ok(feature_id) = parsed else {
             continue;
         };
         let outputs = cadmpeg_ir::features::DistinctMembers::try_from(

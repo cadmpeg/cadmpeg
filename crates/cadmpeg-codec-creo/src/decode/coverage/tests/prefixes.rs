@@ -42,80 +42,7 @@ fn surface(geometry: SurfaceGeometry) -> Surface {
 }
 
 #[test]
-fn transferred_curve_identity_prefix_refuses_work() {
-    let curve = curve(CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(1.0, 0.0, 0.0),
-        )
-        .expect("valid line"),
-    )));
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        ResourceDimension::WorkUnits,
-        "creo coverage identity prefix",
-        |ctx| curve_transfer_coverage(ctx, &[], std::slice::from_ref(&curve)),
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo coverage identity prefix"));
-}
-
-#[test]
-fn unknown_curve_identity_prefix_refuses_work() {
-    let curve = curve(CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-        record: None,
-    }));
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        ResourceDimension::WorkUnits,
-        "creo coverage identity prefix",
-        |ctx| curve_transfer_coverage(ctx, &[], std::slice::from_ref(&curve)),
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo coverage identity prefix"));
-}
-
-#[test]
-fn transferred_surface_identity_prefix_refuses_work() {
-    let surface = surface(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 0.0, 0.0),
-        )
-        .expect("valid plane"),
-    )));
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        ResourceDimension::WorkUnits,
-        "creo coverage identity prefix",
-        |ctx| surface_transfer_coverage(ctx, &[], std::slice::from_ref(&surface), &[]),
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo coverage identity prefix"));
-}
-
-#[test]
-fn unknown_surface_identity_prefix_refuses_work() {
-    let surface = surface(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-        record: None,
-    }));
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        ResourceDimension::WorkUnits,
-        "creo coverage identity prefix",
-        |ctx| surface_transfer_coverage(ctx, &[], std::slice::from_ref(&surface), &[]),
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo coverage identity prefix"));
-}
-
-#[test]
-fn native_constraint_kind_prefix_refuses_work() {
+fn native_constraint_kind_coverage_preserves_counts() {
     use cadmpeg_ir::sketches::{
         SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId, SketchEntityId,
         SketchId,
@@ -154,21 +81,19 @@ fn native_constraint_kind_prefix_refuses_work() {
         metadata: None,
         native_ref: None,
     };
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        ResourceDimension::WorkUnits,
-        "creo native constraint kind prefix",
-        |ctx| {
-            design_constraint_transfer_coverage(
-                ctx,
-                std::slice::from_ref(&constraint),
-                [(":relation:", "creo:relation:")],
-            )
-        },
+    let [coverage] = crate::test_support::assert_work_boundaries(
+        &["creo constraint coverage traversal", "creo constraint identity marker"],
+        |ctx| design_constraint_transfer_coverage(
+            ctx,
+            std::slice::from_ref(&constraint),
+            [(":relation:", "creo:relation:")],
+        ),
     );
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::WorkUnits
-            && resource.operation == "creo native constraint kind prefix"));
+    assert_eq!(coverage.transferred, 1);
+    assert_eq!(coverage.native, 1);
+    assert_eq!(coverage.active_native, 1);
+    assert_eq!(coverage.native_by_kind.get(&9), Some(&1));
+    assert_eq!(coverage.active_native_by_kind.get(&9), Some(&1));
 }
 
 #[test]
@@ -179,7 +104,6 @@ fn curve_coverage_admits_model_traversal_and_uses_scoped_lookup_storage() {
     crate::test_support::assert_work_boundaries(
         &[
             "creo curve coverage traversal",
-            "creo coverage identity prefix",
         ],
         |ctx| curve_transfer_coverage(ctx, &[], std::slice::from_ref(&curve)),
     );
@@ -201,7 +125,6 @@ fn surface_coverage_admits_model_traversal_and_uses_scoped_lookup_storage() {
     crate::test_support::assert_work_boundaries(
         &[
             "creo surface coverage traversal",
-            "creo coverage identity prefix",
         ],
         |ctx| surface_transfer_coverage(ctx, &[], std::slice::from_ref(&surface), &[]),
     );
