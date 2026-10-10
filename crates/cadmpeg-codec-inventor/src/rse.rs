@@ -114,7 +114,10 @@ impl SegmentToken {
         }
         let token_len = cadmpeg_core::decode::u64_from_index(token.len());
         ctx.charge_retained(token_len, "retain RSe segment token")?;
-        ctx.charge_work(token_len.saturating_mul(3), "validate RSe segment token key")?;
+        let key_work = token_len.checked_mul(3).ok_or_else(|| {
+            ctx.refuse_codec_limit("validate RSe segment token key", u64::MAX / 3, token_len)
+        })?;
+        ctx.charge_work(key_work, "validate RSe segment token key")?;
         let Ok(token) = IdentityKey::try_new(token) else {
             return Ok(None);
         };
@@ -1657,7 +1660,9 @@ mod tests {
         policy.limits.max_work_units = 13;
         let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
             .expect("empty root fits input cap");
-        assert!(SegmentToken::parse(&ctx, "Mseg").expect("exact work budget").is_some());
+        assert!(SegmentToken::parse(&ctx, "Mseg")
+            .expect("exact work budget")
+            .is_some());
         ctx.finish_session().expect("exact budget completes");
     }
 

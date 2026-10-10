@@ -2311,11 +2311,15 @@ mod tests {
         assert_eq!(storage_refusal.dimension, ResourceDimension::RetainedBytes);
         assert_eq!(storage_refusal.operation, "load typed native record");
         assert_eq!(storage_refusal.used, 0);
-        assert_eq!(storage_refusal.additional,
-            cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<ActiveCarrierRecord>()));
+        assert_eq!(
+            storage_refusal.additional,
+            cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<ActiveCarrierRecord>())
+        );
         assert_eq!(ctx.resource_refusal(), Some(storage_refusal));
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
-            if limit == storage_refusal));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
+            if limit == storage_refusal)
+        );
 
         assert_eq!(ActiveCarrierRecord::read(&crate::native::test_ctx(), &namespace)
             .expect_err("valid typed records still report their cardinality")
@@ -2331,10 +2335,7 @@ mod tests {
             other => panic!("typed native copy should refuse work: {other:?}"),
         };
         assert_eq!(first_refusal.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(
-            first_refusal.operation,
-            "construct canonical native value"
-        );
+        assert_eq!(first_refusal.operation, "construct canonical native value");
         assert_eq!(ctx.resource_refusal(), Some(first_refusal));
         assert!(matches!(
             ActiveCarrierRecord::read(&ctx, &namespace),
@@ -2356,7 +2357,9 @@ mod tests {
         ];
         let ctx = crate::native::test_ctx();
         let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
-        namespace.set_arena(&ctx, "active_carrier", &records).expect("raw carrier records");
+        namespace
+            .set_arena(&ctx, "active_carrier", &records)
+            .expect("raw carrier records");
         assert_eq!(ActiveCarrierRecord::read(&ctx, &namespace)
             .expect_err("the invalid first carrier is checked before cardinality")
             .to_string(),

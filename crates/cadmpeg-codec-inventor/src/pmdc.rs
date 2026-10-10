@@ -943,8 +943,8 @@ mod tests {
         // Two pairs plus the collector's end probe: 2 + 1 = 3 work units.
         policy.limits.max_work_units = 3;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("zip context");
-        let references = super::PmDcReference::zip(&ctx, &[1, 2], &[false, true])
-            .expect("one traversal fits");
+        let references =
+            super::PmDcReference::zip(&ctx, &[1, 2], &[false, true]).expect("one traversal fits");
         assert_eq!(references[0].index(), 1);
         assert_eq!(references[1].index(), 2);
         assert!(references[1].qualified());

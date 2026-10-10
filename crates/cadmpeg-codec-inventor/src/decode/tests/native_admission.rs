@@ -1274,23 +1274,29 @@ fn ufrx_blank_external_identity_skips_all_source_field_copies() {
     // The large rejected names and state groups have no retained allowance.
     policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
         4 * std::mem::size_of::<StructuralIssueRecord>()
-            + issue_id.len() + issue_scope.len() + issue_detail.len(),
+            + issue_id.len()
+            + issue_scope.len()
+            + issue_detail.len(),
     );
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("issue context");
     let mut issues = Vec::new();
-    assert!(project_ufrx_external_reference(&ctx, 0, &reference, &mut issues)
-        .expect("missing identity is rejected before copies")
-        .is_none());
+    assert!(
+        project_ufrx_external_reference(&ctx, 0, &reference, &mut issues)
+            .expect("missing identity is rejected before copies")
+            .is_none()
+    );
     assert_eq!(issues.len(), 1);
     assert_eq!(issues[0].id, issue_id);
     assert_eq!(issues[0].scope, issue_scope);
     assert_eq!(issues[0].detail, issue_detail);
-    assert!(matches!(ctx.charge_retained(1, "probe rejected reference storage"),
+    assert!(
+        matches!(ctx.charge_retained(1, "probe rejected reference storage"),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.used == policy.limits.max_retained_bytes
-                && limit.additional == 1));
+                && limit.additional == 1)
+    );
 }
 
 #[test]

@@ -2573,7 +2573,11 @@ fn build_profiles(
                     &lines[index].endpoint_refs,
                     |point| {
                         Ok(ctx
-                            .get_hash_map(&adjacency, point.as_str(), "access Inventor sketch records")?
+                            .get_hash_map(
+                                &adjacency,
+                                point.as_str(),
+                                "access Inventor sketch records",
+                            )?
                             .map_or(0, Vec::len)
                             != 2)
                     },
