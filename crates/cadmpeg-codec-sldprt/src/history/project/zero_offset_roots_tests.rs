@@ -60,7 +60,7 @@ fn zero_offset_roots_refuse_at_the_exact_workspace_peak_and_keep_original_refusa
     assert_eq!(first.operation, OPERATION);
     assert_eq!(first.used, 2 * array);
     assert_eq!(first.additional, output);
-    assert_eq!(ctx.resource_refusal(), Some(first.clone()));
+    assert_eq!(ctx.resource_refusal(), Some(first));
     let CodecError::ResourceLimit(next) = ctx.reserve_scoped(0, "sticky refusal").unwrap_err()
     else {
         panic!("expected original sticky refusal");
@@ -130,7 +130,7 @@ fn offset_binding_retires_parent_vector_before_frame_construction() {
     for _ in 0..64 {
         let mut features = [source.clone()];
         super::bind_offset_plane_references(&ctx, &mut features).unwrap();
-        assert_eq!(features, [source.clone()]);
+        assert_eq!(features.as_slice(), std::slice::from_ref(&source));
         let full = ctx
             .reserve_scoped(peak, "reuse offset binding workspace")
             .unwrap();
@@ -155,7 +155,7 @@ fn offset_binding_frame_growth_refuses_at_exact_peak_and_keeps_original_refusal(
     assert_eq!(first.operation, "bind SLDPRT offset plane references");
     assert_eq!(first.used, before_frames);
     assert_eq!(first.additional, frames);
-    assert_eq!(ctx.resource_refusal(), Some(first.clone()));
+    assert_eq!(ctx.resource_refusal(), Some(first));
     let CodecError::ResourceLimit(next) =
         ctx.reserve_scoped(0, "sticky frame refusal").unwrap_err()
     else {

@@ -188,9 +188,9 @@ fn an_empty_quoted_run_is_not_a_parameter_reference() {
         definite_parameter_reference, expression_identifier_tokens, ExpressionIdentifier,
     };
     let ctx = cadmpeg_test_support::service_decode_context();
-    let _tokens_storage;
+    let tokens_storage;
     let tokens;
-    (tokens, _tokens_storage) = expression_identifier_tokens(&ctx, "\"\" + Width").unwrap();
+    (tokens, tokens_storage) = expression_identifier_tokens(&ctx, "\"\" + Width").unwrap();
     let tokens = tokens.expect("closed quotes");
     assert_eq!(
         tokens
@@ -202,7 +202,7 @@ fn an_empty_quoted_run_is_not_a_parameter_reference() {
     assert!(!tokens
         .iter()
         .any(|identifier| definite_parameter_reference(&ctx, identifier).unwrap()));
-    drop((tokens, _tokens_storage));
+    drop((tokens, tokens_storage));
 
     let _named_storage;
     let named;

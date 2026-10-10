@@ -752,14 +752,14 @@ fn unsupported_swift_loss_refuses_scoped_limit() {
     ));
 }
 
-fn assert_geometry_indexes_skipped(root: Entity, expected_loss: Option<&str>) {
+fn assert_geometry_indexes_skipped(root: &Entity, expected_loss: Option<&str>) {
     use cadmpeg_core::decode::{
         refusal_probe::RefusalProbe, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
     };
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::topology::{Body, BodyKind};
 
-    let source = source_with_swift_root(&root);
+    let source = source_with_swift_root(root);
     let scan = crate::test_support::container::scan(&source);
     let body = Body {
         id: BodyId::mint("sldprt:brep:body#11").expect("identity grammar"),
@@ -814,7 +814,7 @@ fn swift_empty_annotation_roster_skips_geometry_indexes() {
         class: crate::swift::ROOT_CLASS.into(),
         ..Entity::default()
     };
-    assert_geometry_indexes_skipped(root, None);
+    assert_geometry_indexes_skipped(&root, None);
 }
 
 #[test]
@@ -828,7 +828,7 @@ fn swift_incomplete_annotation_roster_keeps_loss_without_geometry_indexes() {
         class: "GdtWidth".into(),
     });
     assert_geometry_indexes_skipped(
-        root,
+        &root,
         Some("1 SWIFT semantic annotation(s) have no neutral PMI definition: GdtAnalysisIncompleteAnnotationRoster (1)."),
     );
 }
@@ -1075,7 +1075,7 @@ fn swift_empty_projection_skips_feature_and_provenance_work() {
         policy.limits.max_work_units = u64::MAX;
         let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
         let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-        let projection = annotations(&ctx, &scan, &mut Default::default(), None).unwrap();
+        let projection = annotations(&ctx, &scan, &mut cadmpeg_ir::annotations::Annotations::default(), None).unwrap();
         assert!(projection.annotations.is_empty());
         assert!(projection.unsupported_loss.is_none());
         ctx.finish_session().unwrap();
@@ -1094,7 +1094,7 @@ fn swift_empty_projection_skips_feature_and_provenance_work() {
         "scan SWIFT annotation references",
         None,
     );
-    let projection = annotations(&ctx, &scan, &mut Default::default(), None).unwrap();
+    let projection = annotations(&ctx, &scan, &mut cadmpeg_ir::annotations::Annotations::default(), None).unwrap();
     assert!(projection.annotations.is_empty());
     assert!(projection
         .unsupported_loss
@@ -1219,7 +1219,7 @@ fn swift_suppressed_roster_skips_geometry_indexes_and_provenance() {
         .references
         .push(super::reference("A10", "GdtFlatness"));
     root.annotations.entities.push(annotation);
-    assert_geometry_indexes_skipped(root.clone(), None);
+    assert_geometry_indexes_skipped(&root, None);
     let source = source_with_swift_root(&root);
     let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
@@ -1231,7 +1231,7 @@ fn swift_suppressed_roster_skips_geometry_indexes_and_provenance() {
         "format SWIFT PMI identity",
         None,
     );
-    let mut provenance = Default::default();
+    let mut provenance = cadmpeg_ir::annotations::Annotations::default();
     let projection = annotations(&ctx, &scan, &mut provenance, None).unwrap();
     assert!(projection.annotations.is_empty());
     assert!(provenance.provenance.is_empty());
@@ -1274,7 +1274,7 @@ fn swift_explicit_nominal_skips_native_pattern_index() {
     let projection = annotations(
         &ctx,
         &scan,
-        &mut Default::default(),
+        &mut cadmpeg_ir::annotations::Annotations::default(),
         Some(crate::swift::GeometryProjectionInputs {
             topology: crate::swift::PrimaryTopology {
                 bodies: &[],
@@ -1478,7 +1478,7 @@ fn swift_unbindable_cad_identifiers_skip_topology_indexes() {
     let bodies = vec![
         Body {
             id: BodyId::mint("sldprt:brep:body#11").unwrap(),
-            kind: Default::default(),
+            kind: cadmpeg_ir::topology::BodyKind::default(),
             regions: Vec::new(),
             transform: None,
             name: None,
@@ -1541,7 +1541,7 @@ fn swift_unbindable_cad_identifiers_skip_topology_indexes() {
         let projection = annotations(
             &ctx,
             &scan,
-            &mut Default::default(),
+            &mut cadmpeg_ir::annotations::Annotations::default(),
             Some(crate::swift::GeometryProjectionInputs {
                 topology: crate::swift::PrimaryTopology {
                     bodies: if empty { &[] } else { &bodies },
@@ -1562,7 +1562,7 @@ fn swift_unbindable_cad_identifiers_skip_topology_indexes() {
             length(4.0)
         );
         assert!(
-            matches!(projection.annotations[0].targets.as_slice(), [PmiTarget::ShapeAspect { source_id }] if source_id.as_str() == "F10")
+            matches!(projection.annotations.first().expect("one annotation").targets.as_slice(), [PmiTarget::ShapeAspect { source_id }] if source_id.as_str() == "F10")
         );
         ctx.finish_session().unwrap();
     }

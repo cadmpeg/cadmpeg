@@ -18,22 +18,22 @@ use std::collections::BTreeMap;
 
 // Core admits four buckets, four control bytes, sixteen trailing controls,
 // and max(element alignment, sixteen)-one padding for a first table.
-const SCALAR_TABLE_BYTES: u64 = 4 * std::mem::size_of::<(&str, &FeatureInputScalar)>() as u64
+const SCALAR_TABLE_BYTES: u64 = 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(&str, &FeatureInputScalar)>())
     + 4
     + 16
-    + ((if std::mem::align_of::<(&str, &FeatureInputScalar)>() > 16 {
+    + cadmpeg_core::decode::u64_from_index((if std::mem::align_of::<(&str, &FeatureInputScalar)>() > 16 {
         std::mem::align_of::<(&str, &FeatureInputScalar)>()
     } else {
         16
-    }) - 1) as u64;
-const NAME_TABLE_BYTES: u64 = 4 * std::mem::size_of::<(&str, &str)>() as u64
+    }) - 1);
+const NAME_TABLE_BYTES: u64 = 4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(&str, &str)>())
     + 4
     + 16
-    + ((if std::mem::align_of::<(&str, &str)>() > 16 {
+    + cadmpeg_core::decode::u64_from_index((if std::mem::align_of::<(&str, &str)>() > 16 {
         std::mem::align_of::<(&str, &str)>()
     } else {
         16
-    }) - 1) as u64;
+    }) - 1);
 const DRIVING_BYTES: u64 = SCALAR_TABLE_BYTES + NAME_TABLE_BYTES;
 
 fn fixture(role: FeatureInputScalarRole) -> (Feature, DesignParameter, FeatureInputLane) {
@@ -77,7 +77,7 @@ fn fixture(role: FeatureInputScalarRole) -> (Feature, DesignParameter, FeatureIn
         FeatureInputScalarRole::Display => {
             RelationScalars::from_refs(vec!["scalar".into()], None, Some("scalar".into()))
         }
-        _ => unreachable!("fixture uses driving or display scalars"),
+        FeatureInputScalarRole::Native => unreachable!("fixture uses driving or display scalars"),
     }
     .unwrap();
     lane.names = ["D0", "D1"]
@@ -129,7 +129,7 @@ fn relation_lookup_storage_driving_reuses_tables_and_keeps_last_values() {
         )
         .unwrap()
         .unwrap();
-        assert!(std::ptr::eq(selected, &parameter));
+        assert!(std::ptr::eq(selected, &raw const parameter));
         ctx.reserve_scoped(DRIVING_BYTES, "reuse relation driving lookup storage")
             .unwrap();
     }
@@ -154,7 +154,7 @@ fn relation_lookup_storage_display_reuses_tables_and_preserves_value_gate() {
         )
         .unwrap()
         .unwrap();
-        assert!(std::ptr::eq(selected, &parameter));
+        assert!(std::ptr::eq(selected, &raw const parameter));
         ctx.reserve_scoped(NAME_TABLE_BYTES, "reuse relation display lookup storage")
             .unwrap();
     }

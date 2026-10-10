@@ -34,8 +34,7 @@ fn native_owner_staging_releases_outer_shells_and_index() {
     );
     let error = ctx
         .reserve_scoped(1, "after SLDPRT owner staging")
-        .err()
-        .expect("named scratch boundary refuses");
+        .expect_err("named scratch boundary refuses");
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected scratch refusal");
     };
@@ -65,8 +64,7 @@ fn native_owner_staging_retains_output_member_storage() {
         |name| name.parent.as_str(),
         |name| name.ordinal,
     )
-    .err()
-    .expect("output member slots need retained admission");
+    .expect_err("output member slots need retained admission");
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected retained refusal");
     };

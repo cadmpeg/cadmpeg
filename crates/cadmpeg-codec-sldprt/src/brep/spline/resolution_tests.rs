@@ -261,7 +261,7 @@ fn absent_multiplicity_headers_skip_knot_count_index_storage() {
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let bytes = f64_array(0x80, 40, &[0.0; 4096]);
+    let bytes = f64_array(0x80, 40, &vec![0.0; 4096]);
     let mut arrays = Arrays::default();
     arrays.f64s.insert(
         40,

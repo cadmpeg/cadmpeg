@@ -330,9 +330,8 @@ pub(super) fn synthesize_cylinder_seams(
         admit_brep_entity(ctx)?;
         ctx.reserve_vec(&mut out.curves, 1, "collect Parasolid cylinder seam curves")?;
         let id = identity_storage.with_storage(|| curve_id.try_clone_for_decode(ctx, COPY))?;
-        let line = match cadmpeg_ir::geometry::analytic::LineCurve::try_new(pa, direction) {
-            Ok(payload) => payload,
-            Err(_) => continue,
+        let Ok(line) = cadmpeg_ir::geometry::analytic::LineCurve::try_new(pa, direction) else {
+            continue;
         };
         let (id, loop_a_id, vertex_a, vertex_b) =
             identity_storage.commit_value((id, loop_a_id, vertex_a, vertex_b))?;

@@ -2549,7 +2549,7 @@ pub(crate) fn brep_body(
         &mut out,
     )?;
     let mut colored_faces = face_colors.into_iter().collect::<Vec<_>>();
-    colored_faces.sort_by(|(left, _), (right, _)| left.cmp(right));
+    colored_faces.sort_by_key(|(left, _)| *left);
     for (face, color) in colored_faces {
         entity53(&mut out, color_attrs[&face], color);
     }

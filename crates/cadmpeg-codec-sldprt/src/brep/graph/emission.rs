@@ -96,7 +96,7 @@ use std::collections::HashSet;
 
 pub(super) fn decode_graph(
     ctx: &DecodeContext<'_>,
-    carriers: &CarrierView<'_, '_>,
+    carriers: CarrierView<'_, '_>,
     t: &topology::Tables,
     mut entity_facts: entity::FactsSource<'_>,
     typed_facts: &typed::Facts,

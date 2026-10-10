@@ -76,8 +76,7 @@ fn opaque_link_attachment_releases_map_and_group_scratch() {
     );
     let error = ctx
         .reserve_scoped(1, "after opaque attachment")
-        .err()
-        .expect("post-attachment boundary refuses");
+        .expect_err("post-attachment boundary refuses");
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected scratch refusal");
     };

@@ -667,7 +667,7 @@ pub(in crate::brep) fn scan_curve_carriers_into<'ctx>(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut sources = demand::Sources::new(ctx, bytes, false)?;
     let mut starts = 0..bytes.len().checked_sub(6).map_or(0, |end| end);
-    while starts.len() != 0 {
+    while !starts.is_empty() {
         let Some(off) = ctx.next_charged(&mut starts, "scan Parasolid curve wrappers")? else {
             break;
         };
@@ -1181,7 +1181,7 @@ pub(in crate::brep) fn scan_surface_carriers_into<'ctx>(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut sources = demand::Sources::new(ctx, bytes, true)?;
     let mut starts = 0..bytes.len().checked_sub(1).map_or(0, |end| end);
-    while starts.len() != 0 {
+    while !starts.is_empty() {
         let Some(off) = ctx.next_charged(&mut starts, "scan Parasolid surface wrappers")? else {
             break;
         };

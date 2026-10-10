@@ -45,7 +45,7 @@ pub(super) struct SweepSurfaceResolution {
 
 pub(super) fn resolve_sweep_surface<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
-    carriers: &CarrierView<'_, '_>,
+    carriers: CarrierView<'_, '_>,
     tables: &topology::Tables,
     face: &WalkedFace,
     refusal: &mut RefusalSink<'_, 'ctx>,
@@ -391,7 +391,7 @@ pub(super) fn emit_offset_surface(
 pub(super) fn support_is_acyclic(
     ctx: &DecodeContext<'_>,
     attr: u16,
-    carriers: &CarrierView<'_, '_>,
+    carriers: CarrierView<'_, '_>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let (acyclic, storage) = ctx
         .with_scoped_storage("hold Parasolid surface support walk", || {
@@ -404,7 +404,7 @@ pub(super) fn support_is_acyclic(
 fn support_is_acyclic_with(
     ctx: &DecodeContext<'_>,
     attr: u16,
-    carriers: &CarrierView<'_, '_>,
+    carriers: CarrierView<'_, '_>,
     resolving: &mut BTreeSet<u16>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let _depth = ctx.enter_nested("check Parasolid surface support")?;
@@ -430,7 +430,7 @@ fn support_is_acyclic_with(
 pub(super) fn ensure_surface_support(
     sink: &mut BrepSink<'_, '_, '_>,
     attr: u16,
-    carriers: &CarrierView<'_, '_>,
+    carriers: CarrierView<'_, '_>,
     indexes: &mut ProceduralSupportIndexes<'_, '_>,
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
@@ -460,7 +460,7 @@ struct SurfaceSupportWalk<'ctx> {
 fn ensure_surface_support_with(
     sink: &mut BrepSink<'_, '_, '_>,
     attr: u16,
-    carriers: &CarrierView<'_, '_>,
+    carriers: CarrierView<'_, '_>,
     indexes: &mut ProceduralSupportIndexes<'_, '_>,
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,

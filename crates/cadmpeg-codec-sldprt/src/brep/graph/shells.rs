@@ -116,7 +116,7 @@ impl<'a, 'ctx, 'arena> ShellFaceIndex<'a, 'ctx, 'arena> {
     ) -> Result<Self, CodecError> {
         let mut neighbor_storage = ctx.reserve_scoped(0, "index Parasolid face neighbors")?;
         let mut neighbors = BTreeMap::<usize, BTreeSet<usize>>::new();
-        let (_, build_storage) = ctx.with_scoped_storage("index Parasolid shell faces", || {
+        let ((), build_storage) = ctx.with_scoped_storage("index Parasolid shell faces", || {
             let face_indices = ctx.collect_hash_map(
                 faces
                     .iter()
@@ -273,7 +273,7 @@ impl<'a, 'ctx, 'arena> ShellFaceIndex<'a, 'ctx, 'arena> {
                 _shell: component_shell,
             });
         };
-        let (_, workspace) = ctx.with_scoped_storage(WALK, || {
+        let ((), workspace) = ctx.with_scoped_storage(WALK, || {
             let members = ctx.collect_btree_set(candidates.values.iter().copied(), WALK)?;
             let mut assigned = BTreeSet::new();
             let mut pending = Vec::new();

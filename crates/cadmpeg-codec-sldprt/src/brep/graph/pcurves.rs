@@ -64,6 +64,7 @@ struct PcurveSupports<'a, 'ctx> {
 }
 
 /// Read-only arenas whose references remain valid across all pcurve passes.
+#[derive(Clone, Copy)]
 struct PcurveArenas<'a> {
     loops: &'a [cadmpeg_ir::topology::Loop],
     faces: &'a [cadmpeg_ir::topology::Face],

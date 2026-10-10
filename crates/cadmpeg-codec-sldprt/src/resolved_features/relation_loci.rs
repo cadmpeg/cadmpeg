@@ -2218,8 +2218,8 @@ impl CanonicalProfileLocus<'_> {
         operation: &'static str,
     ) -> Result<bool, CodecError> {
         ctx.equal(
-            &(self.role as u8, self.entity),
-            &(other.role as u8, other.entity),
+            &(self.role.ordinal(), self.entity),
+            &(other.role.ordinal(), other.entity),
             operation,
         )
     }
@@ -2231,8 +2231,8 @@ impl CanonicalProfileLocus<'_> {
         operation: &'static str,
     ) -> Result<bool, CodecError> {
         ctx.equal(
-            &(self.role as u8, self.entity),
-            &(SketchLocusRole::of_locus(locus) as u8, locus_entity(locus)),
+            &(self.role.ordinal(), self.entity),
+            &(SketchLocusRole::of_locus(locus).ordinal(), locus_entity(locus)),
             operation,
         )
     }
@@ -2290,7 +2290,7 @@ impl<'a, 'ctx> CanonicalProfileLoci<'a, 'ctx> {
                 (
                     locus.source_index,
                     locus.point,
-                    (locus.entity, locus.role as u8),
+                    (locus.entity, locus.role.ordinal()),
                 )
             },
             |(left_index, left_point, (left_entity, left_role)),

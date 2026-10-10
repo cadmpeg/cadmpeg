@@ -346,7 +346,7 @@ impl<'a, 'aliases, 'ctx, 'arena> ParameterExpressionParser<'a, 'aliases, 'ctx, '
                         .map(|(values, _storage)| {
                             self.ctx
                                 .get_hash_map(values, &id, "check SLDPRT parameter evaluation")
-                                .map(|value| value.copied())
+                                .map(Option::<&&ParameterValue>::copied)
                         })
                         .transpose()?
                         .flatten())

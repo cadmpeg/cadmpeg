@@ -1508,7 +1508,7 @@ mod tests {
         let _probe = RefusalProbe::arm(
             ResourceDimension::MaterializedBytes,
             "copy typed Parasolid body ownership references",
-            Some(2 * std::mem::size_of::<u32>() as u64),
+            Some(2 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>())),
         );
         storage
             .with_storage(|| target.merge_missing(&ctx, &source))
@@ -1536,7 +1536,7 @@ mod tests {
         let _probe = RefusalProbe::arm(
             ResourceDimension::MaterializedBytes,
             "copy typed Parasolid body ownership references",
-            Some(2 * std::mem::size_of::<u32>() as u64),
+            Some(2 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>())),
         );
         let Err(CodecError::ResourceLimit(limit)) =
             storage.with_storage(|| target.merge_missing(&ctx, &source))
@@ -1544,7 +1544,7 @@ mod tests {
             panic!("an accepted body must copy its stream-local ownership refs");
         };
         assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
-        assert_eq!(limit.additional, 2 * std::mem::size_of::<u32>() as u64);
+        assert_eq!(limit.additional, 2 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>()));
         assert_eq!(ctx.resource_refusal(), Some(limit));
     }
 

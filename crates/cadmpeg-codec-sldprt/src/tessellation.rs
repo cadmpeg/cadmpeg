@@ -2190,7 +2190,7 @@ struct BoundaryTolerance {
 /// point vector is destroyed before its materialized storage reservation.
 struct PlanarBoundarySamples<'ctx> {
     points: Vec<Point2>,
-    _storage: ScopedReservation<'ctx>,
+    storage: ScopedReservation<'ctx>,
 }
 
 impl std::ops::Deref for PlanarBoundarySamples<'_> {
@@ -2236,7 +2236,7 @@ fn planar_boundary_samples<'ctx>(
                 ctx.with_scoped_storage(OPERATION, || ctx.collection_vec(1, OPERATION))?;
             let mut samples = PlanarBoundarySamples {
                 points,
-                _storage: storage,
+                storage,
             };
             samples.points.push(frame.project(start));
             Ok(Some((samples, 0.0)))
@@ -2393,7 +2393,7 @@ impl PlanarArc {
         let solved_surface = require_some!(surface.solved());
         let mut samples = PlanarBoundarySamples {
             points: Vec::new(),
-            _storage: ctx.reserve_scoped(0, "hold SLDPRT planar trim arc samples")?,
+            storage: ctx.reserve_scoped(0, "hold SLDPRT planar trim arc samples")?,
         };
         for index in 0..segments {
             ctx.charge_work(1, "sample SLDPRT planar trim arc")?;
@@ -2414,7 +2414,7 @@ impl PlanarArc {
                 return Ok(None);
             }
             ctx.push_scoped_vec(
-                &mut samples._storage,
+                &mut samples.storage,
                 &mut samples.points,
                 frame.project(point),
                 "collect SLDPRT planar trim arc samples",

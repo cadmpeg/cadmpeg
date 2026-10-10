@@ -53,7 +53,7 @@ fn borrowed_grid_scale_uses_one_visit_per_pole() {
                 &ctx,
                 surface_poles(&ctx, &surface)
                     .unwrap()
-                    .map(|point| point.get()),
+                    .map(cadmpeg_ir::features::FinitePoint3::get),
             )
         });
         assert_eq!(

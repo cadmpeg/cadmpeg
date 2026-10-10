@@ -131,11 +131,11 @@ fn configuration_base_features<'ctx>(
                 ordinal: feature.ordinal,
                 name: None,
                 suppressed: None,
-                dependencies: Default::default(),
+                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 source_properties: BTreeMap::new(),
                 source_tag: None,
                 source_text: None,
-                source_content: Default::default(),
+                source_content: cadmpeg_ir::features::FeatureContent::default(),
                 evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                     feature
                         .evaluation
@@ -217,11 +217,11 @@ fn copy_configuration_edge_features(
             ordinal: feature.ordinal,
             name: None,
             suppressed: feature.suppressed,
-            dependencies: Default::default(),
-            source_properties: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::default(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
             ),
@@ -271,7 +271,7 @@ fn copy_configuration_state_features<'ctx>(
                 ordinal: feature.ordinal,
                 name: text(&feature.name)?,
                 suppressed: feature.suppressed,
-                dependencies: Default::default(),
+                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 source_properties: crate::history::project::copy_projected_feature_properties(
                     ctx,
                     &feature.source_properties,
@@ -279,7 +279,7 @@ fn copy_configuration_state_features<'ctx>(
                 )?,
                 source_tag: None,
                 source_text: None,
-                source_content: Default::default(),
+                source_content: cadmpeg_ir::features::FeatureContent::default(),
                 evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                 ),

@@ -15,7 +15,7 @@ fn empty_output_sources_do_not_index_history_ordinals() {
     let histories = [crate::records::FeatureHistory {
         id: "history".into(),
         part_name: None,
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         content: Vec::new(),
         configurations: Vec::new(),
         features: vec![crate::history::tests::feature("native", Some("700"), 0)],
@@ -45,7 +45,7 @@ fn binding_without_sketch_features_does_not_allocate_indexes() {
     let histories = [crate::records::FeatureHistory {
         id: "history".into(),
         part_name: None,
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         content: Vec::new(),
         configurations: Vec::new(),
         features: vec![crate::history::tests::feature("native", Some("700"), 0)],
@@ -74,7 +74,7 @@ fn duplicate_body_modifiers_copy_only_the_published_body() {
     let history = crate::records::FeatureHistory {
         id: "history".into(),
         part_name: None,
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         content: Vec::new(),
         configurations: Vec::new(),
         features: vec![native],
@@ -116,7 +116,7 @@ fn invalid_body_modifier_does_not_retain_candidate_storage() {
     let history = crate::records::FeatureHistory {
         id: "history".into(),
         part_name: None,
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         content: Vec::new(),
         configurations: Vec::new(),
         features: vec![native],
@@ -153,7 +153,7 @@ fn face_only_outputs_do_not_index_body_modifier_ordinals() {
     let histories = [crate::records::FeatureHistory {
         id: "history".into(),
         part_name: None,
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         content: Vec::new(),
         configurations: Vec::new(),
         features: vec![crate::history::tests::feature("native", Some("700"), 0)],
@@ -224,7 +224,7 @@ fn existing_sketch_alias_dependency_does_not_copy_the_base_identity() {
     let histories = [crate::records::FeatureHistory {
         id: "history".into(),
         part_name: None,
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         content: Vec::new(),
         configurations: Vec::new(),
         features: vec![
@@ -238,7 +238,7 @@ fn existing_sketch_alias_dependency_does_not_copy_the_base_identity() {
         configuration: None,
         visible: None,
         placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved {},
-        profiles: Default::default(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     }];
     let mut policy = DecodePolicy::service();

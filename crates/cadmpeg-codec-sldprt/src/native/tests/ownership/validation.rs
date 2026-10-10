@@ -37,10 +37,10 @@ fn fixture() -> (SldprtNative, cadmpeg_ir::NativeNamespace) {
 
 #[test]
 fn native_load_releases_workspace_with_owned_lanes_alive() {
+    const EMPTY_INPUT_WORKSPACE: u64 = 16 * 1024 * 1024;
     let (expected, namespace) = fixture();
     // The effective empty-input workspace is MATERIALIZED_BASE = 16 MiB.
     // This is a full release check, not a whole-load peak estimate.
-    const EMPTY_INPUT_WORKSPACE: u64 = 16 * 1024 * 1024;
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = EMPTY_INPUT_WORKSPACE;
     let arena = DecodeArena::new();

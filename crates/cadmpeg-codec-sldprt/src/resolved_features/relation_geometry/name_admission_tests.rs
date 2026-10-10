@@ -80,7 +80,7 @@ fn declared_handle_owner_admits_class_name() {
     let ctx = cadmpeg_test_support::service_decode_context();
     assert!(
         matches!(declared_entity_handle_owner(&ctx, &lanes, &operand).unwrap(),
-        DeclaredEntityHandleOwner::Unique(lane) if std::ptr::eq(lane, &lanes[0]))
+        DeclaredEntityHandleOwner::Unique(lane) if std::ptr::eq(lane, &raw const lanes[0]))
     );
     let CodecError::ResourceLimit(limit) =
         crate::test_support::work_refusal_at("match SLDPRT entity-handle class", |ctx| {

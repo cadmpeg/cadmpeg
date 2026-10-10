@@ -856,7 +856,7 @@ impl ChartCandidates<'_, '_> {
 
 impl<'a, 'ctx> RecordsView<'a, 'ctx> {
     fn charts(
-        &self,
+        self,
         ctx: &DecodeContext<'_>,
         attr: u16,
     ) -> Result<Option<ChartCandidates<'a, 'ctx>>, CodecError> {
@@ -871,14 +871,14 @@ impl<'a, 'ctx> RecordsView<'a, 'ctx> {
                 .map(|values| ChartCandidates::Scoped(values.as_slice()))),
         }
     }
-    fn terms(&self) -> &'a BTreeMap<u16, Vec<[f64; 3]>> {
+    fn terms(self) -> &'a BTreeMap<u16, Vec<[f64; 3]>> {
         match self {
             #[cfg(test)]
             Self::Retained(records) => &records.terms,
             Self::Scoped(records) => &records.terms,
         }
     }
-    fn uvs(&self) -> &'a BTreeMap<u16, Vec<UvRecord>> {
+    fn uvs(self) -> &'a BTreeMap<u16, Vec<UvRecord>> {
         match self {
             #[cfg(test)]
             Self::Retained(records) => &records.uvs,

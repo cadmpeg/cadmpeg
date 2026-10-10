@@ -250,13 +250,13 @@ fn swift_reachability_membership_refusal_reaches_the_caller() {
 fn swift_reachability_explores_shared_descendants_once() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut features = Vec::new();
-    for level in 0..20 {
+    for level in 0_i32..20 {
         for branch in 0..2 {
             let mut feature = entity("GdtCompoundHole");
             if level < 19 {
                 for child in 0..2 {
                     feature.features.references.push(reference(
-                        &format!("F{}-{child}", level + 1),
+                        &format!("F{}-{child}", level.checked_add(1).expect("fixture level")),
                         "GdtCompoundHole",
                     ));
                 }
@@ -343,13 +343,13 @@ fn swift_direct_reachability_defers_subfeature_validation() {
 
 fn shared_diamond() -> Vec<(String, Entity)> {
     let mut features = Vec::new();
-    for level in 0..20 {
+    for level in 0_i32..20 {
         for branch in 0..2 {
             let mut feature = entity("GdtCompoundHole");
             if level < 19 {
                 for child in 0..2 {
                     feature.features.references.push(reference(
-                        &format!("F{}-{child}", level + 1),
+                        &format!("F{}-{child}", level.checked_add(1).expect("fixture level")),
                         "GdtCompoundHole",
                     ));
                 }

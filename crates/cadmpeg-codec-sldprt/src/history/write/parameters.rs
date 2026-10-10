@@ -431,6 +431,7 @@ pub(in crate::history) fn rewrite_parameter_expression(
     expression: &str,
     aliases: &HashMap<String, String>,
 ) -> Result<Option<String>, CodecError> {
+    const OPERATION: &str = "rewrite SLDPRT parameter expression";
     if aliases.is_empty() {
         return Ok(None);
     }
@@ -438,7 +439,6 @@ pub(in crate::history) fn rewrite_parameter_expression(
     let Some(tokens) = tokens else {
         return Ok(None);
     };
-    const OPERATION: &str = "rewrite SLDPRT parameter expression";
     let mut rewritten = String::new();
     let mut tail = expression;
     let mut replaced = false;

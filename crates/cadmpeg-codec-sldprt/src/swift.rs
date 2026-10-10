@@ -755,9 +755,9 @@ pub(crate) fn annotations(
     let AnnotationProjection {
         annotations,
         unsupported,
-        _unsupported_storage,
+        _unsupported_storage: unsupported_storage,
     } = projection;
-    drop((unsupported, _unsupported_storage));
+    drop((unsupported, unsupported_storage));
     Ok(ProjectedAnnotations {
         annotations,
         unsupported_loss,
@@ -1594,8 +1594,8 @@ fn record_projection(
     }
 }
 
-fn project_with_topology<'model, 'ctx, 'arena>(
-    ctx: &'ctx DecodeContext<'arena>,
+fn project_with_topology<'model, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     root: &Entity,
     topology: Option<&'model TopologyIdentityIndex<'model, 'ctx>>,
     rendered: &[RenderedDimension],
