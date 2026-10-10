@@ -117,7 +117,12 @@ fn child_string_id_exhaustion_admits_only_actual_bytes() {
     use crate::native::element_map::ElementMapGroup;
     let diagnostic = "element-map node 1 group Edge child 0 has an invalid child string-id list";
     let diagnostic_work = 2 * cadmpeg_core::decode::u64_from_index(diagnostic.len());
-    for (ids, work) in [("0", 40), ("0.12", 48), ("0.", 37 + diagnostic_work), ("1.unvisited", 46 + diagnostic_work)] {
+    for (ids, work) in [
+        ("0", 40),
+        ("0.12", 48),
+        ("0.", 37 + diagnostic_work),
+        ("1.unvisited", 46 + diagnostic_work),
+    ] {
         with_work(work, |ctx| {
             let result = ElementMapNodes::from_nodes(
                 vec![ElementMapNode {
@@ -129,13 +134,11 @@ fn child_string_id_exhaustion_admits_only_actual_bytes() {
                     }],
                 }],
                 ctx,
-            ).unwrap();
+            )
+            .unwrap();
             match ids {
                 "0" | "0.12" => assert!(result.is_ok()),
-                "0." | "1.unvisited" => assert_eq!(
-                    result.unwrap_err(),
-                    diagnostic
-                ),
+                "0." | "1.unvisited" => assert_eq!(result.unwrap_err(), diagnostic),
                 _ => unreachable!(),
             }
             assert_eq!(ctx.resource_refusal(), None);

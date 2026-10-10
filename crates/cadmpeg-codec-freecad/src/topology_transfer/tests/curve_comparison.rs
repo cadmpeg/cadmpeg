@@ -29,8 +29,13 @@ fn nurbs(rational: bool, last_x: f64) -> TextCurve {
         points,
         rational.then(|| vec![FiniteReal::ONE; POLES]),
         false,
-    ).unwrap().unwrap();
-    assert_eq!(matches!(curve.pole_rows(), NurbsPoles3::Rational { .. }), rational);
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        matches!(curve.pole_rows(), NurbsPoles3::Rational { .. }),
+        rational
+    );
     TextCurve::Nurbs(curve)
 }
 
@@ -54,41 +59,70 @@ fn exact_curve_comparison_preserves_owned_polynomial_rational_and_nested_records
                         basis: NestedCurve::try_new(TextCurve::Trimmed {
                             parameter_range: [FiniteReal::ZERO, FiniteReal::ONE],
                             basis: NestedCurve::try_new(curve).unwrap(),
-                        }).unwrap(),
+                        })
+                        .unwrap(),
                     }
                 } else {
                     curve
                 }
             };
-            let curves = [wrap(nurbs(rational, 1.0)), wrap(nurbs(rational, 1.0)), wrap(nurbs(rational, 2.0))];
+            let curves = [
+                wrap(nurbs(rational, 1.0)),
+                wrap(nurbs(rational, 1.0)),
+                wrap(nurbs(rational, 2.0)),
+            ];
             let shapes = TextTShapes::default();
             let tables = Tables {
-                curves: &curves, tshapes: &shapes,
-                locations: &[], curve2ds: &[], surfaces: &[], polygons3d: &[],
-                polygons_on_triangulations: &[], triangulations: &[], roots: &[],
+                curves: &curves,
+                tshapes: &shapes,
+                locations: &[],
+                curve2ds: &[],
+                surfaces: &[],
+                polygons3d: &[],
+                polygons_on_triangulations: &[],
+                triangulations: &[],
+                roots: &[],
             };
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = u64::MAX;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let equivalent = [exact(1), exact(2), exact(1), exact(2)];
-            assert_eq!(select_exact_curve_representation(&ctx, 7, &equivalent, &tables).unwrap().unwrap().0, 0);
+            assert_eq!(
+                select_exact_curve_representation(&ctx, 7, &equivalent, &tables)
+                    .unwrap()
+                    .unwrap()
+                    .0,
+                0
+            );
             crate::test_support::refusal_at(
                 cadmpeg_core::decode::ResourceDimension::WorkUnits,
                 &[],
                 "FreeCAD exact curve equality",
                 |ctx| select_exact_curve_representation(ctx, 7, &equivalent, &tables),
             );
-            let error = select_exact_curve_representation(&ctx, 7, &[exact(1), exact(3)], &tables).unwrap_err();
+            let error = select_exact_curve_representation(&ctx, 7, &[exact(1), exact(3)], &tables)
+                .unwrap_err();
             assert!(matches!(error, cadmpeg_core::CodecError::Malformed(message)
                 if message == "edge TShape 7 has non-equivalent 3D curve representations"));
-            let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "FreeCAD exact curve equality", None);
+            let _probe = RefusalProbe::arm(
+                ResourceDimension::WorkUnits,
+                "FreeCAD exact curve equality",
+                None,
+            );
             for representations in [[exact(1), exact(4)], [exact(0), exact(0)]] {
-                let error = select_exact_curve_representation(&ctx, 7, &representations, &tables).unwrap_err();
+                let error = select_exact_curve_representation(&ctx, 7, &representations, &tables)
+                    .unwrap_err();
                 assert!(matches!(error, cadmpeg_core::CodecError::Malformed(message)
                     if message == "edge TShape 7 has non-equivalent 3D curve representations"));
             }
-            assert_eq!(select_exact_curve_representation(&ctx, 7, &[exact(4), exact(5)], &tables).unwrap().unwrap().0, 0);
+            assert_eq!(
+                select_exact_curve_representation(&ctx, 7, &[exact(4), exact(5)], &tables)
+                    .unwrap()
+                    .unwrap()
+                    .0,
+                0
+            );
             assert_eq!(ctx.resource_refusal(), None);
         }
     }
@@ -116,9 +150,14 @@ fn repeated_nurbs_archive() -> Vec<u8> {
 #[test]
 fn exact_nurbs_comparison_refuses_through_decode() {
     let input = repeated_nurbs_archive();
-    let result = FcstdCodec.decode(&mut Cursor::new(&input), &DecodeOptions::default()).unwrap();
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(&input), &DecodeOptions::default())
+        .unwrap();
     assert_eq!(result.ir().model.edges.len(), 1);
     assert_eq!(result.ir().model.curves.len(), 2);
-    assert_eq!(result.ir().model.edges[0].curve(), Some(&result.ir().model.curves[0].id));
+    assert_eq!(
+        result.ir().model.edges[0].curve(),
+        Some(&result.ir().model.curves[0].id)
+    );
     assert_codec_work_refusal(&input, "FreeCAD exact curve equality");
 }

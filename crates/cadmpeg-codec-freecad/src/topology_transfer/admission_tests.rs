@@ -41,12 +41,25 @@ fn assert_topology_occurrence_materialized_refusal(operation: &str) {
         .decode(&mut Cursor::new(&input), &DecodeOptions::default())
         .expect("map-bearing repeated roots");
     assert_eq!(decoded.ir().model.edges.len(), 256);
-    let namespace = decoded.ir().native.namespace("fcstd").expect("native namespace");
-    let payloads = namespace.arena_as::<ShapePayloadRecord>("shape_payloads").unwrap();
-    let properties = namespace.arena_as::<crate::native::PropertyRecord>("properties").unwrap();
-    let maps = namespace.arena_as::<crate::native::element_map::ElementMapRecord>("element_maps").unwrap();
+    let namespace = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native namespace");
+    let payloads = namespace
+        .arena_as::<ShapePayloadRecord>("shape_payloads")
+        .unwrap();
+    let properties = namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let maps = namespace
+        .arena_as::<crate::native::element_map::ElementMapRecord>("element_maps")
+        .unwrap();
     assert_eq!(maps.len(), 1);
-    assert_eq!(maps[0].maps.root().groups[0].names[1][0].topology_ids.len(), 256);
+    assert_eq!(
+        maps[0].maps.root().groups[0].names[1][0].topology_ids.len(),
+        256
+    );
 
     crate::test_support::refusal_at(
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
@@ -54,11 +67,19 @@ fn assert_topology_occurrence_materialized_refusal(operation: &str) {
         operation,
         |ctx| {
             let mut ir = CadIr::empty();
-            let (curves, surfaces) = crate::brep::transfer_text_geometry(ctx, &payloads, &properties)?;
+            let (curves, surfaces) =
+                crate::brep::transfer_text_geometry(ctx, &payloads, &properties)?;
             ir.model.curves = curves.curves;
             ir.model.surfaces = surfaces.surfaces;
-            super::transfer(ctx, &mut ir, &payloads, &properties, &mut Vec::new(), !maps.is_empty())
-                .map(|_| ())
+            super::transfer(
+                ctx,
+                &mut ir,
+                &payloads,
+                &properties,
+                &mut Vec::new(),
+                !maps.is_empty(),
+            )
+            .map(|_| ())
         },
     );
 }

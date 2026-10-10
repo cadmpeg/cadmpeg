@@ -341,7 +341,8 @@ fn legacy_element_attribute_error_precedes_final_count() {
 
 #[test]
 fn string_table_validation_refuses_through_the_production_parser() {
-    let document = b"<Document><StringHasher count=\"2\">1.c first\n2.c.1 second\n</StringHasher></Document>";
+    let document =
+        b"<Document><StringHasher count=\"2\">1.c first\n2.c.1 second\n</StringHasher></Document>";
     let (tables, maps) = test_parse(document, 1, &[], &[]).unwrap();
     assert!(maps.is_empty());
     let entries = tables.as_slice()[0].entries();
@@ -360,7 +361,10 @@ fn string_table_validation_refuses_through_the_production_parser() {
             super::parse_bytes(ctx, document, 1, &[], &[])
         });
     }
-    for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems] {
+    for dimension in [
+        ResourceDimension::MaterializedBytes,
+        ResourceDimension::CollectionItems,
+    ] {
         crate::test_support::refusal_at(dimension, document, "FreeCAD string table index", |ctx| {
             parse(ctx, &xml, 1, &[], &[])
         });
