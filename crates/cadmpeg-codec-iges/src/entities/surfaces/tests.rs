@@ -1888,3 +1888,5 @@ mod identity_custody;
 mod entry_refusal;
 
 mod revolution_identity;
+
+mod nurbs_weight_lifetimes;
