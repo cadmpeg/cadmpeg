@@ -1207,9 +1207,13 @@ fn linear_boundary_relationship_rejects_a_self_intersecting_outer_boundary() {
     ]))];
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let rings = linear_boundary_rings(candidates.iter().map(Option::as_ref), BoundarySpace::Parameter, &ctx)
-        .unwrap()
-        .unwrap();
+    let rings = linear_boundary_rings(
+        candidates.iter().map(Option::as_ref),
+        BoundarySpace::Parameter,
+        &ctx,
+    )
+    .unwrap()
+    .unwrap();
     let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
@@ -1254,18 +1258,25 @@ fn linear_boundary_rings_refuse_outer_and_nested_point_storage() {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                linear_boundary_rings(candidates.iter().map(Option::as_ref), BoundarySpace::Parameter, &ctx).map(|_| ())
+                linear_boundary_rings(
+                    candidates.iter().map(Option::as_ref),
+                    BoundarySpace::Parameter,
+                    &ctx,
+                )
+                .map(|_| ())
             },
         );
     }
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert!(
-        linear_boundary_rings(candidates.iter().map(Option::as_ref), BoundarySpace::Parameter, &ctx)
-            .unwrap()
-            .unwrap()
-            .is_ok()
-    );
+    assert!(linear_boundary_rings(
+        candidates.iter().map(Option::as_ref),
+        BoundarySpace::Parameter,
+        &ctx
+    )
+    .unwrap()
+    .unwrap()
+    .is_ok());
 }
 
 #[test]

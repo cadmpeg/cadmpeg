@@ -7,9 +7,21 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::CadIr;
 
-fn run<'ctx>(ir: &mut CadIr, parameters: &[ParameterRecord], global: &ProjectedGlobal,
-    ctx: &'ctx DecodeContext<'_>) -> Result<(), CodecError> {
-    super::super::project_geometry(ir, &[], parameters, &std::collections::BTreeMap::new(), global, ctx).map(|_| ())
+fn run(
+    ir: &mut CadIr,
+    parameters: &[ParameterRecord],
+    global: &ProjectedGlobal,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    super::super::project_geometry(
+        ir,
+        &[],
+        parameters,
+        &std::collections::BTreeMap::new(),
+        global,
+        ctx,
+    )
+    .map(|_| ())
 }
 
 #[test]
@@ -17,24 +29,29 @@ fn geometry_parameter_index_first_and_last_visits_refuse_without_model_changes()
     for count in [1, 64] {
         let (parameters, global) = parameter_inputs(count);
         for visited in [0, count - 1] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = work(visited);
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut ir = CadIr::empty();
-        let first = match run(&mut ir, &parameters, &global, &ctx) {
-            Err(CodecError::ResourceLimit(first)) => first,
-            _ => panic!("expected actual owning Parameter source refusal"),
-        };
-        assert_eq!(first.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(first.operation, "iges geometry parameter traversal");
-        assert_eq!((first.used, first.additional, first.limit), (work(visited), 1, work(visited)));
-        assert_eq!(ir.model, CadIr::empty().model);
-        assert!(matches!(run(&mut ir, &parameters, &global, &ctx),
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = work(visited);
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut ir = CadIr::empty();
+            let Err(CodecError::ResourceLimit(first)) = run(&mut ir, &parameters, &global, &ctx)
+            else {
+                panic!("expected actual owning Parameter source refusal")
+            };
+            assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(first.operation, "iges geometry parameter traversal");
+            assert_eq!(
+                (first.used, first.additional, first.limit),
+                (work(visited), 1, work(visited))
+            );
+            assert_eq!(ir.model, CadIr::empty().model);
+            assert!(matches!(run(&mut ir, &parameters, &global, &ctx),
             Err(CodecError::ResourceLimit(last)) if last == first));
-        assert!(matches!(run(&mut ir, &[], &global, &ctx),
+            assert!(matches!(run(&mut ir, &[], &global, &ctx),
             Err(CodecError::ResourceLimit(last)) if last == first));
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+            );
         }
     }
 }
@@ -49,15 +66,19 @@ fn geometry_parameter_index_completion_has_no_terminal_source_step() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut ir = CadIr::empty();
         // The completed owning map goes directly to the first real child map.
-        let first = match run(&mut ir, &parameters, &global, &ctx) {
-            Err(CodecError::ResourceLimit(first)) => first,
-            _ => panic!("expected next projection's actual source visit"),
+        let Err(CodecError::ResourceLimit(first)) = run(&mut ir, &parameters, &global, &ctx) else {
+            panic!("expected next projection's actual source visit")
         };
         assert_eq!(first.dimension, ResourceDimension::WorkUnits);
         assert_eq!(first.operation, "iges splines parameter index traversal");
-        assert_eq!((first.used, first.additional, first.limit), (work(count), 1, work(count)));
+        assert_eq!(
+            (first.used, first.additional, first.limit),
+            (work(count), 1, work(count))
+        );
         assert_eq!(ir.model, CadIr::empty().model);
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+        );
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
