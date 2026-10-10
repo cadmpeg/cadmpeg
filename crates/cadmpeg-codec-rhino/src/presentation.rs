@@ -150,11 +150,6 @@ fn push_scoped_file_reference_loss(
                 message,
                 "Rhino texture file-reference loss text",
             )?;
-            ctx.charge_retained(5, "Rhino texture file-reference provenance format")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index("PRESENTATION/TEXTURE/FILE_REFERENCE".len()),
-                "Rhino texture file-reference provenance tag",
-            )?;
             Ok::<_, CodecError>(loss.with_provenance(
                 SourceProvenance::root(
                     "rhino",
@@ -200,13 +195,6 @@ struct GroupRecord {
     source_uuid: Option<String>,
     name: String,
     links: Vec<String>,
-}
-
-#[derive(Debug)]
-struct GroupRecordStorage<'ctx> {
-    _name: cadmpeg_core::decode::ScopedReservation<'ctx>,
-    _source_uuid: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
-    id: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -3028,42 +3016,20 @@ fn parse_group<'ctx>(
     data: &[u8],
     range: Range<usize>,
     source_offset: usize,
-) -> Result<(GroupRecord, GroupRecordStorage<'ctx>), FramingError> {
-    let mut reader = BoundedReader::new(data, range.start, range.end)?;
-    let packed = reader.u8()?;
-    if packed >> 4 != 1 {
-        return Err(FramingError::structural(
-            range.start,
-            "group version is unsupported",
-        ));
-    }
-    let index = reader.i32()?;
-    let name_bytes = crate::settings::utf16_payload(&mut reader)?;
-    let (name_storage, name) = ctx
-        .utf16le_scoped_text(
-            name_bytes,
-            name_bytes.len() / 2,
-            false,
-            "Rhino group name",
-        )
-        .map(|(name, storage)| (storage, name))?;
-    let id = if packed & 0x0f >= 1 {
-        Some(uuid(&mut reader)?)
-    } else {
-        None
-    };
-    reader.skip_remaining()?;
-    let id = id.filter(|id| !id.is_nil());
-    let (source_uuid_storage, source_uuid) = match id {
-        Some(id) => {
-            let (text, storage) =
-                ctx.format_scoped(format_args!("{id}"), "Rhino group source UUID")?;
-            (Some(storage), Some(text))
+) -> Result<(GroupRecord, cadmpeg_core::decode::ScopedReservation<'ctx>), FramingError> {
+    ctx.with_scoped_storage("Rhino group parse attempt", || {
+        let mut reader = BoundedReader::new(data, range.start, range.end)?;
+        let packed = reader.u8()?;
+        if packed >> 4 != 1 {
+            return Err(FramingError::structural(range.start, "group version is unsupported"));
         }
-        None => (None, None),
-    };
-    Ok((
-        GroupRecord {
+        let index = reader.i32()?;
+        let name = settings::utf16_retained(ctx, &mut reader, "Rhino group name")?;
+        let id = if packed & 0x0f >= 1 { Some(uuid(&mut reader)?) } else { None };
+        reader.skip_remaining()?;
+        let id = id.filter(|id| !id.is_nil());
+        let source_uuid = id.map(|id| ctx.format_retained(format_args!("{id}"), "Rhino group source UUID")).transpose()?;
+        Ok(GroupRecord {
             id: String::new(),
             identity: id.map_or(GroupIdentity::ArchiveIndex(index), GroupIdentity::SourceUuid),
             source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
@@ -3071,41 +3037,15 @@ fn parse_group<'ctx>(
             source_uuid,
             name,
             links: Vec::new(),
-        },
-        GroupRecordStorage {
-            _name: name_storage,
-            _source_uuid: source_uuid_storage,
-            id: None,
-        },
-    ))
+        })
+    })
 }
 
-/// Makes source identities unique when the archive repeats a group UUID or
-/// archive index. The serialized identity remains in `source_uuid` and
-/// `archive_index`; the suffix identifies the particular source record.
-fn assign_group_id<'ctx>(
-    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
-    group: &mut GroupRecord,
-    storage: Option<&mut GroupRecordStorage<'ctx>>,
-    id: std::fmt::Arguments<'_>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    if let Some(storage) = storage {
-        group.id = String::new();
-        storage.id = None;
-        let (id, id_storage) = ctx.format_scoped(id, operation)?;
-        group.id = id;
-        storage.id = Some(id_storage);
-    } else {
-        group.id = ctx.format_retained(id, operation)?;
-    }
-    Ok(())
-}
-
+/// Makes group identities unique without changing their source fields.
 fn disambiguate_group_ids<'ctx>(
     ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     groups: &mut [GroupRecord],
-    mut staging: Option<&mut [GroupRecordStorage<'ctx>]>,
+    staging: &mut cadmpeg_core::decode::ScopedReservation<'ctx>,
 ) -> Result<usize, CodecError> {
     let mut workspace = ctx.reserve_scoped(0, "Rhino group identity workspace")?;
     let mut counts = HashMap::<GroupIdentity, usize>::new();
@@ -3146,6 +3086,7 @@ fn disambiguate_group_ids<'ctx>(
     drop(counts);
     drop(workspace);
     let changed = duplicate_indices.len();
+    staging.with_storage(|| {
     ctx.charge_work(0, "Rhino duplicate group traversal")?;
     let mut projection_source = duplicate_indices.into_iter();
     for _ in 0..projection_source.len() {
@@ -3157,17 +3098,11 @@ fn disambiguate_group_ids<'ctx>(
         let id = format_args!(
             "{identity}-source-offset-{source_offset:016x}-record-{order:06}"
         );
-        assign_group_id(
-            ctx,
-            group,
-            staging.as_deref_mut().and_then(|values| values.get_mut(order)),
-            id,
-            "Rhino disambiguated group ID",
-        )?;
+        group.id = ctx.format_retained(id, "Rhino disambiguated group ID")?;
     }
     ctx.charge_work(0, "Rhino group identity assignment")?;
     let mut projection_source = groups[..].iter_mut();
-    for order in 0..projection_source.len() {
+    for _ in 0..projection_source.len() {
         let group = ctx.next_charged(&mut projection_source, "Rhino group identity assignment")?
             .ok_or_else(|| CodecError::malformed("Rhino presentation traversal source ended early"))?;
         if !group.id.is_empty() {
@@ -3175,14 +3110,10 @@ fn disambiguate_group_ids<'ctx>(
         }
         let identity = group.identity;
         let id = format_args!("{identity}");
-        assign_group_id(
-            ctx,
-            group,
-            staging.as_deref_mut().and_then(|values| values.get_mut(order)),
-            id,
-            "Rhino group ID",
-        )?;
+        group.id = ctx.format_retained(id, "Rhino group ID")?;
     }
+        Ok::<_, CodecError>(())
+    })?;
     Ok(changed)
 }
 
@@ -3765,10 +3696,7 @@ fn scaled_length(
         || {
             Err(FramingError::structural(
                 reader.position() - 8,
-                ctx.format_retained(
-                    format_args!("scaled {label} is invalid"),
-                    "Rhino scaled_length text",
-                )?,
+                format!("scaled {label} is invalid"),
             ))
         },
         Ok,
@@ -5386,14 +5314,11 @@ fn admit_group_member(
     })
 }
 
-/// Keeps the record owned until its backing reservations have entered the
-/// outer owner. Tuple fields drop the record before its remaining reservations.
+/// Transfers successful record backing into the aggregate staging reservation.
 fn push_presentation_record<'ctx, T>(
     ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     staging: &mut cadmpeg_core::decode::ScopedReservation<'ctx>,
-    guard_storage: &mut cadmpeg_core::decode::ScopedReservation<'ctx>,
     records: &mut Vec<T>,
-    guards: &mut Vec<cadmpeg_core::decode::ScopedReservation<'ctx>>,
     mut record: (
         T,
         cadmpeg_core::decode::ScopedReservation<'ctx>,
@@ -5402,17 +5327,9 @@ fn push_presentation_record<'ctx, T>(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     staging.with_storage(|| ctx.reserve_vec(records, 1, operation))?;
-    guard_storage.with_storage(|| {
-        ctx.reserve_vec(guards, 1, "Rhino presentation record guards")
-    })?;
-    guards.push(record.1);
-    if record.2.is_some() {
-        guard_storage.with_storage(|| {
-            ctx.reserve_vec(guards, 1, "Rhino presentation record guards")
-        })?;
-        if let Some(extra_storage) = record.2.take() {
-            guards.push(extra_storage);
-        }
+    staging.absorb(&mut record.1)?;
+    if let Some(extra_storage) = record.2.as_mut() {
+        staging.absorb(extra_storage)?;
     }
     records.push(record.0);
     Ok(())
@@ -5426,14 +5343,9 @@ pub(crate) fn install<'ctx>(
     let binding = UnitBinding::from_units(scan.metadata.settings.units.as_ref());
     let physical_scale = binding.neutral_scale();
     let mut groups_storage = ctx.reserve_scoped(0, "Rhino group staging records")?;
-    let mut group_scope_storage = ctx.reserve_scoped(0, "Rhino group staging reservations")?;
     let mut staging = ctx.reserve_scoped(0, "Rhino presentation staging records")?;
-    let mut record_guard_storage =
-        ctx.reserve_scoped(0, "Rhino presentation record guard storage")?;
     let mut group_member_workspace;
-    let mut group_storages = Vec::new();
     let mut groups = Vec::new();
-    let mut record_storages = Vec::new();
     let mut materials = Vec::new();
     let mut lights = Vec::new();
     let mut light_index_workspace = ctx.reserve_scoped(0, "Rhino light identity workspace")?;
@@ -5500,26 +5412,8 @@ pub(crate) fn install<'ctx>(
                 {
                     match parse_group(ctx, scan.data, range, record.range.start) {
                         Ok((group, group_storage)) => {
-                            if let Err(error) = groups_storage
-                                .with_storage(|| ctx.reserve_vec(&mut groups, 1, "Rhino groups"))
-                            {
-                                drop(group);
-                                drop(group_storage);
-                                return Err(error);
-                            }
-                            if let Err(error) = group_scope_storage.with_storage(|| {
-                                ctx.reserve_vec(
-                                    &mut group_storages,
-                                    1,
-                                    "Rhino group staging reservations",
-                                )
-                            }) {
-                                drop(group);
-                                drop(group_storage);
-                                return Err(error);
-                            }
-                            groups.push(group);
-                            group_storages.push(group_storage);
+                            push_presentation_record(ctx, &mut groups_storage, &mut groups,
+                                (group, group_storage, None), "Rhino groups")?;
                             parsed = true;
                         }
                         Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
@@ -5628,9 +5522,7 @@ record_losses.append_admitted(
                             push_presentation_record(
                                 ctx,
                                 &mut staging,
-                                &mut record_guard_storage,
                                 &mut materials,
-                                &mut record_storages,
                                 (material, record_storage, None),
                                 "Rhino materials",
                             )?;
@@ -5763,9 +5655,7 @@ attribute_losses.append_admitted(
                         push_presentation_record(
                             ctx,
                             &mut staging,
-                            &mut record_guard_storage,
                             &mut lights,
-                            &mut record_storages,
                             (light, light_storage, attribute_storage.take()),
                             "Rhino lights",
                         )?;
@@ -5792,9 +5682,7 @@ attribute_losses.append_admitted(
                             push_presentation_record(
                                 ctx,
                                 &mut staging,
-                                &mut record_guard_storage,
                                 &mut linetypes,
-                                &mut record_storages,
                                 (value, storage, None),
                                 "Rhino linetypes",
                             )?;
@@ -5834,9 +5722,7 @@ attribute_losses.append_admitted(
                             push_presentation_record(
                                 ctx,
                                 &mut staging,
-                                &mut record_guard_storage,
                                 &mut hatch_patterns,
-                                &mut record_storages,
                                 (value, storage, None),
                                 "Rhino hatch patterns",
                             )?;
@@ -5946,9 +5832,7 @@ attribute_losses.append_admitted(
                             push_presentation_record(
                                 ctx,
                                 &mut staging,
-                                &mut record_guard_storage,
                                 &mut dimension_styles,
-                                &mut record_storages,
                                 (value, storage, extra_storage),
                                 "Rhino dimension styles",
                             )?;
@@ -5983,9 +5867,7 @@ attribute_losses.append_admitted(
                         push_presentation_record(
                             ctx,
                             &mut staging,
-                            &mut record_guard_storage,
                             &mut dimension_styles,
-                            &mut record_storages,
                             (value, storage, None),
                             "Rhino dimension styles",
                         )?;
@@ -6016,9 +5898,7 @@ attribute_losses.append_admitted(
                         push_presentation_record(
                             ctx,
                             &mut staging,
-                            &mut record_guard_storage,
                             &mut images,
-                            &mut record_storages,
                             (value, storage, None),
                             "Rhino images",
                         )?;
@@ -6048,9 +5928,7 @@ attribute_losses.append_admitted(
                             push_presentation_record(
                                 ctx,
                                 &mut staging,
-                                &mut record_guard_storage,
                                 &mut windows_bitmaps,
-                                &mut record_storages,
                                 (value, storage, None),
                                 "Rhino Windows bitmaps",
                             )?;
@@ -6082,9 +5960,7 @@ attribute_losses.append_admitted(
                         push_presentation_record(
                             ctx,
                             &mut staging,
-                            &mut record_guard_storage,
                             &mut texture_mappings,
-                            &mut record_storages,
                             (value.value, storage, None),
                             "Rhino texture mappings",
                         )?;
@@ -6163,9 +6039,7 @@ record_losses.append_admitted(
                             push_presentation_record(
                                 ctx,
                                 &mut staging,
-                                &mut record_guard_storage,
                                 &mut text_styles,
-                                &mut record_storages,
                                 (value, record_storage, None),
                                 "Rhino text styles",
                             )?;
@@ -6264,9 +6138,7 @@ record_losses.append_admitted(
                         push_presentation_record(
                             ctx,
                             &mut staging,
-                            &mut record_guard_storage,
                             &mut lights,
-                            &mut record_storages,
                             (light, light_storage, None),
                             "Rhino lights",
                         )?;
@@ -6358,9 +6230,7 @@ record_losses.append_admitted(
             push_presentation_record(
                 ctx,
                 &mut staging,
-                &mut record_guard_storage,
                 &mut object_presentation,
-                &mut record_storages,
                 (record, record_storage, None),
                 "Rhino object presentation records",
             )?;
@@ -6501,9 +6371,7 @@ record_losses.append_admitted(
         push_presentation_record(
             ctx,
             &mut staging,
-            &mut record_guard_storage,
             &mut layers,
-            &mut record_storages,
             (record, layer_storage, rendering_storage),
             "Rhino layer presentation records",
         )?;
@@ -6527,7 +6395,7 @@ record_losses.append_admitted(
     drop(group_index_counts);
     drop(group_index_workspace);
     let disambiguated_group_count =
-        disambiguate_group_ids(ctx, &mut groups, Some(&mut group_storages))?;
+        disambiguate_group_ids(ctx, &mut groups, &mut groups_storage)?;
     if disambiguated_group_count != 0 {
         push_presentation_loss(ctx, &mut losses, RhinoLossCode::DuplicateRecordResolved, format_args!(
             "{disambiguated_group_count} group source identities were disambiguated by source offset"

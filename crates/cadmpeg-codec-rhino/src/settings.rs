@@ -1143,6 +1143,7 @@ fn parse_layer_extensions(
     archive: ArchiveVersion,
     parent_id: Option<Uuid>,
 ) -> Result<Vec<LayerPerViewportSettings>, FramingError> {
+    let (values, storage) = ctx.with_scoped_storage("Rhino layer extension attempt", || {
     let outer = chunk_at(
         data,
         descriptor.payload_range.start,
@@ -1327,6 +1328,8 @@ fn parse_layer_extensions(
         "Rhino layer per-viewport settings sort",
     )?;
     Ok(values)
+        })?;
+    Ok(storage.commit_value(values)?)
 }
 
 fn packed(reader: &mut BoundedReader<'_>) -> Result<(u8, u8), FramingError> {
@@ -2483,10 +2486,7 @@ fn parse_layer(
     if class.class_uuid != ON_LAYER_UUID {
         return Err(FramingError::Structural {
             offset: record.range.start,
-            message: ctx.format_retained(
-                format_args!("layer record has class UUID {}", class.class_uuid),
-                "Rhino parse_layer text",
-            )?,
+            message: format!("layer record has class UUID {}", class.class_uuid),
         });
     }
     let mut reader = BoundedReader::new(
@@ -2786,6 +2786,8 @@ pub(crate) fn parse_metadata(
     tables: &[Table],
     warnings: &mut Diagnostics,
 ) -> Result<DocumentMetadata, CodecError> {
+    let mut property_storages = std::array::from_fn::<_, { PROPERTY_SINGLETONS.len() }, _>(|_| None);
+    let mut setting_storages = std::array::from_fn::<_, { SETTING_SINGLETONS.len() }, _>(|_| None);
     let mut metadata = DocumentMetadata::default();
     let mut id_workspace = ctx.reserve_scoped(0, "Rhino layer UUID workspace")?;
     let mut ids = HashSet::<Uuid>::new();
@@ -2817,7 +2819,15 @@ pub(crate) fn parse_metadata(
                 _ => None,
             };
             let duplicate_singleton = singleton.as_deref().copied().unwrap_or(false);
-            let result = if table_type == PROPERTIES {
+            let storage_slot = match table_type {
+                PROPERTIES => PROPERTY_SINGLETONS.iter().position(|code| *code == record.typecode)
+                    .map(|slot| &mut property_storages[slot]),
+                SETTINGS => SETTING_SINGLETONS.iter().position(|code| *code == record.typecode)
+                    .map(|slot| &mut setting_storages[slot]),
+                _ => None,
+            };
+            let parse_singleton = |metadata: &mut DocumentMetadata| {
+            if table_type == PROPERTIES {
                 match record.typecode {
                     WRITER_VERSION => {
                         if let Some(value) = record.short_value() {
@@ -2851,6 +2861,21 @@ pub(crate) fn parse_metadata(
                 }
             } else if table_type == SETTINGS {
                 parse_setting(ctx, data, record, &mut metadata.settings, archive)
+            } else {
+                Ok(())
+            }
+            };
+            let result = if let Some(storage_slot) = storage_slot {
+                let mut attempt = ctx.reserve_scoped(0, "Rhino singleton metadata attempt")?;
+                let result = attempt.with_storage(|| parse_singleton(&mut metadata));
+                if result.is_ok() {
+                    // Assignment dropped the replaced value before its old storage is released.
+                    *storage_slot = Some(attempt);
+                }
+                else { drop(attempt); }
+                result
+            } else if matches!(table_type, PROPERTIES | SETTINGS) {
+                parse_singleton(&mut metadata)
             } else if table_type == LAYER && record.typecode == LAYER_RECORD {
                 let writer_version = metadata.properties.writer_version;
                 match parse_layer(
@@ -2952,7 +2977,11 @@ pub(crate) fn parse_metadata(
     }
     metadata.opaque_records = opaque_records;
     report_layer_parent_references(ctx, &metadata.layers, warnings)?;
-    Ok(metadata)
+    let mut storage = ctx.reserve_scoped(0, "Rhino singleton metadata output")?;
+    for reservation in property_storages.iter_mut().chain(setting_storages.iter_mut()).flatten() {
+        storage.absorb(reservation)?;
+    }
+    Ok(storage.commit_value(metadata)?)
 }
 
 /// Records a layer UUID in the table of UUIDs seen so far and returns whether

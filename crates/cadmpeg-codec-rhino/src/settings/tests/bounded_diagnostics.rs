@@ -47,3 +47,20 @@ fn bounded_anonymous_diagnostics_keep_the_integration_text() {
     assert!(matches!(settings::anonymous_payload(&bytes, &mut reader, ArchiveVersion::V8, "IO settings"), Err(FramingError::Structural { message, .. }) if message == "IO settings must be a long anonymous chunk"));
     assert!(matches!(settings::begin_direct_object(&bytes, &mut reader, ArchiveVersion::V8, "embedded linetype"), Err(FramingError::Structural { message, .. }) if message == "embedded linetype must be an object chunk"));
 }
+
+#[test]
+fn layer_class_diagnostic_has_no_text_budget_fee() {
+    use crate::loss::Diagnostics;
+    use crate::test_support::test_dump::{class_wrapper, metadata_record};
+
+    let archive = ArchiveVersion::V8;
+    let (bytes, record) = metadata_record(settings::LAYER_RECORD, class_wrapper(archive, [0x44; 16], &[]));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let error = settings::parse_layer(&ctx, &bytes, &record, archive, None, &mut Diagnostics::new(), &mut Vec::new()).unwrap_err();
+    assert!(matches!(error, FramingError::Structural { message, .. } if message == "layer record has class UUID 44444444-4444-4444-4444-444444444444"));
+    assert_eq!(ctx.resource_refusal(), None);
+    ctx.finish_session().unwrap();
+}
