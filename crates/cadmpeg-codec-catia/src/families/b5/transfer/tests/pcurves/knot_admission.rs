@@ -70,25 +70,32 @@ fn analytic_knot_validation_charges_only_visited_distinct_pairs() {
     pcurve.parameterization = B5PcurveParameterization::Translated {
         native_origin: finite(f64::MAX),
     };
-    crate::test_support::with_work_limit(1, |ctx| {
-        assert!(!crate::families::b5::graph::pcurve_knot_expansion_is_finite(ctx, &pcurve)?);
-        assert!(ctx.resource_refusal().is_none());
-        pcurve.parameterization = B5PcurveParameterization::Native;
-        let cadmpeg_core::CodecError::ResourceLimit(original) =
-            crate::families::b5::graph::pcurve_knot_expansion_is_finite(ctx, &pcurve)
-                .expect_err("second pair scan refuses")
-        else {
-            panic!("typed refusal")
-        };
-        assert_eq!((original.used, original.additional), (1, 1));
-        pcurve.distinct_knots.clear();
-        assert!(matches!(
-            crate::families::b5::graph::pcurve_knot_expansion_is_finite(ctx, &pcurve),
-            Err(cadmpeg_core::CodecError::ResourceLimit(next)) if next == original
-        ));
-        Ok::<_, cadmpeg_core::CodecError>(())
-    })
-    .expect("admission assertions");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root fits the work limit");
+    assert!(
+        !crate::families::b5::graph::pcurve_knot_expansion_is_finite(&ctx, &pcurve)
+            .expect("first invalid pair fits one visit")
+    );
+    assert!(ctx.resource_refusal().is_none());
+    pcurve.parameterization = B5PcurveParameterization::Native;
+    let cadmpeg_core::CodecError::ResourceLimit(original) =
+        crate::families::b5::graph::pcurve_knot_expansion_is_finite(&ctx, &pcurve)
+            .expect_err("second pair scan refuses")
+    else {
+        panic!("typed refusal")
+    };
+    assert_eq!((original.used, original.additional), (1, 1));
+    pcurve.distinct_knots.clear();
+    let empty = crate::families::b5::graph::pcurve_knot_expansion_is_finite(&ctx, &pcurve);
+    assert!(matches!(empty.as_ref(), Ok(&true)));
+    assert_eq!(ctx.resource_refusal(), Some(original));
+    assert!(matches!(
+        ctx.finish(empty),
+        Err(cadmpeg_core::CodecError::ResourceLimit(next)) if next == original
+    ));
 }
 
 fn plane() -> B5Surface {
