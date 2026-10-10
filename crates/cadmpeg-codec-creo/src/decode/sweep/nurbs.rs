@@ -259,11 +259,13 @@ fn interpolation_knots(
     if !parameters.last().is_some_and(|value| value.is_finite()) {
         return Ok(None);
     }
-    let mut knots = ctx.alloc_filled(
+    let mut knots = Vec::new();
+    ctx.reserve_vec(
+        &mut knots,
         INTERPOLATION_DEGREE + 1,
-        parameters[0],
         "creo interpolation curve knots",
     )?;
+    knots.extend([parameters[0]; INTERPOLATION_DEGREE + 1]);
     ctx.reserve_vec(
         &mut knots,
         point_count - 2 + INTERPOLATION_DEGREE + 1,
@@ -920,34 +922,6 @@ pub(in super::super) fn extruded_nurbs_surface(
     }
 }
 
-/// Copies a pcurve NURBS with the knot lane and the pole lane each charged under its own operation.
-pub(super) fn copy_pcurve_nurbs(
-    ctx: &DecodeContext<'_>,
-    curve: &cadmpeg_ir::geometry::pcurve::PcurveNurbs,
-    knot_operation: &'static str,
-    pole_operation: &'static str,
-) -> Result<cadmpeg_ir::geometry::pcurve::PcurveNurbs, CodecError> {
-    use cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles;
-
-    let knots = curve.knots().try_clone_for_decode(ctx, knot_operation)?;
-    let poles = match curve.pole_rows() {
-        PcurveNurbsPoles::Polynomial { points } => PcurveNurbsPoles::Polynomial {
-            points: ctx.copy_slice(points, pole_operation)?,
-        },
-        PcurveNurbsPoles::Rational { points } => PcurveNurbsPoles::Rational {
-            points: ctx.copy_slice(points, pole_operation)?,
-        },
-    };
-    cadmpeg_ir::geometry::pcurve::PcurveNurbs::new(
-        ctx,
-        curve.degree(),
-        knots,
-        poles,
-        curve.periodic(),
-    )?
-    .map_err(CodecError::malformed)
-}
-
 pub(super) fn sketch_nurbs_curve(
     ctx: &DecodeContext<'_>,
     geometry: &SketchGeometry,
@@ -1522,8 +1496,8 @@ mod tests {
                 && refusal.operation == "creo sketch NURBS lift knots")
         );
         assert!(
-            crate::decode::with_test_decode_ctx(|ctx| super::sketch_nurbs_curve(ctx, &geometry))
-                .expect("service sized collection")
+            with_collection_limit(6, |ctx| super::sketch_nurbs_curve(ctx, &geometry))
+                .expect("six collection items")
                 .is_some()
         );
     }
@@ -1545,8 +1519,8 @@ mod tests {
                 && refusal.operation == "creo sketch NURBS lift poles")
         );
         assert!(
-            crate::decode::with_test_decode_ctx(|ctx| super::sketch_nurbs_curve(ctx, &geometry))
-                .expect("service sized collection")
+            with_collection_limit(6, |ctx| super::sketch_nurbs_curve(ctx, &geometry))
+                .expect("six collection items")
                 .is_some()
         );
     }
@@ -1576,7 +1550,7 @@ mod tests {
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "creo sketch NURBS pcurve knots")
         );
-        assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        assert!(with_collection_limit(12, |ctx| {
             super::sketch_nurbs_pcurve(
                 ctx,
                 &geometry,
@@ -1585,7 +1559,7 @@ mod tests {
                 &mut crate::lane_refusal::LaneRefusals::new(),
             )
         })
-        .expect("service sized collection")
+        .expect("twelve collection items")
         .is_some());
     }
 
@@ -1614,7 +1588,7 @@ mod tests {
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "creo sketch NURBS pcurve poles")
         );
-        assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        assert!(with_collection_limit(12, |ctx| {
             super::sketch_nurbs_pcurve(
                 ctx,
                 &geometry,
@@ -1623,7 +1597,7 @@ mod tests {
                 &mut crate::lane_refusal::LaneRefusals::new(),
             )
         })
-        .expect("service sized collection")
+        .expect("twelve collection items")
         .is_some());
     }
 

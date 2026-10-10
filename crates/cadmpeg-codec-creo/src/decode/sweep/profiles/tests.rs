@@ -219,14 +219,14 @@ fn profile_sketch_copy_knots_refuse_collection_limit() {
 
     let error = profile_sketch_copy_with_limit(crate::test_support::allocation_limit_at(
         ResourceDimension::CollectionItems,
-        Some("creo profile sketch NURBS knots"),
+        Some("creo profile sketch NURBS copy"),
         profile_sketch_copy_with_limit,
     ))
     .expect_err("four knots exceed zero items");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
         if refusal.dimension == ResourceDimension::CollectionItems
-            && refusal.operation == "creo profile sketch NURBS knots")
+            && refusal.operation == "creo profile sketch NURBS copy")
     );
     assert!(
         profile_sketch_copy_with_limit(crate::test_support::allocation_limit_at(
@@ -245,14 +245,14 @@ fn profile_sketch_copy_poles_refuse_collection_limit() {
 
     let error = profile_sketch_copy_with_limit(crate::test_support::allocation_limit_at(
         ResourceDimension::CollectionItems,
-        Some("creo profile sketch NURBS poles"),
+        None,
         profile_sketch_copy_with_limit,
-    ))
+    ) - 1)
     .expect_err("two poles exceed four knot items");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
         if refusal.dimension == ResourceDimension::CollectionItems
-            && refusal.operation == "creo profile sketch NURBS poles")
+            && refusal.operation == "creo profile sketch NURBS copy")
     );
     assert!(
         profile_sketch_copy_with_limit(crate::test_support::allocation_limit_at(

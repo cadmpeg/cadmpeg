@@ -70,12 +70,7 @@ fn copy_circular_pcurve(
         ));
     };
     Ok(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
-        nurbs: super::nurbs::copy_pcurve_nurbs(
-            ctx,
-            nurbs,
-            "creo circular cap pcurve knot copy",
-            "creo circular cap pcurve pole copy",
-        )?,
+        nurbs: nurbs.try_clone_for_decode(ctx, "creo circular cap pcurve copy")?,
     })
 }
 
@@ -726,8 +721,8 @@ mod tests {
         crate::test_support::assert_refusal_order(
             cadmpeg_core::decode::ResourceDimension::CollectionItems,
             &[
-                "creo circular cap pcurve knot copy",
-                "creo circular cap pcurve pole copy",
+                "creo circular cap pcurve copy",
+                "creo circular cap pcurve copy",
             ],
             |limit| {
                 let arena = DecodeArena::new();
