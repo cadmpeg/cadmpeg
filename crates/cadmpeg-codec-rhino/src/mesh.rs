@@ -1625,13 +1625,11 @@ fn read_v5_double_vertices(
     }
     let mut finite = ctx.collection_vec(array_count, "Rhino V5 mesh admitted double vertices")?;
     let mut floats = float_vertices.iter();
-    while let Some(float) = ctx.next_charged(
-        &mut floats,
-        "Rhino mesh read_v5_double_vertices records",
-    )? {
+    while let Some(float) =
+        ctx.next_charged(&mut floats, "Rhino mesh read_v5_double_vertices records")?
+    {
         let point = [reader.f64()?, reader.f64()?, reader.f64()?];
-        let Some(admitted) = FinitePoint3::new(Point3::new(point[0], point[1], point[2]))
-        else {
+        let Some(admitted) = FinitePoint3::new(Point3::new(point[0], point[1], point[2])) else {
             return Ok(None);
         };
         if !point.iter().zip(float).all(|(double, float)| {

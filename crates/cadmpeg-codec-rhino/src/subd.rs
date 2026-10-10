@@ -1045,14 +1045,16 @@ fn validate_level(
         ..edge_partition.end + cadmpeg_core::decode::u64_from_index(level.faces.len());
     let mut vertex_source = level.vertices.iter();
     for _ in 0..vertex_source.len() {
-        let vertex = ctx.next_charged(&mut vertex_source, "Rhino validate level traversal")?
+        let vertex = ctx
+            .next_charged(&mut vertex_source, "Rhino validate level traversal")?
             .ok_or_else(|| unpositioned("SubD traversal source ended early"))?;
         resolve_all(ctx, &vertex.edges, &edge_partition)?;
         resolve_all(ctx, &vertex.faces, &face_partition)?;
     }
     let mut edge_source = level.edges.iter();
     for _ in 0..edge_source.len() {
-        let edge = ctx.next_charged(&mut edge_source, "Rhino validate level traversal")?
+        let edge = ctx
+            .next_charged(&mut edge_source, "Rhino validate level traversal")?
             .ok_or_else(|| unpositioned("SubD traversal source ended early"))?;
         if edge
             .vertices
@@ -1073,7 +1075,8 @@ fn validate_level(
     }
     let mut face_source = level.faces.iter();
     for _ in 0..face_source.len() {
-        let face = ctx.next_charged(&mut face_source, "Rhino validate level traversal")?
+        let face = ctx
+            .next_charged(&mut face_source, "Rhino validate level traversal")?
             .ok_or_else(|| unpositioned("SubD traversal source ended early"))?;
         resolve_all(ctx, &face.edges, &edge_partition)?;
         if face.edges.len() < 3 {
@@ -1092,7 +1095,8 @@ fn validate_level(
     let edge_faces = edge_faces_buffer;
     let mut vertex_source = level.vertices.iter();
     for _ in 0..vertex_source.len() {
-        let vertex = ctx.next_charged(&mut vertex_source, "Rhino validate level traversal")?
+        let vertex = ctx
+            .next_charged(&mut vertex_source, "Rhino validate level traversal")?
             .ok_or_else(|| unpositioned("SubD traversal source ended early"))?;
         compare_incidence(
             ctx,
@@ -1117,7 +1121,8 @@ fn validate_level(
     }
     let mut edge_source = level.edges.iter();
     for _ in 0..edge_source.len() {
-        let edge = ctx.next_charged(&mut edge_source, "Rhino validate level traversal")?
+        let edge = ctx
+            .next_charged(&mut edge_source, "Rhino validate level traversal")?
             .ok_or_else(|| unpositioned("SubD traversal source ended early"))?;
         compare_incidence(
             ctx,
@@ -1166,7 +1171,8 @@ fn incidence_from_edges<'ctx>(
     })?;
     let mut edge_source = level.edges.iter();
     for _ in 0..edge_source.len() {
-        let edge = ctx.next_charged(&mut edge_source, "Rhino incidence from edges traversal")?
+        let edge = ctx
+            .next_charged(&mut edge_source, "Rhino incidence from edges traversal")?
             .ok_or_else(|| unpositioned("SubD traversal source ended early"))?;
         for vertex in edge.vertices {
             storage.with_storage(|| {
@@ -1196,13 +1202,15 @@ fn incidence_from_faces<'ctx>(
     })?;
     let mut face_source = level.faces.iter();
     for _ in 0..face_source.len() {
-        let face = ctx.next_charged(&mut face_source, "Rhino incidence from faces traversal")?
+        let face = ctx
+            .next_charged(&mut face_source, "Rhino incidence from faces traversal")?
             .ok_or_else(|| unpositioned("SubD traversal source ended early"))?;
         let mut first = None;
         let mut previous_end = None;
         let mut edge_use_source = face.edges.iter();
         for _ in 0..edge_use_source.len() {
-            let edge_use = ctx.next_charged(&mut edge_use_source, "Rhino incidence from faces traversal")?
+            let edge_use = ctx
+                .next_charged(&mut edge_use_source, "Rhino incidence from faces traversal")?
                 .ok_or_else(|| unpositioned("SubD traversal source ended early"))?;
             let edge_start = 1 + level.vertices.len();
             let edge_index = usize::try_from(edge_use.archive_id)
@@ -1270,11 +1278,13 @@ fn edge_face_incidence<'ctx>(
     })?;
     let mut face_source = level.faces.iter();
     for _ in 0..face_source.len() {
-        let face = ctx.next_charged(&mut face_source, "Rhino edge face incidence traversal")?
+        let face = ctx
+            .next_charged(&mut face_source, "Rhino edge face incidence traversal")?
             .ok_or_else(|| unpositioned("SubD traversal source ended early"))?;
         let mut edge_source = face.edges.iter();
         for _ in 0..edge_source.len() {
-            let edge = ctx.next_charged(&mut edge_source, "Rhino edge face incidence traversal")?
+            let edge = ctx
+                .next_charged(&mut edge_source, "Rhino edge face incidence traversal")?
                 .ok_or_else(|| unpositioned("SubD traversal source ended early"))?;
             let edge_index = usize::try_from(edge.archive_id)
                 .map_err(|_| malformed(face.base.source_offset, "SubD edge index overflow"))?
@@ -1307,7 +1317,8 @@ fn compare_incidence(
     let mut serialized_ids = BTreeSet::new();
     let mut pointer_source = serialized.iter();
     for _ in 0..pointer_source.len() {
-        let pointer = ctx.next_charged(&mut pointer_source, "Rhino compare incidence traversal")?
+        let pointer = ctx
+            .next_charged(&mut pointer_source, "Rhino compare incidence traversal")?
             .ok_or_else(|| unpositioned("SubD traversal source ended early"))?;
         storage.with_storage(|| {
             ctx.insert_btree_set(
@@ -1365,7 +1376,8 @@ fn materialize(
         .map_err(SubdError::from)?;
     let mut vertex_source = level.vertices.into_iter();
     for _ in 0..vertex_source.len() {
-        let vertex = ctx.next_charged(&mut vertex_source, "Rhino materialize traversal")?
+        let vertex = ctx
+            .next_charged(&mut vertex_source, "Rhino materialize traversal")?
             .ok_or_else(|| unpositioned("SubD traversal source ended early"))?;
         let tag = vertex.tag.ok_or_else(|| {
             malformed(
@@ -1395,7 +1407,8 @@ fn materialize(
         .map_err(SubdError::from)?;
     let mut edge_source = level.edges.into_iter();
     for _ in 0..edge_source.len() {
-        let edge = ctx.next_charged(&mut edge_source, "Rhino materialize traversal")?
+        let edge = ctx
+            .next_charged(&mut edge_source, "Rhino materialize traversal")?
             .ok_or_else(|| unpositioned("SubD traversal source ended early"))?;
         let tag = edge.tag.ok_or_else(|| {
             malformed(
@@ -1429,7 +1442,8 @@ fn materialize(
         .map_err(SubdError::from)?;
     let mut face_source = level.faces.into_iter();
     for _ in 0..face_source.len() {
-        let face = ctx.next_charged(&mut face_source, "Rhino materialize traversal")?
+        let face = ctx
+            .next_charged(&mut face_source, "Rhino materialize traversal")?
             .ok_or_else(|| unpositioned("SubD traversal source ended early"))?;
         let mut face_edges = ctx
             .collection_vec(face.edges.len(), "Rhino SubD face edges")

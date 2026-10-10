@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    correspondence_userdata_payload, v5_double_userdata_descriptor,
-    v5_double_userdata_payload, with_expand, with_expand_policy,
+    correspondence_userdata_payload, v5_double_userdata_descriptor, v5_double_userdata_payload,
+    with_expand, with_expand_policy,
 };
 use crate::chunks::ArchiveVersion;
 use crate::curves::GeometryError;
 use crate::mesh::{
-    decode, MeshBudget, MeshDecodeOptions, MeshExpand, MeshId,
-    TT_MAPPING_MESH_INFO_USERDATA, TT_RENDER_MESH_INFO_USERDATA,
+    decode, MeshBudget, MeshDecodeOptions, MeshExpand, MeshId, TT_MAPPING_MESH_INFO_USERDATA,
+    TT_RENDER_MESH_INFO_USERDATA,
 };
 use crate::objects::{ClassUserdata, UserdataDescriptor};
 use crate::settings::MillimeterScale;

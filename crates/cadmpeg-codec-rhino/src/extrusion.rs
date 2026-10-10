@@ -121,7 +121,13 @@ pub(crate) fn decode<'ctx>(
     format: ExtrusionFormat,
     userdata: &[UserdataDescriptor],
     mesh_budget: &mut crate::mesh::MeshBudget,
-) -> Result<(DecodedExtrusion, cadmpeg_core::decode::ScopedReservation<'ctx>), GeometryError> {
+) -> Result<
+    (
+        DecodedExtrusion,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    GeometryError,
+> {
     let ExtrusionFormat {
         archive,
         writer_version,
@@ -237,7 +243,12 @@ pub(crate) fn decode<'ctx>(
                     format_args!("extrusion mesh cache dropped: {cache_error}"),
                 )?;
                 reader.skip(reader.remaining())?;
-                (Vec::new(), expand.ctx().reserve_scoped(0, "Rhino extrusion cache meshes")?)
+                (
+                    Vec::new(),
+                    expand
+                        .ctx()
+                        .reserve_scoped(0, "Rhino extrusion cache meshes")?,
+                )
             }
         }
     } else {
@@ -262,7 +273,12 @@ pub(crate) fn decode<'ctx>(
                     expand.ctx(),
                     format_args!("V5 extrusion mesh cache dropped: {cache_error}"),
                 )?;
-                (Vec::new(), expand.ctx().reserve_scoped(0, "Rhino extrusion cache meshes")?)
+                (
+                    Vec::new(),
+                    expand
+                        .ctx()
+                        .reserve_scoped(0, "Rhino extrusion cache meshes")?,
+                )
             }
         }
     };
@@ -325,11 +341,16 @@ pub(crate) fn decode<'ctx>(
         path_from.translated(path_delta, trim[1]),
     ];
     let direction = cap_origins[1].vector_from(cap_origins[0]);
-    let mut staging_storage = expand.ctx().reserve_scoped(0, "Rhino extrusion boundary staging")?;
+    let mut staging_storage = expand
+        .ctx()
+        .reserve_scoped(0, "Rhino extrusion boundary staging")?;
     let mut mesh_storage = mesh_storage;
     staging_storage.absorb(&mut mesh_storage)?;
-    let mut boundaries = staging_storage.with_storage(|| expand.ctx()
-        .collection_vec(source_boundaries.len(), "Rhino extrusion boundaries"))?;
+    let mut boundaries = staging_storage.with_storage(|| {
+        expand
+            .ctx()
+            .collection_vec(source_boundaries.len(), "Rhino extrusion boundaries")
+    })?;
     let mut orientation_storage = expand
         .ctx()
         .reserve_scoped(0, "Rhino extrusion orientations")?;
@@ -355,30 +376,34 @@ pub(crate) fn decode<'ctx>(
             &source_nurbs,
             version_offset,
         )?);
-        let start_nurbs = staging_storage.with_storage(|| transform_nurbs(
-            expand.ctx(),
-            &source_nurbs,
-            &ProfileFrame {
-                origin: cap_origins[0],
-                xaxis: xaxis.into(),
-                yaxis: up,
-                zaxis: tangent,
-                miter: active_miters[0],
-            },
-            version_offset,
-        ))?;
-        let end_nurbs = staging_storage.with_storage(|| transform_nurbs(
-            expand.ctx(),
-            &source_nurbs,
-            &ProfileFrame {
-                origin: cap_origins[1],
-                xaxis: xaxis.into(),
-                yaxis: up,
-                zaxis: tangent,
-                miter: active_miters[1],
-            },
-            version_offset,
-        ))?;
+        let start_nurbs = staging_storage.with_storage(|| {
+            transform_nurbs(
+                expand.ctx(),
+                &source_nurbs,
+                &ProfileFrame {
+                    origin: cap_origins[0],
+                    xaxis: xaxis.into(),
+                    yaxis: up,
+                    zaxis: tangent,
+                    miter: active_miters[0],
+                },
+                version_offset,
+            )
+        })?;
+        let end_nurbs = staging_storage.with_storage(|| {
+            transform_nurbs(
+                expand.ctx(),
+                &source_nurbs,
+                &ProfileFrame {
+                    origin: cap_origins[1],
+                    xaxis: xaxis.into(),
+                    yaxis: up,
+                    zaxis: tangent,
+                    miter: active_miters[1],
+                },
+                version_offset,
+            )
+        })?;
         let mut boundary_warnings = Diagnostics::new();
         let source_warnings = source.into_warnings();
         boundary_warnings.extend_cloned_admitted(expand.ctx(), &source_warnings)?;
@@ -404,28 +429,34 @@ pub(crate) fn decode<'ctx>(
             active_miters[1],
             version_offset,
         )?;
-        let start_pcurve = staging_storage.with_storage(|| cap_pcurve(
-            expand.ctx(),
-            &start_nurbs,
-            cap_origins[0],
-            start_frame,
-            version_offset,
-        ))?;
-        let end_pcurve = staging_storage.with_storage(|| cap_pcurve(
-            expand.ctx(),
-            &end_nurbs,
-            cap_origins[1],
-            end_frame,
-            version_offset,
-        ))?;
-        let lateral = staging_storage.with_storage(|| crate::surfaces::extrusion_nurbs(
-            expand.ctx(),
-            &start_nurbs,
-            &end_nurbs,
-            path_domain,
-            transposed,
-            version_offset,
-        ))?;
+        let start_pcurve = staging_storage.with_storage(|| {
+            cap_pcurve(
+                expand.ctx(),
+                &start_nurbs,
+                cap_origins[0],
+                start_frame,
+                version_offset,
+            )
+        })?;
+        let end_pcurve = staging_storage.with_storage(|| {
+            cap_pcurve(
+                expand.ctx(),
+                &end_nurbs,
+                cap_origins[1],
+                end_frame,
+                version_offset,
+            )
+        })?;
+        let lateral = staging_storage.with_storage(|| {
+            crate::surfaces::extrusion_nurbs(
+                expand.ctx(),
+                &start_nurbs,
+                &end_nurbs,
+                path_domain,
+                transposed,
+                version_offset,
+            )
+        })?;
         boundaries.push(ExtrusionBoundary {
             start_curve,
             start_nurbs,
@@ -488,16 +519,19 @@ pub(crate) fn decode<'ctx>(
             version_offset,
         )?,
     ];
-    Ok((DecodedExtrusion {
-        boundaries,
-        direction,
-        cap_origins,
-        cap_normals: [cap_frames[0].2, cap_frames[1].2],
-        cap_u_axes: [cap_frames[0].0, cap_frames[1].0],
-        caps,
-        meshes,
-        warnings,
-    }, staging_storage))
+    Ok((
+        DecodedExtrusion {
+            boundaries,
+            direction,
+            cap_origins,
+            cap_normals: [cap_frames[0].2, cap_frames[1].2],
+            cap_u_axes: [cap_frames[0].0, cap_frames[1].0],
+            caps,
+            meshes,
+            warnings,
+        },
+        staging_storage,
+    ))
 }
 
 fn split_profiles(
@@ -920,7 +954,13 @@ fn read_mesh_cache<'ctx>(
     format: ExtrusionFormat,
     mesh_budget: &mut crate::mesh::MeshBudget,
     warnings: &mut Diagnostics,
-) -> Result<(Vec<crate::mesh::DecodedMesh>, cadmpeg_core::decode::ScopedReservation<'ctx>), GeometryError> {
+) -> Result<
+    (
+        Vec<crate::mesh::DecodedMesh>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    GeometryError,
+> {
     let ExtrusionFormat {
         archive,
         writer_version,
@@ -935,9 +975,15 @@ fn read_mesh_cache<'ctx>(
         0,
         "extrusion mesh cache",
     )?;
-    let (mut meshes, mut mesh_storage) = expand.ctx().temporary_vec(0, "Rhino extrusion cache meshes")?;
-    let mut payload_storage = expand.ctx().reserve_scoped(0, "Rhino extrusion mesh-cache payloads")?;
-    let (mut cache_children, mut child_storage) = expand.ctx().temporary_vec(0, "Rhino extrusion cache child ranges")?;
+    let (mut meshes, mut mesh_storage) = expand
+        .ctx()
+        .temporary_vec(0, "Rhino extrusion cache meshes")?;
+    let mut payload_storage = expand
+        .ctx()
+        .reserve_scoped(0, "Rhino extrusion mesh-cache payloads")?;
+    let (mut cache_children, mut child_storage) = expand
+        .ctx()
+        .temporary_vec(0, "Rhino extrusion cache child ranges")?;
     let mut index = 0_usize;
     loop {
         expand
@@ -982,21 +1028,28 @@ fn read_mesh_cache<'ctx>(
         if class.class_uuid != crate::mesh::ON_MESH {
             return Err(error(wrapper_start, "mesh-cache item is not ON_Mesh"));
         }
-        let mesh = payload_storage.with_storage(|| crate::mesh::decode(
-            expand,
-            data,
-            class.class_data_range,
-            archive,
-            crate::mesh::MeshDecodeOptions {
-                writer_version,
-                association: None,
-                id: crate::mesh::MeshId::ExtrusionCache(index),
-                scale,
-                userdata: &userdata[..],
-            },
-            mesh_budget,
-        ))?;
-        expand.ctx().push_scoped_vec(&mut mesh_storage, &mut meshes, mesh, "Rhino extrusion mesh-cache meshes")?;
+        let mesh = payload_storage.with_storage(|| {
+            crate::mesh::decode(
+                expand,
+                data,
+                class.class_data_range,
+                archive,
+                crate::mesh::MeshDecodeOptions {
+                    writer_version,
+                    association: None,
+                    id: crate::mesh::MeshId::ExtrusionCache(index),
+                    scale,
+                    userdata: &userdata[..],
+                },
+                mesh_budget,
+            )
+        })?;
+        expand.ctx().push_scoped_vec(
+            &mut mesh_storage,
+            &mut meshes,
+            mesh,
+            "Rhino extrusion mesh-cache meshes",
+        )?;
         finish_anonymous(
             expand.ctx(),
             data,
@@ -1035,7 +1088,13 @@ fn read_v5_mesh_cache<'ctx>(
     userdata: &[UserdataDescriptor],
     mesh_budget: &mut crate::mesh::MeshBudget,
     warnings: &mut Diagnostics,
-) -> Result<(Vec<crate::mesh::DecodedMesh>, cadmpeg_core::decode::ScopedReservation<'ctx>), GeometryError> {
+) -> Result<
+    (
+        Vec<crate::mesh::DecodedMesh>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    GeometryError,
+> {
     let ExtrusionFormat {
         archive,
         writer_version,
@@ -1054,12 +1113,18 @@ fn read_v5_mesh_cache<'ctx>(
         "Rhino read v5 mesh cache traversal",
     )?
     else {
-        return Ok(expand.ctx().temporary_vec(0, "Rhino V5 extrusion cache meshes")?);
+        return Ok(expand
+            .ctx()
+            .temporary_vec(0, "Rhino V5 extrusion cache meshes")?);
     };
 
     let mut offset = cache.payload_range.start;
-    let (mut meshes, mut mesh_storage) = expand.ctx().temporary_vec(0, "Rhino V5 extrusion cache meshes")?;
-    let mut payload_storage = expand.ctx().reserve_scoped(0, "Rhino V5 extrusion mesh-cache payloads")?;
+    let (mut meshes, mut mesh_storage) = expand
+        .ctx()
+        .temporary_vec(0, "Rhino V5 extrusion cache meshes")?;
+    let mut payload_storage = expand
+        .ctx()
+        .reserve_scoped(0, "Rhino V5 extrusion mesh-cache payloads")?;
     for index in 0..3_usize {
         let wrapper = chunk_at(data, offset, cache.payload_range.end, archive, false)?;
         let (class, nested_userdata) = parse_class_wrapper_with_scoped_userdata(
@@ -1071,21 +1136,28 @@ fn read_v5_mesh_cache<'ctx>(
         )?;
         if index < 2 {
             if class.class_uuid == crate::mesh::ON_MESH {
-                let mesh = payload_storage.with_storage(|| crate::mesh::decode(
-                    expand,
-                    data,
-                    class.class_data_range,
-                    archive,
-                    crate::mesh::MeshDecodeOptions {
-                        writer_version,
-                        association: None,
-                        id: crate::mesh::MeshId::V5ExtrusionCache(index),
-                        scale,
-                        userdata: &nested_userdata[..],
-                    },
-                    mesh_budget,
-                ))?;
-                expand.ctx().push_scoped_vec(&mut mesh_storage, &mut meshes, mesh, "Rhino V5 extrusion mesh-cache meshes")?;
+                let mesh = payload_storage.with_storage(|| {
+                    crate::mesh::decode(
+                        expand,
+                        data,
+                        class.class_data_range,
+                        archive,
+                        crate::mesh::MeshDecodeOptions {
+                            writer_version,
+                            association: None,
+                            id: crate::mesh::MeshId::V5ExtrusionCache(index),
+                            scale,
+                            userdata: &nested_userdata[..],
+                        },
+                        mesh_budget,
+                    )
+                })?;
+                expand.ctx().push_scoped_vec(
+                    &mut mesh_storage,
+                    &mut meshes,
+                    mesh,
+                    "Rhino V5 extrusion mesh-cache meshes",
+                )?;
             } else if class.class_uuid != Uuid::nil() {
                 return Err(error(
                     wrapper.header_start,
