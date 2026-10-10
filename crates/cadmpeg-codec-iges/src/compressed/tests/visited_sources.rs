@@ -34,8 +34,8 @@ fn compressed_global_cards_refuse_only_the_first_executed_card_step() {
             Err(CodecError::ResourceLimit(original)) if original == refusal
         ));
         // Width fold: n. Card steps: n. Two one-byte UTF-8 checks and
-        // two one-byte integer parses per card: 4*n. No empty card read.
-        let required = u64::try_from(6 * count).unwrap();
+        // two one-byte integer parses and two digit copies per card: 6*n.
+        let required = u64::try_from(8 * count).unwrap();
         for cap in [required - 1, required] {
             let arena = DecodeArena::new();
             policy.limits.max_work_units = cap;
@@ -44,10 +44,10 @@ fn compressed_global_cards_refuse_only_the_first_executed_card_step() {
             if cap < required {
                 let refusal = match result.as_ref() {
                     Err(CodecError::ResourceLimit(refusal)) => *refusal,
-                    _ => panic!("expected final Global count parse refusal"),
+                    _ => panic!("expected final Global digit copy refusal"),
                 };
                 drop(result);
-                assert_eq!(refusal.operation, "iges compressed Global Hollerith number");
+                assert_eq!(refusal.operation, "iges compressed Global digit copy");
                 assert_eq!((refusal.used, refusal.additional), (required - 1, 1));
                 assert!(matches!(
                     ctx.finish_session(),
