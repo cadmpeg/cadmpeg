@@ -98,7 +98,9 @@ impl JointParameters {
         let mut checked = BTreeMap::new();
         let mut parameters = parameters.into_iter();
         while parameters.len() != 0 {
-            let Some((name, raw)) = ctx.next_charged(&mut parameters, "fcstd joint raw parameters")? else {
+            let Some((name, raw)) =
+                ctx.next_charged(&mut parameters, "fcstd joint raw parameters")?
+            else {
                 break;
             };
             let parameter = match parameter_kind(&name) {

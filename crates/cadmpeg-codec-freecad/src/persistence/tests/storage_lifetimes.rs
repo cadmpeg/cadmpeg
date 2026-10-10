@@ -29,17 +29,29 @@ fn dependency_framing_storage_retires_before_the_data_lookup() {
         "FCStd object data lookup",
         None,
     );
-    let CodecError::ResourceLimit(original) = parse_document(text, &xml, FcstdDialect::Schema4, &ctx)
-        .err().expect("the data-table growth makes a new scratch peak")
-        else { panic!("data lookup admission must refuse") };
+    let CodecError::ResourceLimit(original) =
+        parse_document(text, &xml, FcstdDialect::Schema4, &ctx)
+            .err()
+            .expect("the data-table growth makes a new scratch peak")
+    else {
+        panic!("data lookup admission must refuse")
+    };
     drop(probe);
     assert_eq!(original.operation, "FCStd object data lookup");
     // The dependency table remains; the framing Node Vec and its guard do not.
-    assert_eq!(original.used, one_table_bytes::<(&str, DependencyInfo<'_, '_>)>());
-    assert_eq!(original.additional, one_table_bytes::<(&str, roxmltree::Node<'_, '_>)>());
+    assert_eq!(
+        original.used,
+        one_table_bytes::<(&str, DependencyInfo<'_, '_>)>()
+    );
+    assert_eq!(
+        original.additional,
+        one_table_bytes::<(&str, roxmltree::Node<'_, '_>)>()
+    );
     assert_eq!(ctx.resource_refusal(), Some(original));
-    assert!(matches!(parse_document(text, &xml, FcstdDialect::Schema4, &ctx),
-        Err(CodecError::ResourceLimit(actual)) if actual == original));
+    assert!(
+        matches!(parse_document(text, &xml, FcstdDialect::Schema4, &ctx),
+        Err(CodecError::ResourceLimit(actual)) if actual == original)
+    );
 }
 
 #[test]
@@ -59,23 +71,30 @@ fn property_name_set_retires_before_the_original_count_diagnostic() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut output = Vec::new();
         // The diagnostic is a scoped result owned together with its guard.
-        let result = ctx.with_scoped_storage("property diagnostic result", || {
-            Ok::<_, CodecError>(parse_properties(
-                text, xml.root_element(), &owner, &mut output, &ctx,
-            ).unwrap_err())
-        }).unwrap();
+        let result = ctx
+            .with_scoped_storage("property diagnostic result", || {
+                Ok::<_, CodecError>(
+                    parse_properties(text, xml.root_element(), &owner, &mut output, &ctx)
+                        .unwrap_err(),
+                )
+            })
+            .unwrap();
         let diagnostic_storage = result.1;
         let error = result.0;
         assert!(output.is_empty());
         if below {
-            let CodecError::ResourceLimit(original) = error else { panic!("diagnostic needs its bytes") };
+            let CodecError::ResourceLimit(original) = error else {
+                panic!("diagnostic needs its bytes")
+            };
             assert_eq!(original.dimension, ResourceDimension::MaterializedBytes);
             assert_eq!(original.operation, "FCStd persistence diagnostic");
             assert_eq!(original.used, u64::try_from(node_bytes).unwrap());
             assert_eq!(original.additional, u64::try_from(expected.len()).unwrap());
             assert_eq!(ctx.resource_refusal(), Some(original));
-            assert!(matches!(parse_properties(text, xml.root_element(), &owner, &mut output, &ctx),
-                Err(CodecError::ResourceLimit(actual)) if actual == original));
+            assert!(
+                matches!(parse_properties(text, xml.root_element(), &owner, &mut output, &ctx),
+                Err(CodecError::ResourceLimit(actual)) if actual == original)
+            );
         } else {
             assert!(matches!(error, CodecError::Malformed(message) if message == expected));
             assert_eq!(ctx.resource_refusal(), None);
@@ -97,20 +116,29 @@ fn consumed_dependency_vector_retires_before_the_next_object() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let graph_result = ctx.with_scoped_storage("persistence graph result", || {
-        parse_document(&text, &xml, FcstdDialect::Schema4, &ctx)
-    }).unwrap();
+    let graph_result = ctx
+        .with_scoped_storage("persistence graph result", || {
+            parse_document(&text, &xml, FcstdDialect::Schema4, &ctx)
+        })
+        .unwrap();
     let graph_storage = graph_result.1;
     let graph = graph_result.0;
     assert_eq!(graph.objects.len(), 2);
     assert_eq!(graph.objects[0].dependencies.len(), DEPENDENCIES);
-    assert!(graph.objects[0].dependencies.iter().all(|id| id == "fcstd:native:object#B"));
+    assert!(graph.objects[0]
+        .dependencies
+        .iter()
+        .all(|id| id == "fcstd:native:object#B"));
     assert!(graph.objects[1].dependencies.is_empty());
     assert_eq!(graph.objects[1].type_name, long_type);
     // The completed graph remains owned by its scope. Query its actual
     // admitted allocation, not a failing parse's observed output.
-    let CodecError::ResourceLimit(materialized) = ctx.reserve_scoped(u64::MAX, "graph storage oracle")
-        .unwrap_err() else { panic!("graph allocation oracle") };
+    let CodecError::ResourceLimit(materialized) = ctx
+        .reserve_scoped(u64::MAX, "graph storage oracle")
+        .unwrap_err()
+    else {
+        panic!("graph allocation oracle")
+    };
     let scratch = one_table_bytes::<(&str, DependencyInfo<'_, '_>)>()
         + one_table_bytes::<(&str, roxmltree::Node<'_, '_>)>()
         + one_table_bytes::<&str>();
@@ -120,9 +148,11 @@ fn consumed_dependency_vector_retires_before_the_next_object() {
     // consumed dependency Vec and the declaration-framing Vec no longer live.
     policy.limits.max_materialized_bytes = materialized.used + scratch;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let bounded_result = ctx.with_scoped_storage("bounded persistence graph result", || {
-        parse_document(&text, &xml, FcstdDialect::Schema4, &ctx)
-    }).unwrap();
+    let bounded_result = ctx
+        .with_scoped_storage("bounded persistence graph result", || {
+            parse_document(&text, &xml, FcstdDialect::Schema4, &ctx)
+        })
+        .unwrap();
     let bounded_storage = bounded_result.1;
     let bounded = bounded_result.0;
     assert_eq!(bounded.objects, graph.objects);

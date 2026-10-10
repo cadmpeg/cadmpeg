@@ -188,8 +188,8 @@ fn spreadsheet_cells_refuse_at_caller_limit() {
 
 #[test]
 fn spreadsheet_value_visits_exact_descendants_without_end_probe() {
-    let document = roxmltree::Document::parse("<Property><Cells/></Property>")
-        .expect("valid spreadsheet XML");
+    let document =
+        roxmltree::Document::parse("<Property><Cells/></Property>").expect("valid spreadsheet XML");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 27;

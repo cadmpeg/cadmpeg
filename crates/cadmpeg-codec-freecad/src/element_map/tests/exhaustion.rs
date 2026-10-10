@@ -2,10 +2,12 @@
 //! Exact source exhaustion and fused empty-route admission.
 
 use crate::element_map::{
-    bind_topology, element_map_size, mapped_name_count, parse_legacy_records,
-    parse_string_table, ParsedMap, TextScanner,
+    bind_topology, element_map_size, mapped_name_count, parse_legacy_records, parse_string_table,
+    ParsedMap, TextScanner,
 };
-use crate::native::element_map::{ElementMapGroup, ElementMapNode, ElementMapNodes, ElementMappedName};
+use crate::native::element_map::{
+    ElementMapGroup, ElementMapNode, ElementMapNodes, ElementMappedName,
+};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimit};
 use cadmpeg_core::CodecError;
 
@@ -19,7 +21,8 @@ fn with_work<T>(work: u64, call: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
 
 fn parsed(groups: Vec<ElementMapGroup>) -> ParsedMap {
     ParsedMap {
-        map_id: 0, postfixes: Vec::new(),
+        map_id: 0,
+        postfixes: Vec::new(),
         maps: ElementMapNodes::try_from(vec![ElementMapNode { map_id: 0, groups }]).unwrap(),
     }
 }
@@ -38,8 +41,12 @@ fn empty_text_and_record_sources_need_no_work() {
         assert_eq!(scanner.next_field(ctx).unwrap(), None);
         assert_eq!(scanner.next_legacy_id(ctx).unwrap(), None);
         assert!(parse_string_table(ctx, b"", 0, false).unwrap().is_empty());
-        assert!(parse_legacy_records(ctx, &mut TextScanner::new_ascii(""), 0)
-            .unwrap().data.is_empty());
+        assert!(
+            parse_legacy_records(ctx, &mut TextScanner::new_ascii(""), 0)
+                .unwrap()
+                .data
+                .is_empty()
+        );
         assert_eq!(element_map_size(ctx, &parsed(Vec::new())).unwrap(), 0);
         bind_topology(ctx, &mut [], &[]).unwrap();
         assert_eq!(ctx.resource_refusal(), None);
@@ -98,14 +105,22 @@ fn whitespace_exhaustion_preserves_unicode_and_ascii_rules() {
 #[test]
 fn mapped_count_exhaustion_charges_only_nodes_groups_and_chains() {
     let name = || ElementMappedName {
-        encoded: ";name.0".into(), resolved: Some("name".into()),
-        string_ids: Vec::new(), topology_ids: Vec::new(),
+        encoded: ";name.0".into(),
+        resolved: Some("name".into()),
+        string_ids: Vec::new(),
+        topology_ids: Vec::new(),
     };
     let map = parsed(vec![
-        ElementMapGroup { indexed_name: "Edge".into(), children: Vec::new(),
-            names: vec![vec![name(), name()], Vec::new()] },
-        ElementMapGroup { indexed_name: "Face".into(), children: Vec::new(),
-            names: vec![vec![name()]] },
+        ElementMapGroup {
+            indexed_name: "Edge".into(),
+            children: Vec::new(),
+            names: vec![vec![name(), name()], Vec::new()],
+        },
+        ElementMapGroup {
+            indexed_name: "Face".into(),
+            children: Vec::new(),
+            names: vec![vec![name()]],
+        },
     ]);
     with_work(5, |ctx| {
         // Two groups and three chains; chain lengths are fixed metadata.
@@ -142,7 +157,8 @@ fn empty_and_completed_element_helpers_return_original_refusal() {
     with_work(0, |ctx| {
         let mut completed = TextScanner::new("");
         assert_eq!(completed.next_field(ctx).unwrap(), Some(""));
-        ctx.charge_work(1, "test original element fuse").unwrap_err();
+        ctx.charge_work(1, "test original element fuse")
+            .unwrap_err();
         let original = ctx.resource_refusal().unwrap();
         let mut scanner = TextScanner::new("");
         assert_original(scanner.skip_whitespace(ctx), original);
@@ -151,7 +167,10 @@ fn empty_and_completed_element_helpers_return_original_refusal() {
         assert_original(completed.next_field(ctx), original);
         assert_original(scanner.next_legacy_id(ctx), original);
         assert_original(parse_string_table(ctx, b"", 0, false), original);
-        assert_original(parse_legacy_records(ctx, &mut TextScanner::new_ascii(""), 0), original);
+        assert_original(
+            parse_legacy_records(ctx, &mut TextScanner::new_ascii(""), 0),
+            original,
+        );
         let map = parsed(Vec::new());
         assert_original(element_map_size(ctx, &map), original);
         assert_original(mapped_name_count(ctx, &map), original);

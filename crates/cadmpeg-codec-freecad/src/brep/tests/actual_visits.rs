@@ -13,8 +13,9 @@ fn grid_row_allocation_refuses_before_unmoved_values() {
         policy.limits.max_collection_items = collection_limit;
         policy.limits.max_work_units = work_limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let Err(CodecError::ResourceLimit(original)) = grid_rows(&ctx, vec![1, 2, 3, 4], 2)
-            else { panic!("row storage must refuse before its values move") };
+        let Err(CodecError::ResourceLimit(original)) = grid_rows(&ctx, vec![1, 2, 3, 4], 2) else {
+            panic!("row storage must refuse before its values move")
+        };
         assert_eq!(original.dimension, ResourceDimension::CollectionItems);
         assert_eq!(original.operation, "FreeCAD B-rep surface row values");
         assert_eq!(original.used, used);
@@ -30,9 +31,13 @@ fn grid_rows_charge_each_moved_value_once_and_keep_order() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 4;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(grid_rows(&ctx, vec![1, 2, 3, 4], 2).unwrap(), [[1, 2], [3, 4]]);
-    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "after row moves")
-        else { panic!("four moves exhaust the work budget") };
+    assert_eq!(
+        grid_rows(&ctx, vec![1, 2, 3, 4], 2).unwrap(),
+        [[1, 2], [3, 4]]
+    );
+    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "after row moves") else {
+        panic!("four moves exhaust the work budget")
+    };
     assert_eq!(limit.used, 4);
 }
 
@@ -46,11 +51,14 @@ fn empty_and_invalid_grid_dimensions_need_no_work_and_keep_original_refusal() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(grid_rows::<u8>(&ctx, Vec::new(), 2).unwrap().is_empty());
-    assert!(matches!(grid_rows(&ctx, vec![1_u8], 2), Err(CodecError::Malformed(message))
-        if message == "surface grid dimensions do not match pole count"));
+    assert!(
+        matches!(grid_rows(&ctx, vec![1_u8], 2), Err(CodecError::Malformed(message))
+        if message == "surface grid dimensions do not match pole count")
+    );
     assert_eq!(ctx.resource_refusal(), None);
-    let Err(CodecError::ResourceLimit(original)) = ctx.charge_work(1, "prior grid refusal")
-        else { panic!("work refusal") };
+    let Err(CodecError::ResourceLimit(original)) = ctx.charge_work(1, "prior grid refusal") else {
+        panic!("work refusal")
+    };
     for width in [0, 2] {
         assert!(matches!(grid_rows::<u8>(&ctx, Vec::new(), width),
             Err(CodecError::ResourceLimit(actual)) if actual == original));
@@ -68,11 +76,15 @@ fn invalid_reference_prefix_does_not_scan_or_copy_suffix() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let tokens = [token.as_str()];
         let mut cursor = TokenCursor::new(&ctx, &tokens);
-        assert!(matches!(parse_reference_suffix(&mut cursor, "test suffix", 1),
-            Err(CodecError::Malformed(message)) if message == "test suffix limit exceeded"));
+        assert!(
+            matches!(parse_reference_suffix(&mut cursor, "test suffix", 1),
+            Err(CodecError::Malformed(message)) if message == "test suffix limit exceeded")
+        );
         assert_eq!(ctx.resource_refusal(), None);
         let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "after reference prefix")
-            else { panic!("only the visited prefix exhausts work") };
+        else {
+            panic!("only the visited prefix exhausts work")
+        };
         assert_eq!(limit.used, 4);
     }
 }
@@ -90,10 +102,15 @@ fn reference_prefix_keeps_utf8_suffix_and_digit_only_exhaustion() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let tokens = [token];
         let mut cursor = TokenCursor::new(&ctx, &tokens);
-        assert_eq!(parse_reference_suffix(&mut cursor, "test suffix", maximum).unwrap(), expected);
+        assert_eq!(
+            parse_reference_suffix(&mut cursor, "test suffix", maximum).unwrap(),
+            expected
+        );
         assert_eq!(ctx.resource_refusal(), None);
         let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "after valid reference")
-            else { panic!("the executed scans and copy exhaust work") };
+        else {
+            panic!("the executed scans and copy exhaust work")
+        };
         assert_eq!(limit.used, work);
     }
 }
@@ -105,11 +122,14 @@ fn empty_token_cursor_returns_truncation_without_work_and_preserves_refusal() {
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut cursor = TokenCursor::new(&ctx, &[]);
-    assert!(matches!(cursor.next("test token"), Err(CodecError::Malformed(message))
-        if message == "truncated test token in text B-rep Curves table"));
+    assert!(
+        matches!(cursor.next("test token"), Err(CodecError::Malformed(message))
+        if message == "truncated test token in text B-rep Curves table")
+    );
     assert_eq!(ctx.resource_refusal(), None);
-    let Err(CodecError::ResourceLimit(original)) = ctx.charge_work(1, "prior token refusal")
-        else { panic!("work refusal") };
+    let Err(CodecError::ResourceLimit(original)) = ctx.charge_work(1, "prior token refusal") else {
+        panic!("work refusal")
+    };
     assert!(matches!(cursor.next("test token"),
         Err(CodecError::ResourceLimit(actual)) if actual == original));
 }
@@ -123,8 +143,9 @@ fn token_cursor_charges_before_each_actual_visit_and_keeps_order() {
     let tokens = ["first", "second"];
     let mut cursor = TokenCursor::new(&ctx, &tokens);
     assert_eq!(cursor.next("test token").unwrap(), "first");
-    let Err(CodecError::ResourceLimit(original)) = cursor.next("test token")
-        else { panic!("the second token visit must refuse") };
+    let Err(CodecError::ResourceLimit(original)) = cursor.next("test token") else {
+        panic!("the second token visit must refuse")
+    };
     assert_eq!(original.operation, "FreeCAD text B-rep token");
     assert_eq!(original.used, 1);
     assert_eq!(original.additional, 1);
@@ -138,7 +159,10 @@ fn periodic_endpoint_search_charges_only_the_two_bounded_runs() {
     use cadmpeg_ir::scalar::FiniteReal;
     for middle_count in [0, 4096] {
         let mut knots = vec![FiniteReal::ZERO; 3];
-        knots.extend(std::iter::repeat_n(FiniteReal::new(0.5).unwrap(), middle_count));
+        knots.extend(std::iter::repeat_n(
+            FiniteReal::new(0.5).unwrap(),
+            middle_count,
+        ));
         knots.extend([FiniteReal::ONE; 3]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -146,14 +170,20 @@ fn periodic_endpoint_search_charges_only_the_two_bounded_runs() {
         policy.limits.max_work_units = 6;
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(super::super::normalize_periodic_knots(&ctx, knots, 2, true),
-            Err(CodecError::Malformed(message)) if message == "periodic B-spline endpoint knots are invalid"));
+        assert!(
+            matches!(super::super::normalize_periodic_knots(&ctx, knots, 2, true),
+            Err(CodecError::Malformed(message)) if message == "periodic B-spline endpoint knots are invalid")
+        );
         assert_eq!(ctx.resource_refusal(), None);
         let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "after endpoint search")
-            else { panic!("the two runs exhaust work") };
+        else {
+            panic!("the two runs exhaust work")
+        };
         assert_eq!(limit.used, 6);
-        assert!(matches!(super::super::normalize_periodic_knots(&ctx, Vec::new(), 2, false),
-            Err(CodecError::ResourceLimit(actual)) if actual == limit));
+        assert!(
+            matches!(super::super::normalize_periodic_knots(&ctx, Vec::new(), 2, false),
+            Err(CodecError::ResourceLimit(actual)) if actual == limit)
+        );
     }
 }
 
@@ -169,11 +199,15 @@ fn periodic_extension_overflow_does_not_copy_the_remaining_knots() {
         // Two endpoint visits each, then the first exterior-knot calculation.
         policy.limits.max_work_units = 5;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(super::super::normalize_periodic_knots(&ctx, knots, 1, true),
-            Err(CodecError::Malformed(message)) if message == "periodic B-spline extension exceeds finite knot range"));
+        assert!(
+            matches!(super::super::normalize_periodic_knots(&ctx, knots, 1, true),
+            Err(CodecError::Malformed(message)) if message == "periodic B-spline extension exceeds finite knot range")
+        );
         assert_eq!(ctx.resource_refusal(), None);
         let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "after exterior knot")
-            else { panic!("only the endpoint runs and first extension exhaust work") };
+        else {
+            panic!("only the endpoint runs and first extension exhaust work")
+        };
         assert_eq!(limit.used, 5);
     }
 }
@@ -181,7 +215,9 @@ fn periodic_extension_overflow_does_not_copy_the_remaining_knots() {
 #[test]
 fn periodic_knot_extension_charges_actual_visits_and_keeps_values() {
     use cadmpeg_ir::scalar::FiniteReal;
-    let knots = [-1.0, 0.0, 1.0].map(|value| FiniteReal::new(value).unwrap()).to_vec();
+    let knots = [-1.0, 0.0, 1.0]
+        .map(|value| FiniteReal::new(value).unwrap())
+        .to_vec();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     // Four endpoint visits, two exterior calculations and three source copies.
@@ -189,10 +225,14 @@ fn periodic_knot_extension_charges_actual_visits_and_keeps_values() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let (knots, padding) = super::super::normalize_periodic_knots(&ctx, knots, 1, true).unwrap();
     assert_eq!(padding, 1);
-    assert_eq!(knots.iter().map(|value| value.get()).collect::<Vec<_>>(), [-2.0, -1.0, 0.0, 1.0, 2.0]);
+    assert_eq!(
+        knots.iter().map(|value| value.get()).collect::<Vec<_>>(),
+        [-2.0, -1.0, 0.0, 1.0, 2.0]
+    );
     assert_eq!(ctx.resource_refusal(), None);
-    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "after periodic knots")
-        else { panic!("nine executed operations exhaust work") };
+    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "after periodic knots") else {
+        panic!("nine executed operations exhaust work")
+    };
     assert_eq!(limit.used, 9);
 }
 
@@ -201,7 +241,9 @@ fn periodic_pole_and_weight_copies_are_admitted_and_keep_source_order() {
     use cadmpeg_ir::scalar::FiniteReal;
     for spare_capacity in [false, true] {
         let mut points = vec![1_u8, 2];
-        let mut weights = [10.0, 20.0].map(|value| FiniteReal::new(value).unwrap()).to_vec();
+        let mut weights = [10.0, 20.0]
+            .map(|value| FiniteReal::new(value).unwrap())
+            .to_vec();
         if spare_capacity {
             points.reserve_exact(2);
             weights.reserve_exact(2);
@@ -209,20 +251,30 @@ fn periodic_pole_and_weight_copies_are_admitted_and_keep_source_order() {
         // Core linear_growth charges old capacity bytes only when growth is needed.
         let moved_points = if points.len() + 2 > points.capacity() {
             points.capacity() * std::mem::size_of::<u8>()
-        } else { 0 };
+        } else {
+            0
+        };
         let moved_weights = if weights.len() + 2 > weights.capacity() {
             weights.capacity() * std::mem::size_of::<FiniteReal>()
-        } else { 0 };
+        } else {
+            0
+        };
         let work = u64::try_from(moved_points + moved_weights + 4).unwrap();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = work;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        super::super::append_periodic_curve_poles(&ctx, &mut points, Some(&mut weights), 2).unwrap();
+        super::super::append_periodic_curve_poles(&ctx, &mut points, Some(&mut weights), 2)
+            .unwrap();
         assert_eq!(points, [1, 2, 1, 2]);
-        assert_eq!(weights.iter().map(|value| value.get()).collect::<Vec<_>>(), [10.0, 20.0, 10.0, 20.0]);
+        assert_eq!(
+            weights.iter().map(|value| value.get()).collect::<Vec<_>>(),
+            [10.0, 20.0, 10.0, 20.0]
+        );
         let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "after periodic copies")
-            else { panic!("relocation bytes and four source copies exhaust work") };
+        else {
+            panic!("relocation bytes and four source copies exhaust work")
+        };
         assert_eq!(limit.used, work);
     }
 }
@@ -235,16 +287,20 @@ fn periodic_copy_refuses_before_copying_and_preserves_the_original_refusal() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut points = Vec::with_capacity(4);
     points.extend([1_u8, 2]);
-    let Err(CodecError::ResourceLimit(original)) = super::super::append_periodic_curve_poles(
-        &ctx, &mut points, None, 2,
-    ) else { panic!("source-copy admission must refuse before copying") };
+    let Err(CodecError::ResourceLimit(original)) =
+        super::super::append_periodic_curve_poles(&ctx, &mut points, None, 2)
+    else {
+        panic!("source-copy admission must refuse before copying")
+    };
     assert_eq!(original.dimension, ResourceDimension::WorkUnits);
     assert_eq!(original.operation, "FreeCAD periodic B-rep curve poles");
     assert_eq!(original.used, 0);
     assert_eq!(original.additional, 2);
     assert_eq!(points, [1, 2]);
-    assert!(matches!(super::super::append_periodic_curve_poles(&ctx, &mut points, None, 0),
-        Err(CodecError::ResourceLimit(actual)) if actual == original));
+    assert!(
+        matches!(super::super::append_periodic_curve_poles(&ctx, &mut points, None, 0),
+        Err(CodecError::ResourceLimit(actual)) if actual == original)
+    );
 }
 
 #[test]
@@ -253,20 +309,25 @@ fn periodic_weight_error_keeps_the_original_pole_copy_phase() {
     // Before the weight error, growth moves old capacity bytes and one pole is copied.
     let moved = if points.len() + 1 > points.capacity() {
         points.capacity() * std::mem::size_of::<u8>()
-    } else { 0 };
+    } else {
+        0
+    };
     let work = u64::try_from(moved + 1).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = work;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut weights = Vec::new();
-    assert!(matches!(super::super::append_periodic_curve_poles(&ctx, &mut points, Some(&mut weights), 1),
-        Err(CodecError::Malformed(message)) if message == "periodic B-spline has insufficient weights"));
+    assert!(
+        matches!(super::super::append_periodic_curve_poles(&ctx, &mut points, Some(&mut weights), 1),
+        Err(CodecError::Malformed(message)) if message == "periodic B-spline has insufficient weights")
+    );
     assert_eq!(points, [1, 1]);
     assert!(weights.is_empty());
     assert_eq!(ctx.resource_refusal(), None);
-    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "after missing weights")
-        else { panic!("only relocation and the pole copy exhaust work") };
+    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "after missing weights") else {
+        panic!("only relocation and the pole copy exhaust work")
+    };
     assert_eq!(limit.used, work);
 }
 
@@ -291,9 +352,15 @@ fn nonperiodic_knots_and_zero_padding_move_no_storage_and_preserve_refusal() {
     assert_eq!(points, [1]);
     assert_eq!(ctx.resource_refusal(), None);
     let Err(CodecError::ResourceLimit(original)) = ctx.charge_work(1, "prior periodic refusal")
-        else { panic!("work refusal") };
-    assert!(matches!(super::super::normalize_periodic_knots(&ctx, Vec::new(), 1, false),
-        Err(CodecError::ResourceLimit(actual)) if actual == original));
-    assert!(matches!(super::super::append_periodic_curve_poles(&ctx, &mut points, None, 0),
-        Err(CodecError::ResourceLimit(actual)) if actual == original));
+    else {
+        panic!("work refusal")
+    };
+    assert!(
+        matches!(super::super::normalize_periodic_knots(&ctx, Vec::new(), 1, false),
+        Err(CodecError::ResourceLimit(actual)) if actual == original)
+    );
+    assert!(
+        matches!(super::super::append_periodic_curve_poles(&ctx, &mut points, None, 0),
+        Err(CodecError::ResourceLimit(actual)) if actual == original)
+    );
 }

@@ -296,13 +296,18 @@ mod tests {
     fn native_identity_key_fallback_keeps_borrow_and_original_refusal() {
         use cadmpeg_core::decode::ResourceDimension;
         let id = "identity_without_a_separator";
-        crate::test_support::refusal_at(ResourceDimension::WorkUnits, &[], "identity key search", |ctx| {
-            let result = super::id_key_charged(ctx, id, "identity key search");
-            if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
-                assert_eq!(ctx.resource_refusal(), Some(*limit));
-            }
-            result
-        });
+        crate::test_support::refusal_at(
+            ResourceDimension::WorkUnits,
+            &[],
+            "identity key search",
+            |ctx| {
+                let result = super::id_key_charged(ctx, id, "identity key search");
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                    assert_eq!(ctx.resource_refusal(), Some(*limit));
+                }
+                result
+            },
+        );
         crate::test_support::with_service_context(&[], |ctx| {
             let key = super::id_key_charged(ctx, id, "identity key search").expect("fallback");
             assert_eq!(key, id);
@@ -706,12 +711,9 @@ mod tests {
 
     #[test]
     fn link_clone_refuses_first_subelement_text_before_a_long_suffix() {
-        let link = super::LinkTarget::try_new(
-            None,
-            None,
-            vec!["x".into(), "unvisited".repeat(8192)],
-        )
-        .unwrap();
+        let link =
+            super::LinkTarget::try_new(None, None, vec!["x".into(), "unvisited".repeat(8192)])
+                .unwrap();
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_work_units = 1;
@@ -723,7 +725,10 @@ mod tests {
         else {
             panic!("the first subelement copy must refuse at its work boundary");
         };
-        assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::WorkUnits
+        );
         assert_eq!(limit.operation, "FreeCAD link subelement text");
         assert_eq!(limit.used, 1);
         assert_eq!(ctx.resource_refusal(), Some(limit));
@@ -812,10 +817,7 @@ mod tests {
             let facts = facts(&domains);
             assert_eq!(facts.document_kind(), expected);
             crate::test_support::with_service_context(&[], |ctx| {
-                assert_eq!(
-                    facts.document_kind_with_admission(ctx).unwrap(),
-                    expected
-                );
+                assert_eq!(facts.document_kind_with_admission(ctx).unwrap(), expected);
             });
         }
         let facts = facts(&["Assembly", "Unused", "Unused"]);
@@ -866,8 +868,7 @@ mod tests {
 
         let records = (0..2)
             .map(|index| {
-                super::StringTableRecord::try_new(index, None, false, 0, None, Vec::new())
-                    .unwrap()
+                super::StringTableRecord::try_new(index, None, false, 0, None, Vec::new()).unwrap()
             })
             .collect::<Vec<_>>();
         let expected = super::StringTables::try_from(records.clone()).unwrap();
@@ -940,7 +941,10 @@ mod tests {
             (ZipSpanRole::CentralName, "central-name"),
             (ZipSpanRole::CentralExtra, "central-extra"),
             (ZipSpanRole::CentralComment, "central-comment"),
-            (|entry| ZipSpanRole::Padding { entry: Some(entry) }, "archive-padding"),
+            (
+                |entry| ZipSpanRole::Padding { entry: Some(entry) },
+                "archive-padding",
+            ),
         ];
         for (constructor, label) in constructors {
             let entry = "SyntheticEntry.xml".to_owned();
@@ -1076,12 +1080,10 @@ mod tests {
                 .unwrap(),
             ]
         };
-        let standard_error = super::StringTables::from_records_with_admission(
-            records(),
-            &super::StandardAdmission,
-        )
-        .unwrap()
-        .unwrap_err();
+        let standard_error =
+            super::StringTables::from_records_with_admission(records(), &super::StandardAdmission)
+                .unwrap()
+                .unwrap_err();
         let cadmpeg_ir::native::NativeConvertError::InvalidCollection(message) = standard_error
         else {
             panic!("invalid string table positions use the collection diagnostic");
@@ -1100,9 +1102,9 @@ mod tests {
                 panic!("invalid string table positions use the collection diagnostic");
             };
             assert_eq!(message, "string_tables[1].index must equal 1, got 9");
-            let cadmpeg_core::CodecError::ResourceLimit(prefix) =
-                ctx.charge_work(u64::MAX, "successful-prefix work oracle")
-                    .unwrap_err()
+            let cadmpeg_core::CodecError::ResourceLimit(prefix) = ctx
+                .charge_work(u64::MAX, "successful-prefix work oracle")
+                .unwrap_err()
             else {
                 panic!("the successful prefix work oracle must refuse");
             };
@@ -1121,8 +1123,9 @@ mod tests {
             panic!("invalid string table positions use the collection diagnostic");
         };
         assert_eq!(message, "string_tables[1].index must equal 1, got 9");
-        let cadmpeg_core::CodecError::ResourceLimit(prefix) =
-            ctx.charge_work(u64::MAX, "visited-prefix oracle").unwrap_err()
+        let cadmpeg_core::CodecError::ResourceLimit(prefix) = ctx
+            .charge_work(u64::MAX, "visited-prefix oracle")
+            .unwrap_err()
         else {
             panic!("the successful prefix exhausts the work limit");
         };
@@ -1245,15 +1248,8 @@ mod tests {
     #[test]
     fn string_table_identity_uses_admitted_exact_native_spelling() {
         for index in [0, 10, usize::MAX] {
-            let table = super::StringTableRecord::try_new(
-                index,
-                None,
-                false,
-                0,
-                None,
-                Vec::new(),
-            )
-            .expect("valid string table");
+            let table = super::StringTableRecord::try_new(index, None, false, 0, None, Vec::new())
+                .expect("valid string table");
             let expected = native_id("string-table", &index.to_string());
             assert_eq!(table.id(), expected);
             crate::test_support::with_service_context(&[], |ctx| {
@@ -1261,15 +1257,8 @@ mod tests {
             });
         }
 
-        let table = super::StringTableRecord::try_new(
-            usize::MAX,
-            None,
-            false,
-            0,
-            None,
-            Vec::new(),
-        )
-        .expect("valid string table");
+        let table = super::StringTableRecord::try_new(usize::MAX, None, false, 0, None, Vec::new())
+            .expect("valid string table");
         crate::test_support::assert_retained_refusal_at(
             &[],
             "FreeCAD string table identity",
@@ -4543,10 +4532,7 @@ pub(crate) fn is_safe_entry_name_charged(
 }
 
 /// Reads each byte once, stopping at the first unsafe path component.
-fn safe_entry_name<A: Admission>(
-    admission: &A,
-    name: &str,
-) -> Result<bool, A::Error> {
+fn safe_entry_name<A: Admission>(admission: &A, name: &str) -> Result<bool, A::Error> {
     admission.charge_work(0, "FCStd entry name check")?;
     let bytes = name.as_bytes();
     let mut start = 0;

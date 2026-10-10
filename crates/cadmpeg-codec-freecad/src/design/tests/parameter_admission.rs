@@ -23,10 +23,12 @@ fn design_parameter_object_name_index_refuses_at_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root");
-    assert!(matches!(super::super::ordering::bind_parameter_dependencies(
+    assert!(
+        matches!(super::super::ordering::bind_parameter_dependencies(
         &ctx, &mut Vec::new(), &[object], &std::collections::BTreeSet::default(),
     ), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "fcstd parameter dependency object names"));
+        if limit.operation == "fcstd parameter dependency object names")
+    );
 }
 
 #[test]
@@ -50,14 +52,17 @@ fn design_parameter_candidates_refuse_at_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root");
-    assert!(matches!(super::super::ordering::bind_parameter_dependencies(
+    assert!(
+        matches!(super::super::ordering::bind_parameter_dependencies(
         &ctx, &mut vec![parameter.clone()], &[], &std::collections::BTreeSet::default(),
     ), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "fcstd parameter dependency candidates"));
+        if limit.operation == "fcstd parameter dependency candidates")
+    );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root");
-    let result = super::super::ordering::order_parameters_by_dependencies(&ctx, &mut vec![parameter]);
+    let result =
+        super::super::ordering::order_parameters_by_dependencies(&ctx, &mut vec![parameter]);
     assert!(
         matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(ref limit))
         if limit.operation == "fcstd known parameter identities"),

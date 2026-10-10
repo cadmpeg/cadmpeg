@@ -165,8 +165,7 @@ fn body_predecessors_keep_first_usable_body_and_first_member_winners() {
     let second_body = object("second-body", 1);
     let third_body = object("third-body", 2);
     let first_members = membership_property(first_body.id(), &["member", "base-a", "member"]);
-    let second_members =
-        membership_property(second_body.id(), &["base-b", "member", "member"]);
+    let second_members = membership_property(second_body.id(), &["base-b", "member", "member"]);
     let third_members = membership_property(third_body.id(), &["base-c", "member"]);
     let objects = [first_body, second_body, third_body];
     let properties_by_owner = BTreeMap::from([
@@ -178,8 +177,7 @@ fn body_predecessors_keep_first_usable_body_and_first_member_winners() {
     for name in ["base-a", "base-b", "base-c"] {
         features.insert(
             name,
-            FeatureId::mint(format!("test:test:feature#{name}"))
-                .expect("valid feature identity"),
+            FeatureId::mint(format!("test:test:feature#{name}")).expect("valid feature identity"),
         );
     }
 
@@ -271,9 +269,7 @@ fn body_predecessor_visits_source_objects_before_admitting_suffix() {
         &oracle_properties,
     )
     .expect("lazy predecessor index");
-    let _oracle = oracle_index
-        .build()
-        .expect("short predecessor index build");
+    let _oracle = oracle_index.build().expect("short predecessor index build");
     let work_cap = work_used_after_successful_prefix(&oracle_ctx);
 
     let mut objects = vec![object("body", 0)];
@@ -309,10 +305,7 @@ fn body_predecessor_visits_source_objects_before_admitting_suffix() {
 fn body_predecessor_member_first_insertion_refuses_before_long_suffix() {
     let oracle_body = object("body", 0);
     let oracle_members = membership_property(oracle_body.id(), &["base", "member"]);
-    let oracle_properties = BTreeMap::from([(
-        oracle_body.id().as_str(),
-        vec![&oracle_members],
-    )]);
+    let oracle_properties = BTreeMap::from([(oracle_body.id().as_str(), vec![&oracle_members])]);
     let oracle_features = HashMap::from([(
         "base",
         FeatureId::mint("test:test:feature#base").expect("base feature identity"),
@@ -362,13 +355,8 @@ fn body_predecessor_member_first_insertion_refuses_before_long_suffix() {
     policy.limits.max_work_units = work_cap;
     policy.limits.max_collection_items = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let index = BodyPredecessors::new(
-        &ctx,
-        std::slice::from_ref(&body),
-        &features,
-        &properties,
-    )
-    .expect("lazy predecessor index");
+    let index = BodyPredecessors::new(&ctx, std::slice::from_ref(&body), &features, &properties)
+        .expect("lazy predecessor index");
     assert!(ctx.resource_refusal().is_none());
     let _probe = RefusalProbe::arm(
         ResourceDimension::CollectionItems,
@@ -434,13 +422,8 @@ fn body_predecessor_empty_members_keep_a_later_fused_refusal() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let index = BodyPredecessors::new(
-        &ctx,
-        std::slice::from_ref(&body),
-        &features,
-        &properties,
-    )
-    .expect("lazy predecessor index");
+    let index = BodyPredecessors::new(&ctx, std::slice::from_ref(&body), &features, &properties)
+        .expect("lazy predecessor index");
     assert!(index
         .get("missing", "test predecessor lookup")
         .expect("empty member route")

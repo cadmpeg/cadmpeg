@@ -35,7 +35,9 @@ pub(crate) fn transfer(
     let mut transferred = false;
     let mut property_sources = properties.iter();
     while property_sources.len() != 0 {
-        let Some(property) = ctx.next_charged(&mut property_sources, "FreeCAD geometry properties")? else {
+        let Some(property) =
+            ctx.next_charged(&mut property_sources, "FreeCAD geometry properties")?
+        else {
             break;
         };
         let geometry_kind = match property.type_name.as_str() {
@@ -63,15 +65,14 @@ pub(crate) fn transfer(
                     "FreeCAD geometry XML error",
                 )?))
             })?;
-        let root_entry =
-            ctx.with_scoped_storage("FreeCAD geometry side-entry lookup", || {
-                validate_value_root(
-                    ctx,
-                    property,
-                    geometry_kind.value_tag(),
-                    Some(admitted_document.document()),
-                )
-            })?;
+        let root_entry = ctx.with_scoped_storage("FreeCAD geometry side-entry lookup", || {
+            validate_value_root(
+                ctx,
+                property,
+                geometry_kind.value_tag(),
+                Some(admitted_document.document()),
+            )
+        })?;
         let _root_storage = root_entry.1;
         let root_entry = root_entry.0;
         let side_entry_matches_root = property.side_entries().len()
@@ -248,7 +249,8 @@ fn parse_mesh(
         let mut vertices = ctx.collection_vec(point_count, "FreeCAD mesh vertices")?;
         let mut vertex_sources = 0..point_count;
         while vertex_sources.len() != 0 {
-            let Some(_) = ctx.next_charged(&mut vertex_sources, "FreeCAD mesh vertex visits")? else {
+            let Some(_) = ctx.next_charged(&mut vertex_sources, "FreeCAD mesh vertex visits")?
+            else {
                 break;
             };
             vertices.push(reader.point3(byte_order, "mesh point")?);
@@ -292,13 +294,12 @@ fn parse_mesh(
     })?;
     reader.finish(ctx, "mesh payload")?;
     // Format escaping diagnostics after restoring storage routing.
-    let id = storage.with_storage(|| {
-        Ok::<_, CodecError>(cadmpeg_ir::tessellation::TessellationId::mint(ctx.retained_suffix(
-            &property.id,
-            ":mesh",
-            "FreeCAD mesh identity",
-        )?))
-    })?
+    let id = storage
+        .with_storage(|| {
+            Ok::<_, CodecError>(cadmpeg_ir::tessellation::TessellationId::mint(
+                ctx.retained_suffix(&property.id, ":mesh", "FreeCAD mesh identity")?,
+            ))
+        })?
         .map_err(|error| {
             crate::resource::malformed_charged(
                 ctx,
@@ -306,17 +307,24 @@ fn parse_mesh(
                 "FreeCAD mesh diagnostic",
             )
         })?;
-    let tessellation = storage.with_storage(|| Ok::<_, CodecError>(Tessellation::from_parts(
-        id,
-        cadmpeg_ir::tessellation::TessellationMesh::List {
-            vertices,
-            triangles,
-        },
-        Vec::new(),
-    )))?
-    .map_err(|error| {
-        crate::resource::malformed_charged(ctx, format_args!("{error}"), "FreeCAD mesh diagnostic")
-    })?;
+    let tessellation = storage
+        .with_storage(|| {
+            Ok::<_, CodecError>(Tessellation::from_parts(
+                id,
+                cadmpeg_ir::tessellation::TessellationMesh::List {
+                    vertices,
+                    triangles,
+                },
+                Vec::new(),
+            ))
+        })?
+        .map_err(|error| {
+            crate::resource::malformed_charged(
+                ctx,
+                format_args!("{error}"),
+                "FreeCAD mesh diagnostic",
+            )
+        })?;
     let source = storage.with_storage(|| association(ctx, property))?;
     storage.commit_value(tessellation.with_source_object(Some(source)))
 }
@@ -350,26 +358,29 @@ fn parse_points(
     ctx.reserve_vec(points, count, "FreeCAD point-cloud points")?;
     let mut point_sources = 0..count;
     while point_sources.len() != 0 {
-        let Some(index) = ctx.next_charged(&mut point_sources, "FreeCAD point-cloud point visits")? else {
+        let Some(index) =
+            ctx.next_charged(&mut point_sources, "FreeCAD point-cloud point visits")?
+        else {
             break;
         };
-        let ordinal =
-            ctx.format_scoped(format_args!("{index}"), "FreeCAD point ordinal")?;
+        let ordinal = ctx.format_scoped(format_args!("{index}"), "FreeCAD point ordinal")?;
         let _ordinal_storage = ordinal.1;
         let ordinal = ordinal.0;
         let position = reader.point3(ByteOrder::Little, "point-cloud point")?;
         let mut storage = ctx.provisional_retained("FreeCAD point-cloud candidate")?;
-        let point = storage.with_storage(|| Ok::<_, CodecError>(Point::new(
-            PointId::mint(crate::native::model_id_charged(
-                ctx,
-                "point",
-                &property.id,
-                &ordinal,
-            )?)
-            .map_err(CodecError::malformed)?,
-            transform_point(transform, position)?,
-            Some(association(ctx, property)?),
-        )))?;
+        let point = storage.with_storage(|| {
+            Ok::<_, CodecError>(Point::new(
+                PointId::mint(crate::native::model_id_charged(
+                    ctx,
+                    "point",
+                    &property.id,
+                    &ordinal,
+                )?)
+                .map_err(CodecError::malformed)?,
+                transform_point(transform, position)?,
+                Some(association(ctx, property)?),
+            ))
+        })?;
         points.push(storage.commit_value(point)?);
     }
     reader.finish(ctx, "point-cloud payload")?;
@@ -638,8 +649,12 @@ pub(crate) mod tests {
         assert!(!super::transfer(&ctx, &mut ir, &[], &[], &mut 0).expect("empty geometry"));
         assert!(ir.model.points.is_empty());
         assert!(ir.model.tessellations.is_empty());
-        let CodecError::ResourceLimit(original) = ctx.charge_work(1, "prior geometry refusal")
-            .expect_err("work limit") else { panic!("resource refusal") };
+        let CodecError::ResourceLimit(original) = ctx
+            .charge_work(1, "prior geometry refusal")
+            .expect_err("work limit")
+        else {
+            panic!("resource refusal")
+        };
         assert!(matches!(super::transfer(&ctx, &mut ir, &[], &[], &mut 0),
             Err(CodecError::ResourceLimit(repeated)) if repeated == original));
     }
@@ -648,28 +663,53 @@ pub(crate) mod tests {
     fn malformed_first_geometry_property_skips_unvisited_suffix() {
         let mut property = resource_test_property();
         let budget = crate::test_support::with_service_context(&[], |ctx| {
-            assert!(!super::transfer(ctx, &mut cadmpeg_ir::CadIr::empty(),
-                std::slice::from_ref(&property), &[], &mut 0).expect("short geometry"));
-            ctx.format_retained(format_args!(
-                "geometry property {} references more than one side entry", property.id,
-            ), "FreeCAD geometry side-entry error").expect("diagnostic oracle");
-            let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "geometry work oracle")
-                .expect_err("work overflow") else { panic!("resource refusal") };
+            assert!(!super::transfer(
+                ctx,
+                &mut cadmpeg_ir::CadIr::empty(),
+                std::slice::from_ref(&property),
+                &[],
+                &mut 0
+            )
+            .expect("short geometry"));
+            ctx.format_retained(
+                format_args!(
+                    "geometry property {} references more than one side entry",
+                    property.id,
+                ),
+                "FreeCAD geometry side-entry error",
+            )
+            .expect("diagnostic oracle");
+            let CodecError::ResourceLimit(limit) = ctx
+                .charge_work(u64::MAX, "geometry work oracle")
+                .expect_err("work overflow")
+            else {
+                panic!("resource refusal")
+            };
             limit.used
         });
         property.body = PropertyBody::Persisted {
-            values: Vec::new(), links: Vec::new(), side_entries: vec!["A".into(), "B".into()],
+            values: Vec::new(),
+            links: Vec::new(),
+            side_entries: vec!["A".into(), "B".into()],
             dynamic: None,
         };
-        let count = usize::try_from(budget).expect("finite budget").checked_add(1)
+        let count = usize::try_from(budget)
+            .expect("finite budget")
+            .checked_add(1)
             .expect("finite suffix count");
         let properties: Vec<_> = (0..count).map(|_| property.clone()).collect();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = budget;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        let error = super::transfer(&ctx, &mut cadmpeg_ir::CadIr::empty(), &properties, &[], &mut 0)
-            .expect_err("first invalid side-entry cardinality");
+        let error = super::transfer(
+            &ctx,
+            &mut cadmpeg_ir::CadIr::empty(),
+            &properties,
+            &[],
+            &mut 0,
+        )
+        .expect_err("first invalid side-entry cardinality");
         assert!(matches!(error, CodecError::Malformed(message)
             if message == "geometry property fcstd:native:property#Geometry references more than one side entry"));
         assert_eq!(ctx.resource_refusal(), None);
@@ -684,13 +724,20 @@ pub(crate) mod tests {
             parse_points(ctx, &property, &short, 0, &mut 0, None, &mut points)
                 .expect("short point population");
             assert_eq!(points.len(), 1);
-            let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "point work oracle")
-                .expect_err("work overflow") else { panic!("resource refusal") };
+            let CodecError::ResourceLimit(limit) = ctx
+                .charge_work(u64::MAX, "point work oracle")
+                .expect_err("work overflow")
+            else {
+                panic!("resource refusal")
+            };
             limit.used
         });
         let count = budget.checked_add(1).expect("finite point count");
         assert!(count <= u64::try_from(super::MAX_ELEMENTS).expect("codec population bound"));
-        let mut bytes = u32::try_from(count).expect("bounded u32 count").to_le_bytes().to_vec();
+        let mut bytes = u32::try_from(count)
+            .expect("bounded u32 count")
+            .to_le_bytes()
+            .to_vec();
         bytes.extend_from_slice(&f32::NAN.to_le_bytes());
         bytes.resize(4 + usize::try_from(count).expect("bounded count") * 12, 0);
         let arena = DecodeArena::new();

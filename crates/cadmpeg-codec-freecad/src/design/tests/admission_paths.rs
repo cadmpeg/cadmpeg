@@ -132,9 +132,7 @@ fn membership_property(owner: &str, members: &[&str]) -> crate::native::Property
     }
 }
 
-fn work_used_before_marker(
-    action: impl Fn(&DecodeContext<'_>) -> Result<(), CodecError>,
-) -> u64 {
+fn work_used_before_marker(action: impl Fn(&DecodeContext<'_>) -> Result<(), CodecError>) -> u64 {
     let error =
         crate::test_support::refusal_at(ResourceDimension::WorkUnits, &[], WORK_MARKER, |ctx| {
             action(ctx)?;
@@ -341,13 +339,11 @@ fn operation_parameter_owner_identity_is_lazy_and_scoped() {
     )
     .expect("nonnumeric candidates do not retain output expressions");
 
-    let feature_identity_error = crate::test_support::materialized_refusal_at(
-        "fcstd design feature identity",
-        |ctx| {
+    let feature_identity_error =
+        crate::test_support::materialized_refusal_at("fcstd design feature identity", |ctx| {
             let mut parameters = Vec::new();
             super::super::append_operation_parameters(ctx, &mut parameters, &object, &[&valid])
-        },
-    );
+        });
     let CodecError::ResourceLimit(feature_identity_limit) = feature_identity_error else {
         panic!("feature identity should have a positive materialized boundary");
     };
@@ -392,7 +388,8 @@ fn operation_parameter_owner_identity_is_lazy_and_scoped() {
         let mut parameters = Vec::new();
         super::super::append_operation_parameters(ctx, &mut parameters, &object, &[&valid])?;
         assert_eq!(parameters.len(), 1);
-        ctx.reserve_scoped(MEASUREMENT_MARKER_BYTES, marker).map(drop)
+        ctx.reserve_scoped(MEASUREMENT_MARKER_BYTES, marker)
+            .map(drop)
     });
     assert!(matches!(error,
         CodecError::ResourceLimit(limit)
@@ -545,8 +542,14 @@ fn reference_horizontal_axis_is_neutral_and_native_unresolved_operands_keep_orde
             &[],
             operation,
             |ctx| {
-                super::parse_constraints(ctx, &object, &[&native_property], &sketch, &[line.clone()])
-                    .map(drop)
+                super::parse_constraints(
+                    ctx,
+                    &object,
+                    &[&native_property],
+                    &sketch,
+                    &[line.clone()],
+                )
+                .map(drop)
             },
         );
         assert!(matches!(error,
@@ -882,7 +885,8 @@ fn single_parameter_and_sweep_skip_rotation_and_profile_deduplication() {
         |ctx| {
             let mut parameters = vec![single_parameter()];
             let original = parameters[0].id.clone();
-            super::super::ordering::order_parameters_by_dependencies(ctx, &mut parameters).map(drop)?;
+            super::super::ordering::order_parameters_by_dependencies(ctx, &mut parameters)
+                .map(drop)?;
             assert_eq!(parameters.len(), 1);
             assert_eq!(parameters[0].id, original);
             Ok(())

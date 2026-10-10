@@ -89,7 +89,8 @@ pub(super) fn feature_ordinals<'ctx, 'a>(
             ctx.vector_storage(design_objects.len(), "fcstd design dependency lists")?;
         let mut source = design_objects.iter();
         while source.len() != 0 {
-            let Some(object) = ctx.next_charged(&mut source, "fcstd design dependency sources")? else {
+            let Some(object) = ctx.next_charged(&mut source, "fcstd design dependency sources")?
+            else {
                 break;
             };
             let mut required = BTreeSet::new();
@@ -109,7 +110,9 @@ pub(super) fn feature_ordinals<'ctx, 'a>(
             if !is_body(&object.type_name) {
                 let mut source = object.dependencies.iter();
                 while source.len() != 0 {
-                    let Some(dependency) = ctx.next_charged(&mut source, "fcstd declared design dependencies")? else {
+                    let Some(dependency) =
+                        ctx.next_charged(&mut source, "fcstd declared design dependencies")?
+                    else {
                         break;
                     };
                     if ctx.contains_key_hash_map(
@@ -132,12 +135,16 @@ pub(super) fn feature_ordinals<'ctx, 'a>(
             )? {
                 let mut source = properties.iter();
                 while source.len() != 0 {
-                    let Some(property) = ctx.next_charged(&mut source, "fcstd design dependency properties")? else {
+                    let Some(property) =
+                        ctx.next_charged(&mut source, "fcstd design dependency properties")?
+                    else {
                         break;
                     };
                     let mut source = property.values().iter();
                     while source.len() != 0 {
-                        let Some(value) = ctx.next_charged(&mut source, "fcstd design expression values")? else {
+                        let Some(value) =
+                            ctx.next_charged(&mut source, "fcstd design expression values")?
+                        else {
                             break;
                         };
                         if let Some(expression) = ctx.get_btree_map(
@@ -182,7 +189,9 @@ pub(super) fn feature_ordinals<'ctx, 'a>(
                     if !is_body(&object.type_name) {
                         let mut source = property.links().iter();
                         while source.len() != 0 {
-                            let Some(link) = ctx.next_charged(&mut source, "fcstd design property links")? else {
+                            let Some(link) =
+                                ctx.next_charged(&mut source, "fcstd design property links")?
+                            else {
                                 break;
                             };
                             let Some(dependency_id) =
@@ -227,14 +236,17 @@ pub(super) fn feature_ordinals<'ctx, 'a>(
     })?;
     let mut source = source_ordinals.iter();
     while source.len() != 0 {
-        let Some(ordinal) = ctx.next_charged(&mut source, "fcstd design dependency ordering passes")? else {
+        let Some(ordinal) =
+            ctx.next_charged(&mut source, "fcstd design dependency ordering passes")?
+        else {
             break;
         };
         let mut next: Option<&ObjectRecord> = None;
         let mut source = design_objects.iter();
         while source.len() != 0 {
             let index = design_objects.len() - source.len();
-            let Some(object) = ctx.next_charged(&mut source, "fcstd design dependency ordering")? else {
+            let Some(object) = ctx.next_charged(&mut source, "fcstd design dependency ordering")?
+            else {
                 break;
             };
             if ctx.contains_btree_set(
@@ -267,7 +279,9 @@ pub(super) fn feature_ordinals<'ctx, 'a>(
                 let mut next: Option<&ObjectRecord> = None;
                 let mut source = design_objects.iter();
                 while source.len() != 0 {
-                    let Some(object) = ctx.next_charged(&mut source, "fcstd design cycle objects")? else {
+                    let Some(object) =
+                        ctx.next_charged(&mut source, "fcstd design cycle objects")?
+                    else {
                         break;
                     };
                     if ctx.contains_btree_set(
@@ -330,7 +344,9 @@ pub(super) fn bind_parameter_dependencies<'ctx>(
             let mut object_names = HashMap::new();
             let mut source = objects.iter();
             while source.len() != 0 {
-                let Some(object) = ctx.next_charged(&mut source, "fcstd parameter dependency objects")? else {
+                let Some(object) =
+                    ctx.next_charged(&mut source, "fcstd parameter dependency objects")?
+                else {
                     break;
                 };
                 ctx.insert_hash_map(
@@ -344,7 +360,9 @@ pub(super) fn bind_parameter_dependencies<'ctx>(
                 ctx.collection_vec(parameters.len(), "fcstd parameter dependency candidates")?;
             let mut source = parameters.iter();
             while source.len() != 0 {
-                let Some(parameter) = ctx.next_charged(&mut source, "fcstd dependency parameters")? else {
+                let Some(parameter) =
+                    ctx.next_charged(&mut source, "fcstd dependency parameters")?
+                else {
                     break;
                 };
                 let source_name = match ctx.get_btree_map(
@@ -373,13 +391,17 @@ pub(super) fn bind_parameter_dependencies<'ctx>(
             let mut qualified_candidates = BTreeMap::<String, Vec<&ParameterId>>::new();
             let mut source = candidates.iter();
             while source.len() != 0 {
-                let Some((id, owner, names)) = ctx.next_charged(&mut source, "fcstd parameter candidate groups")? else {
+                let Some((id, owner, names)) =
+                    ctx.next_charged(&mut source, "fcstd parameter candidate groups")?
+                else {
                     break;
                 };
                 let Some(owner) = owner else { continue };
                 let mut source = names.iter();
                 while source.len() != 0 {
-                    let Some(name) = ctx.next_charged(&mut source, "fcstd parameter candidate names")? else {
+                    let Some(name) =
+                        ctx.next_charged(&mut source, "fcstd parameter candidate names")?
+                    else {
                         break;
                     };
                     let key = (*owner, *name);
@@ -426,7 +448,9 @@ pub(super) fn bind_parameter_dependencies<'ctx>(
                     ctx.vector_storage(parameters.len(), "fcstd parameter dependency results")?;
                 let mut source = parameters.iter();
                 while source.len() != 0 {
-                    let Some(parameter) = ctx.next_charged(&mut source, "fcstd parameter dependency scan")? else {
+                    let Some(parameter) =
+                        ctx.next_charged(&mut source, "fcstd parameter dependency scan")?
+                    else {
                         break;
                     };
                     let owner_cycle = match parameter.owner.as_ref() {
@@ -504,7 +528,9 @@ pub(super) fn bind_parameter_dependencies<'ctx>(
     drop(candidate_storage);
     let mut source = 0..parameters.len();
     while source.len() != 0 {
-        let Some(index) = ctx.next_charged(&mut source, "fcstd parameter dependency materialization")? else {
+        let Some(index) =
+            ctx.next_charged(&mut source, "fcstd parameter dependency materialization")?
+        else {
             break;
         };
         let parameter = &mut parameters[index];
@@ -515,7 +541,9 @@ pub(super) fn bind_parameter_dependencies<'ctx>(
                     ctx.vector_storage(dependencies.len(), "fcstd parameter dependency members")?;
                 let mut source = dependencies.iter();
                 while source.len() != 0 {
-                    let Some(dependency) = ctx.next_charged(&mut source, "fcstd parameter dependency members")? else {
+                    let Some(dependency) =
+                        ctx.next_charged(&mut source, "fcstd parameter dependency members")?
+                    else {
                         break;
                     };
                     ctx.push_vec(
@@ -567,7 +595,8 @@ pub(super) fn bind_parameter_dependencies<'ctx>(
     }
     let mut source = owner_ordinals.iter_mut();
     while source.len() != 0 {
-        let Some((_, ordinals)) = ctx.next_charged(&mut source, "fcstd owner ordinal sorting")? else {
+        let Some((_, ordinals)) = ctx.next_charged(&mut source, "fcstd owner ordinal sorting")?
+        else {
             break;
         };
         ctx.stable_sort_by(
@@ -582,7 +611,9 @@ pub(super) fn bind_parameter_dependencies<'ctx>(
         order_parameters_by_dependencies(ctx, parameters)?;
     let mut source = 0..parameters.len();
     while source.len() != 0 {
-        let Some(index) = ctx.next_charged(&mut source, "fcstd parameter dependency cycle clearing")? else {
+        let Some(index) =
+            ctx.next_charged(&mut source, "fcstd parameter dependency cycle clearing")?
+        else {
             break;
         };
         let has_cycle = match parameters[index].owner.as_ref() {
@@ -604,7 +635,9 @@ pub(super) fn bind_parameter_dependencies<'ctx>(
     let mut next_ordinal = HashMap::<Option<&FeatureId>, usize>::new();
     let mut source = parameters.iter_mut();
     while source.len() != 0 {
-        let Some(parameter) = ctx.next_charged(&mut source, "fcstd parameter ordinal assignment")? else {
+        let Some(parameter) =
+            ctx.next_charged(&mut source, "fcstd parameter ordinal assignment")?
+        else {
             break;
         };
         next_ordinal_storage.with_storage(|| {
@@ -692,7 +725,9 @@ pub(super) fn order_parameters_by_dependencies<'ctx>(
         else {
             let mut source = remaining.iter();
             while source.len() != 0 {
-                let Some(parameter) = ctx.next_charged(&mut source, "fcstd parameter cycle owners")? else {
+                let Some(parameter) =
+                    ctx.next_charged(&mut source, "fcstd parameter cycle owners")?
+                else {
                     break;
                 };
                 let Some(owner) = parameter.owner.as_ref() else {
@@ -720,7 +755,9 @@ pub(super) fn order_parameters_by_dependencies<'ctx>(
         };
         if remaining.len() - index > 1 {
             ctx.rotate_left(
-                &mut remaining[index..], 1, "fcstd parameter dependency extraction",
+                &mut remaining[index..],
+                1,
+                "fcstd parameter dependency extraction",
             )?;
         } else {
             ctx.charge_work(0, "fcstd parameter dependency extraction")?;
@@ -772,4 +809,3 @@ fn expression_identifiers_until(
     }
     Ok(true)
 }
-

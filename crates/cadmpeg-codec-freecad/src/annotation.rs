@@ -58,10 +58,9 @@ pub(crate) fn transfer(
                     "fcstd annotation owner lookup",
                 )?
                 .map_or(&[][..], Vec::as_slice);
-            let owned = ctx
-                .with_scoped_storage("fcstd annotation selected properties", || {
-                    ctx.copy_slice(source, "fcstd annotation selected properties")
-                })?;
+            let owned = ctx.with_scoped_storage("fcstd annotation selected properties", || {
+                ctx.copy_slice(source, "fcstd annotation selected properties")
+            })?;
             let _selected_storage = owned.1;
             let mut owned = owned.0;
             ctx.stable_sort_by_key(
@@ -74,7 +73,9 @@ pub(crate) fn transfer(
             let mut parameters = BTreeMap::new();
             let mut property_iter = owned.iter();
             while property_iter.len() != 0 {
-                let Some(property) = ctx.next_charged(&mut property_iter, "fcstd annotation properties")? else {
+                let Some(property) =
+                    ctx.next_charged(&mut property_iter, "fcstd annotation properties")?
+                else {
                     break;
                 };
                 let name =
@@ -94,7 +95,9 @@ pub(crate) fn transfer(
                         ctx.collection_vec(property.links().len(), "fcstd annotation links")?;
                     let mut link_iter = property.links().iter();
                     while link_iter.len() != 0 {
-                        let Some(link) = ctx.next_charged(&mut link_iter, "fcstd annotation link visits")? else {
+                        let Some(link) =
+                            ctx.next_charged(&mut link_iter, "fcstd annotation link visits")?
+                        else {
                             break;
                         };
                         links.push(
@@ -115,7 +118,9 @@ pub(crate) fn transfer(
             if let Some(carrier) = schema.text {
                 let mut property_iter = owned.iter();
                 while property_iter.len() != 0 {
-                    let Some(property) = ctx.next_charged(&mut property_iter, "fcstd annotation text properties")? else {
+                    let Some(property) =
+                        ctx.next_charged(&mut property_iter, "fcstd annotation text properties")?
+                    else {
                         break;
                     };
                     if property.name != carrier.property {
@@ -133,15 +138,16 @@ pub(crate) fn transfer(
             let mut side_entries = Vec::new();
             let mut property_iter = owned.iter();
             while property_iter.len() != 0 {
-                let Some(property) = ctx.next_charged(&mut property_iter, "fcstd annotation properties")? else {
+                let Some(property) =
+                    ctx.next_charged(&mut property_iter, "fcstd annotation properties")?
+                else {
                     break;
                 };
                 let mut side_entry_iter = property.side_entries().iter();
                 while side_entry_iter.len() != 0 {
-                    let Some(name) = ctx.next_charged(
-                    &mut side_entry_iter,
-                    "fcstd annotation side-entry names",
-                )? else {
+                    let Some(name) = ctx
+                        .next_charged(&mut side_entry_iter, "fcstd annotation side-entry names")?
+                    else {
                         break;
                     };
                     ctx.reserve_vec(&mut side_entries, 1, "fcstd annotation side entries")?;
@@ -189,7 +195,9 @@ pub(crate) fn transfer_neutral(
     let mut drawing_ids_built = false;
     let mut record_iter = records.iter().enumerate();
     while record_iter.len() != 0 {
-        let Some((order, record)) = ctx.next_charged(&mut record_iter, "fcstd neutral annotation records")? else {
+        let Some((order, record)) =
+            ctx.next_charged(&mut record_iter, "fcstd neutral annotation records")?
+        else {
             break;
         };
         let schema = annotation_schema(record.kind);
@@ -217,9 +225,10 @@ pub(crate) fn transfer_neutral(
                         let mut drawing_iter = drawings.iter();
                         while drawing_iter.len() != 0 {
                             let Some(drawing) = ctx.next_charged(
-                            &mut drawing_iter,
-                            "fcstd annotation drawing identities",
-                        )? else {
+                                &mut drawing_iter,
+                                "fcstd annotation drawing identities",
+                            )?
+                            else {
                                 break;
                             };
                             lookup_storage.with_storage(|| {
@@ -238,11 +247,17 @@ pub(crate) fn transfer_neutral(
                         }
                         drawing_ids_built = true;
                     }
-                    ReferenceTarget::Local(ctx.copy_retained_text(
-                        ctx.get_btree_map(&drawing_ids, object, "fcstd annotation drawing lookup")?
+                    ReferenceTarget::Local(
+                        ctx.copy_retained_text(
+                            ctx.get_btree_map(
+                                &drawing_ids,
+                                object,
+                                "fcstd annotation drawing lookup",
+                            )?
                             .map_or(object, String::as_str),
-                        "fcstd annotation local reference",
-                    )?)
+                            "fcstd annotation local reference",
+                        )?,
+                    )
                 }
                 _ => {
                     return Err(CodecError::malformed(
@@ -258,14 +273,18 @@ pub(crate) fn transfer_neutral(
         let mut references = BTreeMap::new();
         let mut role_iter = record.references.iter();
         while role_iter.len() != 0 {
-            let Some((role, targets)) = ctx.next_charged(&mut role_iter, "fcstd annotation reference roles")? else {
+            let Some((role, targets)) =
+                ctx.next_charged(&mut role_iter, "fcstd annotation reference roles")?
+            else {
                 break;
             };
             let mut selections =
                 ctx.collection_vec(targets.len(), "fcstd annotation reference selections")?;
             let mut target_iter = targets.iter();
             while target_iter.len() != 0 {
-                let Some(link) = ctx.next_charged(&mut target_iter, "fcstd annotation reference targets")? else {
+                let Some(link) =
+                    ctx.next_charged(&mut target_iter, "fcstd annotation reference targets")?
+                else {
                     break;
                 };
                 selections.push(target(link)?);
@@ -285,7 +304,9 @@ pub(crate) fn transfer_neutral(
         let mut parameters = BTreeMap::new();
         let mut parameter_iter = record.parameters.iter();
         while parameter_iter.len() != 0 {
-            let Some((name, value)) = ctx.next_charged(&mut parameter_iter, "fcstd annotation parameters")? else {
+            let Some((name, value)) =
+                ctx.next_charged(&mut parameter_iter, "fcstd annotation parameters")?
+            else {
                 break;
             };
             ctx.insert_btree_map(
@@ -299,7 +320,8 @@ pub(crate) fn transfer_neutral(
             ctx.collection_vec(record.side_entries.len(), "fcstd annotation assets")?;
         let mut asset_iter = record.side_entries.iter();
         while asset_iter.len() != 0 {
-            let Some(name) = ctx.next_charged(&mut asset_iter, "fcstd annotation asset names")? else {
+            let Some(name) = ctx.next_charged(&mut asset_iter, "fcstd annotation asset names")?
+            else {
                 break;
             };
             assets.push(crate::native::native_id_charged(ctx, "entry", name)?);
@@ -748,7 +770,9 @@ fn direct_value<T, const N: usize>(
     let mut selected = [None; N];
     let mut attributes = value.attributes();
     while attributes.len() != 0 {
-        let Some(attribute) = ctx.next_charged(&mut attributes, "fcstd annotation direct attributes")? else {
+        let Some(attribute) =
+            ctx.next_charged(&mut attributes, "fcstd annotation direct attributes")?
+        else {
             break;
         };
         // Each carrier has one or three literal names. Preserve the last local
@@ -943,10 +967,9 @@ fn strict_text_values(
     if let Some(texts) = texts {
         let mut selected_iter = selected.iter();
         while selected_iter.len() != 0 {
-            let Some(value) = ctx.next_charged(
-            &mut selected_iter,
-            "fcstd annotation selected text visits",
-        )? else {
+            let Some(value) =
+                ctx.next_charged(&mut selected_iter, "fcstd annotation selected text visits")?
+            else {
                 break;
             };
             ctx.push_vec(
@@ -1510,8 +1533,7 @@ pub(crate) mod tests {
             .map(|index| drawing_record(&format!("fcstd:native:object#Unused{index}")))
             .collect::<Vec<_>>();
         let no_drawings_work = work_before_annotation_follow_up(&records, &[]);
-        let unused_drawings_work =
-            work_before_annotation_follow_up(&records, &unused_drawings);
+        let unused_drawings_work = work_before_annotation_follow_up(&records, &unused_drawings);
         assert_eq!(unused_drawings_work, no_drawings_work);
         let no_reference = std::slice::from_ref(&records[1]);
         assert_eq!(
@@ -1555,9 +1577,7 @@ pub(crate) mod tests {
             super::transfer_neutral(ctx, &mut model, &[record], &[], &drawings)
                 .expect("local reference resolves");
             let expected = cadmpeg_ir::drawings::DrawingId::mint(crate::native::model_id(
-                "drawing",
-                object,
-                "entity",
+                "drawing", object, "entity",
             ))
             .expect("drawing identity");
             assert_eq!(

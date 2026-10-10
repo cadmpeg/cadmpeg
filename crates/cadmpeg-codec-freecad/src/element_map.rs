@@ -54,10 +54,9 @@ pub(crate) fn parse(
     entries: &[EntryRecord],
 ) -> Result<(StringTables, Vec<ElementMapRecord>), CodecError> {
     let root = ctx.xml_root_element(xml, "FreeCAD element-map XML root")?;
-    let (data, storage) = ctx
-        .with_scoped_storage("FreeCAD string-hasher carriers", || {
-            validate_string_hasher_framing(ctx, root)
-        })?;
+    let (data, storage) = ctx.with_scoped_storage("FreeCAD string-hasher carriers", || {
+        validate_string_hasher_framing(ctx, root)
+    })?;
     let hashers = ScopedData {
         data,
         _storage: storage,
@@ -70,10 +69,7 @@ pub(crate) fn parse(
     let mut tables = Vec::new();
     let mut hashers_iter = hashers.data.iter().copied();
     while hashers_iter.len() != 0 {
-        let Some(node) = ctx.next_charged(
-            &mut hashers_iter,
-            "FreeCAD string-hasher scan",
-        )? else {
+        let Some(node) = ctx.next_charged(&mut hashers_iter, "FreeCAD string-hasher scan")? else {
             break;
         };
         let index = tables.len();
@@ -112,13 +108,12 @@ pub(crate) fn parse(
             .then(|| node_text_bytes(ctx, data_node))
             .transpose()?;
         let bytes = if let Some(name) = source_entry {
-            entry_data.get(ctx, name)?
-                .ok_or_else(|| {
-                    element_map_malformed(
-                        ctx,
-                        format_args!("StringHasher references missing entry {name}"),
-                    )
-                })?
+            entry_data.get(ctx, name)?.ok_or_else(|| {
+                element_map_malformed(
+                    ctx,
+                    format_args!("StringHasher references missing entry {name}"),
+                )
+            })?
         } else {
             inline_bytes
                 .as_ref()
@@ -163,10 +158,9 @@ pub(crate) fn parse(
     let mut maps = Vec::new();
     let mut properties = properties.iter();
     while properties.len() != 0 {
-        let Some(property) = ctx.next_charged(
-            &mut properties,
-            "FreeCAD element-map property scan",
-        )? else {
+        let Some(property) =
+            ctx.next_charged(&mut properties, "FreeCAD element-map property scan")?
+        else {
             break;
         };
         if property.type_name != "Part::PropertyPartShape" {
@@ -214,13 +208,12 @@ pub(crate) fn parse(
                     .then(|| node_text_bytes(ctx, map_node))
                     .transpose()?;
                 let bytes = if let Some(name) = source_entry.as_deref() {
-                    entry_data.get(ctx, name)?
-                        .ok_or_else(|| {
-                            element_map_malformed(
-                                ctx,
-                                format_args!("ElementMap2 references missing entry {name}"),
-                            )
-                        })?
+                    entry_data.get(ctx, name)?.ok_or_else(|| {
+                        element_map_malformed(
+                            ctx,
+                            format_args!("ElementMap2 references missing entry {name}"),
+                        )
+                    })?
                 } else {
                     inline_bytes
                         .as_ref()
@@ -262,8 +255,8 @@ pub(crate) fn parse(
             maps: parsed.maps,
         });
     }
-    let string_tables = StringTables::from_records_with_admission(tables, ctx)?
-        .map_err(CodecError::from)?;
+    let string_tables =
+        StringTables::from_records_with_admission(tables, ctx)?.map_err(CodecError::from)?;
     Ok((string_tables, maps))
 }
 
@@ -280,10 +273,14 @@ impl<'a, 'c> EntryLookup<'a, 'c> {
     ) -> Result<Option<&'a [u8]>, CodecError> {
         let (index, _) = match &mut self.index {
             Some(index) => index,
-            missing @ None => missing.insert(ctx.collect_scoped_btree_map(
-                self.entries.iter().map(|entry| (entry.name(), entry.data())),
-                "FreeCAD element entry lookup",
-            )?),
+            missing @ None => missing.insert(
+                ctx.collect_scoped_btree_map(
+                    self.entries
+                        .iter()
+                        .map(|entry| (entry.name(), entry.data())),
+                    "FreeCAD element entry lookup",
+                )?,
+            ),
         };
         Ok(ctx
             .get_btree_map(index, name, "FreeCAD element entry lookup")?
@@ -338,10 +335,8 @@ pub(crate) fn bind_topology(
     };
     let mut map_iter = maps.iter_mut();
     while map_iter.len() != 0 {
-        let Some(map) = ctx.next_charged(
-            &mut map_iter,
-            "FreeCAD element topology map scan",
-        )? else {
+        let Some(map) = ctx.next_charged(&mut map_iter, "FreeCAD element topology map scan")?
+        else {
             break;
         };
         let Some(occurrences) = ctx.get_btree_map(
@@ -385,7 +380,7 @@ impl<'a, 'c> PropertyOwners<'a, 'c> {
                         (property.xml.start(), (position + 1, true)),
                         (property.xml.end(), (position + 1, false)),
                     ]
-            }),
+                }),
             "FreeCAD property ownership endpoints",
         )?;
         let events = ScopedData {
@@ -402,18 +397,16 @@ impl<'a, 'c> PropertyOwners<'a, 'c> {
         let mut active_xor = 0_usize;
         let mut offsets = events.data.iter();
         while offsets.len() != 0 {
-            let Some((offset, events)) = ctx.next_charged(
-                &mut offsets,
-                "FreeCAD property ownership sweep",
-            )? else {
+            let Some((offset, events)) =
+                ctx.next_charged(&mut offsets, "FreeCAD property ownership sweep")?
+            else {
                 break;
             };
             let mut event_iter = events.iter();
             while event_iter.len() != 0 {
-                let Some(&(position, start)) = ctx.next_charged(
-                    &mut event_iter,
-                    "FreeCAD property ownership events",
-                )? else {
+                let Some(&(position, start)) =
+                    ctx.next_charged(&mut event_iter, "FreeCAD property ownership events")?
+                else {
                     break;
                 };
                 active_xor ^= position;
@@ -430,10 +423,7 @@ impl<'a, 'c> PropertyOwners<'a, 'c> {
             data: spans,
             _storage,
         } = spans;
-        Ok(Self {
-            spans,
-            _storage,
-        })
+        Ok(Self { spans, _storage })
     }
 }
 
@@ -471,10 +461,8 @@ fn validate_string_hasher_framing<'a, 'input>(
     let mut hashers = Vec::new();
     let mut descendants = document_root.descendants();
     while descendants.len() != 0 {
-        let Some(node) = ctx.next_charged(
-            &mut descendants,
-            "FreeCAD string-hasher descendants",
-        )? else {
+        let Some(node) = ctx.next_charged(&mut descendants, "FreeCAD string-hasher descendants")?
+        else {
             break;
         };
         if !ctx.xml_has_tag_name(node, "StringHasher", "FreeCAD string-hasher tag")? {
@@ -551,10 +539,8 @@ fn validate_string_hasher_framing<'a, 'input>(
 
     let mut descendants = document_root.descendants();
     while descendants.len() != 0 {
-        let Some(node) = ctx.next_charged(
-            &mut descendants,
-            "FreeCAD string-hasher descendants",
-        )? else {
+        let Some(node) = ctx.next_charged(&mut descendants, "FreeCAD string-hasher descendants")?
+        else {
             break;
         };
         if !ctx.xml_has_tag_name(node, "StringHasher2", "FreeCAD string-hasher tag")? {
@@ -698,18 +684,13 @@ fn element_map_size(ctx: &DecodeContext<'_>, parsed: &ParsedMap) -> Result<usize
     let mut total = 0_usize;
     let mut groups = parsed.maps.root().groups.iter();
     while groups.len() != 0 {
-        let Some(group) = ctx.next_charged(
-            &mut groups,
-            "FreeCAD element-map size groups",
-        )? else {
+        let Some(group) = ctx.next_charged(&mut groups, "FreeCAD element-map size groups")? else {
             break;
         };
         let mut names = group.names.iter();
         while names.len() != 0 {
-            let Some(chain) = ctx.next_charged(
-                &mut names,
-                "FreeCAD element-map size names",
-            )? else {
+            let Some(chain) = ctx.next_charged(&mut names, "FreeCAD element-map size names")?
+            else {
                 break;
             };
             total = total
@@ -742,26 +723,20 @@ fn mapped_name_count(ctx: &DecodeContext<'_>, parsed: &ParsedMap) -> Result<usiz
     let mut total = 0_usize;
     let mut nodes = parsed.maps.iter();
     while nodes.len() != 0 {
-        let Some(node) = ctx.next_charged(
-            &mut nodes,
-            "FreeCAD mapped-name node count",
-        )? else {
+        let Some(node) = ctx.next_charged(&mut nodes, "FreeCAD mapped-name node count")? else {
             break;
         };
         let mut groups = node.groups.iter();
         while groups.len() != 0 {
-            let Some(group) = ctx.next_charged(
-                &mut groups,
-                "FreeCAD mapped-name group count",
-            )? else {
+            let Some(group) = ctx.next_charged(&mut groups, "FreeCAD mapped-name group count")?
+            else {
                 break;
             };
             let mut chains = group.names.iter();
             while chains.len() != 0 {
-                let Some(chain) = ctx.next_charged(
-                    &mut chains,
-                    "FreeCAD mapped-name chain count",
-                )? else {
+                let Some(chain) =
+                    ctx.next_charged(&mut chains, "FreeCAD mapped-name chain count")?
+                else {
                     break;
                 };
                 total = total
@@ -785,11 +760,9 @@ fn parse_legacy_element_map<'c>(
         .map(|name| ctx.copy_retained_text(name, "FreeCAD legacy element map side-entry name"))
         .transpose()?;
     if let Some(name) = source_entry.as_deref() {
-        let bytes = entry_data
-            .get(ctx, name)?
-            .ok_or_else(|| {
-                CodecError::Malformed("legacy ElementMap references missing entry".into())
-            })?;
+        let bytes = entry_data.get(ctx, name)?.ok_or_else(|| {
+            CodecError::Malformed("legacy ElementMap references missing entry".into())
+        })?;
         let text = ctx
             .validate_utf8(bytes, "FreeCAD element-map UTF-8")?
             .map_err(|_| CodecError::Malformed("legacy element map is not UTF-8".into()))?;
@@ -1002,10 +975,8 @@ fn group_legacy_records<'c>(
     };
     let mut record_iter = std::mem::take(&mut records.data).into_iter();
     while record_iter.len() != 0 {
-        let Some(record) = ctx.next_charged(
-            &mut record_iter,
-            "FreeCAD legacy element grouping",
-        )? else {
+        let Some(record) = ctx.next_charged(&mut record_iter, "FreeCAD legacy element grouping")?
+        else {
             break;
         };
         append_legacy_name(
@@ -1056,7 +1027,11 @@ fn append_legacy_name(
         })?;
     }
     let names = ctx
-        .get_mut_btree_map(&mut groups.data, family, "FreeCAD legacy element group lookup")?
+        .get_mut_btree_map(
+            &mut groups.data,
+            family,
+            "FreeCAD legacy element group lookup",
+        )?
         .ok_or_else(|| CodecError::malformed("legacy element group was not inserted"))?;
     if names.len() <= index {
         let additional = index + 1 - names.len();
@@ -1413,7 +1388,8 @@ impl<'a> TextScanner<'a> {
             let Some(character) = ctx.next_charged(
                 &mut self.text[self.position..].chars(),
                 "FreeCAD element-map whitespace scan",
-            )? else {
+            )?
+            else {
                 break;
             };
             if !(if self.ascii_whitespace {
@@ -1435,7 +1411,8 @@ impl<'a> TextScanner<'a> {
             let Some(character) = ctx.next_charged(
                 &mut self.text[self.position..].chars(),
                 "FreeCAD element-map token scan",
-            )? else {
+            )?
+            else {
                 break;
             };
             if if self.ascii_whitespace {
@@ -1467,7 +1444,8 @@ impl<'a> TextScanner<'a> {
             let Some(character) = ctx.next_charged(
                 &mut self.text[self.position..].chars(),
                 "FreeCAD element-map field scan",
-            )? else {
+            )?
+            else {
                 break;
             };
             self.position += character.len_utf8();
@@ -1487,7 +1465,8 @@ impl<'a> TextScanner<'a> {
             let Some(character) = ctx.next_charged(
                 &mut self.text[self.position..].chars(),
                 "FreeCAD legacy string-id separator scan",
-            )? else {
+            )?
+            else {
                 break;
             };
             if character.is_ascii_digit() || character == '-' {
@@ -1500,7 +1479,8 @@ impl<'a> TextScanner<'a> {
             let Some(character) = ctx.next_charged(
                 &mut self.text[self.position..].chars(),
                 "FreeCAD legacy string-id token scan",
-            )? else {
+            )?
+            else {
                 break;
             };
             if !character.is_ascii_digit() && character != '-' {
@@ -1615,10 +1595,9 @@ fn parse_element_map(
     let mut maps = ctx.collection_vec(map_capacity, "FreeCAD element map nodes")?;
     let mut records_left = 1..=map_count;
     while !records_left.is_empty() {
-        let Some(expected_index) = ctx.next_charged(
-            &mut records_left,
-            "FreeCAD element-map record step",
-        )? else {
+        let Some(expected_index) =
+            ctx.next_charged(&mut records_left, "FreeCAD element-map record step")?
+        else {
             break;
         };
         expect(ctx, &mut tokens, "ElementMap")?;
@@ -1764,7 +1743,8 @@ fn parse_mapped_name(
                 .map_err(|_| CodecError::Malformed("negative mapped-name element index".into()))?;
             (
                 ctx.format_retained(
-                    format_args!("{prefix}{element}"), "FreeCAD mapped name base",
+                    format_args!("{prefix}{element}"),
+                    "FreeCAD mapped name base",
                 )?,
                 2,
                 3,
@@ -1803,10 +1783,8 @@ fn parse_mapped_name(
     let mut string_ids = Vec::new();
     let mut values = fields.get(id_position..).unwrap_or_default().iter();
     while values.len() != 0 {
-        let Some(value) = ctx.next_charged(
-            &mut values,
-            "FreeCAD mapped-name string-id scan",
-        )? else {
+        let Some(value) = ctx.next_charged(&mut values, "FreeCAD mapped-name string-id scan")?
+        else {
             break;
         };
         if !value.is_empty() {

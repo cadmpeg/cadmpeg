@@ -401,9 +401,7 @@ fn serialize_value(value: &ValueRecord) -> Result<Cow<'_, str>, CodecError> {
         .attributes()
         .map(|attribute| (attribute.name(), attribute.value()))
         .collect::<std::collections::BTreeMap<_, _>>();
-    let original_text = original
-        .children()
-        .find_map(|node| node.text());
+    let original_text = original.children().find_map(|node| node.text());
     if original.tag_name().name() == value.tag
         && original_attributes.len() == value.attributes.len()
         && original_attributes.iter().zip(&value.attributes).all(

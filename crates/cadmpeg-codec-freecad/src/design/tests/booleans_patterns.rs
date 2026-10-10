@@ -37,12 +37,14 @@ fn with_empty_reference_indexes<T>(
     ctx: &DecodeContext<'_>,
     properties_by_owner: &std::collections::BTreeMap<&str, Vec<&PropertyRecord>>,
     entries: &[crate::native::EntryRecord],
-    use_sources: impl FnOnce(crate::design::PatternSources<'_, '_, '_, '_>)
-        -> Result<T, cadmpeg_core::CodecError>,
+    use_sources: impl FnOnce(
+        crate::design::PatternSources<'_, '_, '_, '_>,
+    ) -> Result<T, cadmpeg_core::CodecError>,
 ) -> Result<T, cadmpeg_core::CodecError> {
     let objects = crate::design::ObjectIndex::new(ctx, &[])?;
     let features = std::collections::HashMap::new();
-    let predecessors = crate::design::BodyPredecessors::new(ctx, &[], &features, properties_by_owner)?;
+    let predecessors =
+        crate::design::BodyPredecessors::new(ctx, &[], &features, properties_by_owner)?;
     use_sources(crate::design::PatternSources {
         objects: &[],
         object_by_id: &objects,

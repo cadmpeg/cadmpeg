@@ -107,11 +107,7 @@ fn line_entity(ordinal: u32) -> SketchEntity {
     )
 }
 
-fn coincident_constraint(
-    id: &str,
-    sketch: SketchId,
-    loci: Vec<SketchLocus>,
-) -> SketchConstraint {
+fn coincident_constraint(id: &str, sketch: SketchId, loci: Vec<SketchLocus>) -> SketchConstraint {
     SketchConstraint {
         id: SketchConstraintId::mint(id).unwrap(),
         sketch,
@@ -606,7 +602,10 @@ fn profile_endpoint_index_failure_does_not_precharge_entity_suffix() {
     let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
         panic!("endpoint index work refusal required")
     };
-    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits
+    );
     assert_eq!(limit.operation, "FCStd profile endpoint buckets");
     assert_eq!(limit.used, short_work);
     assert!(limit.additional > 0);
@@ -683,15 +682,16 @@ fn explicit_profile_locus_failure_does_not_precharge_locus_suffix() {
     let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
         panic!("profile locus work refusal required")
     };
-    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
-    assert!(
-        [
-            "FCStd explicit profile loci",
-            "FCStd profile entity index",
-            "FCStd eligible profile entity lookup",
-        ]
-        .contains(&limit.operation)
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits
     );
+    assert!([
+        "FCStd explicit profile loci",
+        "FCStd profile entity index",
+        "FCStd eligible profile entity lookup",
+    ]
+    .contains(&limit.operation));
     assert!(limit.additional < u64::try_from(long_locus_count).expect("locus bound fits u64"));
     assert!(limit.used <= policy.limits.max_work_units);
     assert_eq!(ctx.resource_refusal(), Some(limit));
@@ -730,10 +730,7 @@ fn empty_profile_routes_preserve_prior_resource_refusal() {
         entity: 0,
         start: true,
     };
-    let explicit = std::collections::BTreeMap::from([(
-        source,
-        std::collections::BTreeSet::new(),
-    )]);
+    let explicit = std::collections::BTreeMap::from([(source, std::collections::BTreeSet::new())]);
     let endpoint_index = super::EndpointIndex {
         by_scale: std::collections::BTreeMap::new(),
     };

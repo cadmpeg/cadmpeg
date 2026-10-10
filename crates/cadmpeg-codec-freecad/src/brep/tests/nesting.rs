@@ -327,8 +327,10 @@ fn a_cadir_document_cannot_carry_a_surface_chain_past_the_bound() {
 #[test]
 fn boxed_parameter_curve_conversion_reuses_its_owned_pointee_and_wire() {
     let curve = Box::new(TextCurve2d::Line {
-        origin: cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(0.0, 0.0)).unwrap(),
-        direction: cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(1.0, 0.0)).unwrap(),
+        origin: cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(0.0, 0.0))
+            .unwrap(),
+        direction: cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(1.0, 0.0))
+            .unwrap(),
     });
     let pointer = std::ptr::from_ref(curve.as_ref());
     let expected = serde_json::to_vec(&curve).unwrap();
@@ -339,45 +341,63 @@ fn boxed_parameter_curve_conversion_reuses_its_owned_pointee_and_wire() {
 
 #[test]
 fn boxed_curve_conversion_reuses_its_owned_pointee_at_nesting_bound() {
-    let curve = Box::new(nested_trimmed_curve(super::super::MAX_GEOMETRY_NESTING_DEPTH - 1).unwrap());
+    let curve =
+        Box::new(nested_trimmed_curve(super::super::MAX_GEOMETRY_NESTING_DEPTH - 1).unwrap());
     let pointer = std::ptr::from_ref(curve.as_ref());
     let expected = serde_json::to_vec(&curve).unwrap();
     let nested = super::super::NestedCurve::try_from(curve).unwrap();
     assert!(std::ptr::eq(pointer, nested.curve()));
     assert_eq!(serde_json::to_vec(&nested).unwrap(), expected);
     let curve = Box::new(nested_trimmed_curve(super::super::MAX_GEOMETRY_NESTING_DEPTH).unwrap());
-    assert_eq!(super::super::NestedCurve::try_from(curve).unwrap_err(), "3D curve nesting exceeds 64");
+    assert_eq!(
+        super::super::NestedCurve::try_from(curve).unwrap_err(),
+        "3D curve nesting exceeds 64"
+    );
 }
 
 #[test]
 fn boxed_surface_conversion_reuses_its_owned_pointee_at_nesting_bound() {
-    let surface = Box::new(nested_offset_surface(super::super::MAX_GEOMETRY_NESTING_DEPTH - 1).unwrap());
+    let surface =
+        Box::new(nested_offset_surface(super::super::MAX_GEOMETRY_NESTING_DEPTH - 1).unwrap());
     let pointer = std::ptr::from_ref(surface.as_ref());
     let expected = serde_json::to_vec(&surface).unwrap();
     let nested = super::super::NestedSurface::try_from(surface).unwrap();
     assert!(std::ptr::eq(pointer, nested.surface()));
     assert_eq!(serde_json::to_vec(&nested).unwrap(), expected);
-    let surface = Box::new(nested_offset_surface(super::super::MAX_GEOMETRY_NESTING_DEPTH).unwrap());
-    assert_eq!(super::super::NestedSurface::try_from(surface).unwrap_err(), "surface nesting exceeds 64");
+    let surface =
+        Box::new(nested_offset_surface(super::super::MAX_GEOMETRY_NESTING_DEPTH).unwrap());
+    assert_eq!(
+        super::super::NestedSurface::try_from(surface).unwrap_err(),
+        "surface nesting exceeds 64"
+    );
 }
 
 #[test]
 fn boxed_parameter_curve_conversion_preserves_its_nesting_bound() {
     let mut curve = TextCurve2d::Line {
-        origin: cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(0.0, 0.0)).unwrap(),
-        direction: cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(1.0, 0.0)).unwrap(),
+        origin: cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(0.0, 0.0))
+            .unwrap(),
+        direction: cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(1.0, 0.0))
+            .unwrap(),
     };
     for _ in 0..super::super::MAX_GEOMETRY_NESTING_DEPTH - 1 {
-        curve = TextCurve2d::Offset { distance: FiniteReal::ONE,
-            basis: super::super::NestedCurve2d::try_new(curve).unwrap() };
+        curve = TextCurve2d::Offset {
+            distance: FiniteReal::ONE,
+            basis: super::super::NestedCurve2d::try_new(curve).unwrap(),
+        };
     }
     let curve = Box::new(curve);
     let pointer = std::ptr::from_ref(curve.as_ref());
     let nested = super::super::NestedCurve2d::try_from(curve).unwrap();
     assert!(std::ptr::eq(pointer, nested.curve()));
-    let curve = TextCurve2d::Offset { distance: FiniteReal::ONE, basis: nested };
-    assert_eq!(super::super::NestedCurve2d::try_from(Box::new(curve)).unwrap_err(),
-        "parameter-curve nesting exceeds 64");
+    let curve = TextCurve2d::Offset {
+        distance: FiniteReal::ONE,
+        basis: nested,
+    };
+    assert_eq!(
+        super::super::NestedCurve2d::try_from(Box::new(curve)).unwrap_err(),
+        "parameter-curve nesting exceeds 64"
+    );
 }
 
 // Actual surface affine recursion: one frame per offset/trim/leaf record.
@@ -393,26 +413,42 @@ fn surface_parameter_affine_retains_the_original_caller_depth_and_fuse() {
         let leaf = nested_offset_surface(0).unwrap();
         if cap != 0 {
             let actual = super::super::surface_parameter_affine(&ctx, &leaf).unwrap();
-            assert_eq!(actual, super::super::SurfaceParameterAffine {
-                u_scale: 1.0, u_offset: 0.0, v_scale: 1.0, v_offset: 0.0,
-            });
-            let depth = ctx.enter_nested("completed surface parameter frame").unwrap();
+            assert_eq!(
+                actual,
+                super::super::SurfaceParameterAffine {
+                    u_scale: 1.0,
+                    u_offset: 0.0,
+                    v_scale: 1.0,
+                    v_offset: 0.0,
+                }
+            );
+            let depth = ctx
+                .enter_nested("completed surface parameter frame")
+                .unwrap();
             drop(depth);
         }
         let nested = nested_offset_surface(1).unwrap();
         if cap == 2 {
             let actual = super::super::surface_parameter_affine(&ctx, &nested).unwrap();
-            assert_eq!(actual, super::super::SurfaceParameterAffine {
-                u_scale: 1.0, u_offset: 0.0, v_scale: 1.0, v_offset: 0.0,
-            });
+            assert_eq!(
+                actual,
+                super::super::SurfaceParameterAffine {
+                    u_scale: 1.0,
+                    u_offset: 0.0,
+                    v_scale: 1.0,
+                    v_offset: 0.0,
+                }
+            );
             let root = ctx.enter_nested("completed affine root").unwrap();
             let child = ctx.enter_nested("completed affine child").unwrap();
             drop((child, root));
             assert_eq!(ctx.resource_refusal(), None);
         } else {
-            let CodecError::ResourceLimit(original) =
-                super::super::surface_parameter_affine(&ctx, if cap == 0 { &leaf } else { &nested })
-                    .expect_err("actual affine frame exceeds caller ceiling") else {
+            let CodecError::ResourceLimit(original) = super::super::surface_parameter_affine(
+                &ctx,
+                if cap == 0 { &leaf } else { &nested },
+            )
+            .expect_err("actual affine frame exceeds caller ceiling") else {
                 panic!("recursion refusal");
             };
             assert_eq!(original.dimension, ResourceDimension::RecursionDepth);
@@ -421,8 +457,10 @@ fn surface_parameter_affine_retains_the_original_caller_depth_and_fuse() {
             assert_eq!(original.limit, cap);
             assert_eq!(original.operation, "FreeCAD surface parameter nesting");
             assert_eq!(ctx.resource_refusal(), Some(original));
-            assert!(matches!(super::super::surface_parameter_affine(&ctx, &leaf),
-                Err(CodecError::ResourceLimit(repeated)) if repeated == original));
+            assert!(
+                matches!(super::super::surface_parameter_affine(&ctx, &leaf),
+                Err(CodecError::ResourceLimit(repeated)) if repeated == original)
+            );
         }
     }
 }
@@ -437,8 +475,16 @@ fn standard_surface_parameter_affine_preserves_outer_trim_and_offset_arithmetic(
         v_reversed: true,
     };
     let inner = TextSurface::Trimmed {
-        parameter_ranges: [[FiniteReal::new(9.0).unwrap(), FiniteReal::new(10.0).unwrap()],
-            [FiniteReal::new(11.0).unwrap(), FiniteReal::new(12.0).unwrap()]],
+        parameter_ranges: [
+            [
+                FiniteReal::new(9.0).unwrap(),
+                FiniteReal::new(10.0).unwrap(),
+            ],
+            [
+                FiniteReal::new(11.0).unwrap(),
+                FiniteReal::new(12.0).unwrap(),
+            ],
+        ],
         basis: super::super::NestedSurface::try_new(leaf).unwrap(),
     };
     let offset = TextSurface::Offset {
@@ -446,12 +492,19 @@ fn standard_surface_parameter_affine_preserves_outer_trim_and_offset_arithmetic(
         basis: super::super::NestedSurface::try_new(inner).unwrap(),
     };
     let outer = TextSurface::Trimmed {
-        parameter_ranges: [[FiniteReal::new(2.0).unwrap(), FiniteReal::new(3.0).unwrap()],
-            [FiniteReal::new(4.0).unwrap(), FiniteReal::new(5.0).unwrap()]],
+        parameter_ranges: [
+            [FiniteReal::new(2.0).unwrap(), FiniteReal::new(3.0).unwrap()],
+            [FiniteReal::new(4.0).unwrap(), FiniteReal::new(5.0).unwrap()],
+        ],
         basis: super::super::NestedSurface::try_new(offset).unwrap(),
     };
-    assert_eq!(super::super::surface_parameter_affine(&StandardAdmission, &outer).unwrap(),
+    assert_eq!(
+        super::super::surface_parameter_affine(&StandardAdmission, &outer).unwrap(),
         super::super::SurfaceParameterAffine {
-            u_scale: 1.0, u_offset: -2.0, v_scale: 1.0, v_offset: -4.0,
-        });
+            u_scale: 1.0,
+            u_offset: -2.0,
+            v_scale: 1.0,
+            v_offset: -4.0,
+        }
+    );
 }

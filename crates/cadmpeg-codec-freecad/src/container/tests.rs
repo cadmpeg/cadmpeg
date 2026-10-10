@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Archive scan and physical-ledger unit tests.
 
-mod numeric_ordinals;
 mod byte_coverage_storage;
+mod numeric_ordinals;
 
 use cadmpeg_test_support::EditableDecodeResult;
 
@@ -316,7 +316,7 @@ fn missing_first_entry_does_not_charge_unvisited_entry_suffix() {
                 .checked_add(1)
                 .expect("finite source-derived entry suffix length"),
         )
-            .expect("finite source-derived entry suffix length");
+        .expect("finite source-derived entry suffix length");
         let first = scan.entries[0].clone();
         scan.entries.extend((1..entry_count).map(|index| {
             let mut entry = first.clone();
@@ -354,8 +354,8 @@ fn duplicate_span_stops_before_unvisited_chain_suffix() {
             Some(&valid_second),
         );
     });
-    let suffix_count = usize::try_from(work_cap.max(128))
-        .expect("finite source-derived span suffix length");
+    let suffix_count =
+        usize::try_from(work_cap.max(128)).expect("finite source-derived span suffix length");
 
     let mut duplicate = vec![first, first];
     duplicate.extend((1..=suffix_count).map(|start| {
@@ -363,12 +363,8 @@ fn duplicate_span_stops_before_unvisited_chain_suffix() {
         let end = start.checked_add(1).expect("finite suffix span end");
         crate::native::ByteSpan::try_new(start, end).expect("nonempty suffix span")
     }));
-    let chain_end = u64::try_from(
-        suffix_count
-            .checked_add(1)
-            .expect("finite span endpoint"),
-    )
-    .expect("finite span endpoint");
+    let chain_end = u64::try_from(suffix_count.checked_add(1).expect("finite span endpoint"))
+        .expect("finite span endpoint");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_work_units = work_cap;
@@ -443,7 +439,7 @@ fn nested_gui_refusal_does_not_charge_unvisited_document_suffix() {
             .checked_add(1)
             .expect("finite source-derived document suffix length"),
     )
-        .expect("finite source-derived document suffix length");
+    .expect("finite source-derived document suffix length");
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
@@ -461,9 +457,11 @@ fn nested_gui_refusal_does_not_charge_unvisited_document_suffix() {
         &[],
     )
     .expect_err("the first state range refuses before the document suffix");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "FCStd logical ranges"));
+            && limit.operation == "FCStd logical ranges")
+    );
 }
 
 #[test]
@@ -474,26 +472,17 @@ fn empty_container_sources_are_work_free_and_keep_an_existing_fuse() {
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within input limits");
-    assert!(!super::chain_is_exact(
-        &ctx,
-        empty.iter(),
-        0,
-        "FCStd physical span chain",
-    )
-    .expect("an empty exact-size source has no next step"));
-    assert!(super::logical_ledger(
-        &ctx,
-        &[],
-        &[],
-        &crate::gui::Graph::default(),
-        &[],
-        &[],
-        &[],
-    )
-    .expect("empty logical sources are free")
-    .is_empty());
-    let coverage = super::byte_coverage(&ctx, &[], &[], &[], 0)
-        .expect("empty byte-coverage sources are free");
+    assert!(
+        !super::chain_is_exact(&ctx, empty.iter(), 0, "FCStd physical span chain",)
+            .expect("an empty exact-size source has no next step")
+    );
+    assert!(
+        super::logical_ledger(&ctx, &[], &[], &crate::gui::Graph::default(), &[], &[], &[],)
+            .expect("empty logical sources are free")
+            .is_empty()
+    );
+    let coverage =
+        super::byte_coverage(&ctx, &[], &[], &[], 0).expect("empty byte-coverage sources are free");
     assert_eq!(coverage.id, crate::native::native_id("byte-coverage", "0"));
     assert_eq!(coverage.physical_span_count, 0);
     assert_eq!(coverage.logical_entry_count, 0);
@@ -516,17 +505,14 @@ fn empty_container_sources_are_work_free_and_keep_an_existing_fuse() {
         panic!("the zero work cap fuses on positive work");
     };
     let assert_prior_fuse = |error: cadmpeg_core::CodecError| {
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit == original));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit == original)
+        );
     };
     assert_prior_fuse(
-        super::chain_is_exact(
-            &fused_ctx,
-            empty.iter(),
-            0,
-            "FCStd physical span chain",
-        )
-        .expect_err("empty chain preserves an existing fuse"),
+        super::chain_is_exact(&fused_ctx, empty.iter(), 0, "FCStd physical span chain")
+            .expect_err("empty chain preserves an existing fuse"),
     );
     assert_prior_fuse(
         super::logical_ledger(
@@ -548,8 +534,10 @@ fn empty_container_sources_are_work_free_and_keep_an_existing_fuse() {
         scan.entries.clear();
         let error = super::entry_records(&fused_ctx, scan, &[])
             .expect_err("empty entry source preserves an existing fuse");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit == original));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit == original)
+        );
     });
 }
 
@@ -760,7 +748,8 @@ fn xml_envelope_scan_skips_comments_cdata_and_quoted_brackets() {
     let bytes = br#"<Document SchemaVersion="4"><!-- <Objects><Object/> --><Note attr=">"> <![CDATA[<Object/>]]> </Note><Objects><Object/><Object/></Objects></Document>"#;
     let (bound, objects) = crate::test_support::with_service_context(&[], |ctx| {
         super::xml_envelope_counts(ctx, bytes).expect("lexical admission")
-    }).expect("lexical XML count");
+    })
+    .expect("lexical XML count");
     assert_eq!(objects, 2);
     let parsed = roxmltree::Document::parse(std::str::from_utf8(bytes).expect("UTF-8 XML"))
         .expect("XML document");
@@ -788,15 +777,13 @@ fn xml_envelope_scan_admits_each_visited_name_tail_and_markup_step() {
         ),
     ];
     for (xml, operation) in cases {
-        crate::test_support::refusal_at(
-            ResourceDimension::WorkUnits,
-            &[],
-            operation,
-            |ctx| super::xml_envelope_counts(ctx, xml.as_bytes()),
-        );
+        crate::test_support::refusal_at(ResourceDimension::WorkUnits, &[], operation, |ctx| {
+            super::xml_envelope_counts(ctx, xml.as_bytes())
+        });
         crate::test_support::with_service_context(&[], |ctx| {
             assert!(super::xml_envelope_counts(ctx, xml.as_bytes())
-                .expect("admitted scan").is_some());
+                .expect("admitted scan")
+                .is_some());
         });
     }
 }
@@ -810,7 +797,10 @@ fn xml_envelope_scan_does_not_charge_an_unvisited_malformed_tail() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_work_units = WORK_TO_EMPTY_NAME;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    assert_eq!(super::xml_envelope_counts(&ctx, bytes.as_bytes()).expect("early stop"), None);
+    assert_eq!(
+        super::xml_envelope_counts(&ctx, bytes.as_bytes()).expect("early stop"),
+        None
+    );
     assert_eq!(ctx.resource_refusal(), None);
 }
 

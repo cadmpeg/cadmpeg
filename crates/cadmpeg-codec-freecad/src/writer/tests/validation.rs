@@ -28,7 +28,10 @@ fn property(id: &str) -> PropertyRecord {
 fn writer_property_missing_identity_follows_expected_order() {
     let first = property("test:property#z");
     let second = property("test:property#a");
-    let written = [property("test:property#other-a"), property("test:property#other-z")];
+    let written = [
+        property("test:property#other-a"),
+        property("test:property#other-z"),
+    ];
     for expected in [[first.clone(), second.clone()], [second, first]] {
         let error = validate_properties(&expected, &written).expect_err("missing identities");
         assert!(matches!(error, CodecError::NotImplemented(message)
@@ -57,7 +60,11 @@ fn writer_property_expected_duplicate_precedes_written_duplicate_and_count() {
     let written_duplicate = property("test:property#written");
     let error = validate_properties(
         &[duplicate.clone(), duplicate],
-        &[written_duplicate.clone(), written_duplicate, property("test:property#extra")],
+        &[
+            written_duplicate.clone(),
+            written_duplicate,
+            property("test:property#extra"),
+        ],
     )
     .expect_err("expected duplicates precede later gates");
     assert!(matches!(error, CodecError::NotImplemented(message)
@@ -80,7 +87,10 @@ fn writer_property_written_duplicate_precedes_count_and_missing_identity() {
 fn writer_property_count_precedes_missing_identity() {
     let error = validate_properties(
         &[property("test:property#expected")],
-        &[property("test:property#other"), property("test:property#extra")],
+        &[
+            property("test:property#other"),
+            property("test:property#extra"),
+        ],
     )
     .expect_err("record count precedes identity correspondence");
     assert!(matches!(error, CodecError::NotImplemented(message)

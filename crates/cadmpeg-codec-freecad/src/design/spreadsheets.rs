@@ -455,21 +455,18 @@ fn merged_range(
         .xml_attribute(cell, "address", "FreeCAD design XML attribute")?
         .ok_or_else(|| malformed_design(ctx, format_args!("spreadsheet cell has no address")))?;
     let (_end_storage, end);
-    (end, _end_storage) = ctx.with_scoped_storage(
-        "fcstd spreadsheet range endpoint",
-        || {
-            offset_cell_address(
-                ctx,
-                start,
-                u32::try_from(rows - 1).map_err(|_| {
-                    CodecError::Malformed("spreadsheet cell span is out of range".into())
-                })?,
-                u32::try_from(columns - 1).map_err(|_| {
-                    CodecError::Malformed("spreadsheet cell span is out of range".into())
-                })?,
-            )
-        },
-    )?;
+    (end, _end_storage) = ctx.with_scoped_storage("fcstd spreadsheet range endpoint", || {
+        offset_cell_address(
+            ctx,
+            start,
+            u32::try_from(rows - 1).map_err(|_| {
+                CodecError::Malformed("spreadsheet cell span is out of range".into())
+            })?,
+            u32::try_from(columns - 1).map_err(|_| {
+                CodecError::Malformed("spreadsheet cell span is out of range".into())
+            })?,
+        )
+    })?;
     let end = end.ok_or_else(|| {
         malformed_design(ctx, format_args!("spreadsheet cell span is out of range"))
     })?;

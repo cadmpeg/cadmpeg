@@ -271,4 +271,3 @@ fn source_indices_stop_at_nested_same_kind_shapes() {
         Some(&1)
     );
 }
-

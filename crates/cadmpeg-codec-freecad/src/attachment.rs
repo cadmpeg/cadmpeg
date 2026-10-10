@@ -154,24 +154,35 @@ pub(crate) fn transfer(
     let mut object_ids = HashSet::new();
     let mut candidates = properties.iter();
     while candidates.len() != 0 {
-        let Some(property) = ctx.next_charged(&mut candidates, "FreeCAD attachment properties")? else {
+        let Some(property) = ctx.next_charged(&mut candidates, "FreeCAD attachment properties")?
+        else {
             break;
         };
         if !is_attachment_property(&property.name) {
             continue;
         }
         let owner = property.owner.as_str();
-        if ctx.equal_bytes(owner.as_bytes(), b"fcstd:native:document#0", "FreeCAD attachment candidate owner")? {
+        if ctx.equal_bytes(
+            owner.as_bytes(),
+            b"fcstd:native:document#0",
+            "FreeCAD attachment candidate owner",
+        )? {
             continue;
         }
         if object_ids.is_empty() {
             let mut input = objects.iter();
             while input.len() != 0 {
-                let Some(object) = ctx.next_charged(&mut input, "FreeCAD attachment owner objects")? else {
+                let Some(object) =
+                    ctx.next_charged(&mut input, "FreeCAD attachment owner objects")?
+                else {
                     break;
                 };
                 object_storage.with_storage(|| {
-                    ctx.insert_hash_set(&mut object_ids, object.id().as_str(), "FreeCAD attachment object index")
+                    ctx.insert_hash_set(
+                        &mut object_ids,
+                        object.id().as_str(),
+                        "FreeCAD attachment object index",
+                    )
                 })?;
             }
         }
@@ -196,7 +207,9 @@ pub(crate) fn transfer(
     }
     let mut properties = properties.iter();
     while properties.len() != 0 {
-        let Some(property) = ctx.next_charged(&mut properties, "FreeCAD attachment owner property visits")? else {
+        let Some(property) =
+            ctx.next_charged(&mut properties, "FreeCAD attachment owner property visits")?
+        else {
             break;
         };
         if !is_attachment_property(&property.name) {
@@ -259,7 +272,10 @@ pub(crate) fn transfer(
 }
 
 fn is_attachment_property(name: &str) -> bool {
-    matches!(name, "AttachmentSupport" | "MapMode" | "Placement" | "AttachmentOffset")
+    matches!(
+        name,
+        "AttachmentSupport" | "MapMode" | "Placement" | "AttachmentOffset"
+    )
 }
 
 pub(crate) fn effective_frame(
@@ -309,7 +325,8 @@ fn support_links(
         ctx.vector_storage(property.links().len(), "FreeCAD attachment support links")?;
     let mut input = property.links().iter();
     while input.len() != 0 {
-        let Some(link) = ctx.next_charged(&mut input, "FreeCAD attachment support link visits")? else {
+        let Some(link) = ctx.next_charged(&mut input, "FreeCAD attachment support link visits")?
+        else {
             break;
         };
         ctx.push_vec(
@@ -367,9 +384,10 @@ fn map_mode_value(
     };
     match ctx.parse_text::<usize>(index, "FreeCAD attachment map-mode parse")? {
         Ok(index) => {
-            let result = ctx.with_scoped_storage("FreeCAD attachment map-mode index storage", || {
-                MapModeIndex::try_new_with_admission(index, ctx)
-            })?;
+            let result = ctx
+                .with_scoped_storage("FreeCAD attachment map-mode index storage", || {
+                    MapModeIndex::try_new_with_admission(index, ctx)
+                })?;
             let _storage = result.1;
             let result = result.0;
             result.or_else(|error| {

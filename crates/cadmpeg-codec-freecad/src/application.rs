@@ -17,10 +17,9 @@ pub(crate) fn install(
     properties: &[PropertyRecord],
     entries: &[EntryRecord],
 ) -> Result<(), NativeConvertError> {
-    let records = ctx
-        .with_scoped_storage("FreeCAD application wire records", || {
-            wire_records(ctx, objects, properties, entries)
-        })?;
+    let records = ctx.with_scoped_storage("FreeCAD application wire records", || {
+        wire_records(ctx, objects, properties, entries)
+    })?;
     let _storage = records.1;
     let records = records.0;
     namespace.set_arena(ctx, "applications", &records)
@@ -34,10 +33,9 @@ pub(crate) fn matches_native(
     properties: &[PropertyRecord],
     entries: &[EntryRecord],
 ) -> Result<bool, NativeConvertError> {
-    let expected = ctx
-        .with_scoped_storage("FreeCAD expected application records", || {
-            wire_records(ctx, objects, properties, entries)
-        })?;
+    let expected = ctx.with_scoped_storage("FreeCAD expected application records", || {
+        wire_records(ctx, objects, properties, entries)
+    })?;
     let _expected_storage = expected.1;
     let mut expected = expected.0;
     ctx.stable_sort_by(
@@ -55,11 +53,10 @@ pub(crate) fn matches_native(
         let Some(record) = ctx.next_charged(&mut expected, "FreeCAD expected applications")? else {
             break;
         };
-        let record_result =
-            ctx.with_scoped_storage("FreeCAD actual application record", || {
-                ctx.next_charged(&mut actual, "FreeCAD actual application record")?
-                    .transpose()
-            })?;
+        let record_result = ctx.with_scoped_storage("FreeCAD actual application record", || {
+            ctx.next_charged(&mut actual, "FreeCAD actual application record")?
+                .transpose()
+        })?;
         let _actual_storage = record_result.1;
         let actual = record_result.0;
         let Some(actual) = actual else {
@@ -72,11 +69,10 @@ pub(crate) fn matches_native(
     if actual.size_hint().1 == Some(0) {
         return Ok(true);
     }
-    let tail =
-        ctx.with_scoped_storage("FreeCAD actual application tail", || {
-            ctx.next_charged(&mut actual, "FreeCAD actual application tail")?
-                .transpose()
-        })?;
+    let tail = ctx.with_scoped_storage("FreeCAD actual application tail", || {
+        ctx.next_charged(&mut actual, "FreeCAD actual application tail")?
+            .transpose()
+    })?;
     let _tail_storage = tail.1;
     let tail = tail.0;
     Ok(tail.is_none())
@@ -167,14 +163,17 @@ fn wire_records<'a>(
                 storage: ctx.reserve_scoped(0, OWNER_PROPERTIES)?,
             }),
         };
-        group.storage.with_storage(|| ctx.push_vec(&mut group.properties, property, OWNER_PROPERTIES))?;
+        group
+            .storage
+            .with_storage(|| ctx.push_vec(&mut group.properties, property, OWNER_PROPERTIES))?;
     }
     let mut entry_storage = None;
     let mut entry_index: Option<BTreeMap<&str, &EntryRecord>> = None;
     let mut records = ctx.collection_vec(objects.len(), "FreeCAD application records")?;
     let mut object_iter = objects.iter();
     while object_iter.len() != 0 {
-        let Some(object) = ctx.next_charged(&mut object_iter, "FreeCAD application objects")? else {
+        let Some(object) = ctx.next_charged(&mut object_iter, "FreeCAD application objects")?
+        else {
             break;
         };
         let owned = ctx
@@ -204,12 +203,16 @@ fn wire_records<'a>(
         let mut property_ids =
             ctx.collection_vec(owned.properties.len(), "FreeCAD application property IDs")?;
         let mut side_entries = Vec::new();
-        let mut property_records =
-            ctx.collection_vec(owned.properties.len(), "FreeCAD application property records")?;
+        let mut property_records = ctx.collection_vec(
+            owned.properties.len(),
+            "FreeCAD application property records",
+        )?;
         let mut inert_payload = false;
         let mut property_iter = owned.properties.into_iter();
         while property_iter.len() != 0 {
-            let Some(property) = ctx.next_charged(&mut property_iter, "FreeCAD application properties")? else {
+            let Some(property) =
+                ctx.next_charged(&mut property_iter, "FreeCAD application properties")?
+            else {
                 break;
             };
             property_ids.push(property.id.as_str());
@@ -217,7 +220,9 @@ fn wire_records<'a>(
             let mut payloads = Vec::new();
             let mut entry_iter = property.side_entries().iter();
             while entry_iter.len() != 0 {
-                let Some(name) = ctx.next_charged(&mut entry_iter, "FreeCAD application side-entry names")? else {
+                let Some(name) =
+                    ctx.next_charged(&mut entry_iter, "FreeCAD application side-entry names")?
+                else {
                     break;
                 };
                 let entry_index = match &mut entry_index {
@@ -335,11 +340,16 @@ fn is_inert(
         return Err(refusal.into());
     }
     Ok(property.family == PropertyFamily::PythonObject
-        || ctx.position_by(
-            property.type_name.as_bytes().windows(b"PropertyPythonObject".len()),
-            |window| Ok(window == b"PropertyPythonObject"),
-            "FreeCAD application inert payload",
-        )?.is_some())
+        || ctx
+            .position_by(
+                property
+                    .type_name
+                    .as_bytes()
+                    .windows(b"PropertyPythonObject".len()),
+                |window| Ok(window == b"PropertyPythonObject"),
+                "FreeCAD application inert payload",
+            )?
+            .is_some())
 }
 
 #[cfg(test)]

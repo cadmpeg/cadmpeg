@@ -43,13 +43,15 @@ impl<'ctx, 'arena, 'objects> ObjectIndex<'ctx, 'arena, 'objects> {
         let mut cache = self.entries.borrow_mut();
         let (entries, _storage) = match &mut *cache {
             Some(entries) => entries,
-            slot @ None => slot.insert(self.ctx.collect_scoped_btree_map(
-                self.objects
-                    .iter()
-                    .rev()
-                    .map(|object| (object.id().as_str(), object)),
-                "fcstd design object index",
-            )?),
+            slot @ None => slot.insert(
+                self.ctx.collect_scoped_btree_map(
+                    self.objects
+                        .iter()
+                        .rev()
+                        .map(|object| (object.id().as_str(), object)),
+                    "fcstd design object index",
+                )?,
+            ),
         };
         self.ctx
             .get_btree_map(entries, key, operation)
@@ -121,10 +123,11 @@ impl<'ctx, 'arena, 'data> BodyPredecessors<'ctx, 'arena, 'data> {
                     };
                     let mut previous = None;
                     let (mut seen_storage, mut seen);
-                    (seen, seen_storage) = self.ctx.with_scoped_storage(
-                        "fcstd body predecessor seen storage",
-                        || Ok::<_, CodecError>(BTreeSet::new()),
-                    )?;
+                    (seen, seen_storage) = self
+                        .ctx
+                        .with_scoped_storage("fcstd body predecessor seen storage", || {
+                            Ok::<_, CodecError>(BTreeSet::new())
+                        })?;
                     let mut links = members.links().iter();
                     while links.len() > 0 {
                         let Some(link) = self
@@ -133,9 +136,8 @@ impl<'ctx, 'arena, 'data> BodyPredecessors<'ctx, 'arena, 'data> {
                         else {
                             break;
                         };
-                        let Some(member) = link
-                            .as_ref()
-                            .and_then(crate::native::LinkTarget::object)
+                        let Some(member) =
+                            link.as_ref().and_then(crate::native::LinkTarget::object)
                         else {
                             continue;
                         };
