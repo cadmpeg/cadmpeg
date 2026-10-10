@@ -228,34 +228,54 @@ fn point_source_work(count: usize, completed: usize) -> u64 {
     u64::try_from(work).unwrap()
 }
 
-fn point_projection_source_boundary(form: i64, count: usize, completed: usize, exact: bool) {
-    let bytes = crate::test_support::test_owned::owned_test_file(&[]);
+fn point_projection_source_boundary(form: i64, count: usize, completed: usize, exact: bool, placed: bool) {
+    let bytes = if form >= 11 {
+        crate::test_support::test_owned::owned_test_file_with_global(&[],
+            b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;")
+    } else {
+        crate::test_support::test_owned::owned_test_file(&[])
+    };
     let global = crate::test_support::with_service_context(&bytes, |setup| {
         let scan = crate::card::scan_with_context(&bytes, setup).unwrap();
         let (global, _, _) = crate::global::parse(&scan, setup).unwrap();
         global.length_context().unwrap()
     });
     assert_eq!(global.length_factor_mm(), 1.0);
+    if form >= 11 {
+        assert_eq!(global.global_table(), crate::global::GlobalTable::V4_0);
+        assert!(count <= 1);
+    }
     let mut entry = crate::test_support::directory_target(1, 106);
     entry.form = form;
+    if placed {
+        entry.transform = 3;
+    }
     let directory = [entry];
-    let entries = BTreeMap::from([(1, &directory[0])]);
-    let mut values = vec![106, form, i64::try_from(count).unwrap()];
-    if form == 1 {
+    let transform_entry = crate::test_support::directory_target(3, 124);
+    let mut entries = BTreeMap::from([(1, &directory[0])]);
+    if placed {
+        entries.insert(3, &transform_entry);
+    }
+    let interpretation = if form >= 11 { form - 10 } else { form };
+    let mut values = vec![106, interpretation, i64::try_from(count).unwrap()];
+    if interpretation == 1 {
         values.push(0);
     }
     let mut expected = CadIr::empty();
     for index in 0..count {
         let x = i64::try_from(index).unwrap();
-        match form {
+        match interpretation {
             1 => values.extend([x, 0]),
             2 => values.extend([x, 0, 0]),
             3 => values.extend([x, 0, 0, 0, 0, 1]),
             _ => panic!("unsupported point fixture form"),
         }
         let point = PointId::mint(format!("iges:model:point#D1-{}", index + 1)).unwrap();
+        let x = f64::from(u32::try_from(index).unwrap());
+        let position = if placed { Point3::new(x + 2.0, 3.0, 4.0) }
+            else { Point3::new(x, 0.0, 0.0) };
         expected.model.points.push(Point::new(point.clone(),
-            FinitePoint3::new(Point3::new(f64::from(u32::try_from(index).unwrap()), 0.0, 0.0)).unwrap(), None));
+            FinitePoint3::new(position).unwrap(), None));
         expected.model.vertices.push(Vertex {
             id: VertexId::mint(format!("iges:model:vertex#D1-{}", index + 1)).unwrap(),
             point, tolerance: None,
@@ -268,8 +288,23 @@ fn point_projection_source_boundary(form: i64, count: usize, completed: usize, e
         values.into_iter().map(|value| Token {
             value: TokenValue::Integer(value), span: 0..0,
         }).collect(), Vec::new());
-    let records = BTreeMap::from([(1, &record)]);
+    let transform_values = [124, 1, 0, 0, 2, 0, 1, 0, 3, 0, 0, 1, 4];
+    let transform_record = ParameterRecord::from_test_tokens(3, 1..2, Vec::new(), transform_values.len(),
+        transform_values.into_iter().map(|value| Token {
+            value: TokenValue::Integer(value), span: 0..0,
+        }).collect(), Vec::new());
+    let mut records = BTreeMap::from([(1, &record)]);
+    if placed {
+        records.insert(3, &transform_record);
+    }
+    // Two-key maps add4 to the initial parameter lookup and8 per transform
+    // lookup. The new path node needs3passes; removal needs1pass and4bytes
+    // of key comparison. Matrix checks and composition have fixed size.
+    let placement_work = if placed && count != 0 {
+        u64::try_from(4 + 8 + 8 + 4 * node_bytes() + 4).unwrap()
+    } else { 0 };
     let cap = point_source_work(count, completed)
+        + placement_work
         + if exact && count != 0 { u64::try_from(3 * node_bytes()).unwrap() } else { 0 };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -277,9 +312,12 @@ fn point_projection_source_boundary(form: i64, count: usize, completed: usize, e
     // One position, sequence entry, point, vertex and free-vertex slot per
     // tuple, followed by one decoded sequence. Two entities per tuple.
     policy.limits.max_collection_items = if count == 0 { 0 } else { u64::try_from(5 * count + 1).unwrap() };
+    if placed && count != 0 {
+        policy.limits.max_collection_items += 1;
+    }
     policy.limits.max_entities = u64::try_from(2 * count).unwrap();
     policy.limits.max_retained_bytes = 0;
-    policy.limits.max_recursion_depth = 0;
+    policy.limits.max_recursion_depth = u64::from(placed && count != 0);
     if count == 0 {
         policy.limits.max_materialized_bytes = 0;
     }
@@ -337,7 +375,7 @@ fn point_projection_source_boundary(form: i64, count: usize, completed: usize, e
 fn copious_point_sources_refuse_first_actual_position_visit() {
     for form in [1, 2, 3] {
         for count in [1, 64] {
-            point_projection_source_boundary(form, count, 0, false);
+            point_projection_source_boundary(form, count, 0, false, false);
         }
     }
 }
@@ -346,7 +384,7 @@ fn copious_point_sources_refuse_first_actual_position_visit() {
 fn copious_point_sources_refuse_last_actual_position_visit() {
     for form in [1, 2, 3] {
         for count in [1, 64] {
-            point_projection_source_boundary(form, count, count - 1, false);
+            point_projection_source_boundary(form, count, count - 1, false, false);
         }
     }
 }
@@ -355,7 +393,48 @@ fn copious_point_sources_refuse_last_actual_position_visit() {
 fn copious_point_sources_accept_exact_whole_work_without_an_exhausted_read() {
     for form in [1, 2, 3] {
         for count in [0, 1, 64] {
-            point_projection_source_boundary(form, count, count, true);
+            point_projection_source_boundary(form, count, count, true, false);
+        }
+    }
+}
+
+#[test]
+fn copious_v4_path_sources_refuse_the_only_point_visit() {
+    for form in [11, 12, 13] {
+        point_projection_source_boundary(form, 1, 0, false, false);
+    }
+}
+
+#[test]
+fn copious_v4_path_sources_accept_exact_whole_point_work() {
+    for form in [11, 12, 13] {
+        point_projection_source_boundary(form, 1, 1, true, false);
+    }
+}
+
+#[test]
+fn copious_placed_point_sources_refuse_first_actual_position_visit() {
+    for form in [1, 2, 3, 11, 12, 13] {
+        for &count in if form >= 11 { &[1][..] } else { &[1, 64][..] } {
+            point_projection_source_boundary(form, count, 0, false, true);
+        }
+    }
+}
+
+#[test]
+fn copious_placed_point_sources_refuse_last_actual_position_visit() {
+    for form in [1, 2, 3, 11, 12, 13] {
+        for &count in if form >= 11 { &[1][..] } else { &[1, 64][..] } {
+            point_projection_source_boundary(form, count, count - 1, false, true);
+        }
+    }
+}
+
+#[test]
+fn copious_placed_point_sources_accept_exact_whole_work() {
+    for form in [1, 2, 3, 11, 12, 13] {
+        for &count in if form >= 11 { &[0, 1][..] } else { &[0, 1, 64][..] } {
+            point_projection_source_boundary(form, count, count, true, true);
         }
     }
 }
