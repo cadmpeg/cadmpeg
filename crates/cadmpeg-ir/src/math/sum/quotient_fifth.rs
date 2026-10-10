@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Complete rational fifth numerator before final span and weight division.
 
-use super::six_product::Numerator;
+use super::expanded::Numerator;
 use super::ScaledValue;
 use crate::scalar::FiniteReal;
 
@@ -15,7 +15,7 @@ pub(crate) fn quotient_fifth(
     width: ScaledValue,
 ) -> Option<Result<FiniteReal, f64>> {
     let order = |index| [0, 1, 3, 6, 10, 15].iter().position(|candidate| *candidate == index);
-    let mut numerator = Numerator::new();
+    let mut numerator = Numerator::<6, 834, 5>::new();
     for &(coordinate, weights, negative, copies) in &terms::PURE {
         let mut factors = [w[0]; 6];
         factors[0] = h[order(coordinate)?];
@@ -36,7 +36,7 @@ pub(crate) fn product_fifth(
     weight: ScaledValue,
     width: ScaledValue,
 ) -> Option<Result<FiniteReal, f64>> {
-    let mut numerator = Numerator::new();
+    let mut numerator = Numerator::<6, 834, 5>::new();
     numerator.add_product(factors, false, 1)?;
     numerator.divide(weight, [width; 5])
 }
@@ -53,7 +53,7 @@ pub(crate) fn quotient_fifth_partials(
     let weight = w[0]?;
     let partial = |table: &[terms::Term], transpose: bool, u_order: usize| {
         let index = |at| if transpose { terms::TRANSPOSE[at] } else { at };
-        let mut numerator = Numerator::new();
+        let mut numerator = Numerator::<6, 834, 5>::new();
         for &(coordinate, weights, negative, copies) in table {
             let mut factors = [w[0]; 6];
             factors[0] = h[index(coordinate)];
@@ -62,7 +62,7 @@ pub(crate) fn quotient_fifth_partials(
             }
             numerator.add_product(factors, negative, copies)?;
         }
-        let denominators = std::array::from_fn(|at| widths[usize::from((at >= u_order) ^ transpose)]);
+        let denominators: [ScaledValue; 5] = std::array::from_fn(|at| widths[usize::from((at >= u_order) ^ transpose)]);
         numerator.divide(weight, denominators)
     };
     Some([

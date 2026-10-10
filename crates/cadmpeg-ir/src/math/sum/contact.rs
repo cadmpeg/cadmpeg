@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Closed second-through-fifth composition of a surface with a parameter curve.
 
-use super::six_product::Numerator;
+use super::expanded::Numerator;
 use super::{scaled_finite, ScaledValue};
 use crate::features::FiniteVector3;
 use crate::scalar::{FiniteReal, NonZeroReal};
@@ -20,7 +20,7 @@ pub(crate) fn contact_derivative<const N: usize>(
     let unit = ScaledValue::of_nonzero(NonZeroReal::ONE);
     let mut output = [Ok(FiniteReal::ZERO); 3];
     for (coordinate, result) in output.iter_mut().enumerate() {
-        let mut sum = ChainSum { numerator: Numerator::new(), pcurve: &pcurve, unit };
+        let mut sum = ChainSum { numerator: Numerator::<6, 834, 5>::new(), pcurve: &pcurve, unit };
         for degree in 1..=N {
             for v_order in 0..=degree {
                 let vector = partials[degree - 1][v_order].get();
@@ -52,7 +52,7 @@ pub(crate) fn directional_derivative<const N: usize>(
     let direction = direction.coordinates().map(|value| scaled_finite(value.get()));
     let mut output = [Ok(FiniteReal::ZERO); 3];
     for (coordinate, result) in output.iter_mut().enumerate() {
-        let mut sum = Numerator::new();
+        let mut sum = Numerator::<6, 834, 5>::new();
         for v_order in 0..=N {
             let vector = partials[v_order].get();
             let mut factors = [Some(unit); 6];
@@ -70,7 +70,7 @@ pub(crate) fn directional_derivative<const N: usize>(
 }
 
 struct ChainSum<'a> {
-    numerator: Numerator,
+    numerator: Numerator<6, 834, 5>,
     pcurve: &'a [[FiniteReal; 2]; 5],
     unit: ScaledValue,
 }

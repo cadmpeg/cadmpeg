@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Complete mixed rational third numerators from triangular H/W orders.
 
-use super::{quotient_third, Numerator, ScaledValue};
+use super::{quotient_third, ScaledValue};
+use crate::math::sum::expanded::Numerator;
 use crate::scalar::FiniteReal;
 
 const TRANSPOSE: [usize; 10] = [0, 2, 1, 5, 4, 3, 9, 8, 7, 6];
@@ -48,7 +49,7 @@ fn mixed(
     u_order: usize
 ) -> Option<Result<FiniteReal, f64>> {
     let index = |at: usize| if transpose { TRANSPOSE[at] } else { at };
-    let mut numerator = Numerator::new();
+    let mut numerator = Numerator::<4, 556, 4>::new();
     for &(coordinate, weights, negative, copies) in table {
         let mut factors = [w[0]; 4];
         factors[0] = h[index(coordinate)];
@@ -57,7 +58,7 @@ fn mixed(
         }
         numerator.add_product(factors, negative, copies)?;
     }
-    let denominators = std::array::from_fn(|at| widths[usize::from((at >= u_order) ^ transpose)]);
+    let denominators: [ScaledValue; 3] = std::array::from_fn(|at| widths[usize::from((at >= u_order) ^ transpose)]);
     numerator.divide(w[0]?, denominators)
 }
 
