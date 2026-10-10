@@ -461,9 +461,10 @@ pub(in super::super) fn materialized_saved_section_external_ids(
         std::convert::Infallible,
     >(ctx, definition, |entity| {
         let materializes = match entity {
-            crate::feature::definitions::FeatureSavedEntity::Spline(spline) => identity_storage
-                .with_storage(|| saved_spline_sketch_geometry(ctx, spline, refusal))?
-                .is_some(),
+            crate::feature::definitions::FeatureSavedEntity::Spline(spline) => {
+                let mut spline_storage = ctx.reserve_scoped(0, "creo saved spline identity geometry")?;
+                spline_storage.with_storage(|| saved_spline_sketch_geometry(ctx, spline, refusal))?.is_some()
+            },
             _ => saved_section_entity_geometry(entity).is_some(),
         };
         if !materializes {
@@ -571,6 +572,7 @@ pub(super) fn opaque_section_segment_identity_suffix_admitted(
 
 #[cfg(test)]
 mod tests {
+    mod spline_storage;
     mod admission_recovery;
     mod record_lookup;
     use super::{
