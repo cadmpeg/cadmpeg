@@ -159,7 +159,7 @@ impl DecodedProceduralSurface {
             &'static str,
             DecodedCurve,
         ) -> Result<cadmpeg_ir::ids::CurveId, E>,
-        reject_payload: impl FnOnce(cadmpeg_ir::geometry::ProceduralGeometryError) -> Result<E, E>,
+        reject_payload: impl FnOnce(cadmpeg_ir::geometry::ProceduralGeometryError) -> E,
     ) -> Result<cadmpeg_ir::geometry::ProceduralSurfaceDefinition, E> {
         use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 
@@ -190,7 +190,7 @@ impl DecodedProceduralSurface {
                             cadmpeg_ir::geometry::CacheContract::from_form(None),
                         )
                     })
-                    .or_else(|error| Err(reject_payload(error)?))?,
+                    .map_err(reject_payload)?,
                 )
             }
             Self::Sum {
@@ -207,7 +207,7 @@ impl DecodedProceduralSurface {
                         basepoint,
                         cadmpeg_ir::geometry::CacheContract::from_form(None),
                     )
-                    .or_else(|error| Err(reject_payload(error)?))?,
+                    .map_err(reject_payload)?,
                 )
             }
         })
@@ -428,7 +428,6 @@ fn read_revolution(
         .ok_or_else(|| error(reader.position(), "scaled revolution axis is invalid"))?
         .get();
     let angular_interval = increasing_interval(
-        ctx,
         interval(ctx, reader)?.0,
         reader.position(),
         "revolution angle",
@@ -441,7 +440,6 @@ fn read_revolution(
     }
     let parameter_interval = if major >= 2 {
         increasing_interval(
-            ctx,
             interval(ctx, reader)?.0,
             reader.position(),
             "revolution parameter interval",
@@ -695,12 +693,7 @@ fn revolution_nurbs(
         false,
     )
     .map_err(GeometryError::from)?
-    .or_else(|error| {
-        Err(GeometryError::malformed(
-            offset,
-            ctx.format_retained(format_args!("{error}"), "Rhino revolution_nurbs text")?,
-        ))
-    })?;
+    .map_err(|error| GeometryError::malformed(offset, format!("{error}")))?;
     if transposed {
         result.transpose_parameter_axes(ctx)?;
     }
@@ -785,12 +778,7 @@ fn sum_nurbs(
         NurbsSurfaceLanes::new(point_rows, weight_rows),
         false,
     )?
-    .or_else(|error| {
-        Err(GeometryError::malformed(
-            offset,
-            ctx.format_retained(format_args!("{error}"), "Rhino sum_nurbs text")?,
-        ))
-    })
+    .map_err(|error| GeometryError::malformed(offset, format!("{error}")))
 }
 
 fn copy_rows<T: Copy>(
@@ -818,9 +806,10 @@ pub(crate) fn extrusion_nurbs(
     offset: usize,
 ) -> Result<NurbsSurface, GeometryError> {
     if start.degree() != end.degree()
-        || !ctx.equal(
-            start.knots().as_slice(),
-            end.knots().as_slice(),
+        || start.knots().len() != end.knots().len()
+        || !ctx.all_by(
+            start.knots().as_slice().iter().zip(end.knots().as_slice()),
+            |(first, second)| Ok(first == second),
             "Rhino extrusion knot equality",
         )?
         || start.pole_count() != end.pole_count()
@@ -864,12 +853,7 @@ pub(crate) fn extrusion_nurbs(
         knots.extend([path_start, path_start, path_end, path_end]);
         KnotVector::from_finite_lanes(ctx, knots)?
     }
-    .or_else(|error| {
-        Err(GeometryError::malformed(
-            offset,
-            ctx.format_retained(format_args!("{error}"), "Rhino extrusion_nurbs text")?,
-        ))
-    })?;
+    .map_err(|error| GeometryError::malformed(offset, format!("{error}")))?;
     let mut surface = NurbsSurface::new(
         ctx,
         NurbsSurfaceAxis::new(start.degree(), u_knots, start.periodic()),
@@ -877,12 +861,7 @@ pub(crate) fn extrusion_nurbs(
         poles,
         false,
     )?
-    .or_else(|error| {
-        Err(GeometryError::malformed(
-            offset,
-            ctx.format_retained(format_args!("{error}"), "Rhino extrusion_nurbs text")?,
-        ))
-    })?;
+    .map_err(|error| GeometryError::malformed(offset, format!("{error}")))?;
     if transposed {
         surface.transpose_parameter_axes(ctx)?;
     }
@@ -921,20 +900,13 @@ fn extrusion_rows<T: Copy>(
 ) -> Result<Vec<Vec<T>>, GeometryError> {
     let operation = "Rhino extrusion surface rows";
     let row_count = start.len();
-    row_count.checked_mul(3).ok_or_else(|| {
-        GeometryError::not_implemented("Rhino extrusion surface row count exceeds address space")
-    })?;
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(row_count), operation)?;
-    let mut rows = Vec::new();
-    ctx.reserve_capacity(&mut rows, row_count, operation)?;
+    let mut rows = ctx.collection_vec(row_count, operation)?;
     let mut points = start.iter().copied().zip(end.iter().copied());
     for _ in 0..row_count {
         let (first, second) = ctx
             .next_charged(&mut points, "Rhino extrusion rows traversal")?
             .ok_or_else(|| GeometryError::unpositioned("extrusion row source ended early"))?;
-        ctx.charge_collection_items(2, operation)?;
-        let mut row = Vec::new();
-        ctx.reserve_capacity(&mut row, 2, operation)?;
+        let mut row = ctx.collection_vec(2, operation)?;
         row.push(first);
         row.push(second);
         rows.push(row);
@@ -983,8 +955,8 @@ fn read_nurbs_curve_inner(
     }
     let dimension = reader.i32()?;
     let rational = reader.i32()?;
-    let order = checked_positive(ctx, reader.i32()?, reader.position(), "curve order")?;
-    let cv_count = checked_positive(ctx, reader.i32()?, reader.position(), "curve CV count")?;
+    let order = checked_positive(reader.i32()?, reader.position(), "curve order")?;
+    let cv_count = checked_positive(reader.i32()?, reader.position(), "curve CV count")?;
     reader.i32()?;
     reader.i32()?;
     reader.skip(48)?;
@@ -1037,13 +1009,8 @@ fn read_nurbs_curve_inner(
     let periodic = periodic_knots_checked(ctx, &knots, order, cv_count)?;
     let full_knots = reconstruct_checked_knots(ctx, &knots, order, cv_count)?;
     reader.skip_remaining()?;
-    let poles =
-        NurbsPoles3::from_checked_lanes(ctx, control_points, weights)?.or_else(|error| {
-            Err(GeometryError::malformed(
-                reader.position(),
-                ctx.format_retained(format_args!("{error}"), "Rhino read_nurbs_curve_inner text")?,
-            ))
-        })?;
+    let poles = NurbsPoles3::from_checked_lanes(ctx, control_points, weights)?
+        .map_err(|error| GeometryError::malformed(reader.position(), format!("{error}")))?;
     NurbsCurve::new(
         ctx,
         u32::try_from(order - 1).map_err(|_| error(reader.position(), "NURBS order overflow"))?,
@@ -1051,12 +1018,7 @@ fn read_nurbs_curve_inner(
         poles,
         periodic,
     )?
-    .or_else(|error| {
-        Err(GeometryError::malformed(
-            reader.position(),
-            ctx.format_retained(format_args!("{error}"), "Rhino read_nurbs_curve_inner text")?,
-        ))
-    })
+    .map_err(|error| GeometryError::malformed(reader.position(), format!("{error}")))
 }
 
 pub(crate) fn read_nurbs_surface(
@@ -1085,10 +1047,10 @@ pub(crate) fn read_nurbs_surface_prefix(
     }
     let dimension = reader.i32()?;
     let rational = reader.i32()?;
-    let u_order = checked_positive(ctx, reader.i32()?, reader.position(), "surface U order")?;
-    let v_order = checked_positive(ctx, reader.i32()?, reader.position(), "surface V order")?;
-    let u_count = checked_positive(ctx, reader.i32()?, reader.position(), "surface U CV count")?;
-    let v_count = checked_positive(ctx, reader.i32()?, reader.position(), "surface V CV count")?;
+    let u_order = checked_positive(reader.i32()?, reader.position(), "surface U order")?;
+    let v_order = checked_positive(reader.i32()?, reader.position(), "surface V order")?;
+    let u_count = checked_positive(reader.i32()?, reader.position(), "surface U CV count")?;
+    let v_count = checked_positive(reader.i32()?, reader.position(), "surface V CV count")?;
     reader.i32()?;
     reader.i32()?;
     reader.skip(48)?;
@@ -1169,16 +1131,8 @@ pub(crate) fn read_nurbs_surface_prefix(
                 .with_storage(|| copy_rows(ctx, values, row_len, "Rhino NURBS surface weight grid"))
         })
         .transpose()?;
-    let poles =
-        NurbsPoleGrid::from_checked_lanes(ctx, point_rows, weight_rows)?.or_else(|error| {
-            Err(GeometryError::malformed(
-                reader.position(),
-                ctx.format_retained(
-                    format_args!("{error}"),
-                    "Rhino read_nurbs_surface_prefix text",
-                )?,
-            ))
-        })?;
+    let poles = NurbsPoleGrid::from_checked_lanes(ctx, point_rows, weight_rows)?
+        .map_err(|error| GeometryError::malformed(reader.position(), format!("{error}")))?;
     NurbsSurface::new(
         ctx,
         NurbsSurfaceAxis::new(
@@ -1196,15 +1150,7 @@ pub(crate) fn read_nurbs_surface_prefix(
         poles,
         false,
     )?
-    .or_else(|error| {
-        Err(GeometryError::malformed(
-            reader.position(),
-            ctx.format_retained(
-                format_args!("{error}"),
-                "Rhino read_nurbs_surface_prefix text",
-            )?,
-        ))
-    })
+    .map_err(|error| GeometryError::malformed(reader.position(), format!("{error}")))
 }
 
 fn read_plane_surface_with_parameterization(
@@ -1223,13 +1169,11 @@ fn read_plane_surface_with_parameterization(
     let native_plane = plane(ctx, reader)?;
     let frame = validate_plane(native_plane, reader.position())?;
     let domain = increasing_interval(
-        ctx,
         interval(ctx, reader)?.0,
         reader.position(),
         "plane U domain",
     )?;
     let v_domain = increasing_interval(
-        ctx,
         interval(ctx, reader)?.0,
         reader.position(),
         "plane V domain",
@@ -1237,13 +1181,11 @@ fn read_plane_surface_with_parameterization(
     let (u_extents, v_extents) = if version & 0x0f == 1 {
         (
             increasing_interval(
-                ctx,
                 interval(ctx, reader)?.0,
                 reader.position(),
                 "plane U extents",
             )?,
             increasing_interval(
-                ctx,
                 interval(ctx, reader)?.0,
                 reader.position(),
                 "plane V extents",
@@ -1547,28 +1489,14 @@ fn validate_stored_domain(
     }
 }
 
-fn checked_positive(
-    ctx: &DecodeContext<'_>,
-    value: i32,
-    offset: usize,
-    label: &str,
-) -> Result<usize, GeometryError> {
+fn checked_positive(value: i32, offset: usize, label: &str) -> Result<usize, GeometryError> {
     if value < 2 && label.ends_with("order") || value <= 0 {
-        return Err(error(
-            offset,
-            ctx.copy_retained_text(label, "Rhino surface invariant message")?,
-        ));
+        return Err(error(offset, label));
     }
-    usize::try_from(value).or_else(|_| {
-        Err(error(
-            offset,
-            ctx.copy_retained_text(label, "Rhino surface invariant message")?,
-        ))
-    })
+    usize::try_from(value).map_err(|_| error(offset, label))
 }
 
 fn increasing_interval(
-    ctx: &DecodeContext<'_>,
     value: FiniteVector<2>,
     offset: usize,
     label: &str,
@@ -1577,10 +1505,7 @@ fn increasing_interval(
     if value[0] < value[1] {
         Ok(value)
     } else {
-        Err(error(
-            offset,
-            ctx.copy_retained_text(label, "Rhino surface invariant message")?,
-        ))
+        Err(error(offset, label))
     }
 }
 

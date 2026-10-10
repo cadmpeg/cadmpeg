@@ -286,52 +286,24 @@ pub(crate) fn decode(
 
 const SEMANTIC_JSON_OPERATION: &str = "Rhino polyedge semantic JSON";
 
-struct SemanticJson<'a, 'arena>(&'a PersistentPolyEdge, &'a DecodeContext<'arena>);
+struct SemanticJson<'a>(&'a PersistentPolyEdge);
 
-impl Serialize for SemanticJson<'_, '_> {
+impl Serialize for SemanticJson<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut map = serializer.serialize_map(Some(3))?;
         map.serialize_entry("kind", "polyedge_reference")?;
-        map.serialize_entry(
-            "parameters",
-            &SemanticParameters(&self.0.parameters, self.1),
-        )?;
-        map.serialize_entry("segments", &SemanticSegments(&self.0.segments, self.1))?;
+        map.serialize_entry("parameters", &self.0.parameters)?;
+        map.serialize_entry("segments", &SemanticSegments(&self.0.segments))?;
         map.end()
     }
 }
 
-struct SemanticParameters<'a, 'arena>(&'a [FiniteReal], &'a DecodeContext<'arena>);
+struct SemanticSegments<'a>(&'a [Segment<PersistentReference, FiniteVector<2>>]);
 
-impl Serialize for SemanticParameters<'_, '_> {
+impl Serialize for SemanticSegments<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
-        for parameter in self
-            .1
-            .admit_iter(self.0, "Rhino polyedge semantic parameters")
-            .map_err(cadmpeg_core::CodecError::from)
-            .map_err(serde::ser::Error::custom)?
-        {
-            sequence.serialize_element(parameter)?;
-        }
-        sequence.end()
-    }
-}
-
-struct SemanticSegments<'a, 'arena>(
-    &'a [Segment<PersistentReference, FiniteVector<2>>],
-    &'a DecodeContext<'arena>,
-);
-
-impl Serialize for SemanticSegments<'_, '_> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
-        for segment in self
-            .1
-            .admit_iter(self.0, "Rhino polyedge semantic segments")
-            .map_err(cadmpeg_core::CodecError::from)
-            .map_err(serde::ser::Error::custom)?
-        {
+        for segment in self.0 {
             sequence.serialize_element(&SemanticSegment(segment))?;
         }
         sequence.end()
@@ -394,21 +366,16 @@ pub(crate) fn semantic_json(
         bytes: Vec::new(),
         refusal: None,
     };
-    let serialized = serde_json::to_writer(&mut writer, &SemanticJson(polyedge, ctx));
+    let serialized = serde_json::to_writer(&mut writer, &SemanticJson(polyedge));
     if let Some(refusal) = writer.refusal {
         return Err(refusal);
     }
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(CodecError::ResourceLimit(refusal));
     }
-    if serialized.is_err() {
-        return Ok(None);
-    }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(writer.bytes.len()),
-        "Rhino polyedge semantic UTF-8",
-    )?;
-    Ok(String::from_utf8(writer.bytes).ok())
+    Ok(serialized
+        .ok()
+        .and_then(|()| String::from_utf8(writer.bytes).ok()))
 }
 
 #[cfg(test)]

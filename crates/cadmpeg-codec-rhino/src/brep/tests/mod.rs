@@ -47,13 +47,12 @@ fn numerical_followup_legacy_vertex_mean_stays_finite() {
 use super::{
     body_kind_rests_on_missing_stamp, finite_tolerance, legacy_curve_shape,
     legacy_decoded_curve_endpoints, ordered_interval, read_children, read_edges, read_faces,
-    read_legacy_mesh_sides, read_loops, read_mesh_sides, read_region_records, read_region_sides,
-    read_region_topology_userdata, read_regions, read_trims, read_vertices, serialized_body_kind,
-    supported_class, validate_regions, validate_rings, BrepBodyKind, RawBrep, RawBrepBaseType,
-    RawBrepChild, RawBrepChildren, RawBrepEdge, RawBrepFace, RawBrepFaceSide, RawBrepLoop,
-    RawBrepRegion, RawBrepTrim, RawBrepVertex, RawLoopKind, RawSolidFlag, RawTrimIso, RawTrimKind,
-    ResolvedBrep, ResolvedFace, ResolvedLoop, ResolvedTrim, ResolvedVertex, SolidState,
-    ValidatedRawBrep, LEGACY_BREP, LEGACY_TRIMMED_SURFACE, ON_BREP, ON_BREP_FACE_SIDE,
+    read_legacy_mesh_sides, read_loops, read_mesh_sides, read_trims, read_vertices,
+    serialized_body_kind, supported_class, validate_regions, validate_rings, BrepBodyKind, RawBrep,
+    RawBrepBaseType, RawBrepChild, RawBrepChildren, RawBrepEdge, RawBrepFace, RawBrepFaceSide,
+    RawBrepLoop, RawBrepRegion, RawBrepTrim, RawBrepVertex, RawLoopKind, RawSolidFlag, RawTrimIso,
+    RawTrimKind, ResolvedBrep, ResolvedFace, ResolvedLoop, ResolvedTrim, ResolvedVertex,
+    SolidState, ValidatedRawBrep, LEGACY_BREP, LEGACY_TRIMMED_SURFACE, ON_BREP, ON_BREP_FACE_SIDE,
     ON_BREP_REGION, ON_UNSET_POSITIVE_VALUE, ON_UNSET_VALUE, OPENNURBS4, TL_BREP,
     V5_BREP_REGION_TOPOLOGY_USERDATA,
 };
@@ -256,7 +255,10 @@ fn long_chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
 }
 
 fn mesh_class_wrapper_with_userdata() -> Vec<u8> {
-    let class_uuid = crate::mesh::ON_MESH;
+    class_wrapper_with_mesh_userdata(crate::mesh::ON_MESH)
+}
+
+fn class_wrapper_with_mesh_userdata(class_uuid: Uuid) -> Vec<u8> {
     let item_uuid = crate::mesh::V5_MESH_DOUBLE_VERTICES;
     let uuid = long_chunk(0x0002_fffb, &class_uuid.to_wire());
     let class_data = long_chunk(0x0002_fffc, &[]);
@@ -1241,32 +1243,23 @@ fn trim_gate_preserves_legacy_tail_and_wrapper_range() {
 
 #[test]
 fn tolerance_accepts_explicit_signed_unset_values() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
-    assert!(finite_tolerance(&ctx, ON_UNSET_VALUE, "tolerance").is_ok());
-    assert!(finite_tolerance(&ctx, ON_UNSET_POSITIVE_VALUE, "tolerance").is_ok());
-    assert!(finite_tolerance(&ctx, -1.0, "tolerance").is_err());
+    assert!(finite_tolerance(ON_UNSET_VALUE, "tolerance").is_ok());
+    assert!(finite_tolerance(ON_UNSET_POSITIVE_VALUE, "tolerance").is_ok());
+    assert!(finite_tolerance(-1.0, "tolerance").is_err());
 }
 
 /// Both validators judge an already-decoded record field, which no byte of
 /// the file locates, so their refusals name no offset instead of byte 0.
 #[test]
 fn an_interval_or_tolerance_refusal_names_no_byte() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
-    let error =
-        ordered_interval(&ctx, finite_interval([0.0, 0.0]), "interval").expect_err("ordering");
+    let error = ordered_interval(finite_interval([0.0, 0.0]), "interval").expect_err("ordering");
     assert!(matches!(
         error,
         GeometryError::Malformed(crate::chunks::FramingError::Unpositioned { ref message })
             if message == "interval is invalid"
     ));
     assert_eq!(error.to_string(), "framing error: interval is invalid");
-    let error = finite_tolerance(&ctx, -1.0, "tolerance").expect_err("sign");
+    let error = finite_tolerance(-1.0, "tolerance").expect_err("sign");
     assert!(matches!(
         error,
         GeometryError::Malformed(crate::chunks::FramingError::Unpositioned { ref message })
@@ -1276,19 +1269,15 @@ fn an_interval_or_tolerance_refusal_names_no_byte() {
 
 #[test]
 fn interval_accepts_explicit_signed_unset_values() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
     for value in [
         finite_interval([ON_UNSET_VALUE, ON_UNSET_VALUE]),
         finite_interval([ON_UNSET_POSITIVE_VALUE, ON_UNSET_POSITIVE_VALUE]),
         finite_interval([ON_UNSET_VALUE, ON_UNSET_POSITIVE_VALUE]),
         finite_interval([ON_UNSET_POSITIVE_VALUE, ON_UNSET_VALUE]),
     ] {
-        assert!(ordered_interval(&ctx, value, "interval").is_ok());
+        assert!(ordered_interval(value, "interval").is_ok());
     }
-    assert!(ordered_interval(&ctx, finite_interval([0.0, 0.0]), "interval").is_err());
+    assert!(ordered_interval(finite_interval([0.0, 0.0]), "interval").is_err());
 }
 
 /// The one-trim fixture resolved the way validation resolves it.

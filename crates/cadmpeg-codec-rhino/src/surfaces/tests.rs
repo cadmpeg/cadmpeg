@@ -1659,7 +1659,7 @@ fn revolution_subnormal_axis_defers_unit_refusal_to_payload_admission() {
                         .expect("identity grammar"),
                 )
             },
-            |error| Ok(error.to_string()),
+            |error| error.to_string(),
         )
         .expect_err("unit axis required by procedural payload");
     assert!(error.contains(

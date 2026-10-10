@@ -7,11 +7,12 @@ use cadmpeg_ir::geometry::nurbs::NurbsSurface;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::units::FiniteVector;
 
-const INPUT_BYTES: u64 = 4 * std::mem::size_of::<f64>() as u64;
-const PROFILE_OUTPUT_BYTES: u64 =
-    (4 * std::mem::size_of::<Vec<FinitePoint3>>()
-        + 8 * std::mem::size_of::<FinitePoint3>()
-        + 4 * std::mem::size_of::<f64>()) as u64;
+const INPUT_BYTES: u64 = cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<f64>());
+const PROFILE_OUTPUT_BYTES: u64 = cadmpeg_core::decode::u64_from_index(
+    2 * std::mem::size_of::<Vec<FinitePoint3>>()
+        + 4 * std::mem::size_of::<FinitePoint3>()
+        + 4 * std::mem::size_of::<f64>(),
+);
 
 fn surface(ctx: &DecodeContext<'_>) -> Result<NurbsSurface, crate::curves::GeometryError> {
     let (start, end) = super::simple_extrusion_curves();
@@ -42,26 +43,47 @@ fn refusal(dimension: ResourceDimension, cap: u64, operation: &str, used: u64, a
     };
     assert_eq!(limit.dimension, dimension);
     assert_eq!(limit.operation, operation);
-    assert_eq!((limit.limit, limit.used, limit.additional), (cap, used, additional));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    assert_eq!(
+        (limit.limit, limit.used, limit.additional),
+        (cap, used, additional)
+    );
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+    );
 }
 
 #[test]
 fn extrusion_path_input_refuses_before_its_four_slot_allocation() {
     // Two row slots, four pole slots and four copied profile knots precede this input.
-    refusal(ResourceDimension::CollectionItems, 10, "Rhino extrusion path knot input", 10, 4);
+    refusal(
+        ResourceDimension::CollectionItems,
+        10,
+        "Rhino extrusion path knot input",
+        10,
+        4,
+    );
 }
 
 #[test]
 fn extrusion_path_input_refuses_one_byte_below_actual_backing() {
-    refusal(ResourceDimension::MaterializedBytes, INPUT_BYTES - 1,
-        "Rhino extrusion path knot input", 0, INPUT_BYTES);
+    refusal(
+        ResourceDimension::MaterializedBytes,
+        INPUT_BYTES - 1,
+        "Rhino extrusion path knot input",
+        0,
+        INPUT_BYTES,
+    );
 }
 
 #[test]
 fn extrusion_path_output_preserves_the_original_retained_refusal() {
-    refusal(ResourceDimension::RetainedBytes, PROFILE_OUTPUT_BYTES + INPUT_BYTES - 1,
-        "IR finite knot values", PROFILE_OUTPUT_BYTES, INPUT_BYTES);
+    refusal(
+        ResourceDimension::RetainedBytes,
+        PROFILE_OUTPUT_BYTES + INPUT_BYTES - 1,
+        "IR finite knot values",
+        PROFILE_OUTPUT_BYTES,
+        INPUT_BYTES,
+    );
 }
 
 #[test]
@@ -74,17 +96,30 @@ fn extrusion_path_input_releases_after_conversion_and_output_stays_retained() {
     let value = surface(&ctx).expect("actual input and output backing fit exactly");
     assert_eq!(value.v_knots().as_slice(), &[2.0, 2.0, 5.0, 5.0]);
     assert_eq!((value.u_count(), value.v_count()), (2, 2));
-    assert_eq!(value.poles().into_iter().nth(3).expect("four tensor poles"), Point3::new(1.0, 0.0, 1.0));
-    let reuse = ctx.reserve_scoped(INPUT_BYTES, "path input release control")
+    assert_eq!(
+        value.poles().into_iter().nth(3).expect("four tensor poles"),
+        Point3::new(1.0, 0.0, 1.0)
+    );
+    let reuse = ctx
+        .reserve_scoped(INPUT_BYTES, "path input release control")
         .expect("consumed finite input was destroyed before its reservation released");
     drop(reuse);
-    let CodecError::ResourceLimit(limit) = ctx.vector_storage::<f64>(1, "path output control")
+    let CodecError::ResourceLimit(limit) = ctx
+        .vector_storage::<f64>(1, "path output control")
         .expect_err("the returned surface still occupies retained backing")
     else {
         panic!("retained output control");
     };
     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-    assert_eq!((limit.used, limit.additional), (PROFILE_OUTPUT_BYTES + INPUT_BYTES, std::mem::size_of::<f64>() as u64));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    assert_eq!(
+        (limit.used, limit.additional),
+        (
+            PROFILE_OUTPUT_BYTES + INPUT_BYTES,
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<f64>())
+        )
+    );
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+    );
     assert_eq!(value.v_knots().as_slice(), &[2.0, 2.0, 5.0, 5.0]);
 }

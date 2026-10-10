@@ -953,23 +953,15 @@ fn legacy_curve(
     let offset = range.start;
     let mut source_storage = ctx.reserve_scoped(0, "Rhino V1 joined source curves")?;
     let segments = legacy_curve_segments(ctx, &mut source_storage, data, range, scale)?;
-    let child_result_storages_storage =
-        ctx.reserve_scoped(0, "Rhino V1 joined child result reservations")?;
-    let mut warnings = crate::loss::ScratchDiagnostics::new(
+    let mut warnings =
+        crate::loss::ScratchDiagnostics::new(ctx, "Rhino temporary V1 joined curve diagnostics")?;
+    let joined = crate::curves::join_nurbs_curves(
         ctx,
-        "Rhino temporary V1 joined curve diagnostics",
-    )?;
-    let joined = crate::curves::join_nurbs_segments_scoped(
-        ctx,
+        Some(source_storage),
         segments,
-        crate::curves::ScopedJoinInputs {
-            _segment_storage: source_storage,
-            _child_result_storages: Vec::new(),
-            _child_result_storages_storage: child_result_storages_storage,
-        },
         offset,
-        output_storage,
-        &mut warnings,
+        Some(output_storage),
+        Some(&mut warnings),
     )
         .or_else(|error| Err(geometry_error(ctx, error)?))?;
     Ok(joined)
