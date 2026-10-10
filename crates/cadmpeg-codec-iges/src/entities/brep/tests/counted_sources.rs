@@ -139,7 +139,7 @@ fn resolution_boundary(operation: &'static str, preceding_items: u64) {
         let result = super::super::resolve_pcurve_uses(
             &source, &uses, &support, endpoints, &ctx,
             (&mut model_index, (&mut composite_index, &mut composite_storage)),
-        );
+        ).map(|resolved| resolved.map(drop));
         let refusal = if cap < 4 {
             let first = match result {
                 Err(super::super::super::composite::CompositeCurveError::Budget(
@@ -166,7 +166,8 @@ fn resolution_boundary(operation: &'static str, preceding_items: u64) {
                 &source, &[], &support, endpoints, &ctx,
                 (&mut model_index, (&mut composite_index, &mut composite_storage)),
             ).unwrap().unwrap();
-            assert!(empty.is_empty());
+            assert!(empty.0.is_empty());
+            drop(empty);
             None
         };
         drop(model_index);

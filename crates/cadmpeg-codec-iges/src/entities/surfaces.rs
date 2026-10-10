@@ -3691,6 +3691,7 @@ pub(super) fn project<'ctx>(
             )?;
             continue;
         };
+        let mut candidate_storage = ctx.reserve_scoped(0, "iges NURBS surface candidate")?;
         let collect_numbers = |start: usize,
                                count: usize,
                                operation: &'static str|
@@ -3709,11 +3710,11 @@ pub(super) fn project<'ctx>(
             }
             Ok(Some(values))
         };
-        let Some(finite_u_knots) = collect_numbers(
+        let Some(finite_u_knots) = candidate_storage.with_storage(|| collect_numbers(
             u_knot_start,
             u_knot_count,
             "iges NURBS surface source u knots",
-        )?
+        ))?
         else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -3724,11 +3725,11 @@ pub(super) fn project<'ctx>(
             )?;
             continue;
         };
-        let Some(finite_v_knots) = collect_numbers(
+        let Some(finite_v_knots) = candidate_storage.with_storage(|| collect_numbers(
             v_knot_start,
             v_knot_count,
             "iges NURBS surface source v knots",
-        )?
+        ))?
         else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -3750,8 +3751,8 @@ pub(super) fn project<'ctx>(
         let u_domain = [u_lower, u_upper];
         let v_domain = [v_lower, v_upper];
         let (Ok(u_knots), Ok(v_knots)) = (
-            KnotVector::new(ctx, finite_u_knots)?,
-            KnotVector::new(ctx, finite_v_knots)?,
+            candidate_storage.with_storage(|| KnotVector::new(ctx, finite_u_knots))?,
+            candidate_storage.with_storage(|| KnotVector::new(ctx, finite_v_knots))?,
         ) else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
@@ -3977,7 +3978,7 @@ pub(super) fn project<'ctx>(
                     CodecError::malformed("placement produces a non-finite surface pole")
                 })
         };
-        let poles = if polynomial {
+        let poles = candidate_storage.with_storage(|| Ok::<_, CodecError>(if polynomial {
             let mut rows = ctx.collection_vec(u_count, "iges NURBS surface pole rows")?;
             if let Some(refusal) = ctx.resource_refusal() {
                 return Err(refusal.into());
@@ -4034,15 +4035,15 @@ pub(super) fn project<'ctx>(
                 rows.push(row);
             }
             NurbsPoleGrid::Rational { rows }
-        };
+        }))?;
         drop(native_weights);
-        let construction = NurbsSurface::new(
+        let construction = candidate_storage.with_storage(|| NurbsSurface::new(
             ctx,
             NurbsSurfaceAxis::new(u_degree, u_knots, flags[3] == Some(1)),
             NurbsSurfaceAxis::new(v_degree, v_knots, flags[4] == Some(1)),
             poles,
             false,
-        )?;
+        ))?;
         let surface = match construction {
             Ok(nurbs) => nurbs,
             Err(error) => {
@@ -4101,6 +4102,7 @@ pub(super) fn project<'ctx>(
                 continue 'surface;
             }
         }
+        let surface = candidate_storage.commit_value(surface)?;
         let surface_id =
             crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
         sequences.record_surface(&surface_id, entry.sequence, ctx)?;

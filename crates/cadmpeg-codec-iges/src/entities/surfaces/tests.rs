@@ -1896,3 +1896,5 @@ mod carrier_lifetimes;
 mod weighted_source_visits;
 
 mod bernstein_source_visits;
+
+mod candidate_storage;
