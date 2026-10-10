@@ -1137,11 +1137,16 @@ impl CompoundState {
             }
             Ok(())
         };
-        for &sector in ctx
-            .admit_iter(&self.fat_sectors, "visit CFB owned FAT sectors")?
-            .chain(ctx.admit_iter(&self.difat_sectors, "visit CFB owned DIFAT sectors")?)
-        {
-            claim_structural(sector)?;
+        for (sectors, operation) in [
+            (&self.fat_sectors, "visit CFB owned FAT sectors"),
+            (&self.difat_sectors, "visit CFB owned DIFAT sectors"),
+        ] {
+            let mut sectors = sectors.iter();
+            while sectors.len() != 0 {
+                if let Some(&sector) = ctx.next_charged(&mut sectors, operation)? {
+                    claim_structural(sector)?;
+                }
+            }
         }
         for chain in [
             &self.directory_chain,

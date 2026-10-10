@@ -464,3 +464,29 @@ fn full_fat_loading_rejects_a_partial_first_declared_sector() {
         assert_eq!(ctx.resource_refusal(), None);
     });
 }
+
+#[test]
+fn early_structural_claim_failure_skips_remaining_fat_and_difat_visits() {
+    let mut state = empty_state(Vec::new(), 0);
+    state.range_lock_sector = Some(0);
+    state.fat_sectors.extend([0, 1, 2]);
+    state.difat_sectors.extend([3, 4, 5]);
+    // The range-lock insertion creates one node in three passes. The first
+    // FAT visit then compares its duplicate id without creating a node.
+    let exact_work = 3 * id_node_bytes() + 1 + std::mem::size_of::<u32>();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::try_from(exact_work).expect("claim work fits u64");
+    with_context(&[], &policy, |ctx| {
+        let error = state.validate_sector_ownership(ctx, &[])
+            .expect_err("the first FAT id already belongs to the range lock");
+        assert!(matches!(error, CodecError::Malformed(message)
+            if message == "CFB regular sector has duplicate structural ownership"));
+        assert_eq!(ctx.resource_refusal(), None);
+        let CodecError::ResourceLimit(limit) = ctx.charge_work(1, "after failed CFB structural claim")
+            .expect_err("only the reached claim used the work allowance")
+        else { panic!("typed resource refusal") };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!((limit.used, limit.additional), (u64::try_from(exact_work).expect("used work"), 1));
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    });
+}
