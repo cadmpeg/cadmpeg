@@ -33,12 +33,14 @@ pub(super) fn merge_archive(
     let mut stack = Vec::new();
     ctx.reserve_scoped_vec(&mut stack_storage, &mut stack, 1, "seed F3Z merge stack")?;
     stack.push(model_root);
-    MergeSession {
-        ctx,
-        scan,
-        archive,
-    }
-    .merge(&mut stack, &mut stack_storage, ir, report, fidelity, &table)
+    MergeSession { ctx, scan, archive }.merge(
+        &mut stack,
+        &mut stack_storage,
+        ir,
+        report,
+        fidelity,
+        &table,
+    )
 }
 
 /// Reassigns only repeated sibling ordinals after independent document graphs
@@ -269,12 +271,8 @@ impl MergeSession<'_, '_> {
                         )
                     })?;
             _path_storage = held_storage;
-            self.ctx.push_scoped_vec(
-                stack_storage,
-                stack,
-                path,
-                "grow F3Z merge stack",
-            )?;
+            self.ctx
+                .push_scoped_vec(stack_storage, stack, path, "grow F3Z merge stack")?;
             let descendants = {
                 let frame = MergeStackFrame {
                     stack,

@@ -7,7 +7,10 @@ use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
 fn topology(vertices: Vec<i64>) -> AsmHistoricalTopology {
-    let relation = |owner_ref, member_refs| AsmHistoricalRelation { owner_ref, member_refs };
+    let relation = |owner_ref, member_refs| AsmHistoricalRelation {
+        owner_ref,
+        member_refs,
+    };
     AsmHistoricalTopology {
         bodies: vec![1],
         body_regions: vec![relation(1, vec![2])],
@@ -28,13 +31,23 @@ fn missing_first_free_vertex_link_skips_the_unread_tail() {
     let used = |topology: &AsmHistoricalTopology| {
         crate::test_support::with_decode_policy(&policy, |ctx| {
             let mut visited = Vec::new();
-            assert!(!crate::history::topology::walk_body_closures(ctx, topology, |body, entity| {
-                visited.push((body, entity));
-                Ok(())
-            }).unwrap());
+            assert!(!crate::history::topology::walk_body_closures(
+                ctx,
+                topology,
+                |body, entity| {
+                    visited.push((body, entity));
+                    Ok(())
+                }
+            )
+            .unwrap());
             assert_eq!(visited, [(1, 1), (1, 2), (1, 3), (1, 99)]);
             assert_eq!(ctx.resource_refusal(), None);
-            let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "measure reached free vertices").unwrap_err() else { panic!("work measurement refusal"); };
+            let CodecError::ResourceLimit(limit) = ctx
+                .charge_work(u64::MAX, "measure reached free vertices")
+                .unwrap_err()
+            else {
+                panic!("work measurement refusal");
+            };
             limit.used
         })
     };
@@ -44,20 +57,42 @@ fn missing_first_free_vertex_link_skips_the_unread_tail() {
 #[test]
 fn free_vertex_source_admission_preserves_the_original_refusal() {
     let mut topology = topology(vec![99]);
-    topology.vertex_points = vec![crate::history_records::AsmHistoricalCarrierBinding { entity: 99, carrier: 199 }];
+    topology.vertex_points = vec![crate::history_records::AsmHistoricalCarrierBinding {
+        entity: 99,
+        carrier: 199,
+    }];
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = u64::MAX;
     crate::test_support::with_decode_policy(&policy, |ctx| {
         let mut visited = Vec::new();
-        assert!(crate::history::topology::walk_body_closures(ctx, &topology, |body, entity| {
-            visited.push((body, entity));
-            Ok(())
-        }).unwrap());
+        assert!(
+            crate::history::topology::walk_body_closures(ctx, &topology, |body, entity| {
+                visited.push((body, entity));
+                Ok(())
+            })
+            .unwrap()
+        );
         assert_eq!(visited, [(1, 1), (1, 2), (1, 3), (1, 99), (1, 199)]);
-        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "scan F3D historical shell vertices", None);
-        let CodecError::ResourceLimit(original) = crate::history::topology::walk_body_closures(ctx, &topology, |_, _| Ok(())).unwrap_err() else { panic!("free vertex refusal"); };
+        let _probe = RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            "scan F3D historical shell vertices",
+            None,
+        );
+        let CodecError::ResourceLimit(original) =
+            crate::history::topology::walk_body_closures(ctx, &topology, |_, _| Ok(()))
+                .unwrap_err()
+        else {
+            panic!("free vertex refusal");
+        };
         assert_eq!(original.operation, "scan F3D historical shell vertices");
-        let CodecError::ResourceLimit(sticky) = crate::history::topology::walk_body_closures(ctx, &AsmHistoricalTopology::default(), |_, _| Ok(())).unwrap_err() else { panic!("sticky free vertex refusal"); };
+        let CodecError::ResourceLimit(sticky) = crate::history::topology::walk_body_closures(
+            ctx,
+            &AsmHistoricalTopology::default(),
+            |_, _| Ok(()),
+        )
+        .unwrap_err() else {
+            panic!("sticky free vertex refusal");
+        };
         assert_eq!(sticky, original);
     });
 }

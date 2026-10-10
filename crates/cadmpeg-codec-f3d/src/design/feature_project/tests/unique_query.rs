@@ -2,11 +2,13 @@
 //! Unique queries admit raw source visits and preserve repeated-match refusal.
 
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
-use crate::records::topology::construction::{DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame};
+use crate::records::topology::construction::{
+    DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
+};
 use crate::records::topology::entity_selection::DesignEntitySelectionOperand;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_core::decode::refusal_probe::RefusalProbe;
-use cadmpeg_core::decode::{DecodePolicy, ResourceDimension, u64_from_index};
+use cadmpeg_core::decode::{u64_from_index, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
 fn group(
@@ -122,9 +124,12 @@ fn plane(record: u32) -> DesignParameterScope {
 }
 
 fn scope() -> DesignParameterScope {
-    DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#77", DesignFeatureKind::SplitFace, 77)
+    DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#77",
+        DesignFeatureKind::SplitFace,
+        77,
+    )
 }
-
 
 #[test]
 fn unique_query_duplicate_stops_before_the_unvisited_source_suffix() {
@@ -133,10 +138,17 @@ fn unique_query_duplicate_stops_before_the_unvisited_source_suffix() {
     policy.limits.max_work_units = 2;
     crate::test_support::with_decode_policy(&policy, |ctx| {
         let mut visited = Vec::new();
-        assert!(super::super::unique_feature_match_for_decode(ctx, &values, |value| {
-            visited.push(*value);
-            Ok(*value == 5)
-        }, "visit actual unique query fixture").unwrap().is_none());
+        assert!(super::super::unique_feature_match_for_decode(
+            ctx,
+            &values,
+            |value| {
+                visited.push(*value);
+                Ok(*value == 5)
+            },
+            "visit actual unique query fixture"
+        )
+        .unwrap()
+        .is_none());
         assert_eq!(visited, [5, 5]);
         assert_eq!(ctx.resource_refusal(), None);
     });
@@ -149,7 +161,14 @@ fn unique_query_single_match_returns_the_actual_source_reference() {
     // Three visited scalar slots and the actual second search's end probe.
     policy.limits.max_work_units = 4;
     crate::test_support::with_decode_policy(&policy, |ctx| {
-        let selected = super::super::unique_feature_match_for_decode(ctx, &values, |value| Ok(*value == 5), "visit actual unique query fixture").unwrap().unwrap();
+        let selected = super::super::unique_feature_match_for_decode(
+            ctx,
+            &values,
+            |value| Ok(*value == 5),
+            "visit actual unique query fixture",
+        )
+        .unwrap()
+        .unwrap();
         assert!(std::ptr::eq(selected, &values[1]));
         assert_eq!(ctx.resource_refusal(), None);
     });
@@ -161,12 +180,26 @@ fn unique_query_original_visit_refusal_does_not_execute_the_predicate() {
     policy.limits.max_work_units = 0;
     crate::test_support::with_decode_policy(&policy, |ctx| {
         let mut visits = 0;
-        let Err(CodecError::ResourceLimit(original)) = super::super::unique_feature_match_for_decode(ctx, &[5], |_| { visits += 1; Ok(true) }, "visit actual unique query fixture") else { panic!("source visit must refuse"); };
+        let Err(CodecError::ResourceLimit(original)) =
+            super::super::unique_feature_match_for_decode(
+                ctx,
+                &[5],
+                |_| {
+                    visits += 1;
+                    Ok(true)
+                },
+                "visit actual unique query fixture",
+            )
+        else {
+            panic!("source visit must refuse");
+        };
         assert_eq!(visits, 0);
         assert_eq!(original.operation, "visit actual unique query fixture");
         assert_eq!((original.used, original.additional), (0, 1));
         assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-        assert!(matches!(super::super::unique_feature_match_for_decode(ctx, &[] as &[i32], |_| { visits += 1; Ok(true) }, "later unique query"), Err(CodecError::ResourceLimit(later)) if later == original));
+        assert!(
+            matches!(super::super::unique_feature_match_for_decode(ctx, &[] as &[i32], |_| { visits += 1; Ok(true) }, "later unique query"), Err(CodecError::ResourceLimit(later)) if later == original)
+        );
         assert_eq!(visits, 0);
     });
 }
@@ -183,22 +216,38 @@ fn unique_query_selected_plane_duplicate_skips_the_large_operand_tail() {
     let operand_stream = crate::ids::native_stream(&selections[0].id).unwrap();
     // The scope reverse scan, then two raw operand slots, reverse scans and
     // equal stream comparisons. The duplicate ends the query without a probe.
-    let reached = u64::try_from(scope.id.len() - scope_stream.len()
-        + 2 * (1 + selections[0].id.len() - operand_stream.len() + operand_stream.len())).unwrap();
+    let reached = u64::try_from(
+        scope.id.len() - scope_stream.len()
+            + 2 * (1 + selections[0].id.len() - operand_stream.len() + operand_stream.len()),
+    )
+    .unwrap();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = reached;
     crate::test_support::with_decode_policy(&policy, |ctx| {
-        assert!(super::super::selected_work_planes(ctx, &scope, &group, &selections, &[]).unwrap().is_none());
+        assert!(
+            super::super::selected_work_planes(ctx, &scope, &group, &selections, &[])
+                .unwrap()
+                .is_none()
+        );
         assert_eq!(ctx.resource_refusal(), None);
     });
     policy.limits.max_work_units -= 1;
     crate::test_support::with_decode_policy(&policy, |ctx| {
-        let Err(CodecError::ResourceLimit(original)) = super::super::selected_work_planes(ctx, &scope, &group, &selections, &[]) else { panic!("one below actual last compared byte must refuse"); };
+        let Err(CodecError::ResourceLimit(original)) =
+            super::super::selected_work_planes(ctx, &scope, &group, &selections, &[])
+        else {
+            panic!("one below actual last compared byte must refuse");
+        };
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(original.operation, "compare F3D selected work plane operand stream");
+        assert_eq!(
+            original.operation,
+            "compare F3D selected work plane operand stream"
+        );
         assert_eq!((original.used, original.additional), (reached - 1, 1));
         assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-        assert!(matches!(super::super::selected_work_planes(ctx, &scope, &group, &[], &[]), Err(CodecError::ResourceLimit(later)) if later == original));
+        assert!(
+            matches!(super::super::selected_work_planes(ctx, &scope, &group, &[], &[]), Err(CodecError::ResourceLimit(later)) if later == original)
+        );
     });
 }
 
@@ -212,12 +261,18 @@ fn assert_selected_plane_refusal(operation: &'static str) {
     policy.limits.max_work_units = u64::MAX;
     crate::test_support::with_decode_policy(&policy, |ctx| {
         let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-        let Err(CodecError::ResourceLimit(original)) = super::super::selected_work_planes(ctx, &scope, &group, &selections, &planes) else { panic!("actual query phase must refuse"); };
+        let Err(CodecError::ResourceLimit(original)) =
+            super::super::selected_work_planes(ctx, &scope, &group, &selections, &planes)
+        else {
+            panic!("actual query phase must refuse");
+        };
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
         assert_eq!(original.operation, operation);
         assert_eq!(original.additional, 1);
         assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-        assert!(matches!(super::super::selected_work_planes(ctx, &scope, &group, &[], &[]), Err(CodecError::ResourceLimit(later)) if later == original));
+        assert!(
+            matches!(super::super::selected_work_planes(ctx, &scope, &group, &[], &[]), Err(CodecError::ResourceLimit(later)) if later == original)
+        );
     });
 }
 

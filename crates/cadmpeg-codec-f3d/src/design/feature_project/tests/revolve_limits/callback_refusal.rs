@@ -22,12 +22,17 @@ fn operand(lane: u8) -> DesignFaceOperand {
         "recipe_node_offsets": [], "recipe_nodes": [],
         "candidate_faces": ["f3d:test:face#1", "f3d:test:face#2"],
         "next_record_index": 24, "next_byte_offset": 160
-    })).unwrap();
+    }))
+    .unwrap();
     let faces = operand.candidate_faces.clone();
     if lane != 0 {
         operand.recipe_references.push(DesignRecipeReference {
-            selector: 1, selector_offset: 0, token: "face".into(), token_offset: 0,
-            design_reference: 1, design_reference_offset: 0,
+            selector: 1,
+            selector_offset: 0,
+            token: "face".into(),
+            token_offset: 0,
+            design_reference: 1,
+            design_reference_offset: 0,
             candidate_faces: if lane == 1 { faces.clone() } else { Vec::new() },
             candidate_edges: Vec::new(),
             alternate_selector_faces: if lane == 2 { faces } else { Vec::new() },
@@ -43,11 +48,17 @@ fn assert_callback_refusal(returned: Option<bool>) {
         let first = operand.candidate_faces[0].clone();
         let tail = operand.candidate_faces[1].clone();
         if lane == 0 {
-            operand.candidate_faces.extend((0..4096).map(|_| tail.clone()));
+            operand
+                .candidate_faces
+                .extend((0..4096).map(|_| tail.clone()));
         } else if lane == 1 {
-            operand.recipe_references[0].candidate_faces.extend((0..4096).map(|_| tail.clone()));
+            operand.recipe_references[0]
+                .candidate_faces
+                .extend((0..4096).map(|_| tail.clone()));
         } else {
-            operand.recipe_references[0].alternate_selector_faces.extend((0..4096).map(|_| tail.clone()));
+            operand.recipe_references[0]
+                .alternate_selector_faces
+                .extend((0..4096).map(|_| tail.clone()));
         }
         let original_operand = operand.clone();
         let mut policy = DecodePolicy::service();
@@ -58,7 +69,10 @@ fn assert_callback_refusal(returned: Option<bool>) {
             let result = visit_revolve_face_candidates(ctx, &operand, |face| {
                 visits += 1;
                 assert_eq!(face, &first);
-                assert!(matches!(ctx.charge_work(1, ORIGINAL), Err(CodecError::ResourceLimit(_))));
+                assert!(matches!(
+                    ctx.charge_work(1, ORIGINAL),
+                    Err(CodecError::ResourceLimit(_))
+                ));
                 returned.ok_or_else(|| CodecError::malformed("ordinary Revolve visitor error"))
             });
             let original = ctx.resource_refusal().expect("visitor stored its refusal");
@@ -78,13 +92,19 @@ fn assert_callback_refusal(returned: Option<bool>) {
 }
 
 #[test]
-fn revolve_visitor_false_keeps_original_refusal() { assert_callback_refusal(Some(false)); }
+fn revolve_visitor_false_keeps_original_refusal() {
+    assert_callback_refusal(Some(false));
+}
 
 #[test]
-fn revolve_visitor_true_keeps_original_refusal() { assert_callback_refusal(Some(true)); }
+fn revolve_visitor_true_keeps_original_refusal() {
+    assert_callback_refusal(Some(true));
+}
 
 #[test]
-fn revolve_visitor_ordinary_error_keeps_original_refusal() { assert_callback_refusal(None); }
+fn revolve_visitor_ordinary_error_keeps_original_refusal() {
+    assert_callback_refusal(None);
+}
 
 #[test]
 fn revolve_visitor_ordinary_error_preserves_first_face_and_unread_suffix() {
@@ -97,7 +117,9 @@ fn revolve_visitor_ordinary_error_preserves_first_face_and_unread_suffix() {
                 assert_eq!(face, &operand.candidate_faces[0]);
                 Err(CodecError::malformed("ordinary Revolve visitor error"))
             });
-            assert!(matches!(result, Err(CodecError::Malformed(message)) if message == "ordinary Revolve visitor error"));
+            assert!(
+                matches!(result, Err(CodecError::Malformed(message)) if message == "ordinary Revolve visitor error")
+            );
             assert_eq!(visits, 1);
             assert_eq!(ctx.resource_refusal(), None);
         });
@@ -118,10 +140,13 @@ fn revolve_visitor_false_stops_at_actual_face_without_extra_work() {
                 visits += 1;
                 assert_eq!(face, &operand.candidate_faces[0]);
                 Ok(false)
-            }).unwrap());
+            })
+            .unwrap());
             assert_eq!(visits, 1);
             assert_eq!(ctx.resource_refusal(), None);
-            let Err(CodecError::ResourceLimit(after)) = ctx.charge_work(1, "observe reached Revolve visitor work") else {
+            let Err(CodecError::ResourceLimit(after)) =
+                ctx.charge_work(1, "observe reached Revolve visitor work")
+            else {
                 panic!("the exact reached traversal used the ceiling");
             };
             assert_eq!((after.used, after.additional), (reached, 1));
@@ -133,14 +158,17 @@ fn revolve_visitor_false_stops_at_actual_face_without_extra_work() {
 fn revolve_visitor_preserves_candidate_then_alternate_source_order() {
     let mut operand = operand(1);
     operand.recipe_references[0].candidate_faces.truncate(1);
-    operand.recipe_references[0].alternate_selector_faces.push(operand.candidate_faces[1].clone());
+    operand.recipe_references[0]
+        .alternate_selector_faces
+        .push(operand.candidate_faces[1].clone());
     let original = operand.clone();
     crate::test_support::with_decode_policy(&DecodePolicy::service(), |ctx| {
         let mut visited = Vec::new();
         assert!(visit_revolve_face_candidates(ctx, &operand, |face| {
             visited.push(face.as_str());
             Ok(true)
-        }).unwrap());
+        })
+        .unwrap());
         assert_eq!(visited, ["f3d:test:face#1", "f3d:test:face#2"]);
         assert_eq!(ctx.resource_refusal(), None);
     });

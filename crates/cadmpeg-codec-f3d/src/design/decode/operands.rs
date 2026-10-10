@@ -156,11 +156,7 @@ impl<'a, 'c, 'arena, T> RecordIndex<'a, 'c, 'arena, T> {
         })
     }
 
-    fn get(
-        &self,
-        stream: &str,
-        record_index: u32,
-    ) -> Result<Option<&'a T>, CodecError> {
+    fn get(&self, stream: &str, record_index: u32) -> Result<Option<&'a T>, CodecError> {
         let ctx = self.ctx;
         ctx.charge_work(0, "find F3D indexed record")?;
         if self.by_identity.is_empty() {
@@ -235,11 +231,7 @@ impl<'a, 'c, 'arena, T> RecordGroups<'a, 'c, 'arena, T> {
 
     /// The values of `record_index` in `stream`. The lookup key borrows
     /// `stream`, so the result lives no longer than it.
-    fn get<'s>(
-        &'s self,
-        stream: &'s str,
-        record_index: u32,
-    ) -> Result<&'s [&'a T], CodecError> {
+    fn get<'s>(&'s self, stream: &'s str, record_index: u32) -> Result<&'s [&'a T], CodecError> {
         let ctx = self.ctx;
         ctx.charge_work(0, "find F3D grouped records")?;
         if self.groups.is_empty() {
@@ -273,7 +265,9 @@ struct KeyCollector<'c, 'arena, K> {
     ctx: &'c DecodeContext<'arena>,
 }
 
-impl<'c, 'arena, K: Copy + Ord + cadmpeg_core::decode::cost::DecodeCost> KeyCollector<'c, 'arena, K> {
+impl<'c, 'arena, K: Copy + Ord + cadmpeg_core::decode::cost::DecodeCost>
+    KeyCollector<'c, 'arena, K>
+{
     fn new(ctx: &'c DecodeContext<'arena>, operation: &'static str) -> Result<Self, CodecError> {
         Ok(Self {
             keys: Vec::new(),
@@ -282,12 +276,9 @@ impl<'c, 'arena, K: Copy + Ord + cadmpeg_core::decode::cost::DecodeCost> KeyColl
         })
     }
 
-    fn push(
-        &mut self,
-        key: K,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        self.ctx.push_scoped_vec(&mut self.storage, &mut self.keys, key, operation)
+    fn push(&mut self, key: K, operation: &'static str) -> Result<(), CodecError> {
+        self.ctx
+            .push_scoped_vec(&mut self.storage, &mut self.keys, key, operation)
     }
 
     /// Sort the collected keys once, so that each lookup is a bisection.
@@ -296,7 +287,8 @@ impl<'c, 'arena, K: Copy + Ord + cadmpeg_core::decode::cost::DecodeCost> KeyColl
         operation: &'static str,
     ) -> Result<SortedKeys<'c, 'arena, K>, CodecError> {
         self.ctx.charge_work(0, operation)?;
-        self.ctx.sort_unstable_by_key(&mut self.keys[..], |key| *key, Ord::cmp, operation)?;
+        self.ctx
+            .sort_unstable_by_key(&mut self.keys[..], |key| *key, Ord::cmp, operation)?;
         Ok(SortedKeys {
             keys: self.keys,
             _storage: self.storage,
@@ -313,11 +305,7 @@ struct SortedKeys<'c, 'arena, K> {
 }
 
 impl<K: Ord + cadmpeg_core::decode::cost::DecodeCost> SortedKeys<'_, '_, K> {
-    fn contains(
-        &self,
-        key: &K,
-        operation: &'static str,
-    ) -> Result<bool, CodecError> {
+    fn contains(&self, key: &K, operation: &'static str) -> Result<bool, CodecError> {
         self.ctx.charge_work(0, operation)?;
         Ok(self.ctx.binary_search(&self.keys, key, operation)?.is_ok())
     }
@@ -1012,15 +1000,24 @@ pub(crate) fn bind_vertex_recipe_candidates(
         let Some(construction) = scope.work_point_construction_mut() else {
             continue;
         };
-        construction.rule.for_each_vertex_recipe_for_decode(ctx, "visit F3D WorkPoint candidate inputs", |recipe| {
-            for reference in ctx.admit_iter(&(0..recipe.recipe_references.len()), OPERATION)? {
-                let Some(reference) = recipe.recipe_references.get_mut(reference) else {
-                    continue;
-                };
-                bind_recipe_reference_candidates_charged(ctx, reference, tags, Some(&scope_id))?;
-            }
-            Ok(())
-        })?;
+        construction.rule.for_each_vertex_recipe_for_decode(
+            ctx,
+            "visit F3D WorkPoint candidate inputs",
+            |recipe| {
+                for reference in ctx.admit_iter(&(0..recipe.recipe_references.len()), OPERATION)? {
+                    let Some(reference) = recipe.recipe_references.get_mut(reference) else {
+                        continue;
+                    };
+                    bind_recipe_reference_candidates_charged(
+                        ctx,
+                        reference,
+                        tags,
+                        Some(&scope_id),
+                    )?;
+                }
+                Ok(())
+            },
+        )?;
     }
     Ok(())
 }
@@ -1493,9 +1490,9 @@ pub(crate) fn decode_face_operands(
                             )?
                             .and_then(|ordinal| reference_at(references, ordinal + 1));
                             match next {
-                                Some(next) => headers
-                                    .get(stream, next)?
-                                    .map(|header| header.byte_offset),
+                                Some(next) => {
+                                    headers.get(stream, next)?.map(|header| header.byte_offset)
+                                }
                                 None => None,
                             }
                         }
@@ -1512,9 +1509,9 @@ pub(crate) fn decode_face_operands(
                         continue;
                     };
                     let next_byte_offset = match reference_at(references, position + 1) {
-                        Some(next) if legacy_as_built => headers
-                            .get(stream, next)?
-                            .map(|header| header.byte_offset),
+                        Some(next) if legacy_as_built => {
+                            headers.get(stream, next)?.map(|header| header.byte_offset)
+                        }
                         _ => None,
                     };
                     (scope_reference_ordinal, None, next_byte_offset)
@@ -2363,10 +2360,9 @@ pub(crate) fn decode_construction_operand_groups(
         .copied()
         .enumerate()
         {
-            let (Ok(ordinal), Some(header)) = (
-                u32::try_from(ordinal),
-                headers.get(stream, record_index)?,
-            ) else {
+            let (Ok(ordinal), Some(header)) =
+                (u32::try_from(ordinal), headers.get(stream, record_index)?)
+            else {
                 continue;
             };
             match parse_construction_operand_group_at(
@@ -3074,10 +3070,7 @@ pub(crate) fn disambiguate_fixed_fillet_parameters(
         let Some(stream) = record_stream(ctx, &scope.id)? else {
             continue;
         };
-        if owners_by_scope
-            .get(stream, scope.record_index)?
-            .is_empty()
-        {
+        if owners_by_scope.get(stream, scope.record_index)?.is_empty() {
             continue;
         }
         if let Some(
@@ -5342,10 +5335,7 @@ impl<'a, 'c, 'arena, T> StreamOrdered<'a, 'c, 'arena, T> {
     }
 
     /// The records of `stream` in byte order. The ordered list is bisected.
-    fn of_stream(
-        &self,
-        stream: &str,
-    ) -> Result<&[(&'a str, &'a T)], CodecError> {
+    fn of_stream(&self, stream: &str) -> Result<&[(&'a str, &'a T)], CodecError> {
         const OPERATION: &str = "find F3D stream records";
         let ctx = self.ctx;
         let start = self.stream_start(stream)?;

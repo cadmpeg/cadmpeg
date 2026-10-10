@@ -13,7 +13,8 @@ fn decode_sketch_points_from_stream(
     stream: &str,
 ) -> Result<Vec<crate::records::sketch_geometry::SketchPoint>, cadmpeg_core::CodecError> {
     crate::design::test_support::with_test_decode_context(|ctx| {
-        crate::design::decode::sketch::decode_sketch_points_from_stream(ctx, bytes, meta, stream).and_then(|(records, storage)| storage.commit_value(records))
+        crate::design::decode::sketch::decode_sketch_points_from_stream(ctx, bytes, meta, stream)
+            .and_then(|(records, storage)| storage.commit_value(records))
     })
 }
 
@@ -23,7 +24,8 @@ fn decode_sketch_texts_from_stream(
     stream: &str,
 ) -> Result<Vec<crate::records::sketch_geometry::SketchText>, cadmpeg_core::CodecError> {
     crate::design::test_support::with_test_decode_context(|ctx| {
-        crate::design::decode::sketch::decode_sketch_texts_from_stream(ctx, bytes, meta, stream).and_then(|(records, storage)| storage.commit_value(records))
+        crate::design::decode::sketch::decode_sketch_texts_from_stream(ctx, bytes, meta, stream)
+            .and_then(|(records, storage)| storage.commit_value(records))
     })
 }
 
@@ -35,7 +37,8 @@ fn decode_sketch_curve_identities_from_stream(
     crate::design::test_support::with_test_decode_context(|ctx| {
         crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
             ctx, bytes, meta, stream,
-        ).and_then(|(records, storage)| storage.commit_value(records))
+        )
+        .and_then(|(records, storage)| storage.commit_value(records))
     })
 }
 
@@ -183,7 +186,8 @@ fn sketch_text_output_refuses_collection_limit() {
             &bytes,
             &meta,
             "Design/BulkStream.dat"
-        ).and_then(|(records, storage)| storage.commit_value(records))
+        )
+        .and_then(|(records, storage)| storage.commit_value(records))
         .unwrap()
         .len(),
         1
@@ -199,7 +203,8 @@ fn sketch_text_output_refuses_collection_limit() {
                 &bytes,
                 &meta,
                 "Design/BulkStream.dat",
-            ).and_then(|(records, storage)| storage.commit_value(records))
+            )
+            .and_then(|(records, storage)| storage.commit_value(records))
         },
     );
     assert!(matches!(
@@ -615,7 +620,8 @@ fn sketch_point_indices_and_output_refuse_collection_limits() {
                     &bytes,
                     &meta,
                     "Design/BulkStream.dat",
-                ).and_then(|(records, storage)| storage.commit_value(records))
+                )
+                .and_then(|(records, storage)| storage.commit_value(records))
             },
         );
         assert!(
@@ -641,7 +647,8 @@ fn sketch_curve_output_refuses_collection_limit() {
                 &bytes,
                 &meta,
                 "Design/BulkStream.dat",
-            ).and_then(|(records, storage)| storage.commit_value(records))
+            )
+            .and_then(|(records, storage)| storage.commit_value(records))
         },
     );
     assert!(
@@ -671,7 +678,8 @@ fn sketch_point_and_curve_ids_refuse_retained_limit() {
                         &bytes,
                         &meta,
                         "Design/BulkStream.dat",
-                    ).and_then(|(records, storage)| storage.commit_value(records))
+                    )
+                    .and_then(|(records, storage)| storage.commit_value(records))
                     .map(|_| ())
                 } else {
                     crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
@@ -679,7 +687,8 @@ fn sketch_point_and_curve_ids_refuse_retained_limit() {
                         &bytes,
                         &meta,
                         "Design/BulkStream.dat",
-                    ).and_then(|(records, storage)| storage.commit_value(records))
+                    )
+                    .and_then(|(records, storage)| storage.commit_value(records))
                     .map(|_| ())
                 }
             },

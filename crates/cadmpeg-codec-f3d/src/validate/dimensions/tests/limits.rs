@@ -437,7 +437,9 @@ fn dimension_recipe_absent_companion_member_skips_text_comparison() {
 
 #[test]
 fn empty_dimension_presentations_skip_sketch_scope_index() {
-    use crate::records::sketch_placement::{DesignSketchFrame, DesignSketchFrameForm, DesignSketchPlacement};
+    use crate::records::sketch_placement::{
+        DesignSketchFrame, DesignSketchFrameForm, DesignSketchPlacement,
+    };
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = u64::MAX;
     crate::test_support::with_decode_policy(&policy, |decode| {
@@ -452,18 +454,24 @@ fn empty_dimension_presentations_skip_sketch_scope_index() {
                 record_index: 1,
                 paired_class_tag: "257".to_owned().try_into().unwrap(),
                 frame: DesignSketchFrame::new(10, DesignSketchFrameForm::ScopeCompact).unwrap(),
-            }], ..Default::default()
+            }],
+            ..Default::default()
         };
         let ctx = crate::validate::Ctx::new(&ir, &native, decode).unwrap();
         let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
             cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            "index F3D dimension presentation sketch scopes", None,
+            "index F3D dimension presentation sketch scopes",
+            None,
         );
         let mut findings = Vec::new();
         super::super::validate_dimension_presentation_frames(&ctx, &mut findings).unwrap();
         assert!(findings.is_empty());
         assert!(decode.resource_refusal().is_none());
-        assert!(decode.admit_iter(&native.design_sketch_placements,
-            "index F3D dimension presentation sketch scopes").is_err());
+        assert!(decode
+            .admit_iter(
+                &native.design_sketch_placements,
+                "index F3D dimension presentation sketch scopes"
+            )
+            .is_err());
     });
 }

@@ -30,8 +30,10 @@ fn retained_face_membership_refuses_before_native_search_or_mutation() {
     assert_eq!(serde_json::to_value(&operand).unwrap(), before);
     // A missing stream and empty input must not replace the original refusal.
     group.id = "unqualified".into();
-    assert!(matches!(retain_face_operand_resolution(&ctx, &group, &mut [], &target),
-        Err(CodecError::ResourceLimit(actual)) if actual == expected));
+    assert!(
+        matches!(retain_face_operand_resolution(&ctx, &group, &mut [], &target),
+        Err(CodecError::ResourceLimit(actual)) if actual == expected)
+    );
     assert_eq!(ctx.resource_refusal(), Some(expected));
     assert!(matches!(ctx.finish_session(),
         Err(CodecError::ResourceLimit(actual)) if actual == expected));
@@ -51,8 +53,8 @@ fn retained_face_ambiguous_members_stop_before_unread_native_suffix() {
     // operand then visits its slot, stream bytes, first group member, first
     // candidate slot, and the equal face bytes. The second match ends search.
     let group_search = "construction-group#150".len() + 1;
-    let per_operand = 1 + "face-operand#200".len() + 1 + "f3d:test".len()
-        + 1 + 1 + target.as_str().len();
+    let per_operand =
+        1 + "face-operand#200".len() + 1 + "f3d:test".len() + 1 + 1 + target.as_str().len();
     let work = u64::try_from(group_search + 2 * per_operand).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -76,8 +78,8 @@ fn retained_face_second_candidate_comparison_refuses_without_partial_publication
     let mut operands = [operand, duplicate];
     let before = serde_json::to_value(&operands).unwrap();
     let group_search = "construction-group#150".len() + 1;
-    let per_operand = 1 + "face-operand#200".len() + 1 + "f3d:test".len()
-        + 1 + 1 + target.as_str().len();
+    let per_operand =
+        1 + "face-operand#200".len() + 1 + "f3d:test".len() + 1 + 1 + target.as_str().len();
     let work = u64::try_from(group_search + 2 * per_operand).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -94,11 +96,15 @@ fn retained_face_second_candidate_comparison_refuses_without_partial_publication
         additional: 1,
         operation: "find F3D retained face operand candidate",
     };
-    assert!(matches!(retain_face_operand_resolution(&ctx, &group, &mut operands, &target),
-        Err(CodecError::ResourceLimit(actual)) if actual == expected));
+    assert!(
+        matches!(retain_face_operand_resolution(&ctx, &group, &mut operands, &target),
+        Err(CodecError::ResourceLimit(actual)) if actual == expected)
+    );
     assert_eq!(serde_json::to_value(&operands).unwrap(), before);
-    assert!(matches!(retain_face_operand_resolution(&ctx, &group, &mut [], &target),
-        Err(CodecError::ResourceLimit(actual)) if actual == expected));
+    assert!(
+        matches!(retain_face_operand_resolution(&ctx, &group, &mut [], &target),
+        Err(CodecError::ResourceLimit(actual)) if actual == expected)
+    );
     assert_eq!(ctx.resource_refusal(), Some(expected));
     assert!(matches!(ctx.finish_session(),
         Err(CodecError::ResourceLimit(actual)) if actual == expected));

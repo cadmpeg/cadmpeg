@@ -280,15 +280,15 @@ impl<'a, 'ctx, 'arena, T> Grouped<'a, 'ctx, 'arena, T> {
         }
         // The stable sort keeps the records of each key in input order.
         ctx.stable_sort_by(&mut grouped[..], |(key, _)| *key, Ord::cmp, operation)?;
-        Ok(Self { ctx, records: grouped })
+        Ok(Self {
+            ctx,
+            records: grouped,
+        })
     }
 
     /// The records of `key` with their key, in input order. Two bisections
     /// locate them.
-    pub(super) fn run(
-        &self,
-        key: &str,
-    ) -> Result<&[(&'a str, &'a T)], CodecError> {
+    pub(super) fn run(&self, key: &str) -> Result<&[(&'a str, &'a T)], CodecError> {
         self.ctx.charge_work(0, "find F3D grouped records")?;
         let run = key_range(self.ctx, &self.records, |(record_key, _)| record_key, key)?;
         Ok(self.records.get(run).unwrap_or(&[]))
@@ -455,10 +455,9 @@ fn clone_sketch_entity_id_charged(
     let text = ctx.copy_retained_text(entity_id.as_str(), "f3d sketch placement entity ID")?;
     match crate::records::identity::DesignEntityId::try_from(text) {
         Ok(entity_id) => Ok(entity_id),
-        Err(message) => Err(CodecError::Malformed(ctx.copy_retained_text(
-            message,
-            "f3d sketch placement entity ID",
-        )?)),
+        Err(message) => Err(CodecError::Malformed(
+            ctx.copy_retained_text(message, "f3d sketch placement entity ID")?,
+        )),
     }
 }
 
@@ -943,10 +942,10 @@ fn decode_sketch_visibilities_in_stream<'ctx>(
         }
         let frame_bytes = &bytes[..frame.end];
         let _header_storage;
-        let (settled_header, settled_storage) = ctx.with_scoped_storage(
-            "f3d sketch visibility entity header",
-            || parse_settled_entity_header(ctx, frame_bytes, frame.start),
-        )?;
+        let (settled_header, settled_storage) = ctx
+            .with_scoped_storage("f3d sketch visibility entity header", || {
+                parse_settled_entity_header(ctx, frame_bytes, frame.start)
+            })?;
         let (header, header_storage) = match settled_header {
             Some(header) => (Some(header), settled_storage),
             None => {
@@ -1983,10 +1982,9 @@ pub(crate) fn decode_entity_headers(
                     entity_id: match crate::records::identity::DesignEntityId::try_from(entity_id) {
                         Ok(entity_id) => entity_id,
                         Err(message) => {
-                            return Err(CodecError::Malformed(ctx.copy_retained_text(
-                                message,
-                                "f3d legacy sketch entity ID",
-                            )?));
+                            return Err(CodecError::Malformed(
+                                ctx.copy_retained_text(message, "f3d legacy sketch entity ID")?,
+                            ));
                         }
                     },
                     class_tag: retain_header_class_tag(ctx, bytes, start)?,
@@ -2787,7 +2785,8 @@ impl SketchProperties<'_, '_, '_> {
         if self.entries.is_empty() {
             return Ok(None);
         }
-        Ok(self.ctx
+        Ok(self
+            .ctx
             .find_by(
                 &self.entries,
                 |property| Ok(property.name.as_bytes() == key.as_bytes()),
@@ -2798,8 +2797,11 @@ impl SketchProperties<'_, '_, '_> {
 
     /// The first property and, in a two-property block, the second. Other
     /// block sizes have no such pair.
-    fn first_two(&self) -> Result<Option<(SketchProperty<'_>, Option<SketchProperty<'_>>)>, CodecError> {
-        self.ctx.charge_work(0, "read F3D first sketch properties")?;
+    fn first_two(
+        &self,
+    ) -> Result<Option<(SketchProperty<'_>, Option<SketchProperty<'_>>)>, CodecError> {
+        self.ctx
+            .charge_work(0, "read F3D first sketch properties")?;
         Ok(match self.entries.as_slice() {
             [first] => Some((*first, None)),
             [first, second] => Some((*first, Some(*second))),
@@ -6434,9 +6436,8 @@ fn decode_sketch_streams<'ctx, T>(
         let child_storage;
         let (mut child, held_storage) = decode(ctx, bytes, &meta, &entry.name)?;
         child_storage = held_storage;
-        output_storage.with_storage(|| {
-            ctx.append_vec(&mut out, &mut child, "f3d sketch stream output")
-        })?;
+        output_storage
+            .with_storage(|| ctx.append_vec(&mut out, &mut child, "f3d sketch stream output"))?;
         // The drained allocation is destroyed before its reservation refunds.
         drop(child);
         drop(child_storage);

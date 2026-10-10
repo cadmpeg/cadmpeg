@@ -522,12 +522,17 @@ fn scope_json_empty_walk_is_free_and_preserves_the_original_refusal() {
         crate::test_support::with_decode_policy(&policy, |ctx| {
             assert!(super::equivalent_scope_json(ctx, &empty, &empty, true).unwrap());
             assert_eq!(ctx.resource_refusal(), None);
-            let cadmpeg_core::CodecError::ResourceLimit(original) =
-                ctx.charge_work(1, "original scope comparison refusal").unwrap_err()
-            else { panic!("the original zero-work context must refuse"); };
+            let cadmpeg_core::CodecError::ResourceLimit(original) = ctx
+                .charge_work(1, "original scope comparison refusal")
+                .unwrap_err()
+            else {
+                panic!("the original zero-work context must refuse");
+            };
             let cadmpeg_core::CodecError::ResourceLimit(later) =
                 super::equivalent_scope_json(ctx, &empty, &empty, true).unwrap_err()
-            else { panic!("an empty comparison must preserve the original refusal"); };
+            else {
+                panic!("an empty comparison must preserve the original refusal");
+            };
             assert_eq!(later, original);
             assert_eq!(ctx.resource_refusal(), Some(original));
         });
@@ -552,8 +557,9 @@ fn scope_json_object_stops_before_unvisited_payloads() {
                 assert!(!result.unwrap());
                 assert_eq!(ctx.resource_refusal(), None);
             } else {
-                let cadmpeg_core::CodecError::ResourceLimit(limit) = result.unwrap_err()
-                else { panic!("the reached key comparison must refuse"); };
+                let cadmpeg_core::CodecError::ResourceLimit(limit) = result.unwrap_err() else {
+                    panic!("the reached key comparison must refuse");
+                };
                 assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
                 assert_eq!(limit.operation, "f3d scope variant comparison");
                 assert_eq!(limit.used, 2);
@@ -582,8 +588,9 @@ fn scope_json_array_admits_each_reached_side_before_its_first_difference() {
                 assert!(!result.unwrap());
                 assert_eq!(ctx.resource_refusal(), None);
             } else {
-                let cadmpeg_core::CodecError::ResourceLimit(limit) = result.unwrap_err()
-                else { panic!("the reached right array item must refuse before yield"); };
+                let cadmpeg_core::CodecError::ResourceLimit(limit) = result.unwrap_err() else {
+                    panic!("the reached right array item must refuse before yield");
+                };
                 assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
                 assert_eq!(limit.operation, "f3d scope variant comparison");
                 assert_eq!(limit.used, 1);
@@ -627,8 +634,9 @@ fn scope_json_equal_arrays_need_no_final_end_probe() {
                 assert!(result.unwrap());
                 assert_eq!(ctx.resource_refusal(), None);
             } else {
-                let cadmpeg_core::CodecError::ResourceLimit(limit) = result.unwrap_err()
-                else { panic!("the last right item must refuse before yield"); };
+                let cadmpeg_core::CodecError::ResourceLimit(limit) = result.unwrap_err() else {
+                    panic!("the last right item must refuse before yield");
+                };
                 assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
                 assert_eq!(limit.operation, "f3d scope variant comparison");
                 assert_eq!(limit.used, 3);
@@ -641,9 +649,9 @@ fn scope_json_equal_arrays_need_no_final_end_probe() {
 
 #[test]
 fn scope_admission_releases_dead_identities_before_retaining_its_output() {
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
     use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
-    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 
     let identity_bytes = std::mem::size_of::<(&str, u32, usize)>();
     let output_bytes = std::mem::size_of::<DesignParameterScope>();
@@ -662,9 +670,8 @@ fn scope_admission_releases_dead_identities_before_retaining_its_output() {
                 DesignFeatureKind::try_from("Sketch".to_owned()).unwrap(),
                 12,
             )];
-            let result = output_storage.with_storage(|| {
-                super::admit_history_bound_scope_variants(ctx, &mut scopes, &[])
-            });
+            let result = output_storage
+                .with_storage(|| super::admit_history_bound_scope_variants(ctx, &mut scopes, &[]));
             if cap == peak {
                 result.expect("dead identities do not overlap the returned vector");
                 let scopes = output_storage.commit_value(scopes).unwrap();

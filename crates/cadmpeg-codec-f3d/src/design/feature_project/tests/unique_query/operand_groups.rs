@@ -77,8 +77,11 @@ fn single_operand_query_duplicate_stops_before_long_unread_source_tail() {
     tail.id = "x".repeat(4096);
     let scope_stream = crate::ids::native_stream(&scope.id).unwrap();
     let group_stream = crate::ids::native_stream(&first.id).unwrap();
-    let reached = u64::try_from(scope.id.len() - scope_stream.len()
-        + 2 * (1 + first.id.len() - group_stream.len() + group_stream.len())).unwrap();
+    let reached = u64::try_from(
+        scope.id.len() - scope_stream.len()
+            + 2 * (1 + first.id.len() - group_stream.len() + group_stream.len()),
+    )
+    .unwrap();
     assert_eq!(first.id.len(), second.id.len());
     let groups = [first, second, tail];
     let original = groups.clone();
@@ -98,7 +101,9 @@ fn single_operand_query_duplicate_stops_before_long_unread_source_tail() {
         assert_eq!(original.operation, "match F3D single operand group stream");
         assert_eq!((original.used, original.additional), (reached - 1, 1));
         assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-        assert!(matches!(query(ctx, &[], &scope), Err(CodecError::ResourceLimit(later)) if later == original));
+        assert!(
+            matches!(query(ctx, &[], &scope), Err(CodecError::ResourceLimit(later)) if later == original)
+        );
     });
     assert_eq!(groups, original);
 }
@@ -119,12 +124,16 @@ fn single_operand_query_missing_raw_prefix_and_end_probe_are_admitted() {
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_collection_items = 0;
     crate::test_support::with_decode_policy(&policy, |ctx| {
-        assert!(query(ctx, std::slice::from_ref(&missing), &scope).unwrap().is_none());
+        assert!(query(ctx, std::slice::from_ref(&missing), &scope)
+            .unwrap()
+            .is_none());
         assert_eq!(ctx.resource_refusal(), None);
     });
     policy.limits.max_work_units -= 1;
     crate::test_support::with_decode_policy(&policy, |ctx| {
-        let Err(CodecError::ResourceLimit(original)) = query(ctx, std::slice::from_ref(&missing), &scope) else {
+        let Err(CodecError::ResourceLimit(original)) =
+            query(ctx, std::slice::from_ref(&missing), &scope)
+        else {
             panic!("actual raw search end probe must refuse")
         };
         assert_eq!(original.operation, "find F3D single operand group");
@@ -140,17 +149,28 @@ fn single_operand_query_unique_result_requires_the_actual_second_search_end() {
     let group = group(100);
     let scope_stream = crate::ids::native_stream(&scope.id).unwrap();
     let group_stream = crate::ids::native_stream(&group.id).unwrap();
-    let reached = u64::try_from(scope.id.len() - scope_stream.len()
-        + 1 + group.id.len() - group_stream.len() + group_stream.len() + 1).unwrap();
+    let reached = u64::try_from(
+        scope.id.len() - scope_stream.len() + 1 + group.id.len() - group_stream.len()
+            + group_stream.len()
+            + 1,
+    )
+    .unwrap();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = reached;
     crate::test_support::with_decode_policy(&policy, |ctx| {
-        assert!(std::ptr::eq(query(ctx, std::slice::from_ref(&group), &scope).unwrap().unwrap(), &group));
+        assert!(std::ptr::eq(
+            query(ctx, std::slice::from_ref(&group), &scope)
+                .unwrap()
+                .unwrap(),
+            &group
+        ));
         assert_eq!(ctx.resource_refusal(), None);
     });
     policy.limits.max_work_units -= 1;
     crate::test_support::with_decode_policy(&policy, |ctx| {
-        let Err(CodecError::ResourceLimit(original)) = query(ctx, std::slice::from_ref(&group), &scope) else {
+        let Err(CodecError::ResourceLimit(original)) =
+            query(ctx, std::slice::from_ref(&group), &scope)
+        else {
             panic!("unique result requires the real second search end probe")
         };
         assert_eq!(original.operation, "find F3D single operand group");
@@ -172,16 +192,22 @@ fn single_operand_query_each_reached_phase_keeps_original_refusal() {
         policy.limits.max_work_units = u64::MAX;
         crate::test_support::with_decode_policy(&policy, |ctx| {
             let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-                ResourceDimension::WorkUnits, operation, Some(1),
+                ResourceDimension::WorkUnits,
+                operation,
+                Some(1),
             );
-            let Err(CodecError::ResourceLimit(original)) = query(ctx, std::slice::from_ref(&group), &scope) else {
+            let Err(CodecError::ResourceLimit(original)) =
+                query(ctx, std::slice::from_ref(&group), &scope)
+            else {
                 panic!("actual reached query phase must refuse")
             };
             assert_eq!(original.operation, operation);
             assert_eq!(original.dimension, ResourceDimension::WorkUnits);
             assert_eq!(original.additional, 1);
             assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-            assert!(matches!(query(ctx, &[], &scope), Err(CodecError::ResourceLimit(later)) if later == original));
+            assert!(
+                matches!(query(ctx, &[], &scope), Err(CodecError::ResourceLimit(later)) if later == original)
+            );
         });
     }
 }
@@ -192,10 +218,14 @@ fn single_operand_query_empty_source_keeps_preexisting_refusal() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     crate::test_support::with_decode_policy(&policy, |ctx| {
-        let Err(CodecError::ResourceLimit(original)) = ctx.charge_work(1, "original before single operand group") else {
+        let Err(CodecError::ResourceLimit(original)) =
+            ctx.charge_work(1, "original before single operand group")
+        else {
             panic!("initial refusal")
         };
-        assert!(matches!(query(ctx, &[], &scope), Err(CodecError::ResourceLimit(later)) if later == original));
+        assert!(
+            matches!(query(ctx, &[], &scope), Err(CodecError::ResourceLimit(later)) if later == original)
+        );
         assert_eq!(ctx.resource_refusal(), Some(original));
     });
 }
@@ -206,26 +236,44 @@ fn single_operand_query_remove_body_caller_keeps_native_output_and_original_refu
     let group = group(100);
     let original = group.clone();
     crate::test_support::with_decode_context(|ctx| {
-        let definition = super::super::super::project_remove_body(ctx, &scope, std::slice::from_ref(&group)).unwrap().unwrap();
-        let cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::DeleteBody { bodies, mode }) = definition else {
+        let definition =
+            super::super::super::project_remove_body(ctx, &scope, std::slice::from_ref(&group))
+                .unwrap()
+                .unwrap();
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::DeleteBody { bodies, mode },
+        ) = definition
+        else {
             panic!("exact RemoveBody definition")
         };
-        assert_eq!(bodies, cadmpeg_ir::features::BodySelection::Native(group.id.clone()));
-        assert_eq!(mode, cadmpeg_ir::features::BodyRetentionMode::DeleteSelected);
+        assert_eq!(
+            bodies,
+            cadmpeg_ir::features::BodySelection::Native(group.id.clone())
+        );
+        assert_eq!(
+            mode,
+            cadmpeg_ir::features::BodyRetentionMode::DeleteSelected
+        );
         assert_eq!(ctx.resource_refusal(), None);
     });
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = u64::MAX;
     crate::test_support::with_decode_policy(&policy, |ctx| {
         let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-            ResourceDimension::WorkUnits, "find F3D single operand group", Some(1),
+            ResourceDimension::WorkUnits,
+            "find F3D single operand group",
+            Some(1),
         );
-        let Err(CodecError::ResourceLimit(original)) = super::super::super::project_remove_body(ctx, &scope, std::slice::from_ref(&group)) else {
+        let Err(CodecError::ResourceLimit(original)) =
+            super::super::super::project_remove_body(ctx, &scope, std::slice::from_ref(&group))
+        else {
             panic!("actual caller source visit must refuse")
         };
         assert_eq!(original.operation, "find F3D single operand group");
         assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-        assert!(matches!(super::super::super::project_remove_body(ctx, &scope, &[]), Err(CodecError::ResourceLimit(later)) if later == original));
+        assert!(
+            matches!(super::super::super::project_remove_body(ctx, &scope, &[]), Err(CodecError::ResourceLimit(later)) if later == original)
+        );
     });
     assert_eq!(group, original);
 }

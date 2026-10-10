@@ -179,12 +179,13 @@ fn sketch_visibility_output_refuses_collection_limit() {
 
 #[test]
 fn sketch_visibility_retains_only_numeric_output_rows() {
+    use crate::records::sketch_placement::DesignSketchVisibility;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
-    use crate::records::sketch_placement::DesignSketchVisibility;
 
     let (bytes, metadata) = visibility_stream();
-    let surviving = u64::try_from(4 * std::mem::size_of::<(u64, DesignSketchVisibility)>()).unwrap();
+    let surviving =
+        u64::try_from(4 * std::mem::size_of::<(u64, DesignSketchVisibility)>()).unwrap();
     for retained in [surviving, surviving - 1] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
@@ -192,7 +193,8 @@ fn sketch_visibility_retains_only_numeric_output_rows() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = crate::design::decode::sketch::decode_sketch_visibilities_in_stream(
             &ctx, &bytes, &metadata,
-        ).and_then(|(rows, storage)| storage.commit_value(rows));
+        )
+        .and_then(|(rows, storage)| storage.commit_value(rows));
         if retained == surviving {
             let rows = result.unwrap();
             assert_eq!(rows.capacity(), 4);
@@ -230,7 +232,8 @@ fn skipped_sketch_visibility_version_retains_no_frames() {
     let rows = crate::design::decode::sketch::decode_sketch_visibilities_in_stream(
         &ctx, &bytes, &metadata,
     )
-    .and_then(|(rows, storage)| storage.commit_value(rows)).unwrap();
+    .and_then(|(rows, storage)| storage.commit_value(rows))
+    .unwrap();
     assert!(rows.is_empty());
     assert_eq!(rows.capacity(), 0);
     assert!(ctx.resource_refusal().is_none());
@@ -243,7 +246,9 @@ fn sketch_visibility_registration_diagnostic_is_outside_frame_scope() {
 
     let (bytes, mut metadata) = visibility_stream();
     metadata.types[0].module = "wrong".into();
-    let error = decode_sketch_visibilities_in_stream(&bytes, &metadata).err().unwrap();
+    let error = decode_sketch_visibilities_in_stream(&bytes, &metadata)
+        .err()
+        .unwrap();
     assert!(matches!(error, CodecError::Malformed(message)
         if message == "F3D sketch container 201 has incompatible registration metadata"));
 
@@ -254,7 +259,9 @@ fn sketch_visibility_registration_diagnostic_is_outside_frame_scope() {
     let error = crate::design::decode::sketch::decode_sketch_visibilities_in_stream(
         &ctx, &bytes, &metadata,
     )
-    .and_then(|(rows, storage)| storage.commit_value(rows)).err().unwrap();
+    .and_then(|(rows, storage)| storage.commit_value(rows))
+    .err()
+    .unwrap();
     let CodecError::ResourceLimit(limit) = error else {
         panic!("expected original registration diagnostic refusal");
     };
@@ -280,7 +287,8 @@ fn successful_visibility_row_lease_keeps_text_retention_independent() {
         let (rows, held_storage) =
             crate::design::decode::sketch::decode_sketch_visibilities_in_stream(
                 &ctx, &bytes, &metadata,
-            ).unwrap();
+            )
+            .unwrap();
         row_storage = held_storage;
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].0, ENTITY_SUFFIX);
@@ -293,7 +301,8 @@ fn successful_visibility_row_lease_keeps_text_retention_independent() {
             assert_eq!(text, "a");
             let CodecError::ResourceLimit(limit) = ctx
                 .copy_retained_text("b", "retain text after F3D visibility rows")
-                .err().unwrap()
+                .err()
+                .unwrap()
             else {
                 panic!("expected original independent text refusal");
             };
@@ -333,16 +342,21 @@ fn sketch_visibility_escaping_registration_diagnostic_remains_retained() {
     let CodecError::Malformed(message) =
         crate::design::decode::sketch::decode_sketch_visibilities_in_stream(
             &ctx, &bytes, &metadata,
-        ).err().unwrap()
+        )
+        .err()
+        .unwrap()
     else {
         panic!("expected original registration diagnostic");
     };
     assert_eq!(message, MESSAGE);
     assert_eq!(message.capacity(), MESSAGE.len());
-    let text = ctx.copy_retained_text("a", "retain text beside F3D visibility diagnostic").unwrap();
+    let text = ctx
+        .copy_retained_text("a", "retain text beside F3D visibility diagnostic")
+        .unwrap();
     let CodecError::ResourceLimit(limit) = ctx
         .copy_retained_text("b", "retain text after F3D visibility diagnostic")
-        .err().unwrap()
+        .err()
+        .unwrap()
     else {
         panic!("expected original refusal beside escaping diagnostic");
     };
@@ -352,6 +366,9 @@ fn sketch_visibility_escaping_registration_diagnostic_remains_retained() {
     assert_eq!(limit.used, retained);
     assert_eq!(limit.additional, 1);
     assert_eq!(limit.limit, retained);
-    assert_eq!(limit.operation, "retain text after F3D visibility diagnostic");
+    assert_eq!(
+        limit.operation,
+        "retain text after F3D visibility diagnostic"
+    );
     assert_eq!(ctx.resource_refusal(), Some(limit));
 }

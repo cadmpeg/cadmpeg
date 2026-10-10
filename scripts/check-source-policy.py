@@ -244,7 +244,7 @@ DISCARD_EXEMPT_FILES = {
 
 
 def standalone_markers(source: str, pattern: re.Pattern[str]) -> dict[int, str]:
-    """Read standalone line comments, excluding lookalikes inside Rust literals."""
+    """Read production line comments, excluding literals and test-only items."""
     markers = {}
     for start, end in rust_non_code_spans(source):
         marker = pattern.fullmatch(source[start:end])
@@ -253,17 +253,16 @@ def standalone_markers(source: str, pattern: re.Pattern[str]) -> dict[int, str]:
         line_start = source.rfind("\n", 0, start) + 1
         if not source[line_start:start].strip():
             markers[source.count("\n", 0, start)] = marker[1]
-    return markers
-
-
-def endian_markers(source: str) -> dict[int, str]:
-    """Read the standalone endian-exception comments of a source file."""
-    return standalone_markers(source, ENDIAN_MARKER)
-
-
-def discard_markers(source: str) -> dict[int, str]:
-    """Read the standalone discarded-value comments of a source file."""
-    return standalone_markers(source, DISCARD_MARKER)
+    if not markers:
+        return markers
+    # Make comment positions visible while test-only items are masked. Each
+    # probe line was a standalone comment, so no code delimiter is replaced.
+    probe = source.splitlines(keepends=True)
+    for index in markers:
+        probe[index] = re.sub(r"[^\r\n]", "x", probe[index])
+    active, _ = production_source("".join(probe))
+    active_lines = active.splitlines()
+    return {index: reason for index, reason in markers.items() if active_lines[index].strip()}
 
 
 def _vec_repeat_count(text: str, macro: re.Match[str]) -> str | None:
@@ -364,13 +363,14 @@ def collect_attribute(lines: list[str], start: int) -> tuple[str, int]:
 
 
 def attr_is_test_cfg(attr: str) -> bool:
+    code = mask_rust_non_code(attr).strip()
     # The built-in test attribute removes its function from ordinary builds.
-    if re.fullmatch(r"#\s*\[\s*test\s*\]", mask_rust_non_code(attr).strip()):
+    if re.fullmatch(r"#\s*\[\s*test\s*\]", code):
         return True
-    match = CFG_ATTR.match(attr.strip())
+    match = CFG_ATTR.match(code)
     if match is None:
         return False
-    body = mask_rust_non_code(match.group(1)).strip()
+    body = match.group(1).strip()
     # ponytail: recognize test and flat all(..., test, ...) gates only.
     # Retain other expressions as production; extend if new test-only forms occur.
     if body == "test":
@@ -862,14 +862,6 @@ def scan_wrapping_arithmetic(path: Path, source: str, code: str) -> list[Finding
     """Admit one format-defined modular operation per local reason."""
     findings = []
     markers = standalone_markers(source, WRAPPING_MARKER)
-    # Mark comment positions with identifiers before masking test items. This
-    # keeps test-only markers out of stale-marker checks without parsing Rust twice per marker.
-    probe = source.splitlines(keepends=True)
-    for index in markers:
-        probe[index] = re.sub(r"[^\r\n]", "x", probe[index])
-    active, _ = production_source("".join(probe))
-    active_lines = active.splitlines()
-    markers = {index: reason for index, reason in markers.items() if active_lines[index].strip()}
     calls_by_line: dict[int, int] = {}
     for match in WRAPPING_CALL.finditer(code):
         index = code.count("\n", 0, match.start())
@@ -906,7 +898,7 @@ def scan_patterns(path: Path, source: str) -> list[Finding]:
         report("production_size", 1,
                f"Production file has {size} lines excluding cfg(test) items; limit is {PRODUCTION_LINE_LIMIT}.")
 
-    markers = endian_markers(source)
+    markers = standalone_markers(source, ENDIAN_MARKER)
     lines = code.splitlines()
     for index, reason in markers.items():
         following = lines[index + 1] if index + 1 < len(lines) else ""
@@ -920,7 +912,7 @@ def scan_patterns(path: Path, source: str) -> list[Finding]:
             report("unapproved_endian_read", index + 1, "Use a bounded View read; reconstructed scalars and packed color ordering require a local endian exception.")
 
     if relative_path(path) not in DISCARD_EXEMPT_FILES:
-        discards = discard_markers(source)
+        discards = standalone_markers(source, DISCARD_MARKER)
         for index in discards:
             following = lines[index + 1] if index + 1 < len(lines) else ""
             if len(DISCARD.findall(following)) != 1:
@@ -992,21 +984,23 @@ def scan_placement(sources: dict[Path, str]) -> list[Finding]:
         parent_test: bool, counted_inline: bool, line_offset: int,
     ) -> None:
         lines = text.splitlines(keepends=True)
+        masked = mask_rust_non_code(text).splitlines(keepends=True)
         i = 0
         pending_attrs = []
         pending_start = 0
         while i < len(lines):
-            stripped = lines[i].lstrip()
+            stripped = masked[i].lstrip()
             if stripped.startswith("#["):
                 if not pending_attrs:
                     pending_start = i
-                attr, i = collect_attribute(lines, i)
-                pending_attrs.append(attr)
+                start = i
+                _, i = collect_attribute(masked, i)
+                pending_attrs.append("".join(lines[start:i]))
                 continue
             if is_trivia_line(stripped):
                 i += 1
                 continue
-            match = MOD_DECL.match(lines[i])
+            match = MOD_DECL.match(masked[i])
             if match is None:
                 pending_attrs = []
                 i += 1
@@ -1028,9 +1022,10 @@ def scan_placement(sources: dict[Path, str]) -> list[Finding]:
                     scan_test(target)
                 i += 1
                 continue
-            end = find_matching_brace_end(lines, i)
+            end = find_matching_brace_end(masked, i)
             block = "".join(lines[i:end + 1])
-            opening, closing = block.find("{"), block.rfind("}")
+            block_code = "".join(masked[i:end + 1])
+            opening, closing = block_code.find("{"), block_code.rfind("}")
             body = block[opening + 1:closing] if opening >= 0 and closing > opening else ""
             nested_counted = counted_inline
             if module_test and not file_test and not counted_inline:
@@ -1114,27 +1109,30 @@ def module_scopes(crate_root: Path) -> list[tuple[Path, tuple[str, ...], tuple[s
             return
         seen.add(path)
         modules.append((path, module, scope))
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
-        body(path, lines, 0, len(lines), child_module_dir(path), module, scope)
+        source = path.read_text(encoding="utf-8", errors="replace")
+        lines = source.splitlines(keepends=True)
+        masked = mask_rust_non_code(source).splitlines(keepends=True)
+        body(path, lines, masked, 0, len(lines), child_module_dir(path), module, scope)
 
     def body(
-        path: Path, lines: list[str], index: int, end: int,
+        path: Path, lines: list[str], masked: list[str], index: int, end: int,
         child_dir: Path, module: tuple[str, ...], scope: tuple[str, ...],
     ) -> None:
         attrs: list[str] = []
         while index < end:
-            stripped = lines[index].lstrip()
+            stripped = masked[index].lstrip()
             if stripped.startswith("#["):
-                attr, index = collect_attribute(lines, index)
-                attrs.append(attr)
+                start = index
+                _, index = collect_attribute(masked, index)
+                attrs.append("".join(lines[start:index]))
                 continue
             if is_trivia_line(stripped):
                 index += 1
                 continue
-            match = MOD_DECL_VIS.match(lines[index])
+            match = MOD_DECL_VIS.match(masked[index])
             pending, attrs = attrs, []
             if match is None:
-                index = skip_item(lines, index)
+                index = skip_item(masked, index)
                 continue
             test_gated = any(attr_is_test_cfg(attr) for attr in pending)
             child = module + (match.group("name"),)
@@ -1144,9 +1142,9 @@ def module_scopes(crate_root: Path) -> list[tuple[Path, tuple[str, ...], tuple[s
                 spelled = spelled_scope(module, match.group("scope") or "")
                 child_scope = scope if spelled is None else narrower_scope(scope, spelled)
             if match.group("marker") == "{":
-                stop = find_matching_brace_end(lines, index) + 1
+                stop = find_matching_brace_end(masked, index) + 1
                 if not test_gated:
-                    body(path, lines, index + 1, stop,
+                    body(path, lines, masked, index + 1, stop,
                          child_dir / match.group("name"), child, child_scope)
                 index = stop
                 continue
@@ -1703,9 +1701,11 @@ def is_main_guard(node: ast.AST) -> bool:
     left = node.test.left
     if not isinstance(left, ast.Name) or left.id != "__name__":
         return False
-    return any(
-        isinstance(value, ast.Constant) and value.value == "__main__"
-        for value in node.test.comparators
+    return (
+        len(node.test.ops) == len(node.test.comparators) == 1
+        and isinstance(node.test.ops[0], ast.Eq)
+        and isinstance(node.test.comparators[0], ast.Constant)
+        and node.test.comparators[0].value == "__main__"
     )
 
 
@@ -1742,10 +1742,11 @@ def script_test_definitions(tree: ast.Module):
 
 
 def scan_script_tests() -> list[Finding]:
-    """Every test a script declares where unittest discovery cannot reach it.
+    """Require test declarations before the file's main guard.
 
-    Discovery imports the module and never runs its ``__main__`` block, so a
-    test declared after that block, or inside it, is collected by nothing.
+    A direct run calls unittest.main() in the guard before later definitions
+    exist, and discovery never runs the guard, so a later declaration is missed
+    by direct runs and one inside the guard is missed by discovery.
     """
     findings: list[Finding] = []
     for path in sorted(ROOT.glob("scripts/test_*.py")):
@@ -1769,9 +1770,9 @@ def scan_script_tests() -> list[Finding]:
                 findings.append(Finding(
                     "script_test_collection", relative, line,
                     f"{path.name} declares test {declaration} at or after its "
-                    f'if __name__ == "__main__" block on line {guard}; unittest '
-                    "discovery imports the module without running that block, "
-                    "so the test is collected by nothing.",
+                    f'if __name__ == "__main__" block on line {guard}; a direct '
+                    "run or unittest discovery misses it, so declare tests "
+                    "before that block.",
                 ))
     return findings
 

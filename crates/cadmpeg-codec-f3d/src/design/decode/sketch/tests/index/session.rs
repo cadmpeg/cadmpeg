@@ -21,7 +21,13 @@ fn scratch_cache_original_session_preserves_offsets_and_releases_storage() {
     assert_eq!(cache.get("first", &[0xff]).unwrap().offsets(7), &[0, 11]);
     assert_eq!(cache.get("second", &bytes).unwrap().offsets(7), &[0, 11]);
     drop(cache);
-    drop(ctx.reserve_scoped(policy.limits.max_materialized_bytes, "original cache released").unwrap());
+    drop(
+        ctx.reserve_scoped(
+            policy.limits.max_materialized_bytes,
+            "original cache released",
+        )
+        .unwrap(),
+    );
     ctx.finish_session().unwrap();
 }
 
@@ -40,7 +46,9 @@ fn scratch_cache_original_session_fuse_gates_vacant_and_occupied_queries() {
         if occupied {
             assert_eq!(cache.get("stream", &bytes).unwrap().offsets(7), &[0]);
         }
-        let Err(CodecError::ResourceLimit(original)) = original_ctx.charge_retained(1, "original cache refusal") else {
+        let Err(CodecError::ResourceLimit(original)) =
+            original_ctx.charge_retained(1, "original cache refusal")
+        else {
             panic!("original zero retained ceiling must refuse");
         };
         let Err(CodecError::ResourceLimit(later)) = cache.get("stream", &bytes) else {
@@ -77,7 +85,13 @@ fn scratch_scope_original_session_preserves_first_seen_numbers_and_lifetime() {
     }
     assert_eq!(scopes.numbers.len(), 2);
     drop(scopes);
-    drop(ctx.reserve_scoped(policy.limits.max_materialized_bytes, "original scopes released").unwrap());
+    drop(
+        ctx.reserve_scoped(
+            policy.limits.max_materialized_bytes,
+            "original scopes released",
+        )
+        .unwrap(),
+    );
     ctx.finish_session().unwrap();
 }
 
@@ -92,11 +106,15 @@ fn scratch_scope_original_session_fuse_gates_cached_new_and_empty_ids() {
     let (other_ctx, _) = DecodeContext::from_root_bytes(&[], &other_arena, &policy).unwrap();
     let mut scopes = ScopeNumbers {
         numbers: HashMap::new(),
-        storage: original_ctx.reserve_scoped(0, "original scope test").unwrap(),
+        storage: original_ctx
+            .reserve_scoped(0, "original scope test")
+            .unwrap(),
         ctx: &original_ctx,
     };
     assert_eq!(scopes.of("first:point#7").unwrap(), Some(0));
-    let Err(CodecError::ResourceLimit(original)) = original_ctx.charge_retained(1, "original scope refusal") else {
+    let Err(CodecError::ResourceLimit(original)) =
+        original_ctx.charge_retained(1, "original scope refusal")
+    else {
         panic!("original zero retained ceiling must refuse");
     };
     for id in ["first:curve#8", "second:point#9", "plain", ""] {

@@ -11,8 +11,8 @@
 
 use crate::design::decode::scopes::extrude::is_class_296_two_sided_to_faces_layout;
 use crate::design::decode::scopes::extrude::is_class_296_two_sided_to_faces_scope;
+use crate::ids::{design_segment_from_stream, design_stream};
 use crate::{design, history, ids, native, records};
-use crate::ids::{design_stream, design_segment_from_stream};
 mod dimensions;
 mod scopes;
 
@@ -1416,7 +1416,9 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
         ctx.decode.try_collect_vec(
             native.design_types.iter().map(|value| {
                 let stream = ids::native_stream_charged(
-                    ctx.decode, value.id(), "resolve F3D validation design stream",
+                    ctx.decode,
+                    value.id(),
+                    "resolve F3D validation design stream",
                 )?;
                 Ok::<_, CodecError>((stream, value))
             }),
@@ -3768,7 +3770,8 @@ fn validate_path_feature_operand_roles(
         .filter(|scope| scope.has_path_construction())
     {
         let native_stream = design_stream(ctx.decode, &scope.id)?;
-        let groups = ctx.decode
+        let groups = ctx
+            .decode
             .get_hash_map(
                 &ctx.operand_groups_by_scope,
                 &(native_stream, scope.record_index),
@@ -5942,9 +5945,10 @@ fn validate_extrude_selection_members(
                 .map(|reference| reference.value)
                 == Some(member.record_index())
         });
-        let header_valid = group_slot_valid && header.is_some_and(|header| {
-            header.byte_offset == member.byte_offset() && header.class_tag == member.class_tag
-        });
+        let header_valid = group_slot_valid
+            && header.is_some_and(|header| {
+                header.byte_offset == member.byte_offset() && header.class_tag == member.class_tag
+            });
         if group_slot_valid && header_valid && selected_sketch.is_some() && targets.is_none() {
             let mut target_storage = ctx
                 .decode
@@ -6129,9 +6133,10 @@ fn validate_extrude_selection_members(
         let valid = group_slot_valid
             && header_valid
             && (match selected_profile {
-            Some(profile) => profile.asset_id == member.asset_id,
-            None => true,
-        }) && member.resolved_geometry == expected_target
+                Some(profile) => profile.asset_id == member.asset_id,
+                None => true,
+            })
+            && member.resolved_geometry == expected_target
             && member.operand_identity_ids.len() == expected_identities.len()
             && ctx.decode.all_by(
                 member.operand_identity_ids.iter().zip(&expected_identities),

@@ -8,7 +8,8 @@ use cadmpeg_core::CodecError;
 #[test]
 fn hem_binding_entry_keeps_original_refusal_before_family_or_missing_parameter_gate() {
     for kind in [DesignFeatureKind::Chamfer, DesignFeatureKind::Hem] {
-        let mut scope = DesignParameterScope::empty("f3d:stream:design-parameter-scope#100", kind, 42);
+        let mut scope =
+            DesignParameterScope::empty("f3d:stream:design-parameter-scope#100", kind, 42);
         let native = scope.clone();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -17,12 +18,16 @@ fn hem_binding_entry_keeps_original_refusal_before_family_or_missing_parameter_g
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let Err(CodecError::ResourceLimit(original)) = ctx.charge_work(1, "original Hem binding refusal") else {
+        let Err(CodecError::ResourceLimit(original)) =
+            ctx.charge_work(1, "original Hem binding refusal")
+        else {
             panic!("actual zero-work context refusal");
         };
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
         assert_eq!(original.additional, 1);
-        assert!(matches!(bind_hem_operation_from_parameters(&ctx, &[], &mut scope, &[], &[]), Err(CodecError::ResourceLimit(later)) if later == original));
+        assert!(
+            matches!(bind_hem_operation_from_parameters(&ctx, &[], &mut scope, &[], &[]), Err(CodecError::ResourceLimit(later)) if later == original)
+        );
         assert_eq!(scope, native);
         assert_eq!(ctx.resource_refusal(), Some(original));
     }
@@ -30,7 +35,11 @@ fn hem_binding_entry_keeps_original_refusal_before_family_or_missing_parameter_g
 
 #[test]
 fn hem_binding_ineligible_family_needs_no_positive_resource_or_scope_mutation() {
-    let mut scope = DesignParameterScope::empty("f3d:stream:design-parameter-scope#100", DesignFeatureKind::Chamfer, 42);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:stream:design-parameter-scope#100",
+        DesignFeatureKind::Chamfer,
+        42,
+    );
     let native = scope.clone();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

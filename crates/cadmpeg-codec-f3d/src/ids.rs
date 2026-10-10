@@ -52,8 +52,10 @@ pub(crate) fn design_stream<'id>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     id: &'id str,
 ) -> Result<&'id str, cadmpeg_core::CodecError> {
-    Ok(native_stream_charged(ctx, id, "resolve F3D validation design stream")?
-        .unwrap_or(DEFAULT_STREAM))
+    Ok(
+        native_stream_charged(ctx, id, "resolve F3D validation design stream")?
+            .unwrap_or(DEFAULT_STREAM),
+    )
 }
 
 /// Return whether two native IDs belong to the same root document or xref occurrence.
@@ -661,7 +663,8 @@ pub(crate) fn neutral_parameter_id_charged(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     parameter: &DesignParameter,
 ) -> Result<cadmpeg_ir::features::ParameterId, cadmpeg_core::CodecError> {
-    let stream = native_stream_charged(ctx, &parameter.id, "resolve F3D neutral parameter stream")?.unwrap_or(DEFAULT_STREAM);
+    let stream = native_stream_charged(ctx, &parameter.id, "resolve F3D neutral parameter stream")?
+        .unwrap_or(DEFAULT_STREAM);
     let encoded_len = escaped_scope_len(ctx, stream, "retain F3D neutral parameter ID")?;
     let id = native_scoped_id(
         ctx,
@@ -743,7 +746,8 @@ pub(crate) fn neutral_sketch_id_charged(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     placement: &DesignSketchPlacement,
 ) -> Result<cadmpeg_ir::sketches::SketchId, cadmpeg_core::CodecError> {
-    let stream = native_stream_charged(ctx, &placement.id, "resolve F3D neutral sketch stream")?.unwrap_or(DEFAULT_STREAM);
+    let stream = native_stream_charged(ctx, &placement.id, "resolve F3D neutral sketch stream")?
+        .unwrap_or(DEFAULT_STREAM);
     let id = neutral_sketch_key_charged(ctx, stream, placement.entity_id.suffix(), "sketch")?;
     cadmpeg_ir::sketches::SketchId::mint(id).map_err(cadmpeg_core::CodecError::malformed)
 }
@@ -753,7 +757,12 @@ pub(crate) fn neutral_spatial_sketch_id_charged(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     placement: &DesignSketchPlacement,
 ) -> Result<cadmpeg_ir::sketches::SpatialSketchId, cadmpeg_core::CodecError> {
-    let stream = native_stream_charged(ctx, &placement.id, "resolve F3D neutral spatial sketch stream")?.unwrap_or(DEFAULT_STREAM);
+    let stream = native_stream_charged(
+        ctx,
+        &placement.id,
+        "resolve F3D neutral spatial sketch stream",
+    )?
+    .unwrap_or(DEFAULT_STREAM);
     let id =
         neutral_sketch_key_charged(ctx, stream, placement.entity_id.suffix(), "spatial-sketch")?;
     cadmpeg_ir::sketches::SpatialSketchId::mint(id).map_err(cadmpeg_core::CodecError::malformed)
@@ -949,7 +958,12 @@ pub(crate) fn neutral_sketch_constraint_id_charged(
     native_ref: &str,
     record_index: u32,
 ) -> Result<cadmpeg_ir::sketches::SketchConstraintId, cadmpeg_core::CodecError> {
-    let stream = native_stream_charged(ctx, native_ref, "resolve F3D neutral sketch constraint stream")?.unwrap_or(DEFAULT_STREAM);
+    let stream = native_stream_charged(
+        ctx,
+        native_ref,
+        "resolve F3D neutral sketch constraint stream",
+    )?
+    .unwrap_or(DEFAULT_STREAM);
     let id = neutral_sketch_key_charged(ctx, stream, u64::from(record_index), "sketch-constraint")?;
     cadmpeg_ir::sketches::SketchConstraintId::mint(id).map_err(cadmpeg_core::CodecError::malformed)
 }
@@ -1947,10 +1961,15 @@ mod stream_admission_tests {
             policy.limits.max_work_units = 11;
             crate::test_support::with_decode_policy(&policy, |ctx| {
                 let error = super::design_stream(ctx, &id).unwrap_err();
-                assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref limit)
-                    if limit.used == 11 && limit.additional == 1));
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref limit)
+                    if limit.used == 11 && limit.additional == 1)
+                );
                 match (error, super::design_stream(ctx, "a:b").unwrap_err()) {
-                    (cadmpeg_core::CodecError::ResourceLimit(original), cadmpeg_core::CodecError::ResourceLimit(later)) => assert_eq!(later, original),
+                    (
+                        cadmpeg_core::CodecError::ResourceLimit(original),
+                        cadmpeg_core::CodecError::ResourceLimit(later),
+                    ) => assert_eq!(later, original),
                     _ => panic!("stream search must preserve the original resource refusal"),
                 }
             });
@@ -1966,15 +1985,26 @@ mod stream_admission_tests {
             // Fifteen bytes: the entry's fourteen bytes and the slash.
             policy.limits.max_work_units = 15;
             crate::test_support::with_decode_policy(&policy, |ctx| {
-                assert_eq!(super::design_segment_from_stream(ctx, &stream).unwrap(), Some(segment.as_str()));
+                assert_eq!(
+                    super::design_segment_from_stream(ctx, &stream).unwrap(),
+                    Some(segment.as_str())
+                );
             });
             policy.limits.max_work_units = 14;
             crate::test_support::with_decode_policy(&policy, |ctx| {
                 let error = super::design_segment_from_stream(ctx, &stream).unwrap_err();
-                assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref limit)
-                    if limit.used == 14 && limit.additional == 1));
-                match (error, super::design_segment_from_stream(ctx, "a/b").unwrap_err()) {
-                    (cadmpeg_core::CodecError::ResourceLimit(original), cadmpeg_core::CodecError::ResourceLimit(later)) => assert_eq!(later, original),
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref limit)
+                    if limit.used == 14 && limit.additional == 1)
+                );
+                match (
+                    error,
+                    super::design_segment_from_stream(ctx, "a/b").unwrap_err(),
+                ) {
+                    (
+                        cadmpeg_core::CodecError::ResourceLimit(original),
+                        cadmpeg_core::CodecError::ResourceLimit(later),
+                    ) => assert_eq!(later, original),
                     _ => panic!("stream search must preserve the original resource refusal"),
                 }
             });

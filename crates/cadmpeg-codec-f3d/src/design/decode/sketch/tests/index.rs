@@ -86,10 +86,7 @@ fn scoped_record_offsets_retain_nothing() {
     _storage = held_storage;
     assert_eq!(records.offsets(7), &[0, 11]);
     let mut cache = crate::design::decode::sketch::RecordOffsetCache::new(&ctx).unwrap();
-    assert_eq!(
-        cache.get("stream", &bytes).unwrap().offsets(7),
-        &[0, 11]
-    );
+    assert_eq!(cache.get("stream", &bytes).unwrap().offsets(7), &[0, 11]);
 
     policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
@@ -426,5 +423,5 @@ fn native_scope_encoder_preserves_each_iteration_work_refusal() {
     assert_eq!(text, "f3d:A%3AB");
 }
 
-mod session;
 mod scope_storage;
+mod session;

@@ -253,11 +253,17 @@ fn companion_boundaries_commit_only_surviving_offsets() {
         policy.limits.max_retained_bytes = retained_limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let storage;
-        let (boundaries, held_storage) = ctx.with_scoped_storage("test companion boundaries", || {
-            super::super::CompanionBoundaries::build(
-                &ctx, [].iter().map(Ok), [].iter().map(Ok), scopes.iter().map(Ok), [].iter().map(Ok),
-            )
-        }).unwrap();
+        let (boundaries, held_storage) = ctx
+            .with_scoped_storage("test companion boundaries", || {
+                super::super::CompanionBoundaries::build(
+                    &ctx,
+                    [].iter().map(Ok),
+                    [].iter().map(Ok),
+                    scopes.iter().map(Ok),
+                    [].iter().map(Ok),
+                )
+            })
+            .unwrap();
         storage = held_storage;
         assert_eq!(boundaries.offsets, [80]);
         assert!(boundaries.owner_scopes.is_empty());
@@ -306,26 +312,26 @@ fn annotation_intervals_commit_only_surviving_intervals() {
     )];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = u64::try_from(
-        4 * std::mem::size_of::<super::super::AnnotationInterval>()
-    ).unwrap();
+    policy.limits.max_retained_bytes =
+        u64::try_from(4 * std::mem::size_of::<super::super::AnnotationInterval>()).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let _companion_storage;
-    let (grouped, held_storage) = ctx.with_scoped_storage("test grouped companions", || {
-        super::super::Grouped::build(
-            &ctx, &companions,
-            |companion| super::super::record_stream(&ctx, companion.id()),
-            "test grouped companions",
-        )
-    }).unwrap();
+    let (grouped, held_storage) = ctx
+        .with_scoped_storage("test grouped companions", || {
+            super::super::Grouped::build(
+                &ctx,
+                &companions,
+                |companion| super::super::record_stream(&ctx, companion.id()),
+                "test grouped companions",
+            )
+        })
+        .unwrap();
     _companion_storage = held_storage;
-    let mut boundaries = super::super::CompanionIntervals::new(
-        &ctx, &parameters, &owners, &scopes, &[],
-    ).unwrap();
+    let mut boundaries =
+        super::super::CompanionIntervals::new(&ctx, &parameters, &owners, &scopes, &[]).unwrap();
     let storage;
-    let (intervals, held_storage) = super::super::annotation_intervals(
-        &ctx, &stream, 400, &grouped, &mut boundaries,
-    ).unwrap();
+    let (intervals, held_storage) =
+        super::super::annotation_intervals(&ctx, &stream, 400, &grouped, &mut boundaries).unwrap();
     storage = held_storage;
     assert_eq!(intervals, [(278, 400, Some(11)), (0, 220, None)]);
     assert_eq!(intervals.capacity(), 4);
@@ -336,8 +342,8 @@ fn annotation_intervals_commit_only_surviving_intervals() {
 
 #[test]
 fn presentation_stream_tables_commit_only_surviving_owner_groups() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use crate::records::parameters::DesignParameterOwner;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let parameters = [parameter_at(12, 50)];
     let owners = [owner_at(10, 13, 12, 11, 120)];
@@ -346,31 +352,44 @@ fn presentation_stream_tables_commit_only_surviving_owner_groups() {
     // capture lifetime, not completeness of the shared hash implementation.
     let slot_bytes = std::mem::size_of::<(u32, Vec<&DesignParameterOwner>)>();
     let alignment = std::mem::align_of::<(u32, Vec<&DesignParameterOwner>)>().max(16);
-    let output_bytes = 4 * slot_bytes + alignment - 1 + 4 + 16
-        + std::mem::size_of::<&DesignParameterOwner>();
+    let output_bytes =
+        4 * slot_bytes + alignment - 1 + 4 + 16 + std::mem::size_of::<&DesignParameterOwner>();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = u64::try_from(output_bytes).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let stream = super::super::record_stream(&ctx, owners[0].id()).unwrap().unwrap();
+    let stream = super::super::record_stream(&ctx, owners[0].id())
+        .unwrap()
+        .unwrap();
     let _parameter_storage;
-    let (index, held_storage) = super::super::dimension_parameter_index(
-        &ctx, &parameters, "test dimension parameters",
-    ).unwrap();
+    let (index, held_storage) =
+        super::super::dimension_parameter_index(&ctx, &parameters, "test dimension parameters")
+            .unwrap();
     _parameter_storage = held_storage;
     let owner_storage;
-    let (grouped, held_storage) = ctx.with_scoped_storage("test grouped owners", || {
-        super::super::Grouped::build(
-            &ctx, &owners,
-            |owner| super::super::record_stream(&ctx, owner.id()),
-            "test grouped owners",
-        )
-    }).unwrap();
+    let (grouped, held_storage) = ctx
+        .with_scoped_storage("test grouped owners", || {
+            super::super::Grouped::build(
+                &ctx,
+                &owners,
+                |owner| super::super::record_stream(&ctx, owner.id()),
+                "test grouped owners",
+            )
+        })
+        .unwrap();
     owner_storage = held_storage;
     let pass = super::super::PresentationPassTables {
         owners: grouped,
-        geometry: super::super::StreamIndexRuns { ctx: &ctx, streams: Vec::new(), indices: Vec::new() },
-        sketch_entities: super::super::StreamIndexRuns { ctx: &ctx, streams: Vec::new(), indices: Vec::new() },
+        geometry: super::super::StreamIndexRuns {
+            ctx: &ctx,
+            streams: Vec::new(),
+            indices: Vec::new(),
+        },
+        sketch_entities: super::super::StreamIndexRuns {
+            ctx: &ctx,
+            streams: Vec::new(),
+            indices: Vec::new(),
+        },
         _storage: [
             owner_storage,
             ctx.reserve_scoped(0, "test empty geometry").unwrap(),
@@ -379,9 +398,11 @@ fn presentation_stream_tables_commit_only_surviving_owner_groups() {
     };
     let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&ctx, &[]).unwrap();
     let storage;
-    let (tables, held_storage) = ctx.with_scoped_storage("test presentation table output", || {
-        super::super::PresentationStreamTables::build(stream, &records, &pass, &index)
-    }).unwrap();
+    let (tables, held_storage) = ctx
+        .with_scoped_storage("test presentation table output", || {
+            super::super::PresentationStreamTables::build(stream, &records, &pass, &index)
+        })
+        .unwrap();
     storage = held_storage;
     assert_eq!(tables.owners_by_scope.capacity(), 3);
     let table = storage.commit_value(tables).unwrap();

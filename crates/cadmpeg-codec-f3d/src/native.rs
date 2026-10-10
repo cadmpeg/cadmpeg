@@ -1578,8 +1578,7 @@ impl F3dNative {
         let records: Vec<crate::history_records::AsmHistoryRecord> =
             read_arena!("asm_history_records");
         let board_index_storage;
-        let (board_indices, held_storage) =
-            owner_indices(ctx, &boards, |board| board.id.as_str())?;
+        let (board_indices, held_storage) = owner_indices(ctx, &boards, |board| board.id.as_str())?;
         board_index_storage = held_storage;
         let changes_by_board_storage;
         let (changes_by_board, held_storage) = group_by_owner(
@@ -1609,8 +1608,7 @@ impl F3dNative {
         drop(changes_by_board_storage);
         let boards = attached_boards;
         let state_index_storage;
-        let (state_indices, held_storage) =
-            owner_indices(ctx, &states, |state| state.id.as_str())?;
+        let (state_indices, held_storage) = owner_indices(ctx, &states, |state| state.id.as_str())?;
         state_index_storage = held_storage;
         let boards_by_state_storage;
         let (boards_by_state, held_storage) = group_by_owner(

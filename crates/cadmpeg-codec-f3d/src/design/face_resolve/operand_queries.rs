@@ -19,21 +19,31 @@ pub(super) fn unique_face_operand<'ir>(
         return Ok(None);
     }
     let mut input = operands.iter();
-    let mut matches = |operand: &'ir DesignFaceOperand| -> Result<Option<&'ir DesignFaceOperand>, CodecError> {
-        let actual = native_stream_charged(ctx, &operand.id, "resolve F3D face operand stream")?;
-        let same_stream = match (actual, stream) {
-            (Some(actual), Some(expected)) => ctx.equal_bytes(actual.as_bytes(), expected.as_bytes(), "compare F3D face operand stream")?,
-            (None, None) => true,
-            _ => false,
+    let mut matches =
+        |operand: &'ir DesignFaceOperand| -> Result<Option<&'ir DesignFaceOperand>, CodecError> {
+            let actual =
+                native_stream_charged(ctx, &operand.id, "resolve F3D face operand stream")?;
+            let same_stream = match (actual, stream) {
+                (Some(actual), Some(expected)) => ctx.equal_bytes(
+                    actual.as_bytes(),
+                    expected.as_bytes(),
+                    "compare F3D face operand stream",
+                )?,
+                (None, None) => true,
+                _ => false,
+            };
+            Ok((same_stream
+                && operand.scope_record_index == scope_record_index
+                && operand.record_index() == record_index)
+                .then_some(operand))
         };
-        Ok((same_stream && operand.scope_record_index == scope_record_index
-            && operand.record_index() == record_index).then_some(operand))
-    };
     let Some(first) = ctx.find_map(input.by_ref(), &mut matches, "visit F3D face operand")? else {
         return Ok(None);
     };
     if !input.as_slice().is_empty()
-        && ctx.find_map(input, matches, "visit F3D face operand")?.is_some()
+        && ctx
+            .find_map(input, matches, "visit F3D face operand")?
+            .is_some()
     {
         return Ok(None);
     }

@@ -22,7 +22,9 @@ fn merge_stack_frame_releases_child_on_return_and_error() {
         let policy = policy();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let (mut stack_storage, mut stack) = {
-            let (stack, storage) = ctx.scoped_vector_storage::<String>(2, "test stack").unwrap();
+            let (stack, storage) = ctx
+                .scoped_vector_storage::<String>(2, "test stack")
+                .unwrap();
             (storage, stack)
         };
         stack.push("root.f3d".into());
@@ -34,7 +36,10 @@ fn merge_stack_frame_releases_child_on_return_and_error() {
                 (storage, path)
             };
             ctx.push_scoped_vec(&mut stack_storage, &mut stack, path, "test stack push")?;
-            let frame = MergeStackFrame { stack: &mut stack, _path_storage: path_storage };
+            let frame = MergeStackFrame {
+                stack: &mut stack,
+                _path_storage: path_storage,
+            };
             assert_eq!(frame.stack.as_slice(), ["root.f3d", CHILD]);
             if fails {
                 return Err(CodecError::malformed("child failed"));
@@ -43,7 +48,9 @@ fn merge_stack_frame_releases_child_on_return_and_error() {
         })();
         assert_eq!(result.is_err(), fails);
         assert_eq!(stack, ["root.f3d"]);
-        let released = ctx.reserve_scoped(u64::try_from(CHILD.len()).unwrap(), "child released").unwrap();
+        let released = ctx
+            .reserve_scoped(u64::try_from(CHILD.len()).unwrap(), "child released")
+            .unwrap();
         drop(released);
         drop(stack);
         drop(stack_storage);
@@ -57,25 +64,35 @@ fn merge_stack_frame_releases_child_on_panic() {
     let policy = policy();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let (mut stack_storage, mut stack) = {
-        let (stack, storage) = ctx.scoped_vector_storage::<String>(2, "test stack").unwrap();
+        let (stack, storage) = ctx
+            .scoped_vector_storage::<String>(2, "test stack")
+            .unwrap();
         (storage, stack)
     };
     stack.push("root.f3d".into());
     let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let (path_storage, path) = {
-            let (path, storage) = ctx.with_scoped_storage("test child path", || {
-                ctx.copy_retained_text(CHILD, "copy test child path")
-            }).unwrap();
+            let (path, storage) = ctx
+                .with_scoped_storage("test child path", || {
+                    ctx.copy_retained_text(CHILD, "copy test child path")
+                })
+                .unwrap();
             (storage, path)
         };
-        ctx.push_scoped_vec(&mut stack_storage, &mut stack, path, "test stack push").unwrap();
-        let frame = MergeStackFrame { stack: &mut stack, _path_storage: path_storage };
+        ctx.push_scoped_vec(&mut stack_storage, &mut stack, path, "test stack push")
+            .unwrap();
+        let frame = MergeStackFrame {
+            stack: &mut stack,
+            _path_storage: path_storage,
+        };
         assert_eq!(frame.stack.as_slice(), ["root.f3d", CHILD]);
         panic!("child panic");
     }));
     assert!(unwind.is_err());
     assert_eq!(stack, ["root.f3d"]);
-    let released = ctx.reserve_scoped(u64::try_from(CHILD.len()).unwrap(), "child released").unwrap();
+    let released = ctx
+        .reserve_scoped(u64::try_from(CHILD.len()).unwrap(), "child released")
+        .unwrap();
     drop(released);
     drop(stack);
     drop(stack_storage);
@@ -88,7 +105,9 @@ fn merge_stack_frame_preserves_original_refusal() {
     let policy = policy();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let (mut stack_storage, mut stack) = {
-        let (stack, storage) = ctx.scoped_vector_storage::<String>(2, "test stack").unwrap();
+        let (stack, storage) = ctx
+            .scoped_vector_storage::<String>(2, "test stack")
+            .unwrap();
         (storage, stack)
     };
     stack.push("root.f3d".into());
@@ -100,17 +119,25 @@ fn merge_stack_frame_preserves_original_refusal() {
             (storage, path)
         };
         ctx.push_scoped_vec(&mut stack_storage, &mut stack, path, "test stack push")?;
-        let _frame = MergeStackFrame { stack: &mut stack, _path_storage: path_storage };
+        let _frame = MergeStackFrame {
+            stack: &mut stack,
+            _path_storage: path_storage,
+        };
         ctx.charge_work(u64::MAX, "original child refusal")?;
         Ok(())
-    })().unwrap_err();
-    let CodecError::ResourceLimit(first) = error else { panic!("child must refuse") };
+    })()
+    .unwrap_err();
+    let CodecError::ResourceLimit(first) = error else {
+        panic!("child must refuse")
+    };
     assert_eq!(first.operation, "original child refusal");
     assert_eq!(ctx.resource_refusal(), Some(first));
     assert_eq!(stack, ["root.f3d"]);
     drop(stack);
     drop(stack_storage);
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == first));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == first)
+    );
 }
 
 #[test]
@@ -125,7 +152,9 @@ fn merge_stack_child_copy_and_push_refusals_preserve_parent() {
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let (mut stack_storage, mut stack) = {
-            let (stack, storage) = ctx.scoped_vector_storage::<String>(2, "test stack").unwrap();
+            let (stack, storage) = ctx
+                .scoped_vector_storage::<String>(2, "test stack")
+                .unwrap();
             (storage, stack)
         };
         stack.push("root.f3d".into());
@@ -137,15 +166,30 @@ fn merge_stack_child_copy_and_push_refusals_preserve_parent() {
                 (storage, path)
             };
             ctx.push_scoped_vec(&mut stack_storage, &mut stack, path, "test stack push")?;
-            let _frame = MergeStackFrame { stack: &mut stack, _path_storage: path_storage };
+            let _frame = MergeStackFrame {
+                stack: &mut stack,
+                _path_storage: path_storage,
+            };
             Ok(())
-        })().unwrap_err();
-        let CodecError::ResourceLimit(first) = error else { panic!("child must refuse") };
-        assert_eq!(first.operation, if copy_refuses { "copy test child path" } else { "test stack push" });
+        })()
+        .unwrap_err();
+        let CodecError::ResourceLimit(first) = error else {
+            panic!("child must refuse")
+        };
+        assert_eq!(
+            first.operation,
+            if copy_refuses {
+                "copy test child path"
+            } else {
+                "test stack push"
+            }
+        );
         assert_eq!(ctx.resource_refusal(), Some(first));
         assert_eq!(stack, ["root.f3d"]);
         drop(stack);
         drop(stack_storage);
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == first));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == first)
+        );
     }
 }

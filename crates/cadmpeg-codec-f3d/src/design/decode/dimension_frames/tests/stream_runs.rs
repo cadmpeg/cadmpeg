@@ -27,21 +27,15 @@ fn dimension_geometry_runs_commit_only_surviving_columns() {
         },
     )
     .unwrap();
-    let surviving = u64::try_from(
-        4 * std::mem::size_of::<&str>() + 4 * std::mem::size_of::<u32>(),
-    )
-    .unwrap();
+    let surviving =
+        u64::try_from(4 * std::mem::size_of::<&str>() + 4 * std::mem::size_of::<u32>()).unwrap();
     for retained in [surviving, surviving - 1] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = retained;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let (runs, storage) = super::super::dimension_geometry_runs(
-            &ctx,
-            std::slice::from_ref(&point),
-            &[],
-        )
-        .unwrap();
+        let (runs, storage) =
+            super::super::dimension_geometry_runs(&ctx, std::slice::from_ref(&point), &[]).unwrap();
         assert_eq!(runs.streams, ["f3d:Design/BulkStream.dat"]);
         assert_eq!(runs.indices, [20]);
         assert_eq!(runs.streams.capacity(), 4);
@@ -68,10 +62,8 @@ fn dimension_sketch_entity_runs_commit_only_surviving_columns() {
     let entity = crate::records::entity_header::DesignEntityHeader {
         id: "f3d:Design/BulkStream.dat:design-entity#0".into(),
         byte_offset: 0,
-        entity_id: crate::records::identity::DesignEntityId::try_from("0_20".to_owned())
-            .unwrap(),
-        class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
-            .unwrap(),
+        entity_id: crate::records::identity::DesignEntityId::try_from("0_20".to_owned()).unwrap(),
+        class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned()).unwrap(),
         optional_slot_present: false,
         registration: crate::records::entity_header::DesignEntityRegistration::new(
             Some("MSketch".to_owned()),
@@ -80,20 +72,16 @@ fn dimension_sketch_entity_runs_commit_only_surviving_columns() {
         )
         .unwrap(),
     };
-    let surviving = u64::try_from(
-        4 * std::mem::size_of::<&str>() + 4 * std::mem::size_of::<u32>(),
-    )
-    .unwrap();
+    let surviving =
+        u64::try_from(4 * std::mem::size_of::<&str>() + 4 * std::mem::size_of::<u32>()).unwrap();
     for retained in [surviving, surviving - 1] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = retained;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let (runs, storage) = super::super::dimension_sketch_entity_runs(
-            &ctx,
-            std::slice::from_ref(&entity),
-        )
-        .unwrap();
+        let (runs, storage) =
+            super::super::dimension_sketch_entity_runs(&ctx, std::slice::from_ref(&entity))
+                .unwrap();
         assert_eq!(runs.streams, ["f3d:Design/BulkStream.dat"]);
         assert_eq!(runs.indices, [20]);
         assert_eq!(runs.streams.capacity(), 4);

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{
+    u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+};
 use cadmpeg_core::CodecError;
 
 use crate::design::decode::sketch::{
@@ -46,7 +48,11 @@ fn parse_candidate(
 fn rejected_named_header_releases_its_decoded_identity() {
     for (genesis, optional) in [(false, false), (false, true), (true, false)] {
         for text in [
-            "invalid", "entity_bad", "entity_18446744073709551616", "0_202", "雪_202",
+            "invalid",
+            "entity_bad",
+            "entity_18446744073709551616",
+            "0_202",
+            "雪_202",
         ] {
             let (bytes, _) = candidate_header(text, genesis, optional);
             let arena = DecodeArena::new();
@@ -58,13 +64,19 @@ fn rejected_named_header_releases_its_decoded_identity() {
             assert!(parse_candidate(&ctx, &bytes, genesis).unwrap().is_none());
             let text_storage;
             let (held, storage) = ctx
-                .utf16le_scoped_text(&bytes[bytes.len() - text.encode_utf16().count() * 2..],
-                    text.encode_utf16().count(), false, "after rejected named header")
+                .utf16le_scoped_text(
+                    &bytes[bytes.len() - text.encode_utf16().count() * 2..],
+                    text.encode_utf16().count(),
+                    false,
+                    "after rejected named header",
+                )
                 .unwrap();
             text_storage = storage;
             assert_eq!(held, text);
             assert_eq!(held.capacity(), text.len());
-            let retained = ctx.copy_retained_text("a", "after rejected named header").unwrap();
+            let retained = ctx
+                .copy_retained_text("a", "after rejected named header")
+                .unwrap();
             assert_eq!(retained, "a");
             assert_eq!(retained.capacity(), 1);
             drop(held);
@@ -79,13 +91,20 @@ fn accepted_named_header_preserves_identity_locations_and_exact_backing() {
         for text in ["0_201", "雪_201"] {
             let (bytes, text_offset) = candidate_header(text, genesis, optional);
             let backing = u64_from_index(text.len());
-            for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::RetainedBytes] {
+            for dimension in [
+                ResourceDimension::MaterializedBytes,
+                ResourceDimension::RetainedBytes,
+            ] {
                 for ceiling in [backing, backing - 1] {
                     let arena = DecodeArena::new();
                     let mut policy = DecodePolicy::default();
                     match dimension {
-                        ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = ceiling,
-                        ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = ceiling,
+                        ResourceDimension::MaterializedBytes => {
+                            policy.limits.max_materialized_bytes = ceiling
+                        }
+                        ResourceDimension::RetainedBytes => {
+                            policy.limits.max_retained_bytes = ceiling
+                        }
                         _ => unreachable!(),
                     }
                     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
@@ -100,8 +119,12 @@ fn accepted_named_header_preserves_identity_locations_and_exact_backing() {
                         if dimension == ResourceDimension::MaterializedBytes {
                             let storage;
                             let (held, held_storage) = ctx
-                                .utf16le_scoped_text(&bytes[text_offset..],
-                                    text.encode_utf16().count(), false, "after named header transfer")
+                                .utf16le_scoped_text(
+                                    &bytes[text_offset..],
+                                    text.encode_utf16().count(),
+                                    false,
+                                    "after named header transfer",
+                                )
                                 .unwrap();
                             storage = held_storage;
                             assert_eq!(held, text);
@@ -111,8 +134,11 @@ fn accepted_named_header_preserves_identity_locations_and_exact_backing() {
                             drop(storage);
                         } else {
                             let CodecError::ResourceLimit(limit) = ctx
-                                .copy_retained_text("a", "after named header transfer").unwrap_err()
-                            else { panic!("accepted identity backing must remain retained"); };
+                                .copy_retained_text("a", "after named header transfer")
+                                .unwrap_err()
+                            else {
+                                panic!("accepted identity backing must remain retained");
+                            };
                             assert_eq!(limit.dimension, dimension);
                             assert_eq!(limit.operation, "after named header transfer");
                             assert_eq!(limit.used, backing);
@@ -120,8 +146,11 @@ fn accepted_named_header_preserves_identity_locations_and_exact_backing() {
                             assert_eq!(limit.limit, ceiling);
                             assert_eq!(header.entity_id.as_str(), text);
                             let CodecError::ResourceLimit(later) = ctx
-                                .charge_work(0, "after named header retained refusal").unwrap_err()
-                            else { panic!("the original refusal must remain fused"); };
+                                .charge_work(0, "after named header retained refusal")
+                                .unwrap_err()
+                            else {
+                                panic!("the original refusal must remain fused");
+                            };
                             assert_eq!(later, limit);
                         }
                     } else {
@@ -134,8 +163,11 @@ fn accepted_named_header_preserves_identity_locations_and_exact_backing() {
                         assert_eq!(limit.additional, backing);
                         assert_eq!(limit.limit, ceiling);
                         let CodecError::ResourceLimit(later) = ctx
-                            .charge_work(0, "after named header backing refusal").unwrap_err()
-                        else { panic!("the original refusal must remain fused"); };
+                            .charge_work(0, "after named header backing refusal")
+                            .unwrap_err()
+                        else {
+                            panic!("the original refusal must remain fused");
+                        };
                         assert_eq!(later, limit);
                     }
                 }
@@ -152,7 +184,8 @@ fn named_header_keeps_original_utf16_refusal_before_candidate_allocation() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let Err(CodecError::ResourceLimit(original)) = parse_candidate(&ctx, &bytes, genesis) else {
+        let Err(CodecError::ResourceLimit(original)) = parse_candidate(&ctx, &bytes, genesis)
+        else {
             panic!("the original UTF-16 validation must refuse");
         };
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);

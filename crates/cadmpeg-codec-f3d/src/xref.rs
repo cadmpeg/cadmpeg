@@ -1305,12 +1305,7 @@ fn repeated_target_occurrence_placement_details(
     }
     at += 4;
     for _ in 0..2 {
-        let (guid, next) = xref_some!(lp_utf16_bounded_view(
-            decode,
-            body,
-            at,
-            36..=36,
-        )?);
+        let (guid, next) = xref_some!(lp_utf16_bounded_view(decode, body, at, 36..=36,)?);
         if !guid.is_guid_relaxed() {
             return Ok(None);
         }
@@ -1321,12 +1316,7 @@ fn repeated_target_occurrence_placement_details(
     }
     at += METADATA_MARKER.len();
 
-    let (component_guid, next) = xref_some!(lp_utf16_bounded_view(
-        decode,
-        body,
-        at,
-        36..=36,
-    )?);
+    let (component_guid, next) = xref_some!(lp_utf16_bounded_view(decode, body, at, 36..=36,)?);
     if !component_guid.is_guid_relaxed() {
         return Ok(None);
     }
@@ -1341,12 +1331,7 @@ fn repeated_target_occurrence_placement_details(
     }
     at = next;
     let role_offset = at;
-    let (role, next) = xref_some!(lp_utf16_bounded_view(
-        decode,
-        body,
-        at,
-        36..=256,
-    )?);
+    let (role, next) = xref_some!(lp_utf16_bounded_view(decode, body, at, 36..=256,)?);
     if !role.is_guid_prefix() {
         return Ok(None);
     }
@@ -1373,13 +1358,12 @@ fn repeated_target_occurrence_placement_details(
         return Ok(None);
     }
     at += 4;
-    let (final_role, next) = xref_some!(lp_utf16_bounded_view(
+    let (final_role, next) = xref_some!(lp_utf16_bounded_view(decode, body, at, 36..=256,)?);
+    if !final_role.eq_ignore_ascii_case(
         decode,
-        body,
-        at,
-        36..=256,
-    )?);
-    if !final_role.eq_ignore_ascii_case(decode, role, "compare F3D repeated-target placement roles")? {
+        role,
+        "compare F3D repeated-target placement roles",
+    )? {
         return Ok(None);
     }
     at = next;
@@ -1658,7 +1642,11 @@ fn grouped_component_insert_identity_with_layout<'a>(
         let (repeated_component_guid, next) =
             admitted_option!(lp_utf16_bounded_view(ctx, bytes, at, 36..=36));
         if !repeated_component_guid.is_guid_relaxed()
-            || !admitted_value!(repeated_component_guid.eq_ignore_ascii_case(ctx, component_guid, "compare F3D UTF-16 text"))
+            || !admitted_value!(repeated_component_guid.eq_ignore_ascii_case(
+                ctx,
+                component_guid,
+                "compare F3D UTF-16 text"
+            ))
         {
             return None;
         }
@@ -1680,7 +1668,11 @@ fn grouped_component_insert_identity_with_layout<'a>(
         at = next;
         let (repeated_role, next) =
             admitted_option!(lp_utf16_bounded_view(ctx, bytes, at, role_bounds.clone()));
-        if !admitted_value!(repeated_role.eq_ignore_ascii_case(ctx, role, "compare F3D UTF-16 text")) {
+        if !admitted_value!(repeated_role.eq_ignore_ascii_case(
+            ctx,
+            role,
+            "compare F3D UTF-16 text"
+        )) {
             return None;
         }
         at = next;

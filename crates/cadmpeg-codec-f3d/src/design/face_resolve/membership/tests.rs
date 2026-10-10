@@ -20,14 +20,17 @@ fn refusal(error: CodecError, operation: &'static str, limit: u64) -> ResourceLi
     let CodecError::ResourceLimit(actual) = error else {
         panic!("expected work refusal: {error:?}");
     };
-    assert_eq!(actual, ResourceLimit {
-        dimension: ResourceDimension::WorkUnits,
-        reason: ResourceFailure::BudgetExceeded,
-        limit,
-        used: limit,
-        additional: 1,
-        operation,
-    });
+    assert_eq!(
+        actual,
+        ResourceLimit {
+            dimension: ResourceDimension::WorkUnits,
+            reason: ResourceFailure::BudgetExceeded,
+            limit,
+            used: limit,
+            additional: 1,
+            operation,
+        }
+    );
     actual
 }
 
@@ -42,8 +45,12 @@ fn face_membership_empty_and_nonempty_keep_original_fuse_without_backing() {
     assert!(!contains_face(&ctx, &[], &face, "empty faces").unwrap());
     assert!(!contains_slot(&ctx, &[], 1, "empty slots").unwrap());
     assert_eq!(ctx.resource_refusal(), None);
-    let original = refusal(ctx.charge_work(1, "original membership refusal").unwrap_err(),
-        "original membership refusal", 0);
+    let original = refusal(
+        ctx.charge_work(1, "original membership refusal")
+            .unwrap_err(),
+        "original membership refusal",
+        0,
+    );
     for values in [&[][..], faces] {
         assert!(matches!(contains_face(&ctx, values, &face, "later faces"),
             Err(CodecError::ResourceLimit(actual)) if actual == original));
@@ -77,8 +84,10 @@ fn face_membership_first_match_does_not_visit_native_suffix() {
             ctx.finish_session().unwrap();
         } else {
             let original = refusal(result.unwrap_err(), "first face match", cap);
-            assert!(matches!(contains_face(&ctx, &[], &target, "after face refusal"),
-                Err(CodecError::ResourceLimit(actual)) if actual == original));
+            assert!(
+                matches!(contains_face(&ctx, &[], &target, "after face refusal"),
+                Err(CodecError::ResourceLimit(actual)) if actual == original)
+            );
             assert!(matches!(ctx.finish_session(),
                 Err(CodecError::ResourceLimit(actual)) if actual == original));
         }
@@ -143,17 +152,25 @@ fn face_slot_membership_pays_only_reached_slots_and_terminal_probe() {
         let arena = DecodeArena::new();
         let policy = policy(cap);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert_eq!(contains_slot(&ctx, &values, target, "stable slot query").unwrap(), expected);
+        assert_eq!(
+            contains_slot(&ctx, &values, target, "stable slot query").unwrap(),
+            expected
+        );
         assert_eq!(ctx.resource_refusal(), None);
         ctx.finish_session().unwrap();
     }
     let arena = DecodeArena::new();
     let policy = policy(3);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let original = refusal(contains_slot(&ctx, &values, 4, "stable slot query").unwrap_err(),
-        "stable slot query", 3);
-    assert!(matches!(contains_slot(&ctx, &values, 1, "later first slot"),
-        Err(CodecError::ResourceLimit(actual)) if actual == original));
+    let original = refusal(
+        contains_slot(&ctx, &values, 4, "stable slot query").unwrap_err(),
+        "stable slot query",
+        3,
+    );
+    assert!(
+        matches!(contains_slot(&ctx, &values, 1, "later first slot"),
+        Err(CodecError::ResourceLimit(actual)) if actual == original)
+    );
     assert_eq!(values, [1, 2, 3]);
     assert!(matches!(ctx.finish_session(),
         Err(CodecError::ResourceLimit(actual)) if actual == original));

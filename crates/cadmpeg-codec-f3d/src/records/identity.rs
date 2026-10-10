@@ -614,7 +614,10 @@ mod entity_id_tests {
             ("Sketch_", "entity_id requires a decimal u64 suffix"),
             ("Sketch_-1", "entity_id requires a decimal u64 suffix"),
             ("Sketch_++1", "entity_id requires a decimal u64 suffix"),
-            ("Sketch_18446744073709551616", "entity_id requires a decimal u64 suffix"),
+            (
+                "Sketch_18446744073709551616",
+                "entity_id requires a decimal u64 suffix",
+            ),
         ] {
             let error: &'static str = DesignEntityId::try_from(text.to_owned()).unwrap_err();
             assert_eq!(error, expected);

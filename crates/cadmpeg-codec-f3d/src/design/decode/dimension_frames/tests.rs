@@ -1206,13 +1206,15 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
         policy.limits.max_retained_bytes = retained;
         if items != u64::MAX {
             let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-                    .unwrap();
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let error = annotation_frame(&ctx, &bytes, 0, Some(383)).unwrap_err();
             let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
                 panic!("expected original collection refusal");
             };
-            assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+            assert_eq!(
+                limit.dimension,
+                cadmpeg_core::decode::ResourceDimension::CollectionItems
+            );
             assert_eq!(limit.operation, operation);
             assert_eq!(limit.limit, items);
             assert_eq!(ctx.resource_refusal(), Some(limit));
@@ -1382,13 +1384,15 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
         policy.limits.max_retained_bytes = retained;
         if items != u64::MAX {
             let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-                    .unwrap();
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let error = presentation_frame(&ctx, &bytes, 0, &[306, 331]).unwrap_err();
             let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
                 panic!("expected original collection refusal");
             };
-            assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+            assert_eq!(
+                limit.dimension,
+                cadmpeg_core::decode::ResourceDimension::CollectionItems
+            );
             assert_eq!(limit.operation, operation);
             assert_eq!(limit.limit, items);
             assert_eq!(ctx.resource_refusal(), Some(limit));

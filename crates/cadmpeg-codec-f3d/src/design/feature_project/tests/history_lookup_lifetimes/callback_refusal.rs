@@ -23,7 +23,10 @@ fn assert_callback_refusal(returned: Option<bool>) {
             visits.set(visits.get() + 1);
             assert!(std::ptr::eq(candidate, &scopes[6]));
             assert_eq!(candidate.id, scopes[6].id);
-            assert!(matches!(ctx.charge_work(1, ORIGINAL), Err(CodecError::ResourceLimit(_))));
+            assert!(matches!(
+                ctx.charge_work(1, ORIGINAL),
+                Err(CodecError::ResourceLimit(_))
+            ));
             returned.ok_or_else(|| CodecError::malformed("ordinary predecessor visitor error"))
         });
         let original = ctx.resource_refusal().expect("visitor stored its refusal");
@@ -42,13 +45,19 @@ fn assert_callback_refusal(returned: Option<bool>) {
 }
 
 #[test]
-fn predecessor_visitor_false_keeps_original_refusal() { assert_callback_refusal(Some(false)); }
+fn predecessor_visitor_false_keeps_original_refusal() {
+    assert_callback_refusal(Some(false));
+}
 
 #[test]
-fn predecessor_visitor_true_keeps_original_refusal() { assert_callback_refusal(Some(true)); }
+fn predecessor_visitor_true_keeps_original_refusal() {
+    assert_callback_refusal(Some(true));
+}
 
 #[test]
-fn predecessor_visitor_ordinary_error_keeps_original_refusal() { assert_callback_refusal(None); }
+fn predecessor_visitor_ordinary_error_keeps_original_refusal() {
+    assert_callback_refusal(None);
+}
 
 #[test]
 fn predecessor_visitor_ordinary_error_preserves_first_scope_and_unread_chain() {
@@ -61,7 +70,9 @@ fn predecessor_visitor_ordinary_error_preserves_first_scope_and_unread_chain() {
             assert!(std::ptr::eq(candidate, &scopes[6]));
             Err(CodecError::malformed("ordinary predecessor visitor error"))
         });
-        assert!(matches!(result, Err(CodecError::Malformed(message)) if message == "ordinary predecessor visitor error"));
+        assert!(
+            matches!(result, Err(CodecError::Malformed(message)) if message == "ordinary predecessor visitor error")
+        );
         assert_eq!(visits.get(), 1);
         assert_eq!(ctx.resource_refusal(), None);
     });
@@ -74,11 +85,15 @@ fn predecessor_visitor_preserves_actual_selected_scope_and_chain_order() {
     crate::test_support::with_decode_policy(&DecodePolicy::service(), |ctx| {
         let graph = ScopeHistoryGraph::new(ctx, &scopes, &[], &[], &[], &[]).unwrap();
         let visited = std::cell::RefCell::new(Vec::new());
-        let result = graph.predecessor(ctx, &scopes[7], |candidate| {
-            visited.borrow_mut().push(candidate.record_index);
-            Ok(candidate.record_index == 4)
-        }).unwrap();
-        let ScopeHistoryPredecessor::Scope(selected) = result else { panic!("selected predecessor"); };
+        let result = graph
+            .predecessor(ctx, &scopes[7], |candidate| {
+                visited.borrow_mut().push(candidate.record_index);
+                Ok(candidate.record_index == 4)
+            })
+            .unwrap();
+        let ScopeHistoryPredecessor::Scope(selected) = result else {
+            panic!("selected predecessor");
+        };
         assert!(std::ptr::eq(selected, &scopes[3]));
         assert_eq!(selected.id, scopes[3].id);
         assert_eq!(*visited.borrow(), [7, 6, 5, 4]);

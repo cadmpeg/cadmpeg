@@ -22,18 +22,32 @@ pub(super) fn plane_for_face(
     }
     let Some((index, face)) = ctx.find_map(
         faces.iter().enumerate(),
-        |(index, face)| Ok(ctx.equal_bytes(face.id.as_str().as_bytes(), candidate.as_str().as_bytes(),
-            "compare F3D plane face identity")?.then_some((index, face))),
+        |(index, face)| {
+            Ok(ctx
+                .equal_bytes(
+                    face.id.as_str().as_bytes(),
+                    candidate.as_str().as_bytes(),
+                    "compare F3D plane face identity",
+                )?
+                .then_some((index, face)))
+        },
         "visit F3D plane face",
-    )? else {
+    )?
+    else {
         return Ok(None);
     };
     let Some(surface) = ctx.find_by(
         surfaces,
-        |surface| ctx.equal_bytes(surface.id.as_str().as_bytes(), face.surface.as_str().as_bytes(),
-            "compare F3D plane surface identity"),
+        |surface| {
+            ctx.equal_bytes(
+                surface.id.as_str().as_bytes(),
+                face.surface.as_str().as_bytes(),
+                "compare F3D plane surface identity",
+            )
+        },
         "visit F3D plane surface",
-    )? else {
+    )?
+    else {
         return Ok(None);
     };
     Ok(match surface.geometry.solved() {
@@ -59,9 +73,11 @@ pub(super) fn face_coincident_with_sketch(
     let Some((sketch_origin, sketch_normal, _)) = sketch.resolved_placement() else {
         return Ok(false);
     };
-    Ok(parallel_vectors(*normal, sketch_normal.get(), angular_tolerance)
-        && point_plane_distance(origin, sketch_origin.get(), sketch_normal.get())
-            <= linear_tolerance)
+    Ok(
+        parallel_vectors(*normal, sketch_normal.get(), angular_tolerance)
+            && point_plane_distance(origin, sketch_origin.get(), sketch_normal.get())
+                <= linear_tolerance,
+    )
 }
 
 pub(super) fn parallel_vectors(left: Vector3, right: Vector3, tolerance: f64) -> bool {

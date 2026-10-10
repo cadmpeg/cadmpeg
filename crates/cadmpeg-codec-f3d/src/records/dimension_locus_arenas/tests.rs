@@ -27,7 +27,8 @@ fn null_locus_entry_conversion_refuses_collection_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let entry = crate::records::dimension_null_locus_wire::Entry::from_null_pair_for_test(pair(true));
+    let entry =
+        crate::records::dimension_null_locus_wire::Entry::from_null_pair_for_test(pair(true));
     let error = DesignDimensionNullLocusPairs::from_entries_charged(&ctx, vec![entry]).unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
@@ -41,7 +42,8 @@ fn null_locus_entry_conversion_refuses_source_work_after_valid_output() {
     use cadmpeg_core::decode::ResourceDimension;
 
     let expected = pair(true);
-    let entries = vec![crate::records::dimension_null_locus_wire::Entry::from_null_pair_for_test(pair(true))];
+    let entries =
+        vec![crate::records::dimension_null_locus_wire::Entry::from_null_pair_for_test(pair(true))];
     let result = crate::test_support::with_decode_context(|ctx| {
         DesignDimensionNullLocusPairs::from_entries_charged(ctx, entries)
     })
@@ -55,7 +57,11 @@ fn null_locus_entry_conversion_refuses_source_work_after_valid_output() {
         |ctx| {
             DesignDimensionNullLocusPairs::from_entries_charged(
                 ctx,
-                vec![crate::records::dimension_null_locus_wire::Entry::from_null_pair_for_test(pair(true))],
+                vec![
+                    crate::records::dimension_null_locus_wire::Entry::from_null_pair_for_test(
+                        pair(true),
+                    ),
+                ],
             )
             .map(|_| ())
             .map_err(cadmpeg_core::CodecError::from)
@@ -185,9 +191,11 @@ fn nonnull_locus_empty_conversion_is_free_and_preserves_original_refusal() {
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(DesignDimensionLocusPairs::from_pairs_charged(&ctx, Vec::new())
-        .unwrap()
-        .is_empty());
+    assert!(
+        DesignDimensionLocusPairs::from_pairs_charged(&ctx, Vec::new())
+            .unwrap()
+            .is_empty()
+    );
     assert_eq!(ctx.resource_refusal(), None);
     let cadmpeg_core::CodecError::ResourceLimit(original) =
         ctx.charge_work(1, "prior locus refusal").unwrap_err()
@@ -219,7 +227,10 @@ fn nonnull_locus_first_invalid_pair_leaves_the_validation_suffix_unread() {
     let error = DesignDimensionLocusPairs::from_pairs_charged(&ctx, pairs).unwrap_err();
     let previous: serde_json::Error =
         <serde_json::Error as serde::de::Error>::custom(super::NONNULL_LOCUS_ERROR);
-    assert_eq!(error.to_string(), cadmpeg_ir::NativeConvertError::Serde(previous).to_string());
+    assert_eq!(
+        error.to_string(),
+        cadmpeg_ir::NativeConvertError::Serde(previous).to_string()
+    );
     assert!(matches!(
         error,
         cadmpeg_ir::NativeConvertError::ConversionMessage(ref message)
@@ -234,8 +245,7 @@ fn nonnull_locus_diagnostic_refuses_before_its_owned_copy() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        u64::try_from(super::NONNULL_LOCUS_ERROR.len() - 1).unwrap();
+    policy.limits.max_retained_bytes = u64::try_from(super::NONNULL_LOCUS_ERROR.len() - 1).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = DesignDimensionLocusPairs::from_pairs_charged(&ctx, vec![pair(true)]).unwrap_err();
     let cadmpeg_core::CodecError::ResourceLimit(limit) = cadmpeg_core::CodecError::from(error)
@@ -245,7 +255,10 @@ fn nonnull_locus_diagnostic_refuses_before_its_owned_copy() {
     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
     assert_eq!(limit.operation, "validate F3D nonnull locus pairs");
     assert_eq!(limit.used, 0);
-    assert_eq!(limit.additional, u64::try_from(super::NONNULL_LOCUS_ERROR.len()).unwrap());
+    assert_eq!(
+        limit.additional,
+        u64::try_from(super::NONNULL_LOCUS_ERROR.len()).unwrap()
+    );
     assert_eq!(ctx.resource_refusal(), Some(limit));
 }
 
@@ -288,10 +301,9 @@ fn native_load_reaches_nonnull_locus_validation_with_the_original_context() {
             &[pair(false)],
         )
         .unwrap();
-    let loaded = crate::test_support::with_decode_context(|ctx| {
-        F3dNative::load_charged(ctx, &namespace)
-    })
-    .unwrap();
+    let loaded =
+        crate::test_support::with_decode_context(|ctx| F3dNative::load_charged(ctx, &namespace))
+            .unwrap();
     assert_eq!(&*loaded.design_dimension_locus_pairs, &[pair(false)]);
     let refusal = crate::test_support::resource_refusal_at(
         ResourceDimension::WorkUnits,

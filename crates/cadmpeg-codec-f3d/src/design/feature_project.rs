@@ -111,7 +111,9 @@ fn feature_stream_matches(
 ) -> Result<bool, CodecError> {
     let actual = ids::native_stream_charged(ctx, id, operation)?;
     match (actual, expected) {
-        (Some(actual), Some(expected)) => ctx.equal_bytes(actual.as_bytes(), expected.as_bytes(), operation),
+        (Some(actual), Some(expected)) => {
+            ctx.equal_bytes(actual.as_bytes(), expected.as_bytes(), operation)
+        }
         (None, None) => Ok(true),
         _ => Ok(false),
     }
@@ -125,21 +127,41 @@ fn visit_revolve_face_candidates<'source>(
     mut visit: impl FnMut(&'source cadmpeg_ir::ids::FaceId) -> Result<bool, CodecError>,
 ) -> Result<bool, CodecError> {
     let use_referenced = operand.recipe_kind == ConstructionRecipeKind::Face
-        && ctx.any_by(&operand.recipe_references, |reference| {
-            Ok(!reference.candidate_faces.is_empty() || !reference.alternate_selector_faces.is_empty())
-        }, "select F3D Revolve candidate lane")?;
+        && ctx.any_by(
+            &operand.recipe_references,
+            |reference| {
+                Ok(!reference.candidate_faces.is_empty()
+                    || !reference.alternate_selector_faces.is_empty())
+            },
+            "select F3D Revolve candidate lane",
+        )?;
     let mut visit_with_original_refusal = |face: &'source cadmpeg_ir::ids::FaceId| {
         let result = visit(face);
         ctx.charge_work(0, "visit F3D Revolve face candidate")?;
         result
     };
     if use_referenced {
-        ctx.all_by(&operand.recipe_references, |reference| {
-            Ok(ctx.all_by(&reference.candidate_faces, &mut visit_with_original_refusal, "visit F3D Revolve face candidate")?
-                && ctx.all_by(&reference.alternate_selector_faces, &mut visit_with_original_refusal, "visit F3D Revolve face candidate")?)
-        }, "visit F3D Revolve candidate reference")
+        ctx.all_by(
+            &operand.recipe_references,
+            |reference| {
+                Ok(ctx.all_by(
+                    &reference.candidate_faces,
+                    &mut visit_with_original_refusal,
+                    "visit F3D Revolve face candidate",
+                )? && ctx.all_by(
+                    &reference.alternate_selector_faces,
+                    &mut visit_with_original_refusal,
+                    "visit F3D Revolve face candidate",
+                )?)
+            },
+            "visit F3D Revolve candidate reference",
+        )
     } else {
-        ctx.all_by(crate::design::face_resolve::face_operand_candidates(operand), visit_with_original_refusal, "visit F3D Revolve face candidate")
+        ctx.all_by(
+            crate::design::face_resolve::face_operand_candidates(operand),
+            visit_with_original_refusal,
+            "visit F3D Revolve face candidate",
+        )
     }
 }
 
@@ -1556,7 +1578,9 @@ face_operands,
                 continue;
             };
             let mut key_storage = ctx.reserve_scoped(0, "hold F3D history state lookup key")?;
-            let Some(key) = key_storage.with_storage(|| scope_history.state_key(ctx, scope, state_id))? else {
+            let Some(key) =
+                key_storage.with_storage(|| scope_history.state_key(ctx, scope, state_id))?
+            else {
                 continue;
             };
             let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
@@ -1582,13 +1606,27 @@ face_operands,
         Ok(())
     })?;
     let mut work_point_features = features.iter_mut();
-    while let Some(feature) = ctx.next_charged(&mut work_point_features, "visit F3D WorkPoint dependency features")? {
+    while let Some(feature) = ctx.next_charged(
+        &mut work_point_features,
+        "visit F3D WorkPoint dependency features",
+    )? {
         let Some(native_ref) = feature.native_ref.as_deref() else {
             continue;
         };
-        let Some(scope) = ctx.find_map(scopes, |scope| {
-            Ok(ctx.equal_bytes(scope.id.as_bytes(), native_ref.as_bytes(), "compare F3D WorkPoint dependency scope")?.then_some(scope))
-        }, "visit F3D WorkPoint dependency scopes")? else {
+        let Some(scope) = ctx.find_map(
+            scopes,
+            |scope| {
+                Ok(ctx
+                    .equal_bytes(
+                        scope.id.as_bytes(),
+                        native_ref.as_bytes(),
+                        "compare F3D WorkPoint dependency scope",
+                    )?
+                    .then_some(scope))
+            },
+            "visit F3D WorkPoint dependency scopes",
+        )?
+        else {
             continue;
         };
         let Some(construction) = scope.work_point_construction() else {
@@ -1596,13 +1634,19 @@ face_operands,
         };
         visit_work_point_history_states(ctx, scope, construction, edge_operands, |state_id| {
             let mut key_storage = ctx.reserve_scoped(0, "hold F3D WorkPoint history lookup key")?;
-            let Some(key) = key_storage.with_storage(|| scope_history.state_key(ctx, scope, state_id))? else {
+            let Some(key) =
+                key_storage.with_storage(|| scope_history.state_key(ctx, scope, state_id))?
+            else {
                 return Ok(true);
             };
             let Some(Some(dependency)) = history_state_features.get(&key) else {
                 return Ok(true);
             };
-            if !ctx.equal_bytes(dependency.as_str().as_bytes(), feature.id.as_str().as_bytes(), "compare F3D WorkPoint dependency identity")? {
+            if !ctx.equal_bytes(
+                dependency.as_str().as_bytes(),
+                feature.id.as_str().as_bytes(),
+                "compare F3D WorkPoint dependency identity",
+            )? {
                 insert_feature_dependency(ctx, &mut feature.dependencies, dependency)?;
             }
             Ok(true)
@@ -2065,13 +2109,29 @@ fn work_point_edge_operand<'a>(
     else {
         return Ok(None);
     };
-    let stream = or_none!(ids::native_stream_charged(ctx, &scope.id, "resolve F3D WorkPoint scope stream")?);
-    unique_feature_match_for_decode(ctx, edge_operands, |operand| {
-        Ok(ctx.equal_bytes(operand.id.as_bytes(), operand_id.as_bytes(), "compare F3D WorkPoint operand identity")?
-            && feature_stream_matches(ctx, &operand.id, Some(stream), "compare F3D WorkPoint operand stream")?
-            && operand.scope_record_index == scope.record_index
-            && operand.record_index() == input.record_index())
-    }, "visit F3D WorkPoint edge operands")
+    let stream = or_none!(ids::native_stream_charged(
+        ctx,
+        &scope.id,
+        "resolve F3D WorkPoint scope stream"
+    )?);
+    unique_feature_match_for_decode(
+        ctx,
+        edge_operands,
+        |operand| {
+            Ok(ctx.equal_bytes(
+                operand.id.as_bytes(),
+                operand_id.as_bytes(),
+                "compare F3D WorkPoint operand identity",
+            )? && feature_stream_matches(
+                ctx,
+                &operand.id,
+                Some(stream),
+                "compare F3D WorkPoint operand stream",
+            )? && operand.scope_record_index == scope.record_index
+                && operand.record_index() == input.record_index())
+        },
+        "visit F3D WorkPoint edge operands",
+    )
 }
 
 fn visit_work_point_history_states(
@@ -2081,11 +2141,16 @@ fn visit_work_point_history_states(
     edge_operands: &[DesignEdgeOperand],
     mut visit: impl FnMut(i64) -> Result<bool, CodecError>,
 ) -> Result<bool, CodecError> {
-    use crate::records::feature::work_geometry::{DesignWorkPointInputCarrier, DesignWorkPointRuleForm};
+    use crate::records::feature::work_geometry::{
+        DesignWorkPointInputCarrier, DesignWorkPointRuleForm,
+    };
 
     ctx.charge_work(0, "resolve F3D WorkPoint history inputs")?;
     // Supported rules have fixed arity. Only Native carries a counted run.
-    let counted = matches!(construction.rule.form(), DesignWorkPointRuleForm::Native { .. });
+    let counted = matches!(
+        construction.rule.form(),
+        DesignWorkPointRuleForm::Native { .. }
+    );
     let mut inputs = construction.rule.inputs().iter();
     while let Some(input) = if counted {
         ctx.next_charged(&mut inputs, "visit F3D WorkPoint history inputs")?
@@ -2094,12 +2159,17 @@ fn visit_work_point_history_states(
     } {
         let state = match input.carrier() {
             Some(DesignWorkPointInputCarrier::EdgeRecipe { .. }) => {
-                work_point_edge_operand(ctx, scope, input, edge_operands)?.and_then(|operand| operand.recipe_state_id)
+                work_point_edge_operand(ctx, scope, input, edge_operands)?
+                    .and_then(|operand| operand.recipe_state_id)
             }
             Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) => {
                 recipe.resolution.map(|resolution| resolution.state_id)
             }
-            Some(DesignWorkPointInputCarrier::WorkPlane { .. } | DesignWorkPointInputCarrier::SketchPoint { .. }) | None => None,
+            Some(
+                DesignWorkPointInputCarrier::WorkPlane { .. }
+                | DesignWorkPointInputCarrier::SketchPoint { .. },
+            )
+            | None => None,
         };
         if let Some(state) = state {
             let result = visit(state);
@@ -2120,14 +2190,15 @@ pub(crate) fn work_point_recipe_state_id(
     ctx.charge_work(0, "resolve F3D WorkPoint recipe state")?;
     let construction = or_none!(scope.work_point_construction());
     let mut state = None;
-    let consistent = visit_work_point_history_states(ctx, scope, construction, edge_operands, |candidate| {
-        if let Some(state) = state {
-            Ok(candidate == state)
-        } else {
-            state = Some(candidate);
-            Ok(true)
-        }
-    })?;
+    let consistent =
+        visit_work_point_history_states(ctx, scope, construction, edge_operands, |candidate| {
+            if let Some(state) = state {
+                Ok(candidate == state)
+            } else {
+                state = Some(candidate);
+                Ok(true)
+            }
+        })?;
     Ok(if consistent { state } else { None })
 }
 
@@ -2162,8 +2233,7 @@ fn project_work_point_construction(
                 .map(|edge_slot| (state_id, edge_slot)),
             None => None,
         };
-        let Some((state_id, edge_slot)) = resolved
-        else {
+        let Some((state_id, edge_slot)) = resolved else {
             return Ok(Some(EdgeSelection::Native(ctx.copy_retained_text(
                 &operand.id,
                 "f3d WorkPoint native edge operand id",
@@ -2850,7 +2920,9 @@ fn project_thread_face_selection(
     if face_group_record_indices.is_empty() || groups.is_empty() {
         return Ok(FaceSelection::Unresolved);
     }
-    let Some(stream) = ids::native_stream_charged(ctx, &scope.id, "resolve F3D Thread face query scope stream")? else {
+    let Some(stream) =
+        ids::native_stream_charged(ctx, &scope.id, "resolve F3D Thread face query scope stream")?
+    else {
         return Ok(FaceSelection::Unresolved);
     };
     let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
@@ -2860,13 +2932,18 @@ fn project_thread_face_selection(
             ctx,
             groups,
             |group| {
-                Ok(feature_stream_matches(ctx, &group.id, Some(stream), "match F3D Thread face group stream")?
-                    && group.scope_record_index == scope.record_index
+                Ok(feature_stream_matches(
+                    ctx,
+                    &group.id,
+                    Some(stream),
+                    "match F3D Thread face group stream",
+                )? && group.scope_record_index == scope.record_index
                     && group.record_index == *record_index
                     && group.role() == DesignOperandRole::ROLE_0X10)
             },
             "visit F3D Thread face group source",
-        )? else {
+        )?
+        else {
             return Ok(FaceSelection::Unresolved);
         };
         scratch_storage
@@ -2903,11 +2980,19 @@ fn project_thread_face_selection(
         }
         state.get_or_insert(group_state);
         for face in group_faces.as_slice() {
-            if faces.is_empty() || !ctx.any_by(
-                &faces,
-                |candidate: &cadmpeg_ir::ids::HistoricalFaceId| ctx.equal_bytes(candidate.as_str().as_bytes(), face.as_str().as_bytes(), "compare F3D Thread selected face identity"),
-                "visit F3D Thread selected face membership",
-            )? {
+            if faces.is_empty()
+                || !ctx.any_by(
+                    &faces,
+                    |candidate: &cadmpeg_ir::ids::HistoricalFaceId| {
+                        ctx.equal_bytes(
+                            candidate.as_str().as_bytes(),
+                            face.as_str().as_bytes(),
+                            "compare F3D Thread selected face identity",
+                        )
+                    },
+                    "visit F3D Thread selected face membership",
+                )?
+            {
                 let face = (face).try_clone_for_decode(ctx, "f3d Thread historical face id")?;
                 ctx.push_vec(&mut faces, face, "f3d Thread historical face")?;
             }
@@ -2939,7 +3024,11 @@ fn project_full_round_fillet(
     fillet_radius_groups: &[DesignFilletRadiusGroup],
     histories: &[crate::history_records::AsmHistory],
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    let stream = or_none!(ids::native_stream_charged(ctx, &scope.id, "resolve F3D full-round query scope stream")?);
+    let stream = or_none!(ids::native_stream_charged(
+        ctx,
+        &scope.id,
+        "resolve F3D full-round query scope stream"
+    )?);
     if owners.iter().any(|owner| {
         native_stream(owner.id()) == Some(stream)
             && owner.scope_record_index() == scope.record_index
@@ -2953,7 +3042,12 @@ fn project_full_round_fillet(
         ctx,
         construction_groups,
         |group| {
-            Ok(feature_stream_matches(ctx, &group.id, Some(stream), "match F3D full-round group stream")? && group.scope_record_index == scope.record_index)
+            Ok(feature_stream_matches(
+                ctx,
+                &group.id,
+                Some(stream),
+                "match F3D full-round group stream",
+            )? && group.scope_record_index == scope.record_index)
         },
         "visit F3D full-round group source",
     )?);
@@ -2974,8 +3068,12 @@ fn project_full_round_fillet(
         ctx,
         face_operands,
         |operand| {
-            Ok(feature_stream_matches(ctx, &operand.id, Some(stream), "match F3D full-round face operand stream")?
-                && operand.scope_record_index == scope.record_index
+            Ok(feature_stream_matches(
+                ctx,
+                &operand.id,
+                Some(stream),
+                "match F3D full-round face operand stream",
+            )? && operand.scope_record_index == scope.record_index
                 && operand.group_record_index() == Some(group.record_index)
                 && operand.group_member_ordinal() == Some(0)
                 && operand.record_index() == *member)
@@ -3022,7 +3120,9 @@ fn design_body_selection(
     let mut bodies = Vec::new();
     let mut complete = true;
     while entity_suffixes.len() != 0 {
-        let Some(suffix) = ctx.next_charged(&mut entity_suffixes, "visit F3D body selection suffix")? else {
+        let Some(suffix) =
+            ctx.next_charged(&mut entity_suffixes, "visit F3D body selection suffix")?
+        else {
             break;
         };
         let mut bindings = body_bindings.iter();
@@ -3030,10 +3130,18 @@ fn design_body_selection(
             &mut bindings,
             |binding| {
                 let Some(binding_stream) = ids::native_stream_charged(
-                    ctx, binding.id(), "resolve F3D body binding stream",
-                )? else { return Ok(None); };
-                if !ctx.equal_bytes(binding_stream.as_bytes(), stream.as_bytes(), "compare F3D body binding stream")?
-                    || binding.entity_suffix != suffix
+                    ctx,
+                    binding.id(),
+                    "resolve F3D body binding stream",
+                )?
+                else {
+                    return Ok(None);
+                };
+                if !ctx.equal_bytes(
+                    binding_stream.as_bytes(),
+                    stream.as_bytes(),
+                    "compare F3D body binding stream",
+                )? || binding.entity_suffix != suffix
                 {
                     return Ok(None);
                 }
@@ -3049,28 +3157,43 @@ fn design_body_selection(
             bindings,
             |binding| {
                 let Some(binding_stream) = ids::native_stream_charged(
-                    ctx, binding.id(), "resolve F3D body binding stream",
-                )? else { return Ok(true); };
-                if !ctx.equal_bytes(binding_stream.as_bytes(), stream.as_bytes(), "compare F3D body binding stream")?
-                    || binding.entity_suffix != suffix
+                    ctx,
+                    binding.id(),
+                    "resolve F3D body binding stream",
+                )?
+                else {
+                    return Ok(true);
+                };
+                if !ctx.equal_bytes(
+                    binding_stream.as_bytes(),
+                    stream.as_bytes(),
+                    "compare F3D body binding stream",
+                )? || binding.entity_suffix != suffix
                 {
                     return Ok(true);
                 }
-                let Some(candidate) = binding.body.as_ref() else { return Ok(true); };
-                ctx.equal_bytes(candidate.as_str().as_bytes(), body.as_str().as_bytes(), "compare F3D body selection identity")
+                let Some(candidate) = binding.body.as_ref() else {
+                    return Ok(true);
+                };
+                ctx.equal_bytes(
+                    candidate.as_str().as_bytes(),
+                    body.as_str().as_bytes(),
+                    "compare F3D body selection identity",
+                )
             },
             "visit F3D body selection binding",
         )? {
             complete = false;
             break;
         }
-        let body = candidate_storage.with_storage(|| body.try_clone_for_decode(ctx, "f3d body selection body id"))?;
-        candidate_storage.with_storage(|| ctx.push_vec(&mut bodies, body, "f3d body selection body"))?;
+        let body = candidate_storage
+            .with_storage(|| body.try_clone_for_decode(ctx, "f3d body selection body id"))?;
+        candidate_storage
+            .with_storage(|| ctx.push_vec(&mut bodies, body, "f3d body selection body"))?;
     }
     if complete && bodies.len() == expected_count {
-        let distinct = candidate_storage.with_storage(|| {
-            Ok::<_, CodecError>(DistinctMembers::try_from(bodies, ctx))
-        })?;
+        let distinct = candidate_storage
+            .with_storage(|| Ok::<_, CodecError>(DistinctMembers::try_from(bodies, ctx)))?;
         match distinct {
             Ok(bodies) => {
                 let native = candidate_storage.with_storage(|| {
@@ -3124,16 +3247,25 @@ pub(crate) fn bind_sketch_feature_geometry(
                 else {
                     return Ok(());
                 };
-                let stream = ids::native_stream_charged(ctx, &scope.id, "resolve F3D sketch binding query scope stream")?;
+                let stream = ids::native_stream_charged(
+                    ctx,
+                    &scope.id,
+                    "resolve F3D sketch binding query scope stream",
+                )?;
                 let Some(placement) = unique_feature_match_for_decode(
                     ctx,
                     placements,
                     |placement| {
-                        Ok(feature_stream_matches(ctx, &placement.id, stream, "match F3D sketch binding placement stream")?
-                            && placement.scope_record_index == Some(scope.record_index))
+                        Ok(feature_stream_matches(
+                            ctx,
+                            &placement.id,
+                            stream,
+                            "match F3D sketch binding placement stream",
+                        )? && placement.scope_record_index == Some(scope.record_index))
                     },
                     "visit F3D sketch binding placement source",
-                )? else {
+                )?
+                else {
                     return Ok(());
                 };
                 let planar = crate::design::identity::neutral_sketch_id(ctx, placement)?;
@@ -3523,7 +3655,12 @@ fn project_surface_offset(
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
-    let Some(stream) = ids::native_stream_charged(ctx, &scope.id, "resolve F3D surface offset query scope stream")? else {
+    let Some(stream) = ids::native_stream_charged(
+        ctx,
+        &scope.id,
+        "resolve F3D surface offset query scope stream",
+    )?
+    else {
         return Ok(None);
     };
     let Some(distance) = cadmpeg_ir::scalar::Length::new(operation.distance.get() * 10.0) else {
@@ -3561,14 +3698,19 @@ fn project_surface_offset(
             ctx,
             groups,
             |group| {
-                Ok(feature_stream_matches(ctx, &group.id, Some(stream), "match F3D surface offset group stream")?
-                    && group.scope_record_index == scope.record_index
+                Ok(feature_stream_matches(
+                    ctx,
+                    &group.id,
+                    Some(stream),
+                    "match F3D surface offset group stream",
+                )? && group.scope_record_index == scope.record_index
                     && group.record_index == *group_record_index
                     && group.role() == DesignOperandRole::PROFILE
                     && !group.members().is_empty())
             },
             "visit F3D surface offset group source",
-        )? else {
+        )?
+        else {
             return Ok(None);
         };
         let Some(FaceSelection::Resolved {
@@ -3578,11 +3720,19 @@ fn project_surface_offset(
             return Ok(None);
         };
         for face in &group_faces {
-            if faces.is_empty() || !ctx.any_by(
-                &faces,
-                |candidate: &cadmpeg_ir::ids::FaceId| ctx.equal_bytes(candidate.as_str().as_bytes(), face.as_str().as_bytes(), "compare F3D surface offset face identity"),
-                "visit F3D surface offset face membership",
-            )? {
+            if faces.is_empty()
+                || !ctx.any_by(
+                    &faces,
+                    |candidate: &cadmpeg_ir::ids::FaceId| {
+                        ctx.equal_bytes(
+                            candidate.as_str().as_bytes(),
+                            face.as_str().as_bytes(),
+                            "compare F3D surface offset face identity",
+                        )
+                    },
+                    "visit F3D surface offset face membership",
+                )?
+            {
                 let face = (face).try_clone_for_decode(ctx, "f3d offset surface face id")?;
                 ctx.push_vec(&mut faces, face, "f3d offset surface face")?;
             }
@@ -3628,9 +3778,7 @@ fn project_draft(
         scope,
         DesignOperandRole::ROLE_0X10
     )?);
-    let stream = ids::native_stream_charged(
-        ctx, &scope.id, "resolve F3D Draft role scope stream",
-    )?;
+    let stream = ids::native_stream_charged(ctx, &scope.id, "resolve F3D Draft role scope stream")?;
     let mut role_groups = [None; 2];
     let mut source = groups.iter();
     while let Some(group) = ctx.next_charged(&mut source, "visit F3D Draft role group")? {
@@ -3655,11 +3803,13 @@ fn project_draft(
     let member_of_scope = |group: &DesignConstructionOperandGroup| {
         ctx.all_by(
             group.members(),
-            |member| ctx.any_by(
-                scope.reference_members().values(),
-                |value| Ok(*value == member.value),
-                "visit F3D Draft scope member",
-            ),
+            |member| {
+                ctx.any_by(
+                    scope.reference_members().values(),
+                    |value| Ok(*value == member.value),
+                    "visit F3D Draft scope member",
+                )
+            },
             "visit F3D Draft group member",
         )
     };
@@ -3667,89 +3817,108 @@ fn project_draft(
         scope.reference_members().values(),
         |value| Ok(*value == faces.record_index),
         "visit F3D Draft face group reference",
-    )? || !member_of_scope(faces)? {
+    )? || !member_of_scope(faces)?
+    {
         return Ok(None);
     }
     Ok(match role_groups {
         [Some(neutral_plane), None] if member_of_scope(neutral_plane)? => {
-            if group_has_entity_selection(ctx, scope, neutral_plane, entity_selection_operands)?
-        {
-            if let Some(neutral_plane) =
-                selected_work_plane(ctx, scope, neutral_plane, entity_selection_operands, scopes)?
-            {
-                let transform = or_none!(neutral_plane.work_plane_transform());
-                let pull_direction = or_none!(cadmpeg_ir::units::UnitVector3::normalized(
-                    Vector3::new(transform[0][2], transform[1][2], transform[2][2],)
-                ));
-                return Ok(Some(FeatureDefinition::Operation(
-                    FeatureOperation::Draft {
-                        faces: project_draft_face_selection(
-                            ctx,
-                            scope,
-                            faces,
-                            face_operands,
-                            histories,
-                        )?,
-                        anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
-                            plane: cadmpeg_ir::features::FaceSelection::Native(
-                                crate::design::identity::neutral_feature_id(ctx, neutral_plane)?
+            if group_has_entity_selection(ctx, scope, neutral_plane, entity_selection_operands)? {
+                if let Some(neutral_plane) = selected_work_plane(
+                    ctx,
+                    scope,
+                    neutral_plane,
+                    entity_selection_operands,
+                    scopes,
+                )? {
+                    let transform = or_none!(neutral_plane.work_plane_transform());
+                    let pull_direction = or_none!(cadmpeg_ir::units::UnitVector3::normalized(
+                        Vector3::new(transform[0][2], transform[1][2], transform[2][2],)
+                    ));
+                    return Ok(Some(FeatureDefinition::Operation(
+                        FeatureOperation::Draft {
+                            faces: project_draft_face_selection(
+                                ctx,
+                                scope,
+                                faces,
+                                face_operands,
+                                histories,
+                            )?,
+                            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                                plane: cadmpeg_ir::features::FaceSelection::Native(
+                                    crate::design::identity::neutral_feature_id(
+                                        ctx,
+                                        neutral_plane,
+                                    )?
                                     .into_string(),
-                            ),
-                            pull: Some(cadmpeg_ir::features::DraftPull {
-                                direction: cadmpeg_ir::features::FeatureDirection3::from(
-                                    pull_direction,
                                 ),
-                                plane: Some(crate::design::identity::neutral_feature_id(
-                                    ctx,
-                                    neutral_plane,
-                                )?),
-                            }),
+                                pull: Some(cadmpeg_ir::features::DraftPull {
+                                    direction: cadmpeg_ir::features::FeatureDirection3::from(
+                                        pull_direction,
+                                    ),
+                                    plane: Some(crate::design::identity::neutral_feature_id(
+                                        ctx,
+                                        neutral_plane,
+                                    )?),
+                                }),
+                            },
+                            angle: Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
+                                construction.angle.get(),
+                            ))),
+                            outward: Some(draft_outward(construction.angle.get())),
                         },
-                        angle: Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
-                            construction.angle.get(),
-                        ))),
-                        outward: Some(draft_outward(construction.angle.get())),
-                    },
-                )));
-            }
-            let neutral_plane = selected_historical_face_selection(
-                ctx,
-                scope,
-                neutral_plane,
-                entity_selection_operands,
-                histories,
-            )?;
-            let neutral_plane = or_none!(neutral_plane);
-            Some(FeatureDefinition::Operation(FeatureOperation::Draft {
-                faces: project_draft_face_selection(ctx, scope, faces, face_operands, histories)?,
-                anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
-                    plane: neutral_plane,
-                    pull: None,
-                },
-                angle: Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
-                    construction.angle.get(),
-                ))),
-                outward: Some(draft_outward(construction.angle.get())),
-            }))
-        } else {
-            Some(FeatureDefinition::Operation(FeatureOperation::Draft {
-                faces: project_draft_face_selection(ctx, scope, faces, face_operands, histories)?,
-                anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
-                    plane: project_draft_face_selection(
+                    )));
+                }
+                let neutral_plane = selected_historical_face_selection(
+                    ctx,
+                    scope,
+                    neutral_plane,
+                    entity_selection_operands,
+                    histories,
+                )?;
+                let neutral_plane = or_none!(neutral_plane);
+                Some(FeatureDefinition::Operation(FeatureOperation::Draft {
+                    faces: project_draft_face_selection(
                         ctx,
                         scope,
-                        neutral_plane,
+                        faces,
                         face_operands,
                         histories,
                     )?,
-                    pull: None,
-                },
-                angle: Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
-                    construction.angle.get(),
-                ))),
-                outward: Some(draft_outward(construction.angle.get())),
-            }))
-        }
+                    anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                        plane: neutral_plane,
+                        pull: None,
+                    },
+                    angle: Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
+                        construction.angle.get(),
+                    ))),
+                    outward: Some(draft_outward(construction.angle.get())),
+                }))
+            } else {
+                Some(FeatureDefinition::Operation(FeatureOperation::Draft {
+                    faces: project_draft_face_selection(
+                        ctx,
+                        scope,
+                        faces,
+                        face_operands,
+                        histories,
+                    )?,
+                    anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                        plane: project_draft_face_selection(
+                            ctx,
+                            scope,
+                            neutral_plane,
+                            face_operands,
+                            histories,
+                        )?,
+                        pull: None,
+                    },
+                    angle: Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
+                        construction.angle.get(),
+                    ))),
+                    outward: Some(draft_outward(construction.angle.get())),
+                }))
+            }
         }
         [Some(first), Some(second)] if member_of_scope(first)? && member_of_scope(second)? => {
             let first_plane =
@@ -3758,12 +3927,22 @@ fn project_draft(
                 selected_work_plane(ctx, scope, second, entity_selection_operands, scopes)?;
             let (parting_tool, pull_plane) = match (first_plane, second_plane) {
                 (Some(plane), None)
-                    if !group_has_entity_selection(ctx, scope, second, entity_selection_operands)? =>
+                    if !group_has_entity_selection(
+                        ctx,
+                        scope,
+                        second,
+                        entity_selection_operands,
+                    )? =>
                 {
                     (second, plane)
                 }
                 (None, Some(plane))
-                    if !group_has_entity_selection(ctx, scope, first, entity_selection_operands)? =>
+                    if !group_has_entity_selection(
+                        ctx,
+                        scope,
+                        first,
+                        entity_selection_operands,
+                    )? =>
                 {
                     (first, plane)
                 }
@@ -3810,7 +3989,11 @@ fn selected_historical_face_selection(
     let previous_state_id = or_none!(crate::history::effective_scope_previous_history_state_id(
         ctx, scope, histories
     )?);
-    let stream = or_none!(ids::native_stream_charged(ctx, &scope.id, "resolve F3D Draft historical query scope stream")?);
+    let stream = or_none!(ids::native_stream_charged(
+        ctx,
+        &scope.id,
+        "resolve F3D Draft historical query scope stream"
+    )?);
     let [crate::records::identity::Located { value: member, .. }] = group.members() else {
         return Ok(None);
     };
@@ -3818,14 +4001,19 @@ fn selected_historical_face_selection(
         ctx,
         entity_selection_operands,
         |operand| {
-            Ok(feature_stream_matches(ctx, &operand.id, Some(stream), "match F3D Draft historical operand stream")?
-                && operand.scope_record_index == scope.record_index
+            Ok(feature_stream_matches(
+                ctx,
+                &operand.id,
+                Some(stream),
+                "match F3D Draft historical operand stream",
+            )? && operand.scope_record_index == scope.record_index
                 && operand.group_record_index == group.record_index
                 && operand.group_member_ordinal == 0
                 && operand.record_index() == *member)
         },
         "visit F3D Draft historical operand source",
-    )? else {
+    )?
+    else {
         return Ok(None);
     };
     if selection.secondary().is_some() {
@@ -3835,11 +4023,13 @@ fn selected_historical_face_selection(
     let face_slot = or_none!(ctx.find_map(
         &mut candidates,
         |candidate| {
-            Ok(ctx.any_by(
-                &candidate.historical.state_ids,
-                |state_id| Ok(*state_id == previous_state_id),
-                "visit F3D Draft historical candidate state",
-            )?.then_some(candidate.face_slot))
+            Ok(ctx
+                .any_by(
+                    &candidate.historical.state_ids,
+                    |state_id| Ok(*state_id == previous_state_id),
+                    "visit F3D Draft historical candidate state",
+                )?
+                .then_some(candidate.face_slot))
         },
         "visit F3D Draft historical face candidate",
     )?);
@@ -3966,9 +4156,9 @@ fn group_has_entity_selection(
     if group.members().is_empty() || entity_selection_operands.is_empty() {
         return Ok(false);
     }
-    let Some(stream) = ids::native_stream_charged(
-        ctx, &scope.id, "resolve F3D group entity scope stream",
-    )? else {
+    let Some(stream) =
+        ids::native_stream_charged(ctx, &scope.id, "resolve F3D group entity scope stream")?
+    else {
         return Ok(false);
     };
     ctx.any_by(
@@ -3979,12 +4169,17 @@ fn group_has_entity_selection(
             };
             ctx.any_by(
                 entity_selection_operands,
-                |operand| Ok(feature_stream_matches(
-                    ctx, &operand.id, Some(stream), "match F3D group entity operand stream",
-                )? && operand.scope_record_index == scope.record_index
-                    && operand.group_record_index == group.record_index
-                    && operand.group_member_ordinal == ordinal
-                    && operand.record_index() == member.value),
+                |operand| {
+                    Ok(feature_stream_matches(
+                        ctx,
+                        &operand.id,
+                        Some(stream),
+                        "match F3D group entity operand stream",
+                    )? && operand.scope_record_index == scope.record_index
+                        && operand.group_record_index == group.record_index
+                        && operand.group_member_ordinal == ordinal
+                        && operand.record_index() == member.value)
+                },
                 "visit F3D group entity operand",
             )
         },
@@ -4026,7 +4221,11 @@ fn selected_work_planes<'a>(
     }
     let mut index_storage = ctx.reserve_scoped(0, "F3D projection index scratch")?;
 
-    let stream = or_none!(ids::native_stream_charged(ctx, &scope.id, "resolve F3D selected work plane stream")?);
+    let stream = or_none!(ids::native_stream_charged(
+        ctx,
+        &scope.id,
+        "resolve F3D selected work plane stream"
+    )?);
     let mut plane_storage = ctx.reserve_scoped(0, "hold F3D selected work plane rows")?;
     let mut planes = Vec::new();
     let mut target_record_indices = HashSet::new();
@@ -4042,10 +4241,16 @@ fn selected_work_planes<'a>(
             entity_selection_operands,
             |operand| {
                 let Some(operand_stream) = ids::native_stream_charged(
-                    ctx, &operand.id, "resolve F3D selected work plane operand stream",
-                )? else { return Ok(false); };
+                    ctx,
+                    &operand.id,
+                    "resolve F3D selected work plane operand stream",
+                )?
+                else {
+                    return Ok(false);
+                };
                 Ok(ctx.equal_bytes(
-                    operand_stream.as_bytes(), stream.as_bytes(),
+                    operand_stream.as_bytes(),
+                    stream.as_bytes(),
                     "compare F3D selected work plane operand stream",
                 )? && operand.scope_record_index == scope.record_index
                     && operand.group_record_index == group.record_index
@@ -4071,14 +4276,33 @@ fn selected_work_planes<'a>(
         })? {
             return Ok(None);
         }
-        let target = unique_feature_match_for_decode(ctx, scopes, |candidate| { Ok(feature_stream_matches(ctx, &candidate.id, Some(stream), "compare F3D unique feature stream")?
-                && candidate.record_index == target_record_index
-                && matches!(candidate.payload(), crate::records::feature::scope::DesignScopePayload::WorkPlane(_))
-                && candidate.work_plane_transform().is_some()) }, "visit F3D unique feature source")?;
+        let target = unique_feature_match_for_decode(
+            ctx,
+            scopes,
+            |candidate| {
+                Ok(feature_stream_matches(
+                    ctx,
+                    &candidate.id,
+                    Some(stream),
+                    "compare F3D unique feature stream",
+                )? && candidate.record_index == target_record_index
+                    && matches!(
+                        candidate.payload(),
+                        crate::records::feature::scope::DesignScopePayload::WorkPlane(_)
+                    )
+                    && candidate.work_plane_transform().is_some())
+            },
+            "visit F3D unique feature source",
+        )?;
         let Some(target) = target else {
             return Ok(None);
         };
-        ctx.push_scoped_vec(&mut plane_storage, &mut planes, target, "f3d selected work plane")?;
+        ctx.push_scoped_vec(
+            &mut plane_storage,
+            &mut planes,
+            target,
+            "f3d selected work plane",
+        )?;
     }
     plane_storage.commit_value(Some(planes))
 }
@@ -4097,7 +4321,11 @@ fn resolved_split_face_path(
     let previous_state_id = or_none!(crate::history::effective_scope_previous_history_state_id(
         ctx, scope, histories
     )?);
-    let stream = or_none!(ids::native_stream_charged(ctx, &scope.id, "resolve F3D SplitFace path query scope stream")?);
+    let stream = or_none!(ids::native_stream_charged(
+        ctx,
+        &scope.id,
+        "resolve F3D SplitFace path query scope stream"
+    )?);
     let feature = crate::design::identity::neutral_feature_id(ctx, scope)?;
     let feature_key = crate::design::identity::identity_key(ctx, feature.as_str())?;
     let prefix =
@@ -4114,8 +4342,12 @@ fn resolved_split_face_path(
             ctx,
             entity_selection_operands,
             |selection| {
-                Ok(feature_stream_matches(ctx, &selection.id, Some(stream), "match F3D SplitFace path operand stream")?
-                    && selection.scope_record_index == scope.record_index
+                Ok(feature_stream_matches(
+                    ctx,
+                    &selection.id,
+                    Some(stream),
+                    "match F3D SplitFace path operand stream",
+                )? && selection.scope_record_index == scope.record_index
                     && selection.group_record_index == group.record_index
                     && selection.group_member_ordinal == ordinal
                     && selection.record_index() == *member)
@@ -4126,9 +4358,13 @@ fn resolved_split_face_path(
             return Ok(None);
         }
         let edge_slot = or_none!(selection.resolved_edge_slot);
-        if !edge_slots.is_empty() && ctx.any_by(
-            &edge_slots, |candidate| Ok(*candidate == edge_slot), "visit F3D SplitFace path edge membership",
-        )? {
+        if !edge_slots.is_empty()
+            && ctx.any_by(
+                &edge_slots,
+                |candidate| Ok(*candidate == edge_slot),
+                "visit F3D SplitFace path edge membership",
+            )?
+        {
             return Ok(None);
         }
         scratch_storage.with_storage(|| {
@@ -4167,16 +4403,23 @@ fn single_operand_group<'a>(
         return Ok(None);
     }
     let stream = ids::native_stream_charged(
-        ctx, &scope.id, "resolve F3D single operand group scope stream",
+        ctx,
+        &scope.id,
+        "resolve F3D single operand group scope stream",
     )?;
     unique_feature_match_for_decode(
         ctx,
         groups,
-        |group| Ok(feature_stream_matches(
-            ctx, &group.id, stream, "match F3D single operand group stream",
-        )? && group.scope_record_index == scope.record_index
-            && group.role() == role
-            && !group.members().is_empty()),
+        |group| {
+            Ok(feature_stream_matches(
+                ctx,
+                &group.id,
+                stream,
+                "match F3D single operand group stream",
+            )? && group.scope_record_index == scope.record_index
+                && group.role() == role
+                && !group.members().is_empty())
+        },
         "find F3D single operand group",
     )
 }
@@ -4262,13 +4505,18 @@ pub(super) fn project_thicken(
         if groups.is_empty() {
             return Ok(None);
         }
-        let stream = ids::native_stream_charged(ctx, &scope.id, "resolve F3D Thicken query scope stream")?;
+        let stream =
+            ids::native_stream_charged(ctx, &scope.id, "resolve F3D Thicken query scope stream")?;
         let group = or_none!(unique_feature_match_for_decode(
             ctx,
             groups,
             |group| {
-                Ok(feature_stream_matches(ctx, &group.id, stream, "match F3D Thicken group stream")?
-                    && group.scope_record_index == scope.record_index
+                Ok(feature_stream_matches(
+                    ctx,
+                    &group.id,
+                    stream,
+                    "match F3D Thicken group stream",
+                )? && group.scope_record_index == scope.record_index
                     && matches!(
                         group.role(),
                         DesignOperandRole::ROLE_0X5 | DesignOperandRole::ROLE_0X12
@@ -4323,7 +4571,9 @@ pub(super) fn project_shell(
         .transpose()?;
     let removed_faces = if let Some(faces) = direct_face_selection(ctx, scope, operands)? {
         faces
-    } else if let Some(group) = single_operand_group(ctx, groups, scope, DesignOperandRole::ROLE_0X10)? {
+    } else if let Some(group) =
+        single_operand_group(ctx, groups, scope, DesignOperandRole::ROLE_0X10)?
+    {
         FaceSelection::Native(ctx.copy_retained_text(&group.id, "f3d Shell native face group id")?)
     } else if bodies.is_some() {
         FaceSelection::Faces(Vec::new())
@@ -4416,16 +4666,22 @@ fn project_base_flange(
     if groups.is_empty() {
         return Ok(None);
     }
-    let stream = ids::native_stream_charged(ctx, &scope.id, "resolve F3D base flange query scope stream")?;
+    let stream =
+        ids::native_stream_charged(ctx, &scope.id, "resolve F3D base flange query scope stream")?;
     let Some(profile_group) = unique_feature_match_for_decode(
         ctx,
         groups,
         |group| {
-            Ok(feature_stream_matches(ctx, &group.id, stream, "match F3D base flange group stream")?
-                && group.scope_record_index == scope.record_index)
+            Ok(feature_stream_matches(
+                ctx,
+                &group.id,
+                stream,
+                "match F3D base flange group stream",
+            )? && group.scope_record_index == scope.record_index)
         },
         "visit F3D base flange group source",
-    )? else {
+    )?
+    else {
         return Ok(None);
     };
     if profile_group.scope_reference_ordinal != 0
@@ -4497,7 +4753,11 @@ fn project_edge_flange(
     let Some((operation, stream, height, angle, width, height_datum, bend_position)) =
         (|| -> Result<Option<_>, CodecError> {
             let operation = or_none!(scope.edge_flange_operation());
-            let stream = or_none!(ids::native_stream_charged(ctx, &scope.id, "resolve F3D EdgeFlange query scope stream")?);
+            let stream = or_none!(ids::native_stream_charged(
+                ctx,
+                &scope.id,
+                "resolve F3D EdgeFlange query scope stream"
+            )?);
             let parameter = |owner_record_index, source_kind: &str| {
                 let mut matching = owners.iter().filter(|owner| {
                     native_stream(owner.id()) == Some(stream)
@@ -4531,8 +4791,12 @@ fn project_edge_flange(
                         ctx,
                         groups,
                         |group| {
-                            Ok(feature_stream_matches(ctx, &group.id, Some(stream), "match F3D EdgeFlange target group stream")?
-                                && group.scope_record_index == scope.record_index
+                            Ok(feature_stream_matches(
+                                ctx,
+                                &group.id,
+                                Some(stream),
+                                "match F3D EdgeFlange target group stream",
+                            )? && group.scope_record_index == scope.record_index
                                 && group.record_index == *target_group_record_index
                                 && group.role() == DesignOperandRole::ROLE_0X21
                                 && group
@@ -4547,8 +4811,12 @@ fn project_edge_flange(
                         ctx,
                         entity_selection_operands,
                         |operand| {
-                            Ok(feature_stream_matches(ctx, &operand.id, Some(stream), "match F3D EdgeFlange target operand stream")?
-                                && operand.scope_record_index == scope.record_index
+                            Ok(feature_stream_matches(
+                                ctx,
+                                &operand.id,
+                                Some(stream),
+                                "match F3D EdgeFlange target operand stream",
+                            )? && operand.scope_record_index == scope.record_index
                                 && operand.group_record_index == target_group.record_index
                                 && operand.group_member_ordinal == 0
                                 && operand.record_index() == *target_operand_record_index)
@@ -4703,17 +4971,20 @@ fn project_edge_flange(
             ctx,
             groups,
             |group| {
-                Ok(feature_stream_matches(ctx, &group.id, Some(stream), "match F3D EdgeFlange edge group stream")?
-                    && group.scope_record_index == scope.record_index
+                Ok(feature_stream_matches(
+                    ctx,
+                    &group.id,
+                    Some(stream),
+                    "match F3D EdgeFlange edge group stream",
+                )? && group.scope_record_index == scope.record_index
                     && group.record_index == edge.group_record_index.get())
             },
             "visit F3D EdgeFlange edge group source",
-        )? else {
+        )?
+        else {
             return Ok(None);
         };
-        if edge_group.role() != DesignOperandRole::BODIES_B
-            || edge_group.members().len() != 1
-        {
+        if edge_group.role() != DesignOperandRole::BODIES_B || edge_group.members().len() != 1 {
             return Ok(None);
         }
         let selection = resolved_edge_flange_group(
@@ -4888,17 +5159,32 @@ fn project_hem(
         ctx,
     )?;
 
-    let edge_slot = match unique_feature_match_for_decode(ctx, edge_operands, |operand| { Ok({
-            let operand_stream = ids::native_stream_charged(ctx, &operand.id, "resolve F3D Hem operand stream")?;
-            let group_stream = ids::native_stream_charged(ctx, &edge_group.id, "resolve F3D Hem group stream")?;
-            match (operand_stream, group_stream) {
-                (Some(operand), Some(group)) => ctx.equal_bytes(operand.as_bytes(), group.as_bytes(), "compare F3D Hem operand stream")?,
-                (None, None) => true,
-                _ => false,
-            }
-        }
-            && operand.scope_record_index == edge_group.scope_record_index
-            && operand.record_index() == operation.edge_operand_record_index()) }, "visit F3D unique feature source")? {
+    let edge_slot = match unique_feature_match_for_decode(
+        ctx,
+        edge_operands,
+        |operand| {
+            Ok({
+                let operand_stream =
+                    ids::native_stream_charged(ctx, &operand.id, "resolve F3D Hem operand stream")?;
+                let group_stream = ids::native_stream_charged(
+                    ctx,
+                    &edge_group.id,
+                    "resolve F3D Hem group stream",
+                )?;
+                match (operand_stream, group_stream) {
+                    (Some(operand), Some(group)) => ctx.equal_bytes(
+                        operand.as_bytes(),
+                        group.as_bytes(),
+                        "compare F3D Hem operand stream",
+                    )?,
+                    (None, None) => true,
+                    _ => false,
+                }
+            } && operand.scope_record_index == edge_group.scope_record_index
+                && operand.record_index() == operation.edge_operand_record_index())
+        },
+        "visit F3D unique feature source",
+    )? {
         Some(operand) => crate::design::edge_resolve::resolved_hem_edge_slot(
             operand,
             crate::history::effective_scope_previous_history_state_id(ctx, scope, histories)?,
@@ -5026,7 +5312,11 @@ fn project_ruled_surface(
     let mut scratch_storage = ctx.reserve_scoped(0, "F3D feature projection scratch")?;
 
     let operation = or_none!(scope.ruled_surface_operation());
-    let stream = or_none!(ids::native_stream_charged(ctx, &scope.id, "resolve F3D ruled surface query scope stream")?);
+    let stream = or_none!(ids::native_stream_charged(
+        ctx,
+        &scope.id,
+        "resolve F3D ruled surface query scope stream"
+    )?);
     let parameter = |owner_record_index, source_kind: &str| {
         let mut matching = owners.iter().filter(|owner| {
             native_stream(owner.id()) == Some(stream)
@@ -5062,15 +5352,17 @@ fn project_ruled_surface(
             ctx,
             groups,
             |group| {
-                Ok(feature_stream_matches(ctx, &group.id, Some(stream), "match F3D ruled surface edge group stream")?
-                    && group.scope_record_index == scope.record_index
+                Ok(feature_stream_matches(
+                    ctx,
+                    &group.id,
+                    Some(stream),
+                    "match F3D ruled surface edge group stream",
+                )? && group.scope_record_index == scope.record_index
                     && group.record_index == *record_index)
             },
             "visit F3D ruled surface edge group source",
         )?);
-        if group.role() != DesignOperandRole::BODIES_B
-            || group.members().len() != 1
-        {
+        if group.role() != DesignOperandRole::BODIES_B || group.members().len() != 1 {
             return Ok(None);
         }
         let reference_ordinal = or_none!(usize::try_from(group.scope_reference_ordinal).ok());
@@ -5135,12 +5427,16 @@ fn merge_edge_selections(
             "f3d merged edge native id",
         )?))
     };
-    if ctx.all_by_limit(selections, |selection| {
-        Ok(matches!(
-            selection,
-            EdgeSelection::Edges(_) | EdgeSelection::Resolved { .. }
-        ))
-    }, "f3d merged edge selection scan")? {
+    if ctx.all_by_limit(
+        selections,
+        |selection| {
+            Ok(matches!(
+                selection,
+                EdgeSelection::Edges(_) | EdgeSelection::Resolved { .. }
+            ))
+        },
+        "f3d merged edge selection scan",
+    )? {
         let mut candidate_storage = ctx.provisional_retained("F3D merged direct edge candidate")?;
         let mut resolved = Vec::new();
         for selection in selections {
@@ -5151,40 +5447,51 @@ fn merge_edge_selections(
                 return native();
             };
             for edge in edges {
-                if !ctx.all_by_limit(&resolved, |candidate: &cadmpeg_ir::ids::EdgeId| {
-                    Ok(!ctx.equal_bytes_limit(candidate.as_str().as_bytes(), edge.as_str().as_bytes(),
-                        "f3d merged direct edge identity comparison")?)
-                }, "f3d merged edge duplicate scan")? {
+                if !ctx.all_by_limit(
+                    &resolved,
+                    |candidate: &cadmpeg_ir::ids::EdgeId| {
+                        Ok(!ctx.equal_bytes_limit(
+                            candidate.as_str().as_bytes(),
+                            edge.as_str().as_bytes(),
+                            "f3d merged direct edge identity comparison",
+                        )?)
+                    },
+                    "f3d merged edge duplicate scan",
+                )? {
                     drop(resolved);
                     drop(candidate_storage);
                     return native();
                 }
-                let edge = candidate_storage.with_storage(|| {
-                    edge.try_clone_for_decode(ctx, "f3d merged direct edge id")
-                })?;
-                candidate_storage.with_storage(|| {
-                    ctx.push_vec(&mut resolved, edge, "f3d merged direct edge")
-                })?;
+                let edge = candidate_storage
+                    .with_storage(|| edge.try_clone_for_decode(ctx, "f3d merged direct edge id"))?;
+                candidate_storage
+                    .with_storage(|| ctx.push_vec(&mut resolved, edge, "f3d merged direct edge"))?;
             }
         }
-        let selected_native = candidate_storage.with_storage(|| {
-            ctx.copy_retained_text(&scope.id, "f3d merged direct native id")
-        })?;
+        let selected_native = candidate_storage
+            .with_storage(|| ctx.copy_retained_text(&scope.id, "f3d merged direct native id"))?;
         return candidate_storage.commit_value(EdgeSelection::Resolved {
             edges: resolved,
             native: selected_native,
         });
     }
     if let Some(EdgeSelection::Historical { state, .. }) = selections.first() {
-        if ctx.all_by_limit(selections, |selection| {
-            match selection {
-                EdgeSelection::Historical { state: candidate, .. } => ctx.equal_bytes_limit(
-                    candidate.as_str().as_bytes(), state.as_str().as_bytes(),
-                    "f3d merged historical state identity comparison"),
+        if ctx.all_by_limit(
+            selections,
+            |selection| match selection {
+                EdgeSelection::Historical {
+                    state: candidate, ..
+                } => ctx.equal_bytes_limit(
+                    candidate.as_str().as_bytes(),
+                    state.as_str().as_bytes(),
+                    "f3d merged historical state identity comparison",
+                ),
                 _ => Ok(false),
-            }
-        }, "f3d merged historical state scan")? {
-            let mut candidate_storage = ctx.provisional_retained("F3D merged historical edge candidate")?;
+            },
+            "f3d merged historical state scan",
+        )? {
+            let mut candidate_storage =
+                ctx.provisional_retained("F3D merged historical edge candidate")?;
             let state = candidate_storage.with_storage(|| {
                 state.try_clone_for_decode(ctx, "f3d merged historical edge state id")
             })?;
@@ -5197,10 +5504,17 @@ fn merge_edge_selections(
                     return native();
                 };
                 for edge in edges {
-                    if !ctx.all_by_limit(&resolved, |candidate: &cadmpeg_ir::ids::HistoricalEdgeId| {
-                        Ok(!ctx.equal_bytes_limit(candidate.as_str().as_bytes(), edge.as_str().as_bytes(),
-                            "f3d merged historical edge identity comparison")?)
-                    }, "f3d merged historical edge duplicate scan")? {
+                    if !ctx.all_by_limit(
+                        &resolved,
+                        |candidate: &cadmpeg_ir::ids::HistoricalEdgeId| {
+                            Ok(!ctx.equal_bytes_limit(
+                                candidate.as_str().as_bytes(),
+                                edge.as_str().as_bytes(),
+                                "f3d merged historical edge identity comparison",
+                            )?)
+                        },
+                        "f3d merged historical edge duplicate scan",
+                    )? {
                         drop(resolved);
                         drop(state);
                         drop(candidate_storage);
@@ -5218,7 +5532,12 @@ fn merge_edge_selections(
                 ctx.copy_retained_text(&scope.id, "f3d merged historical native id")
             })?;
             let selected = candidate_storage.with_storage(|| -> Result<_, CodecError> {
-                Ok(EdgeSelection::historical(state, resolved, selected_native, ctx)?)
+                Ok(EdgeSelection::historical(
+                    state,
+                    resolved,
+                    selected_native,
+                    ctx,
+                )?)
             })?;
             return match selected {
                 Ok(selection) => candidate_storage.commit_value(selection),
@@ -5359,11 +5678,19 @@ pub(crate) fn direct_face_selection(
             let mut resolved = Vec::new();
             for slot in members.iter().flat_map(|(_, faces)| faces.iter().copied()) {
                 let face = historical_face(previous_state_id, slot)?;
-                if resolved.is_empty() || !ctx.any_by(
-                    &resolved,
-                    |candidate: &cadmpeg_ir::ids::HistoricalFaceId| ctx.equal_bytes(candidate.as_str().as_bytes(), face.as_str().as_bytes(), "compare F3D direct historical face identity"),
-                    "visit F3D direct historical face membership",
-                )? {
+                if resolved.is_empty()
+                    || !ctx.any_by(
+                        &resolved,
+                        |candidate: &cadmpeg_ir::ids::HistoricalFaceId| {
+                            ctx.equal_bytes(
+                                candidate.as_str().as_bytes(),
+                                face.as_str().as_bytes(),
+                                "compare F3D direct historical face identity",
+                            )
+                        },
+                        "visit F3D direct historical face membership",
+                    )?
+                {
                     ctx.push_vec(&mut resolved, face, "f3d direct historical face")?;
                 }
             }
@@ -5394,11 +5721,19 @@ pub(crate) fn direct_face_selection(
                 } else {
                     for slot in *slots {
                         let face = historical_face(previous_state_id, *slot)?;
-                        if faces.is_empty() || !ctx.any_by(
-                            &faces,
-                            |candidate: &cadmpeg_ir::ids::HistoricalFaceId| ctx.equal_bytes(candidate.as_str().as_bytes(), face.as_str().as_bytes(), "compare F3D direct partial face identity"),
-                            "visit F3D direct partial face membership",
-                        )? {
+                        if faces.is_empty()
+                            || !ctx.any_by(
+                                &faces,
+                                |candidate: &cadmpeg_ir::ids::HistoricalFaceId| {
+                                    ctx.equal_bytes(
+                                        candidate.as_str().as_bytes(),
+                                        face.as_str().as_bytes(),
+                                        "compare F3D direct partial face identity",
+                                    )
+                                },
+                                "visit F3D direct partial face membership",
+                            )?
+                        {
                             ctx.push_vec(&mut faces, face, "f3d direct partial historical face")?;
                         }
                     }
@@ -5692,9 +6027,14 @@ fn cyclic_parameter_components(
                 }
             }
         }
-        if !remaining_members.is_empty() || !edges[root].is_empty() && ctx.any_by(
-            &edges[root], |candidate| Ok(*candidate == root), "visit F3D parameter cycle self-edge membership",
-        )? {
+        if !remaining_members.is_empty()
+            || !edges[root].is_empty()
+                && ctx.any_by(
+                    &edges[root],
+                    |candidate| Ok(*candidate == root),
+                    "visit F3D parameter cycle self-edge membership",
+                )?
+        {
             ctx.push_vec(
                 &mut cycles,
                 (indices[root], remaining_members),
@@ -5762,15 +6102,25 @@ fn project_variable_fillet(
     let edge_identity_operands = inputs.edge_identity_operands;
     let edge_treatment_vertex_operands = inputs.edge_treatment_vertex_operands;
     let histories = inputs.histories;
-    let stream = or_none!(ids::native_stream_charged(ctx, &scope.id, "resolve F3D variable Fillet query scope stream")?);
+    let stream = or_none!(ids::native_stream_charged(
+        ctx,
+        &scope.id,
+        "resolve F3D variable Fillet query scope stream"
+    )?);
     let Some(group) = unique_feature_match_for_decode(
         ctx,
         construction_groups,
         |group| {
-            Ok(feature_stream_matches(ctx, &group.id, Some(stream), "match F3D variable Fillet group stream")? && group.scope_record_index == scope.record_index)
+            Ok(feature_stream_matches(
+                ctx,
+                &group.id,
+                Some(stream),
+                "match F3D variable Fillet group stream",
+            )? && group.scope_record_index == scope.record_index)
         },
         "visit F3D variable Fillet group source",
-    )? else {
+    )?
+    else {
         return Ok(None);
     };
     let (points, tangency_weight) = or_none!(variable_fillet_law(ctx, parameters)?);
@@ -5918,10 +6268,10 @@ fn variable_fillet_law(
         },
         "f3d variable Fillet radius point",
     )?;
-    let mut candidate_storage = ctx.provisional_retained("F3D variable fillet typed radius candidate")?;
-    let converted = candidate_storage.with_storage(|| {
-        cadmpeg_ir::features::edge_treatments::VariableRadii::new(points, ctx)
-    })?;
+    let mut candidate_storage =
+        ctx.provisional_retained("F3D variable fillet typed radius candidate")?;
+    let converted = candidate_storage
+        .with_storage(|| cadmpeg_ir::features::edge_treatments::VariableRadii::new(points, ctx))?;
     match converted {
         Ok(points) => candidate_storage.commit_value(Some((points, tangency_weight))),
         Err(_) => Ok(None),
@@ -6070,7 +6420,8 @@ fn project_chamfer(
     let group_count = edge_groups.len();
     let mut ordered_parameters =
         |matches_kind: &dyn Fn(&str) -> bool| -> Result<Vec<&DesignParameter>, CodecError> {
-            scratch_storage.with_storage(|| ordered_chamfer_parameters(ctx, parameters, matches_kind))
+            scratch_storage
+                .with_storage(|| ordered_chamfer_parameters(ctx, parameters, matches_kind))
         };
     let distances = ordered_parameters(&|kind| kind == "Distance")?;
     let first_distances = ordered_parameters(&|kind| kind == "Distance 1")?;
@@ -6203,9 +6554,24 @@ fn project_fixed_chamfer(
     };
 
     let fixed = or_none!(scope.fixed_chamfer_parameters());
-    let stream = or_none!(ids::native_stream_charged(ctx, &scope.id, "resolve F3D unique feature stream")?);
-    let group = or_none!(unique_feature_match_for_decode(ctx, construction_groups, |group| { Ok(feature_stream_matches(ctx, &group.id, Some(stream), "compare F3D unique feature stream")?
-                && group.scope_record_index == scope.record_index) }, "visit F3D unique feature source")?);
+    let stream = or_none!(ids::native_stream_charged(
+        ctx,
+        &scope.id,
+        "resolve F3D unique feature stream"
+    )?);
+    let group = or_none!(unique_feature_match_for_decode(
+        ctx,
+        construction_groups,
+        |group| {
+            Ok(feature_stream_matches(
+                ctx,
+                &group.id,
+                Some(stream),
+                "compare F3D unique feature stream",
+            )? && group.scope_record_index == scope.record_index)
+        },
+        "visit F3D unique feature source"
+    )?);
     let spec = match fixed {
         crate::records::feature::fixed_parameters::DesignFixedChamferParameters::EqualDistance { distance } => {
             ChamferSpec::Distance {
@@ -6346,7 +6712,8 @@ pub(super) fn project_fixed_revolve_with_entities(
                 *axis_member,
                 entity_selection_operands,
             )?
-            && revolve_face_axis_operand(ctx, scope, axis_group, *axis_member, face_operands)?.is_none()
+            && revolve_face_axis_operand(ctx, scope, axis_group, *axis_member, face_operands)?
+                .is_none()
         {
             return Ok(None);
         }
@@ -6396,11 +6763,22 @@ fn unresolved_historical_face_axis_selection(
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
 ) -> Result<bool, CodecError> {
     let stream = ids::native_stream_charged(ctx, &scope.id, "resolve F3D unique feature stream")?;
-    let selection = unique_feature_match_for_decode(ctx, entity_selection_operands, |operand| { Ok(feature_stream_matches(ctx, &operand.id, stream, "compare F3D unique feature stream")?
-            && operand.scope_record_index == scope.record_index
-            && operand.group_record_index == axis_group.record_index
-            && operand.group_member_ordinal == 0
-            && operand.record_index() == axis_member) }, "visit F3D unique feature source")?;
+    let selection = unique_feature_match_for_decode(
+        ctx,
+        entity_selection_operands,
+        |operand| {
+            Ok(feature_stream_matches(
+                ctx,
+                &operand.id,
+                stream,
+                "compare F3D unique feature stream",
+            )? && operand.scope_record_index == scope.record_index
+                && operand.group_record_index == axis_group.record_index
+                && operand.group_member_ordinal == 0
+                && operand.record_index() == axis_member)
+        },
+        "visit F3D unique feature source",
+    )?;
     Ok(selection.is_some_and(|selection| !selection.historical_face_candidates.is_empty()))
 }
 
@@ -6412,13 +6790,27 @@ fn revolve_face_axis_operand<'a>(
     face_operands: &'a [crate::records::topology::face::DesignFaceOperand],
 ) -> Result<Option<&'a crate::records::topology::face::DesignFaceOperand>, CodecError> {
     let stream = ids::native_stream_charged(ctx, &scope.id, "resolve F3D unique feature stream")?;
-    let operand = or_none!(unique_feature_match_for_decode(ctx, face_operands, |operand| { Ok(feature_stream_matches(ctx, &operand.id, stream, "compare F3D unique feature stream")?
-            && operand.scope_record_index == scope.record_index
-            && operand.group_record_index() == Some(axis_group.record_index)
-            && operand.group_member_ordinal() == Some(0)
-            && operand.record_index() == axis_member) }, "visit F3D unique feature source")?);
+    let operand = or_none!(unique_feature_match_for_decode(
+        ctx,
+        face_operands,
+        |operand| {
+            Ok(feature_stream_matches(
+                ctx,
+                &operand.id,
+                stream,
+                "compare F3D unique feature stream",
+            )? && operand.scope_record_index == scope.record_index
+                && operand.group_record_index() == Some(axis_group.record_index)
+                && operand.group_member_ordinal() == Some(0)
+                && operand.record_index() == axis_member)
+        },
+        "visit F3D unique feature source"
+    )?);
     let mut found = false;
-    visit_revolve_face_candidates(ctx, operand, |_| { found = true; Ok(false) })?;
+    visit_revolve_face_candidates(ctx, operand, |_| {
+        found = true;
+        Ok(false)
+    })?;
     Ok(found.then_some(operand))
 }
 
@@ -6441,96 +6833,163 @@ pub(crate) fn bind_revolve_face_axes(
         let mut edit_result = Ok(());
         feature.evaluation.edit(|definition, _| {
             edit_result = (|| -> Result<(), CodecError> {
-                let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) = definition else {
+                let FeatureDefinition::Operation(FeatureOperation::Revolve {
+                    construction, ..
+                }) = definition
+                else {
                     return Ok(());
                 };
                 if construction.axis().is_some() {
                     return Ok(());
                 }
-                let Some(native_ref) = native_ref else { return Ok(()); };
-                let scope = ctx.find_map(scopes, |scope| {
-                    Ok(ctx.equal_bytes(scope.id.as_bytes(), native_ref.as_bytes(), "compare F3D Revolve native scope identity")?.then_some(scope))
-                }, "visit F3D Revolve native scope")?;
-                let Some(scope) = scope else { return Ok(()); };
-                let Some(stream) = ids::native_stream_charged(ctx, &scope.id, "resolve F3D unique feature stream")? else {
+                let Some(native_ref) = native_ref else {
                     return Ok(());
                 };
-                let Some(group) = unique_feature_match_for_decode(ctx, construction_groups, |group| {
-                    Ok(feature_stream_matches(ctx, &group.id, Some(stream), "compare F3D unique feature stream")?
-                        && group.scope_record_index == scope.record_index
-                        && group.role() == DesignOperandRole::ROLE_0X21)
-                }, "visit F3D unique feature source")? else {
+                let scope = ctx.find_map(
+                    scopes,
+                    |scope| {
+                        Ok(ctx
+                            .equal_bytes(
+                                scope.id.as_bytes(),
+                                native_ref.as_bytes(),
+                                "compare F3D Revolve native scope identity",
+                            )?
+                            .then_some(scope))
+                    },
+                    "visit F3D Revolve native scope",
+                )?;
+                let Some(scope) = scope else {
                     return Ok(());
                 };
-                let [crate::records::identity::Located { value: member, .. }] = group.members() else {
+                let Some(stream) = ids::native_stream_charged(
+                    ctx,
+                    &scope.id,
+                    "resolve F3D unique feature stream",
+                )?
+                else {
                     return Ok(());
                 };
-                let selection = unique_feature_match_for_decode(ctx, entity_selection_operands, |operand| {
-                    Ok(feature_stream_matches(ctx, &operand.id, Some(stream), "compare F3D unique feature stream")?
-                        && operand.scope_record_index == scope.record_index
-                        && operand.group_record_index == group.record_index
-                        && operand.group_member_ordinal == 0
-                        && operand.record_index() == *member)
-                }, "visit F3D unique feature source")?;
+                let Some(group) = unique_feature_match_for_decode(
+                    ctx,
+                    construction_groups,
+                    |group| {
+                        Ok(feature_stream_matches(
+                            ctx,
+                            &group.id,
+                            Some(stream),
+                            "compare F3D unique feature stream",
+                        )? && group.scope_record_index == scope.record_index
+                            && group.role() == DesignOperandRole::ROLE_0X21)
+                    },
+                    "visit F3D unique feature source",
+                )?
+                else {
+                    return Ok(());
+                };
+                let [crate::records::identity::Located { value: member, .. }] = group.members()
+                else {
+                    return Ok(());
+                };
+                let selection = unique_feature_match_for_decode(
+                    ctx,
+                    entity_selection_operands,
+                    |operand| {
+                        Ok(feature_stream_matches(
+                            ctx,
+                            &operand.id,
+                            Some(stream),
+                            "compare F3D unique feature stream",
+                        )? && operand.scope_record_index == scope.record_index
+                            && operand.group_record_index == group.record_index
+                            && operand.group_member_ordinal == 0
+                            && operand.record_index() == *member)
+                    },
+                    "visit F3D unique feature source",
+                )?;
                 let entity_face_slot = match selection {
                     Some(selection) => match selection.historical_face_candidates.first() {
-                        Some(first) if ctx.all_by(&selection.historical_face_candidates, |candidate| {
-                            Ok(candidate.face_slot == first.face_slot)
-                        }, "visit F3D Revolve entity face candidate")? => Some(first.face_slot),
+                        Some(first)
+                            if ctx.all_by(
+                                &selection.historical_face_candidates,
+                                |candidate| Ok(candidate.face_slot == first.face_slot),
+                                "visit F3D Revolve entity face candidate",
+                            )? =>
+                        {
+                            Some(first.face_slot)
+                        }
                         _ => None,
                     },
                     None => None,
                 };
                 let entity_axis = match entity_face_slot {
                     Some(face_slot) => {
-                        let mut identity_storage = ctx.reserve_scoped(0, "hold F3D Revolve selected face identity")?;
+                        let mut identity_storage =
+                            ctx.reserve_scoped(0, "hold F3D Revolve selected face identity")?;
                         let face_id = identity_storage.with_storage(|| {
                             cadmpeg_ir::ids::FaceId::mint(ctx.format_retained(
-                                format_args!("f3d:brep:entity#{face_slot}"), "F3D Revolve selected face identity",
-                            )?).map_err(CodecError::malformed)
+                                format_args!("f3d:brep:entity#{face_slot}"),
+                                "F3D Revolve selected face identity",
+                            )?)
+                            .map_err(CodecError::malformed)
                         })?;
                         analytic_axis_for_face(ctx, &face_id, faces, surfaces)?
                     }
                     None => None,
                 };
-                let recipe_axis = match revolve_face_axis_operand(ctx, scope, group, *member, face_operands)? {
-                    Some(operand) => (|| -> Result<Option<_>, CodecError> {
-                        let mut minimum: Option<&cadmpeg_ir::ids::FaceId> = None;
-                        visit_revolve_face_candidates(ctx, operand, |face| {
-                            let replace = match minimum {
-                                Some(first) => {
-                                    let left = face.as_str().as_bytes();
-                                    let right = first.as_str().as_bytes();
-                                    let ordering = ctx.find_map(left.iter().zip(right), |(left, right)| {
-                                        Ok((left != right).then(|| left.cmp(right)))
-                                    }, "compare F3D Revolve candidate identity")?.unwrap_or_else(|| left.len().cmp(&right.len()));
-                                    // Iterator::min_by retains the last equal minimum.
-                                    ordering != std::cmp::Ordering::Greater
+                let recipe_axis =
+                    match revolve_face_axis_operand(ctx, scope, group, *member, face_operands)? {
+                        Some(operand) => (|| -> Result<Option<_>, CodecError> {
+                            let mut minimum: Option<&cadmpeg_ir::ids::FaceId> = None;
+                            visit_revolve_face_candidates(ctx, operand, |face| {
+                                let replace = match minimum {
+                                    Some(first) => {
+                                        let left = face.as_str().as_bytes();
+                                        let right = first.as_str().as_bytes();
+                                        let ordering = ctx
+                                            .find_map(
+                                                left.iter().zip(right),
+                                                |(left, right)| {
+                                                    Ok((left != right).then(|| left.cmp(right)))
+                                                },
+                                                "compare F3D Revolve candidate identity",
+                                            )?
+                                            .unwrap_or_else(|| left.len().cmp(&right.len()));
+                                        // Iterator::min_by retains the last equal minimum.
+                                        ordering != std::cmp::Ordering::Greater
+                                    }
+                                    None => true,
+                                };
+                                if replace {
+                                    minimum = Some(face);
                                 }
-                                None => true,
-                            };
-                            if replace { minimum = Some(face); }
-                            Ok(true)
-                        })?;
-                        let first_face = or_none!(minimum);
-                        let first = or_none!(analytic_axis_for_face(ctx, first_face, faces, surfaces)?);
-                        let consistent = visit_revolve_face_candidates(ctx, operand, |face_id| {
-                            Ok(analytic_axis_for_face(ctx, face_id, faces, surfaces)?.is_some_and(|axis| {
-                                crate::history::same_axis_line(
-                                    (first.origin.get(), first.direction.get()),
-                                    (axis.origin.get(), axis.direction.get()),
-                                )
-                            }))
-                        })?;
-                        Ok(consistent.then_some(first))
-                    })()?,
-                    None => None,
-                };
+                                Ok(true)
+                            })?;
+                            let first_face = or_none!(minimum);
+                            let first =
+                                or_none!(analytic_axis_for_face(ctx, first_face, faces, surfaces)?);
+                            let consistent =
+                                visit_revolve_face_candidates(ctx, operand, |face_id| {
+                                    Ok(analytic_axis_for_face(ctx, face_id, faces, surfaces)?
+                                        .is_some_and(|axis| {
+                                            crate::history::same_axis_line(
+                                                (first.origin.get(), first.direction.get()),
+                                                (axis.origin.get(), axis.direction.get()),
+                                            )
+                                        }))
+                                })?;
+                            Ok(consistent.then_some(first))
+                        })()?,
+                        None => None,
+                    };
                 construction.set_axis(match (entity_axis, recipe_axis) {
-                    (Some(entity), Some(recipe)) if crate::history::same_axis_line(
-                        (entity.origin.get(), entity.direction.get()),
-                        (recipe.origin.get(), recipe.direction.get()),
-                    ) => Some(entity),
+                    (Some(entity), Some(recipe))
+                        if crate::history::same_axis_line(
+                            (entity.origin.get(), entity.direction.get()),
+                            (recipe.origin.get(), recipe.direction.get()),
+                        ) =>
+                    {
+                        Some(entity)
+                    }
                     (Some(axis), None) | (None, Some(axis)) => Some(axis),
                     _ => None,
                 });
@@ -6548,9 +7007,30 @@ fn analytic_axis_for_face(
     faces: &[cadmpeg_ir::topology::Face],
     surfaces: &[cadmpeg_ir::geometry::Surface],
 ) -> Result<Option<cadmpeg_ir::features::RevolutionAxis>, CodecError> {
-    let face = or_none!(unique_feature_match_for_decode(ctx, faces, |face| { Ok(ctx.equal_bytes(face.id.as_str().as_bytes(), face_id.as_str().as_bytes(), "compare F3D Revolve face identity")?) }, "visit F3D unique feature source")?);
-    let surface =
-        or_none!(unique_feature_match_for_decode(ctx, surfaces, |surface| { Ok(ctx.equal_bytes(surface.id.as_str().as_bytes(), face.surface.as_str().as_bytes(), "compare F3D Revolve surface identity")?) }, "visit F3D unique feature source")?);
+    let face = or_none!(unique_feature_match_for_decode(
+        ctx,
+        faces,
+        |face| {
+            Ok(ctx.equal_bytes(
+                face.id.as_str().as_bytes(),
+                face_id.as_str().as_bytes(),
+                "compare F3D Revolve face identity",
+            )?)
+        },
+        "visit F3D unique feature source"
+    )?);
+    let surface = or_none!(unique_feature_match_for_decode(
+        ctx,
+        surfaces,
+        |surface| {
+            Ok(ctx.equal_bytes(
+                surface.id.as_str().as_bytes(),
+                face.surface.as_str().as_bytes(),
+                "compare F3D Revolve surface identity",
+            )?)
+        },
+        "visit F3D unique feature source"
+    )?);
     Ok(analytic_surface_axis(&surface.geometry))
 }
 
@@ -6590,18 +7070,55 @@ fn resolve_sketch_axis_selection(
     placements: &[DesignSketchPlacement],
     curve_identities: &[SketchCurveIdentity],
 ) -> Result<Option<cadmpeg_ir::features::RevolutionAxis>, CodecError> {
-    let stream = or_none!(ids::native_stream_charged(ctx, &scope.id, "resolve F3D unique feature stream")?);
-    let selection = or_none!(unique_feature_match_for_decode(ctx, entity_selection_operands, |operand| { Ok(feature_stream_matches(ctx, &operand.id, Some(stream), "compare F3D unique feature stream")?
-            && operand.scope_record_index == scope.record_index
-            && operand.group_record_index == axis_group.record_index
-            && operand.group_member_ordinal == 0
-            && operand.record_index() == axis_member) }, "visit F3D unique feature source")?);
+    let stream = or_none!(ids::native_stream_charged(
+        ctx,
+        &scope.id,
+        "resolve F3D unique feature stream"
+    )?);
+    let selection = or_none!(unique_feature_match_for_decode(
+        ctx,
+        entity_selection_operands,
+        |operand| {
+            Ok(feature_stream_matches(
+                ctx,
+                &operand.id,
+                Some(stream),
+                "compare F3D unique feature stream",
+            )? && operand.scope_record_index == scope.record_index
+                && operand.group_record_index == axis_group.record_index
+                && operand.group_member_ordinal == 0
+                && operand.record_index() == axis_member)
+        },
+        "visit F3D unique feature source"
+    )?);
     let owner_reference = or_none!(u32::try_from(selection.primary_identity).ok());
-    let placement = or_none!(unique_feature_match_for_decode(ctx, placements, |placement| { Ok(feature_stream_matches(ctx, &placement.id, Some(stream), "compare F3D unique feature stream")?
-            && placement.entity_id.suffix() == selection.primary_identity) }, "visit F3D unique feature source")?);
-    let curve = or_none!(unique_feature_match_for_decode(ctx, curve_identities, |curve| { Ok(feature_stream_matches(ctx, &curve.id, Some(stream), "compare F3D unique feature stream")?
-            && curve.owner_reference == Some(owner_reference)
-            && entity_selection_matches_curve(selection, curve)) }, "visit F3D unique feature source")?);
+    let placement = or_none!(unique_feature_match_for_decode(
+        ctx,
+        placements,
+        |placement| {
+            Ok(feature_stream_matches(
+                ctx,
+                &placement.id,
+                Some(stream),
+                "compare F3D unique feature stream",
+            )? && placement.entity_id.suffix() == selection.primary_identity)
+        },
+        "visit F3D unique feature source"
+    )?);
+    let curve = or_none!(unique_feature_match_for_decode(
+        ctx,
+        curve_identities,
+        |curve| {
+            Ok(feature_stream_matches(
+                ctx,
+                &curve.id,
+                Some(stream),
+                "compare F3D unique feature stream",
+            )? && curve.owner_reference == Some(owner_reference)
+                && entity_selection_matches_curve(selection, curve))
+        },
+        "visit F3D unique feature source"
+    )?);
     let SketchCurveGeometry::Line {
         start, direction, ..
     } = or_none!(curve.geometry.as_ref())
@@ -6638,9 +7155,9 @@ fn resolve_sketch_axis_selection(
     );
     Ok(Some(cadmpeg_ir::features::RevolutionAxis {
         origin: or_none!(cadmpeg_ir::features::FinitePoint3::new(origin)),
-        direction: cadmpeg_ir::features::FeatureDirection3::from(
-            or_none!(cadmpeg_ir::units::UnitVector3::normalized_by_reciprocal(direction)),
-        ),
+        direction: cadmpeg_ir::features::FeatureDirection3::from(or_none!(
+            cadmpeg_ir::units::UnitVector3::normalized_by_reciprocal(direction)
+        )),
         reference: None,
     }))
 }
@@ -6704,7 +7221,8 @@ pub(super) fn project_fixed_loft(
                 ctx,
                 &groups,
                 |group| {
-                    Ok(group.role() == DesignOperandRole::BODIES_B && group.scope_reference_ordinal == 1)
+                    Ok(group.role() == DesignOperandRole::BODIES_B
+                        && group.scope_reference_ordinal == 1)
                 },
                 "visit F3D legacy Loft body group source",
             )?);
@@ -7082,16 +7600,30 @@ fn project_circular_pattern(
     let Some((axis_origin, axis_dir)) = circular_pattern_axis(&construction.axis) else {
         return Ok(None);
     };
-    let Some(stream) = ids::native_stream_charged(ctx, &scope.id, "resolve F3D unique feature stream")? else {
+    let Some(stream) =
+        ids::native_stream_charged(ctx, &scope.id, "resolve F3D unique feature stream")?
+    else {
         return Ok(None);
     };
-    let Some(group) = unique_feature_match_for_decode(ctx, groups, |group| { Ok(feature_stream_matches(ctx, &group.id, Some(stream), "compare F3D unique feature stream")?
-            && group.scope_record_index == scope.record_index
-            && matches!(
-                group.role(),
-                DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
-            )
-            && !group.members().is_empty()) }, "visit F3D unique feature source")? else {
+    let Some(group) = unique_feature_match_for_decode(
+        ctx,
+        groups,
+        |group| {
+            Ok(feature_stream_matches(
+                ctx,
+                &group.id,
+                Some(stream),
+                "compare F3D unique feature stream",
+            )? && group.scope_record_index == scope.record_index
+                && matches!(
+                    group.role(),
+                    DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
+                )
+                && !group.members().is_empty())
+        },
+        "visit F3D unique feature source",
+    )?
+    else {
         return Ok(None);
     };
     let seed = if group.role() == DesignOperandRole::BODIES_A {
@@ -7318,22 +7850,46 @@ fn project_mirror(
     let Some(construction) = scope.mirror_construction() else {
         return Ok(None);
     };
-    let Some(stream) = ids::native_stream_charged(ctx, &scope.id, "resolve F3D unique feature stream")? else {
+    let Some(stream) =
+        ids::native_stream_charged(ctx, &scope.id, "resolve F3D unique feature stream")?
+    else {
         return Ok(None);
     };
-    let seed_group = unique_feature_match_for_decode(ctx, groups, |group| { Ok(feature_stream_matches(ctx, &group.id, Some(stream), "compare F3D unique feature stream")?
-            && group.scope_record_index == scope.record_index
-            && group.record_index == construction.seed_group_record_index
-            && matches!(
-                group.role(),
-                DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
-            )
-            && !group.members().is_empty()) }, "visit F3D unique feature source")?;
-    let plane_group = unique_feature_match_for_decode(ctx, groups, |group| { Ok(feature_stream_matches(ctx, &group.id, Some(stream), "compare F3D unique feature stream")?
-            && group.scope_record_index == scope.record_index
-            && group.record_index == construction.plane_group_record_index
-            && group.role() == DesignOperandRole::ROLE_0X5
-            && group.members().len() == 1) }, "visit F3D unique feature source")?;
+    let seed_group = unique_feature_match_for_decode(
+        ctx,
+        groups,
+        |group| {
+            Ok(feature_stream_matches(
+                ctx,
+                &group.id,
+                Some(stream),
+                "compare F3D unique feature stream",
+            )? && group.scope_record_index == scope.record_index
+                && group.record_index == construction.seed_group_record_index
+                && matches!(
+                    group.role(),
+                    DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
+                )
+                && !group.members().is_empty())
+        },
+        "visit F3D unique feature source",
+    )?;
+    let plane_group = unique_feature_match_for_decode(
+        ctx,
+        groups,
+        |group| {
+            Ok(feature_stream_matches(
+                ctx,
+                &group.id,
+                Some(stream),
+                "compare F3D unique feature stream",
+            )? && group.scope_record_index == scope.record_index
+                && group.record_index == construction.plane_group_record_index
+                && group.role() == DesignOperandRole::ROLE_0X5
+                && group.members().len() == 1)
+        },
+        "visit F3D unique feature source",
+    )?;
     let (Some(seed_group), Some(_plane_group)) = (seed_group, plane_group) else {
         return Ok(None);
     };
@@ -7341,7 +7897,19 @@ fn project_mirror(
         .seed_feature_scope_record_index
         .map(|reference| reference.value)
     {
-        let seed_scope = unique_feature_match_for_decode(ctx, scopes, |candidate| { Ok(feature_stream_matches(ctx, &candidate.id, Some(stream), "compare F3D unique feature stream")? && candidate.record_index == record_index) }, "visit F3D unique feature source")?;
+        let seed_scope = unique_feature_match_for_decode(
+            ctx,
+            scopes,
+            |candidate| {
+                Ok(feature_stream_matches(
+                    ctx,
+                    &candidate.id,
+                    Some(stream),
+                    "compare F3D unique feature stream",
+                )? && candidate.record_index == record_index)
+            },
+            "visit F3D unique feature source",
+        )?;
         let Some(seed_scope) = seed_scope else {
             return Ok(None);
         };
@@ -7377,10 +7945,24 @@ fn project_mirror(
             else {
                 return Ok(None);
             };
-            let plane = unique_feature_match_for_decode(ctx, scopes, |candidate| { Ok(feature_stream_matches(ctx, &candidate.id, Some(stream), "compare F3D unique feature stream")?
-                    && candidate.record_index == plane_scope_record_index
-                    && matches!(candidate.payload(), crate::records::feature::scope::DesignScopePayload::WorkPlane(_))
-                    && candidate.work_plane_transform().is_some()) }, "visit F3D unique feature source")?;
+            let plane = unique_feature_match_for_decode(
+                ctx,
+                scopes,
+                |candidate| {
+                    Ok(feature_stream_matches(
+                        ctx,
+                        &candidate.id,
+                        Some(stream),
+                        "compare F3D unique feature stream",
+                    )? && candidate.record_index == plane_scope_record_index
+                        && matches!(
+                            candidate.payload(),
+                            crate::records::feature::scope::DesignScopePayload::WorkPlane(_)
+                        )
+                        && candidate.work_plane_transform().is_some())
+                },
+                "visit F3D unique feature source",
+            )?;
             let Some(plane) = plane else {
                 return Ok(None);
             };
@@ -7747,9 +8329,21 @@ fn project_fixed_pipe(
                 return Ok(None);
             }
             let unique = |source_kind: &str| {
-                Ok::<_, CodecError>(unique_feature_match_for_decode(ctx, parameters, |(_, parameter)| {
-                    ctx.equal_bytes(parameter.source_kind().as_bytes(), source_kind.as_bytes(), "compare F3D Pipe parameter kind")
-                }, "visit F3D Pipe parameter source")?.map(|(_, parameter)| *parameter))
+                Ok::<_, CodecError>(
+                    unique_feature_match_for_decode(
+                        ctx,
+                        parameters,
+                        |(_, parameter)| {
+                            ctx.equal_bytes(
+                                parameter.source_kind().as_bytes(),
+                                source_kind.as_bytes(),
+                                "compare F3D Pipe parameter kind",
+                            )
+                        },
+                        "visit F3D Pipe parameter source",
+                    )?
+                    .map(|(_, parameter)| *parameter),
+                )
             };
             let along = or_none!(unique("AlongDistance")?);
             let against = or_none!(unique("AgainstDistance")?);
@@ -7814,7 +8408,7 @@ fn project_fixed_pipe(
                         .eq(or_none!(scope
                             .reference_members()
                             .values_in(6..scope.reference_members().len() - 2))
-                            .copied())
+                        .copied())
                 {
                     return Ok(None);
                 }
@@ -8615,13 +9209,24 @@ pub(super) fn project_split(
             else {
                 return Ok(None);
             };
-            let tool = unique_feature_match_for_decode(ctx, face_operands, |operand| { Ok(feature_stream_matches(ctx, &operand.id, Some(stream), "compare F3D unique feature stream")?
-                    && operand.scope_record_index == scope.record_index
-                    && operand.scope_reference_ordinal == 1
-                    && operand.record_index() == *tool_record_index
-                    && operand.recipe_kind == ConstructionRecipeKind::Face
-                    && operand.recipe_program.as_slice() == [0, -1]
-                    && operand.recipe_nodes.is_empty()) }, "visit F3D unique feature source")?;
+            let tool = unique_feature_match_for_decode(
+                ctx,
+                face_operands,
+                |operand| {
+                    Ok(feature_stream_matches(
+                        ctx,
+                        &operand.id,
+                        Some(stream),
+                        "compare F3D unique feature stream",
+                    )? && operand.scope_record_index == scope.record_index
+                        && operand.scope_reference_ordinal == 1
+                        && operand.record_index() == *tool_record_index
+                        && operand.recipe_kind == ConstructionRecipeKind::Face
+                        && operand.recipe_program.as_slice() == [0, -1]
+                        && operand.recipe_nodes.is_empty())
+                },
+                "visit F3D unique feature source",
+            )?;
             let Some(tool) = tool else {
                 return Ok(None);
             };
@@ -8830,8 +9435,25 @@ fn project_delete_face(
     if reference_count < 2 {
         return Ok(None);
     }
-    let stream = or_none!(ids::native_stream_charged(ctx, &scope.id, "resolve F3D unique feature stream")?);
-    let Some(group) = unique_feature_match_for_decode(ctx, construction_groups, |group| { Ok(feature_stream_matches(ctx, &group.id, Some(stream), "compare F3D unique feature stream")? && group.scope_record_index == scope.record_index) }, "visit F3D unique feature source")? else {
+    let stream = or_none!(ids::native_stream_charged(
+        ctx,
+        &scope.id,
+        "resolve F3D unique feature stream"
+    )?);
+    let Some(group) = unique_feature_match_for_decode(
+        ctx,
+        construction_groups,
+        |group| {
+            Ok(feature_stream_matches(
+                ctx,
+                &group.id,
+                Some(stream),
+                "compare F3D unique feature stream",
+            )? && group.scope_record_index == scope.record_index)
+        },
+        "visit F3D unique feature source",
+    )?
+    else {
         return Ok(None);
     };
     if group.scope_reference_ordinal != 0
@@ -8990,11 +9612,19 @@ fn project_extrude(
                     }
                     state = Some(selected_state);
                     for face in selected_faces {
-                        if faces.is_empty() || !ctx.any_by(
-                            &faces,
-                            |candidate: &cadmpeg_ir::ids::HistoricalFaceId| ctx.equal_bytes(candidate.as_str().as_bytes(), face.as_str().as_bytes(), "compare F3D Extrude profile face identity"),
-                            "visit F3D Extrude profile face membership",
-                        )? {
+                        if faces.is_empty()
+                            || !ctx.any_by(
+                                &faces,
+                                |candidate: &cadmpeg_ir::ids::HistoricalFaceId| {
+                                    ctx.equal_bytes(
+                                        candidate.as_str().as_bytes(),
+                                        face.as_str().as_bytes(),
+                                        "compare F3D Extrude profile face identity",
+                                    )
+                                },
+                                "visit F3D Extrude profile face membership",
+                            )?
+                        {
                             ctx.push_vec(&mut faces, face, "f3d Extrude profile historical face")?;
                         }
                     }

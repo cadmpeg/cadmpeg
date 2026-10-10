@@ -50,13 +50,14 @@ fn encode_component<'ctx>(
                     }
                 }
             } else {
-                storage.with_storage(|| {
-                    ctx.push_retained_char(&mut text, character, operation)
-                })?;
+                storage.with_storage(|| ctx.push_retained_char(&mut text, character, operation))?;
             }
         }
     }
-    Ok(EncodedText { text, _storage: storage })
+    Ok(EncodedText {
+        text,
+        _storage: storage,
+    })
 }
 
 pub(super) fn neutral_configuration_id(
@@ -72,8 +73,7 @@ pub(super) fn neutral_configuration_id(
     let text = ctx.format_retained(
         format_args!(
             "f3d:configuration:variant#{entry_len}:{}{name_len}:{}",
-            encoded_entry.text,
-            encoded_name.text
+            encoded_entry.text, encoded_name.text
         ),
         operation,
     )?;
@@ -130,8 +130,7 @@ pub(super) fn neutral_parameter_id(
         ctx.format_retained(
             format_args!(
                 "f3d:model:parameter#{len}:{}{}",
-                encoded_stream.text,
-                parameter.record_index
+                encoded_stream.text, parameter.record_index
             ),
             operation,
         )?,
@@ -162,8 +161,9 @@ pub(super) fn neutral_spatial_sketch_id(
     ctx: &DecodeContext<'_>,
     placement: &crate::records::sketch_placement::DesignSketchPlacement,
 ) -> Result<cadmpeg_ir::sketches::SpatialSketchId, CodecError> {
-    let stream = crate::ids::native_stream_charged(ctx, &placement.id, "f3d spatial sketch identifier")?
-        .unwrap_or(crate::ids::DEFAULT_STREAM);
+    let stream =
+        crate::ids::native_stream_charged(ctx, &placement.id, "f3d spatial sketch identifier")?
+            .unwrap_or(crate::ids::DEFAULT_STREAM);
     let encoded_stream = encode_component(ctx, stream, false, "f3d spatial sketch identifier")?;
     mint(
         ctx,
@@ -192,9 +192,7 @@ macro_rules! tagged_entity_id {
                 ctx.format_retained(
                     format_args!(
                         concat!($namespace, "#{}:{}", $tag, "{}"),
-                        len,
-                        encoded_sketch.text,
-                        index
+                        len, encoded_sketch.text, index
                     ),
                     $operation,
                 )?,
@@ -305,8 +303,9 @@ pub(super) fn neutral_sketch_constraint_id(
     native_ref: &str,
     record: u32,
 ) -> Result<cadmpeg_ir::sketches::SketchConstraintId, CodecError> {
-    let stream = crate::ids::native_stream_charged(ctx, native_ref, "f3d sketch constraint identifier")?
-        .unwrap_or(crate::ids::DEFAULT_STREAM);
+    let stream =
+        crate::ids::native_stream_charged(ctx, native_ref, "f3d sketch constraint identifier")?
+            .unwrap_or(crate::ids::DEFAULT_STREAM);
     let encoded_stream = encode_component(ctx, stream, false, "f3d sketch constraint identifier")?;
     mint(
         ctx,
@@ -388,8 +387,7 @@ pub(super) fn neutral_assembly_joint_id(
         ctx.format_retained(
             format_args!(
                 "f3d:model:joint#{len}:{}{}",
-                encoded_stream.text,
-                scope.record_index
+                encoded_stream.text, scope.record_index
             ),
             operation,
         )?,

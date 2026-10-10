@@ -1,13 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Temporary history lookup keys do not publish session retention.
 
-use crate::design::feature_project::{project_parameter_design_with_edge_identities, ProjectInputs};
+use crate::design::feature_project::{
+    project_parameter_design_with_edge_identities, ProjectInputs,
+};
 use crate::records::entity_header::DesignFeatureTimeline;
 use crate::records::feature::scope::DesignParameterScope;
-use crate::records::feature::work_geometry::{DesignVertexRecipe, DesignWorkPointConstruction, DesignWorkPointInput, DesignWorkPointInputCarrier};
-use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+use crate::records::feature::work_geometry::{
+    DesignVertexRecipe, DesignWorkPointConstruction, DesignWorkPointInput,
+    DesignWorkPointInputCarrier,
+};
 use cadmpeg_core::decode::refusal_probe::RefusalProbe;
-use cadmpeg_ir::features::{DatumPointConstruction, FeatureDefinition, FeatureOperation, VertexSelection};
+use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+use cadmpeg_ir::features::{
+    DatumPointConstruction, FeatureDefinition, FeatureOperation, VertexSelection,
+};
 
 const LOOKUP_SCRATCH: u64 = 4096;
 
@@ -109,10 +116,20 @@ fn history_lookup_lifetime_work_point_key_is_scratch_and_keeps_native_dependency
     crate::test_support::with_decode_policy(&policy, |ctx| {
         // Both index construction and the later WorkPoint dependency query
         // borrow their key. The latter must not copy text into session output.
-        let _probe = RefusalProbe::arm(ResourceDimension::RetainedBytes, "f3d history lookup stream", None);
-        let (features, parameters) = project_parameter_design_with_edge_identities(ctx, &ProjectInputs {
-            scopes: &scopes, timelines: std::slice::from_ref(&timeline), ..Default::default()
-        }).expect("temporary history lookup key stays in scratch");
+        let _probe = RefusalProbe::arm(
+            ResourceDimension::RetainedBytes,
+            "f3d history lookup stream",
+            None,
+        );
+        let (features, parameters) = project_parameter_design_with_edge_identities(
+            ctx,
+            &ProjectInputs {
+                scopes: &scopes,
+                timelines: std::slice::from_ref(&timeline),
+                ..Default::default()
+            },
+        )
+        .expect("temporary history lookup key stays in scratch");
         assert!(parameters.is_empty());
         assert_eq!(features.len(), 2);
         let predecessor = features
@@ -148,28 +165,38 @@ fn history_lookup_lifetime_work_point_key_is_scratch_and_keeps_native_dependency
         assert_eq!(native.as_str(), &recipe_id);
         assert_eq!(point.dependencies.as_slice(), [predecessor.id.clone()]);
         assert_eq!(ctx.resource_refusal(), None);
-        drop(ctx.reserve_scoped(LOOKUP_SCRATCH, "reuse query scratch while projected features live").unwrap());
+        drop(
+            ctx.reserve_scoped(
+                LOOKUP_SCRATCH,
+                "reuse query scratch while projected features live",
+            )
+            .unwrap(),
+        );
         assert_eq!(ctx.resource_refusal(), None);
     });
 }
 
 fn predecessor_chain() -> Vec<DesignParameterScope> {
     let stream = format!("f3d:{}/BulkStream.dat", "a".repeat(1024));
-    (1..=8).map(|state_id| {
-        let mut scope = DesignParameterScope::empty(
-            &format!("{stream}:parameter-scope#{state_id}"),
-            crate::records::feature::scope::DesignFeatureKind::Extrude,
-            u32::try_from(state_id).unwrap(),
-        );
-        scope.try_edit(|draft| {
-            draft.history_state_id = Some(state_id);
-            if state_id > 1 {
-                draft.previous_history_state_id = Some(state_id - 1);
-                draft.layout_fixture_tail();
-            }
-        }).unwrap();
-        scope
-    }).collect()
+    (1..=8)
+        .map(|state_id| {
+            let mut scope = DesignParameterScope::empty(
+                &format!("{stream}:parameter-scope#{state_id}"),
+                crate::records::feature::scope::DesignFeatureKind::Extrude,
+                u32::try_from(state_id).unwrap(),
+            );
+            scope
+                .try_edit(|draft| {
+                    draft.history_state_id = Some(state_id);
+                    if state_id > 1 {
+                        draft.previous_history_state_id = Some(state_id - 1);
+                        draft.layout_fixture_tail();
+                    }
+                })
+                .unwrap();
+            scope
+        })
+        .collect()
 }
 
 #[test]
@@ -177,18 +204,25 @@ fn history_lookup_lifetime_predecessor_releases_each_consumed_key() {
     let scopes = predecessor_chain();
     let graph = crate::test_support::with_decode_context(|ctx| {
         crate::design::feature_project::ScopeHistoryGraph::new(ctx, &scopes, &[], &[], &[], &[])
-    }).unwrap();
+    })
+    .unwrap();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = LOOKUP_SCRATCH;
     crate::test_support::with_decode_policy(&policy, |ctx| {
         for _ in 0..7 {
-            let selected = graph.predecessor(ctx, &scopes[7], |scope| Ok(scope.record_index == 1)).unwrap();
-            let crate::design::feature_project::ScopeHistoryPredecessor::Scope(selected) = selected else {
+            let selected = graph
+                .predecessor(ctx, &scopes[7], |scope| Ok(scope.record_index == 1))
+                .unwrap();
+            let crate::design::feature_project::ScopeHistoryPredecessor::Scope(selected) = selected
+            else {
                 panic!("chain reaches its sole selected predecessor");
             };
             assert!(std::ptr::eq(selected, &scopes[0]));
             assert_eq!(selected.id, scopes[0].id);
-            drop(ctx.reserve_scoped(LOOKUP_SCRATCH, "reuse complete predecessor query scratch").unwrap());
+            drop(
+                ctx.reserve_scoped(LOOKUP_SCRATCH, "reuse complete predecessor query scratch")
+                    .unwrap(),
+            );
         }
         assert_eq!(ctx.resource_refusal(), None);
     });
@@ -200,19 +234,24 @@ fn history_lookup_lifetime_predecessor_key_one_below_keeps_original_refusal() {
     let scopes = predecessor_chain();
     let graph = crate::test_support::with_decode_context(|ctx| {
         crate::design::feature_project::ScopeHistoryGraph::new(ctx, &scopes, &[], &[], &[], &[])
-    }).unwrap();
+    })
+    .unwrap();
     let bytes = u64::try_from(crate::ids::native_stream(&scopes[7].id).unwrap().len()).unwrap();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = bytes - 1;
     crate::test_support::with_decode_policy(&policy, |ctx| {
-        let Err(CodecError::ResourceLimit(original)) = graph.predecessor(ctx, &scopes[7], |_| Ok(true)) else {
+        let Err(CodecError::ResourceLimit(original)) =
+            graph.predecessor(ctx, &scopes[7], |_| Ok(true))
+        else {
             panic!("actual first predecessor key text must refuse before copying");
         };
         assert_eq!(original.dimension, ResourceDimension::MaterializedBytes);
         assert_eq!(original.operation, "f3d predecessor stream");
         assert_eq!((original.used, original.additional), (0, bytes));
         assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-        assert!(matches!(graph.predecessor(ctx, &scopes[7], |_| Ok(true)), Err(CodecError::ResourceLimit(later)) if later == original));
+        assert!(
+            matches!(graph.predecessor(ctx, &scopes[7], |_| Ok(true)), Err(CodecError::ResourceLimit(later)) if later == original)
+        );
     });
 }
 

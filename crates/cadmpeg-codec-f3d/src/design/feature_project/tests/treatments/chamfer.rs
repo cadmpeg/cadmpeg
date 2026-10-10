@@ -165,16 +165,18 @@ fn chamfer_parameter_lane_publishes_only_ordered_references() {
     let first = localized_fillet_parameter(10, 11, "Distance", Some("mm"), 0.1);
     let second = localized_fillet_parameter(20, 21, "Distance", Some("mm"), 0.2);
     let controls = [(1, &second), (0, &first)];
-    let surviving = u64::try_from(4 * std::mem::size_of::<&crate::records::parameters::DesignParameter>())
-        .unwrap();
+    let surviving =
+        u64::try_from(4 * std::mem::size_of::<&crate::records::parameters::DesignParameter>())
+            .unwrap();
     for retained in [surviving, surviving - 1] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = retained;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = crate::design::feature_project::ordered_chamfer_parameters(
-            &ctx, &controls, |kind| kind == "Distance",
-        );
+        let result =
+            crate::design::feature_project::ordered_chamfer_parameters(&ctx, &controls, |kind| {
+                kind == "Distance"
+            });
         if retained == surviving {
             let lane = result.unwrap();
             assert_eq!(lane.len(), 2);

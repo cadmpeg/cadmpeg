@@ -192,28 +192,38 @@ fn inline_joint_origin_skips_both_fallback_indexes() {
                     "f3d:test:scope#1",
                     DesignScopePayload::JointOrigin(Some(origin)),
                     1,
-                ).into_draft();
+                )
+                .into_draft();
                 draft.frame_length = frame_length;
                 draft.paired_byte_offset = frame_length;
                 let native = crate::native::F3dNative {
-                    design_parameter_scopes: vec![DesignParameterScope::try_new(draft.with_fixture_layout()).unwrap()],
+                    design_parameter_scopes: vec![DesignParameterScope::try_new(
+                        draft.with_fixture_layout(),
+                    )
+                    .unwrap()],
                     ..Default::default()
                 };
                 let ir = cadmpeg_ir::CadIr::empty();
                 let ctx = crate::validate::Ctx::new(&ir, &native, decode).unwrap();
                 let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-                    cadmpeg_core::decode::ResourceDimension::WorkUnits, operation, None,
+                    cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                    operation,
+                    None,
                 );
                 super::super::validate_parameter_scopes(&ctx, &mut Vec::new()).unwrap();
                 assert!(decode.resource_refusal().is_none());
-                let mut storage = decode.reserve_scoped(0, "hold test assembly index").unwrap();
+                let mut storage = decode
+                    .reserve_scoped(0, "hold test assembly index")
+                    .unwrap();
                 let error = if operation == "group F3D assembly scopes by frame" {
                     super::super::assembly_scopes_by_frame(&ctx, &mut storage).unwrap_err()
                 } else {
                     super::super::assembly_scopes_by_offset(&ctx, &mut storage).unwrap_err()
                 };
-                assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.operation == operation));
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.operation == operation)
+                );
             });
         }
     }

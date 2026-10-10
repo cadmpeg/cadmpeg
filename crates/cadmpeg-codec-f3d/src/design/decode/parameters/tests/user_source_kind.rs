@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::parameter_record;
 use super::super::{parameter_source_kind_text, parse_design_parameter, ParsedParameterSourceKind};
+use super::parameter_record;
 use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
@@ -19,8 +19,11 @@ fn user_source_kind_fixed_tag_needs_no_temporary_text_and_keeps_original_fuse() 
         assert!(matches!(kind, ParsedParameterSourceKind::User));
         assert_eq!(kind.as_str(), "User Parameter");
         assert_eq!(end, 32);
-        let Err(CodecError::ResourceLimit(original)) = ctx.charge_work(1, "original fixed user source refusal")
-        else { panic!("zero-work original refusal"); };
+        let Err(CodecError::ResourceLimit(original)) =
+            ctx.charge_work(1, "original fixed user source refusal")
+        else {
+            panic!("zero-work original refusal");
+        };
         for (input, at) in [(bytes.as_slice(), 0), (&[][..], usize::MAX)] {
             assert!(matches!(parameter_source_kind_text(ctx, input, at),
                 Err(CodecError::ResourceLimit(later)) if later == original));
@@ -46,7 +49,10 @@ fn user_source_kind_retains_only_actual_parsed_expression_name_and_class() {
                         && limit.operation == "copy F3D Design parameter class tag"));
             } else {
                 let parsed = parsed.unwrap().unwrap();
-                assert!(matches!(parsed.source_kind, ParsedParameterSourceKind::User));
+                assert!(matches!(
+                    parsed.source_kind,
+                    ParsedParameterSourceKind::User
+                ));
                 assert_eq!(parsed.expression, "1");
                 assert_eq!(parsed.name, "p");
                 assert_eq!(parsed.record_index, 71);

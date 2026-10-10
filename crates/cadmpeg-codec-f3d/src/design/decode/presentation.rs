@@ -50,7 +50,8 @@ const PHYSICAL_MARKER: [u8; LP_GUID_MARKER_BYTES] = guid_marker(PHYSICAL_MATERIA
 const MODERN_MARKER: [u8; LP_GUID_MARKER_BYTES] = guid_marker(MODERN_APPEARANCE_LIBRARY_IDS[0]);
 const MODERN_TRAILER: [u8; LP_GUID_MARKER_BYTES] = guid_marker(MODERN_APPEARANCE_LIBRARY_IDS[1]);
 const LEGACY_MARKER: [u8; LP_GUID_MARKER_BYTES] = guid_marker(APPEARANCE_LIBRARY_ID);
-const ENVELOPE_MARKER: [u8; LP_GUID_MARKER_BYTES] = guid_marker(BODY_PRESENTATION_MATERIAL_ENVELOPE_ID);
+const ENVELOPE_MARKER: [u8; LP_GUID_MARKER_BYTES] =
+    guid_marker(BODY_PRESENTATION_MATERIAL_ENVELOPE_ID);
 
 /// The registered type GUID and record version of one Design entity.
 type EntityType<'a> = (&'a crate::records::mesh::DesignRelaxedGuidText, u32);
@@ -979,7 +980,10 @@ mod tests {
             (MODERN_APPEARANCE_LIBRARY_IDS[0], &super::MODERN_MARKER),
             (MODERN_APPEARANCE_LIBRARY_IDS[1], &super::MODERN_TRAILER),
             (APPEARANCE_LIBRARY_ID, &super::LEGACY_MARKER),
-            (BODY_PRESENTATION_MATERIAL_ENVELOPE_ID, &super::ENVELOPE_MARKER),
+            (
+                BODY_PRESENTATION_MATERIAL_ENVELOPE_ID,
+                &super::ENVELOPE_MARKER,
+            ),
         ] {
             assert_eq!(&marker[..4], &[36, 0, 0, 0]);
             assert_eq!(marker.as_slice(), lp_utf16_bytes(guid).unwrap());
@@ -1002,16 +1006,23 @@ mod tests {
                 (&b"abc"[..], 2, 1, &b"ab"[..]),
                 (&b"abc"[..], 0, 3, &b""[..]),
             ] {
-                assert_eq!(next_match(ctx, bytes, from, end, &[needle], "test F3D marker").unwrap(), None);
+                assert_eq!(
+                    next_match(ctx, bytes, from, end, &[needle], "test F3D marker").unwrap(),
+                    None
+                );
                 assert_eq!(ctx.resource_refusal(), None);
             }
-            let CodecError::ResourceLimit(original) = next_match(ctx, b"a", 0, 1, &[b"ab"], "test F3D marker").unwrap_err() else {
+            let CodecError::ResourceLimit(original) =
+                next_match(ctx, b"a", 0, 1, &[b"ab"], "test F3D marker").unwrap_err()
+            else {
                 panic!("actual marker source refusal");
             };
             assert_eq!(original.used, 0);
             assert_eq!(original.additional, 1);
             for needle in [b"ab".as_slice(), b"".as_slice()] {
-                let CodecError::ResourceLimit(sticky) = next_match(ctx, b"", 0, 0, &[needle], "test F3D marker").unwrap_err() else {
+                let CodecError::ResourceLimit(sticky) =
+                    next_match(ctx, b"", 0, 0, &[needle], "test F3D marker").unwrap_err()
+                else {
                     panic!("sticky marker source refusal");
                 };
                 assert_eq!(sticky, original);
@@ -1028,12 +1039,17 @@ mod tests {
         policy.limits.max_materialized_bytes = 0;
         policy.limits.max_retained_bytes = 0;
         crate::test_support::with_decode_policy(&policy, |ctx| {
-            assert_eq!(next_match(ctx, b"aaa", 0, 3, &[b"ab"], "test F3D marker").unwrap(), None);
+            assert_eq!(
+                next_match(ctx, b"aaa", 0, 3, &[b"ab"], "test F3D marker").unwrap(),
+                None
+            );
             assert_eq!(ctx.resource_refusal(), None);
         });
         policy.limits.max_work_units = 2;
         crate::test_support::with_decode_policy(&policy, |ctx| {
-            let cadmpeg_core::CodecError::ResourceLimit(limit) = next_match(ctx, b"aaa", 0, 3, &[b"ab"], "test F3D marker").unwrap_err() else {
+            let cadmpeg_core::CodecError::ResourceLimit(limit) =
+                next_match(ctx, b"aaa", 0, 3, &[b"ab"], "test F3D marker").unwrap_err()
+            else {
                 panic!("the third reached byte must refuse");
             };
             assert_eq!(limit.used, 2);
@@ -1052,7 +1068,10 @@ mod tests {
         policy.limits.max_materialized_bytes = 0;
         policy.limits.max_retained_bytes = 0;
         crate::test_support::with_decode_policy(&policy, |ctx| {
-            assert_eq!(next_match(ctx, &bytes, 0, bytes.len(), &[b"ab"], "test F3D marker").unwrap(), Some(0));
+            assert_eq!(
+                next_match(ctx, &bytes, 0, bytes.len(), &[b"ab"], "test F3D marker").unwrap(),
+                Some(0)
+            );
             assert_eq!(ctx.resource_refusal(), None);
         });
     }

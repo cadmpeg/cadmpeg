@@ -53,9 +53,10 @@ pub(crate) fn primary_record_frames(
     let mut records = meta.records.iter().enumerate();
     while records.len() != 0 {
         let Some((ordinal, record)) =
-            ctx.next_charged(&mut records, "frame F3D primary records")? else {
-                break;
-            };
+            ctx.next_charged(&mut records, "frame F3D primary records")?
+        else {
+            break;
+        };
         if primary_index_storage
             .with_storage(|| {
                 ctx.insert_hash_map(
@@ -106,9 +107,10 @@ pub(crate) fn primary_record_frames(
     let mut secondary_records = meta.secondary_records.iter();
     while !secondary_records.as_slice().is_empty() {
         let Some(record) =
-            ctx.next_charged(&mut secondary_records, "index F3D secondary entities")? else {
-                break;
-            };
+            ctx.next_charged(&mut secondary_records, "index F3D secondary entities")?
+        else {
+            break;
+        };
         let secondary = usize::try_from(record.bulk_offset).map_err(|_| {
             CodecError::Malformed("F3D secondary record offset exceeds usize".into())
         })?;
@@ -191,7 +193,8 @@ fn take_record_index(
     let mut record_rows = 0..count;
     ctx.charge_work(0, "visit F3D MetaStream record index")?;
     while !record_rows.is_empty() {
-        let Some(_) = ctx.next_charged(&mut record_rows, "visit F3D MetaStream record index")? else {
+        let Some(_) = ctx.next_charged(&mut record_rows, "visit F3D MetaStream record index")?
+        else {
             break;
         };
         let Some(entity_id) = view.u64_le() else {
@@ -341,7 +344,9 @@ fn take_version_context(
     let mut version_rows = 0..count;
     ctx.charge_work(0, "visit F3D MetaStream version contexts")?;
     while !version_rows.is_empty() {
-        let Some(_) = ctx.next_charged(&mut version_rows, "visit F3D MetaStream version contexts")? else {
+        let Some(_) =
+            ctx.next_charged(&mut version_rows, "visit F3D MetaStream version contexts")?
+        else {
             break;
         };
         let token_end = require(at.checked_add(8), "version-context token", *at)?;
@@ -541,7 +546,11 @@ fn parse_inner(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<MetaStream, Pars
         let mut entity_rows_source = 0..id_count;
         ctx.charge_work(0, "visit F3D MetaStream type entity IDs")?;
         while !entity_rows_source.is_empty() {
-            let Some(index) = ctx.next_charged(&mut entity_rows_source, "visit F3D MetaStream type entity IDs")? else {
+            let Some(index) = ctx.next_charged(
+                &mut entity_rows_source,
+                "visit F3D MetaStream type entity IDs",
+            )?
+            else {
                 break;
             };
             let value = require(id_view.u64_le(), "type entity ids", id_view.position())?;
@@ -616,7 +625,9 @@ fn parse_inner(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<MetaStream, Pars
             let mut property_rows = 0..properties;
             ctx.charge_work(0, "visit F3D MetaStream properties")?;
             while !property_rows.is_empty() {
-                let Some(_) = ctx.next_charged(&mut property_rows, "visit F3D MetaStream properties")? else {
+                let Some(_) =
+                    ctx.next_charged(&mut property_rows, "visit F3D MetaStream properties")?
+                else {
                     break;
                 };
                 let (_, next) = require(

@@ -3,7 +3,8 @@ use cadmpeg_core::decode::DecodeContext;
 use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 
-const NONNULL_LOCUS_ERROR: &str = "design_dimension_locus_pairs requires two nonnull geometry loci and opaque_index";
+const NONNULL_LOCUS_ERROR: &str =
+    "design_dimension_locus_pairs requires two nonnull geometry loci and opaque_index";
 
 /// An arena containing only pairs of nonnull geometry loci with an opaque index.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -86,7 +87,12 @@ impl TryFrom<Vec<DesignDimensionLocusPair>> for DesignDimensionNullLocusPairs {
 
 impl From<Vec<dimension_null_locus_wire::Entry>> for DesignDimensionNullLocusPairs {
     fn from(entries: Vec<dimension_null_locus_wire::Entry>) -> Self {
-        Self(entries.into_iter().map(dimension_null_locus_wire::Entry::into_pair).collect())
+        Self(
+            entries
+                .into_iter()
+                .map(dimension_null_locus_wire::Entry::into_pair)
+                .collect(),
+        )
     }
 }
 
@@ -96,7 +102,9 @@ impl DesignDimensionNullLocusPairs {
         entries: Vec<dimension_null_locus_wire::Entry>,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
         let pairs = ctx.collect_vec(
-            entries.into_iter().map(dimension_null_locus_wire::Entry::into_pair),
+            entries
+                .into_iter()
+                .map(dimension_null_locus_wire::Entry::into_pair),
             "load F3D null locus pairs",
         )?;
         Ok(Self(pairs))

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{mesh_texture_table_record, parse_texture_table, synthetic_mesh_graph, texture_table_frame};
 use super::super::MeshTextureEntry;
+use super::{
+    mesh_texture_table_record, parse_texture_table, synthetic_mesh_graph, texture_table_frame,
+};
 use cadmpeg_core::decode::{u64_from_index, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 

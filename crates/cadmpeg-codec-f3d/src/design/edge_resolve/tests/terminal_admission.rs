@@ -15,28 +15,48 @@ fn terminal_operand() -> DesignEdgeOperand {
         serde_json::from_value(serde_json::json!({
             "field_count": 3, "header_value": 0, "scalars": scalars,
             "payload_prefix": [0], "payload_entry_count": 0, "entries": []
-        })).unwrap()
+        }))
+        .unwrap()
     };
     let mut operand = recipe_edge_operand(10, &[], &[]);
-    operand.recipe_structure = Some(crate::records::topology::edge_recipe::DesignEdgeRecipeStructure {
-        root: 2, sides: vec![side([2, 1]), side([1, 3])],
-    });
-    operand.terminal_reference_edge_slots = vec![vec![25, 38, 39, 62], vec![25, 35, 55, 69], vec![35, 39, 57, 83]];
+    operand.recipe_structure = Some(
+        crate::records::topology::edge_recipe::DesignEdgeRecipeStructure {
+            root: 2,
+            sides: vec![side([2, 1]), side([1, 3])],
+        },
+    );
+    operand.terminal_reference_edge_slots = vec![
+        vec![25, 38, 39, 62],
+        vec![25, 35, 55, 69],
+        vec![35, 39, 57, 83],
+    ];
     operand.terminal_boundary_edge_slots = vec![25, 35, 38, 39, 55, 57, 62, 69, 83];
     operand
 }
 
 #[test]
 fn terminal_edge_admits_reached_sources_and_membership_with_sticky_refusal() {
-    for operation in ["scan F3D terminal reference edges", "find F3D terminal shared reference edge", "find F3D terminal boundary edge"] {
+    for operation in [
+        "scan F3D terminal reference edges",
+        "find F3D terminal shared reference edge",
+        "find F3D terminal boundary edge",
+    ] {
         crate::test_support::with_decode_policy(&probe_policy(), |ctx| {
             let mut operand = terminal_operand();
             assert_eq!(resolved_edge_operand(&operand, ctx).unwrap(), Some(25));
             let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-            let CodecError::ResourceLimit(original) = resolved_edge_operand(&operand, ctx).unwrap_err() else { panic!("work refusal"); };
+            let CodecError::ResourceLimit(original) =
+                resolved_edge_operand(&operand, ctx).unwrap_err()
+            else {
+                panic!("work refusal");
+            };
             assert_eq!(original.operation, operation);
             operand.resolved_edge_slot = Some(99);
-            let CodecError::ResourceLimit(sticky) = resolved_edge_operand(&operand, ctx).unwrap_err() else { panic!("sticky refusal"); };
+            let CodecError::ResourceLimit(sticky) =
+                resolved_edge_operand(&operand, ctx).unwrap_err()
+            else {
+                panic!("sticky refusal");
+            };
             assert_eq!(sticky, original);
         });
     }
@@ -60,10 +80,16 @@ fn terminal_edge_fast_paths_skip_reference_work_and_storage() {
     crate::test_support::with_decode_policy(&probe_policy(), |ctx| {
         let mut operand = terminal_operand();
         operand.resolved_edge_slot = Some(99);
-        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "scan F3D terminal reference edges", None);
+        let _probe = RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            "scan F3D terminal reference edges",
+            None,
+        );
         assert_eq!(resolved_edge_operand(&operand, ctx).unwrap(), Some(99));
         operand.resolved_edge_slot = None;
-        assert!(matches!(resolved_edge_operand(&operand, ctx), Err(CodecError::ResourceLimit(limit)) if limit.operation == "scan F3D terminal reference edges"));
+        assert!(
+            matches!(resolved_edge_operand(&operand, ctx), Err(CodecError::ResourceLimit(limit)) if limit.operation == "scan F3D terminal reference edges")
+        );
     });
 }
 
@@ -86,9 +112,13 @@ fn terminal_edge_duplicate_candidate_skips_repeated_membership() {
             let result = resolved_edge_operand(&operand, ctx);
             if completes {
                 assert_eq!(result.unwrap(), Some(25));
-                assert!(matches!(ctx.charge_work(1, "after terminal proof"), Err(CodecError::ResourceLimit(limit)) if limit.used == required));
+                assert!(
+                    matches!(ctx.charge_work(1, "after terminal proof"), Err(CodecError::ResourceLimit(limit)) if limit.used == required)
+                );
             } else {
-                assert!(matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.operation == "find F3D terminal boundary edge"));
+                assert!(
+                    matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.operation == "find F3D terminal boundary edge")
+                );
             }
         });
     }
@@ -99,10 +129,16 @@ fn ambiguous_terminal_edge_skips_boundary_query() {
     crate::test_support::with_decode_policy(&probe_policy(), |ctx| {
         let mut operand = terminal_operand();
         operand.terminal_reference_edge_slots[0].push(69);
-        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "find F3D terminal boundary edge", None);
+        let _probe = RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            "find F3D terminal boundary edge",
+            None,
+        );
         assert_eq!(resolved_edge_operand(&operand, ctx).unwrap(), None);
         operand.terminal_reference_edge_slots[0].pop();
-        assert!(matches!(resolved_edge_operand(&operand, ctx), Err(CodecError::ResourceLimit(limit)) if limit.operation == "find F3D terminal boundary edge"));
+        assert!(
+            matches!(resolved_edge_operand(&operand, ctx), Err(CodecError::ResourceLimit(limit)) if limit.operation == "find F3D terminal boundary edge")
+        );
     });
 }
 
@@ -116,8 +152,13 @@ fn radius_edge_queries_terminal_proof_once_per_operand() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = required;
     crate::test_support::with_decode_policy(&policy, |ctx| {
-        assert_eq!(super::super::radius_edge_group_candidates(&[&operand], 3.0, ctx).unwrap(), Some(vec![25]));
-        assert!(matches!(ctx.charge_work(1, "after radius proof"), Err(CodecError::ResourceLimit(limit)) if limit.used == required));
+        assert_eq!(
+            super::super::radius_edge_group_candidates(&[&operand], 3.0, ctx).unwrap(),
+            Some(vec![25])
+        );
+        assert!(
+            matches!(ctx.charge_work(1, "after radius proof"), Err(CodecError::ResourceLimit(limit)) if limit.used == required)
+        );
     });
 }
 
@@ -132,9 +173,15 @@ fn radius_edge_rejected_chain_releases_scratch() {
     policy.limits.max_materialized_bytes = 4 * u64::try_from(std::mem::size_of::<i64>()).unwrap();
     crate::test_support::with_decode_policy(&policy, |ctx| {
         for _ in 0..2 {
-            assert_eq!(super::super::radius_edge_group_candidates(&[&proven, &unsupported], 3.0, ctx).unwrap(), None);
+            assert_eq!(
+                super::super::radius_edge_group_candidates(&[&proven, &unsupported], 3.0, ctx)
+                    .unwrap(),
+                None
+            );
         }
-        assert!(matches!(super::super::radius_edge_group_candidates(&[&proven], 3.0, ctx), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes));
+        assert!(
+            matches!(super::super::radius_edge_group_candidates(&[&proven], 3.0, ctx), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
+        );
     });
 }
 
@@ -142,9 +189,20 @@ fn radius_edge_rejected_chain_releases_scratch() {
 fn context_only_edge_members_preserve_a_terminal_query_refusal() {
     crate::test_support::with_decode_policy(&probe_policy(), |ctx| {
         let operand = terminal_operand();
-        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "find F3D terminal shared reference edge", None);
-        let members = [&operand].into_iter().map(|operand| Ok((resolved_edge_operand(operand, ctx)?, operand.changed_boundary_edge_slots.as_slice())));
-        assert!(matches!(super::super::context_only_edge_group_candidates(members, ctx), Err(CodecError::ResourceLimit(limit)) if limit.operation == "find F3D terminal shared reference edge"));
+        let _probe = RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            "find F3D terminal shared reference edge",
+            None,
+        );
+        let members = [&operand].into_iter().map(|operand| {
+            Ok((
+                resolved_edge_operand(operand, ctx)?,
+                operand.changed_boundary_edge_slots.as_slice(),
+            ))
+        });
+        assert!(
+            matches!(super::super::context_only_edge_group_candidates(members, ctx), Err(CodecError::ResourceLimit(limit)) if limit.operation == "find F3D terminal shared reference edge")
+        );
     });
 }
 
@@ -156,10 +214,15 @@ fn context_only_edge_rejection_releases_candidates_before_the_next_query() {
     crate::test_support::with_decode_policy(&policy, |ctx| {
         for _ in 0..2 {
             let members = [Ok((Some(25), &[][..])), Ok((None, &[38][..]))];
-            assert_eq!(super::super::context_only_edge_group_candidates(members, ctx).unwrap(), None);
+            assert_eq!(
+                super::super::context_only_edge_group_candidates(members, ctx).unwrap(),
+                None
+            );
         }
         let members = [Ok((Some(25), &[][..]))];
-        assert!(matches!(super::super::context_only_edge_group_candidates(members, ctx), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes));
+        assert!(
+            matches!(super::super::context_only_edge_group_candidates(members, ctx), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
+        );
     });
 }
 
@@ -167,16 +230,34 @@ fn context_only_edge_rejection_releases_candidates_before_the_next_query() {
 fn radius_edge_admits_each_candidate_and_dedup_before_execution() {
     let mut operand = terminal_operand();
     operand.resolved_edge_slot = Some(25);
-    operand.treatment_radius_candidates = vec![crate::records::topology::edge_identity::DesignEdgeTreatmentRadiusCandidate {
-        edge_slot: 25, radius: cadmpeg_ir::scalar::PositiveReal::new(3.0).unwrap(),
-    }];
-    for operation in ["scan F3D radius edge operands", "scan F3D treatment radius candidates", "deduplicate F3D radius edge candidates"] {
+    operand.treatment_radius_candidates = vec![
+        crate::records::topology::edge_identity::DesignEdgeTreatmentRadiusCandidate {
+            edge_slot: 25,
+            radius: cadmpeg_ir::scalar::PositiveReal::new(3.0).unwrap(),
+        },
+    ];
+    for operation in [
+        "scan F3D radius edge operands",
+        "scan F3D treatment radius candidates",
+        "deduplicate F3D radius edge candidates",
+    ] {
         crate::test_support::with_decode_policy(&probe_policy(), |ctx| {
-            assert_eq!(super::super::radius_edge_group_candidates(&[&operand], 3.0, ctx).unwrap(), Some(vec![25]));
+            assert_eq!(
+                super::super::radius_edge_group_candidates(&[&operand], 3.0, ctx).unwrap(),
+                Some(vec![25])
+            );
             let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-            let CodecError::ResourceLimit(original) = super::super::radius_edge_group_candidates(&[&operand], 3.0, ctx).unwrap_err() else { panic!("radius work refusal"); };
+            let CodecError::ResourceLimit(original) =
+                super::super::radius_edge_group_candidates(&[&operand], 3.0, ctx).unwrap_err()
+            else {
+                panic!("radius work refusal");
+            };
             assert_eq!(original.operation, operation);
-            let CodecError::ResourceLimit(sticky) = super::super::radius_edge_group_candidates(&[], f64::NAN, ctx).unwrap_err() else { panic!("sticky radius refusal"); };
+            let CodecError::ResourceLimit(sticky) =
+                super::super::radius_edge_group_candidates(&[], f64::NAN, ctx).unwrap_err()
+            else {
+                panic!("sticky radius refusal");
+            };
             assert_eq!(sticky, original);
         });
     }

@@ -75,7 +75,8 @@ fn complete_record_binding_refusal(operation: &str) -> cadmpeg_core::CodecError 
                 states,
                 &bytes,
                 cadmpeg_asm::kernel_header::RefWidth::Eight,
-            ).map(|_| ())
+            )
+            .map(|_| ())
         },
     )
 }

@@ -3,7 +3,7 @@
 use super::super::*;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
 const STREAM: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
-use super::intervals::{parameter_at, owner_at};
+use super::intervals::{owner_at, parameter_at};
 fn point_at(index: u32) -> SketchPoint {
     let mut point = SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
         id: "f3d:native:sketch-point#0".into(),
@@ -425,8 +425,15 @@ fn lazy_locus_present_stream_without_pair_skips_governing() {
     let archive = archive(&[0; 300], true);
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         let inputs = DimensionDecodeInputs {
-            scan, placements: &[], parameters: &parameters, owners: &owners,
-            companions: &companions, scopes: &[], headers: &[], points: &points, curves: &[],
+            scan,
+            placements: &[],
+            parameters: &parameters,
+            owners: &owners,
+            companions: &companions,
+            scopes: &[],
+            headers: &[],
+            points: &points,
+            curves: &[],
         };
         for null in [false, true] {
             let arena = DecodeArena::new();
@@ -435,7 +442,9 @@ fn lazy_locus_present_stream_without_pair_skips_governing() {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut records = RecordOffsetCache::new(&ctx).unwrap();
             let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-                ResourceDimension::WorkUnits, "index F3D governing dimension owners", None,
+                ResourceDimension::WorkUnits,
+                "index F3D governing dimension owners",
+                None,
             );
             let result = if null {
                 decode_dimension_null_locus_pairs(&ctx, &inputs, &mut records, &[], &[])
@@ -456,15 +465,25 @@ fn lazy_locus_keeps_the_original_refusal_before_index_demand() {
     let archive = archive(&[], false);
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         let inputs = DimensionDecodeInputs {
-            scan, placements: &[], parameters: &parameters, owners: &owners,
-            companions: &[], scopes: &[], headers: &[], points: &points, curves: &[],
+            scan,
+            placements: &[],
+            parameters: &parameters,
+            owners: &owners,
+            companions: &[],
+            scopes: &[],
+            headers: &[],
+            points: &points,
+            curves: &[],
         };
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut records = RecordOffsetCache::new(&ctx).unwrap();
-        let CodecError::ResourceLimit(original) = ctx.charge_work(1, "original dimension pair refusal").unwrap_err() else {
+        let CodecError::ResourceLimit(original) = ctx
+            .charge_work(1, "original dimension pair refusal")
+            .unwrap_err()
+        else {
             panic!("the initial operation must refuse");
         };
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
@@ -497,7 +516,8 @@ fn sketch_header(index: u32) -> DesignEntityHeader {
             Some("MSketch".to_owned()),
             None,
             crate::records::identity::ReferenceRun::located(Vec::new()),
-        ).unwrap(),
+        )
+        .unwrap(),
     }
 }
 
@@ -512,12 +532,20 @@ fn lazy_annotation_and_groups_skip_unreached_interval_and_geometry_owners() {
         for missing in [false, true] {
             let companions = if missing { vec![companion()] } else { vec![] };
             let inputs = DimensionDecodeInputs {
-                scan, placements: &[], parameters: &parameters, owners: &owners,
-                companions: &companions, scopes: &[], headers: &[], points: &points, curves: &[],
+                scan,
+                placements: &[],
+                parameters: &parameters,
+                owners: &owners,
+                companions: &companions,
+                scopes: &[],
+                headers: &[],
+                points: &points,
+                curves: &[],
             };
             for annotation in [false, true] {
                 for operation in [
-                    "f3d companion boundaries", "scan F3D dimension sketch points",
+                    "f3d companion boundaries",
+                    "scan F3D dimension sketch points",
                     "scan F3D dimension sketch entities",
                 ] {
                     let arena = DecodeArena::new();
@@ -526,12 +554,28 @@ fn lazy_annotation_and_groups_skip_unreached_interval_and_geometry_owners() {
                     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
                     let mut records = RecordOffsetCache::new(&ctx).unwrap();
                     let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-                        ResourceDimension::WorkUnits, operation, None,
+                        ResourceDimension::WorkUnits,
+                        operation,
+                        None,
                     );
                     if annotation {
-                        assert!(decode_dimension_annotation_frames(&ctx, &inputs, &mut records, &entities).unwrap().is_empty());
+                        assert!(decode_dimension_annotation_frames(
+                            &ctx,
+                            &inputs,
+                            &mut records,
+                            &entities
+                        )
+                        .unwrap()
+                        .is_empty());
                     } else {
-                        assert!(decode_dimension_locus_groups(&ctx, &inputs, &mut records, &entities).unwrap().is_empty());
+                        assert!(decode_dimension_locus_groups(
+                            &ctx,
+                            &inputs,
+                            &mut records,
+                            &entities
+                        )
+                        .unwrap()
+                        .is_empty());
                     }
                     assert!(ctx.resource_refusal().is_none());
                 }
@@ -576,22 +620,46 @@ fn lazy_group_indexes_keep_the_original_typed_frame_and_refusals() {
     let companions = [companion()];
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         let inputs = DimensionDecodeInputs {
-            scan, placements: &[], parameters: &parameters, owners: &owners,
-            companions: &companions, scopes: &[], headers: &[], points: &points, curves: &[],
+            scan,
+            placements: &[],
+            parameters: &parameters,
+            owners: &owners,
+            companions: &companions,
+            scopes: &[],
+            headers: &[],
+            points: &points,
+            curves: &[],
         };
-        for target in [None, Some("f3d companion boundaries"), Some("scan F3D dimension sketch points"), Some("scan F3D dimension sketch entities")] {
+        for target in [
+            None,
+            Some("f3d companion boundaries"),
+            Some("scan F3D dimension sketch points"),
+            Some("scan F3D dimension sketch entities"),
+        ] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = u64::MAX;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut records = RecordOffsetCache::new(&ctx).unwrap();
-            let _probe = target.map(|operation| cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None));
+            let _probe = target.map(|operation| {
+                cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+                    ResourceDimension::WorkUnits,
+                    operation,
+                    None,
+                )
+            });
             let result = decode_dimension_locus_groups(&ctx, &inputs, &mut records, &entities);
             if let Some(target) = target {
-                let Err(CodecError::ResourceLimit(original)) = result else { panic!("the real reached index must refuse"); };
+                let Err(CodecError::ResourceLimit(original)) = result else {
+                    panic!("the real reached index must refuse");
+                };
                 assert_eq!(original.operation, target);
                 assert_eq!(ctx.resource_refusal(), Some(original));
-                let Err(CodecError::ResourceLimit(later)) = ctx.charge_work(0, "after group index refusal") else { panic!("the original refusal must remain fused"); };
+                let Err(CodecError::ResourceLimit(later)) =
+                    ctx.charge_work(0, "after group index refusal")
+                else {
+                    panic!("the original refusal must remain fused");
+                };
                 assert_eq!(later, original);
             } else {
                 let groups = result.unwrap();
@@ -604,7 +672,18 @@ fn lazy_group_indexes_keep_the_original_typed_frame_and_refusals() {
                 assert_eq!(group.owner_reference, 172);
                 assert_eq!(group.owner_role, 1);
                 assert_eq!(group.state, 0);
-                assert_eq!(group.loci.iter().map(|locus| (locus.geometry_record_index, locus.role, locus.returned.value)).collect::<Vec<_>>(), [(175, 2, 217), (217, 1, 175)]);
+                assert_eq!(
+                    group
+                        .loci
+                        .iter()
+                        .map(|locus| (
+                            locus.geometry_record_index,
+                            locus.role,
+                            locus.returned.value
+                        ))
+                        .collect::<Vec<_>>(),
+                    [(175, 2, 217), (217, 1, 175)]
+                );
                 assert_eq!(group.next_class_tag.as_str(), "314");
                 assert_eq!(group.next_record_index, 250);
             }
@@ -668,22 +747,46 @@ fn lazy_annotation_indexes_keep_the_original_native_frame_and_refusals() {
     )];
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         let inputs = DimensionDecodeInputs {
-            scan, placements: &[], parameters: &parameters, owners: &owners,
-            companions: &companions, scopes: &[], headers: &[], points: &points, curves: &[],
+            scan,
+            placements: &[],
+            parameters: &parameters,
+            owners: &owners,
+            companions: &companions,
+            scopes: &[],
+            headers: &[],
+            points: &points,
+            curves: &[],
         };
-        for target in [None, Some("f3d companion boundaries"), Some("scan F3D dimension sketch points"), Some("scan F3D dimension sketch entities")] {
+        for target in [
+            None,
+            Some("f3d companion boundaries"),
+            Some("scan F3D dimension sketch points"),
+            Some("scan F3D dimension sketch entities"),
+        ] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = u64::MAX;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut records = RecordOffsetCache::new(&ctx).unwrap();
-            let _probe = target.map(|operation| cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None));
+            let _probe = target.map(|operation| {
+                cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+                    ResourceDimension::WorkUnits,
+                    operation,
+                    None,
+                )
+            });
             let result = decode_dimension_annotation_frames(&ctx, &inputs, &mut records, &entities);
             if let Some(target) = target {
-                let Err(CodecError::ResourceLimit(original)) = result else { panic!("the real reached annotation index must refuse"); };
+                let Err(CodecError::ResourceLimit(original)) = result else {
+                    panic!("the real reached annotation index must refuse");
+                };
                 assert_eq!(original.operation, target);
                 assert_eq!(ctx.resource_refusal(), Some(original));
-                let Err(CodecError::ResourceLimit(later)) = ctx.charge_work(0, "after annotation index refusal") else { panic!("the original refusal must remain fused"); };
+                let Err(CodecError::ResourceLimit(later)) =
+                    ctx.charge_work(0, "after annotation index refusal")
+                else {
+                    panic!("the original refusal must remain fused");
+                };
                 assert_eq!(later, original);
             } else {
                 let frames = result.unwrap();
@@ -694,11 +797,29 @@ fn lazy_annotation_indexes_keep_the_original_native_frame_and_refusals() {
                 assert_eq!(frame.governing_owner_record_index, 390);
                 assert_eq!(frame.governing_companion_record_index, 391);
                 assert_eq!(frame.entity_genesis, 0x202);
-                assert_eq!(frame.annotation_byte_offset(), u64_from_index(58 + annotation_byte_offset));
-                assert_eq!(frame.clone().into_draft().annotation_bytes, [0xaa, 0xbb, 0xcc]);
+                assert_eq!(
+                    frame.annotation_byte_offset(),
+                    u64_from_index(58 + annotation_byte_offset)
+                );
+                assert_eq!(
+                    frame.clone().into_draft().annotation_bytes,
+                    [0xaa, 0xbb, 0xcc]
+                );
                 assert_eq!(frame.operands()[0].geometry_record_index, None);
-                assert_eq!(frame.clone().into_draft().return_members.iter().map(|member| member.value.get()).collect::<Vec<_>>(), [376, 354]);
-                assert_eq!(frame.paired_byte_offset(), u64_from_index(58 + paired_byte_offset));
+                assert_eq!(
+                    frame
+                        .clone()
+                        .into_draft()
+                        .return_members
+                        .iter()
+                        .map(|member| member.value.get())
+                        .collect::<Vec<_>>(),
+                    [376, 354]
+                );
+                assert_eq!(
+                    frame.paired_byte_offset(),
+                    u64_from_index(58 + paired_byte_offset)
+                );
                 assert_eq!(frame.owner_reference, 201);
             }
         }

@@ -32,7 +32,14 @@ fn entity_membership_keeps_later_member_ordinals_and_each_eligibility_field() {
     let mut wrong_ordinal = selected.clone();
     wrong_ordinal.group_member_ordinal = 2;
     let wrong_record = super::selection(103, 1, 600);
-    let operands = [foreign, wrong_scope, wrong_group, wrong_ordinal, wrong_record, selected];
+    let operands = [
+        foreign,
+        wrong_scope,
+        wrong_group,
+        wrong_ordinal,
+        wrong_record,
+        selected,
+    ];
     let original = operands.clone();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -44,7 +51,14 @@ fn entity_membership_keeps_later_member_ordinals_and_each_eligibility_field() {
         assert_eq!(ctx.resource_refusal(), None);
     });
     assert_eq!(operands, original);
-    assert_eq!(group.members().iter().map(|row| row.value).collect::<Vec<_>>(), [101, 102]);
+    assert_eq!(
+        group
+            .members()
+            .iter()
+            .map(|row| row.value)
+            .collect::<Vec<_>>(),
+        [101, 102]
+    );
 }
 
 #[test]
@@ -62,8 +76,11 @@ fn entity_membership_first_match_keeps_duplicate_presence_and_unread_tails() {
     let operand_stream = crate::ids::native_stream(&operands[0].id).unwrap();
     // Actual scope suffix, one member and operand visit, operand suffix, and
     // equal stream bytes. Presence stops with no next/end probe after match.
-    let reached = u64::try_from(scope.id.len() - scope_stream.len() + 2
-        + operands[0].id.len() - operand_stream.len() + operand_stream.len()).unwrap();
+    let reached = u64::try_from(
+        scope.id.len() - scope_stream.len() + 2 + operands[0].id.len() - operand_stream.len()
+            + operand_stream.len(),
+    )
+    .unwrap();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = reached;
     policy.limits.max_collection_items = 0;
@@ -122,7 +139,10 @@ fn entity_membership_absent_scope_stream_differs_from_empty_stream() {
         let mut operand = super::selection(101, 0, 600);
         operand.id = operand_id.into();
         crate::test_support::with_decode_context(|ctx| {
-            assert_eq!(query(ctx, &scope, &group, std::slice::from_ref(&operand)).unwrap(), expected);
+            assert_eq!(
+                query(ctx, &scope, &group, std::slice::from_ref(&operand)).unwrap(),
+                expected
+            );
             assert_eq!(ctx.resource_refusal(), None);
         });
     }
@@ -144,7 +164,8 @@ fn entity_membership_each_actual_phase_keeps_original_refusal_and_native_inputs(
         policy.limits.max_work_units = u64::MAX;
         crate::test_support::with_decode_policy(&policy, |ctx| {
             let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, Some(1));
-            let Err(CodecError::ResourceLimit(refusal)) = query(ctx, &scope, &group, &operands) else {
+            let Err(CodecError::ResourceLimit(refusal)) = query(ctx, &scope, &group, &operands)
+            else {
                 panic!("the actual membership phase must refuse");
             };
             assert_eq!(refusal.operation, operation);

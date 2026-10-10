@@ -2,7 +2,9 @@
 //! Draft scans use bounded role slots and preserve native anchor choices.
 
 use crate::records::feature::direct_face::DesignDraftOperation;
-use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut};
+use crate::records::feature::scope::{
+    DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
+};
 use crate::records::identity::ReferenceRun;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
@@ -13,15 +15,19 @@ use cadmpeg_ir::features::{DraftAnchor, FaceSelection, FeatureDefinition, Featur
 
 fn scope(references: Vec<u32>) -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty(
-        "f3d:Design/BulkStream.dat:scope#77", DesignFeatureKind::Draft, 77,
+        "f3d:Design/BulkStream.dat:scope#77",
+        DesignFeatureKind::Draft,
+        77,
     );
-    scope.try_edit(|draft| {
-        draft.reference_members = ReferenceRun::unlocated(references);
-        draft.layout_fixture_references();
-        draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
-        draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
-        draft.layout_fixture_tail();
-    }).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = ReferenceRun::unlocated(references);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
     let DesignScopePayloadMut::Draft(slot) = scope.payload_mut() else {
         panic!("actual Draft payload");
     };
@@ -66,10 +72,15 @@ fn draft_scope_queries_preserve_native_faces_anchor_and_empty_streams_without_ro
         crate::test_support::with_decode_policy(&policy, |ctx| {
             let Some(FeatureDefinition::Operation(FeatureOperation::Draft {
                 faces: FaceSelection::Native(faces),
-                anchor: DraftAnchor::NeutralPlane { plane: FaceSelection::Native(plane), pull },
+                anchor:
+                    DraftAnchor::NeutralPlane {
+                        plane: FaceSelection::Native(plane),
+                        pull,
+                    },
                 angle,
                 outward,
-            })) = project(ctx, &scope, &groups).unwrap() else {
+            })) = project(ctx, &scope, &groups).unwrap()
+            else {
                 panic!("native Draft selections must remain exact");
             };
             assert_eq!(faces, groups[0].id);
@@ -87,7 +98,13 @@ fn draft_scope_queries_preserve_native_faces_anchor_and_empty_streams_without_ro
 fn draft_scope_queries_missing_member_keeps_native_input_and_uses_no_storage() {
     let scope = scope(vec![100, 102, 103]);
     let groups = [
-        super::group(77, 0, 100, vec![101, 999, 999], DesignOperandRole::ROLE_0X10),
+        super::group(
+            77,
+            0,
+            100,
+            vec![101, 999, 999],
+            DesignOperandRole::ROLE_0X10,
+        ),
         super::group(77, 2, 102, vec![103], DesignOperandRole::ROLE_0X21),
     ];
     let original = groups.clone();
@@ -105,13 +122,23 @@ fn draft_scope_queries_missing_member_keeps_native_input_and_uses_no_storage() {
 #[test]
 fn draft_scope_queries_no_role_group_skips_unused_reference_run() {
     let scope = scope(vec![100; 4096]);
-    let groups = [super::group(77, 0, 100, vec![101], DesignOperandRole::ROLE_0X10)];
+    let groups = [super::group(
+        77,
+        0,
+        100,
+        vec![101],
+        DesignOperandRole::ROLE_0X10,
+    )];
     let stream = crate::ids::native_stream(&scope.id).unwrap();
     let group_stream = crate::ids::native_stream(&groups[0].id).unwrap();
     // Single-face query and role query each parse the expected suffix once,
     // visit one raw group, parse and compare its stream, then probe the end.
-    let reached = u64::try_from(2 * (scope.id.len() - stream.len() + 1
-        + groups[0].id.len() - group_stream.len() + stream.len() + 1)).unwrap();
+    let reached = u64::try_from(
+        2 * (scope.id.len() - stream.len() + 1 + groups[0].id.len() - group_stream.len()
+            + stream.len()
+            + 1),
+    )
+    .unwrap();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = reached;
     policy.limits.max_collection_items = 0;
@@ -120,7 +147,9 @@ fn draft_scope_queries_no_role_group_skips_unused_reference_run() {
     crate::test_support::with_decode_policy(&policy, |ctx| {
         assert!(project(ctx, &scope, &groups).unwrap().is_none());
         assert_eq!(ctx.resource_refusal(), None);
-        let Err(CodecError::ResourceLimit(refusal)) = ctx.charge_work(1, "check Draft reached work") else {
+        let Err(CodecError::ResourceLimit(refusal)) =
+            ctx.charge_work(1, "check Draft reached work")
+        else {
             panic!("the actual two queries must consume exactly their reached work");
         };
         assert_eq!((refusal.used, refusal.additional), (reached, 1));
@@ -167,7 +196,9 @@ fn assert_refusal(operation: &'static str) {
         assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
         assert_eq!(refusal.additional, 1);
         assert_eq!(ctx.resource_refusal(), Some(refusal.clone()));
-        assert!(matches!(project(ctx, &scope, &[]), Err(CodecError::ResourceLimit(later)) if later == refusal));
+        assert!(
+            matches!(project(ctx, &scope, &[]), Err(CodecError::ResourceLimit(later)) if later == refusal)
+        );
     });
     assert_eq!(groups, original);
 }

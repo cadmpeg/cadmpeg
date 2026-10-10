@@ -735,7 +735,8 @@ impl<'ctx, 'arena> PrimaryFrames<'ctx, 'arena> {
 
     fn frame(&self, entity: u64) -> Result<Option<PrimaryRecordFrame>, CodecError> {
         self.ctx.charge_work(0, "find F3D body-map primary frame")?;
-        Ok(self.by_entity
+        Ok(self
+            .by_entity
             .get(&entity)
             .and_then(|ordinal| self.frames.get(*ordinal))
             .copied())
@@ -1435,8 +1436,7 @@ pub(crate) fn design_model_blob_names<'ctx>(
         let (modern, held_storage) = body_map_records(ctx, bytes, &metadata, &primary)?;
         _modern_storage = held_storage;
         let _snapshot_storage;
-        let (snapshots, held_storage) =
-            snapshot_body_map_records(ctx, bytes, &metadata, &primary)?;
+        let (snapshots, held_storage) = snapshot_body_map_records(ctx, bytes, &metadata, &primary)?;
         _snapshot_storage = held_storage;
         let modern_selected = !modern.is_empty();
         for (records, selected, operation) in [
@@ -2086,9 +2086,9 @@ fn browser_node_identity_at(bytes: &[u8], at: usize) -> Option<ScannedBrowserNod
 #[cfg(test)]
 mod tests {
     mod map_limits;
+    mod primary_session;
     mod recipe_ids;
     mod reference_candidates;
-    mod primary_session;
 
     use cadmpeg_core::decode::u64_from_index;
 
@@ -2152,7 +2152,9 @@ mod tests {
         let _storage;
         let (pairs, held_storage) = body_bindings(&ctx, bytes, meta).expect("body-map pairs");
         _storage = held_storage;
-        _storage.commit_value(pairs).expect("body-map pairs storage")
+        _storage
+            .commit_value(pairs)
+            .expect("body-map pairs storage")
     }
 
     fn body_member_archive(members: &[(u8, u64, u16)], terminator: u8) -> (Vec<u8>, usize) {

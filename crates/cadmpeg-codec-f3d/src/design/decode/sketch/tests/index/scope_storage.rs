@@ -6,10 +6,7 @@ use cadmpeg_core::CodecError;
 
 #[test]
 fn scoped_native_scope_tuple_holds_actual_text_storage_without_retained_output() {
-    for (name, expected) in [
-        ("a:b", "f3d:a%3Ab"),
-        ("α\u{2003}β", "f3d:α%E2%80%83β"),
-    ] {
+    for (name, expected) in [("a:b", "f3d:a%3Ab"), ("α\u{2003}β", "f3d:α%E2%80%83β")] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
@@ -18,11 +15,16 @@ fn scoped_native_scope_tuple_holds_actual_text_storage_without_retained_output()
         let owner = native_scope_scoped(&ctx, name).unwrap();
         assert_eq!(owner.0, expected);
         assert_eq!(owner.0.capacity(), expected.len());
-        let Err(CodecError::ResourceLimit(original)) = ctx.reserve_scoped(1, "while scope tuple lives") else {
+        let Err(CodecError::ResourceLimit(original)) =
+            ctx.reserve_scoped(1, "while scope tuple lives")
+        else {
             panic!("the actual returned text backing must stay held");
         };
         assert_eq!(original.dimension, ResourceDimension::MaterializedBytes);
-        assert_eq!((original.used, original.additional), (policy.limits.max_materialized_bytes, 1));
+        assert_eq!(
+            (original.used, original.additional),
+            (policy.limits.max_materialized_bytes, 1)
+        );
         drop(owner);
         let Err(CodecError::ResourceLimit(later)) = native_scope_scoped(&ctx, "") else {
             panic!("dropping scratch must preserve the original refusal");
@@ -44,14 +46,18 @@ fn scoped_native_scope_tuple_releases_direct_and_rejected_return_storage() {
                 let candidate = native_scope_scoped(&ctx, "a:b")?;
                 assert_eq!(candidate.0, "f3d:a%3Ab");
                 Ok::<_, CodecError>(None::<()>)
-            })().unwrap();
+            })()
+            .unwrap();
             assert_eq!(result, None);
         } else {
             let owner = native_scope_scoped(&ctx, "a:b").unwrap();
             assert_eq!(owner.0, "f3d:a%3Ab");
             drop(owner);
         }
-        drop(ctx.reserve_scoped(9, "after scope tuple destruction").unwrap());
+        drop(
+            ctx.reserve_scoped(9, "after scope tuple destruction")
+                .unwrap(),
+        );
         ctx.finish_session().unwrap();
     }
 }

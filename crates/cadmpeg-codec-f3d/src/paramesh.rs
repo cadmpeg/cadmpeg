@@ -1961,10 +1961,9 @@ fn decode_index_positions(
     }
 
     let _decoded_storage;
-    let (decoded, held_storage) = ctx
-        .with_scoped_storage("stage paramesh index deltas", || {
-            decode_terminal_delta_values(ctx, stream)
-        })?;
+    let (decoded, held_storage) = ctx.with_scoped_storage("stage paramesh index deltas", || {
+        decode_terminal_delta_values(ctx, stream)
+    })?;
     _decoded_storage = held_storage;
     let mut positions = Vec::new();
     let mut previous = None;

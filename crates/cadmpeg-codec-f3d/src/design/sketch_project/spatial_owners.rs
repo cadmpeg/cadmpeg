@@ -32,11 +32,12 @@ fn sketch_curve_is_spatial(
         }
         Some(SketchCurveGeometry::Nurbs { geometry, .. }) => {
             let poles = geometry.poles();
-            poles.point_count() != 0 && ctx.any_by(
-                poles.points(),
-                |point| Ok(!planar_point(point)),
-                "classify F3D sketch NURBS poles",
-            )?
+            poles.point_count() != 0
+                && ctx.any_by(
+                    poles.points(),
+                    |point| Ok(!planar_point(point)),
+                    "classify F3D sketch NURBS poles",
+                )?
         }
         None => false,
     })
@@ -52,11 +53,15 @@ pub(super) fn spatial_geometry_owners<'a>(
     if !curves.is_empty() {
         let mut input = curves.iter();
         while let Some(curve) = ctx.next_charged(&mut input, "visit F3D spatial owner curve")? {
-            let Some(owner) = curve.owner_reference else { continue; };
+            let Some(owner) = curve.owner_reference else {
+                continue;
+            };
             if !sketch_curve_is_spatial(ctx, curve)? {
                 continue;
             }
-            let Some(scope) = native_stream_charged(ctx, &curve.id, "resolve F3D spatial curve owner stream")? else {
+            let Some(scope) =
+                native_stream_charged(ctx, &curve.id, "resolve F3D spatial curve owner stream")?
+            else {
                 continue;
             };
             if !owners.contains(&(scope, owner)) {
@@ -68,11 +73,15 @@ pub(super) fn spatial_geometry_owners<'a>(
     if !points.is_empty() {
         let mut input = points.iter();
         while let Some(point) = ctx.next_charged(&mut input, "visit F3D spatial owner point")? {
-            let Some(owner) = point.owner_reference else { continue; };
+            let Some(owner) = point.owner_reference else {
+                continue;
+            };
             if !(point.depth().abs() > EPS_SPATIAL_OWNER_DEPTH) {
                 continue;
             }
-            let Some(scope) = native_stream_charged(ctx, &point.id, "resolve F3D spatial point owner stream")? else {
+            let Some(scope) =
+                native_stream_charged(ctx, &point.id, "resolve F3D spatial point owner stream")?
+            else {
                 continue;
             };
             if !owners.contains(&(scope, owner)) {
