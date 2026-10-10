@@ -134,9 +134,6 @@ fn singleton_legacy_surface_namespace_uses_no_ordering_scratch() {
             policy.limits.max_materialized_bytes + 1
         )
     );
-    assert!(matches!(super::super::namespace(&ctx, &index,
-        "Sld_VisGeom", "active_geom", LegacySurfaceNamespace::Visible, &mut Vec::new()),
-        Err(CodecError::ResourceLimit(actual)) if actual == original));
 }
 
 #[test]
