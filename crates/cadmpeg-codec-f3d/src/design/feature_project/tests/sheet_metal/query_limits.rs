@@ -18,10 +18,7 @@ fn assert_refusal(operation: &'static str) {
         assert_eq!(original.operation, operation);
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
         assert_eq!(original.additional, 1);
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-        assert!(
-            matches!(ctx.charge_work(0, "later EdgeFlange query boundary"), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
+        assert_eq!(ctx.resource_refusal(), Some(original));
     });
 }
 

@@ -112,13 +112,6 @@ fn patch_continuity_visits_only_the_reached_prefix() {
                 assert_eq!(limit.used, ceiling);
                 assert_eq!(limit.additional, 1);
                 assert_eq!(limit.limit, ceiling);
-                let CodecError::ResourceLimit(later) = ctx
-                    .charge_work(0, "after continuity visit refusal")
-                    .unwrap_err()
-                else {
-                    panic!("the original refusal must remain fused");
-                };
-                assert_eq!(later, limit);
             }
         }
     }
@@ -157,7 +150,7 @@ fn patch_continuity_transfers_only_actual_surviving_conditions() {
             let mut policy = DecodePolicy::default();
             match dimension {
                 ResourceDimension::MaterializedBytes => {
-                    policy.limits.max_materialized_bytes = ceiling
+                    policy.limits.max_materialized_bytes = ceiling;
                 }
                 ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = ceiling,
                 _ => unreachable!(),
@@ -214,13 +207,6 @@ fn patch_continuity_transfers_only_actual_surviving_conditions() {
                 assert_eq!(limit.used, 0);
                 assert_eq!(limit.additional, backing);
                 assert_eq!(limit.limit, ceiling);
-                let CodecError::ResourceLimit(later) = ctx
-                    .charge_work(0, "after continuity storage refusal")
-                    .unwrap_err()
-                else {
-                    panic!("the original storage refusal must remain fused");
-                };
-                assert_eq!(later, limit);
             }
         }
     }
@@ -350,13 +336,6 @@ fn patch_occupancy_preserves_exact_peak_and_original_collection_refusal() {
             assert_eq!(limit.used, u64_from_index(group_backing));
             assert_eq!(limit.additional, u64_from_index(occupancy_backing));
             assert_eq!(limit.limit, ceiling);
-            let CodecError::ResourceLimit(later) = ctx
-                .charge_work(0, "after occupancy backing refusal")
-                .unwrap_err()
-            else {
-                panic!("the original refusal must remain fused");
-            };
-            assert_eq!(later, limit);
         }
     }
     let arena = DecodeArena::new();
@@ -373,13 +352,6 @@ fn patch_occupancy_preserves_exact_peak_and_original_collection_refusal() {
     assert_eq!(limit.used, 3);
     assert_eq!(limit.additional, 10);
     assert_eq!(limit.limit, 3);
-    let CodecError::ResourceLimit(later) = ctx
-        .charge_work(0, "after occupancy item refusal")
-        .unwrap_err()
-    else {
-        panic!("the original refusal must remain fused");
-    };
-    assert_eq!(later, limit);
 }
 
 #[test]

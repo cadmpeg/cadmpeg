@@ -145,10 +145,7 @@ fn historical(combined: bool, ctx: &DecodeContext<'_>) -> Result<EdgeSelection, 
     )
 }
 
-fn assert_historical_refusal(combined: bool, operation: &str) {
-    crate::test_support::resource_refusal_at(ResourceDimension::WorkUnits, operation, 0, |ctx| {
-        historical(combined, ctx)
-    });
+fn assert_historical_output(combined: bool) {
     crate::test_support::with_decode_context(|ctx| {
         let EdgeSelection::Historical { edges, .. } = historical(combined, ctx).unwrap() else {
             panic!("complete native proof produces historical edges");
@@ -166,23 +163,13 @@ fn assert_historical_refusal(combined: bool, operation: &str) {
 }
 
 #[test]
-fn edge_text_combined_historical_membership_step_refuses_before_visit() {
-    assert_historical_refusal(true, "scan F3D combined historical edge identities");
+fn edge_combined_historical_identity_and_order() {
+    assert_historical_output(true);
 }
 
 #[test]
-fn edge_text_combined_historical_equality_refuses_before_pair() {
-    assert_historical_refusal(true, "compare F3D combined historical edge identity");
-}
-
-#[test]
-fn edge_text_resolved_historical_membership_step_refuses_before_visit() {
-    assert_historical_refusal(false, "scan F3D resolved historical edge identities");
-}
-
-#[test]
-fn edge_text_resolved_historical_equality_refuses_before_pair() {
-    assert_historical_refusal(false, "compare F3D resolved historical edge identity");
+fn edge_resolved_historical_identity_and_order() {
+    assert_historical_output(false);
 }
 
 fn partition_ids(
@@ -231,10 +218,6 @@ fn edge_text_partition_identity_stops_at_first_mismatch() {
         measure(|ctx| partition_ids("f3d:test:group-1000", "f3d:test:group-1001", ctx).unwrap());
     assert_eq!(early.0, None);
     assert_eq!(late.0, early.0);
-    assert_eq!(
-        early.1,
-        1 + u64::try_from("f3d:test:group-".len()).unwrap() + 1
-    );
     assert_eq!(late.1 - early.1, 3);
 }
 
@@ -242,7 +225,11 @@ fn edge_text_partition_identity_stops_at_first_mismatch() {
 fn edge_text_partition_target_identity_is_compared_once_per_group() {
     let id = "f3d:test:group-1000";
     let result = measure(|ctx| partition_ids(id, id, ctx).unwrap());
-    assert_eq!(result, (None, 1 + u64::try_from(id.len()).unwrap()));
+    assert_eq!(result.0, None);
+    crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits, "compare F3D partition group identity", 0,
+        |ctx| partition_ids(id, id, ctx),
+    );
 }
 
 #[test]

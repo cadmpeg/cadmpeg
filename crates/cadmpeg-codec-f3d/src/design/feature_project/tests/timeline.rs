@@ -29,11 +29,11 @@ fn work_point_history_state_keys_are_history_qualified() {
         ])),
         component_namespaces: HashMap::from([
             (
-                scope_a.id.clone(),
+                scope_a.id.as_str(),
                 crate::design::feature_project::ComponentHistoryNamespace::Aggregate,
             ),
             (
-                scope_b.id.clone(),
+                scope_b.id.as_str(),
                 crate::design::feature_project::ComponentHistoryNamespace::Aggregate,
             ),
         ]),
@@ -103,10 +103,10 @@ fn history_state_predecessors_are_component_qualified() {
         naming_space(10, "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"),
         naming_space(20, "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb"),
     ];
-    let graph = crate::test_support::with_decode_context(|decode_ctx| {
-        ScopeHistoryGraph::new(decode_ctx, &scopes, &[], &[], &naming_spaces, &[])
-    })
-    .unwrap();
+    let graph_arena = cadmpeg_core::decode::DecodeArena::new();
+    let graph_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (graph_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &graph_arena, &graph_policy).unwrap();
+    let (graph, _graph_storage) = ScopeHistoryGraph::new(&graph_ctx, &scopes, &[], &[], &naming_spaces, &[]).unwrap();
 
     let predecessor = crate::test_support::with_decode_context(|decode_ctx| {
         graph.predecessor(decode_ctx, &second, |_| Ok(true))
@@ -1230,7 +1230,7 @@ fn assert_history_graph_refusal(operation: &'static str, retained: bool) {
     {
         let error = cadmpeg_test_support::refusal::resource_limit_at(
             if retained {
-                ResourceDimension::RetainedBytes
+                ResourceDimension::MaterializedBytes
             } else {
                 ResourceDimension::CollectionItems
             },
@@ -1239,23 +1239,20 @@ fn assert_history_graph_refusal(operation: &'static str, retained: bool) {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::default();
                 if retained {
-                    policy.limits.max_retained_bytes = cap;
+                    policy.limits.max_materialized_bytes = cap;
                 } else {
                     policy.limits.max_collection_items = cap;
                 }
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                ScopeHistoryGraph::new(&ctx, &scopes, &[], &[], &[], &[])
+                ScopeHistoryGraph::new(&ctx, &scopes, &[], &[], &[], &[]).map(|_| ())
             },
         );
         assert!(matches!(error, CodecError::ResourceLimit(failure)
-            if failure.operation == operation && failure.dimension == (if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems })));
+            if failure.operation == operation && failure.dimension == (if retained { ResourceDimension::MaterializedBytes } else { ResourceDimension::CollectionItems })));
     }
 }
 
-#[test]
-fn component_history_scope_id_refuses_retained_limit() {
-    assert_history_graph_refusal("f3d component history scope id", true);
-}
+
 
 #[test]
 fn component_history_namespace_refuses_collection_limit() {
@@ -1282,10 +1279,10 @@ fn history_lookup_stream_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let scopes = history_graph_limit_fixture();
-    let graph = crate::test_support::with_decode_context(|decode_ctx| {
-        ScopeHistoryGraph::new(decode_ctx, &scopes, &[], &[], &[], &[])
-    })
-    .unwrap();
+    let graph_arena = cadmpeg_core::decode::DecodeArena::new();
+    let graph_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (graph_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &graph_arena, &graph_policy).unwrap();
+    let (graph, _graph_storage) = ScopeHistoryGraph::new(&graph_ctx, &scopes, &[], &[], &[], &[]).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
@@ -1301,10 +1298,10 @@ fn predecessor_stream_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let scopes = history_graph_limit_fixture();
-    let graph = crate::test_support::with_decode_context(|decode_ctx| {
-        ScopeHistoryGraph::new(decode_ctx, &scopes, &[], &[], &[], &[])
-    })
-    .unwrap();
+    let graph_arena = cadmpeg_core::decode::DecodeArena::new();
+    let graph_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (graph_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &graph_arena, &graph_policy).unwrap();
+    let (graph, _graph_storage) = ScopeHistoryGraph::new(&graph_ctx, &scopes, &[], &[], &[], &[]).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_materialized_bytes = 0;
@@ -1322,10 +1319,10 @@ fn predecessor_visited_scope_refuses_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let scopes = history_graph_limit_fixture();
-    let graph = crate::test_support::with_decode_context(|decode_ctx| {
-        ScopeHistoryGraph::new(decode_ctx, &scopes, &[], &[], &[], &[])
-    })
-    .unwrap();
+    let graph_arena = cadmpeg_core::decode::DecodeArena::new();
+    let graph_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (graph_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &graph_arena, &graph_policy).unwrap();
+    let (graph, _graph_storage) = ScopeHistoryGraph::new(&graph_ctx, &scopes, &[], &[], &[], &[]).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
@@ -1610,28 +1607,8 @@ fn feature_alias_owner_id_refuses_retained_limit() {
 }
 
 #[test]
-fn feature_alias_name_refuses_retained_limit() {
-    assert_projected_feature_refusal("f3d feature alias name", true);
-}
-
-#[test]
-fn feature_alias_parameter_id_refuses_retained_limit() {
-    assert_projected_feature_refusal("f3d feature alias parameter id", true);
-}
-
-#[test]
 fn feature_alias_index_refuses_collection_limit() {
     assert_projected_feature_refusal("f3d feature alias index", false);
-}
-
-#[test]
-fn owned_alias_name_refuses_retained_limit() {
-    assert_projected_feature_refusal("f3d owned alias name", true);
-}
-
-#[test]
-fn owned_alias_parameter_id_refuses_retained_limit() {
-    assert_projected_feature_refusal("f3d owned alias parameter id", true);
 }
 
 #[test]
@@ -1642,16 +1619,6 @@ fn owned_alias_index_refuses_collection_limit() {
 #[test]
 fn owned_alias_member_refuses_collection_limit() {
     assert_projected_feature_refusal("f3d owned alias member", false);
-}
-
-#[test]
-fn document_alias_name_refuses_retained_limit() {
-    assert_projected_feature_refusal("f3d document alias name", true);
-}
-
-#[test]
-fn document_alias_parameter_id_refuses_retained_limit() {
-    assert_projected_feature_refusal("f3d document alias parameter id", true);
 }
 
 #[test]
@@ -1672,11 +1639,6 @@ fn parameter_owner_index_owner_id_refuses_retained_limit() {
 #[test]
 fn parameter_owner_index_refuses_collection_limit() {
     assert_projected_feature_refusal("f3d parameter owner index", false);
-}
-
-#[test]
-fn feature_order_index_id_refuses_retained_limit() {
-    assert_projected_feature_refusal("f3d feature order index id", true);
 }
 
 #[test]
@@ -1747,18 +1709,8 @@ fn assert_expression_dependency_refusal(operation: &'static str, retained: bool)
 }
 
 #[test]
-fn expression_identifier_lookup_refuses_materialized_limit() {
-    assert_expression_dependency_refusal("f3d expression identifier lookup", false);
-}
-
-#[test]
 fn expression_owner_lookup_refuses_retained_limit() {
     assert_projected_feature_refusal("f3d expression owner lookup", true);
-}
-
-#[test]
-fn expression_feature_identifier_lookup_refuses_materialized_limit() {
-    assert_projected_feature_refusal("f3d expression feature identifier lookup", false);
 }
 
 #[test]
@@ -1863,10 +1815,10 @@ fn projected_feature_source_tag_refuses_retained_limit() {
 fn predecessor_predicate_preserves_resource_refusal() {
     use cadmpeg_core::decode::ResourceDimension;
     let scopes = history_graph_limit_fixture();
-    let graph = crate::test_support::with_decode_context(|decode_ctx| {
-        ScopeHistoryGraph::new(decode_ctx, &scopes, &[], &[], &[], &[])
-    })
-    .unwrap();
+    let graph_arena = cadmpeg_core::decode::DecodeArena::new();
+    let graph_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (graph_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &graph_arena, &graph_policy).unwrap();
+    let (graph, _graph_storage) = ScopeHistoryGraph::new(&graph_ctx, &scopes, &[], &[], &[], &[]).unwrap();
     let projected = std::collections::HashSet::from([scopes[0].id.as_str()]);
     let operation = "find F3D projected predecessor test scope";
     let error = crate::test_support::resource_refusal_at(

@@ -4,7 +4,7 @@
 use crate::design::constraints::scalar_close;
 use crate::design::feature_project::{design_dimension_unit, design_length};
 use crate::design::geometry::{angle_in_sweep, sketch_entity_endpoints};
-use crate::ids::native_stream;
+use crate::ids::native_stream_charged;
 use crate::records::{
     dimensions::{
         DesignDimensionAnnotationFrame, DesignDimensionLocusGroup, DesignDimensionLocusPair,
@@ -22,7 +22,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::pcurve::evaluator::PcurveEvaluatorLanes;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::NativeOperandField;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 macro_rules! dimension_resource {
     ($result:expr) => {
@@ -38,7 +38,7 @@ fn copy_spatial_entity_members(
     entities: &[&cadmpeg_ir::sketches::SpatialSketchEntity],
 ) -> Result<Vec<cadmpeg_ir::sketches::SpatialSketchEntityId>, CodecError> {
     let mut members = Vec::new();
-    for entity in entities {
+    for entity in ctx.admit_iter(entities, "f3d spatial carrier output source")? {
         let id = (entity.id()).try_clone_for_decode(ctx, "f3d spatial carrier output entity id")?;
         ctx.push_vec(&mut members, id, "f3d spatial carrier output member")?;
     }
@@ -90,13 +90,17 @@ fn dimension_entity_ids_distinct(
     ctx: &DecodeContext<'_>,
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
 ) -> Result<bool, CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "f3d atomic entity uniqueness storage")?;
     let mut unique = HashSet::new();
-    for entity in entities {
-        if unique.contains(entity.id()) {
+    let mut source = entities.iter();
+    while let Some(entity) = ctx.next_charged(&mut source, "f3d atomic entity uniqueness source")? {
+        if ctx.contains_hash_set(&unique, entity.id(), "f3d atomic entity uniqueness lookup")? {
             return Ok(false);
         }
-        ctx.insert_hash_set(&mut unique, entity.id(), "f3d atomic entity uniqueness")
-            .map(|_| ())?;
+        storage.with_storage(|| {
+            ctx.insert_hash_set(&mut unique, entity.id(), "f3d atomic entity uniqueness")
+                .map(|_| ())
+        })?;
     }
     Ok(true)
 }
@@ -106,7 +110,7 @@ fn copy_dimension_entity_members(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
 ) -> Result<Vec<cadmpeg_ir::sketches::SketchEntityId>, CodecError> {
     let mut members = Vec::new();
-    for entity in entities {
+    for entity in ctx.admit_iter(entities, "f3d atomic output member source")? {
         ctx.push_vec(
             &mut members,
             (entity.id()).try_clone_for_decode(ctx, "f3d atomic member entity id")?,
@@ -162,6 +166,11 @@ const EPS_DIMENSIONS_SKETCH_NORMAL_SIGN_E9: f64 = 1.0e-9;
 
 const PRESENTATION_MIN_LINE_LENGTH: f64 = 1.0e-12;
 
+struct DimensionPointClass<'entity, 'ctx> {
+    members: Vec<(&'entity cadmpeg_ir::sketches::SketchEntity, Point2)>,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
 /// Record slices shared by every dimension-constraint projection: the sketch
 /// placements, parameter and companion tables, the locus/group/annotation
 /// dimension records, and the sketch geometry the loci reference.
@@ -188,69 +197,41 @@ pub(crate) fn container_only_dimension_companions<'a>(
     groups: &'a [DesignDimensionLocusGroup],
     recipe_records: &'a [DesignDimensionRecipeRecord],
 ) -> Result<HashSet<(&'a str, u32)>, CodecError> {
-    let physical_entries =
-        pairs
-            .iter()
-            .filter_map(|pair| Some((native_stream(&pair.id)?, pair.companion_record_index)))
-            .chain(
-                null_pairs.iter().filter_map(|pair| {
-                    Some((native_stream(&pair.id)?, pair.companion_record_index))
-                }),
-            )
-            .chain(annotation_frames.iter().filter_map(|frame| {
-                Some((native_stream(&frame.id)?, frame.companion_record_index?))
-            }))
-            .chain(groups.iter().filter_map(|group| {
-                Some((native_stream(&group.id)?, group.companion_record_index))
-            }))
-            .chain(recipe_records.iter().filter_map(|record| {
-                Some((native_stream(&record.id)?, record.companion_record_index))
-            }));
-    let mut physical = HashSet::new();
-    for entry in physical_entries {
-        ctx.insert_hash_set(&mut physical, entry, "f3d physical dimension companion")
-            .map(|_| ())?;
-    }
-    let governed_entries =
-        pairs
-            .iter()
-            .filter_map(|pair| {
-                Some((
-                    native_stream(&pair.id)?,
-                    pair.governing_companion_record_index,
-                ))
-            })
-            .chain(null_pairs.iter().filter_map(|pair| {
-                Some((
-                    native_stream(&pair.id)?,
-                    pair.governing_companion_record_index,
-                ))
-            }))
-            .chain(annotation_frames.iter().filter_map(|frame| {
-                Some((
-                    native_stream(&frame.id)?,
-                    frame.governing_companion_record_index,
-                ))
-            }))
-            .chain(groups.iter().filter_map(|group| {
-                Some((native_stream(&group.id)?, group.companion_record_index))
-            }))
-            .chain(recipe_records.iter().filter_map(|record| {
-                Some((native_stream(&record.id)?, record.companion_record_index))
-            }));
-    let mut governed = HashSet::new();
-    for entry in governed_entries {
-        ctx.insert_hash_set(&mut governed, entry, "f3d governed dimension companion")
-            .map(|_| ())?;
-    }
+    let mut storage = ctx.reserve_scoped(0, "f3d dimension companion index storage")?;
+    let (physical, governed) = storage.with_storage(|| -> Result<_, CodecError> {
+        let mut physical = BTreeSet::new();
+        let mut governed = HashSet::new();
+        let mut entries = pairs.iter().map(|pair| (pair.id.as_str(), Some(pair.companion_record_index), pair.governing_companion_record_index))
+            .chain(null_pairs.iter().map(|pair| (pair.id.as_str(), Some(pair.companion_record_index), pair.governing_companion_record_index)))
+            .chain(annotation_frames.iter().map(|frame| (frame.id.as_str(), frame.companion_record_index, frame.governing_companion_record_index)))
+            .chain(groups.iter().map(|group| (group.id.as_str(), Some(group.companion_record_index), group.companion_record_index)))
+            .chain(recipe_records.iter().map(|record| (record.id.as_str(), Some(record.companion_record_index), record.companion_record_index)));
+        while let Some((id, companion, owner)) = ctx.next_charged(&mut entries, "f3d dimension companion source scan")? {
+            let Some(stream) = native_stream_charged(ctx, id, "resolve F3D dimension stream")? else { continue; };
+            if let Some(companion) = companion {
+                ctx.insert_btree_set(
+                    &mut physical,
+                    (stream, companion),
+                    "f3d physical dimension companion",
+                )?;
+            }
+            ctx.insert_hash_set(
+                &mut governed,
+                (stream, owner),
+                "f3d governed dimension companion",
+            )?;
+        }
+        Ok((physical, governed))
+    })?;
     let mut container_only = HashSet::new();
-    for entry in physical.difference(&governed) {
-        ctx.insert_hash_set(
-            &mut container_only,
-            *entry,
-            "f3d container-only dimension companion",
-        )
-        .map(|_| ())?;
+    for entry in ctx.admit_iter(physical, "f3d dimension companion difference scan")? {
+        if !ctx.contains_hash_set(&governed, &entry, "f3d governed dimension companion lookup")? {
+            ctx.insert_hash_set(
+                &mut container_only,
+                entry,
+                "f3d container-only dimension companion",
+            )?;
+        }
     }
     Ok(container_only)
 }
@@ -289,33 +270,71 @@ fn retain_planar_dimension_constraints(
     ctx: &DecodeContext<'_>,
     placements: &[DesignSketchPlacement],
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
-    constraints: Vec<cadmpeg_ir::sketches::SketchConstraint>,
+    mut constraints: Vec<cadmpeg_ir::sketches::SketchConstraint>,
 ) -> Result<Vec<cadmpeg_ir::sketches::SketchConstraint>, CodecError> {
+    let mut spatial_storage = ctx.reserve_scoped(0, "f3d planar spatial sketch storage")?;
     let mut spatial_sketch_ids = HashSet::new();
-    for sketch in spatial_sketches {
-        ctx.insert_hash_set(
-            &mut spatial_sketch_ids,
-            &sketch.id,
-            "f3d planar spatial sketch index",
-        )
-        .map(|_| ())?;
+    for sketch in ctx.admit_iter(spatial_sketches, "f3d planar spatial sketch source")? {
+        spatial_storage.with_storage(|| {
+            ctx.insert_hash_set(
+                &mut spatial_sketch_ids,
+                &sketch.id,
+                "f3d planar spatial sketch index",
+            )
+        })?;
     }
-    let mut output = Vec::new();
-    for constraint in constraints {
-        let mut keep = true;
-        for placement in placements {
-            if crate::design::identity::neutral_sketch_id(ctx, placement)? == constraint.sketch {
-                keep = !spatial_sketch_ids.contains(
-                    &crate::design::identity::neutral_spatial_sketch_id(ctx, placement)?,
-                );
-                break;
+    let mut index_storage = ctx.reserve_scoped(0, "f3d planar excluded sketch storage")?;
+    let mut excluded = HashMap::new();
+    if !constraints.is_empty() && !spatial_sketch_ids.is_empty() {
+        for placement in ctx.admit_iter(placements, "f3d planar placement source")? {
+            let mut temporary = ctx.reserve_scoped(0, "f3d planar spatial identity storage")?;
+            let spatial_id = temporary.with_storage(|| {
+                crate::design::identity::neutral_spatial_sketch_id(ctx, placement)
+            })?;
+            let is_spatial = ctx.contains_hash_set(
+                &spatial_sketch_ids,
+                &spatial_id,
+                "f3d planar spatial sketch lookup",
+            )?;
+            drop(spatial_id);
+            drop(temporary);
+            if !is_spatial {
+                continue;
             }
-        }
-        if keep {
-            ctx.push_vec(&mut output, constraint, "f3d planar dimension output")?;
+            let mut identity_storage =
+                ctx.reserve_scoped(0, "f3d planar sketch identity storage")?;
+            let sketch_id = identity_storage
+                .with_storage(|| crate::design::identity::neutral_sketch_id(ctx, placement))?;
+            if ctx.contains_key_hash_map(
+                &excluded,
+                &sketch_id,
+                "f3d planar excluded sketch lookup",
+            )? {
+                continue;
+            }
+            // The reservation stays with the owned index key until its drop.
+            index_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut excluded,
+                    sketch_id,
+                    identity_storage,
+                    "f3d planar excluded sketch index",
+                )
+            })?;
         }
     }
-    Ok(output)
+    ctx.retain_vec(
+        &mut constraints,
+        |constraint| {
+            Ok(!ctx.contains_key_hash_map(
+                &excluded,
+                &constraint.sketch,
+                "f3d planar excluded sketch lookup",
+            )?)
+        },
+        "f3d planar dimension source",
+    )?;
+    Ok(constraints)
 }
 
 fn project_all_dimension_constraints(
@@ -331,7 +350,7 @@ fn project_all_dimension_constraints(
 
     let &DimensionConstraintInputs {
         placements,
-        parameters,
+        parameters: parameters_source,
         owners,
         pairs,
         groups,
@@ -344,177 +363,271 @@ fn project_all_dimension_constraints(
         entities,
     } = inputs;
 
+    let mut index_storage = ctx.reserve_scoped(0, "f3d dimension index storage")?;
     let mut sketches = HashMap::new();
     let mut sketches_by_scope = HashMap::new();
-    for placement in placements {
-        let Some(scope) = native_stream(&placement.id) else {
+    for placement in ctx.admit_iter(placements, "f3d dimension placement source")? {
+        let Some(scope) = native_stream_charged(ctx, &placement.id, "resolve F3D dimension stream")? else {
             continue;
         };
         if let Ok(suffix) = u32::try_from(placement.entity_id.suffix()) {
-            ctx.insert_hash_map(
-                &mut sketches,
-                (scope, suffix),
-                crate::design::identity::neutral_sketch_id(ctx, placement)?,
-                "f3d dimension sketch index",
-            )
-            .map(|_| ())?;
+            index_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut sketches,
+                    (scope, suffix),
+                    placement,
+                    "f3d dimension sketch index",
+                )
+            })?;
         }
         if let Some(scope_record_index) = placement.scope_record_index {
-            ctx.insert_hash_map(
-                &mut sketches_by_scope,
-                (scope, scope_record_index),
-                crate::design::identity::neutral_sketch_id(ctx, placement)?,
-                "f3d dimension scope sketch index",
-            )
-            .map(|_| ())?;
+            index_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut sketches_by_scope,
+                    (scope, scope_record_index),
+                    placement,
+                    "f3d dimension scope sketch index",
+                )
+            })?;
         }
     }
-    let mut parameters_by_record = HashMap::new();
-    for parameter in parameters {
-        if let Some(scope) = native_stream(&parameter.id) {
-            ctx.insert_hash_map(
-                &mut parameters_by_record,
-                (scope, parameter.record_index),
-                parameter,
-                "f3d dimension parameter index",
-            )
-            .map(|_| ())?;
+    let mut parameters = HashMap::new();
+    for parameter in ctx.admit_iter(parameters_source, "f3d dimension parameter source")? {
+        if let Some(scope) = native_stream_charged(ctx, &parameter.id, "resolve F3D dimension stream")? {
+            index_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut parameters,
+                    (scope, parameter.record_index),
+                    parameter,
+                    "f3d dimension parameter index",
+                )
+            })?;
         }
     }
-    let parameters = parameters_by_record;
     let mut parameter_by_companion = HashMap::new();
-    for owner in owners {
-        if let Some(scope) = native_stream(owner.id()) {
-            ctx.insert_hash_map(
-                &mut parameter_by_companion,
-                (scope, owner.companion_record_index()),
-                owner.parameter_record_index(),
-                "f3d dimension companion index",
-            )
-            .map(|_| ())?;
+    for owner in ctx.admit_iter(owners, "f3d dimension owner source")? {
+        if let Some(scope) = native_stream_charged(ctx, owner.id(), "resolve F3D dimension stream")? {
+            index_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut parameter_by_companion,
+                    (scope, owner.companion_record_index()),
+                    owner.parameter_record_index(),
+                    "f3d dimension companion index",
+                )
+            })?;
         }
     }
-    let mut native_geometry = HashMap::new();
-    for point in points {
-        if let Some(scope) = native_stream(&point.id) {
-            ctx.insert_hash_map(
-                &mut native_geometry,
-                (scope, point.record_index),
-                (
-                    cadmpeg_core::nonblank_literal!("point"),
-                    point.owner_reference,
-                    point.id.as_str(),
-                ),
-                "f3d dimension native geometry index",
-            )
-            .map(|_| ())?;
+    let mut native_geometry = BTreeMap::new();
+    for point in ctx.admit_iter(points, "f3d dimension point source")? {
+        if let Some(scope) = native_stream_charged(ctx, &point.id, "resolve F3D dimension stream")? {
+            index_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut native_geometry,
+                    (scope, point.record_index),
+                    (
+                        cadmpeg_core::nonblank_literal!("point"),
+                        point.owner_reference,
+                        point.id.as_str(),
+                    ),
+                    "f3d dimension native geometry index",
+                )
+            })?;
         }
     }
-    for curve in curves {
-        if let Some(scope) = native_stream(&curve.id) {
-            ctx.insert_hash_map(
-                &mut native_geometry,
-                (scope, curve.record_index),
-                (
-                    cadmpeg_core::nonblank_literal!("curve"),
-                    curve.owner_reference,
-                    curve.id.as_str(),
-                ),
-                "f3d dimension native geometry index",
-            )
-            .map(|_| ())?;
+    for curve in ctx.admit_iter(curves, "f3d dimension curve source")? {
+        if let Some(scope) = native_stream_charged(ctx, &curve.id, "resolve F3D dimension stream")? {
+            index_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut native_geometry,
+                    (scope, curve.record_index),
+                    (
+                        cadmpeg_core::nonblank_literal!("curve"),
+                        curve.owner_reference,
+                        curve.id.as_str(),
+                    ),
+                    "f3d dimension native geometry index",
+                )
+            })?;
         }
     }
     let mut record_indices_by_native_ref = HashMap::new();
-    for (key, (_, _, native_ref)) in &native_geometry {
-        ctx.insert_hash_map(
-            &mut record_indices_by_native_ref,
-            *native_ref,
-            *key,
-            "f3d dimension native reference index",
-        )
-        .map(|_| ())?;
-    }
-    let mut projected = HashMap::new();
-    for entity in entities {
-        if let Some(key) = entity
-            .native_ref
-            .as_deref()
-            .and_then(|native_ref| record_indices_by_native_ref.get(native_ref).copied())
-        {
+    for (key, (_, _, native_ref)) in
+        ctx.admit_iter(&native_geometry, "f3d dimension native reference source")?
+    {
+        index_storage.with_storage(|| {
             ctx.insert_hash_map(
-                &mut projected,
-                key,
-                entity,
-                "f3d dimension projected entity index",
+                &mut record_indices_by_native_ref,
+                *native_ref,
+                *key,
+                "f3d dimension native reference index",
             )
-            .map(|_| ())?;
+        })?;
+    }
+    let mut projected = BTreeMap::new();
+    for entity in ctx.admit_iter(entities, "f3d dimension projected entity source")? {
+        let Some(native_ref) = entity.native_ref.as_deref() else {
+            continue;
+        };
+        if let Some(key) = ctx
+            .get_hash_map(
+                &record_indices_by_native_ref,
+                native_ref,
+                "f3d dimension native reference lookup",
+            )?
+            .copied()
+        {
+            index_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut projected,
+                    key,
+                    entity,
+                    "f3d dimension projected entity index",
+                )
+            })?;
         }
     }
     let mut curve_secondary_ids = HashMap::new();
-    for curve in curves {
-        if let Some(scope) = native_stream(&curve.id) {
-            ctx.insert_hash_map(
-                &mut curve_secondary_ids,
-                (scope, curve.record_index),
-                curve.secondary_id,
-                "f3d dimension curve secondary index",
-            )
-            .map(|_| ())?;
+    for curve in ctx.admit_iter(curves, "f3d dimension secondary curve source")? {
+        if let Some(scope) = native_stream_charged(ctx, &curve.id, "resolve F3D dimension stream")? {
+            index_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut curve_secondary_ids,
+                    (scope, curve.record_index),
+                    curve.secondary_id,
+                    "f3d dimension curve secondary index",
+                )
+            })?;
         }
     }
 
     let parameter_for = |scope: &str, companion_record_index: u32| {
-        let record_index = *parameter_by_companion.get(&(scope, companion_record_index))?;
-        let parameter = *parameters.get(&(scope, record_index))?;
+        let record_index = *dimension_resource!(ctx.get_hash_map(
+            &parameter_by_companion,
+            &(scope, companion_record_index),
+            "f3d dimension companion parameter lookup",
+        ))?;
+        let parameter = *dimension_resource!(ctx.get_hash_map(
+            &parameters,
+            &(scope, record_index),
+            "f3d dimension parameter lookup",
+        ))?;
         Some(
-            crate::design::identity::neutral_parameter_id(ctx, parameter).map(|id| (parameter, id)),
+            crate::design::identity::neutral_parameter_id_with_operation(
+                ctx,
+                parameter,
+                "f3d parameter identifier",
+            )
+            .map(|id| (parameter, id)),
         )
     };
-    let presentation_for_owner = |scope: &str, owner_record_index: u32| {
-        let mut matches = presentation_frames.iter().filter(|frame| {
-            native_stream(&frame.id) == Some(scope)
-                && frame.governing_owner_record_index == owner_record_index
-        });
-        let frame = matches.next()?;
-        matches.next().is_none().then_some(frame)
+    let presentation_for_owner = |scope: &str,
+                                  owner_record_index: u32|
+     -> Result<
+        Option<&crate::records::dimensions::DesignDimensionPresentationFrame>,
+        CodecError,
+    > {
+        let matches = |frame: &crate::records::dimensions::DesignDimensionPresentationFrame|
+            -> Result<bool, CodecError> {
+            Ok(frame.governing_owner_record_index == owner_record_index
+                && match native_stream_charged(ctx, &frame.id, "resolve F3D dimension stream")? {
+                    Some(candidate) => ctx.equal(candidate, scope, "f3d dimension presentation stream")?,
+                    None => false,
+                })
+        };
+        let Some(first) = ctx.position_by(
+            presentation_frames,
+            matches,
+            "f3d dimension presentation source",
+        )?
+        else {
+            return Ok(None);
+        };
+        if ctx.any_by(
+            &presentation_frames[first + 1..],
+            matches,
+            "f3d dimension presentation source",
+        )? {
+            return Ok(None);
+        }
+        Ok(Some(&presentation_frames[first]))
     };
     let sketch_for_geometry = |scope: &str,
                                indices: &[u32],
                                operation|
      -> Result<Option<cadmpeg_ir::sketches::SketchId>, CodecError> {
-        let projected_sketch = indices
-            .iter()
-            .filter_map(|record_index| projected.get(&(scope, *record_index)))
-            .map(|entity| &entity.sketch)
-            .next();
-        if let Some(sketch) = projected_sketch.filter(|sketch| {
-            indices.iter().all(|record_index| {
-                projected
-                    .get(&(scope, *record_index))
-                    .is_some_and(|entity| &entity.sketch == *sketch)
-            })
-        }) {
-            return (sketch).try_clone_for_decode(ctx, operation).map(Some);
+        let projected_sketch = ctx.find_map(
+            indices,
+            |record_index| {
+                Ok(ctx
+                    .get_btree_map(
+                        &projected,
+                        &(scope, *record_index),
+                        "f3d dimension sketch entity lookup",
+                    )?
+                    .map(|entity| &entity.sketch))
+            },
+            "f3d dimension projected sketch source",
+        )?;
+        if let Some(sketch) = projected_sketch {
+            if ctx.all_by(
+                indices,
+                |record_index| {
+                    let Some(entity) = ctx.get_btree_map(
+                        &projected,
+                        &(scope, *record_index),
+                        "f3d dimension sketch entity lookup",
+                    )?
+                    else {
+                        return Ok(false);
+                    };
+                    ctx.equal(&entity.sketch, sketch, "f3d dimension sketch identity")
+                },
+                "f3d dimension projected sketch agreement",
+            )? {
+                return sketch.try_clone_for_decode(ctx, operation).map(Some);
+            }
         }
-        let owner = indices
-            .iter()
-            .find_map(|record_index| native_geometry.get(&(scope, *record_index))?.1);
+        let owner = ctx.find_map(
+            indices,
+            |record_index| {
+                Ok(ctx
+                    .get_btree_map(
+                        &native_geometry,
+                        &(scope, *record_index),
+                        "f3d dimension native owner lookup",
+                    )?
+                    .and_then(|geometry| geometry.1))
+            },
+            "f3d dimension native owner source",
+        )?;
         let Some(owner) = owner else {
             return Ok(None);
         };
-        if indices
-            .iter()
-            .filter_map(|record_index| native_geometry.get(&(scope, *record_index))?.1)
-            .all(|candidate| candidate == owner)
-        {
-            sketches
-                .get(&(scope, owner))
-                .map(|sketch| (sketch).try_clone_for_decode(ctx, operation))
-                .transpose()
-        } else {
-            Ok(None)
+        if !ctx.all_by(
+            indices,
+            |record_index| {
+                Ok(ctx
+                    .get_btree_map(
+                        &native_geometry,
+                        &(scope, *record_index),
+                        "f3d dimension native owner lookup",
+                    )?
+                    .and_then(|geometry| geometry.1)
+                    .is_none_or(|candidate| candidate == owner))
+            },
+            "f3d dimension native owner agreement",
+        )? {
+            return Ok(None);
         }
+        ctx.get_hash_map(
+            &sketches,
+            &(scope, owner),
+            "f3d dimension owner sketch lookup",
+        )?
+        .map(|placement| {
+            crate::design::identity::neutral_sketch_id_with_operation(ctx, placement, operation)
+        })
+        .transpose()
     };
     let sketch_for_owner_or_geometry =
         |scope: &str,
@@ -522,8 +635,15 @@ fn project_all_dimension_constraints(
          indices: &[u32],
          operation|
          -> Result<Option<cadmpeg_ir::sketches::SketchId>, CodecError> {
-            if let Some(sketch) = sketches.get(&(scope, owner)) {
-                return (sketch).try_clone_for_decode(ctx, operation).map(Some);
+            if let Some(placement) = ctx.get_hash_map(
+                &sketches,
+                &(scope, owner),
+                "f3d dimension owner sketch lookup",
+            )? {
+                return crate::design::identity::neutral_sketch_id_with_operation(
+                    ctx, placement, operation,
+                )
+                .map(Some);
             }
             sketch_for_geometry(scope, indices, operation)
         };
@@ -532,22 +652,33 @@ fn project_all_dimension_constraints(
                           role: Option<u32>,
                           record_index: u32|
      -> Result<SketchNativeOperand, CodecError> {
-        let geometry = native_geometry.get(&(scope, record_index));
+        let geometry = ctx.get_btree_map(
+            &native_geometry,
+            &(scope, record_index),
+            "f3d dimension native operand lookup",
+        )?;
+        let native_kind = match geometry {
+            Some((kind, _, _)) => kind.try_clone_for_decode(ctx, "f3d dimension native kind")?,
+            None => cadmpeg_core::nonblank_literal!("record"),
+        };
+        let native_ref = if let Some((_, _, native_ref)) = geometry {
+            if ctx.contains_key_btree_map(
+                &projected,
+                &(scope, record_index),
+                "f3d dimension native projected lookup",
+            )? {
+                None
+            } else {
+                Some(ctx.copy_retained_text(native_ref, "f3d dimension native operand reference")?)
+            }
+        } else {
+            None
+        };
         Ok(SketchNativeOperand {
-            native_kind: match geometry {
-                Some((kind, _, _)) => {
-                    kind.try_clone_for_decode(ctx, "f3d dimension native kind")?
-                }
-                None => cadmpeg_core::nonblank_literal!("record"),
-            },
+            native_kind,
             field: Some(NativeOperandField { name: field, role }),
             object_index: Some(record_index),
-            native_ref: geometry
-                .filter(|_| !projected.contains_key(&(scope, record_index)))
-                .map(|(_, _, native_ref)| {
-                    ctx.copy_retained_text(native_ref, "f3d dimension native operand reference")
-                })
-                .transpose()?,
+            native_ref,
         })
     };
     let native_definition =
@@ -559,9 +690,16 @@ fn project_all_dimension_constraints(
          -> Result<Definition, CodecError> {
             let mut entity_ids = Vec::new();
             let mut native_operands = Vec::new();
-            for (field, role, record_index) in operands {
-                if let Some(entity) = projected.get(&(scope, *record_index)) {
-                    let id = (entity.id())
+            for (field, role, record_index) in
+                ctx.admit_iter(operands, "f3d native dimension operand source")?
+            {
+                if let Some(entity) = ctx.get_btree_map(
+                    &projected,
+                    &(scope, *record_index),
+                    "f3d native dimension entity lookup",
+                )? {
+                    let id = entity
+                        .id()
                         .try_clone_for_decode(ctx, "f3d native dimension entity id")?;
                     ctx.push_vec(&mut entity_ids, id, "f3d native dimension entity")?;
                 }
@@ -581,7 +719,7 @@ fn project_all_dimension_constraints(
                 native_kind: source_kind,
                 native_state: state,
                 native_flags: None,
-                native_properties: std::collections::BTreeMap::new(),
+                native_properties: BTreeMap::new(),
                 entities: entity_ids,
                 parameter: Some(parameter),
                 operands: native_operands,
@@ -597,34 +735,54 @@ fn project_all_dimension_constraints(
         }
         let source_kind = source_parameter.source_kind();
         let evaluated_value = source_parameter.evaluated_value().get();
+        let mut storage = ctx.reserve_scoped(0, "f3d exact dimension storage")?;
         let mut entities = Vec::new();
-        for record_index in indices {
-            let Some(entity) = projected.get(&(scope, *record_index)).copied() else {
+        let mut source = indices.iter();
+        while let Some(record_index) =
+            ctx.next_charged(&mut source, "f3d exact dimension source")?
+        {
+            let Some(entity) = ctx
+                .get_btree_map(
+                    &projected,
+                    &(scope, *record_index),
+                    "f3d exact dimension entity lookup",
+                )?
+                .copied()
+            else {
                 return Ok(None);
             };
-            ctx.push_vec(&mut entities, entity, "f3d exact dimension entity")?;
+            storage.with_storage(|| {
+                ctx.push_vec(&mut entities, entity, "f3d exact dimension entity")
+            })?;
         }
         if let [entity] = entities.as_slice() {
-            let copied = parameter.try_clone_for_decode(ctx, "f3d exact radial parameter id")?;
-            if let Some(definition) =
-                radial_dimension_definition(ctx, entity, source_kind, evaluated_value, copied)
-                    .transpose()?
+            if let Some(definition) = radial_dimension_definition(
+                ctx,
+                entity,
+                source_kind,
+                evaluated_value,
+                (&parameter, "f3d exact radial parameter id"),
+            )
+            .transpose()?
             {
                 return Ok(Some(definition));
             }
         }
         if let [first, second] = entities.as_slice() {
-            if first.id() == second.id() {
+            if ctx.equal(first.id(), second.id(), "f3d exact dimension identity")? {
                 return Ok(None);
             }
         }
         if source_kind.starts_with("Linear Dimension") && entities.len() == 2 {
             let evaluated_mm = evaluated_value * 10.0;
-            let copied =
-                parameter.try_clone_for_decode(ctx, "f3d exact directional parameter id")?;
-            if let Some(definition) =
-                directional_point_dimension(ctx, &entities, evaluated_mm, copied, linear_tolerance)
-                    .transpose()?
+            if let Some(definition) = directional_point_dimension(
+                ctx,
+                &entities,
+                evaluated_mm,
+                (&parameter, "f3d exact directional parameter id"),
+                linear_tolerance,
+            )
+            .transpose()?
             {
                 return Ok(Some(definition));
             }
@@ -723,32 +881,42 @@ fn project_all_dimension_constraints(
     let exact_group_definition = |scope: &str,
                                   group: &DesignDimensionLocusGroup,
                                   parameter: &DesignParameter,
-                                  parameter_id: cadmpeg_ir::features::ParameterId|
+                                  parameter_id: &cadmpeg_ir::features::ParameterId|
      -> Option<Result<Definition, CodecError>> {
         if !design_dimension_unit(parameter) {
             return None;
         }
+        let mut storage = dimension_resource!(ctx.reserve_scoped(0, "f3d exact group storage"));
         let mut locus_entities = Vec::new();
-        for locus in &group.loci {
-            let entity = projected
-                .get(&(scope, locus.geometry_record_index))
-                .copied()?;
-            if let Err(error) =
-                ctx.push_vec(&mut locus_entities, entity, "f3d exact group locus entity")
-            {
-                return Some(Err(error));
-            }
+        let mut source = group.loci.iter();
+        while let Some(locus) =
+            dimension_resource!(ctx.next_charged(&mut source, "f3d exact group locus source"))
+        {
+            let entity = dimension_resource!(ctx.get_btree_map(
+                &projected,
+                &(scope, locus.geometry_record_index),
+                "f3d exact group locus lookup",
+            ))
+            .copied()?;
+            dimension_resource!(storage.with_storage(|| ctx.push_vec(
+                &mut locus_entities,
+                entity,
+                "f3d exact group locus entity"
+            )));
         }
         if parameter.source_kind().starts_with("Angular Dimension") {
+            let mut angular_storage =
+                dimension_resource!(ctx.reserve_scoped(0, "f3d exact group angular storage"));
             let mut indices = Vec::new();
-            for locus in &group.loci {
-                if let Err(error) = ctx.push_vec(
+            for locus in dimension_resource!(ctx
+                .admit_iter(&group.loci, "f3d exact group angular source")
+                .map_err(CodecError::from))
+            {
+                dimension_resource!(angular_storage.with_storage(|| ctx.push_vec(
                     &mut indices,
                     locus.geometry_record_index,
                     "f3d exact group angular index",
-                ) {
-                    return Some(Err(error));
-                }
+                )));
             }
             let copied = match parameter_id
                 .try_clone_for_decode(ctx, "f3d exact group angular parameter id")
@@ -785,7 +953,7 @@ fn project_all_dimension_constraints(
             entities,
             parameter.source_kind(),
             parameter.evaluated_value().get(),
-            &parameter_id,
+            parameter_id,
         )
         .transpose())
         {
@@ -793,35 +961,38 @@ fn project_all_dimension_constraints(
         }
         if parameter.source_kind().starts_with("Linear Dimension") {
             if group.state == 0x20 {
+                let mut index_storage =
+                    dimension_resource!(ctx.reserve_scoped(0, "f3d exact group offset storage"));
                 let mut entities_by_record = HashMap::new();
                 let mut secondary_ids = HashMap::new();
-                for (locus, entity) in group.loci.iter().zip(&locus_entities) {
-                    if let Err(error) = ctx
+                for (locus, entity) in dimension_resource!(ctx
+                    .admit_iter(&group.loci, "f3d exact group offset source")
+                    .map_err(CodecError::from))
+                .zip(&locus_entities)
+                {
+                    dimension_resource!(index_storage.with_storage(|| ctx
                         .insert_hash_map(
                             &mut entities_by_record,
                             locus.geometry_record_index,
                             *entity,
                             "f3d exact group offset entity index",
                         )
-                        .map(|_| ())
+                        .map(|_| ())));
+                    if let Some(secondary_id) = dimension_resource!(ctx.get_hash_map(
+                        &curve_secondary_ids,
+                        &(scope, locus.geometry_record_index),
+                        "f3d exact group offset secondary lookup",
+                    ))
+                    .copied()
                     {
-                        return Some(Err(error));
-                    }
-                    if let Some(secondary_id) = curve_secondary_ids
-                        .get(&(scope, locus.geometry_record_index))
-                        .copied()
-                    {
-                        if let Err(error) = ctx
+                        dimension_resource!(index_storage.with_storage(|| ctx
                             .insert_hash_map(
                                 &mut secondary_ids,
                                 locus.geometry_record_index,
                                 secondary_id,
                                 "f3d exact group offset secondary index",
                             )
-                            .map(|_| ())
-                        {
-                            return Some(Err(error));
-                        }
+                            .map(|_| ())));
                     }
                 }
                 let counted = exact_counted_offset(
@@ -839,27 +1010,24 @@ fn project_all_dimension_constraints(
                     distance.get(),
                     parameter.evaluated_value().get() * 10.0,
                 )
-                .map(|factor| cadmpeg_ir::sketches::OffsetParameter {
-                    id: parameter_id,
-                    negated: factor.is_sign_negative(),
-                });
+                .map(|factor| -> Result<_, CodecError> {
+                    Ok(cadmpeg_ir::sketches::OffsetParameter {
+                        id: parameter_id.try_clone_for_decode(ctx, "f3d exact group offset parameter id")?,
+                        negated: factor.is_sign_negative(),
+                    })
+                }).transpose();
+                let parameter = dimension_resource!(parameter);
                 return Some(Ok(Definition::Offset {
                     pairs,
                     distance,
                     parameter,
                 }));
             }
-            let copied = match parameter_id
-                .try_clone_for_decode(ctx, "f3d exact group directional parameter id")
-            {
-                Ok(copied) => copied,
-                Err(error) => return Some(Err(error)),
-            };
             if let Some(definition) = dimension_resource!(directional_point_dimension(
                 ctx,
                 &locus_entities,
                 parameter.evaluated_value().get() * 10.0,
-                copied,
+                (parameter_id, "f3d exact group directional parameter id"),
                 linear_tolerance,
             )
             .transpose())
@@ -879,29 +1047,28 @@ fn project_all_dimension_constraints(
         None
     };
     let mut radial_extension_annotation_groups = HashSet::new();
-    for group in groups {
-        let candidate = (|| {
-            let scope = native_stream(&group.id)?;
+    for group in ctx.admit_iter(groups, "f3d dimension classification source")? {
+        let (candidate, classification_storage) = ctx.with_scoped_storage("f3d radial group classification storage", || {
+        (|| {
+            let scope = dimension_resource!(native_stream_charged(ctx, &group.id, "resolve F3D dimension stream"))?;
             if group.state != 0 {
                 return None;
             }
             let (parameter, parameter_id) =
                 dimension_resource!(parameter_for(scope, group.companion_record_index)?);
-            let copied =
-                match parameter_id.try_clone_for_decode(ctx, "f3d radial group parameter id") {
-                    Ok(copied) => copied,
-                    Err(error) => return Some(Err(error)),
-                };
-            match exact_group_definition(scope, group, parameter, copied) {
+            match exact_group_definition(scope, group, parameter, &parameter_id) {
                 Some(Ok(_)) => return None,
                 Some(Err(error)) => return Some(Err(error)),
                 None => {}
             }
             let mut locus_entities = Vec::new();
-            for locus in &group.loci {
-                let entity = projected
-                    .get(&(scope, locus.geometry_record_index))
-                    .copied()?;
+            for locus in dimension_resource!(ctx.admit_iter(group.loci.as_slice(), "f3d dimension group locus source").map_err(CodecError::from)) {
+                let entity = dimension_resource!(ctx.get_btree_map(
+                    &projected,
+                    &(scope, locus.geometry_record_index),
+                    "f3d radial group locus lookup",
+                ))
+                .copied()?;
                 if let Err(error) =
                     ctx.push_vec(&mut locus_entities, entity, "f3d radial group locus entity")
                 {
@@ -912,7 +1079,7 @@ fn project_all_dimension_constraints(
                 return None;
             }
             let mut locus_indices = Vec::new();
-            for locus in &group.loci {
+            for locus in dimension_resource!(ctx.admit_iter(group.loci.as_slice(), "f3d dimension group locus source").map_err(CodecError::from)) {
                 if let Err(error) = ctx.push_vec(
                     &mut locus_indices,
                     locus.geometry_record_index,
@@ -941,135 +1108,128 @@ fn project_all_dimension_constraints(
             )
             .transpose())?;
             Some(Ok((scope, group.record_index)))
-        })();
+        })().transpose()
+        })?;
+        drop(classification_storage);
         if let Some(result) = candidate {
-            ctx.insert_hash_set(
+            index_storage.with_storage(|| ctx.insert_hash_set(
                 &mut radial_extension_annotation_groups,
-                result?,
+                result,
                 "f3d radial extension group",
-            )
+            ))
             .map(|_| ())?;
         }
     }
     let mut exact_pair_companions = HashSet::new();
-    for pair in pairs {
-        let Some(scope) = native_stream(&pair.id) else {
+    for pair in ctx.admit_iter(pairs, "f3d dimension classification source")? {
+        let Some(scope) = native_stream_charged(ctx, &pair.id, "resolve F3D dimension stream")? else {
             continue;
         };
-        let Some((parameter, parameter_id)) =
-            parameter_for(scope, pair.governing_companion_record_index).transpose()?
-        else {
-            continue;
-        };
-        let indices = [
-            pair.loci()[0].geometry_index(),
-            pair.loci()[1].geometry_index(),
-        ];
-        if exact_definition(scope, parameter, &indices, parameter_id)?.is_some() {
-            ctx.insert_hash_set(
+        let (exact, classification_storage) = ctx.with_scoped_storage("f3d exact pair classification storage", || -> Result<bool, CodecError> {
+            let Some((parameter, parameter_id)) = parameter_for(scope, pair.governing_companion_record_index).transpose()? else { return Ok(false); };
+            let indices = [pair.loci()[0].geometry_index(), pair.loci()[1].geometry_index()];
+            Ok(exact_definition(scope, parameter, &indices, parameter_id)?.is_some())
+        })?;
+        drop(classification_storage);
+        if exact {
+            index_storage.with_storage(|| ctx.insert_hash_set(
                 &mut exact_pair_companions,
                 (scope, pair.governing_companion_record_index),
                 "f3d exact pair companion",
-            )
+            ))
             .map(|_| ())?;
         }
     }
     let mut parameterized_offset_companions = HashSet::new();
-    for group in groups {
-        let Some(scope) = native_stream(&group.id) else {
+    for group in ctx.admit_iter(groups, "f3d dimension classification source")? {
+        let Some(scope) = native_stream_charged(ctx, &group.id, "resolve F3D dimension stream")? else {
             continue;
         };
-        let Some((parameter, parameter_id)) =
-            parameter_for(scope, group.companion_record_index).transpose()?
-        else {
-            continue;
-        };
-        match exact_group_definition(scope, group, parameter, parameter_id) {
-            Some(Ok(Definition::Offset {
-                parameter: Some(_), ..
-            })) => {
-                ctx.insert_hash_set(
+        let (parameterized_offset, classification_storage) = ctx.with_scoped_storage("f3d offset group classification storage", || -> Result<bool, CodecError> {
+            let Some((parameter, parameter_id)) = parameter_for(scope, group.companion_record_index).transpose()? else { return Ok(false); };
+            Ok(matches!(exact_group_definition(scope, group, parameter, &parameter_id).transpose()?, Some(Definition::Offset { parameter: Some(_), .. })))
+        })?;
+        drop(classification_storage);
+        if parameterized_offset {
+                index_storage.with_storage(|| ctx.insert_hash_set(
                     &mut parameterized_offset_companions,
                     (scope, group.companion_record_index),
                     "f3d parameterized offset companion",
-                )
+                ))
                 .map(|_| ())?;
-            }
-            Some(Err(error)) => return Err(error),
-            _ => {}
         }
     }
     let mut projected_dimension_companions = HashSet::new();
-    for pair in pairs {
-        if let Some(scope) = native_stream(&pair.id) {
-            ctx.insert_hash_set(
+    for pair in ctx.admit_iter(pairs, "f3d dimension classification source")? {
+        if let Some(scope) = native_stream_charged(ctx, &pair.id, "resolve F3D dimension stream")? {
+            index_storage.with_storage(|| ctx.insert_hash_set(
                 &mut projected_dimension_companions,
                 (scope, pair.governing_companion_record_index),
                 "f3d projected pair companion",
-            )
+            ))
             .map(|_| ())?;
         }
     }
-    for frame in annotation_frames {
-        if let Some(scope) = native_stream(&frame.id) {
-            ctx.insert_hash_set(
+    for frame in ctx.admit_iter(annotation_frames, "f3d dimension classification source")? {
+        if let Some(scope) = native_stream_charged(ctx, &frame.id, "resolve F3D dimension stream")? {
+            index_storage.with_storage(|| ctx.insert_hash_set(
                 &mut projected_dimension_companions,
                 (scope, frame.governing_companion_record_index),
                 "f3d projected annotation companion",
-            )
+            ))
             .map(|_| ())?;
         }
     }
-    for pair in null_pairs {
-        if let Some(scope) = native_stream(&pair.id) {
-            ctx.insert_hash_set(
+    for pair in ctx.admit_iter(null_pairs, "f3d dimension classification source")? {
+        if let Some(scope) = native_stream_charged(ctx, &pair.id, "resolve F3D dimension stream")? {
+            index_storage.with_storage(|| ctx.insert_hash_set(
                 &mut projected_dimension_companions,
                 (scope, pair.governing_companion_record_index),
                 "f3d projected null-pair companion",
-            )
+            ))
             .map(|_| ())?;
         }
     }
-    for group in groups {
-        let Some(scope) = native_stream(&group.id) else {
+    for group in ctx.admit_iter(groups, "f3d dimension classification source")? {
+        let Some(scope) = native_stream_charged(ctx, &group.id, "resolve F3D dimension stream")? else {
             continue;
         };
-        if radial_extension_annotation_groups.contains(&(scope, group.record_index)) {
+        if ctx.contains_hash_set(&radial_extension_annotation_groups, &(scope, group.record_index), "f3d radial group classification lookup")?  {
             continue;
         }
-        let Some((parameter, parameter_id)) =
-            parameter_for(scope, group.companion_record_index).transpose()?
-        else {
-            continue;
-        };
-        let copied = parameter_id.try_clone_for_decode(ctx, "f3d projected group parameter id")?;
-        let definition = exact_group_definition(scope, group, parameter, copied).transpose()?;
-        if definition.as_ref().is_none_or(|definition| {
-            constraint_parameters(definition).any(|id| id == &parameter_id)
-        }) {
-            ctx.insert_hash_set(
+        let (projects_parameter, classification_storage) = ctx.with_scoped_storage("f3d projected group classification storage", || {
+            let Some((parameter, parameter_id)) = parameter_for(scope, group.companion_record_index).transpose()? else { return Ok(false); };
+            let definition = exact_group_definition(scope, group, parameter, &parameter_id).transpose()?;
+            match definition {
+                None => Ok(true),
+                Some(definition) => ctx.any_by(constraint_parameters(&definition), |id| ctx.equal(id, &parameter_id, "f3d projected group parameter equality"), "f3d projected group parameter source"),
+            }
+        })?;
+        drop(classification_storage);
+        if projects_parameter {
+            index_storage.with_storage(|| ctx.insert_hash_set(
                 &mut projected_dimension_companions,
                 (scope, group.companion_record_index),
                 "f3d projected group companion",
-            )
+            ))
             .map(|_| ())?;
         }
     }
 
     let mut group_constraints = Vec::new();
-    for group in groups {
+    for group in ctx.admit_iter(groups, "f3d dimension classification source")? {
         let projected = (|| {
-            let scope = native_stream(&group.id)?;
-            if radial_extension_annotation_groups.contains(&(scope, group.record_index)) {
+            let scope = dimension_resource!(native_stream_charged(ctx, &group.id, "resolve F3D dimension stream"))?;
+            if dimension_resource!(ctx.contains_hash_set(&radial_extension_annotation_groups, &(scope, group.record_index), "f3d radial group classification lookup")) {
                 return None;
             }
-            if exact_pair_companions.contains(&(scope, group.companion_record_index)) {
+            if dimension_resource!(ctx.contains_hash_set(&exact_pair_companions, &(scope, group.companion_record_index), "f3d exact pair classification lookup")) {
                 return None;
             }
             let (parameter, parameter_id) =
                 dimension_resource!(parameter_for(scope, group.companion_record_index)?);
             let mut locus_indices = Vec::new();
-            for locus in &group.loci {
+            for locus in dimension_resource!(ctx.admit_iter(group.loci.as_slice(), "f3d dimension group locus source").map_err(CodecError::from)) {
                 if let Err(error) = ctx.push_vec(
                     &mut locus_indices,
                     locus.geometry_record_index,
@@ -1088,12 +1248,7 @@ fn project_all_dimension_constraints(
                 Ok(None) => return None,
                 Err(error) => return Some(Err(error)),
             };
-            let copied =
-                match parameter_id.try_clone_for_decode(ctx, "f3d group constraint parameter id") {
-                    Ok(copied) => copied,
-                    Err(error) => return Some(Err(error)),
-                };
-            let exact = match exact_group_definition(scope, group, parameter, copied).transpose() {
+            let exact = match exact_group_definition(scope, group, parameter, &parameter_id).transpose() {
                 Ok(definition) => definition,
                 Err(error) => return Some(Err(error)),
             };
@@ -1101,10 +1256,11 @@ fn project_all_dimension_constraints(
                 definition
             } else {
                 let fallback = (|| -> Result<Definition, CodecError> {
+                    let mut operand_storage = ctx.reserve_scoped(0, "f3d native group operand storage")?;
                     let mut operands = Vec::new();
-                    for locus in &group.loci {
-                        ctx.push_vec(
-                            &mut operands,
+                    for locus in ctx.admit_iter(group.loci.as_slice(), "f3d dimension group locus source")? {
+                        ctx.push_scoped_vec(
+                            &mut operand_storage, &mut operands,
                             (
                                 cadmpeg_core::nonblank_literal!("locus"),
                                 Some(locus.role),
@@ -1113,8 +1269,8 @@ fn project_all_dimension_constraints(
                             "f3d native group locus operand",
                         )?;
                     }
-                    ctx.push_vec(
-                        &mut operands,
+                    ctx.push_scoped_vec(
+                        &mut operand_storage, &mut operands,
                         (
                             cadmpeg_core::nonblank_literal!("owner"),
                             Some(group.owner_role),
@@ -1122,9 +1278,9 @@ fn project_all_dimension_constraints(
                         ),
                         "f3d native group owner operand",
                     )?;
-                    for locus in &group.loci {
-                        ctx.push_vec(
-                            &mut operands,
+                    for locus in ctx.admit_iter(group.loci.as_slice(), "f3d dimension group locus source")? {
+                        ctx.push_scoped_vec(
+                            &mut operand_storage, &mut operands,
                             (
                                 cadmpeg_core::nonblank_literal!("return"),
                                 None,
@@ -1182,8 +1338,8 @@ fn project_all_dimension_constraints(
         }
     }
     let mut pair_constraints = Vec::new();
-    for pair in pairs {
-        let Some(scope) = native_stream(&pair.id) else {
+    for pair in ctx.admit_iter(pairs, "f3d dimension classification source")? {
+        let Some(scope) = native_stream_charged(ctx, &pair.id, "resolve F3D dimension stream")? else {
             continue;
         };
         let Some((parameter, parameter_id)) =
@@ -1206,8 +1362,16 @@ fn project_all_dimension_constraints(
             .map(Ok)
             .or_else(|| {
                 let [first_index, second_index] = indices;
-                let first = projected.get(&(scope, first_index))?;
-                let second = projected.get(&(scope, second_index))?;
+                let first = dimension_resource!(ctx.get_btree_map(
+                    &projected,
+                    &(scope, first_index),
+                    "f3d symmetric pair first lookup"
+                ))?;
+                let second = dimension_resource!(ctx.get_btree_map(
+                    &projected,
+                    &(scope, second_index),
+                    "f3d symmetric pair second lookup"
+                ))?;
                 symmetric_parallel_line_dimension_definition(
                     ctx,
                     first,
@@ -1269,29 +1433,39 @@ fn project_all_dimension_constraints(
             "f3d pair dimension constraint",
         )?;
     }
-    let combined = pair_constraints
-        .into_iter()
-        .chain(group_constraints)
-        .map(Ok)
-        .chain(annotation_frames.iter().filter_map(|frame| {
-            let scope = native_stream(&frame.id)?;
+    let mut constraints = Vec::new();
+    for projected in ctx.admit_iter(pair_constraints, "f3d dimension pair output source")?.chain(ctx.admit_iter(group_constraints, "f3d dimension group output source")?) {
+        ctx.push_vec(&mut constraints, projected, "f3d dimension constraint output")?;
+    }
+    let mut frame_source = annotation_frames.iter();
+    while let Some(frame) = ctx.next_charged(&mut frame_source, "f3d dimension annotation source")? {
+        let projected = (|| {
+            let scope = dimension_resource!(native_stream_charged(ctx, &frame.id, "resolve F3D dimension stream"))?;
             let (parameter, parameter_id) = dimension_resource!(parameter_for(
                 scope,
                 frame.governing_companion_record_index
             )?);
+            let mut index_storage = dimension_resource!(ctx.reserve_scoped(0, "f3d annotation index storage"));
             let mut indices = Vec::new();
-            for operand in frame.operands() {
+            for operand in dimension_resource!(ctx.admit_iter(frame.operands(), "f3d dimension annotation operand source").map_err(CodecError::from)) {
                 if let Some(index) = operand.geometry_record_index {
                     if let Err(error) =
-                        ctx.push_vec(&mut indices, index.get(), "f3d annotation dimension index")
+                        ctx.push_scoped_vec(&mut index_storage, &mut indices, index.get(), "f3d annotation dimension index")
                     {
                         return Some(Err(error));
                     }
                 }
             }
-            let sketch = match (sketches.get(&(scope, frame.owner_reference))?)
-                .try_clone_for_decode(ctx, "f3d dimension annotation sketch id")
-            {
+            let placement = dimension_resource!(ctx.get_hash_map(
+                &sketches,
+                &(scope, frame.owner_reference),
+                "f3d dimension annotation sketch lookup",
+            ))?;
+            let sketch = match crate::design::identity::neutral_sketch_id_with_operation(
+                ctx,
+                placement,
+                "f3d dimension annotation sketch id",
+            ) {
                 Ok(sketch) => sketch,
                 Err(error) => return Some(Err(error)),
             };
@@ -1328,7 +1502,7 @@ fn project_all_dimension_constraints(
             } else {
                 let fallback = (|| -> Result<Definition, CodecError> {
                     let mut operands = Vec::new();
-                    for operand in frame.operands() {
+                    for operand in ctx.admit_iter(frame.operands(), "f3d dimension annotation operand source")? {
                         let native = match operand.geometry_record_index {
                             None => SketchNativeOperand {
                                 native_kind: cadmpeg_core::nonblank_literal!("null_locus"),
@@ -1350,7 +1524,11 @@ fn project_all_dimension_constraints(
                     }
                     let mut entity_ids = Vec::new();
                     for record_index in &indices {
-                        if let Some(entity) = projected.get(&(scope, *record_index)) {
+                        if let Some(entity) = ctx.get_btree_map(
+                            &projected,
+                            &(scope, *record_index),
+                            "f3d native dimension entity lookup",
+                        )? {
                             let id = (entity.id())
                                 .try_clone_for_decode(ctx, "f3d annotation native entity id")?;
                             ctx.push_vec(&mut entity_ids, id, "f3d annotation native entity")?;
@@ -1401,11 +1579,15 @@ fn project_all_dimension_constraints(
                 metadata: None,
                 native_ref: Some(native_ref),
             }))
-        }))
-        .chain(null_pairs.iter().filter_map(|pair| {
-            let scope = native_stream(&pair.id)?;
-            if parameterized_offset_companions
-                .contains(&(scope, pair.governing_companion_record_index))
+
+        })();
+        if let Some(projected) = projected { ctx.push_vec(&mut constraints, projected?, "f3d dimension constraint output")?; }
+    }
+    let mut null_pair_source = null_pairs.iter();
+    while let Some(pair) = ctx.next_charged(&mut null_pair_source, "f3d dimension null pair source")? {
+        let projected = (|| {
+            let scope = dimension_resource!(native_stream_charged(ctx, &pair.id, "resolve F3D dimension stream"))?;
+            if dimension_resource!(ctx.contains_hash_set(&parameterized_offset_companions, &(scope, pair.governing_companion_record_index), "f3d offset companion classification lookup"))
             {
                 return None;
             }
@@ -1425,20 +1607,18 @@ fn project_all_dimension_constraints(
                     "null-pair"
                 ));
             if design_dimension_unit(parameter) {
-                if let Some(entity) = projected.get(&(scope, pair.loci()[1].geometry_index())) {
-                    let copied = match parameter_id
-                        .try_clone_for_decode(ctx, "f3d null pair exact parameter id")
-                    {
-                        Ok(copied) => copied,
-                        Err(error) => return Some(Err(error)),
-                    };
+                if let Some(entity) = dimension_resource!(ctx.get_btree_map(
+                    &projected,
+                    &(scope, pair.loci()[1].geometry_index()),
+                    "f3d dimension null pair entity lookup",
+                )) {
                     if let Some(definition) = dimension_resource!(null_locus_dimension_definition(
                         ctx,
                         pair,
                         entity,
                         parameter.source_kind(),
                         parameter.evaluated_value().get(),
-                        copied,
+                        (&parameter_id, "f3d null pair exact parameter id"),
                         linear_tolerance,
                     )
                     .transpose())
@@ -1495,7 +1675,11 @@ fn project_all_dimension_constraints(
                 ctx.push_vec(&mut operands, native, "f3d null pair native operand")?;
                 let mut entity_ids = Vec::new();
                 for record_index in &indices {
-                    if let Some(entity) = projected.get(&(scope, *record_index)) {
+                    if let Some(entity) = ctx.get_btree_map(
+                        &projected,
+                        &(scope, *record_index),
+                        "f3d native dimension entity lookup",
+                    )? {
                         let id = (entity.id())
                             .try_clone_for_decode(ctx, "f3d null pair native entity id")?;
                         ctx.push_vec(&mut entity_ids, id, "f3d null pair native entity")?;
@@ -1542,71 +1726,87 @@ fn project_all_dimension_constraints(
                 Ok(None) => None,
                 Err(error) => Some(Err(error)),
             }
-        }));
-    let mut constraints = Vec::new();
-    for projected in combined {
-        ctx.push_vec(
-            &mut constraints,
-            projected?,
-            "f3d dimension constraint output",
-        )?;
+
+        })();
+        if let Some(projected) = projected { ctx.push_vec(&mut constraints, projected?, "f3d dimension constraint output")?; }
     }
+    let mut companion_storage = ctx.reserve_scoped(0, "f3d dimension companion index storage")?;
     let mut companions_by_key = HashMap::new();
-    for companion in companions {
-        if let Some(scope) = native_stream(companion.id()) {
-            ctx.insert_hash_map(
-                &mut companions_by_key,
-                (scope, companion.record_index()),
-                companion,
-                "f3d dimension recipe companion index",
-            )
-            .map(|_| ())?;
+    for companion in ctx.admit_iter(companions, "f3d dimension companion source")? {
+        if let Some(scope) = native_stream_charged(ctx, companion.id(), "resolve F3D dimension stream")? {
+            companion_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut companions_by_key,
+                    (scope, companion.record_index()),
+                    companion,
+                    "f3d dimension recipe companion index",
+                )
+            })?;
         }
     }
     let mut owners_by_companion = HashMap::new();
-    for owner in owners {
-        if let Some(scope) = native_stream(owner.id()) {
-            ctx.insert_hash_map(
-                &mut owners_by_companion,
-                (scope, owner.companion_record_index()),
-                owner,
-                "f3d dimension recipe owner index",
-            )
-            .map(|_| ())?;
+    for owner in ctx.admit_iter(owners, "f3d dimension companion owner source")? {
+        if let Some(scope) = native_stream_charged(ctx, owner.id(), "resolve F3D dimension stream")? {
+            companion_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut owners_by_companion,
+                    (scope, owner.companion_record_index()),
+                    owner,
+                    "f3d dimension recipe owner index",
+                )
+            })?;
         }
     }
+    let mut recipe_storage = ctx.reserve_scoped(0, "f3d dimension recipe storage")?;
     let mut recipes_by_companion = BTreeMap::<(&str, u32), Vec<_>>::new();
-    for record in recipe_records {
-        let Some(scope) = native_stream(&record.id) else {
+    for record in ctx.admit_iter(recipe_records, "f3d dimension recipe record source")? {
+        let Some(scope) = native_stream_charged(ctx, &record.id, "resolve F3D dimension stream")? else {
             continue;
         };
-        if !projected_dimension_companions.contains(&(scope, record.companion_record_index)) {
-            let key = (scope, record.companion_record_index);
-            ctx.push_btree_group(
-                &mut recipes_by_companion,
-                key,
-                record,
-                "f3d dimension recipe group",
-                "f3d dimension recipe group member",
-            )?;
+        if !ctx.contains_hash_set(
+            &projected_dimension_companions,
+            &(scope, record.companion_record_index),
+            "f3d dimension projected companion lookup",
+        )? {
+            recipe_storage.with_storage(|| {
+                ctx.push_btree_group(
+                    &mut recipes_by_companion,
+                    (scope, record.companion_record_index),
+                    record,
+                    "f3d dimension recipe group",
+                    "f3d dimension recipe group member",
+                )
+            })?;
         }
     }
-    for records in recipes_by_companion.values_mut() {
+    for (_, records) in ctx.admit_iter(
+        &mut recipes_by_companion,
+        "f3d dimension recipe sort source",
+    )? {
         ctx.stable_sort_by_key(
             &mut records[..],
-            |value| {
-                let record = value;
-                record.recipe_ordinal
-            },
+            |record| record.recipe_ordinal,
             Ord::cmp,
             "sort f3d design dimensions 1",
         )?;
     }
-    for ((scope, companion_record_index), records) in recipes_by_companion {
-        let Some(companion) = companions_by_key.get(&(scope, companion_record_index)) else {
+    for (&(scope, companion_record_index), records) in
+        ctx.admit_iter(&recipes_by_companion, "f3d dimension recipe group source")?
+    {
+        let Some(companion) = ctx.get_hash_map(
+            &companions_by_key,
+            &(scope, companion_record_index),
+            "f3d dimension recipe companion lookup",
+        )?
+        else {
             continue;
         };
-        let Some(owner) = owners_by_companion.get(&(scope, companion_record_index)) else {
+        let Some(owner) = ctx.get_hash_map(
+            &owners_by_companion,
+            &(scope, companion_record_index),
+            "f3d dimension recipe owner lookup",
+        )?
+        else {
             continue;
         };
         let Some((parameter, parameter_id)) =
@@ -1619,10 +1819,19 @@ fn project_all_dimension_constraints(
             &parameter_id,
             "recipe-group",
         )?;
-        let Some(sketch) = sketches_by_scope.get(&(scope, owner.scope_record_index())) else {
+        let Some(placement) = ctx.get_hash_map(
+            &sketches_by_scope,
+            &(scope, owner.scope_record_index()),
+            "f3d dimension recipe sketch lookup",
+        )?
+        else {
             continue;
         };
-        let sketch = (sketch).try_clone_for_decode(ctx, "f3d recipe dimension sketch id")?;
+        let sketch = crate::design::identity::neutral_sketch_id_with_operation(
+            ctx,
+            placement,
+            "f3d recipe dimension sketch id",
+        )?;
         let linear_candidates = if parameter.source_kind().starts_with("Linear Dimension")
             && design_dimension_unit(parameter)
         {
@@ -1675,7 +1884,7 @@ fn project_all_dimension_constraints(
             concentric
         } else {
             let mut operands = Vec::new();
-            for record in records {
+            for record in ctx.admit_iter(records, "f3d dimension recipe operand source")? {
                 let native_ref =
                     ctx.copy_retained_text(&record.id, "f3d recipe native operand reference")?;
                 ctx.push_vec(
@@ -1728,69 +1937,90 @@ fn project_all_dimension_constraints(
             "f3d recipe dimension constraint",
         )?;
     }
+    drop(recipes_by_companion);
+    drop(recipe_storage);
+    let mut parameter_storage =
+        ctx.reserve_scoped(0, "f3d projected dimension parameter storage")?;
     let mut projected_parameters = HashSet::new();
-    for constraint in &constraints {
+    for constraint in ctx.admit_iter(&constraints, "f3d projected dimension constraint source")? {
         for parameter in constraint_parameters(constraint.definition.kind()) {
-            if !projected_parameters.contains(parameter) {
-                let id = (parameter)
-                    .try_clone_for_decode(ctx, "f3d projected dimension parameter id")?;
-                ctx.insert_hash_set(
-                    &mut projected_parameters,
-                    id,
-                    "f3d projected dimension parameter",
-                )
-                .map(|_| ())?;
+            if !ctx.contains_hash_set(
+                &projected_parameters,
+                parameter,
+                "f3d projected dimension parameter lookup",
+            )? {
+                parameter_storage.with_storage(|| {
+                    let id = parameter
+                        .try_clone_for_decode(ctx, "f3d projected dimension parameter id")?;
+                    ctx.insert_hash_set(
+                        &mut projected_parameters,
+                        id,
+                        "f3d projected dimension parameter",
+                    )
+                })?;
             }
         }
     }
-    let container_only_payload_companions = container_only_dimension_companions(
-        ctx,
-        pairs,
-        null_pairs,
-        annotation_frames,
-        groups,
-        recipe_records,
-    )?;
-    for companion in companions {
+    let mut container_storage = ctx.reserve_scoped(0, "f3d container-only dimension storage")?;
+    let container_only_payload_companions = container_storage.with_storage(|| {
+        container_only_dimension_companions(
+            ctx,
+            pairs,
+            null_pairs,
+            annotation_frames,
+            groups,
+            recipe_records,
+        )
+    })?;
+    for companion in ctx.admit_iter(companions, "f3d dimension companion projection source")? {
         let projected = (|| {
-            let scope = native_stream(companion.id())?;
-            let owner = owners_by_companion.get(&(scope, companion.record_index()))?;
+            let scope = dimension_resource!(native_stream_charged(ctx, companion.id(), "resolve F3D dimension stream"))?;
+            let owner = dimension_resource!(ctx.get_hash_map(
+                &owners_by_companion,
+                &(scope, companion.record_index()),
+                "f3d dimension companion owner lookup",
+            ))?;
             let (parameter, parameter_id) =
                 dimension_resource!(parameter_for(scope, companion.record_index())?);
             if parameter.kind() != DesignParameterKind::Dimension
-                || projected_parameters.contains(&parameter_id)
-                || container_only_payload_companions.contains(&(scope, companion.record_index()))
+                || dimension_resource!(ctx.contains_hash_set(
+                    &projected_parameters,
+                    &parameter_id,
+                    "f3d projected dimension parameter lookup"
+                ))
+                || dimension_resource!(ctx.contains_hash_set(
+                    &container_only_payload_companions,
+                    &(scope, companion.record_index()),
+                    "f3d container-only dimension lookup"
+                ))
             {
                 return None;
             }
-            let sketch = match (sketches_by_scope.get(&(scope, owner.scope_record_index()))?)
-                .try_clone_for_decode(ctx, "f3d companion dimension sketch id")
-            {
+            let placement = dimension_resource!(ctx.get_hash_map(
+                &sketches_by_scope,
+                &(scope, owner.scope_record_index()),
+                "f3d dimension companion sketch lookup",
+            ))?;
+            let sketch = match crate::design::identity::neutral_sketch_id_with_operation(
+                ctx,
+                placement,
+                "f3d companion dimension sketch id",
+            ) {
                 Ok(sketch) => sketch,
                 Err(error) => return Some(Err(error)),
             };
             let mut parallel_axis_angle = None;
             let mut saw_parallel_axis_angle = false;
             let mut multiple_parallel_axis_angles = false;
-            for group in groups.iter().filter(|group| {
-                native_stream(&group.id) == Some(scope)
-                    && group.companion_record_index == companion.record_index()
-            }) {
-                let copied = match parameter_id
-                    .try_clone_for_decode(ctx, "f3d parallel group parameter id")
-                {
-                    Ok(copied) => copied,
-                    Err(error) => return Some(Err(error)),
-                };
-                let (first, second) = match exact_group_definition(scope, group, parameter, copied)
-                {
-                    Some(Ok(Definition::Parallel { first, second })) => (first, second),
-                    Some(Err(error)) => return Some(Err(error)),
-                    _ => continue,
-                };
+            for group in dimension_resource!(ctx.admit_iter(groups, "f3d dimension companion group source").map_err(CodecError::from)) {
+                let stream = dimension_resource!(native_stream_charged(ctx, &group.id, "resolve F3D dimension stream"));
+                if !dimension_resource!(ctx.equal(&stream, &Some(scope), "f3d dimension companion group stream"))
+                    || group.companion_record_index != companion.record_index() { continue; }
+                let mut parallel_storage = dimension_resource!(ctx.reserve_scoped(0, "f3d parallel group classification storage"));
+                let Some(Definition::Parallel { first, second }) = dimension_resource!(parallel_storage.with_storage(|| exact_group_definition(scope, group, parameter, &parameter_id).transpose())) else { continue; };
                 let members = [
-                    entities.iter().find(|entity| entity.id() == &first),
-                    entities.iter().find(|entity| entity.id() == &second),
+                    dimension_resource!(ctx.find_by(entities, |entity| ctx.equal(entity.id(), &first, "f3d parallel group entity equality"), "f3d parallel group entity source")),
+                    dimension_resource!(ctx.find_by(entities, |entity| ctx.equal(entity.id(), &second, "f3d parallel group entity equality"), "f3d parallel group entity source")),
                 ];
                 let [Some(first), Some(second)] = members else {
                     continue;
@@ -1904,18 +2134,20 @@ fn project_all_dimension_constraints(
                 )
             });
             let owner_scoped_definition = dimension_resource!(owner_scoped_definition.transpose());
-            let presentation_definition = presentation_for_owner(scope, owner.record_index())
-                .and_then(|frame| {
-                    presentation_dimension_definition(
-                        ctx,
-                        scope,
-                        frame,
-                        &projected,
-                        parameter,
-                        &parameter_id,
-                        linear_tolerance,
-                    )
-                });
+            let presentation_definition =
+                dimension_resource!(presentation_for_owner(scope, owner.record_index())).and_then(
+                    |frame| {
+                        presentation_dimension_definition(
+                            ctx,
+                            scope,
+                            frame,
+                            &projected,
+                            parameter,
+                            &parameter_id,
+                            linear_tolerance,
+                        )
+                    },
+                );
             let presentation_definition = dimension_resource!(presentation_definition.transpose());
             let exact_definition = presentation_definition
                 .or(parallel_axis_angle)
@@ -2017,7 +2249,7 @@ fn presentation_dimension_definition(
     ctx: &DecodeContext<'_>,
     scope: &str,
     frame: &crate::records::dimensions::DesignDimensionPresentationFrame,
-    projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
+    projected: &BTreeMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
     parameter: &DesignParameter,
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
@@ -2029,26 +2261,35 @@ fn presentation_dimension_definition(
     if !design_dimension_unit(parameter) {
         return None;
     }
-    let mut entities = Vec::new();
-    for operand in &frame.operands {
-        let entity = projected
-            .get(&(scope, operand.geometry_record_index.get()))
-            .copied()?;
-        dimension_resource!(ctx.push_vec(
-            &mut entities,
-            entity,
-            "f3d presentation dimension entity"
-        ));
-    }
-    if entities.is_empty()
-        || entities
-            .iter()
-            .any(|entity| entity.sketch != entities[0].sketch)
-    {
+    if !(1..=2).contains(&frame.operands.len()) {
         return None;
     }
-    match entities.as_slice() {
-        [entity] if parameter.source_kind().starts_with("Tangent Dimension") => {
+    let first = dimension_resource!(ctx.get_btree_map(
+        projected,
+        &(scope, frame.operands[0].geometry_record_index.get()),
+        "f3d presentation dimension entity lookup",
+    ))
+    .copied()?;
+    let second = if frame.operands.len() == 2 {
+        let second = dimension_resource!(ctx.get_btree_map(
+            projected,
+            &(scope, frame.operands[1].geometry_record_index.get()),
+            "f3d presentation dimension entity lookup",
+        ))
+        .copied()?;
+        if !dimension_resource!(ctx.equal(
+            &first.sketch,
+            &second.sketch,
+            "f3d presentation sketch equality"
+        )) {
+            return None;
+        }
+        Some(second)
+    } else {
+        None
+    };
+    match (first, second) {
+        (entity, None) if parameter.source_kind().starts_with("Tangent Dimension") => {
             tangent_radius_dimension_definition(
                 ctx,
                 entity,
@@ -2057,14 +2298,12 @@ fn presentation_dimension_definition(
                 linear_tolerance,
             )
         }
-        [entity] => radial_dimension_definition_at_tolerance(
+        (entity, None) => radial_dimension_definition_at_tolerance(
             ctx,
             entity,
             parameter.source_kind(),
             parameter.evaluated_value().get(),
-            dimension_resource!(
-                (parameter_id).try_clone_for_decode(ctx, "f3d presentation parameter id")
-            ),
+            (parameter_id, "f3d presentation parameter id"),
             linear_tolerance,
         )
         .or_else(|| {
@@ -2093,7 +2332,7 @@ fn presentation_dimension_definition(
                 })
             })
         }),
-        [first, second] if parameter.source_kind().starts_with("Tangent Dimension") => {
+        (first, Some(second)) if parameter.source_kind().starts_with("Tangent Dimension") => {
             tangent_entity_distance_definition(
                 ctx,
                 first,
@@ -2103,7 +2342,7 @@ fn presentation_dimension_definition(
                 linear_tolerance,
             )
         }
-        [first, second] if parameter.source_kind().starts_with("Linear Dimension") => {
+        (first, Some(second)) if parameter.source_kind().starts_with("Linear Dimension") => {
             explicit_linear_dimension_definition(
                 ctx,
                 first,
@@ -2113,7 +2352,7 @@ fn presentation_dimension_definition(
                 linear_tolerance,
             )
         }
-        [first, second] if parameter.source_kind().starts_with("Angular Dimension") => {
+        (first, Some(second)) if parameter.source_kind().starts_with("Angular Dimension") => {
             line_angle_matches(
                 &first.geometry,
                 &second.geometry,
@@ -2279,9 +2518,7 @@ fn explicit_linear_dimension_definition(
         ctx,
         &[first, second],
         expected,
-        dimension_resource!(
-            (parameter_id).try_clone_for_decode(ctx, "f3d explicit linear parameter id")
-        ),
+        (parameter_id, "f3d explicit linear parameter id"),
         linear_tolerance,
     ) {
         return Some(definition);
@@ -2340,7 +2577,7 @@ fn preceding_incident_angular_dimension_definition(
     scope: &str,
     points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
-    projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
+    projected: &BTreeMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
     sketch: &cadmpeg_ir::sketches::SketchId,
     parameter: (&DesignParameter, &cadmpeg_ir::features::ParameterId),
 ) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
@@ -2355,51 +2592,103 @@ fn preceding_incident_angular_dimension_definition(
     {
         return None;
     }
-    let preceding_curve = |record| {
-        curves.iter().any(|curve| {
-            native_stream(&curve.id) == Some(scope)
-                && curve.byte_offset < parameter.byte_offset()
-                && curve.record_index == record
-        })
-    };
+    let mut curve_storage =
+        dimension_resource!(ctx.reserve_scoped(0, "f3d preceding incident curve storage"));
+    let mut preceding_records = None;
     let mut matched = None::<(
         u32,
         u32,
         &cadmpeg_ir::sketches::SketchEntity,
         &cadmpeg_ir::sketches::SketchEntity,
     )>;
-    for point in points.iter().filter(|point| {
-        native_stream(&point.id) == Some(scope) && point.byte_offset < parameter.byte_offset()
-    }) {
+    let mut source = points.iter();
+    while let Some(point) =
+        dimension_resource!(ctx.next_charged(&mut source, "f3d preceding incident point source"))
+    {
+        let Some(stream) = dimension_resource!(native_stream_charged(ctx, &point.id, "resolve F3D dimension stream")) else {
+            continue;
+        };
+        if !dimension_resource!(ctx.equal(stream, scope, "f3d preceding incident point stream"))
+            || point.byte_offset >= parameter.byte_offset()
+        {
+            continue;
+        }
         let companion = point.companion();
         let [first_record, second_record] = companion.incident_curves else {
             continue;
         };
-        if !preceding_curve(*first_record) || !preceding_curve(*second_record) {
+        if preceding_records.is_none() {
+            let mut records = HashSet::new();
+            for curve in dimension_resource!(ctx
+                .admit_iter(curves, "f3d preceding incident curve source")
+                .map_err(CodecError::from))
+            {
+                if curve.byte_offset >= parameter.byte_offset() {
+                    continue;
+                }
+                let Some(stream) = dimension_resource!(native_stream_charged(ctx, &curve.id, "resolve F3D dimension stream")) else {
+                    continue;
+                };
+                if dimension_resource!(ctx.equal(
+                    stream,
+                    scope,
+                    "f3d preceding incident curve stream"
+                )) {
+                    dimension_resource!(curve_storage.with_storage(|| ctx.insert_hash_set(
+                        &mut records,
+                        curve.record_index,
+                        "f3d preceding incident curve index",
+                    )));
+                }
+            }
+            preceding_records = Some(records);
+        }
+        let records = preceding_records.as_ref()?;
+        if !dimension_resource!(ctx.contains_hash_set(
+            records,
+            first_record,
+            "f3d preceding incident curve lookup"
+        )) || !dimension_resource!(ctx.contains_hash_set(
+            records,
+            second_record,
+            "f3d preceding incident curve lookup"
+        )) {
             continue;
         }
-        let (Some(first), Some(second)) = (
-            projected.get(&(scope, *first_record)).copied(),
-            projected.get(&(scope, *second_record)).copied(),
-        ) else {
+        let first = dimension_resource!(ctx.get_btree_map(
+            projected,
+            &(scope, *first_record),
+            "f3d preceding incident entity lookup"
+        ))
+        .copied();
+        let second = dimension_resource!(ctx.get_btree_map(
+            projected,
+            &(scope, *second_record),
+            "f3d preceding incident entity lookup"
+        ))
+        .copied();
+        let (Some(first), Some(second)) = (first, second) else {
             continue;
         };
-        if &first.sketch != sketch
-            || &second.sketch != sketch
-            || !matches!(
-                *first.geometry.definition(),
-                SketchGeometryDefinition::Line { .. }
-            )
-            || !matches!(
-                *second.geometry.definition(),
-                SketchGeometryDefinition::Line { .. }
-            )
-            || !line_angle_matches(
-                &first.geometry,
-                &second.geometry,
-                parameter.evaluated_value().get(),
-            )
-        {
+        if !dimension_resource!(ctx.equal(
+            &first.sketch,
+            sketch,
+            "f3d preceding incident sketch equality"
+        )) || !dimension_resource!(ctx.equal(
+            &second.sketch,
+            sketch,
+            "f3d preceding incident sketch equality"
+        )) || !matches!(
+            *first.geometry.definition(),
+            SketchGeometryDefinition::Line { .. }
+        ) || !matches!(
+            *second.geometry.definition(),
+            SketchGeometryDefinition::Line { .. }
+        ) || !line_angle_matches(
+            &first.geometry,
+            &second.geometry,
+            parameter.evaluated_value().get(),
+        ) {
             continue;
         }
         let key = if first_record < second_record {
@@ -2448,8 +2737,9 @@ fn owner_scoped_angular_dimension_definition(
         return None;
     }
     let mut matched = None;
-    for (first_index, first) in entities.iter().enumerate() {
-        if &first.sketch != sketch
+    let mut first_source = entities.iter().enumerate();
+    while let Some((first_index, first)) = dimension_resource!(ctx.next_charged(&mut first_source, "f3d angular first entity source")) {
+        if !dimension_resource!(ctx.equal(&first.sketch, sketch, "f3d angular first sketch equality"))
             || !matches!(
                 *first.geometry.definition(),
                 SketchGeometryDefinition::Line { .. }
@@ -2457,8 +2747,9 @@ fn owner_scoped_angular_dimension_definition(
         {
             continue;
         }
-        for second in entities.iter().skip(first_index + 1) {
-            if &second.sketch != sketch
+        let mut second_source = entities[first_index + 1..].iter();
+        while let Some(second) = dimension_resource!(ctx.next_charged(&mut second_source, "f3d angular second entity source")) {
+            if !dimension_resource!(ctx.equal(&second.sketch, sketch, "f3d angular second sketch equality"))
                 || !matches!(
                     *second.geometry.definition(),
                     SketchGeometryDefinition::Line { .. }
@@ -2563,20 +2854,37 @@ fn concentric_circle_dimension_definition(
     if !evaluated_mm.is_finite() {
         return None;
     }
-    let circles = dimension_resource!(ctx.collect_vec(
-        entities.iter().filter(|entity| {
-            &entity.sketch == sketch
-                && matches!(
-                    *entity.geometry.definition(),
-                    SketchGeometryDefinition::Circle { .. }
-                )
-        }),
-        "f3d concentric circle candidate"
-    ));
+    let mut scratch = dimension_resource!(ctx.reserve_scoped(0, "f3d concentric circle scratch"));
+    let mut circles = Vec::new();
+    for entity in dimension_resource!(ctx
+        .admit_iter(entities, "f3d concentric circle source")
+        .map_err(CodecError::from))
+    {
+        if dimension_resource!(ctx.equal(
+            &entity.sketch,
+            sketch,
+            "f3d concentric circle sketch identity"
+        )) && matches!(
+            entity.geometry.definition(),
+            SketchGeometryDefinition::Circle { .. }
+        ) {
+            dimension_resource!(scratch.with_storage(|| ctx.push_vec(
+                &mut circles,
+                entity,
+                "f3d concentric circle candidate"
+            )));
+        }
+    }
     let mut pairs = Vec::new();
     let mut paired_entities = HashSet::new();
-    for first in 0..circles.len() {
-        for second in first + 1..circles.len() {
+    let mut first_source = 0..circles.len();
+    while let Some(first) = dimension_resource!(
+        ctx.next_charged(&mut first_source, "f3d concentric circle pair source")
+    ) {
+        let mut second_source = first + 1..circles.len();
+        while let Some(second) = dimension_resource!(
+            ctx.next_charged(&mut second_source, "f3d concentric circle pair source")
+        ) {
             if !concentric_circle_separation(
                 circles[first],
                 circles[second],
@@ -2587,24 +2895,32 @@ fn concentric_circle_dimension_definition(
             }
             let first_id = circles[first].id();
             let second_id = circles[second].id();
-            if paired_entities.contains(first_id) || paired_entities.contains(second_id) {
+            if dimension_resource!(ctx.contains_hash_set(
+                &paired_entities,
+                first_id,
+                "f3d concentric first member lookup"
+            )) || dimension_resource!(ctx.contains_hash_set(
+                &paired_entities,
+                second_id,
+                "f3d concentric second member lookup"
+            )) {
                 return None;
             }
-            dimension_resource!(ctx
+            dimension_resource!(scratch.with_storage(|| ctx
                 .insert_hash_set(&mut paired_entities, first_id, "f3d concentric used first")
-                .map(|_| ()));
-            dimension_resource!(ctx
+                .map(|_| ())));
+            dimension_resource!(scratch.with_storage(|| ctx
                 .insert_hash_set(
                     &mut paired_entities,
                     second_id,
                     "f3d concentric used second"
                 )
-                .map(|_| ()));
-            dimension_resource!(ctx.push_vec(
+                .map(|_| ())));
+            dimension_resource!(scratch.with_storage(|| ctx.push_vec(
                 &mut pairs,
                 (circles[first], circles[second]),
-                "f3d concentric pair"
-            ));
+                "f3d concentric pair",
+            )));
         }
     }
     match pairs.as_slice() {
@@ -2624,7 +2940,10 @@ fn concentric_circle_dimension_definition(
         })),
         _ => {
             let mut measurements = Vec::new();
-            for (first, second) in pairs {
+            for (first, second) in dimension_resource!(ctx
+                .admit_iter(&pairs, "f3d concentric output pair source")
+                .map_err(CodecError::from))
+            {
                 let measurement = Measurement::Distance {
                     first: SketchLocus::Entity(dimension_resource!(
                         (first.id()).try_clone_for_decode(ctx, "f3d concentric repeated first id")
@@ -2669,25 +2988,36 @@ fn unique_point_line_dimension_definition(
     if !evaluated_mm.is_finite() {
         return None;
     }
-    let points = entities.iter().filter(|entity| {
-        &entity.sketch == sketch
-            && matches!(
-                *entity.geometry.definition(),
-                SketchGeometryDefinition::Point { .. }
-            )
-    });
-    let lines = || {
-        entities.iter().filter(|entity| {
-            &entity.sketch == sketch
-                && matches!(
-                    *entity.geometry.definition(),
-                    SketchGeometryDefinition::Line { .. }
-                )
-        })
-    };
+    let mut scratch = dimension_resource!(ctx.reserve_scoped(0, "f3d point line scratch"));
+    let mut points = Vec::new();
+    let mut lines = Vec::new();
+    for entity in dimension_resource!(ctx
+        .admit_iter(entities, "f3d point line source")
+        .map_err(CodecError::from))
+    {
+        if !dimension_resource!(ctx.equal(&entity.sketch, sketch, "f3d point line sketch identity"))
+        {
+            continue;
+        }
+        match entity.geometry.definition() {
+            SketchGeometryDefinition::Point { .. } => dimension_resource!(scratch.with_storage(
+                || ctx.push_vec(&mut points, entity, "f3d point line point candidate")
+            )),
+            SketchGeometryDefinition::Line { .. } => dimension_resource!(scratch.with_storage(
+                || ctx.push_vec(&mut lines, entity, "f3d point line line candidate")
+            )),
+            _ => (),
+        }
+    }
     let mut matched = None;
-    for point in points {
-        for line in lines() {
+    let mut point_source = points.iter().copied();
+    while let Some(point) =
+        dimension_resource!(ctx.next_charged(&mut point_source, "f3d point line pair source"))
+    {
+        let mut line_source = lines.iter().copied();
+        while let Some(line) =
+            dimension_resource!(ctx.next_charged(&mut line_source, "f3d point line pair source"))
+        {
             if point_line_separation(point, line, evaluated_mm, linear_tolerance) {
                 if matched.is_some() {
                     return None;
@@ -2734,18 +3064,36 @@ fn unique_parallel_line_dimension_definition(
     if !evaluated_mm.is_finite() {
         return None;
     }
-    let lines = || {
-        entities.iter().filter(|entity| {
-            &entity.sketch == sketch
-                && matches!(
-                    *entity.geometry.definition(),
-                    SketchGeometryDefinition::Line { .. }
-                )
-        })
-    };
+    let mut scratch = dimension_resource!(ctx.reserve_scoped(0, "f3d parallel line scratch"));
+    let mut lines = Vec::new();
+    for entity in dimension_resource!(ctx
+        .admit_iter(entities, "f3d parallel line source")
+        .map_err(CodecError::from))
+    {
+        if dimension_resource!(ctx.equal(
+            &entity.sketch,
+            sketch,
+            "f3d parallel line sketch identity"
+        )) && matches!(
+            entity.geometry.definition(),
+            SketchGeometryDefinition::Line { .. }
+        ) {
+            dimension_resource!(scratch.with_storage(|| ctx.push_vec(
+                &mut lines,
+                entity,
+                "f3d parallel line candidate"
+            )));
+        }
+    }
     let mut matched = None;
-    for (first_ordinal, first) in lines().enumerate() {
-        for second in lines().skip(first_ordinal + 1) {
+    let mut first_source = lines.iter().enumerate();
+    while let Some((first_ordinal, &first)) =
+        dimension_resource!(ctx.next_charged(&mut first_source, "f3d parallel line pair source"))
+    {
+        let mut second_source = lines[first_ordinal + 1..].iter().copied();
+        while let Some(second) = dimension_resource!(
+            ctx.next_charged(&mut second_source, "f3d parallel line pair source")
+        ) {
             if parallel_line_separation(first, second, evaluated_mm, linear_tolerance) {
                 if matched.is_some() {
                     return None;
@@ -2794,56 +3142,96 @@ fn owner_scoped_parallel_line_set_dimension_definition(
     if !evaluated_mm.is_finite() {
         return None;
     }
-    let lines = dimension_resource!(ctx.collect_vec(
-        entities.iter().filter(|entity| {
-            &entity.sketch == sketch
-                && matches!(
-                    *entity.geometry.definition(),
-                    SketchGeometryDefinition::Line { .. }
-                )
-        }),
-        "f3d parallel line set candidate"
-    ));
+    let mut scratch = dimension_resource!(ctx.reserve_scoped(0, "f3d parallel line set scratch"));
+    let mut lines = Vec::new();
+    for entity in dimension_resource!(ctx
+        .admit_iter(entities, "f3d parallel line set source")
+        .map_err(CodecError::from))
+    {
+        if dimension_resource!(ctx.equal(
+            &entity.sketch,
+            sketch,
+            "f3d parallel line set sketch identity"
+        )) && matches!(
+            entity.geometry.definition(),
+            SketchGeometryDefinition::Line { .. }
+        ) {
+            dimension_resource!(scratch.with_storage(|| ctx.push_vec(
+                &mut lines,
+                entity,
+                "f3d parallel line set candidate"
+            )));
+        }
+    }
     let collinear = |first: &cadmpeg_ir::sketches::SketchEntity,
                      second: &cadmpeg_ir::sketches::SketchEntity| {
         parallel_line_distance(first, second).is_some_and(|distance| distance <= linear_tolerance)
     };
     let mut carriers = Vec::<Vec<&cadmpeg_ir::sketches::SketchEntity>>::new();
-    for line in lines {
-        let matches = dimension_resource!(ctx.collect_vec(
-            carriers.iter().enumerate().filter_map(|(index, carrier)| {
-                carrier
-                    .iter()
-                    .all(|member| collinear(member, line))
-                    .then_some(index)
-            }),
+    let mut line_source = lines.iter().copied();
+    while let Some(line) =
+        dimension_resource!(ctx.next_charged(&mut line_source, "f3d planar line carrier source"))
+    {
+        let matches_carrier = |carrier: &Vec<&cadmpeg_ir::sketches::SketchEntity>| {
+            ctx.all_by(
+                carrier,
+                |member| Ok(collinear(member, line)),
+                "f3d planar line carrier member agreement",
+            )
+        };
+        let first = dimension_resource!(ctx.position_by(
+            &carriers,
+            matches_carrier,
             "f3d parallel line carrier candidate"
         ));
-        match matches.as_slice() {
-            [] => {
-                let mut carrier = Vec::new();
-                dimension_resource!(ctx.push_vec(&mut carrier, line, "f3d planar carrier member"));
-                dimension_resource!(ctx.push_vec(&mut carriers, carrier, "f3d planar carrier"));
+        if let Some(index) = first {
+            if dimension_resource!(ctx.any_by(
+                &carriers[index + 1..],
+                matches_carrier,
+                "f3d parallel line carrier candidate"
+            )) {
+                return None;
             }
-            [index] => dimension_resource!(ctx.push_vec(
-                &mut carriers[*index],
+            dimension_resource!(scratch.with_storage(|| ctx.push_vec(
+                &mut carriers[index],
                 line,
                 "f3d planar carrier member"
-            )),
-            _ => return None,
+            )));
+        } else {
+            let mut carrier = Vec::new();
+            dimension_resource!(scratch.with_storage(|| ctx.push_vec(
+                &mut carrier,
+                line,
+                "f3d planar carrier member"
+            )));
+            dimension_resource!(scratch.with_storage(|| ctx.push_vec(
+                &mut carriers,
+                carrier,
+                "f3d planar carrier"
+            )));
         }
     }
     let mut matched = None;
-    for first in 0..carriers.len() {
-        for second in first + 1..carriers.len() {
+    let mut first_source = 0..carriers.len();
+    while let Some(first) = dimension_resource!(
+        ctx.next_charged(&mut first_source, "f3d planar line carrier pair source")
+    ) {
+        let mut second_source = first + 1..carriers.len();
+        while let Some(second) = dimension_resource!(
+            ctx.next_charged(&mut second_source, "f3d planar line carrier pair source")
+        ) {
             if carriers[first].len() == 1 && carriers[second].len() == 1 {
                 continue;
             }
-            let measured = carriers[first].iter().find_map(|first| {
-                carriers[second]
-                    .iter()
-                    .find_map(|second| parallel_line_span_distance(first, second, linear_tolerance))
-            });
+            let measured = dimension_resource!(ctx.find_map(
+                &carriers[first],
+                |first| ctx.find_map(
+                    &carriers[second],
+                    |second| Ok(parallel_line_span_distance(first, second, linear_tolerance)),
+                    "f3d planar line carrier second span search"
+                ),
+                "f3d planar line carrier first span search",
+            ));
             let Some(measured) = measured else {
                 continue;
             };
@@ -2894,23 +3282,35 @@ fn owner_scoped_line_length_dimension_definition(
     if !expected.is_finite() {
         return None;
     }
-    let matches = dimension_resource!(ctx.collect_vec(
-        entities.iter().filter(|entity| {
-            if &entity.sketch != sketch {
-                return false;
-            }
-            let SketchGeometryDefinition::Line { start, end } = entity.geometry.definition() else {
-                return false;
-            };
-            let measured = (end.u - start.u).hypot(end.v - start.v);
-            let tolerance = linear_tolerance.max(
-                EPS_DIMENSIONS_OWNER_SCOPED_LINE_LENGTH_DIMENSION_DEFINITION_E9
-                    * (1.0 + measured.abs().max(expected.abs())),
-            );
-            (measured - expected.abs()).abs() <= tolerance
-        }),
-        "f3d line length candidate"
-    ));
+    let mut scratch = dimension_resource!(ctx.reserve_scoped(0, "f3d line length scratch"));
+    let mut matches = Vec::new();
+    for entity in dimension_resource!(ctx
+        .admit_iter(entities, "f3d line length source")
+        .map_err(CodecError::from))
+    {
+        if !dimension_resource!(ctx.equal(
+            &entity.sketch,
+            sketch,
+            "f3d line length sketch identity"
+        )) {
+            continue;
+        }
+        let SketchGeometryDefinition::Line { start, end } = entity.geometry.definition() else {
+            continue;
+        };
+        let measured = (end.u - start.u).hypot(end.v - start.v);
+        let tolerance = linear_tolerance.max(
+            EPS_DIMENSIONS_OWNER_SCOPED_LINE_LENGTH_DIMENSION_DEFINITION_E9
+                * (1.0 + measured.abs().max(expected.abs())),
+        );
+        if (measured - expected.abs()).abs() <= tolerance {
+            dimension_resource!(scratch.with_storage(|| ctx.push_vec(
+                &mut matches,
+                entity,
+                "f3d line length candidate"
+            )));
+        }
+    }
     match matches.as_slice() {
         [] => None,
         [entity] => {
@@ -2955,16 +3355,27 @@ fn unique_point_class_dimension_definition(
     if !expected.is_finite() {
         return None;
     }
-    let points = dimension_resource!(ctx.collect_vec(
-        entities
-            .iter()
-            .filter(|entity| &entity.sketch == sketch)
-            .filter_map(|entity| match *entity.geometry.definition() {
-                SketchGeometryDefinition::Point { position } => Some((entity, position.get())),
-                _ => None,
-            }),
-        "f3d point class candidate"
-    ));
+    let mut scratch = dimension_resource!(ctx.reserve_scoped(0, "f3d point class scratch"));
+    let mut points = Vec::new();
+    for entity in dimension_resource!(ctx
+        .admit_iter(entities, "f3d point class source")
+        .map_err(CodecError::from))
+    {
+        if !dimension_resource!(ctx.equal(
+            &entity.sketch,
+            sketch,
+            "f3d point class sketch identity"
+        )) {
+            continue;
+        }
+        if let SketchGeometryDefinition::Point { position } = entity.geometry.definition() {
+            dimension_resource!(scratch.with_storage(|| ctx.push_vec(
+                &mut points,
+                (entity, position.get()),
+                "f3d point class candidate"
+            )));
+        }
+    }
     let coincident = |first: Point2, second: Point2| {
         let scale = 1.0
             + first
@@ -2976,40 +3387,93 @@ fn unique_point_class_dimension_definition(
             <= linear_tolerance
                 .max(EPS_DIMENSIONS_UNIQUE_POINT_CLASS_DIMENSION_DEFINITION_E9 * scale)
     };
-    let mut classes = Vec::<Vec<(&cadmpeg_ir::sketches::SketchEntity, Point2)>>::new();
-    for point in points {
-        let matches = dimension_resource!(ctx.collect_vec(
-            classes.iter().enumerate().filter_map(|(index, class)| {
-                class
-                    .iter()
-                    .any(|member| coincident(member.1, point.1))
-                    .then_some(index)
-            }),
-            "f3d point class match"
-        ));
+    let mut classes = Vec::<Option<DimensionPointClass<'_, '_>>>::new();
+    for &point in dimension_resource!(ctx
+        .admit_iter(&points, "f3d point class candidate source")
+        .map_err(CodecError::from))
+    {
+        let mut match_storage =
+            dimension_resource!(ctx.reserve_scoped(0, "f3d point class matches"));
+        let mut matches = Vec::new();
+        for (index, class) in dimension_resource!(ctx
+            .admit_iter(&classes, "f3d point class match source")
+            .map_err(CodecError::from))
+        .enumerate()
+        {
+            let Some(class) = class else {
+                continue;
+            };
+            if dimension_resource!(ctx.any_by(
+                &class.members,
+                |member| Ok(coincident(member.1, point.1)),
+                "f3d point class member search"
+            )) {
+                dimension_resource!(match_storage.with_storage(|| ctx.push_vec(
+                    &mut matches,
+                    index,
+                    "f3d point class match"
+                )));
+            }
+        }
         let Some((&first, rest)) = matches.split_first() else {
-            let mut class = Vec::new();
-            dimension_resource!(ctx.push_vec(&mut class, point, "f3d point class member"));
-            dimension_resource!(ctx.push_vec(&mut classes, class, "f3d point class"));
+            let mut class = DimensionPointClass {
+                members: Vec::new(),
+                storage: dimension_resource!(ctx.reserve_scoped(0, "f3d point class members")),
+            };
+            dimension_resource!(class.storage.with_storage(|| ctx.push_vec(
+                &mut class.members,
+                point,
+                "f3d point class member"
+            )));
+            dimension_resource!(scratch.with_storage(|| ctx.push_vec(
+                &mut classes,
+                Some(class),
+                "f3d point class"
+            )));
             continue;
         };
-        dimension_resource!(ctx.push_vec(&mut classes[first], point, "f3d point class member"));
-        for &index in rest.iter().rev() {
-            let merged = classes.remove(index);
-            for member in merged {
-                dimension_resource!(ctx.push_vec(
-                    &mut classes[first],
+        let target = classes[first].as_mut()?;
+        dimension_resource!(target.storage.with_storage(|| ctx.push_vec(
+            &mut target.members,
+            point,
+            "f3d point class member"
+        )));
+        for &index in dimension_resource!(ctx
+            .admit_iter(rest, "f3d point class merge source")
+            .map_err(CodecError::from))
+        .rev()
+        {
+            let merged = classes[index].take()?;
+            let target = classes[first].as_mut()?;
+            for member in dimension_resource!(ctx
+                .admit_iter(merged.members, "f3d point class merged member source")
+                .map_err(CodecError::from))
+            {
+                dimension_resource!(target.storage.with_storage(|| ctx.push_vec(
+                    &mut target.members,
                     member,
                     "f3d point class merged member"
-                ));
+                )));
             }
         }
     }
     let mut matched = None;
-    for first in 0..classes.len() {
-        for second in first + 1..classes.len() {
-            let first_position = classes[first][0].1;
-            let second_position = classes[second][0].1;
+    let mut first_source = 0..classes.len();
+    while let Some(first) =
+        dimension_resource!(ctx.next_charged(&mut first_source, "f3d point class pair source"))
+    {
+        let Some(first_class) = &classes[first] else {
+            continue;
+        };
+        let mut second_source = first + 1..classes.len();
+        while let Some(second) =
+            dimension_resource!(ctx.next_charged(&mut second_source, "f3d point class pair source"))
+        {
+            let Some(second_class) = &classes[second] else {
+                continue;
+            };
+            let first_position = first_class.members[0].1;
+            let second_position = second_class.members[0].1;
             let du = second_position.u - first_position.u;
             let dv = second_position.v - first_position.v;
             let measured = du.hypot(dv);
@@ -3023,7 +3487,13 @@ fn unique_point_class_dimension_definition(
             if matched.is_some() {
                 return None;
             }
-            matched = Some((classes[first][0].0, classes[second][0].0, du, dv, tolerance));
+            matched = Some((
+                first_class.members[0].0,
+                second_class.members[0].0,
+                du,
+                dv,
+                tolerance,
+            ));
         }
     }
     let (first, second, du, dv, tolerance) = matched?;
@@ -3070,65 +3540,50 @@ fn owner_scoped_radial_dimension_definition(
     parameter_id: &cadmpeg_ir::features::ParameterId,
     linear_tolerance: f64,
 ) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
-    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
-
     if !design_dimension_unit(parameter) {
         return None;
     }
 
-    let mut definitions = Vec::new();
-    for entity in entities.iter().filter(|entity| &entity.sketch == sketch) {
-        if let Some(result) = radial_dimension_definition_at_tolerance(
+    let kind = RadialDimensionKind::from_source_kind(parameter.source_kind())?;
+    let mut storage = dimension_resource!(ctx.reserve_scoped(0, "F3D owner radial candidates"));
+    let mut selected = Vec::new();
+    for entity in dimension_resource!(ctx
+        .admit_iter(entities, "f3d owner radial source")
+        .map_err(CodecError::from))
+    {
+        if dimension_resource!(ctx.equal(&entity.sketch, sketch, "f3d owner radial sketch"))
+            && kind.matches(entity, parameter.evaluated_value().get(), linear_tolerance)
+        {
+            dimension_resource!(storage.with_storage(|| ctx.push_vec(
+                &mut selected,
+                entity,
+                "f3d owner radial definition",
+            )));
+        }
+    }
+    match selected.as_slice() {
+        [] => None,
+        [entity] => Some(kind.single_definition(
             ctx,
             entity,
-            parameter.source_kind(),
-            parameter.evaluated_value().get(),
-            dimension_resource!(
-                (parameter_id).try_clone_for_decode(ctx, "f3d owner scoped radial parameter id")
-            ),
-            linear_tolerance,
-        ) {
-            dimension_resource!(ctx.push_vec(
-                &mut definitions,
-                dimension_resource!(result),
-                "f3d owner radial definition"
-            ));
+            (parameter_id, "f3d owner scoped radial parameter id"),
+        )),
+        _ => {
+            let mut members = Vec::new();
+            for entity in dimension_resource!(ctx
+                .admit_iter(&selected, "f3d owner radial output source")
+                .map_err(CodecError::from))
+            {
+                let id = dimension_resource!(entity
+                    .id()
+                    .try_clone_for_decode(ctx, "f3d radial at tolerance entity id",));
+                dimension_resource!(ctx.push_vec(&mut members, id, "f3d owner radial member"));
+            }
+            let parameter = dimension_resource!(parameter_id
+                .try_clone_for_decode(ctx, "f3d owner scoped radial repeated parameter id",));
+            Some(Ok(kind.repeated_definition(members, parameter)))
         }
     }
-    if definitions.len() < 2 {
-        return definitions.pop().map(Ok);
-    }
-    let radius = definitions
-        .iter()
-        .all(|definition| matches!(definition, Definition::Radius { .. }));
-    let diameter = definitions
-        .iter()
-        .all(|definition| matches!(definition, Definition::Diameter { .. }));
-    if !radius && !diameter {
-        return None;
-    }
-    let mut members = Vec::new();
-    for definition in definitions {
-        let (Definition::Radius { entity, .. } | Definition::Diameter { entity, .. }) = definition
-        else {
-            return None;
-        };
-        dimension_resource!(ctx.push_vec(&mut members, entity, "f3d owner radial member"));
-    }
-    let parameter =
-        dimension_resource!((parameter_id)
-            .try_clone_for_decode(ctx, "f3d owner scoped radial repeated parameter id"));
-    Some(Ok(if radius {
-        Definition::RepeatedRadius {
-            entities: members,
-            parameter,
-        }
-    } else {
-        Definition::RepeatedDiameter {
-            entities: members,
-            parameter,
-        }
-    }))
 }
 
 pub(crate) fn constraint_parameters(
@@ -3233,20 +3688,118 @@ pub(crate) fn bind_offset_dimension_parameters(
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
 
+    let mut storage = ctx.reserve_scoped(0, "f3d offset binding storage")?;
     let mut parameter_values = HashMap::new();
-    for parameter in parameters {
+    for parameter in ctx.admit_iter(parameters, "f3d offset parameter source")? {
         if let Some(value) = design_length(parameter) {
-            ctx.insert_hash_map(
+            let mut identity_storage = ctx.reserve_scoped(0, "f3d offset parameter identity")?;
+            let id = identity_storage.with_storage(|| {
+                crate::design::identity::neutral_parameter_id_with_operation(
+                    ctx,
+                    parameter,
+                    "f3d parameter identifier",
+                )
+            })?;
+            if let Some(previous) = ctx.get_mut_hash_map(
                 &mut parameter_values,
-                crate::design::identity::neutral_parameter_id(ctx, parameter)?,
-                value.get(),
-                "f3d offset parameter value index",
-            )
-            .map(|_| ())?;
+                &id,
+                "f3d offset parameter value duplicate",
+            )? {
+                let (previous_value, _) = previous;
+                *previous_value = value.get();
+            } else {
+                storage.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut parameter_values,
+                        id,
+                        (value.get(), identity_storage),
+                        "f3d offset parameter value index",
+                    )
+                })?;
+            }
         }
     }
+    let mut candidate_storage = ctx.reserve_scoped(0, "f3d offset candidate storage")?;
+    let mut offsets_by_source = HashMap::new();
+    let mut remaining_constraints = Some(constraints.as_slice());
+    let mut unique_offset_for = |sketch: &cadmpeg_ir::sketches::SketchId,
+                                 entity: &cadmpeg_ir::sketches::SketchEntityId,
+                                 parameter_value: f64|
+     -> Result<Option<usize>, CodecError> {
+        if let Some(source) = remaining_constraints.take() {
+            for (index, constraint) in ctx
+                .admit_iter(source, "f3d offset candidate source")?
+                .enumerate()
+            {
+                let Definition::Offset {
+                    pairs,
+                    distance,
+                    parameter: None,
+                } = constraint.definition.kind()
+                else {
+                    continue;
+                };
+                for pair in ctx.admit_iter(pairs, "f3d offset candidate pair source")? {
+                    let key = (&constraint.sketch, &pair.source);
+                    if let Some(candidates) = ctx.get_mut_hash_map(
+                        &mut offsets_by_source,
+                        &key,
+                        "f3d offset candidate duplicate",
+                    )? {
+                        candidate_storage.with_storage(|| {
+                            ctx.push_vec(
+                                candidates,
+                                (index, distance.get()),
+                                "f3d offset candidate",
+                            )
+                        })?;
+                    } else {
+                        let mut candidates = Vec::new();
+                        candidate_storage.with_storage(|| {
+                            ctx.push_vec(
+                                &mut candidates,
+                                (index, distance.get()),
+                                "f3d offset candidate",
+                            )?;
+                            ctx.insert_hash_map(
+                                &mut offsets_by_source,
+                                key,
+                                candidates,
+                                "f3d offset candidate index",
+                            )
+                        })?;
+                    }
+                }
+            }
+        }
+        let Some(candidates) = ctx.get_hash_map(
+            &offsets_by_source,
+            &(sketch, entity),
+            "f3d offset candidate lookup",
+        )?
+        else {
+            return Ok(None);
+        };
+        let matches =
+            |(_, distance): &(usize, f64)| Ok(scalar_close(*distance, parameter_value.abs()));
+        let Some(position) = ctx.position_by(candidates, matches, "f3d offset first source")?
+        else {
+            return Ok(None);
+        };
+        if ctx.any_by(
+            &candidates[position + 1..],
+            matches,
+            "f3d offset unique suffix",
+        )? {
+            return Ok(None);
+        }
+        Ok(Some(candidates[position].0))
+    };
     let mut bindings = Vec::new();
-    for (dimension_index, dimension) in constraints.iter().enumerate() {
+    for (dimension_index, dimension) in ctx
+        .admit_iter(constraints.as_slice(), "f3d offset dimension source")?
+        .enumerate()
+    {
         let Definition::Native {
             native_kind,
             entities,
@@ -3267,93 +3820,99 @@ pub(crate) fn bind_offset_dimension_parameters(
         {
             continue;
         }
-        let Some(parameter_value) = parameter_values.get(parameter).copied() else {
+        let Some(parameter_value) = ctx
+            .get_hash_map(
+                &parameter_values,
+                parameter,
+                "f3d offset parameter value lookup",
+            )?
+            .map(|(value, _)| *value)
+        else {
             continue;
         };
-        let mut candidate = None;
-        let mut ambiguous = false;
-        for (offset_index, constraint) in constraints.iter().enumerate() {
-            if constraint.sketch != dimension.sketch {
-                continue;
-            }
-            let Definition::Offset {
-                pairs,
-                distance,
-                parameter: None,
-            } = constraint.definition.kind()
-            else {
-                continue;
-            };
-            if pairs.iter().any(|pair| &pair.source == entity)
-                && scalar_close(distance.get(), parameter_value.abs())
-                && candidate.replace(offset_index).is_some()
-            {
-                ambiguous = true;
-                break;
-            }
-        }
-        if let Some(offset_index) = candidate.filter(|_| !ambiguous) {
-            let parameter = cadmpeg_ir::features::ParameterId::try_from(
-                String::from_utf8(ctx.copy_retained(
-                    parameter.as_str().as_bytes(),
-                    "f3d offset binding parameter id",
-                )?)
-                .map_err(|_| CodecError::malformed("validated offset parameter ID is not UTF-8"))?,
-            )
-            .map_err(CodecError::malformed)?;
+        let Some(offset_index) = unique_offset_for(&dimension.sketch, entity, parameter_value)?
+        else {
+            continue;
+        };
+        storage.with_storage(|| {
             ctx.push_vec(
                 &mut bindings,
-                (dimension_index, offset_index, parameter, parameter_value),
+                (dimension_index, offset_index, parameter_value),
                 "f3d offset dimension binding",
-            )?;
-        }
+            )
+        })?;
     }
+    drop(offsets_by_source);
+    drop(candidate_storage);
     let mut offset_counts = HashMap::new();
-    for binding in &bindings {
-        if let Some(count) = offset_counts.get_mut(&binding.1) {
+    for binding in ctx.admit_iter(&bindings, "f3d offset binding count source")? {
+        if let Some(count) = ctx.get_mut_hash_map(
+            &mut offset_counts,
+            &binding.1,
+            "f3d offset binding count lookup",
+        )? {
             *count += 1;
         } else {
-            ctx.insert_hash_map(
-                &mut offset_counts,
-                binding.1,
-                1usize,
-                "f3d offset binding count",
-            )
-            .map(|_| ())?;
+            storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut offset_counts,
+                    binding.1,
+                    1usize,
+                    "f3d offset binding count",
+                )
+            })?;
         }
     }
-    bindings.retain(|binding| offset_counts.get(&binding.1) == Some(&1));
+    ctx.retain_vec(
+        &mut bindings,
+        |binding| {
+            Ok(ctx.get_hash_map(
+                &offset_counts,
+                &binding.1,
+                "f3d offset binding count lookup",
+            )? == Some(&1))
+        },
+        "f3d offset binding uniqueness source",
+    )?;
     let mut removed = HashSet::new();
-    for (dimension_index, offset_index, parameter, parameter_value) in bindings {
-        let parameter = cadmpeg_ir::features::ParameterId::try_from(
-            String::from_utf8(ctx.copy_retained(
-                parameter.as_str().as_bytes(),
-                "f3d offset driving parameter id",
-            )?)
-            .map_err(|_| CodecError::malformed("validated offset parameter ID is not UTF-8"))?,
-        )
-        .map_err(CodecError::malformed)?;
-        let applied = constraints[offset_index].definition.set_offset_parameter(
+    for &(dimension_index, offset_index, parameter_value) in
+        ctx.admit_iter(&bindings, "f3d offset binding mutation source")?
+    {
+        let Definition::Native {
+            parameter: Some(parameter),
+            ..
+        } = constraints[dimension_index].definition.kind()
+        else {
+            return Err(CodecError::malformed(
+                "offset dimension binding source is absent",
+            ));
+        };
+        let parameter = parameter.try_clone_for_decode(ctx, "f3d offset driving parameter id")?;
+        constraints[offset_index].definition.set_offset_parameter(
             cadmpeg_ir::sketches::OffsetParameter {
                 id: parameter,
                 negated: parameter_value.is_sign_negative(),
             },
         );
-        if applied {
+        storage.with_storage(|| {
             ctx.insert_hash_set(
                 &mut removed,
                 dimension_index,
                 "f3d offset removed dimension",
             )
-            .map(|_| ())?;
-        }
+        })?;
     }
     let mut index = 0usize;
-    constraints.retain(|_| {
-        let keep = !removed.contains(&index);
-        index += 1;
-        keep
-    });
+    ctx.retain_vec(
+        constraints,
+        |_| {
+            let keep =
+                !ctx.contains_hash_set(&removed, &index, "f3d offset removed dimension lookup")?;
+            index += 1;
+            Ok(keep)
+        },
+        "f3d offset constraint removal source",
+    )?;
     Ok(())
 }
 
@@ -3381,137 +3940,167 @@ pub(crate) fn project_spatial_dimension_constraints(
         ..
     } = inputs;
 
-    let mut spatial_by_planar_id = HashMap::new();
-    for placement in placements {
-        let spatial_id = crate::design::identity::neutral_spatial_sketch_id(ctx, placement)?;
-        if spatial_sketches
-            .iter()
-            .any(|sketch| sketch.id == spatial_id)
-        {
-            ctx.insert_hash_map(
-                &mut spatial_by_planar_id,
-                crate::design::identity::neutral_sketch_id(ctx, placement)?,
-                spatial_id,
-                "f3d spatial planar sketch index",
-            )
-            .map(|_| ())?;
+    let mut index_storage = ctx.reserve_scoped(0, "f3d spatial dimension indexes")?;
+    let mut spatial_ids = HashSet::new();
+    if !placements.is_empty() {
+        for sketch in ctx.admit_iter(spatial_sketches, "f3d spatial sketch source")? {
+            index_storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut spatial_ids,
+                    &sketch.id,
+                    "f3d spatial sketch identity index",
+                )
+            })?;
         }
     }
+    let mut spatial_by_planar_id = HashMap::new();
     let mut spatial_by_scope = HashMap::new();
-    for placement in placements {
-        let (Some(scope), Some(scope_record_index)) =
-            (native_stream(&placement.id), placement.scope_record_index)
-        else {
+    for placement in ctx.admit_iter(placements, "f3d spatial placement source")? {
+        let mut temporary = ctx.reserve_scoped(0, "f3d spatial placement identity")?;
+        let spatial_id = temporary
+            .with_storage(|| crate::design::identity::neutral_spatial_sketch_id(ctx, placement))?;
+        let sketch = ctx
+            .get_hash_set(&spatial_ids, &spatial_id, "f3d spatial sketch lookup")?
+            .copied();
+        drop(spatial_id);
+        drop(temporary);
+        let Some(sketch) = sketch else {
             continue;
         };
-        if let Some(sketch) =
-            spatial_by_planar_id.get(&crate::design::identity::neutral_sketch_id(ctx, placement)?)
+        let mut identity_storage = ctx.reserve_scoped(0, "f3d spatial planar identity")?;
+        let planar_id = identity_storage
+            .with_storage(|| crate::design::identity::neutral_sketch_id(ctx, placement))?;
+        if ctx.contains_key_hash_map(
+            &spatial_by_planar_id,
+            &planar_id,
+            "f3d spatial planar sketch lookup",
+        )? {
+            drop(planar_id);
+            drop(identity_storage);
+        } else {
+            index_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut spatial_by_planar_id,
+                    planar_id,
+                    (sketch, identity_storage),
+                    "f3d spatial planar sketch index",
+                )
+            })?;
+        }
+        if let (Some(scope), Some(scope_record_index)) =
+            (native_stream_charged(ctx, &placement.id, "resolve F3D dimension stream")?, placement.scope_record_index)
         {
-            let sketch = (sketch).try_clone_for_decode(ctx, "f3d spatial scope sketch id")?;
-            ctx.insert_hash_map(
-                &mut spatial_by_scope,
-                (scope, scope_record_index),
-                sketch,
-                "f3d spatial scope sketch index",
-            )
-            .map(|_| ())?;
+            index_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut spatial_by_scope,
+                    (scope, scope_record_index),
+                    sketch,
+                    "f3d spatial scope sketch index",
+                )
+            })?;
         }
     }
-    let native_records = points
-        .iter()
-        .filter_map(|point| {
-            Some((
-                point.id.as_str(),
-                (native_stream(&point.id)?, point.record_index),
-            ))
-        })
-        .chain(curves.iter().filter_map(|curve| {
-            Some((
-                curve.id.as_str(),
-                (native_stream(&curve.id)?, curve.record_index),
-            ))
-        }));
     let mut native_record_indices = HashMap::new();
-    for (native_ref, record) in native_records {
-        ctx.insert_hash_map(
-            &mut native_record_indices,
-            native_ref,
-            record,
-            "f3d spatial native record index",
-        )
-        .map(|_| ())?;
+    for point in ctx.admit_iter(points, "f3d spatial native point source")? {
+        let Some(scope) = native_stream_charged(ctx, &point.id, "resolve F3D dimension stream")? else {
+            continue;
+        };
+        index_storage.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut native_record_indices,
+                point.id.as_str(),
+                (scope, point.record_index),
+                "f3d spatial native record index",
+            )
+        })?;
+    }
+    for curve in ctx.admit_iter(curves, "f3d spatial native curve source")? {
+        let Some(scope) = native_stream_charged(ctx, &curve.id, "resolve F3D dimension stream")? else {
+            continue;
+        };
+        index_storage.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut native_record_indices,
+                curve.id.as_str(),
+                (scope, curve.record_index),
+                "f3d spatial native record index",
+            )
+        })?;
     }
     let mut spatial_by_record = HashMap::new();
-    for entity in spatial_entities {
+    for entity in ctx.admit_iter(spatial_entities, "f3d spatial projected entity source")? {
         let Some(native_ref) = entity.native_ref.as_deref() else {
             continue;
         };
-        if let Some(key) = native_record_indices.get(native_ref) {
-            ctx.insert_hash_map(
-                &mut spatial_by_record,
-                *key,
-                entity,
-                "f3d spatial projected record index",
-            )
-            .map(|_| ())?;
+        if let Some(key) = ctx.get_hash_map(
+            &native_record_indices,
+            native_ref,
+            "f3d spatial native record lookup",
+        )? {
+            index_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut spatial_by_record,
+                    *key,
+                    entity,
+                    "f3d spatial projected record index",
+                )
+            })?;
         }
     }
-    let mut parameter_lengths = HashMap::new();
     let mut parameters_by_id = HashMap::new();
-    for parameter in parameters {
-        if let Some(length) = design_length(parameter) {
-            ctx.insert_hash_map(
-                &mut parameter_lengths,
-                crate::design::identity::neutral_parameter_id(ctx, parameter)?,
-                length.get().abs(),
-                "f3d spatial parameter length index",
-            )
-            .map(|_| ())?;
-        }
-        ctx.insert_hash_map(
-            &mut parameters_by_id,
-            crate::design::identity::neutral_parameter_id(ctx, parameter)?,
-            parameter,
-            "f3d spatial parameter index",
-        )
-        .map(|_| ())?;
+    for parameter in ctx.admit_iter(parameters, "f3d spatial parameter source")? {
+        index_storage.with_storage(|| {
+            let id = crate::design::identity::neutral_parameter_id_with_operation(ctx, parameter, "f3d parameter identifier")?;
+            ctx.insert_hash_map(&mut parameters_by_id, id, (parameter, design_length(parameter).map(|length| length.get().abs())), "f3d spatial parameter index")
+        })?;
     }
     let source_constraints = project_all_dimension_constraints(ctx, inputs, &[], linear_tolerance)?;
     let mut parameter_constraint_counts = HashMap::new();
-    for parameter in source_constraints
-        .iter()
+    for parameter in ctx.admit_iter(&source_constraints, "f3d spatial source constraint scan")?
         .flat_map(|constraint| constraint_parameters(constraint.definition.kind()))
     {
-        if let Some(count) = parameter_constraint_counts.get_mut(parameter) {
+        let Some((parameter, _)) = ctx.get_key_value_hash_map(
+            &parameters_by_id, parameter, "f3d spatial source parameter lookup",
+        )? else { continue; };
+        if let Some(count) = ctx.get_mut_hash_map(&mut parameter_constraint_counts, parameter, "f3d spatial parameter count lookup")? {
             *count += 1;
         } else {
-            let id = (parameter).try_clone_for_decode(ctx, "f3d spatial parameter count id")?;
+            index_storage.with_storage(|| {
             ctx.insert_hash_map(
                 &mut parameter_constraint_counts,
-                id,
+                parameter,
                 1usize,
                 "f3d spatial parameter count index",
             )
-            .map(|_| ())?;
+            .map(|_| ())
+            })?;
         }
     }
-    let mut source_parameters = HashSet::new();
+    let mut source_parameters = BTreeSet::new();
     let mut projected = Vec::new();
-    for constraint in source_constraints {
+    for constraint in ctx.admit_iter(source_constraints, "f3d spatial dimension projection source")? {
         let projected_constraint = (|| -> Result<Option<SpatialSketchConstraint>, CodecError> {
-            let Some(sketch) = spatial_by_planar_id.get(&constraint.sketch) else {
+            let Some((sketch, _storage)) = ctx.get_hash_map(
+                &spatial_by_planar_id,
+                &constraint.sketch,
+                "f3d spatial projected sketch lookup",
+            )?
+            else {
                 return Ok(None);
             };
             let sketch = (sketch).try_clone_for_decode(ctx, "f3d projected spatial sketch id")?;
             for parameter in constraint_parameters(constraint.definition.kind()) {
-                let id =
-                    (parameter).try_clone_for_decode(ctx, "f3d spatial source parameter id")?;
-                ctx.insert_hash_set(
+                let Some((parameter, _)) = ctx.get_key_value_hash_map(
+                    &parameters_by_id, parameter, "f3d spatial source parameter lookup",
+                )? else { continue; };
+                index_storage.with_storage(|| {
+                ctx.insert_btree_set(
                     &mut source_parameters,
-                    id,
+                    parameter,
                     "f3d spatial source parameter index",
                 )
-                .map(|_| ())?;
+                .map(|_| ())
+                })?;
             }
             let definition = match constraint.definition.into_kind() {
                 SketchConstraintDefinitionInput::Native {
@@ -3534,8 +4123,8 @@ pub(crate) fn project_spatial_dimension_constraints(
                     let offset = parameter
                         .as_ref()
                         .and_then(|parameter_id| {
-                            let expected = *parameter_lengths.get(parameter_id)?;
-                            let parameter = parameters_by_id.get(parameter_id)?;
+                            let (parameter, expected) = *dimension_resource!(ctx.get_hash_map(&parameters_by_id, parameter_id, "f3d spatial parameter lookup"))?;
+                            let expected = expected?;
                             let signed = design_length(parameter)?.get();
                             spatial_counted_offset_dimension_definition(
                                 ctx,
@@ -3550,19 +4139,16 @@ pub(crate) fn project_spatial_dimension_constraints(
                     let distance = parameter
                         .as_ref()
                         .and_then(|parameter| {
-                            let expected = *parameter_lengths.get(parameter)?;
-                            let scope = native_stream(constraint.native_ref.as_deref()?)?;
+                            let (_, expected) = *dimension_resource!(ctx.get_hash_map(&parameters_by_id, parameter, "f3d spatial parameter lookup"))?;
+                            let expected = expected?;
+                            let scope = dimension_resource!(native_stream_charged(ctx, constraint.native_ref.as_deref()?, "resolve F3D dimension stream"))?;
+                            let mut measured_storage = dimension_resource!(ctx.reserve_scoped(0, "f3d spatial distance locus storage"));
                             let mut measured = Vec::new();
-                            for operand in operands.iter().filter(|operand| {
-                                operand_field(operand).is_some_and(|field| {
-                                    field == "locus" || field.ends_with("_locus")
-                                }) && operand.object_index.is_some()
-                            }) {
-                                let entity = spatial_by_record
-                                    .get(&(scope, operand.object_index?))
-                                    .copied()?;
-                                dimension_resource!(ctx.push_vec(
-                                    &mut measured,
+                            for operand in dimension_resource!(ctx.admit_iter(operands.as_slice(), "f3d spatial distance operand source").map_err(CodecError::from)) {
+                                if !operand_field(operand).is_some_and(|field| field == "locus" || field.ends_with("_locus")) || operand.object_index.is_none() { continue; }
+                                let entity = dimension_resource!(ctx.get_hash_map(&spatial_by_record, &(scope, operand.object_index?), "f3d spatial distance entity lookup")).copied()?;
+                                dimension_resource!(ctx.push_scoped_vec(
+                                    &mut measured_storage, &mut measured,
                                     entity,
                                     "f3d spatial distance locus"
                                 ));
@@ -3571,9 +4157,9 @@ pub(crate) fn project_spatial_dimension_constraints(
                                 return None;
                             };
                             if !native_kind.as_str().starts_with("Linear Dimension")
-                                || first.sketch != sketch
-                                || second.sketch != sketch
-                                || first.id() == second.id()
+                                || !dimension_resource!(ctx.equal(&first.sketch, &sketch, "f3d spatial distance first sketch equality"))
+                                || !dimension_resource!(ctx.equal(&second.sketch, &sketch, "f3d spatial distance second sketch equality"))
+                                || dimension_resource!(ctx.equal(first.id(), second.id(), "f3d spatial distance entity equality"))
                             {
                                 return None;
                             }
@@ -3635,10 +4221,10 @@ pub(crate) fn project_spatial_dimension_constraints(
                             })
                         { return Ok(None); }
                         let Some(parameter_id) = parameter.as_ref() else { return Ok(None); };
-                        if parameter_constraint_counts.get(parameter_id) != Some(&1) {
+                        if ctx.get_hash_map(&parameter_constraint_counts, parameter_id, "f3d spatial parameter count lookup")? != Some(&1) {
                             return Ok(None);
                         }
-                        let Some(parameter) = parameters_by_id.get(parameter_id) else { return Ok(None); };
+                        let Some((parameter, _length)) = ctx.get_hash_map(&parameters_by_id, parameter_id, "f3d spatial parameter lookup")? else { return Ok(None); };
                         let line_length = owner_scoped_spatial_line_length_dimension_definition(
                             ctx,
                             spatial_entities,
@@ -3708,8 +4294,7 @@ pub(crate) fn project_spatial_dimension_constraints(
     }
 
     let retained_parameter_ids =
-        projected
-            .iter()
+        ctx.admit_iter(&projected, "f3d spatial retained parameter source")?
             .filter_map(|constraint| match constraint.definition.kind() {
                 SpatialSketchConstraintDefinitionInput::Native {
                     parameter: Some(parameter),
@@ -3740,66 +4325,83 @@ pub(crate) fn project_spatial_dimension_constraints(
             });
     let mut retained_parameters = HashSet::new();
     for parameter in retained_parameter_ids {
-        let id = (parameter).try_clone_for_decode(ctx, "f3d retained spatial parameter id")?;
+        let Some((parameter, _)) = ctx.get_key_value_hash_map(
+            &parameters_by_id, parameter, "f3d retained spatial parameter lookup",
+        )? else { continue; };
+        index_storage.with_storage(|| {
         ctx.insert_hash_set(
             &mut retained_parameters,
-            id,
+            parameter,
             "f3d retained spatial parameter index",
         )
-        .map(|_| ())?;
+        .map(|_| ())
+        })?;
     }
     let mut owners_by_record = HashMap::new();
-    for owner in owners {
-        if let Some(scope) = native_stream(owner.id()) {
-            ctx.insert_hash_map(
-                &mut owners_by_record,
-                (scope, owner.record_index()),
-                owner,
-                "f3d spatial owner record index",
-            )
-            .map(|_| ())?;
+    for owner in ctx.admit_iter(owners, "f3d spatial owner source")? {
+        if let Some(scope) = native_stream_charged(ctx, owner.id(), "resolve F3D dimension stream")? {
+            index_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut owners_by_record,
+                    (scope, owner.record_index()),
+                    owner,
+                    "f3d spatial owner record index",
+                )
+            })?;
         }
     }
     let mut companions_by_record = HashMap::new();
-    for companion in companions {
-        if let Some(scope) = native_stream(companion.id()) {
-            ctx.insert_hash_map(
-                &mut companions_by_record,
-                (scope, companion.record_index()),
-                companion,
-                "f3d spatial companion record index",
-            )
-            .map(|_| ())?;
+    for companion in ctx.admit_iter(companions, "f3d spatial companion source")? {
+        if let Some(scope) = native_stream_charged(ctx, companion.id(), "resolve F3D dimension stream")? {
+            index_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut companions_by_record,
+                    (scope, companion.record_index()),
+                    companion,
+                    "f3d spatial companion record index",
+                )
+            })?;
         }
     }
-    let mut missing = Vec::new();
-    for parameter_id in source_parameters.difference(&retained_parameters) {
-        ctx.push_vec(&mut missing, parameter_id, "f3d missing spatial parameter")?;
-    }
-    ctx.stable_sort_by(
-        &mut missing[..],
-        |value| value.as_str(),
-        Ord::cmp,
-        "sort f3d design dimensions 3",
-    )?;
-    for parameter_id in missing {
-        let Some(parameter) = parameters_by_id.get(parameter_id) else {
+    for parameter_id in ctx.admit_iter(&source_parameters, "f3d missing spatial parameter scan")? {
+        if ctx.contains_hash_set(
+            &retained_parameters,
+            parameter_id,
+            "f3d retained spatial parameter lookup",
+        )? {
+            continue;
+        }
+        let Some((parameter, _length)) = ctx.get_hash_map(&parameters_by_id, *parameter_id, "f3d spatial parameter lookup")? else {
             continue;
         };
-        let Some(scope) = native_stream(&parameter.id) else {
+        let Some(scope) = native_stream_charged(ctx, &parameter.id, "resolve F3D dimension stream")? else {
             continue;
         };
         let Some(owner_record_index) = parameter.owner_record_index() else {
             continue;
         };
-        let Some(owner) = owners_by_record.get(&(scope, owner_record_index)) else {
-            continue;
-        };
-        let Some(companion) = companions_by_record.get(&(scope, owner.companion_record_index()))
+        let Some(owner) = ctx.get_hash_map(
+            &owners_by_record,
+            &(scope, owner_record_index),
+            "f3d spatial owner record lookup",
+        )?
         else {
             continue;
         };
-        let Some(sketch) = spatial_by_scope.get(&(scope, owner.scope_record_index())) else {
+        let Some(companion) = ctx.get_hash_map(
+            &companions_by_record,
+            &(scope, owner.companion_record_index()),
+            "f3d spatial companion record lookup",
+        )?
+        else {
+            continue;
+        };
+        let Some(sketch) = ctx.get_hash_map(
+            &spatial_by_scope,
+            &(scope, owner.scope_record_index()),
+            "f3d spatial scope sketch lookup",
+        )?
+        else {
             continue;
         };
         let sketch = (sketch).try_clone_for_decode(ctx, "f3d missing spatial sketch id")?;
@@ -3883,28 +4485,32 @@ fn owner_scoped_spatial_line_length_dimension_definition(
         return Ok(None);
     }
     let mut matches = Vec::new();
-    for entity in entities
-        .iter()
-        .filter(|entity| &entity.sketch == sketch)
-        .filter(|entity| {
-            let SpatialSketchGeometryDefinition::Line { start, end } =
-                *entity.geometry.definition()
-            else {
-                return false;
-            };
-            let measured = (end.x - start.x).hypot((end.y - start.y).hypot(end.z - start.z));
-            if !measured.is_finite() {
-                return false;
-            }
-            let tolerance = linear_tolerance.max(
-                EPS_DIMENSIONS_OWNER_SCOPED_SPATIAL_LINE_LENGTH_DIMENSION_DEFINITION_E9
-                    * (1.0 + measured.abs().max(expected.abs())),
-            );
-            (measured - expected).abs() <= tolerance
-        })
-    {
-        let id = (entity.id()).try_clone_for_decode(ctx, "f3d spatial line length entity id")?;
-        ctx.push_vec(&mut matches, id, "f3d spatial line length match")?;
+    for entity in ctx.admit_iter(entities, "f3d spatial line length source")? {
+        if !ctx.equal(
+            &entity.sketch,
+            sketch,
+            "f3d spatial line length sketch identity",
+        )? {
+            continue;
+        }
+        let SpatialSketchGeometryDefinition::Line { start, end } = *entity.geometry.definition()
+        else {
+            continue;
+        };
+        let measured = (end.x - start.x).hypot((end.y - start.y).hypot(end.z - start.z));
+        if !measured.is_finite() {
+            continue;
+        }
+        let tolerance = linear_tolerance.max(
+            EPS_DIMENSIONS_OWNER_SCOPED_SPATIAL_LINE_LENGTH_DIMENSION_DEFINITION_E9
+                * (1.0 + measured.abs().max(expected.abs())),
+        );
+        if (measured - expected).abs() <= tolerance {
+            let id = entity
+                .id()
+                .try_clone_for_decode(ctx, "f3d spatial line length entity id")?;
+            ctx.push_vec(&mut matches, id, "f3d spatial line length match")?;
+        }
     }
     match matches.len() {
         0 => Ok(None),
@@ -3940,19 +4546,37 @@ fn unique_spatial_parallel_line_dimension_definition(
     if !expected.is_finite() {
         return None;
     }
-    let lines = dimension_resource!(ctx.collect_vec(
-        entities.iter().filter(|entity| {
-            &entity.sketch == sketch
-                && matches!(
-                    *entity.geometry.definition(),
-                    SpatialSketchGeometryDefinition::Line { .. }
-                )
-        }),
-        "f3d spatial parallel line candidate"
-    ));
+    let mut scratch =
+        dimension_resource!(ctx.reserve_scoped(0, "f3d spatial parallel line scratch"));
+    let mut lines = Vec::new();
+    for entity in dimension_resource!(ctx
+        .admit_iter(entities, "f3d spatial parallel line source")
+        .map_err(CodecError::from))
+    {
+        if dimension_resource!(ctx.equal(
+            &entity.sketch,
+            sketch,
+            "f3d spatial parallel line sketch identity"
+        )) && matches!(
+            entity.geometry.definition(),
+            SpatialSketchGeometryDefinition::Line { .. }
+        ) {
+            dimension_resource!(scratch.with_storage(|| ctx.push_vec(
+                &mut lines,
+                entity,
+                "f3d spatial parallel line candidate"
+            )));
+        }
+    }
     let mut matched = None;
-    for first in 0..lines.len() {
-        for second in first + 1..lines.len() {
+    let mut first_source = 0..lines.len();
+    while let Some(first) = dimension_resource!(
+        ctx.next_charged(&mut first_source, "f3d spatial parallel line pair source")
+    ) {
+        let mut second_source = first + 1..lines.len();
+        while let Some(second) = dimension_resource!(
+            ctx.next_charged(&mut second_source, "f3d spatial parallel line pair source")
+        ) {
             if spatial_parallel_line_distance_matches(
                 &lines[first].geometry,
                 &lines[second].geometry,
@@ -3998,85 +4622,146 @@ fn owner_scoped_spatial_repeated_profile_line_distance_definition(
     if !expected.is_finite() {
         return None;
     }
+    let mut scratch = dimension_resource!(ctx.reserve_scoped(0, "f3d spatial repeated scratch"));
     let mut entities_by_id = HashMap::new();
-    for entity in entities.iter().filter(|entity| &entity.sketch == sketch) {
-        dimension_resource!(ctx
-            .insert_hash_map(
-                &mut entities_by_id,
-                entity.id(),
-                entity,
-                "f3d spatial repeated entity index"
-            )
-            .map(|_| ()));
+    for entity in dimension_resource!(ctx
+        .admit_iter(entities, "f3d spatial repeated entity source")
+        .map_err(CodecError::from))
+    {
+        if dimension_resource!(ctx.equal(
+            &entity.sketch,
+            sketch,
+            "f3d spatial repeated sketch identity"
+        )) {
+            dimension_resource!(scratch.with_storage(|| ctx
+                .insert_hash_map(
+                    &mut entities_by_id,
+                    entity.id(),
+                    entity,
+                    "f3d spatial repeated entity index"
+                )
+                .map(|_| ())));
+        }
     }
-    let sketch = sketches.iter().find(|candidate| &candidate.id == sketch)?;
+    let sketch = dimension_resource!(ctx.find_by(
+        sketches,
+        |candidate| ctx.equal(
+            &candidate.id,
+            sketch,
+            "f3d spatial repeated sketch identity"
+        ),
+        "f3d spatial repeated sketch search",
+    ))?;
     let mut seen_pairs = HashSet::new();
     let mut used_entities = HashSet::new();
     let mut pairs = Vec::new();
-    for profile in &sketch.profiles {
+    let mut profile_source = sketch.profiles.iter();
+    while let Some(profile) = dimension_resource!(
+        ctx.next_charged(&mut profile_source, "f3d spatial repeated profile source")
+    ) {
         if profile.boundary().len() < 4 {
             continue;
         }
-        for index in 0..profile.boundary().len() {
+        let mut boundary_source = 0..profile.boundary().len();
+        while let Some(index) = dimension_resource!(
+            ctx.next_charged(&mut boundary_source, "f3d spatial repeated boundary source")
+        ) {
             let first_id = &profile.boundary()[index].entity;
             let second_id = &profile.boundary()[(index + 2) % profile.boundary().len()].entity;
-            let key = if first_id < second_id {
+            let key = if dimension_resource!(ctx.compare(
+                first_id,
+                second_id,
+                "f3d spatial repeated pair order"
+            )) == std::cmp::Ordering::Less
+            {
                 (first_id, second_id)
             } else {
                 (second_id, first_id)
             };
-            if seen_pairs.contains(&key) {
+            if dimension_resource!(ctx.contains_hash_set(
+                &seen_pairs,
+                &key,
+                "f3d spatial repeated pair lookup"
+            )) {
                 continue;
             }
-            dimension_resource!(ctx
+            dimension_resource!(scratch.with_storage(|| ctx
                 .insert_hash_set(&mut seen_pairs, key, "f3d spatial repeated pair key")
-                .map(|_| ()));
-            let first = entities_by_id.get(first_id)?;
-            let second = entities_by_id.get(second_id)?;
+                .map(|_| ())));
+            let first = dimension_resource!(ctx.get_hash_map(
+                &entities_by_id,
+                first_id,
+                "f3d spatial repeated first entity lookup"
+            ))?;
+            let second = dimension_resource!(ctx.get_hash_map(
+                &entities_by_id,
+                second_id,
+                "f3d spatial repeated second entity lookup"
+            ))?;
             if !spatial_parallel_line_distance_matches(&first.geometry, &second.geometry, expected)
             {
                 continue;
             }
-            if used_entities.contains(first_id) || used_entities.contains(second_id) {
+            if dimension_resource!(ctx.contains_hash_set(
+                &used_entities,
+                first_id,
+                "f3d spatial repeated first member lookup"
+            )) || dimension_resource!(ctx.contains_hash_set(
+                &used_entities,
+                second_id,
+                "f3d spatial repeated second member lookup"
+            )) {
                 return None;
             }
-            dimension_resource!(ctx
+            dimension_resource!(scratch.with_storage(|| ctx
                 .insert_hash_set(
                     &mut used_entities,
                     first_id,
                     "f3d spatial repeated first member"
                 )
-                .map(|_| ()));
-            dimension_resource!(ctx
+                .map(|_| ())));
+            dimension_resource!(scratch.with_storage(|| ctx
                 .insert_hash_set(
                     &mut used_entities,
                     second_id,
                     "f3d spatial repeated second member"
                 )
-                .map(|_| ()));
-            dimension_resource!(ctx.push_vec(
+                .map(|_| ())));
+            dimension_resource!(scratch.with_storage(|| ctx.push_vec(
                 &mut pairs,
-                SpatialSketchEntityPair {
-                    first: dimension_resource!(
-                        (first_id).try_clone_for_decode(ctx, "f3d spatial repeated first id")
-                    ),
-                    second: dimension_resource!(
-                        (second_id).try_clone_for_decode(ctx, "f3d spatial repeated second id")
-                    ),
-                },
-                "f3d spatial repeated pair"
-            ));
+                (first_id, second_id),
+                "f3d spatial repeated borrowed pair",
+            )));
         }
     }
-    (pairs.len() >= 2).then(|| -> Result<_, CodecError> {
-        Ok(Definition::RepeatedParallelLineDistance {
-            pairs,
-            parameter: (parameter_id).try_clone_for_decode(
-                ctx,
-                "f3d owner scoped spatial repeated profile line distance parameter id",
-            )?,
-        })
-    })
+    if pairs.len() < 2 {
+        return None;
+    }
+    let mut output = Vec::new();
+    for (first, second) in dimension_resource!(ctx
+        .admit_iter(&pairs, "f3d spatial repeated output source")
+        .map_err(CodecError::from))
+    {
+        dimension_resource!(ctx.push_vec(
+            &mut output,
+            SpatialSketchEntityPair {
+                first: dimension_resource!(
+                    first.try_clone_for_decode(ctx, "f3d spatial repeated first id")
+                ),
+                second: dimension_resource!(
+                    second.try_clone_for_decode(ctx, "f3d spatial repeated second id")
+                ),
+            },
+            "f3d spatial repeated pair",
+        ));
+    }
+    Some(Ok(Definition::RepeatedParallelLineDistance {
+        pairs: output,
+        parameter: dimension_resource!(parameter_id.try_clone_for_decode(
+            ctx,
+            "f3d owner scoped spatial repeated profile line distance parameter id",
+        )),
+    }))
 }
 
 fn owner_scoped_spatial_parallel_line_set_dimension_definition(
@@ -4102,61 +4787,101 @@ fn owner_scoped_spatial_parallel_line_set_dimension_definition(
     if !expected.is_finite() {
         return None;
     }
-    let lines = dimension_resource!(ctx.collect_vec(
-        entities.iter().filter(|entity| {
-            &entity.sketch == sketch
-                && matches!(
-                    *entity.geometry.definition(),
-                    SpatialSketchGeometryDefinition::Line { .. }
-                )
-        }),
-        "f3d spatial line set candidate"
-    ));
+    let mut scratch = dimension_resource!(ctx.reserve_scoped(0, "f3d spatial line set scratch"));
+    let mut lines = Vec::new();
+    for entity in dimension_resource!(ctx
+        .admit_iter(entities, "f3d spatial line set source")
+        .map_err(CodecError::from))
+    {
+        if dimension_resource!(ctx.equal(
+            &entity.sketch,
+            sketch,
+            "f3d spatial line set sketch identity"
+        )) && matches!(
+            entity.geometry.definition(),
+            SpatialSketchGeometryDefinition::Line { .. }
+        ) {
+            dimension_resource!(scratch.with_storage(|| ctx.push_vec(
+                &mut lines,
+                entity,
+                "f3d spatial line set candidate"
+            )));
+        }
+    }
     let collinear = |first: &cadmpeg_ir::sketches::SpatialSketchEntity,
                      second: &cadmpeg_ir::sketches::SpatialSketchEntity| {
         spatial_parallel_line_distance(&first.geometry, &second.geometry)
             .is_some_and(|distance| distance <= linear_tolerance)
     };
     let mut carriers = Vec::<Vec<&cadmpeg_ir::sketches::SpatialSketchEntity>>::new();
-    for line in lines {
-        let matches = dimension_resource!(ctx.collect_vec(
-            carriers.iter().enumerate().filter_map(|(index, carrier)| {
-                carrier
-                    .iter()
-                    .all(|member| collinear(member, line))
-                    .then_some(index)
-            }),
+    let mut line_source = lines.iter().copied();
+    while let Some(line) =
+        dimension_resource!(ctx.next_charged(&mut line_source, "f3d spatial line carrier source"))
+    {
+        let matches_carrier = |carrier: &Vec<&cadmpeg_ir::sketches::SpatialSketchEntity>| {
+            ctx.all_by(
+                carrier,
+                |member| Ok(collinear(member, line)),
+                "f3d spatial line carrier member agreement",
+            )
+        };
+        let first = dimension_resource!(ctx.position_by(
+            &carriers,
+            matches_carrier,
             "f3d spatial line carrier candidate"
         ));
-        match matches.as_slice() {
-            [] => {
-                let mut carrier = Vec::new();
-                dimension_resource!(ctx.push_vec(&mut carrier, line, "f3d spatial carrier member"));
-                dimension_resource!(ctx.push_vec(&mut carriers, carrier, "f3d spatial carrier"));
+        if let Some(index) = first {
+            if dimension_resource!(ctx.any_by(
+                &carriers[index + 1..],
+                matches_carrier,
+                "f3d spatial line carrier candidate"
+            )) {
+                return None;
             }
-            [index] => dimension_resource!(ctx.push_vec(
-                &mut carriers[*index],
+            dimension_resource!(scratch.with_storage(|| ctx.push_vec(
+                &mut carriers[index],
+                line,
+                "f3d spatial carrier member",
+            )));
+        } else {
+            let mut carrier = Vec::new();
+            dimension_resource!(scratch.with_storage(|| ctx.push_vec(
+                &mut carrier,
                 line,
                 "f3d spatial carrier member"
-            )),
-            _ => return None,
+            )));
+            dimension_resource!(scratch.with_storage(|| ctx.push_vec(
+                &mut carriers,
+                carrier,
+                "f3d spatial carrier"
+            )));
         }
     }
     let mut matched = None;
-    for first in 0..carriers.len() {
-        for second in first + 1..carriers.len() {
+    let mut first_source = 0..carriers.len();
+    while let Some(first) = dimension_resource!(
+        ctx.next_charged(&mut first_source, "f3d spatial line carrier pair source")
+    ) {
+        let mut second_source = first + 1..carriers.len();
+        while let Some(second) = dimension_resource!(
+            ctx.next_charged(&mut second_source, "f3d spatial line carrier pair source")
+        ) {
             if carriers[first].len() == 1 && carriers[second].len() == 1 {
                 continue;
             }
-            let measured = carriers[first].iter().find_map(|first| {
-                carriers[second].iter().find_map(|second| {
-                    spatial_parallel_line_span_distance(
+            let measured = dimension_resource!(ctx.find_map(
+                &carriers[first],
+                |first| ctx.find_map(
+                    &carriers[second],
+                    |second| Ok(spatial_parallel_line_span_distance(
                         &first.geometry,
                         &second.geometry,
-                        linear_tolerance,
-                    )
-                })
-            });
+                        linear_tolerance
+                    )),
+                    "f3d spatial line carrier second span search",
+                ),
+                "f3d spatial line carrier first span search",
+            ));
             let Some(measured) = measured else {
                 continue;
             };
@@ -4211,11 +4936,17 @@ fn spatial_reflection_symmetry(
     if !native_kind.starts_with("Linear Dimension") || native_state != Some(0) {
         return None;
     }
-    let mut owners = operands
-        .iter()
-        .filter(|operand| operand_field(operand) == Some("owner"));
-    let owner = owners.next()?;
-    if owners.next().is_some() {
+    let mut owners = operands.iter();
+    let owner = dimension_resource!(ctx.find_by(
+        owners.by_ref(),
+        |operand| Ok(operand_field(operand) == Some("owner")),
+        "f3d spatial reflection owner search",
+    ))?;
+    if dimension_resource!(ctx.any_by(
+        owners,
+        |operand| Ok(operand_field(operand) == Some("owner")),
+        "f3d spatial reflection owner search"
+    )) {
         return None;
     }
     if !operand_role(owner).is_some_and(|role| {
@@ -4224,26 +4955,64 @@ fn spatial_reflection_symmetry(
     }) {
         return None;
     }
-    let scope = native_stream(native_ref?)?;
-    let mut loci = operands
-        .iter()
-        .filter(|operand| operand_field(operand) == Some("locus"));
-    let mut entity_for = || {
-        let operand = loci.next()?;
-        spatial_by_record
-            .get(&(scope, operand.object_index?))
-            .copied()
-    };
-    let entities = [entity_for()?, entity_for()?, entity_for()?];
-    if loci.next().is_some() {
+    let scope = dimension_resource!(native_stream_charged(ctx, native_ref?, "resolve F3D dimension stream"))?;
+    let mut loci = operands.iter();
+    let mut entity_for =
+        || -> Result<Option<&cadmpeg_ir::sketches::SpatialSketchEntity>, CodecError> {
+            let Some(operand) = ctx.find_by(
+                loci.by_ref(),
+                |operand| Ok(operand_field(operand) == Some("locus")),
+                "f3d spatial reflection locus search",
+            )?
+            else {
+                return Ok(None);
+            };
+            let Some(record) = operand.object_index else {
+                return Ok(None);
+            };
+            Ok(ctx
+                .get_hash_map(
+                    spatial_by_record,
+                    &(scope, record),
+                    "f3d spatial reflection entity lookup",
+                )?
+                .copied())
+        };
+    let entities = [
+        dimension_resource!(entity_for())?,
+        dimension_resource!(entity_for())?,
+        dimension_resource!(entity_for())?,
+    ];
+    if dimension_resource!(ctx.any_by(
+        loci,
+        |operand| Ok(operand_field(operand) == Some("locus")),
+        "f3d spatial reflection locus search"
+    )) {
         return None;
     }
     let [first, second, third] = entities;
-    if entities.iter().any(|entity| &entity.sketch != sketch)
-        || first.id() == second.id()
-        || first.id() == third.id()
-        || second.id() == third.id()
-    {
+    for entity in entities {
+        if !dimension_resource!(ctx.equal(
+            &entity.sketch,
+            sketch,
+            "f3d spatial reflection sketch identity"
+        )) {
+            return None;
+        }
+    }
+    if dimension_resource!(ctx.equal(
+        first.id(),
+        second.id(),
+        "f3d spatial reflection entity identity"
+    )) || dimension_resource!(ctx.equal(
+        first.id(),
+        third.id(),
+        "f3d spatial reflection entity identity"
+    )) || dimension_resource!(ctx.equal(
+        second.id(),
+        third.id(),
+        "f3d spatial reflection entity identity"
+    )) {
         return None;
     }
     let mut points = [None; 2];
@@ -4311,130 +5080,218 @@ fn spatial_counted_offset_dimension_definition(
         return None;
     }
     let parameter_factor = offset_parameter_factor(distance, signed_parameter)?;
-    let scope = operands
-        .iter()
-        .find_map(|operand| native_stream(operand.native_ref.as_deref()?))?;
-    let owner_position = operands
-        .iter()
-        .take_while(|operand| operand_field(operand) == Some("locus"))
-        .count();
+    let scope = dimension_resource!(ctx.find_map(
+        operands,
+        |operand| match operand.native_ref.as_deref() { Some(native_ref) => native_stream_charged(ctx, native_ref, "resolve F3D spatial offset stream"), None => Ok(None) },
+        "f3d spatial offset stream search",
+    ))?;
+    let owner_position = dimension_resource!(ctx.position_by(
+        operands,
+        |operand| Ok(operand_field(operand) != Some("locus")),
+        "f3d spatial offset locus prefix",
+    ))
+    .unwrap_or(operands.len());
     let loci = &operands[..owner_position];
     let owner = operands.get(owner_position)?;
     let returns = operands.get(owner_position + 1..)?;
     if operand_field(owner) != Some("owner")
         || owner.native_kind.as_str() != "record"
         || operand_role(owner) != Some(0)
-        || loci
-            .iter()
-            .any(|operand| operand.native_kind.as_str() != "curve")
-        || returns.iter().any(|operand| {
-            operand.native_kind.as_str() != "curve"
+        || dimension_resource!(ctx.any_by(
+            loci,
+            |operand| Ok(operand.native_kind.as_str() != "curve"),
+            "f3d spatial offset locus kind",
+        ))
+        || dimension_resource!(ctx.any_by(
+            returns,
+            |operand| Ok(operand.native_kind.as_str() != "curve"
                 || operand_field(operand) != Some("return")
-                || operand_role(operand).is_some()
-        })
+                || operand_role(operand).is_some()),
+            "f3d spatial offset return shape",
+        ))
         || loci.len() < 4
         || !loci.len().is_multiple_of(2)
         || returns.len() != loci.len()
     {
         return None;
     }
-    let source_count = loci
-        .iter()
-        .position(|operand| operand_role(operand) == Some(0))?;
+    let source_count = dimension_resource!(ctx.position_by(
+        loci,
+        |operand| Ok(operand_role(operand) == Some(0)),
+        "f3d spatial offset source role prefix",
+    ))?;
     if source_count == 0
         || source_count * 2 != loci.len()
-        || loci[..source_count]
-            .iter()
-            .any(|operand| operand_role(operand) == Some(0))
-        || loci[source_count..]
-            .iter()
-            .any(|operand| operand_role(operand) != Some(0))
+        || dimension_resource!(ctx.any_by(
+            &loci[source_count..],
+            |operand| Ok(operand_role(operand) != Some(0)),
+            "f3d spatial offset result role suffix",
+        ))
     {
         return None;
     }
+    let mut role_storage = dimension_resource!(ctx.reserve_scoped(0, "f3d spatial offset roles"));
     let mut roles = HashMap::new();
-    for operand in loci {
-        dimension_resource!(ctx
-            .insert_hash_map(
-                &mut roles,
-                operand.object_index?,
-                operand_role(operand)?,
-                "f3d spatial offset role"
-            )
-            .map(|_| ()));
+    let mut locus_source = loci.iter();
+    while let Some(operand) =
+        dimension_resource!(ctx.next_charged(&mut locus_source, "f3d spatial offset role source",))
+    {
+        let record = operand.object_index?;
+        let role = operand_role(operand)?;
+        dimension_resource!(role_storage.with_storage(|| ctx
+            .insert_hash_map(&mut roles, record, role, "f3d spatial offset role")
+            .map(|_| ())));
     }
     if roles.len() != loci.len() {
         return None;
     }
-    let mut result_records = HashSet::new();
-    for pair in returns.chunks_exact(2) {
-        dimension_resource!(ctx
-            .insert_hash_set(
+    let mut record_storage =
+        dimension_resource!(ctx.reserve_scoped(0, "f3d spatial offset result records"));
+    let mut result_records = BTreeSet::new();
+    let mut return_source = returns.chunks_exact(2);
+    while let Some(pair) = dimension_resource!(ctx.next_charged(
+        &mut return_source,
+        "f3d spatial offset result record source",
+    )) {
+        let record = pair[1].object_index?;
+        dimension_resource!(record_storage.with_storage(|| ctx
+            .insert_btree_set(
                 &mut result_records,
-                pair[1].object_index?,
+                record,
                 "f3d spatial offset result record"
             )
-            .map(|_| ()));
+            .map(|_| ())));
     }
-    let mut result_ids = HashSet::new();
-    for record in &result_records {
-        if let Some(entity) = spatial_by_record.get(&(scope, *record)) {
-            dimension_resource!(ctx
-                .insert_hash_set(
+    let mut identity_storage =
+        dimension_resource!(ctx.reserve_scoped(0, "f3d spatial offset result identities"));
+    let mut result_ids = BTreeSet::new();
+    for record in dimension_resource!(ctx
+        .admit_iter(&result_records, "f3d spatial offset result identity source")
+        .map_err(CodecError::from))
+    {
+        if let Some(entity) = dimension_resource!(ctx.get_hash_map(
+            spatial_by_record,
+            &(scope, *record),
+            "f3d spatial offset result entity lookup",
+        )) {
+            dimension_resource!(identity_storage.with_storage(|| ctx
+                .insert_btree_set(
                     &mut result_ids,
                     entity.id(),
                     "f3d spatial offset result identity"
                 )
-                .map(|_| ()));
+                .map(|_| ())));
         }
     }
     if result_ids.len() != result_records.len() {
         return None;
     }
-    let spatial = spatial_sketches
-        .iter()
-        .find(|candidate| &candidate.id == sketch)?;
-    let mut matching_profiles = spatial.profiles.iter().filter(|profile| {
-        profile
-            .boundary()
-            .iter()
-            .all(|use_| result_ids.contains(&use_.entity))
-            && result_ids
-                .iter()
-                .all(|id| profile.boundary().iter().any(|use_| &use_.entity == *id))
-    });
-    let normal = matching_profiles.next()?.normal();
-    if matching_profiles.next().is_some() {
+    let spatial = dimension_resource!(ctx.find_by(
+        spatial_sketches,
+        |candidate| ctx.equal(&candidate.id, sketch, "f3d spatial offset sketch identity"),
+        "f3d spatial offset sketch search",
+    ))?;
+    let matches_profile =
+        |profile: &&cadmpeg_ir::sketches::SpatialSketchProfile| -> Result<bool, CodecError> {
+            Ok(profile.boundary().len() == result_ids.len()
+                && ctx.all_by(
+                    profile.boundary(),
+                    |use_| {
+                        ctx.contains_btree_set(
+                            &result_ids,
+                            &use_.entity,
+                            "f3d spatial offset boundary membership",
+                        )
+                    },
+                    "f3d spatial offset profile boundary search",
+                )?)
+        };
+    let mut profile_source = spatial.profiles.iter();
+    let normal = dimension_resource!(ctx.find_by(
+        profile_source.by_ref(),
+        matches_profile,
+        "f3d spatial offset profile search",
+    ))?
+    .normal();
+    if dimension_resource!(ctx.any_by(
+        profile_source,
+        |profile| matches_profile(&profile),
+        "f3d spatial offset profile search",
+    )) {
         return None;
     }
-    let mut sources = Vec::new();
-    let mut results = Vec::new();
+    let mut used_storage =
+        dimension_resource!(ctx.reserve_scoped(0, "f3d spatial offset used records"));
     let mut used = HashSet::new();
-    for operands in returns.chunks_exact(2) {
+    let mut pair_storage =
+        dimension_resource!(ctx.reserve_scoped(0, "f3d spatial offset borrowed pairs"));
+    let mut pairs = Vec::new();
+    let mut return_source = returns.chunks_exact(2);
+    while let Some(operands) =
+        dimension_resource!(ctx.next_charged(&mut return_source, "f3d spatial offset pair source",))
+    {
         let source_record = operands[0].object_index?;
         let result_record = operands[1].object_index?;
-        if !matches!(roles.get(&source_record), Some(role) if *role != 0)
-            || roles.get(&result_record) != Some(&0)
-            || used.contains(&source_record)
-            || used.contains(&result_record)
+        if !matches!(dimension_resource!(ctx.get_hash_map(&roles, &source_record, "f3d spatial offset source role lookup")), Some(role) if *role != 0)
+            || dimension_resource!(ctx.get_hash_map(
+                &roles,
+                &result_record,
+                "f3d spatial offset result role lookup"
+            )) != Some(&0)
+            || dimension_resource!(ctx.contains_hash_set(
+                &used,
+                &source_record,
+                "f3d spatial offset used source lookup"
+            ))
+            || dimension_resource!(ctx.contains_hash_set(
+                &used,
+                &result_record,
+                "f3d spatial offset used result lookup"
+            ))
         {
             return None;
         }
-        dimension_resource!(ctx
+        dimension_resource!(used_storage.with_storage(|| ctx
             .insert_hash_set(&mut used, source_record, "f3d spatial offset used source")
-            .map(|_| ()));
-        dimension_resource!(ctx
+            .map(|_| ())));
+        dimension_resource!(used_storage.with_storage(|| ctx
             .insert_hash_set(&mut used, result_record, "f3d spatial offset used result")
-            .map(|_| ()));
-        let source = *spatial_by_record.get(&(scope, source_record))?;
-        let result = *spatial_by_record.get(&(scope, result_record))?;
-        if source.sketch != *sketch
-            || result.sketch != *sketch
-            || !spatial_curve(&source.geometry)
+            .map(|_| ())));
+        let source = *dimension_resource!(ctx.get_hash_map(
+            spatial_by_record,
+            &(scope, source_record),
+            "f3d spatial offset source entity lookup"
+        ))?;
+        let result = *dimension_resource!(ctx.get_hash_map(
+            spatial_by_record,
+            &(scope, result_record),
+            "f3d spatial offset pair result entity lookup"
+        ))?;
+        if !dimension_resource!(ctx.equal(
+            &source.sketch,
+            sketch,
+            "f3d spatial offset source sketch identity"
+        )) || !dimension_resource!(ctx.equal(
+            &result.sketch,
+            sketch,
+            "f3d spatial offset result sketch identity"
+        )) || !spatial_curve(&source.geometry)
             || !spatial_curve(&result.geometry)
         {
             return None;
         }
+        dimension_resource!(pair_storage.with_storage(|| ctx.push_vec(
+            &mut pairs,
+            (source, result),
+            "f3d spatial offset borrowed pair",
+        )));
+    }
+    let mut sources = Vec::new();
+    let mut results = Vec::new();
+    for (source, result) in dimension_resource!(ctx
+        .admit_iter(&pairs, "f3d spatial offset output pair source")
+        .map_err(CodecError::from))
+    {
         dimension_resource!(ctx.push_vec(
             &mut sources,
             dimension_resource!(
@@ -4449,9 +5306,6 @@ fn spatial_counted_offset_dimension_definition(
             ),
             "f3d spatial offset result member"
         ));
-    }
-    if used.len() != loci.len() {
-        return None;
     }
     Some(Ok(Definition::Offset {
         sources,
@@ -4589,17 +5443,36 @@ fn repeated_linear_dimension(
     if candidates.len() < 2 {
         return None;
     }
-    let mut entities = HashSet::new();
+    let unique = ctx.with_scoped_storage("f3d repeated dimension member storage", || {
+        let mut entities = HashSet::new();
+        ctx.all_by(candidates, |candidate| {
+            let (first, second) = match candidate {
+                Definition::Distance { entities: pair, .. } => {
+                    let [first, second] = pair.as_slice() else { return Ok(false); };
+                    (first, second)
+                }
+                Definition::HorizontalDistance { first, second, .. }
+                | Definition::VerticalDistance { first, second, .. } => (locus_entity_id(first), locus_entity_id(second)),
+                _ => return Ok(false),
+            };
+            if ctx.equal(first, second, "f3d repeated member equality")?
+                || ctx.contains_hash_set(&entities, first, "f3d repeated member lookup")?
+                || ctx.contains_hash_set(&entities, second, "f3d repeated member lookup")? { return Ok(false); }
+            ctx.insert_hash_set(&mut entities, first, "f3d repeated first member")?;
+            ctx.insert_hash_set(&mut entities, second, "f3d repeated second member")?;
+            Ok(true)
+        }, "f3d repeated dimension proof source")
+    });
+    let (unique, member_storage) = dimension_resource!(unique);
+    drop(member_storage);
+    if !unique { return None; }
     let mut measurements = Vec::new();
-    for candidate in candidates {
-        let (first, second, measurement) = match candidate {
+    for candidate in dimension_resource!(ctx.admit_iter(candidates, "f3d repeated dimension output source").map_err(CodecError::from)) {
+        let measurement = match candidate {
             Definition::Distance { entities: pair, .. } => {
                 let [first, second] = pair.as_slice() else {
                     return None;
                 };
-                (
-                    first,
-                    second,
                     Measurement::Distance {
                         first: SketchLocus::Entity(dimension_resource!(
                             (first).try_clone_for_decode(ctx, "f3d repeated distance first id")
@@ -4607,13 +5480,9 @@ fn repeated_linear_dimension(
                         second: SketchLocus::Entity(dimension_resource!(
                             (second).try_clone_for_decode(ctx, "f3d repeated distance second id")
                         )),
-                    },
-                )
+                    }
             }
-            Definition::HorizontalDistance { first, second, .. } => (
-                locus_entity_id(first),
-                locus_entity_id(second),
-                Measurement::Horizontal {
+            Definition::HorizontalDistance { first, second, .. } => Measurement::Horizontal {
                     first: dimension_resource!(copy_dimension_locus(
                         ctx,
                         first,
@@ -4625,11 +5494,7 @@ fn repeated_linear_dimension(
                         "f3d repeated directional second locus"
                     )),
                 },
-            ),
-            Definition::VerticalDistance { first, second, .. } => (
-                locus_entity_id(first),
-                locus_entity_id(second),
-                Measurement::Vertical {
+            Definition::VerticalDistance { first, second, .. } => Measurement::Vertical {
                     first: dimension_resource!(copy_dimension_locus(
                         ctx,
                         first,
@@ -4641,18 +5506,8 @@ fn repeated_linear_dimension(
                         "f3d repeated directional second locus"
                     )),
                 },
-            ),
             _ => return None,
         };
-        if first == second || entities.contains(first) || entities.contains(second) {
-            return None;
-        }
-        dimension_resource!(ctx
-            .insert_hash_set(&mut entities, first, "f3d repeated first member")
-            .map(|_| ()));
-        dimension_resource!(ctx
-            .insert_hash_set(&mut entities, second, "f3d repeated second member")
-            .map(|_| ()));
         dimension_resource!(ctx.push_vec(
             &mut measurements,
             measurement,
@@ -4683,7 +5538,7 @@ pub(super) fn null_locus_dimension_definition(
     entity: &cadmpeg_ir::sketches::SketchEntity,
     source_kind: &str,
     evaluated_value: f64,
-    parameter: cadmpeg_ir::features::ParameterId,
+    parameter: (&cadmpeg_ir::features::ParameterId, &'static str),
     linear_tolerance: f64,
 ) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::{
@@ -4691,15 +5546,17 @@ pub(super) fn null_locus_dimension_definition(
         SketchGeometryDefinition,
     };
 
-    if let Some(definition) = radial_dimension_definition_at_tolerance(
-        ctx,
-        entity,
-        source_kind,
-        evaluated_value,
-        dimension_resource!(parameter.try_clone_for_decode(ctx, "f3d null locus parameter id")),
-        linear_tolerance,
-    ) {
-        return Some(definition);
+    if let Some(kind) = RadialDimensionKind::from_source_kind(source_kind) {
+        if kind.matches(entity, evaluated_value, linear_tolerance) {
+            let parameter = dimension_resource!(parameter.0.try_clone_for_decode(ctx, parameter.1));
+            let entity = dimension_resource!(entity.id().try_clone_for_decode(
+                ctx, "f3d radial at tolerance entity id",
+            ));
+            return Some(Ok(match kind {
+                RadialDimensionKind::Radius => Definition::Radius { entity, parameter },
+                RadialDimensionKind::Diameter => Definition::Diameter { entity, parameter },
+            }));
+        }
     }
     if source_kind != "Angular Dimension-2"
         || pair.loci()[0].role != 14
@@ -4721,7 +5578,7 @@ pub(super) fn null_locus_dimension_definition(
             Ok(Definition::AngleToAxis {
                 entity: (entity.id()).try_clone_for_decode(ctx, "f3d null locus entity id")?,
                 axis: SketchAxis::Horizontal,
-                parameter,
+                parameter: parameter.0.try_clone_for_decode(ctx, parameter.1)?,
             })
         },
     )
@@ -4732,7 +5589,7 @@ fn radial_dimension_definition(
     entity: &cadmpeg_ir::sketches::SketchEntity,
     source_kind: &str,
     evaluated_value: f64,
-    parameter: cadmpeg_ir::features::ParameterId,
+    parameter: (&cadmpeg_ir::features::ParameterId, &'static str),
 ) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
     radial_dimension_definition_at_tolerance(
         ctx,
@@ -4749,52 +5606,96 @@ fn radial_dimension_definition_at_tolerance(
     entity: &cadmpeg_ir::sketches::SketchEntity,
     source_kind: &str,
     evaluated_value: f64,
-    parameter: cadmpeg_ir::features::ParameterId,
+    parameter: (&cadmpeg_ir::features::ParameterId, &'static str),
     linear_tolerance: f64,
 ) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
-    use cadmpeg_ir::sketches::{
-        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition as Geometry,
-    };
+    let kind = RadialDimensionKind::from_source_kind(source_kind)?;
+    kind.matches(entity, evaluated_value, linear_tolerance)
+        .then(|| kind.single_definition(ctx, entity, parameter))
+}
 
-    let radius = match entity.geometry.definition() {
-        Geometry::Circle { radius, .. } | Geometry::Arc { radius, .. } => radius.get(),
-        _ => return None,
-    };
-    let is_radius =
-        source_kind.starts_with("Radius Dimension") || source_kind.starts_with("Radial Dimension");
-    let measured = if is_radius {
-        radius
-    } else if source_kind.starts_with("Diameter Dimension") {
-        2.0 * radius
-    } else {
-        return None;
-    };
-    let evaluated = evaluated_value * 10.0;
-    let scale = 1.0 + measured.abs().max(evaluated.abs());
-    let tolerance =
-        linear_tolerance.max(EPS_DIMENSIONS_RADIAL_DIMENSION_DEFINITION_AT_TOLERANCE_E9 * scale);
-    if !evaluated.is_finite()
-        || !tolerance.is_finite()
-        || tolerance < 0.0
-        || (measured - evaluated).abs() > tolerance
-    {
-        return None;
+#[derive(Clone, Copy)]
+enum RadialDimensionKind {
+    Radius,
+    Diameter,
+}
+
+impl RadialDimensionKind {
+    fn from_source_kind(source_kind: &str) -> Option<Self> {
+        if source_kind.starts_with("Radius Dimension")
+            || source_kind.starts_with("Radial Dimension")
+        {
+            Some(Self::Radius)
+        } else if source_kind.starts_with("Diameter Dimension") {
+            Some(Self::Diameter)
+        } else {
+            None
+        }
     }
-    Some(Ok(if is_radius {
-        Definition::Radius {
-            entity: dimension_resource!(
-                (entity.id()).try_clone_for_decode(ctx, "f3d radial at tolerance entity id")
-            ),
-            parameter,
+
+    fn matches(
+        self,
+        entity: &cadmpeg_ir::sketches::SketchEntity,
+        evaluated_value: f64,
+        linear_tolerance: f64,
+    ) -> bool {
+        use cadmpeg_ir::sketches::SketchGeometryDefinition as Geometry;
+        let radius = match entity.geometry.definition() {
+            Geometry::Circle { radius, .. } | Geometry::Arc { radius, .. } => radius.get(),
+            _ => return false,
+        };
+        let measured = match self {
+            Self::Radius => radius,
+            Self::Diameter => 2.0 * radius,
+        };
+        let evaluated = evaluated_value * 10.0;
+        let scale = 1.0 + measured.abs().max(evaluated.abs());
+        let tolerance = linear_tolerance
+            .max(EPS_DIMENSIONS_RADIAL_DIMENSION_DEFINITION_AT_TOLERANCE_E9 * scale);
+        if !evaluated.is_finite()
+            || !tolerance.is_finite()
+            || tolerance < 0.0
+            || (measured - evaluated).abs() > tolerance
+        {
+            return false;
         }
-    } else {
-        Definition::Diameter {
-            entity: dimension_resource!(
-                (entity.id()).try_clone_for_decode(ctx, "f3d radial at tolerance entity id")
-            ),
-            parameter,
+        true
+    }
+
+    fn single_definition(
+        self,
+        ctx: &DecodeContext<'_>,
+        entity: &cadmpeg_ir::sketches::SketchEntity,
+        parameter: (&cadmpeg_ir::features::ParameterId, &'static str),
+    ) -> Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError> {
+        use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
+        let parameter = parameter.0.try_clone_for_decode(ctx, parameter.1)?;
+        let entity = entity
+            .id()
+            .try_clone_for_decode(ctx, "f3d radial at tolerance entity id")?;
+        Ok(match self {
+            Self::Radius => Definition::Radius { entity, parameter },
+            Self::Diameter => Definition::Diameter { entity, parameter },
+        })
+    }
+
+    fn repeated_definition(
+        self,
+        entities: Vec<cadmpeg_ir::sketches::SketchEntityId>,
+        parameter: cadmpeg_ir::features::ParameterId,
+    ) -> cadmpeg_ir::sketches::SketchConstraintDefinitionInput {
+        use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
+        match self {
+            Self::Radius => Definition::RepeatedRadius {
+                entities,
+                parameter,
+            },
+            Self::Diameter => Definition::RepeatedDiameter {
+                entities,
+                parameter,
+            },
         }
-    }))
+    }
 }
 
 /// Resolve a parameterized linear annotation that governs an offset pair.
@@ -4812,7 +5713,7 @@ fn annotation_offset_dimension_definition(
     parameter: (&DesignParameter, &cadmpeg_ir::features::ParameterId),
     scope: &str,
     curves: &[SketchCurveIdentity],
-    projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
+    projected: &BTreeMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
     linear_tolerance: f64,
 ) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::scalar::Length;
@@ -4829,36 +5730,56 @@ fn annotation_offset_dimension_definition(
         return None;
     }
 
-    let curve_for_index = |record_index| {
-        let mut matches = curves.iter().filter(|curve| {
-            native_stream(&curve.id) == Some(scope)
-                && curve.record_index == record_index
-                && curve.owner_reference == Some(frame.owner_reference)
-        });
-        let curve = matches.next()?;
-        matches.next().is_none().then_some(curve)
+    if !(2..=3).contains(&frame.operands().len()) {
+        return None;
+    }
+    let curve_for_index = |record_index| -> Result<Option<&SketchCurveIdentity>, CodecError> {
+        let matches = |curve: &SketchCurveIdentity| -> Result<bool, CodecError> {
+            if curve.record_index != record_index
+                || curve.owner_reference != Some(frame.owner_reference)
+            {
+                return Ok(false);
+            }
+            let Some(stream) = native_stream_charged(ctx, &curve.id, "resolve F3D dimension stream")? else {
+                return Ok(false);
+            };
+            ctx.equal(stream, scope, "f3d annotation offset curve stream")
+        };
+        let Some(index) = ctx.position_by(curves, matches, "f3d annotation offset curve source")?
+        else {
+            return Ok(None);
+        };
+        if ctx.any_by(
+            &curves[index + 1..],
+            matches,
+            "f3d annotation offset curve source",
+        )? {
+            return Ok(None);
+        }
+        Ok(Some(&curves[index]))
     };
-    let non_null_indices = dimension_resource!(ctx.collect_vec(
-        frame
-            .operands()
-            .iter()
-            .filter_map(|operand| operand.geometry_record_index.map(std::num::NonZeroU32::get)),
-        "f3d annotation offset index"
-    ));
-    let null_locus_count = frame
-        .operands()
-        .iter()
-        .filter(|operand| operand.geometry_record_index.is_none())
-        .count();
+    let mut indices = [0; 2];
+    let mut count = 0;
+    for operand in frame.operands() {
+        if let Some(index) = operand.geometry_record_index {
+            if count == indices.len() {
+                return None;
+            }
+            indices[count] = index.get();
+            count += 1;
+        }
+    }
+    let non_null_indices = &indices[..count];
+    let null_locus_count = frame.operands().len() - non_null_indices.len();
 
-    let explicit_pair = match non_null_indices.as_slice() {
+    let explicit_pair = match non_null_indices {
         [first_index, second_index]
             if frame.operands().len() == 3
                 && null_locus_count == 1
                 && first_index != second_index =>
         {
-            let first_curve = curve_for_index(*first_index)?;
-            let second_curve = curve_for_index(*second_index)?;
+            let first_curve = dimension_resource!(curve_for_index(*first_index))?;
+            let second_curve = dimension_resource!(curve_for_index(*second_index))?;
             let (source_curve, result_curve) = match (
                 first_curve.secondary_id == 0,
                 second_curve.secondary_id == 0,
@@ -4874,27 +5795,35 @@ fn annotation_offset_dimension_definition(
     let (source_record_index, explicit_result_record_index) = if let Some(pair) = explicit_pair {
         pair
     } else {
-        match non_null_indices.as_slice() {
+        match non_null_indices {
             [source_record_index] if frame.operands().len() == 2 && null_locus_count == 1 => {
-                let source_curve = curve_for_index(*source_record_index)?;
+                let source_curve = dimension_resource!(curve_for_index(*source_record_index))?;
                 (source_curve.secondary_id == 0).then_some((*source_record_index, None))?
             }
             _ => return None,
         }
     };
 
-    let source = projected.get(&(scope, source_record_index))?;
+    let source = dimension_resource!(ctx.get_btree_map(
+        projected,
+        &(scope, source_record_index),
+        "f3d annotation offset entity lookup"
+    ))?;
     let expected = parameter.evaluated_value().get() * 10.0;
     if !expected.is_finite() {
         return None;
     }
 
     let (result, distance) = if let Some(result_record_index) = explicit_result_record_index {
-        let result_curve = curve_for_index(result_record_index)?;
+        let result_curve = dimension_resource!(curve_for_index(result_record_index))?;
         if result_curve.secondary_id == 0 {
             return None;
         }
-        let result = projected.get(&(scope, result_record_index))?;
+        let result = dimension_resource!(ctx.get_btree_map(
+            projected,
+            &(scope, result_record_index),
+            "f3d annotation offset entity lookup"
+        ))?;
         let distance = sketch_curve_offset(&source.geometry, &result.geometry)?;
         let tolerance = linear_tolerance.max(
             EPS_DIMENSIONS_ANNOTATION_OFFSET_DIMENSION_DEFINITION_E9
@@ -4904,34 +5833,55 @@ fn annotation_offset_dimension_definition(
             && (distance.abs() - expected.abs()).abs() <= tolerance)
             .then_some((result, distance))?
     } else {
-        let mut matches = curves
-            .iter()
-            .filter(|curve| {
-                native_stream(&curve.id) == Some(scope)
-                    && curve.record_index != source_record_index
-                    && curve.owner_reference == Some(frame.owner_reference)
-                    && curve.secondary_id != 0
-            })
-            .filter_map(|curve| {
-                let result = projected.get(&(scope, curve.record_index))?;
-                let distance = sketch_curve_offset(&source.geometry, &result.geometry)?;
-                let tolerance = linear_tolerance.max(
-                    EPS_DIMENSIONS_ANNOTATION_OFFSET_DIMENSION_DEFINITION_E9
-                        * (1.0 + distance.abs().max(expected.abs())),
-                );
-                (distance.abs() > EPS_DIMENSIONS_ANNOTATION_OFFSET_DIMENSION_DEFINITION_E9
-                    && (distance.abs() - expected.abs()).abs() <= tolerance)
-                    .then_some((result, distance))
-            });
-        let result = matches.next()?;
-        if matches.next().is_some() {
-            return None;
+        let mut source_curves = curves.iter();
+        let mut matched = None;
+        while let Some(curve) = dimension_resource!(
+            ctx.next_charged(&mut source_curves, "f3d annotation offset result source")
+        ) {
+            if curve.record_index == source_record_index
+                || curve.owner_reference != Some(frame.owner_reference)
+                || curve.secondary_id == 0
+            {
+                continue;
+            }
+            let Some(stream) = dimension_resource!(native_stream_charged(ctx, &curve.id, "resolve F3D dimension stream")) else {
+                continue;
+            };
+            if !dimension_resource!(ctx.equal(stream, scope, "f3d annotation offset curve stream"))
+            {
+                continue;
+            }
+            let Some(result) = dimension_resource!(ctx.get_btree_map(
+                projected,
+                &(scope, curve.record_index),
+                "f3d annotation offset entity lookup"
+            )) else {
+                continue;
+            };
+            let Some(distance) = sketch_curve_offset(&source.geometry, &result.geometry) else {
+                continue;
+            };
+            let tolerance = linear_tolerance.max(
+                EPS_DIMENSIONS_ANNOTATION_OFFSET_DIMENSION_DEFINITION_E9
+                    * (1.0 + distance.abs().max(expected.abs())),
+            );
+            if distance.abs() > EPS_DIMENSIONS_ANNOTATION_OFFSET_DIMENSION_DEFINITION_E9
+                && (distance.abs() - expected.abs()).abs() <= tolerance
+            {
+                if matched.is_some() {
+                    return None;
+                }
+                matched = Some((result, distance));
+            }
         }
-        result
+        matched?
     };
     let parameter_factor = offset_parameter_factor(distance.abs(), expected)?;
-    Some(Ok(Definition::Offset {
-        pairs: vec![SketchOffsetPair {
+    let magnitude = Length::new(distance.abs())?;
+    let mut pairs = Vec::new();
+    dimension_resource!(ctx.push_vec(
+        &mut pairs,
+        SketchOffsetPair {
             source: dimension_resource!(
                 (source.id()).try_clone_for_decode(ctx, "f3d annotation offset source id")
             ),
@@ -4939,8 +5889,12 @@ fn annotation_offset_dimension_definition(
                 (result.id()).try_clone_for_decode(ctx, "f3d annotation offset result id")
             ),
             source_reversed: distance.is_sign_negative(),
-        }],
-        distance: Length::new(distance.abs())?,
+        },
+        "f3d annotation offset pair"
+    ));
+    Some(Ok(Definition::Offset {
+        pairs,
+        distance: magnitude,
         parameter: Some(cadmpeg_ir::sketches::OffsetParameter {
             id: dimension_resource!(
                 (parameter_id).try_clone_for_decode(ctx, "f3d annotation offset parameter id")
@@ -4960,97 +5914,94 @@ fn radial_locus_dimension_definition(
     evaluated_value: f64,
     parameter: &cadmpeg_ir::features::ParameterId,
 ) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
-    use cadmpeg_ir::sketches::{
-        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
-    };
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
+    let kind = RadialDimensionKind::from_source_kind(source_kind)?;
+    let mut storage = dimension_resource!(ctx.reserve_scoped(0, "F3D radial locus candidates"));
     let mut direct = Vec::new();
-    for entity in loci {
-        if let Some(result) = radial_dimension_definition(
+    for entity in dimension_resource!(ctx
+        .admit_iter(loci, "f3d radial locus source")
+        .map_err(CodecError::from))
+    {
+        if kind.matches(entity, evaluated_value, 0.0) {
+            dimension_resource!(storage.with_storage(|| ctx.push_vec(
+                &mut direct,
+                *entity,
+                "f3d radial locus definition",
+            )));
+        }
+    }
+    if let [entity] = direct.as_slice() {
+        return Some(kind.single_definition(
             ctx,
             entity,
-            source_kind,
-            evaluated_value,
-            dimension_resource!(
-                (parameter).try_clone_for_decode(ctx, "f3d radial locus parameter id")
-            ),
-        ) {
-            dimension_resource!(ctx.push_vec(
-                &mut direct,
-                dimension_resource!(result),
-                "f3d radial locus definition"
-            ));
-        }
-    }
-    if direct.len() == 1 {
-        return direct.pop().map(Ok);
+            (parameter, "f3d radial locus parameter id"),
+        ));
     }
     if !direct.is_empty() {
-        let radius = direct
-            .iter()
-            .all(|definition| matches!(definition, Definition::Radius { .. }));
-        let diameter = direct
-            .iter()
-            .all(|definition| matches!(definition, Definition::Diameter { .. }));
-        if !radius && !diameter {
-            return None;
+        let mut unique_storage =
+            dimension_resource!(ctx.reserve_scoped(0, "F3D radial locus identity index"));
+        let mut unique = HashSet::new();
+        let mut candidates = direct.iter();
+        while let Some(entity) = dimension_resource!(
+            ctx.next_charged(&mut candidates, "f3d radial locus uniqueness source")
+        ) {
+            if !dimension_resource!(unique_storage.with_storage(|| ctx.insert_hash_set(
+                &mut unique,
+                entity.id(),
+                "f3d radial locus unique member",
+            ))) {
+                return None;
+            }
         }
         let mut ids = Vec::new();
-        for definition in direct {
-            let (Definition::Radius { entity, .. } | Definition::Diameter { entity, .. }) =
-                definition
-            else {
-                return None;
-            };
-            dimension_resource!(ctx.push_vec(&mut ids, entity, "f3d radial locus member"));
-        }
-        let mut unique = HashSet::new();
-        for id in &ids {
-            if unique.contains(id) {
-                return None;
-            }
-            dimension_resource!(ctx
-                .insert_hash_set(&mut unique, id, "f3d radial locus unique member")
-                .map(|_| ()));
+        for entity in dimension_resource!(ctx
+            .admit_iter(&direct, "f3d radial locus output source")
+            .map_err(CodecError::from))
+        {
+            let id = dimension_resource!(entity
+                .id()
+                .try_clone_for_decode(ctx, "f3d radial at tolerance entity id"));
+            dimension_resource!(ctx.push_vec(&mut ids, id, "f3d radial locus member"));
         }
         let parameter = dimension_resource!(
-            (parameter).try_clone_for_decode(ctx, "f3d radial locus repeated parameter id")
+            parameter.try_clone_for_decode(ctx, "f3d radial locus repeated parameter id")
         );
-        return Some(Ok(if radius {
-            Definition::RepeatedRadius {
-                entities: ids,
-                parameter,
-            }
-        } else {
-            Definition::RepeatedDiameter {
-                entities: ids,
-                parameter,
-            }
-        }));
+        return Some(Ok(kind.repeated_definition(ids, parameter)));
     }
 
     let sketch = &loci.first()?.sketch;
-    if loci.iter().any(|entity| &entity.sketch != sketch) {
+    if !dimension_resource!(ctx.all_by(
+        loci,
+        |entity| ctx.equal(&entity.sketch, sketch, "f3d radial center sketch"),
+        "f3d radial center sketch source",
+    )) || !dimension_resource!(ctx.any_by(
+        loci,
+        |entity| Ok(matches!(
+            entity.geometry.definition(),
+            SketchGeometryDefinition::Point { .. }
+        )),
+        "f3d radial center point source",
+    )) {
         return None;
     }
-    let centers = || {
-        loci.iter()
-            .filter_map(|entity| match entity.geometry.definition() {
-                SketchGeometryDefinition::Point { position } => Some(*position),
-                _ => None,
-            })
-    };
-    centers().next()?;
-    let candidates = all_entities
-        .iter()
-        .filter(|entity| &entity.sketch == sketch)
-        .filter(|entity| {
-            let center = match entity.geometry.definition() {
-                SketchGeometryDefinition::Circle { center, .. }
-                | SketchGeometryDefinition::Arc { center, .. } => *center,
-                _ => return false,
-            };
-            centers().any(|witness| {
+    let matches = |entity: &cadmpeg_ir::sketches::SketchEntity| -> Result<bool, CodecError> {
+        if !ctx.equal(&entity.sketch, sketch, "f3d radial center candidate sketch")? {
+            return Ok(false);
+        }
+        let center = match entity.geometry.definition() {
+            SketchGeometryDefinition::Circle { center, .. }
+            | SketchGeometryDefinition::Arc { center, .. } => *center,
+            _ => return Ok(false),
+        };
+        if !ctx.any_by(
+            loci,
+            |witness| {
+                let SketchGeometryDefinition::Point { position: witness } =
+                    witness.geometry.definition()
+                else {
+                    return Ok(false);
+                };
                 let scale = 1.0
                     + center
                         .u
@@ -5058,34 +6009,32 @@ fn radial_locus_dimension_definition(
                         .max(center.v.abs())
                         .max(witness.u.abs())
                         .max(witness.v.abs());
-                (center.u - witness.u).hypot(center.v - witness.v)
-                    <= EPS_DIMENSIONS_RADIAL_LOCUS_DIMENSION_DEFINITION_E9 * scale
-            })
-        });
-    let mut matched = None;
-    let mut multiple = false;
-    for entity in candidates {
-        if let Some(result) = radial_dimension_definition(
-            ctx,
-            entity,
-            source_kind,
-            evaluated_value,
-            dimension_resource!(
-                (parameter).try_clone_for_decode(ctx, "f3d radial center parameter id")
-            ),
-        ) {
-            let definition = dimension_resource!(result);
-            if matched.is_some() {
-                multiple = true;
-            }
-            matched = Some(definition);
+                Ok((center.u - witness.u).hypot(center.v - witness.v)
+                    <= EPS_DIMENSIONS_RADIAL_LOCUS_DIMENSION_DEFINITION_E9 * scale)
+            },
+            "f3d radial center witness source",
+        )? {
+            return Ok(false);
         }
+        Ok(kind.matches(entity, evaluated_value, 0.0))
+    };
+    let first = dimension_resource!(ctx.position_by(
+        all_entities,
+        matches,
+        "f3d radial center candidate source",
+    ))?;
+    if dimension_resource!(ctx.any_by(
+        &all_entities[first + 1..],
+        matches,
+        "f3d radial center candidate suffix",
+    )) {
+        return None;
     }
-    if multiple {
-        None
-    } else {
-        matched.map(Ok)
-    }
+    Some(kind.single_definition(
+        ctx,
+        &all_entities[first],
+        (parameter, "f3d radial center parameter id"),
+    ))
 }
 
 /// Identify a point-and-line radial annotation whose point lies on the
@@ -5140,32 +6089,55 @@ pub(crate) fn remove_dimension_frame_relations(
     groups: &[DesignDimensionLocusGroup],
     null_pairs: &[DesignDimensionLocusPair],
 ) -> Result<(), CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "f3d dimension frame relation storage")?;
     let mut dimension_frames = HashSet::new();
-    let frames = pairs
-        .iter()
-        .filter_map(|pair| Some((native_stream(&pair.id)?, pair.byte_offset())))
-        .chain(
-            groups
-                .iter()
-                .filter_map(|group| Some((native_stream(&group.id)?, group.byte_offset))),
-        )
-        .chain(
-            null_pairs
-                .iter()
-                .filter_map(|pair| Some((native_stream(&pair.id)?, pair.byte_offset()))),
-        );
-    for frame in frames {
-        ctx.insert_hash_set(
-            &mut dimension_frames,
-            frame,
-            "f3d dimension frame relation index",
-        )
-        .map(|_| ())?;
+    for pair in ctx.admit_iter(pairs, "f3d dimension relation pair source")? {
+        if let Some(scope) = native_stream_charged(ctx, &pair.id, "resolve F3D dimension stream")? {
+            storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut dimension_frames,
+                    (scope, pair.byte_offset()),
+                    "f3d dimension frame relation index",
+                )
+            })?;
+        }
     }
-    relations.retain(|relation| {
-        native_stream(&relation.id)
-            .is_none_or(|scope| !dimension_frames.contains(&(scope, relation.byte_offset)))
-    });
+    for group in ctx.admit_iter(groups, "f3d dimension relation group source")? {
+        if let Some(scope) = native_stream_charged(ctx, &group.id, "resolve F3D dimension stream")? {
+            storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut dimension_frames,
+                    (scope, group.byte_offset),
+                    "f3d dimension frame relation index",
+                )
+            })?;
+        }
+    }
+    for pair in ctx.admit_iter(null_pairs, "f3d dimension relation null pair source")? {
+        if let Some(scope) = native_stream_charged(ctx, &pair.id, "resolve F3D dimension stream")? {
+            storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut dimension_frames,
+                    (scope, pair.byte_offset()),
+                    "f3d dimension frame relation index",
+                )
+            })?;
+        }
+    }
+    ctx.retain_vec(
+        relations,
+        |relation| {
+            let Some(scope) = native_stream_charged(ctx, &relation.id, "resolve F3D dimension stream")? else {
+                return Ok(true);
+            };
+            Ok(!ctx.contains_hash_set(
+                &dimension_frames,
+                &(scope, relation.byte_offset),
+                "f3d dimension frame relation lookup",
+            )?)
+        },
+        "f3d dimension relation source",
+    )?;
     Ok(())
 }
 
@@ -5195,50 +6167,73 @@ pub(crate) fn bind_dimension_loci(
         annotation_frames,
         null_pairs,
     } = input;
+    let mut lookup_storage = ctx.reserve_scoped(0, "f3d dimension owner lookup storage")?;
     let mut placements_by_scope = HashMap::new();
-    for placement in placements {
+    for placement in ctx.admit_iter(placements, "f3d dimension binding placement source")? {
         if let (Some(scope), Some(record_index), Ok(owner)) = (
-            native_stream(&placement.id),
+            native_stream_charged(ctx, &placement.id, "resolve F3D dimension stream")?,
             placement.scope_record_index,
             u32::try_from(placement.entity_id.suffix()),
         ) {
-            ctx.insert_hash_map(
-                &mut placements_by_scope,
-                (scope, record_index),
-                owner,
-                "f3d dimension placement scope",
-            )
-            .map(|_| ())?;
+            lookup_storage
+                .with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut placements_by_scope,
+                        (scope, record_index),
+                        owner,
+                        "f3d dimension placement scope",
+                    )
+                })
+                .map(|_| ())?;
         }
     }
     let mut scopes_by_companion = HashMap::new();
-    for owner in owners {
-        if let Some(scope) = native_stream(owner.id()) {
-            ctx.insert_hash_map(
-                &mut scopes_by_companion,
-                (scope, owner.companion_record_index()),
-                owner.scope_record_index(),
-                "f3d dimension companion scope",
-            )
-            .map(|_| ())?;
+    for owner in ctx.admit_iter(owners, "f3d dimension binding owner source")? {
+        if let Some(scope) = native_stream_charged(ctx, owner.id(), "resolve F3D dimension stream")? {
+            lookup_storage
+                .with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut scopes_by_companion,
+                        (scope, owner.companion_record_index()),
+                        owner.scope_record_index(),
+                        "f3d dimension companion scope",
+                    )
+                })
+                .map(|_| ())?;
         }
     }
-    let mut bindings = HashMap::<&str, HashMap<u32, u32>>::new();
-    for pair in pairs {
-        let Some(scope) = native_stream(&pair.id) else {
+    let mut binding_storage = ctx.reserve_scoped(0, "f3d dimension binding storage")?;
+    let mut bindings = HashMap::new();
+    let mut pair_source = pairs.iter();
+    while let Some(pair) =
+        ctx.next_charged(&mut pair_source, "f3d dimension binding pair source")?
+    {
+        let Some(scope) = native_stream_charged(ctx, &pair.id, "resolve F3D dimension stream")? else {
             continue;
         };
-        let Some(parameter_scope) = scopes_by_companion
-            .get(&(scope, pair.governing_companion_record_index))
+        let Some(parameter_scope) = ctx
+            .get_hash_map(
+                &scopes_by_companion,
+                &(scope, pair.governing_companion_record_index),
+                "f3d dimension binding companion lookup",
+            )?
             .copied()
         else {
             continue;
         };
-        let Some(owner) = placements_by_scope.get(&(scope, parameter_scope)).copied() else {
+        let Some(owner) = ctx
+            .get_hash_map(
+                &placements_by_scope,
+                &(scope, parameter_scope),
+                "f3d dimension binding placement lookup",
+            )?
+            .copied()
+        else {
             continue;
         };
         insert_dimension_binding(
             ctx,
+            &mut binding_storage,
             &mut bindings,
             scope,
             pair.loci()[0].geometry_index(),
@@ -5246,19 +6241,27 @@ pub(crate) fn bind_dimension_loci(
         )?;
         insert_dimension_binding(
             ctx,
+            &mut binding_storage,
             &mut bindings,
             scope,
             pair.loci()[1].geometry_index(),
             owner,
         )?;
     }
-    for group in groups {
-        let Some(scope) = native_stream(&group.id) else {
+    let mut group_source = groups.iter();
+    while let Some(group) =
+        ctx.next_charged(&mut group_source, "f3d dimension binding group source")?
+    {
+        let Some(scope) = native_stream_charged(ctx, &group.id, "resolve F3D dimension stream")? else {
             continue;
         };
-        for locus in &group.loci {
+        let mut locus_source = group.loci.iter();
+        while let Some(locus) =
+            ctx.next_charged(&mut locus_source, "f3d dimension binding locus source")?
+        {
             insert_dimension_binding(
                 ctx,
+                &mut binding_storage,
                 &mut bindings,
                 scope,
                 locus.geometry_record_index,
@@ -5266,52 +6269,80 @@ pub(crate) fn bind_dimension_loci(
             )?;
         }
     }
-    for frame in annotation_frames {
-        let Some(scope) = native_stream(&frame.id) else {
+    let mut frame_source = annotation_frames.iter();
+    while let Some(frame) =
+        ctx.next_charged(&mut frame_source, "f3d dimension binding annotation source")?
+    {
+        let Some(scope) = native_stream_charged(ctx, &frame.id, "resolve F3D dimension stream")? else {
             continue;
         };
-        for record_index in frame
-            .operands()
-            .iter()
-            .filter_map(|operand| operand.geometry_record_index.map(std::num::NonZeroU32::get))
+        let mut operand_source = frame.operands().iter();
+        while let Some(operand) =
+            ctx.next_charged(&mut operand_source, "f3d dimension binding operand source")?
         {
+            let Some(record_index) = operand.geometry_record_index else {
+                continue;
+            };
             insert_dimension_binding(
                 ctx,
+                &mut binding_storage,
                 &mut bindings,
                 scope,
-                record_index,
+                record_index.get(),
                 frame.owner_reference,
             )?;
         }
     }
-    for pair in null_pairs {
-        let Some(scope) = native_stream(&pair.id) else {
+    let mut null_pair_source = null_pairs.iter();
+    while let Some(pair) = ctx.next_charged(
+        &mut null_pair_source,
+        "f3d dimension binding null pair source",
+    )? {
+        let Some(scope) = native_stream_charged(ctx, &pair.id, "resolve F3D dimension stream")? else {
             continue;
         };
-        let Some(parameter_scope) = scopes_by_companion
-            .get(&(scope, pair.governing_companion_record_index))
+        let Some(parameter_scope) = ctx
+            .get_hash_map(
+                &scopes_by_companion,
+                &(scope, pair.governing_companion_record_index),
+                "f3d dimension binding companion lookup",
+            )?
             .copied()
         else {
             continue;
         };
-        let Some(owner) = placements_by_scope.get(&(scope, parameter_scope)).copied() else {
+        let Some(owner) = ctx
+            .get_hash_map(
+                &placements_by_scope,
+                &(scope, parameter_scope),
+                "f3d dimension binding placement lookup",
+            )?
+            .copied()
+        else {
             continue;
         };
         insert_dimension_binding(
             ctx,
+            &mut binding_storage,
             &mut bindings,
             scope,
             pair.loci()[1].geometry_index(),
             owner,
         )?;
     }
-    for point in points {
-        let Some(scope) = native_stream(&point.id) else {
+    let mut point_source = points.iter_mut();
+    while let Some(point) =
+        ctx.next_charged(&mut point_source, "f3d dimension binding point source")?
+    {
+        let Some(scope) = native_stream_charged(ctx, &point.id, "resolve F3D dimension stream")? else {
             continue;
         };
-        let Some(owner) = bindings
-            .get(scope)
-            .and_then(|records| records.get(&point.record_index))
+        let Some(owner) = ctx
+            .get_hash_map(
+                &bindings,
+                &(scope, point.record_index),
+                "f3d dimension binding record lookup",
+            )?
             .copied()
         else {
             continue;
@@ -5330,13 +6361,19 @@ pub(crate) fn bind_dimension_loci(
             ));
         }
     }
-    for curve in curves {
-        let Some(scope) = native_stream(&curve.id) else {
+    let mut curve_source = curves.iter_mut();
+    while let Some(curve) =
+        ctx.next_charged(&mut curve_source, "f3d dimension binding curve source")?
+    {
+        let Some(scope) = native_stream_charged(ctx, &curve.id, "resolve F3D dimension stream")? else {
             continue;
         };
-        let Some(owner) = bindings
-            .get(scope)
-            .and_then(|records| records.get(&curve.record_index))
+        let Some(owner) = ctx
+            .get_hash_map(
+                &bindings,
+                &(scope, curve.record_index),
+                "f3d dimension binding record lookup",
+            )?
             .copied()
         else {
             continue;
@@ -5360,30 +6397,21 @@ pub(crate) fn bind_dimension_loci(
 
 fn insert_dimension_binding<'a>(
     ctx: &DecodeContext<'_>,
-    bindings: &mut HashMap<&'a str, HashMap<u32, u32>>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    bindings: &mut HashMap<(&'a str, u32), u32>,
     scope: &'a str,
     record_index: u32,
     owner: u32,
 ) -> Result<(), CodecError> {
-    if !bindings.contains_key(scope) {
+    let previous = storage.with_storage(|| {
         ctx.insert_hash_map(
             bindings,
-            scope,
-            HashMap::new(),
-            "f3d dimension binding scope",
+            (scope, record_index),
+            owner,
+            "f3d dimension binding record",
         )
-        .map(|_| ())?;
-    }
-    let records = bindings
-        .get_mut(scope)
-        .ok_or_else(|| CodecError::malformed("dimension binding scope missing after insertion"))?;
-    if !records.contains_key(&record_index) {
-        ctx.reserve_map(records, 1, "f3d dimension binding record")?;
-    }
-    if records
-        .insert(record_index, owner)
-        .is_some_and(|existing| existing != owner)
-    {
+    })?;
+    if previous.is_some_and(|existing| existing != owner) {
         return Err(crate::design::text::malformed_design(
             ctx,
             format_args!(
@@ -5406,7 +6434,7 @@ pub(super) fn exact_atomic_constraint(
 
     let lines = || -> Result<Option<_>, CodecError> {
         if entities.len() == 2
-            && entities[0].id() != entities[1].id()
+            && !ctx.equal(entities[0].id(), entities[1].id(), "f3d atomic entity equality")?
             && entities
                 .iter()
                 .all(|entity| matches!(*entity.geometry.definition(), Geometry::Line { .. }))
@@ -5422,7 +6450,7 @@ pub(super) fn exact_atomic_constraint(
     };
     let curves = || -> Result<Option<_>, CodecError> {
         if entities.len() == 2
-            && entities[0].id() != entities[1].id()
+            && !ctx.equal(entities[0].id(), entities[1].id(), "f3d atomic entity equality")?
             && entities.iter().all(|entity| {
                 matches!(
                     *entity.geometry.definition(),
@@ -5447,7 +6475,7 @@ pub(super) fn exact_atomic_constraint(
         let [first, second] = entities else {
             return Ok(None);
         };
-        if first.id() != second.id()
+        if !ctx.equal(first.id(), second.id(), "f3d atomic entity equality")?
             && matches!(
                 (first.geometry.definition(), second.geometry.definition()),
                 (Geometry::Line { .. }, Geometry::Line { .. })
@@ -5480,7 +6508,7 @@ pub(super) fn exact_atomic_constraint(
         }
         SketchConstraintKind::Concentric => {
             if entities.len() == 2
-                && entities[0].id() != entities[1].id()
+                && !ctx.equal(entities[0].id(), entities[1].id(), "f3d atomic entity equality")?
                 && entities.iter().all(|entity| {
                     matches!(
                         *entity.geometry.definition(),
@@ -5492,7 +6520,7 @@ pub(super) fn exact_atomic_constraint(
                     copy_dimension_entity_pair(ctx, entities[0].id(), entities[1].id())?;
                 return Ok(Some(Definition::Concentric { first, second }));
             }
-            let Some((first, second, axis)) = reflected_symmetry(entities) else {
+            let Some((first, second, axis)) = reflected_symmetry(ctx, entities)? else {
                 return Ok(None);
             };
             Some(Definition::Symmetric {
@@ -5506,7 +6534,7 @@ pub(super) fn exact_atomic_constraint(
             })
         }
         SketchConstraintKind::Symmetry => {
-            let Some((first, second, axis)) = reflected_symmetry(entities) else {
+            let Some((first, second, axis)) = reflected_symmetry(ctx, entities)? else {
                 return Ok(None);
             };
             Some(Definition::Symmetric {
@@ -5540,7 +6568,7 @@ pub(super) fn exact_atomic_constraint(
         }
         SketchConstraintKind::Horizontal
             if entities.len() == 2
-                && entities[0].id() != entities[1].id()
+                && !ctx.equal(entities[0].id(), entities[1].id(), "f3d atomic entity equality")?
                 && entities.iter().all(|entity| {
                     matches!(*entity.geometry.definition(), Geometry::Point { .. })
                 }) =>
@@ -5567,7 +6595,7 @@ pub(super) fn exact_atomic_constraint(
         }
         SketchConstraintKind::Vertical
             if entities.len() == 2
-                && entities[0].id() != entities[1].id()
+                && !ctx.equal(entities[0].id(), entities[1].id(), "f3d atomic entity equality")?
                 && entities.iter().all(|entity| {
                     matches!(*entity.geometry.definition(), Geometry::Point { .. })
                 }) =>
@@ -5624,138 +6652,62 @@ pub(super) fn exact_coincident_loci(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput>, CodecError> {
-    use cadmpeg_ir::sketches::{
-        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition as Geometry,
-        SketchLocus,
-    };
-
-    let loci = |entity: &cadmpeg_ir::sketches::SketchEntity| {
-        let mut loci = Vec::new();
-        if let Some([start, end]) = sketch_entity_endpoints(entity, ctx)? {
-            ctx.push_vec(
-                &mut loci,
-                (
-                    SketchLocus::Start(
-                        (entity.id())
-                            .try_clone_for_decode(ctx, "f3d coincident local entity id")?,
-                    ),
-                    start,
-                ),
-                "f3d coincident local locus",
-            )?;
-            ctx.push_vec(
-                &mut loci,
-                (
-                    SketchLocus::End(
-                        (entity.id())
-                            .try_clone_for_decode(ctx, "f3d coincident local entity id")?,
-                    ),
-                    end,
-                ),
-                "f3d coincident local locus",
-            )?;
-        }
-        match entity.geometry.definition() {
-            Geometry::Point { position } => {
-                ctx.push_vec(
-                    &mut loci,
-                    (
-                        SketchLocus::Entity(
-                            (entity.id())
-                                .try_clone_for_decode(ctx, "f3d coincident local entity id")?,
-                        ),
-                        position.get(),
-                    ),
-                    "f3d coincident local locus",
-                )?;
+    use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition as Geometry, SketchLocus};
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum LocusKind { Entity, Start, End, Center }
+    if entities.len() < 2 { return Ok(None); }
+    let mut proof_storage = ctx.reserve_scoped(0, "f3d coincident carrier storage")?;
+    let loci_by_entity = proof_storage.with_storage(|| -> Result<_, CodecError> {
+        let mut unique = HashSet::new();
+        let mut loci_by_entity = Vec::new();
+        let mut entity_source = entities.iter();
+        while let Some(entity) = ctx.next_charged(&mut entity_source, "f3d coincident entity source")? {
+            if ctx.contains_hash_set(&unique, entity.id(), "f3d coincident entity uniqueness")? { return Ok(None); }
+            ctx.insert_hash_set(&mut unique, entity.id(), "f3d coincident entity uniqueness")?;
+            let mut loci = Vec::new();
+            if let Some([start, end]) = sketch_entity_endpoints(entity, ctx)? {
+                ctx.push_vec(&mut loci, (LocusKind::Start, entity.id(), start), "f3d coincident local locus")?;
+                ctx.push_vec(&mut loci, (LocusKind::End, entity.id(), end), "f3d coincident local locus")?;
             }
-            Geometry::Circle { center, .. }
-            | Geometry::Arc { center, .. }
-            | Geometry::Ellipse { center, .. }
-            | Geometry::Hyperbola { center, .. } => {
-                ctx.push_vec(
-                    &mut loci,
-                    (
-                        SketchLocus::Center(
-                            (entity.id())
-                                .try_clone_for_decode(ctx, "f3d coincident local entity id")?,
-                        ),
-                        center.get(),
-                    ),
-                    "f3d coincident local locus",
-                )?;
+            match entity.geometry.definition() {
+                Geometry::Point { position } => { ctx.push_vec(&mut loci, (LocusKind::Entity, entity.id(), position.get()), "f3d coincident local locus")?; }
+                Geometry::Circle { center, .. } | Geometry::Arc { center, .. }
+                | Geometry::Ellipse { center, .. } | Geometry::Hyperbola { center, .. } => {
+                    ctx.push_vec(&mut loci, (LocusKind::Center, entity.id(), center.get()), "f3d coincident local locus")?;
+                }
+                _ => {}
             }
-            Geometry::Line { .. }
-            | Geometry::ReferenceLine { .. }
-            | Geometry::Parabola { .. }
-            | Geometry::Nurbs { .. }
-            | Geometry::Text { .. }
-            | Geometry::ExternalReference { .. }
-            | Geometry::Native { .. } => {}
+            ctx.push_vec(&mut loci_by_entity, loci, "f3d coincident member loci")?;
         }
-        Ok::<_, CodecError>(loci)
-    };
-
-    if entities.len() < 2 {
-        return Ok(None);
-    }
-    let mut unique = HashSet::new();
-    let mut loci_by_entity = Vec::new();
-    for entity in entities {
-        if unique.contains(entity.id()) {
-            return Ok(None);
-        }
-        ctx.insert_hash_set(&mut unique, entity.id(), "f3d coincident entity uniqueness")
-            .map(|_| ())?;
-        ctx.push_vec(
-            &mut loci_by_entity,
-            loci(entity)?,
-            "f3d coincident member loci",
-        )?;
-    }
-    let mut unique_solution: Option<Vec<SketchLocus>> = None;
-    for (first_locus, position) in &loci_by_entity[0] {
+        Ok(Some(loci_by_entity))
+    })?;
+    let Some(loci_by_entity) = loci_by_entity else { return Ok(None); };
+    let mut unique_solution: Option<(Vec<(LocusKind, &cadmpeg_ir::sketches::SketchEntityId)>, cadmpeg_core::decode::ScopedReservation<'_>)> = None;
+    // Each entity contributes at most start, end and center/point loci.
+    for &(first_kind, first_id, position) in &loci_by_entity[0] {
+        let mut solution_storage = ctx.reserve_scoped(0, "f3d coincident solution storage")?;
         let mut solution = Vec::new();
-        ctx.push_vec(
-            &mut solution,
-            copy_dimension_locus(ctx, first_locus, "f3d coincident solution entity id")?,
-            "f3d coincident solution locus",
-        )?;
-        for member_loci in loci_by_entity.iter().skip(1) {
-            {
-                let count = u64::try_from(member_loci.len())
-                    .map_err(|_| ctx.refuse_codec_limit("f3d coincident locus matching", 0, 1))?;
-                ctx.charge_work(count, "f3d coincident locus matching")?;
-            }
-            let mut matches = member_loci.iter().filter(|(_, candidate)| {
-                (candidate.u - position.u).hypot(candidate.v - position.v)
-                    <= EPS_DIMENSIONS_EXACT_COINCIDENT_LOCI_E9
-            });
-            let Some(matched) = matches.next() else {
-                solution.clear();
-                break;
-            };
-            if matches.next().is_some() {
-                solution.clear();
-                break;
-            }
-            ctx.push_vec(
-                &mut solution,
-                copy_dimension_locus(ctx, &matched.0, "f3d coincident solution entity id")?,
-                "f3d coincident solution locus",
-            )?;
+        ctx.push_scoped_vec(&mut solution_storage, &mut solution, (first_kind, first_id), "f3d coincident solution locus")?;
+        let mut member_source = loci_by_entity[1..].iter();
+        while let Some(member_loci) = ctx.next_charged(&mut member_source, "f3d coincident member source")? {
+            let matched = crate::design::feature_project::unique_feature_match_for_decode(ctx, member_loci.iter(), |(_, _, candidate)| Ok((candidate.u - position.u).hypot(candidate.v - position.v) <= EPS_DIMENSIONS_EXACT_COINCIDENT_LOCI_E9), "f3d coincident locus matching")?;
+            let Some(&(kind, id, _)) = matched else { solution.clear(); break; };
+            ctx.push_scoped_vec(&mut solution_storage, &mut solution, (kind, id), "f3d coincident solution locus")?;
         }
         if solution.len() == entities.len() {
-            if let Some(existing) = &unique_solution {
-                if existing != &solution {
-                    return Ok(None);
-                }
+            if let Some((existing, _storage)) = &unique_solution {
+                if !ctx.all_by(existing.iter().zip(&solution), |((left_kind, left), (right_kind, right))| Ok(left_kind == right_kind && ctx.equal(*left, *right, "f3d coincident solution equality")?), "f3d coincident solution source")? { return Ok(None); }
             } else {
-                unique_solution = Some(solution);
+                unique_solution = Some((solution, solution_storage));
             }
         }
     }
-    Ok(unique_solution.map(|loci| Definition::CoincidentLoci { loci }))
+    let Some((solution, _solution_storage)) = unique_solution else { return Ok(None); };
+    let loci = ctx.try_collect_vec(solution.into_iter().map(|(kind, id)| {
+        let id = id.try_clone_for_decode(ctx, "f3d coincident solution entity id")?;
+        Ok::<_, CodecError>(match kind { LocusKind::Entity => SketchLocus::Entity(id), LocusKind::Start => SketchLocus::Start(id), LocusKind::End => SketchLocus::End(id), LocusKind::Center => SketchLocus::Center(id) })
+    }), "f3d coincident output locus")?;
+    Ok(Some(Definition::CoincidentLoci { loci }))
 }
 
 fn midpoint_constraint(
@@ -5799,7 +6751,7 @@ fn indirect_angular_lines(
     scope: &str,
     operands: &[&cadmpeg_ir::sketches::SketchEntity],
     evaluated_value: f64,
-    projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
+    projected: &BTreeMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
 ) -> Result<
     Option<(
         cadmpeg_ir::sketches::SketchEntityId,
@@ -5807,72 +6759,78 @@ fn indirect_angular_lines(
     )>,
     CodecError,
 > {
-    let pair = (|| {
-        use cadmpeg_ir::sketches::SketchGeometryDefinition;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-        let [first, second] = operands else {
-            return None;
-        };
-        let (point_ordinal, position, explicit_line) =
-            match (first.geometry.definition(), second.geometry.definition()) {
-                (
-                    SketchGeometryDefinition::Point { position },
-                    SketchGeometryDefinition::Line { .. },
-                ) => (0, position, *second),
-                (
-                    SketchGeometryDefinition::Line { .. },
-                    SketchGeometryDefinition::Point { position },
-                ) => (1, position, *first),
-                _ => return None,
-            };
-        if !evaluated_value.is_finite() || !(0.0..=std::f64::consts::PI).contains(&evaluated_value)
-        {
-            return None;
-        }
-        let candidates = projected
-            .iter()
-            .filter(|((candidate_scope, _), candidate)| {
-                *candidate_scope == scope
-                    && candidate.sketch == explicit_line.sketch
-                    && candidate.id() != explicit_line.id()
-            })
-            .filter_map(|(_, candidate)| {
-                let SketchGeometryDefinition::Line { start, end } = candidate.geometry.definition()
-                else {
-                    return None;
-                };
-                (sketch_points_close(position.get(), start.get())
-                    || sketch_points_close(position.get(), end.get()))
-                .then_some(*candidate)
-            })
-            .filter(|candidate| {
-                line_angle_matches(
-                    &explicit_line.geometry,
-                    &candidate.geometry,
-                    evaluated_value,
-                )
-            });
-        let mut candidate = None;
-        for next in candidates {
-            match candidate {
-                None => candidate = Some(next),
-                Some(first) if first.id() == next.id() => {}
-                Some(_) => return None,
-            }
-        }
-        let candidate = candidate?;
-        Some(if point_ordinal == 0 {
-            (candidate.id(), explicit_line.id())
-        } else {
-            (explicit_line.id(), candidate.id())
-        })
-    })();
-    let Some((first, second)) = pair else {
+    let [first, second] = operands else {
         return Ok(None);
     };
+    let (point_ordinal, position, explicit_line) =
+        match (first.geometry.definition(), second.geometry.definition()) {
+            (
+                SketchGeometryDefinition::Point { position },
+                SketchGeometryDefinition::Line { .. },
+            ) => (0, position, *second),
+            (
+                SketchGeometryDefinition::Line { .. },
+                SketchGeometryDefinition::Point { position },
+            ) => (1, position, *first),
+            _ => return Ok(None),
+        };
+    if !evaluated_value.is_finite() || !(0.0..=std::f64::consts::PI).contains(&evaluated_value) {
+        return Ok(None);
+    }
+    let mut source = projected.iter();
+    let mut candidate: Option<&cadmpeg_ir::sketches::SketchEntity> = None;
+    while let Some(((candidate_scope, _), next)) =
+        ctx.next_charged(&mut source, "f3d indirect angular candidate source")?
+    {
+        if !ctx.equal(
+            *candidate_scope,
+            scope,
+            "f3d indirect angular candidate stream",
+        )? || !ctx.equal(
+            &next.sketch,
+            &explicit_line.sketch,
+            "f3d indirect angular sketch equality",
+        )? || ctx.equal(
+            next.id(),
+            explicit_line.id(),
+            "f3d indirect angular explicit equality",
+        )? {
+            continue;
+        }
+        let SketchGeometryDefinition::Line { start, end } = next.geometry.definition() else {
+            continue;
+        };
+        if !(sketch_points_close(position.get(), start.get())
+            || sketch_points_close(position.get(), end.get()))
+            || !line_angle_matches(&explicit_line.geometry, &next.geometry, evaluated_value)
+        {
+            continue;
+        }
+        if let Some(first) = candidate {
+            if !ctx.equal(
+                first.id(),
+                next.id(),
+                "f3d indirect angular candidate equality",
+            )? {
+                return Ok(None);
+            }
+        } else {
+            candidate = Some(*next);
+        }
+    }
+    let Some(candidate) = candidate else {
+        return Ok(None);
+    };
+    let (first, second) = if point_ordinal == 0 {
+        (candidate.id(), explicit_line.id())
+    } else {
+        (explicit_line.id(), candidate.id())
+    };
     Ok(Some((
-        (first).try_clone_for_decode(ctx, "f3d indirect angular first id")?,
-        (second).try_clone_for_decode(ctx, "f3d indirect angular second id")?,
+        first.try_clone_for_decode(ctx, "f3d indirect angular first id")?,
+        second.try_clone_for_decode(ctx, "f3d indirect angular second id")?,
     )))
 }
 
@@ -5880,7 +6838,7 @@ fn directional_point_dimension(
     ctx: &DecodeContext<'_>,
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
     evaluated_mm: f64,
-    parameter: cadmpeg_ir::features::ParameterId,
+    parameter: (&cadmpeg_ir::features::ParameterId, &'static str),
     linear_tolerance: f64,
 ) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::{
@@ -5902,12 +6860,6 @@ fn directional_point_dimension(
     else {
         return None;
     };
-    let first_locus = SketchLocus::Entity(dimension_resource!(
-        (first.id()).try_clone_for_decode(ctx, "f3d directional point dimension first id")
-    ));
-    let second_locus = SketchLocus::Entity(dimension_resource!(
-        (second.id()).try_clone_for_decode(ctx, "f3d directional point dimension second id")
-    ));
     let horizontal = linear_measurement_matches(
         first_position.u - second_position.u,
         evaluated_mm,
@@ -5918,19 +6870,31 @@ fn directional_point_dimension(
         evaluated_mm,
         linear_tolerance,
     );
-    match (horizontal, vertical) {
-        (true, false) => Some(Ok(Definition::HorizontalDistance {
+    let horizontal = match (horizontal, vertical) {
+        (true, false) => true,
+        (false, true) => false,
+        (false, false) | (true, true) => return None,
+    };
+    let first_locus = SketchLocus::Entity(dimension_resource!(
+        (first.id()).try_clone_for_decode(ctx, "f3d directional point dimension first id")
+    ));
+    let second_locus = SketchLocus::Entity(dimension_resource!(
+        (second.id()).try_clone_for_decode(ctx, "f3d directional point dimension second id")
+    ));
+    let parameter = dimension_resource!(parameter.0.try_clone_for_decode(ctx, parameter.1));
+    Some(Ok(if horizontal {
+        Definition::HorizontalDistance {
             first: first_locus,
             second: second_locus,
             parameter,
-        })),
-        (false, true) => Some(Ok(Definition::VerticalDistance {
+        }
+    } else {
+        Definition::VerticalDistance {
             first: first_locus,
             second: second_locus,
             parameter,
-        })),
-        (false, false) | (true, true) => None,
-    }
+        }
+    }))
 }
 
 fn recipe_linear_dimension_candidates(
@@ -5945,36 +6909,28 @@ fn recipe_linear_dimension_candidates(
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
 
-    let sketch_entities = ctx.collect_vec(
-        entities.iter().filter(|entity| &entity.sketch == sketch),
-        "f3d recipe sketch candidate",
-    )?;
-    let points = ctx.collect_vec(
-        sketch_entities
-            .iter()
-            .copied()
-            .filter_map(|entity| match *entity.geometry.definition() {
-                SketchGeometryDefinition::Point { position } => Some((entity, position.get())),
-                _ => None,
-            }),
-        "f3d recipe point candidate",
-    )?;
-    let lines = ctx.collect_vec(
-        sketch_entities.iter().copied().filter(|entity| {
-            matches!(
-                *entity.geometry.definition(),
-                cadmpeg_ir::sketches::SketchGeometryDefinition::Line { .. }
-            )
-        }),
-        "f3d recipe line candidate",
-    )?;
+    let mut carrier_storage = ctx.reserve_scoped(0, "f3d recipe carrier storage")?;
+    let (points, lines) = carrier_storage.with_storage(|| {
+        let mut points = Vec::new();
+        let mut lines = Vec::new();
+        for entity in ctx.admit_iter(entities, "f3d recipe sketch source")? {
+            if !ctx.equal(&entity.sketch, sketch, "f3d recipe sketch equality")? { continue; }
+            match entity.geometry.definition() {
+                SketchGeometryDefinition::Point { position } => { ctx.push_vec(&mut points, (entity, position.get()), "f3d recipe point candidate")?; }
+                SketchGeometryDefinition::Line { .. } => { ctx.push_vec(&mut lines, entity, "f3d recipe line candidate")?; }
+                _ => {}
+            }
+        }
+        Ok::<_, CodecError>((points, lines))
+    })?;
+    let mut pair_storage = ctx.reserve_scoped(0, "f3d recipe line pair storage")?;
     let mut line_pairs = Vec::new();
-    for first in 0..lines.len() {
-        for second in first + 1..lines.len() {
+    for first in ctx.admit_iter(0..lines.len(), "f3d recipe first line source")? {
+        for second in ctx.admit_iter(first + 1..lines.len(), "f3d recipe second line source")? {
             if parallel_line_separation(lines[first], lines[second], evaluated_mm, linear_tolerance)
             {
-                ctx.push_vec(
-                    &mut line_pairs,
+                ctx.push_scoped_vec(
+                    &mut pair_storage, &mut line_pairs,
                     (lines[first], lines[second]),
                     "f3d recipe line pair",
                 )?;
@@ -6003,14 +6959,15 @@ fn recipe_linear_dimension_candidates(
         _ => false,
     };
     let mut candidates = Vec::new();
-    for first in 0..points.len() {
-        for second in first + 1..points.len() {
-            let subsumed_by_line_pair = line_pairs.iter().any(|(first_line, second_line)| {
+    for first in ctx.admit_iter(0..points.len(), "f3d recipe first point source")? {
+        for second in ctx.admit_iter(first + 1..points.len(), "f3d recipe second point source")? {
+            let subsumed_by_line_pair = ctx.any_by(&line_pairs, |(first_line, second_line)| {
+                Ok(
                 (point_on_endpoint(points[first].1, first_line)
                     && point_on_endpoint(points[second].1, second_line))
                     || (point_on_endpoint(points[first].1, second_line)
-                        && point_on_endpoint(points[second].1, first_line))
-            });
+                        && point_on_endpoint(points[second].1, first_line)))
+            }, "f3d recipe subsuming line pair")?;
             if subsumed_by_line_pair {
                 continue;
             }
@@ -6018,7 +6975,7 @@ fn recipe_linear_dimension_candidates(
                 ctx,
                 &[points[first].0, points[second].0],
                 evaluated_mm,
-                (parameter).try_clone_for_decode(ctx, "f3d recipe directional parameter id")?,
+                (parameter, "f3d recipe directional parameter id"),
                 0.0,
             )
             .transpose()?
@@ -6027,7 +6984,7 @@ fn recipe_linear_dimension_candidates(
             }
         }
     }
-    for (first, second) in line_pairs {
+    for (first, second) in ctx.admit_iter(line_pairs, "f3d recipe line output source")? {
         let definition = Definition::Distance {
             entities: copy_dimension_entity_members(ctx, &[first, second])?,
             parameter: (parameter).try_clone_for_decode(ctx, "f3d recipe line parameter id")?,
@@ -6045,19 +7002,19 @@ fn recipe_dimension_candidate_entities(
 
     let mut entities = Vec::new();
     let mut add = |entity: &cadmpeg_ir::sketches::SketchEntityId| -> Result<(), CodecError> {
-        if !entities.contains(entity) {
+        if !ctx.contains(&entities, entity, "f3d recipe native entity membership")? {
             let copied = (entity).try_clone_for_decode(ctx, "f3d recipe native entity id")?;
             ctx.push_vec(&mut entities, copied, "f3d recipe native entity")?;
         }
         Ok(())
     };
-    for candidate in candidates {
+    for candidate in ctx.admit_iter(candidates, "f3d recipe native candidate source")? {
         match candidate {
             Definition::Distance {
                 entities: candidate_entities,
                 ..
             } => {
-                for entity in candidate_entities {
+                for entity in ctx.admit_iter(candidate_entities.as_slice(), "f3d recipe native member source")? {
                     add(entity)?;
                 }
             }
@@ -6085,23 +7042,24 @@ fn recipe_extension_point_dimension(
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
 
-    let sketch_entities = || entities.iter().filter(|entity| &entity.sketch == sketch);
-    let lines = || sketch_entities().filter_map(|entity| Some((entity, line_segment(entity)?)));
     let point = |id: &cadmpeg_ir::sketches::SketchEntityId| {
-        sketch_entities().find_map(|entity| match *entity.geometry.definition() {
-            SketchGeometryDefinition::Point { position } if entity.id() == id => {
-                Some(position.get())
+        ctx.find_map(entities, |entity| {
+            if !ctx.equal(&entity.sketch, sketch, "f3d recipe extension sketch equality")? { return Ok(None); }
+            match entity.geometry.definition() {
+                SketchGeometryDefinition::Point { position } if ctx.equal(entity.id(), id, "f3d recipe extension entity equality")? => Ok(Some(position.get())),
+                _ => Ok(None),
             }
-            _ => None,
-        })
+        }, "f3d recipe extension point source")
     };
     let is_any_line_endpoint = |position: Point2| {
-        lines().any(|(_, [start, end])| {
-            sketch_points_close(position, start) || sketch_points_close(position, end)
-        })
+        ctx.any_by(entities, |entity| {
+            if !ctx.equal(&entity.sketch, sketch, "f3d recipe extension sketch equality")? { return Ok(false); }
+            Ok(line_segment(entity).is_some_and(|[start, end]| sketch_points_close(position, start) || sketch_points_close(position, end)))
+        }, "f3d recipe extension endpoint source")
     };
     let mut matched = None;
-    for candidate in candidates {
+    let mut candidate_source = candidates.iter();
+    while let Some(candidate) = dimension_resource!(ctx.next_charged(&mut candidate_source, "f3d recipe extension candidate source")) {
         let (first_id, second_id, horizontal) = match candidate {
             Definition::HorizontalDistance { first, second, .. } => {
                 (locus_entity_id(first), locus_entity_id(second), true)
@@ -6111,16 +7069,14 @@ fn recipe_extension_point_dimension(
             }
             _ => continue,
         };
-        let first_position = point(first_id)?;
-        let second_position = point(second_id)?;
-        let qualifies = [
-            (first_position, second_position),
-            (second_position, first_position),
-        ]
-        .into_iter()
-        .any(|(detached, endpoint)| {
-            !is_any_line_endpoint(detached)
-                && lines().any(|(_, [start, end])| {
+        let first_position = dimension_resource!(point(first_id))?;
+        let second_position = dimension_resource!(point(second_id))?;
+        let mut qualifies = false;
+        for (detached, endpoint) in [(first_position, second_position), (second_position, first_position)] {
+            if dimension_resource!(is_any_line_endpoint(detached)) { continue; }
+            if dimension_resource!(ctx.any_by(entities, |entity| {
+                    if !ctx.equal(&entity.sketch, sketch, "f3d recipe extension sketch equality")? { return Ok(false); }
+                    let Some([start, end]) = line_segment(entity) else { return Ok(false); };
                     let du = end.u - start.u;
                     let dv = end.v - start.v;
                     let length = du.hypot(dv);
@@ -6135,11 +7091,11 @@ fn recipe_extension_point_dimension(
                         || length <= EPS_DIMENSIONS_RECIPE_EXTENSION_POINT_DIMENSION_E9
                         || !axis_aligned
                     {
-                        return false;
+                        return Ok(false);
                     }
                     if !sketch_points_close(endpoint, start) && !sketch_points_close(endpoint, end)
                     {
-                        return false;
+                        return Ok(false);
                     }
                     let relative_u = detached.u - start.u;
                     let relative_v = detached.v - start.v;
@@ -6150,12 +7106,16 @@ fn recipe_extension_point_dimension(
                         * (1.0 + length + relative_u.abs().max(relative_v.abs()));
                     let projection =
                         (relative_u * (du / length) + relative_v * (dv / length)) / length;
-                    carrier_error <= carrier_tolerance
+                    Ok(carrier_error <= carrier_tolerance
                         && !(-EPS_DIMENSIONS_RECIPE_EXTENSION_POINT_DIMENSION_E9
                             ..=1.0 + EPS_DIMENSIONS_RECIPE_EXTENSION_POINT_DIMENSION_E9)
-                            .contains(&projection)
-                })
-        });
+                            .contains(&projection))
+                }, "f3d recipe extension line source")) {
+                    qualifies = true;
+                    break;
+                }
+        }
+
         if qualifies {
             if matched.is_some() {
                 return None;
@@ -6393,16 +7353,16 @@ fn linear_measurement_matches(measured: f64, expected: f64, linear_tolerance: f6
 fn two_locus_distance_dimension(
     ctx: &DecodeContext<'_>,
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
-    parameter: cadmpeg_ir::features::ParameterId,
+    parameter: &cadmpeg_ir::features::ParameterId,
 ) -> Option<Result<cadmpeg_ir::sketches::SketchConstraintDefinitionInput, CodecError>> {
     use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
 
-    if entities.len() != 2 || entities[0].id() == entities[1].id() {
+    if entities.len() != 2 || dimension_resource!(ctx.equal(entities[0].id(), entities[1].id(), "f3d distance entity equality")) {
         return None;
     }
     Some(Ok(Definition::Distance {
         entities: dimension_resource!(copy_dimension_entity_members(ctx, entities)),
-        parameter,
+        parameter: dimension_resource!(parameter.try_clone_for_decode(ctx, "f3d two locus parameter id")),
     }))
 }
 
@@ -6432,7 +7392,9 @@ fn counted_role_relation_at_tolerance(
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition as Geometry,
     };
-    owner_kinds.iter().find_map(|kind| match (kind, entities) {
+    let mut kind_source = owner_kinds.iter();
+    while let Some(kind) = dimension_resource!(ctx.next_charged(&mut kind_source, "f3d counted owner kind source")) {
+    let candidate = (|| { match (kind, entities) {
         (SketchConstraintKind::Horizontal | SketchConstraintKind::Vertical, [entity]) => {
             let Geometry::Line { start, end } = entity.geometry.definition() else {
                 return None;
@@ -6471,7 +7433,7 @@ fn counted_role_relation_at_tolerance(
         }
         (SketchConstraintKind::Tangent, [first, second])
             if exact_line_arc_tangency(entities, linear_tolerance)
-                || exact_circular_tangency(entities, linear_tolerance) =>
+                || dimension_resource!(exact_circular_tangency(ctx, entities, linear_tolerance)) =>
         {
             Some(Ok(Definition::Tangent {
                 first: dimension_resource!((first.id())
@@ -6480,7 +7442,7 @@ fn counted_role_relation_at_tolerance(
                     .try_clone_for_decode(ctx, "f3d counted role relation at tolerance second id")),
             }))
         }
-        (SketchConstraintKind::Equal, [first, second]) if exact_equal_size(entities) => {
+        (SketchConstraintKind::Equal, [first, second]) if dimension_resource!(exact_equal_size(ctx, entities)) => {
             Some(Ok(Definition::Equal {
                 first: dimension_resource!((first.id())
                     .try_clone_for_decode(ctx, "f3d counted role relation at tolerance first id")),
@@ -6489,7 +7451,10 @@ fn counted_role_relation_at_tolerance(
             }))
         }
         _ => None,
-    })
+    } })();
+    if candidate.is_some() { return candidate; }
+    }
+    None
 }
 
 fn exact_line_arc_tangency(
@@ -6568,18 +7533,16 @@ fn exact_line_arc_tangency(
     })
 }
 
-fn exact_circular_tangency(
+fn exact_circular_tangency(ctx: &DecodeContext<'_>,
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
     linear_tolerance: f64,
-) -> bool {
+) -> Result<bool, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition as Geometry;
 
-    let [first, second] = entities else {
-        return false;
-    };
-    if first.id() == second.id() {
-        return false;
-    }
+    let [first, second] = entities else { return Ok(false); };
+    if ctx.equal(first.id(), second.id(), "f3d geometry entity equality")? { return Ok(false); }
+    Ok((|| {
+
     let circular = |geometry: &cadmpeg_ir::sketches::SketchGeometry| match geometry.definition() {
         Geometry::Circle { center, radius } | Geometry::Arc { center, radius, .. } => {
             Some((*center, radius.get()))
@@ -6631,6 +7594,7 @@ fn exact_circular_tangency(
         circular_entity_contains_point(&first.geometry, *point, linear_tolerance)
             && circular_entity_contains_point(&second.geometry, *point, linear_tolerance)
     })
+    })())
 }
 
 fn circular_entity_contains_point(
@@ -6673,15 +7637,13 @@ fn circular_entity_contains_point(
 const EPS_CIRCULAR_TANGENCY: f64 = 1.0e-9;
 const EPS_CIRCULAR_TANGENCY_LENGTH: f64 = 1.0e-12;
 
-fn exact_equal_size(entities: &[&cadmpeg_ir::sketches::SketchEntity]) -> bool {
+fn exact_equal_size(ctx: &DecodeContext<'_>, entities: &[&cadmpeg_ir::sketches::SketchEntity]) -> Result<bool, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition as Geometry;
 
-    let [first, second] = entities else {
-        return false;
-    };
-    if first.id() == second.id() {
-        return false;
-    }
+    let [first, second] = entities else { return Ok(false); };
+    if ctx.equal(first.id(), second.id(), "f3d geometry entity equality")? { return Ok(false); }
+    Ok({
+
     let close = |first: f64, second: f64| {
         (first - second).abs()
             <= EPS_DIMENSIONS_EXACT_EQUAL_SIZE_E9 * (1.0 + first.abs().max(second.abs()))
@@ -6722,6 +7684,7 @@ fn exact_equal_size(entities: &[&cadmpeg_ir::sketches::SketchEntity]) -> bool {
         }
         _ => false,
     }
+    })
 }
 
 const EPS_CENTERED_RELATION: f64 = 1.0e-9;
@@ -6738,7 +7701,7 @@ fn exact_centered_entity_relation(
     let [first, second] = entities else {
         return None;
     };
-    if first.id() == second.id() {
+    if dimension_resource!(ctx.equal(first.id(), second.id(), "f3d centered entity equality")) {
         return None;
     }
     let centered_geometry =
@@ -6787,7 +7750,7 @@ fn exact_counted_dimension_relation(
     if let Some(definition) = exact_centered_entity_relation(ctx, entities).transpose()? {
         return Ok(Some(definition));
     }
-    if let Some((first, second, axis)) = reflected_symmetry(entities) {
+    if let Some((first, second, axis)) = reflected_symmetry(ctx, entities)? {
         return Ok(Some(Definition::Symmetric {
             first: SketchLocus::Entity(
                 (first.id()).try_clone_for_decode(ctx, "f3d exact counted first id")?,
@@ -6801,7 +7764,7 @@ fn exact_counted_dimension_relation(
     let [first, second] = entities else {
         return Ok(None);
     };
-    if first.id() == second.id() {
+    if ctx.equal(first.id(), second.id(), "f3d counted entity equality")? {
         return Ok(None);
     }
     let point_on_geometry = |point: &cadmpeg_ir::sketches::SketchEntity,
@@ -7085,38 +8048,33 @@ fn exact_counted_offset(
         return None;
     }
     let source_count = loci.len() / 2;
-    let role_partition = loci[..source_count].iter().all(|locus| locus.role != 0)
-        && loci[source_count..].iter().all(|locus| locus.role == 0);
-    let identity_partition = loci.iter().all(|locus| locus.role != 0)
-        && loci[..source_count]
-            .iter()
-            .all(|locus| secondary_ids.get(&locus.geometry_record_index).copied() == Some(0))
-        && loci[source_count..].iter().all(|locus| {
-            secondary_ids
-                .get(&locus.geometry_record_index)
-                .is_some_and(|secondary_id| *secondary_id != 0)
-        });
+    let role_partition = resource!(ctx.all_by(&loci[..source_count], |locus| Ok(locus.role != 0), "f3d counted offset source role"))
+        && resource!(ctx.all_by(&loci[source_count..], |locus| Ok(locus.role == 0), "f3d counted offset result role"));
+    let identity_partition = resource!(ctx.all_by(loci, |locus| Ok(locus.role != 0), "f3d counted offset identity role"))
+        && resource!(ctx.all_by(&loci[..source_count], |locus| Ok(ctx.get_hash_map(secondary_ids, &locus.geometry_record_index, "f3d counted offset source identity lookup")?.copied() == Some(0)), "f3d counted offset source identity"))
+        && resource!(ctx.all_by(&loci[source_count..], |locus| Ok(ctx.get_hash_map(secondary_ids, &locus.geometry_record_index, "f3d counted offset result identity lookup")?.is_some_and(|id| *id != 0)), "f3d counted offset result identity"));
     if !role_partition && !identity_partition {
         return None;
     }
+    let mut index_storage = resource!(ctx.reserve_scoped(0, "f3d counted offset index storage"));
     let mut source_records = HashSet::new();
     let mut result_records = HashSet::new();
-    for locus in &loci[..source_count] {
-        resource!(ctx
+    for locus in resource!(ctx.admit_iter(&loci[..source_count], "f3d counted offset source records").map_err(CodecError::from)) {
+        resource!(index_storage.with_storage(|| ctx
             .insert_hash_set(
                 &mut source_records,
                 locus.geometry_record_index,
                 "f3d counted offset source record"
-            )
+            ))
             .map(|_| ()));
     }
-    for locus in &loci[source_count..] {
-        resource!(ctx
+    for locus in resource!(ctx.admit_iter(&loci[source_count..], "f3d counted offset result records").map_err(CodecError::from)) {
+        resource!(index_storage.with_storage(|| ctx
             .insert_hash_set(
                 &mut result_records,
                 locus.geometry_record_index,
                 "f3d counted offset result record"
-            )
+            ))
             .map(|_| ()));
     }
     if source_records.len() != source_count || result_records.len() != source_count {
@@ -7125,32 +8083,33 @@ fn exact_counted_offset(
     let mut used_members = HashSet::new();
     let mut pairs = Vec::new();
     let mut canonical_distance: Option<f64> = None;
-    for [source_locus, result_locus] in loci.as_chunks::<2>().0 {
+    let mut pair_source = loci.as_chunks::<2>().0.iter();
+    while let Some([source_locus, result_locus]) = resource!(ctx.next_charged(&mut pair_source, "f3d counted offset pair source")) {
         let source_record_index = source_locus.returned.value;
         let result_record_index = result_locus.returned.value;
-        if !source_records.contains(&source_record_index)
-            || !result_records.contains(&result_record_index)
-            || used_members.contains(&source_record_index)
-            || used_members.contains(&result_record_index)
+        if !resource!(ctx.contains_hash_set(&source_records, &source_record_index, "f3d counted offset record lookup"))
+            || !resource!(ctx.contains_hash_set(&result_records, &result_record_index, "f3d counted offset record lookup"))
+            || resource!(ctx.contains_hash_set(&used_members, &source_record_index, "f3d counted offset record lookup"))
+            || resource!(ctx.contains_hash_set(&used_members, &result_record_index, "f3d counted offset record lookup"))
         {
             return None;
         }
-        resource!(ctx
+        resource!(index_storage.with_storage(|| ctx
             .insert_hash_set(
                 &mut used_members,
                 source_record_index,
                 "f3d counted offset used source"
-            )
+            ))
             .map(|_| ()));
-        resource!(ctx
+        resource!(index_storage.with_storage(|| ctx
             .insert_hash_set(
                 &mut used_members,
                 result_record_index,
                 "f3d counted offset used result"
-            )
+            ))
             .map(|_| ()));
-        let source = entities.get(&source_record_index)?;
-        let result = entities.get(&result_record_index)?;
+        let source = resource!(ctx.get_hash_map(entities, &source_record_index, "f3d counted offset entity lookup"))?;
+        let result = resource!(ctx.get_hash_map(entities, &result_record_index, "f3d counted offset entity lookup"))?;
         let distance = match sketch_curve_offset(&source.geometry, &result.geometry) {
             Some(distance) => distance,
             None => resource!(cadmpeg_ir::eval::fitted_nurbs_offset_frame_distance(
@@ -7260,10 +8219,7 @@ pub(super) fn exact_offset_constraint(
         || relation.return_members().len() < 4
         || !relation.return_members().len().is_multiple_of(2)
         || relation.return_members().len() != relation.members().len()
-        || relation
-            .return_members()
-            .iter()
-            .any(|member| member.reference.resolved().is_none())
+        || dimension_resource!(ctx.any_by(relation.return_members().iter(), |member| Ok(member.reference.resolved().is_none()), "f3d relation offset resolved source"))
     {
         return None;
     }
@@ -7273,10 +8229,12 @@ pub(super) fn exact_offset_constraint(
     // two sides.
     let ordered_pairs = crate::design::relation_kinds::sole_constraint_kind(relation)
         == Some(SketchConstraintKind::Offset);
+    let mut index_storage = dimension_resource!(ctx.reserve_scoped(0, "f3d relation offset index storage"));
     let mut pairs = Vec::new();
     let mut used_entities = HashSet::new();
     let mut canonical_distance: Option<f64> = None;
-    for members in relation.return_members().chunks_exact(2) {
+    let mut member_source = relation.return_members().chunks_exact(2);
+    while let Some(members) = dimension_resource!(ctx.next_charged(&mut member_source, "f3d relation offset member source")) {
         let (first_record_index, first_secondary_id, second_record_index, second_secondary_id) =
             match (&members[0].reference, &members[1].reference) {
                 (
@@ -7308,24 +8266,24 @@ pub(super) fn exact_offset_constraint(
             } else {
                 return None;
             };
-        let source = projected.get(&(scope, source_record_index))?;
-        let result = projected.get(&(scope, result_record_index))?;
-        if used_entities.contains(source.id()) || used_entities.contains(result.id()) {
+        let source = dimension_resource!(ctx.get_hash_map(projected, &(scope, source_record_index), "f3d relation offset entity lookup"))?;
+        let result = dimension_resource!(ctx.get_hash_map(projected, &(scope, result_record_index), "f3d relation offset entity lookup"))?;
+        if dimension_resource!(ctx.contains_hash_set(&used_entities, source.id(), "f3d relation offset used lookup")) || dimension_resource!(ctx.contains_hash_set(&used_entities, result.id(), "f3d relation offset used lookup")) {
             return None;
         }
-        dimension_resource!(ctx
+        dimension_resource!(index_storage.with_storage(|| ctx
             .insert_hash_set(
                 &mut used_entities,
                 source.id(),
                 "f3d relation offset used source"
-            )
+            ))
             .map(|_| ()));
-        dimension_resource!(ctx
+        dimension_resource!(index_storage.with_storage(|| ctx
             .insert_hash_set(
                 &mut used_entities,
                 result.id(),
                 "f3d relation offset used result"
-            )
+            ))
             .map(|_| ()));
         let distance = parallel_line_offset(&source.geometry, &result.geometry)?;
         if distance.abs() <= EPS_DIMENSIONS_EXACT_OFFSET_CONSTRAINT_E9 {
@@ -7564,20 +8522,22 @@ fn parallel_line_offset(
         .then_some(start_distance)
 }
 
-fn reflected_symmetry<'a>(
+fn reflected_symmetry<'a>(ctx: &DecodeContext<'_>,
     entities: &[&'a cadmpeg_ir::sketches::SketchEntity],
-) -> Option<(
+) -> Result<Option<(
     &'a cadmpeg_ir::sketches::SketchEntity,
     &'a cadmpeg_ir::sketches::SketchEntity,
     &'a cadmpeg_ir::sketches::SketchEntity,
-)> {
+)>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let [first, second, third] = entities else {
-        return None;
+        return Ok(None);
     };
-    if first.id() == second.id() || first.id() == third.id() || second.id() == third.id() {
-        return None;
+    if ctx.equal(first.id(), second.id(), "f3d symmetry entity equality")?
+        || ctx.equal(first.id(), third.id(), "f3d symmetry entity equality")?
+        || ctx.equal(second.id(), third.id(), "f3d symmetry entity equality")? {
+        return Ok(None);
     }
     let mut candidate = None;
     for (axis_ordinal, axis) in entities.iter().enumerate() {
@@ -7601,10 +8561,10 @@ fn reflected_symmetry<'a>(
             axis_end,
         ) && candidate.replace((others[0], others[1], axis)).is_some()
         {
-            return None;
+            return Ok(None);
         }
     }
-    candidate
+    Ok(candidate)
 }
 
 fn reflected_geometry_matches(
@@ -7824,7 +8784,13 @@ pub(super) fn sketch_normal_sign(normal: &Vector3) -> Option<f64> {
         .then_some(normal.z.signum())
 }
 
-pub(super) fn expression_identifiers(expression: &str) -> impl Iterator<Item = &str> {
+pub(super) fn expression_identifiers<'text, 'ctx>(
+    ctx: &'ctx DecodeContext<'ctx>,
+    expression: &'text str,
+) -> impl Iterator<Item = Result<&'text str, CodecError>> + 'ctx
+where
+    'text: 'ctx,
+{
     let identifier_character = |character: char| {
         character.is_alphanumeric() || matches!(character, '_' | '"' | '$' | '°' | 'µ')
     };
@@ -7832,41 +8798,65 @@ pub(super) fn expression_identifiers(expression: &str) -> impl Iterator<Item = &
     let mut characters = expression
         .char_indices()
         .chain(std::iter::once((expression.len(), '\0')));
+    let mut ended = false;
     std::iter::from_fn(move || {
-        for (offset, character) in characters.by_ref() {
-            if identifier_character(character) {
-                start.get_or_insert(offset);
-                continue;
-            }
-            let Some(token_start) = start.take() else {
-                continue;
-            };
-            let token = &expression[token_start..offset];
-            if !token
-                .chars()
-                .next()
-                .is_some_and(|character| character.is_alphabetic() || character == '_')
-            {
-                continue;
-            }
-            let next = expression[offset..]
-                .chars()
-                .find(|character| !character.is_whitespace());
-            if next == Some('(') {
-                continue;
-            }
-            let previous = expression[..token_start]
-                .chars()
-                .rev()
-                .find(|character| !character.is_whitespace());
-            if matches!(token, "mm" | "cm" | "m" | "in" | "ft" | "deg" | "rad")
-                && previous.is_some_and(|character| character.is_ascii_digit() || character == ')')
-            {
-                continue;
-            }
-            return Some(token);
+        if ended {
+            return None;
         }
-        None
+        let token = (|| -> Result<Option<&'text str>, CodecError> {
+            while let Some((offset, character)) =
+                ctx.next_charged(&mut characters, "f3d expression character scan")?
+            {
+                if identifier_character(character) {
+                    start.get_or_insert(offset);
+                    continue;
+                }
+                let Some(token_start) = start.take() else {
+                    continue;
+                };
+                let token = &expression[token_start..offset];
+                if !token
+                    .chars()
+                    .next()
+                    .is_some_and(|character| character.is_alphabetic() || character == '_')
+                {
+                    continue;
+                }
+                let next = ctx.find_by(
+                    expression[offset..].chars(),
+                    |character| Ok(!character.is_whitespace()),
+                    "f3d expression following character",
+                )?;
+                if next == Some('(') {
+                    continue;
+                }
+                if matches!(token, "mm" | "cm" | "m" | "in" | "ft" | "deg" | "rad") {
+                    let previous = ctx.find_by(
+                        expression[..token_start].chars().rev(),
+                        |character| Ok(!character.is_whitespace()),
+                        "f3d expression preceding character",
+                    )?;
+                    if previous
+                        .is_some_and(|character| character.is_ascii_digit() || character == ')')
+                    {
+                        continue;
+                    }
+                }
+                return Ok(Some(token));
+            }
+            Ok(None)
+        })();
+        match token {
+            Ok(Some(token)) => Some(Ok(token)),
+            Ok(None) => {
+                ended = true;
+                None
+            }
+            Err(error) => {
+                ended = true;
+                Some(Err(error))
+            }
+        }
     })
 }
 
@@ -7877,79 +8867,102 @@ pub(crate) fn unresolved_parameter_expression_dependency_count(
     native: &[DesignParameter],
     projected: &[cadmpeg_ir::features::DesignParameter],
 ) -> Result<usize, CodecError> {
-    let mut projected_by_native_ref = HashMap::new();
-    let mut projected_by_id = HashMap::new();
-    for parameter in projected {
-        if let Some(native_ref) = parameter.native_ref.as_deref() {
-            ctx.insert_hash_map(
-                &mut projected_by_native_ref,
-                native_ref,
-                parameter,
-                "f3d expression native parameter index",
-            )
-            .map(|_| ())?;
-        }
-        ctx.insert_hash_map(
-            &mut projected_by_id,
-            &parameter.id,
-            parameter,
-            "f3d expression neutral parameter index",
-        )
-        .map(|_| ())?;
-    }
-    let mut names_by_stream = HashMap::<&str, HashSet<&str>>::new();
-    for parameter in native {
-        let Some(stream) = native_stream(&parameter.id) else {
-            continue;
-        };
-        if !names_by_stream.contains_key(stream) {
-            ctx.insert_hash_map(
-                &mut names_by_stream,
-                stream,
-                HashSet::new(),
-                "f3d expression stream index",
-            )
-            .map(|_| ())?;
-        }
-        if let Some(names) = names_by_stream.get_mut(stream) {
-            ctx.insert_hash_set(names, parameter.name(), "f3d expression stream name")
-                .map(|_| ())?;
-        }
-    }
-
-    let mut unresolved = 0usize;
-    for parameter in native {
-        let Some(stream) = native_stream(&parameter.id) else {
-            continue;
-        };
-        let Some(names) = names_by_stream.get(stream) else {
-            continue;
-        };
-        let Some(projected) = projected_by_native_ref.get(parameter.id.as_str()) else {
-            continue;
-        };
-        let mut dependency_names = HashSet::new();
-        for dependency in &projected.dependencies {
-            if let Some(dependency) = projected_by_id.get(dependency) {
-                ctx.insert_hash_set(
-                    &mut dependency_names,
-                    dependency.name.as_str(),
-                    "f3d expression dependency name",
+    let mut lookup_storage = ctx.reserve_scoped(0, "f3d expression audit lookup storage")?;
+    let (projected_by_native_ref, projected_by_id, names_by_stream) =
+        lookup_storage.with_storage(|| -> Result<_, CodecError> {
+            let mut projected_by_native_ref = HashMap::new();
+            let mut projected_by_id = HashMap::new();
+            for parameter in ctx.admit_iter(projected, "f3d expression projected parameter scan")? {
+                if let Some(native_ref) = parameter.native_ref.as_deref() {
+                    ctx.insert_hash_map(
+                        &mut projected_by_native_ref,
+                        native_ref,
+                        parameter,
+                        "f3d expression native parameter index",
+                    )
+                    .map(|_| ())?;
+                }
+                ctx.insert_hash_map(
+                    &mut projected_by_id,
+                    &parameter.id,
+                    parameter,
+                    "f3d expression neutral parameter index",
                 )
                 .map(|_| ())?;
             }
-        }
-        let mut identifiers = HashSet::new();
-        for identifier in expression_identifiers(parameter.expression()) {
-            if names.contains(identifier) {
-                ctx.insert_hash_set(&mut identifiers, identifier, "f3d expression identifier")
-                    .map(|_| ())?;
+            let mut names_by_stream = HashMap::<&str, HashSet<&str>>::new();
+            for parameter in ctx.admit_iter(native, "f3d expression native parameter scan")? {
+                let Some(stream) = native_stream_charged(ctx, &parameter.id, "resolve F3D dimension stream")? else {
+                    continue;
+                };
+                let names = ctx
+                    .entry_hash_map(&mut names_by_stream, stream, "f3d expression stream index")?
+                    .or_default();
+                ctx.insert_hash_set(names, parameter.name(), "f3d expression stream name")?;
             }
-        }
-        unresolved += identifiers
-            .into_iter()
-            .filter(|identifier| !dependency_names.contains(*identifier))
-            .count();
+            Ok((projected_by_native_ref, projected_by_id, names_by_stream))
+        })?;
+    let mut unresolved = 0usize;
+    for parameter in ctx.admit_iter(native, "f3d expression audit parameter scan")? {
+        let Some(stream) = native_stream_charged(ctx, &parameter.id, "resolve F3D dimension stream")? else {
+            continue;
+        };
+        let Some(names) =
+            ctx.get_hash_map(&names_by_stream, stream, "f3d expression stream lookup")?
+        else {
+            continue;
+        };
+        let Some(projected) = ctx.get_hash_map(
+            &projected_by_native_ref,
+            parameter.id.as_str(),
+            "f3d expression projected parameter lookup",
+        )?
+        else {
+            continue;
+        };
+        let mut dependency_storage = ctx.reserve_scoped(0, "f3d expression dependency storage")?;
+        let dependency_names = dependency_storage.with_storage(|| -> Result<_, CodecError> {
+            let mut names = HashSet::new();
+            for dependency in ctx.admit_iter(
+                projected.dependencies.as_slice(),
+                "f3d expression dependency scan",
+            )? {
+                if let Some(dependency) = ctx.get_hash_map(
+                    &projected_by_id,
+                    dependency,
+                    "f3d expression dependency lookup",
+                )? {
+                    ctx.insert_hash_set(
+                        &mut names,
+                        dependency.name.as_str(),
+                        "f3d expression dependency name",
+                    )?;
+                }
+            }
+            Ok(names)
+        })?;
+        let mut identifier_storage = ctx.reserve_scoped(0, "f3d expression identifier storage")?;
+        identifier_storage.with_storage(|| -> Result<(), CodecError> {
+            let mut identifiers = HashSet::new();
+            for identifier in expression_identifiers(ctx, parameter.expression()) {
+                let identifier = identifier?;
+                if ctx.contains_hash_set(names, identifier, "f3d expression name lookup")?
+                    && ctx.insert_hash_set(
+                        &mut identifiers,
+                        identifier,
+                        "f3d expression identifier",
+                    )?
+                    && !ctx.contains_hash_set(
+                        &dependency_names,
+                        identifier,
+                        "f3d expression dependency name lookup",
+                    )?
+                {
+                    unresolved += 1;
+                }
+            }
+            Ok(())
+        })?;
     }
     Ok(unresolved)
 }

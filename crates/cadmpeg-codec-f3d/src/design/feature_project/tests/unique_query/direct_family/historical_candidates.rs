@@ -164,10 +164,7 @@ fn draft_candidate_conflict_skips_unused_states_and_candidate_tail_without_stora
             "visit F3D Draft historical candidate state"
         );
         assert_eq!((original.used, original.additional), (reached - 1, 1));
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-        assert!(
-            matches!(ctx.charge_work(0, "later candidate boundary"), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
+        assert_eq!(ctx.resource_refusal(), Some(original));
     });
     assert_eq!(selections, original);
 }

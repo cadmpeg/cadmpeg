@@ -138,7 +138,7 @@ fn parameter(id: &str, dependencies: &[&str]) -> cadmpeg_ir::features::DesignPar
 fn membership_parameter_self_edge_keeps_original_refusal() {
     let parameters = [parameter("f3d:test:parameter#A", &["f3d:test:parameter#A"])];
     let original = parameters.clone();
-    let unresolved = std::collections::HashSet::from([0]);
+    let unresolved = std::collections::BTreeSet::from([0]);
     assert_original_refusal(CYCLE_MEMBERSHIP, |ctx| {
         super::super::super::cyclic_parameter_components(ctx, &parameters, &unresolved)
     });
@@ -149,7 +149,7 @@ fn membership_parameter_self_edge_keeps_original_refusal() {
 fn membership_parameter_self_edge_keeps_exact_component() {
     let parameters = [parameter("f3d:test:parameter#A", &["f3d:test:parameter#A"])];
     let original = parameters.clone();
-    let unresolved = std::collections::HashSet::from([0]);
+    let unresolved = std::collections::BTreeSet::from([0]);
     crate::test_support::with_decode_context(|ctx| {
         assert_eq!(
             super::super::super::cyclic_parameter_components(ctx, &parameters, &unresolved)
@@ -164,7 +164,7 @@ fn membership_parameter_self_edge_keeps_exact_component() {
 #[test]
 fn membership_parameter_empty_edges_skip_self_edge_query() {
     let parameters = [parameter("f3d:test:parameter#A", &[])];
-    let unresolved = std::collections::HashSet::from([0]);
+    let unresolved = std::collections::BTreeSet::from([0]);
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = u64::MAX;
     crate::test_support::with_decode_policy(&policy, |ctx| {
@@ -185,7 +185,7 @@ fn membership_parameter_multi_node_cycle_skips_unused_self_edge_query() {
         parameter("f3d:test:parameter#B", &["f3d:test:parameter#A"]),
     ];
     let original = parameters.clone();
-    let unresolved = std::collections::HashSet::from([0, 1]);
+    let unresolved = std::collections::BTreeSet::from([0, 1]);
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = u64::MAX;
     crate::test_support::with_decode_policy(&policy, |ctx| {

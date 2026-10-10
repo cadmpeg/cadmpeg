@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::CodecError;
 
 use cadmpeg_test_support::edit;
 
@@ -41,7 +42,7 @@ use cadmpeg_ir::sketches::{
     SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchGeometryDefinition,
     SpatialSketchProfile,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 mod extrude_bind_allocation;
 mod historical_allocation;
@@ -568,7 +569,12 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
         Some(vec![0, 1, 2])
     );
     assert_eq!(
-        spatial_profile_containing_entity(&spatial_sketches[0], &entity_id(100)),
+        crate::test_support::with_decode_context(|ctx| spatial_profile_containing_entity(
+            &spatial_sketches[0],
+            &entity_id(100),
+            ctx
+        ))
+        .unwrap(),
         Some(0)
     );
     let repeated_profile = SpatialSketch {
@@ -576,7 +582,12 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
         ..spatial_sketches[0].clone()
     };
     assert_eq!(
-        spatial_profile_containing_entity(&repeated_profile, &entity_id(100)),
+        crate::test_support::with_decode_context(|ctx| spatial_profile_containing_entity(
+            &repeated_profile,
+            &entity_id(100),
+            ctx
+        ))
+        .unwrap(),
         None
     );
 
@@ -1273,7 +1284,7 @@ fn historical_selection_preserves_first_member_region_order() {
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| {
             crate::design::profile_select::ordered_unique_profile_selections(
-                [
+                &[
                     Some(
                         crate::design::profile_select::ResolvedProfileSelection::Regions(vec![
                             region(3),
@@ -1310,7 +1321,7 @@ fn historical_selection_preserves_first_member_region_order() {
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| {
             crate::design::profile_select::ordered_unique_profile_selections(
-                [
+                &[
                     Some(
                         crate::design::profile_select::ResolvedProfileSelection::Regions(vec![
                             region(3),
@@ -1523,7 +1534,7 @@ fn historical_profile_members_resolve_through_topology_ownership() {
             decode_ctx
         ))
         .unwrap(),
-        HashSet::from([10])
+        std::collections::BTreeSet::from([10])
     );
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| historical_profile_face_candidates(
@@ -1533,7 +1544,7 @@ fn historical_profile_members_resolve_through_topology_ownership() {
             decode_ctx
         ))
         .unwrap(),
-        HashSet::from([10])
+        std::collections::BTreeSet::from([10])
     );
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| historical_profile_face_candidates(
@@ -1543,7 +1554,7 @@ fn historical_profile_members_resolve_through_topology_ownership() {
             decode_ctx
         ))
         .unwrap(),
-        HashSet::from([10, 20])
+        std::collections::BTreeSet::from([10, 20])
     );
 }
 
@@ -1637,26 +1648,32 @@ fn historical_face_points_require_complete_boundary_topology() {
         ],
         ..crate::history_records::AsmHistoricalTopology::default()
     };
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::profile_select::historical_face_points(10, &topology, decode_ctx)
-        })
-        .unwrap(),
-        Some(vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(2.0, 0.0, 0.0),
-            Point3::new(0.0, 1.0, 0.0),
-        ])
-    );
+    crate::test_support::with_decode_context(|decode_ctx| {
+        let value =
+            crate::design::profile_select::historical_face_points(10, &topology, decode_ctx)?;
+        assert_eq!(
+            value.as_ref().map(AsRef::as_ref),
+            Some(
+                [
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(2.0, 0.0, 0.0),
+                    Point3::new(0.0, 1.0, 0.0),
+                ]
+                .as_slice()
+            )
+        );
+        Ok::<_, CodecError>(())
+    })
+    .unwrap();
 
     topology.point_positions.pop();
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::profile_select::historical_face_points(10, &topology, decode_ctx)
-        })
-        .unwrap(),
-        None
-    );
+    crate::test_support::with_decode_context(|decode_ctx| {
+        let value =
+            crate::design::profile_select::historical_face_points(10, &topology, decode_ctx)?;
+        assert_eq!(value.as_ref().map(AsRef::as_ref), None);
+        Ok::<_, CodecError>(())
+    })
+    .unwrap();
 }
 
 #[test]
@@ -1914,3 +1931,7 @@ fn deleted_profile_family_requires_one_complete_multi_face_carrier() {
 }
 
 mod carrier_boundaries;
+
+mod selection_admission;
+
+mod query_admission;

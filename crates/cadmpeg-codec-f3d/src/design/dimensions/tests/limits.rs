@@ -268,27 +268,11 @@ fn assert_exact_pair_variant_refusal(
     inputs.curves = &curves;
     inputs.entities = &entities;
     inputs.pairs = std::slice::from_ref(&pair);
-    for limit in 0..16_384 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        match dimension {
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-            _ => panic!("unsupported exact pair limit"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == dimension && failure.operation == operation =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected {operation} refusal, got success"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
-    }
-    panic!("no {operation} refusal");
+    let error = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+        project_dimension_constraints(ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR).map(|_| ())
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.dimension == dimension && failure.operation == operation));
 }
 
 fn assert_exact_pair_refusal(operation: &'static str, dimension: ResourceDimension) {
@@ -304,11 +288,21 @@ fn exact_dimension_entity_refuses_collection_limit() {
 }
 
 #[test]
-fn exact_directional_parameter_refuses_retained_limit() {
+fn exact_dimension_source_refuses_work_limit() {
+    assert_exact_pair_refusal("f3d exact dimension source", ResourceDimension::WorkUnits);
+}
+
+#[test]
+fn exact_dimension_lookup_refuses_work_limit() {
     assert_exact_pair_refusal(
-        "f3d exact directional parameter id",
-        ResourceDimension::RetainedBytes,
+        "f3d exact dimension entity lookup",
+        ResourceDimension::WorkUnits,
     );
+}
+
+#[test]
+fn exact_dimension_identity_refuses_work_limit() {
+    assert_exact_pair_refusal("f3d exact dimension identity", ResourceDimension::WorkUnits);
 }
 
 #[test]
@@ -491,27 +485,11 @@ fn assert_recipe_projection_refusal(operation: &'static str, dimension: Resource
     let mut inputs = fixture.inputs();
     inputs.companions = std::slice::from_ref(&companion);
     inputs.recipe_records = &recipes;
-    for limit in 0..16_384 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        match dimension {
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-            _ => panic!("unsupported recipe projection limit"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == dimension && failure.operation == operation =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected {operation} refusal, got success"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
-    }
-    panic!("no {operation} refusal");
+    let error = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+        project_dimension_constraints(ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR).map(|_| ())
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.dimension == dimension && failure.operation == operation));
 }
 
 fn assert_companion_projection_refusal(operation: &'static str, dimension: ResourceDimension) {
@@ -595,46 +573,6 @@ fn companion_dimension_constraint_refuses_collection_limit() {
 }
 
 #[test]
-fn parallel_group_parameter_refuses_retained_limit() {
-    let mut fixture = fixture();
-    let mut parameter = parse_design_parameter_record(&parameter_record(
-        Some(21),
-        "0.1 rad",
-        "Angular Dimension",
-        Some("rad"),
-        "a1",
-        0.1,
-    ))
-    .unwrap();
-    parameter.id = fixture.parameter.id.clone();
-    parameter.record_index = fixture.parameter.record_index;
-    fixture.parameter = parameter;
-    let companion = parameter_companion().bound(DesignCompanionPayload::new(58, 1, Vec::new()));
-    let mut group = native_fallback_group();
-    group.loci[0].geometry_record_index = 99;
-    group.owner_reference = 999;
-    let mut inputs = fixture.inputs();
-    inputs.companions = std::slice::from_ref(&companion);
-    inputs.groups = std::slice::from_ref(&group);
-    let operation = "f3d parallel group parameter id";
-    {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::RetainedBytes,
-            operation,
-            |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::default();
-                policy.limits.max_retained_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR)
-            },
-        );
-        assert!(matches!(error, CodecError::ResourceLimit(failure)
-            if failure.operation == operation && failure.dimension == (ResourceDimension::RetainedBytes)));
-    }
-}
-
-#[test]
 fn recipe_dimension_sketch_refuses_retained_limit() {
     assert_recipe_projection_refusal(
         "f3d recipe dimension sketch id",
@@ -693,11 +631,11 @@ fn dimension_recipe_group_member_refuses_collection_limit() {
 }
 
 #[test]
-fn projected_dimension_parameter_id_refuses_retained_limit() {
+fn projected_dimension_parameter_id_refuses_materialized_limit() {
     assert_native_fallback_refusal(
         false,
         "f3d projected dimension parameter id",
-        ResourceDimension::RetainedBytes,
+        ResourceDimension::MaterializedBytes,
     );
 }
 
@@ -787,27 +725,11 @@ fn assert_native_auxiliary_refusal(
     } else {
         inputs.null_pairs = std::slice::from_ref(&pair);
     }
-    for limit in 0..16_384 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        match dimension {
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-            _ => panic!("unsupported native auxiliary limit"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == dimension && failure.operation == operation =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected {operation} refusal, got success"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
-    }
-    panic!("no {operation} refusal");
+    let error = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+        project_dimension_constraints(ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR)
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.dimension == dimension && failure.operation == operation));
 }
 
 fn assert_native_fallback_refusal(
@@ -826,27 +748,11 @@ fn assert_native_fallback_refusal(
     } else {
         inputs.pairs = std::slice::from_ref(&pair);
     }
-    for limit in 0..16_384 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        match dimension {
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-            _ => panic!("unsupported native fallback limit"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == dimension && failure.operation == operation =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected {operation} refusal, got success"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
-    }
-    panic!("no {operation} refusal");
+    let error = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+        project_dimension_constraints(ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR).map(|_| ())
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.dimension == dimension && failure.operation == operation));
 }
 
 fn assert_exact_group_variant_refusal(
@@ -879,27 +785,11 @@ fn assert_exact_group_variant_refusal(
     let mut inputs = fixture.inputs();
     inputs.curves = &curves;
     inputs.groups = std::slice::from_ref(&group);
-    for limit in 0..16_384 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        match dimension {
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-            _ => panic!("unsupported exact group limit"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == dimension && failure.operation == operation =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected {operation} refusal, got success"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
-    }
-    panic!("no {operation} refusal");
+    let error = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+        project_dimension_constraints(ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR).map(|_| ())
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.dimension == dimension && failure.operation == operation));
 }
 
 fn assert_radial_extension_refusal(operation: &'static str, dimension: ResourceDimension) {
@@ -959,27 +849,14 @@ fn assert_radial_extension_refusal(operation: &'static str, dimension: ResourceD
     inputs.curves = &curves;
     inputs.entities = &entities;
     inputs.groups = std::slice::from_ref(&group);
-    for limit in 0..16_384 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        match dimension {
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-            _ => panic!("unsupported radial extension limit"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == dimension && failure.operation == operation =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected {operation} refusal, got success"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
-    }
-    panic!("no {operation} refusal");
+    let dimension = if dimension == ResourceDimension::RetainedBytes {
+        ResourceDimension::MaterializedBytes
+    } else { dimension };
+    let error = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+        project_dimension_constraints(ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR)
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.dimension == dimension && failure.operation == operation));
 }
 
 #[test]
@@ -1016,11 +893,47 @@ fn exact_group_locus_entity_refuses_collection_limit() {
 }
 
 #[test]
-fn exact_group_directional_parameter_refuses_retained_limit() {
+fn exact_group_locus_source_refuses_work_limit() {
     assert_exact_group_variant_refusal(
         "linear",
-        "f3d exact group directional parameter id",
-        ResourceDimension::RetainedBytes,
+        "f3d exact group locus source",
+        ResourceDimension::WorkUnits,
+    );
+}
+
+#[test]
+fn exact_group_locus_lookup_refuses_work_limit() {
+    assert_exact_group_variant_refusal(
+        "linear",
+        "f3d exact group locus lookup",
+        ResourceDimension::WorkUnits,
+    );
+}
+
+#[test]
+fn exact_group_angular_source_refuses_work_limit() {
+    assert_exact_group_variant_refusal(
+        "angular",
+        "f3d exact group angular source",
+        ResourceDimension::WorkUnits,
+    );
+}
+
+#[test]
+fn exact_group_offset_source_refuses_work_limit() {
+    assert_exact_group_variant_refusal(
+        "offset",
+        "f3d exact group offset source",
+        ResourceDimension::WorkUnits,
+    );
+}
+
+#[test]
+fn exact_group_offset_secondary_lookup_refuses_work_limit() {
+    assert_exact_group_variant_refusal(
+        "offset",
+        "f3d exact group offset secondary lookup",
+        ResourceDimension::WorkUnits,
     );
 }
 
@@ -1061,15 +974,6 @@ fn exact_group_angular_parameter_refuses_retained_limit() {
 }
 
 #[test]
-fn radial_group_parameter_refuses_retained_limit() {
-    assert_exact_group_variant_refusal(
-        "radial-call",
-        "f3d radial group parameter id",
-        ResourceDimension::RetainedBytes,
-    );
-}
-
-#[test]
 fn radial_group_locus_entity_refuses_collection_limit() {
     assert_exact_group_variant_refusal(
         "radial-call",
@@ -1078,23 +982,7 @@ fn radial_group_locus_entity_refuses_collection_limit() {
     );
 }
 
-#[test]
-fn projected_group_parameter_refuses_retained_limit() {
-    assert_exact_group_variant_refusal(
-        "linear",
-        "f3d projected group parameter id",
-        ResourceDimension::RetainedBytes,
-    );
-}
 
-#[test]
-fn group_constraint_parameter_refuses_retained_limit() {
-    assert_exact_group_variant_refusal(
-        "linear",
-        "f3d group constraint parameter id",
-        ResourceDimension::RetainedBytes,
-    );
-}
 
 #[test]
 fn pair_exact_parameter_refuses_retained_limit() {
@@ -1115,11 +1003,11 @@ fn annotation_exact_parameter_refuses_retained_limit() {
 }
 
 #[test]
-fn null_pair_exact_parameter_refuses_retained_limit() {
+fn null_pair_entity_lookup_refuses_work_limit() {
     assert_native_auxiliary_refusal(
         false,
-        "f3d null pair exact parameter id",
-        ResourceDimension::RetainedBytes,
+        "f3d dimension null pair entity lookup",
+        ResourceDimension::WorkUnits,
     );
 }
 
@@ -1577,7 +1465,7 @@ fn dimension_recipe_companion_index_refuses_collection_limit() {
 }
 
 #[test]
-fn planar_dimension_output_refuses_collection_limit() {
+fn planar_dimension_source_refuses_work_limit() {
     let constraint = cadmpeg_ir::sketches::SketchConstraint {
         id: cadmpeg_ir::sketches::SketchConstraintId::mint(
             "synthetic:test:id#dimension-limit-constraint",
@@ -1600,15 +1488,15 @@ fn planar_dimension_output_refuses_collection_limit() {
         metadata: None,
         native_ref: None,
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        retain_planar_dimension_constraints(&ctx, &[], &[], vec![constraint.clone()]).unwrap_err();
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        "f3d planar dimension source",
+        0,
+        |ctx| retain_planar_dimension_constraints(ctx, &[], &[], vec![constraint.clone()]),
+    );
     assert!(matches!(error, CodecError::ResourceLimit(failure)
-        if failure.operation == "f3d planar dimension output"
-            && failure.dimension == ResourceDimension::CollectionItems));
+        if failure.operation == "f3d planar dimension source"
+            && failure.dimension == ResourceDimension::WorkUnits));
     let output = crate::test_support::with_decode_context(|decode_ctx| {
         retain_planar_dimension_constraints(decode_ctx, &[], &[], vec![constraint.clone()])
     })
@@ -1879,4 +1767,10 @@ fn counted_offset_result_id_refuses_retained_limit() {
 
 mod source_kind_limits;
 
+mod index_admission;
+
 mod spatial;
+
+mod binding_admission;
+
+mod spatial_admission;

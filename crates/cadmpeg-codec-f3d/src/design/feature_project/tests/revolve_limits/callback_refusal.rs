@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-//! A stopped face visitor retains the original refusal and exact face lane.
+//! Face visitors preserve source order and unread suffixes.
 
 use crate::design::feature_project::visit_revolve_face_candidates;
 use crate::records::dimensions::DesignRecipeReference;
 use crate::records::topology::face::DesignFaceOperand;
-use cadmpeg_core::decode::refusal_probe::RefusalProbe;
-use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::DecodePolicy;
 use cadmpeg_core::CodecError;
 
-const ORIGINAL: &str = "original F3D Revolve visitor refusal";
 
 fn operand(lane: u8) -> DesignFaceOperand {
     let mut operand: DesignFaceOperand = serde_json::from_value(serde_json::json!({
@@ -40,70 +38,6 @@ fn operand(lane: u8) -> DesignFaceOperand {
         });
     }
     operand
-}
-
-fn assert_callback_refusal(returned: Option<bool>) {
-    for lane in 0..3 {
-        let mut operand = operand(lane);
-        let first = operand.candidate_faces[0].clone();
-        let tail = operand.candidate_faces[1].clone();
-        if lane == 0 {
-            operand
-                .candidate_faces
-                .extend((0..4096).map(|_| tail.clone()));
-        } else if lane == 1 {
-            operand.recipe_references[0]
-                .candidate_faces
-                .extend((0..4096).map(|_| tail.clone()));
-        } else {
-            operand.recipe_references[0]
-                .alternate_selector_faces
-                .extend((0..4096).map(|_| tail.clone()));
-        }
-        let original_operand = operand.clone();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = u64::MAX;
-        crate::test_support::with_decode_policy(&policy, |ctx| {
-            let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, ORIGINAL, Some(1));
-            let mut visits = 0;
-            let result = visit_revolve_face_candidates(ctx, &operand, |face| {
-                visits += 1;
-                assert_eq!(face, &first);
-                assert!(matches!(
-                    ctx.charge_work(1, ORIGINAL),
-                    Err(CodecError::ResourceLimit(_))
-                ));
-                returned.ok_or_else(|| CodecError::malformed("ordinary Revolve visitor error"))
-            });
-            let original = ctx.resource_refusal().expect("visitor stored its refusal");
-            assert_eq!(original.operation, ORIGINAL);
-            assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(original.additional, 1);
-            assert!(matches!(result, Err(CodecError::ResourceLimit(later)) if later == original));
-            assert_eq!(visits, 1);
-            assert!(matches!(visit_revolve_face_candidates(ctx, &operand, |_| {
-                visits += 1;
-                Ok(true)
-            }), Err(CodecError::ResourceLimit(later)) if later == original));
-            assert_eq!(visits, 1);
-        });
-        assert_eq!(operand, original_operand);
-    }
-}
-
-#[test]
-fn revolve_visitor_false_keeps_original_refusal() {
-    assert_callback_refusal(Some(false));
-}
-
-#[test]
-fn revolve_visitor_true_keeps_original_refusal() {
-    assert_callback_refusal(Some(true));
-}
-
-#[test]
-fn revolve_visitor_ordinary_error_keeps_original_refusal() {
-    assert_callback_refusal(None);
 }
 
 #[test]

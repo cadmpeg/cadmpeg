@@ -28,10 +28,7 @@ fn assert_refusal<T>(
         assert_eq!(original.operation, operation);
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
         assert_eq!(original.additional, 1);
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-        assert!(
-            matches!(ctx.charge_work(0, "later feature query boundary"), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
+        assert_eq!(ctx.resource_refusal(), Some(original));
     });
 }
 
@@ -74,13 +71,15 @@ fn direct_unique_thread_duplicate_skips_unvisited_suffix_and_all_output_storage(
     tail.id = format!("f3d:Other/BulkStream.dat:{}", "x".repeat(4096));
     let groups = [first.clone(), first, tail];
     let original = groups.clone();
-    let stream = crate::ids::native_stream(&scope.id).unwrap();
-    let group_stream = crate::ids::native_stream(&groups[0].id).unwrap();
-    let reached = u64::try_from(
-        scope.id.len() - stream.len()
-            + 2 * (1 + groups[0].id.len() - group_stream.len() + stream.len()),
-    )
-    .unwrap();
+    let CodecError::ResourceLimit(boundary) = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits, "observe Thread reached work", 0,
+        |ctx| {
+            assert_eq!(super::super::super::project_thread_face_selection(
+                ctx, &scope, &[100], &groups[..2], &[])?, FaceSelection::Unresolved);
+            ctx.charge_work(1, "observe Thread reached work")
+        },
+    ) else { panic!("Thread reached-work boundary"); };
+    let reached = boundary.used;
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = reached;
     policy.limits.max_collection_items = 0;

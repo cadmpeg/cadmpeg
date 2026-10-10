@@ -72,7 +72,7 @@ fn unique_query_remaining_stream_mismatch_leaves_long_stream_suffix_unvisited() 
             (original.used, original.additional),
             (policy.limits.max_work_units, 1)
         );
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
+        assert_eq!(ctx.resource_refusal(), Some(original));
         assert!(
             matches!(super::super::super::feature_stream_matches(ctx, "", None, "later F3D stream query"), Err(CodecError::ResourceLimit(later)) if later == original)
         );
@@ -102,7 +102,7 @@ fn assert_target_refusal(operation: &'static str) {
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
         assert_eq!(original.operation, operation);
         assert_eq!(original.additional, 1);
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
+        assert_eq!(ctx.resource_refusal(), Some(original));
         assert!(
             matches!(super::super::super::selected_work_planes(ctx, &scope, &group, &[], &[]), Err(CodecError::ResourceLimit(later)) if later == original)
         );
@@ -194,7 +194,7 @@ fn unique_query_remaining_bind_feature_visit_refuses_before_mutation() {
         };
         assert_eq!(original.operation, "visit F3D Revolve axis feature");
         assert_eq!((original.used, original.additional), (0, 1));
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
+        assert_eq!(ctx.resource_refusal(), Some(original));
         assert_eq!(feature.evaluation.definition(), &original_definition);
         assert!(
             matches!(super::super::super::bind_revolve_face_axes(ctx, &mut [], &[], &[], &[], &[], &[], &[]), Err(CodecError::ResourceLimit(later)) if later == original)

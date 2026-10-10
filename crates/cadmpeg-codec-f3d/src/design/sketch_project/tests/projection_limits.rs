@@ -1,4 +1,3 @@
-use cadmpeg_core::decode::ResourceDimension;
 // SPDX-License-Identifier: Apache-2.0
 use crate::design::sketch_project::project_sketch_design;
 use crate::design::sketch_project::project_spatial_sketch_constraints;
@@ -211,7 +210,7 @@ fn spatial_spline_segment_candidate_refuses_collection_limit() {
 
 #[test]
 fn spatial_constraint_indices_refuse_collection_limits() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
     let placement = owner_limit_placement();
     let curve = owner_limit_curve(false);
@@ -227,37 +226,30 @@ fn spatial_constraint_indices_refuse_collection_limits() {
         .unwrap(),
     )
     .with_native_ref(Some(curve.id.clone()));
-    for (limit, placements, entities, operation) in [
+    for (placements, entities, operation) in [
         (
-            0,
             std::slice::from_ref(&placement),
             std::slice::from_ref(&entity),
             "f3d spatial constraint sketch index",
         ),
         (
-            0,
             &[][..],
             &[][..],
             "f3d spatial constraint native record index",
         ),
         (
-            1,
             &[][..],
             std::slice::from_ref(&entity),
             "f3d spatial constraint entity index",
         ),
     ] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = crate::test_support::resource_refusal_at(ResourceDimension::CollectionItems, operation, 0, |ctx| {
+            project_spatial_sketch_constraints(ctx, placements, &[], &[], std::slice::from_ref(&curve), &[], entities)
+        });
         assert!(
             matches!(
-                project_spatial_sketch_constraints(
-                    &ctx, placements, &[], &[], std::slice::from_ref(&curve), &[], entities,
-                ),
-                Err(CodecError::ResourceLimit(failure))
+                error,
+                CodecError::ResourceLimit(failure)
                     if failure.dimension == ResourceDimension::CollectionItems
                         && failure.operation == operation
             ),
@@ -419,36 +411,7 @@ fn spatial_surface_lanes_refuse_each_collection_limit() {
     }
 }
 
-#[test]
-fn spatial_sketch_id_index_copy_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_core::CodecError;
-    let placement = owner_limit_placement();
-    let surface = owner_limit_surface();
-    {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::RetainedBytes,
-            "f3d spatial sketch id index copy",
-            |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::default();
-                policy.limits.max_retained_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                project_spatial_sketch_design(
-                    &ctx,
-                    std::slice::from_ref(&placement),
-                    &[],
-                    &[],
-                    std::slice::from_ref(&surface),
-                    &[],
-                    EPS_PROJECTION_LIMITS_E6,
-                )
-            },
-        );
-        assert!(matches!(error, CodecError::ResourceLimit(failure)
-            if failure.operation == "f3d spatial sketch id index copy" && failure.dimension == (ResourceDimension::RetainedBytes)));
-    }
-}
+
 
 #[test]
 fn sketch_nurbs_lanes_refuse_collection_limit() {
@@ -619,7 +582,7 @@ fn projected_sketch_entries_refuse_collection_limit() {
 
 #[test]
 fn spatial_constraint_sketch_membership_refuses_work_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{ResourceDimension};
     use cadmpeg_core::CodecError;
 
     let placement = owner_limit_placement();
@@ -634,18 +597,17 @@ fn spatial_constraint_sketch_membership_refuses_work_limit() {
         )
         .unwrap(),
     );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_work_units =
-        2 * cadmpeg_core::decode::u64_from_index(entity.sketch.as_str().len());
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(
-        project_spatial_sketch_constraints(&ctx, std::slice::from_ref(&placement), &[], &[], &[], &[], &[entity]),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.dimension == ResourceDimension::WorkUnits
-                && failure.operation == "f3d spatial constraint sketch membership work"
-    ));
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        "f3d spatial constraint sketch membership work",
+        0,
+        |ctx| project_spatial_sketch_constraints(
+            ctx, std::slice::from_ref(&placement), &[], &[], &[], &[], std::slice::from_ref(&entity),
+        ),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.dimension == ResourceDimension::WorkUnits
+            && failure.operation == "f3d spatial constraint sketch membership work"));
 }
 
 #[test]

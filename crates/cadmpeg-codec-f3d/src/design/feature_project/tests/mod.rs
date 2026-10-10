@@ -23,6 +23,7 @@ mod parameters;
 mod pattern;
 mod pipe;
 mod replace_face;
+mod query_admission;
 mod revolve_limits;
 mod scope_properties_limits;
 mod sheet_metal;

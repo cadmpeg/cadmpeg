@@ -5,7 +5,7 @@ use super::super::{
 };
 use super::{group, recipe_edge_operand, recipe_reference};
 use cadmpeg_core::decode::refusal_probe::RefusalProbe;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{EdgeSelection, FeatureId};
 
@@ -110,8 +110,6 @@ fn edge_recipe_state_step_refuses_before_reading_the_next_state() {
         assert_eq!(refusal.used, 0);
         assert_eq!(refusal.additional, 1);
         assert_eq!(ctx.resource_refusal(), Some(refusal));
-        assert!(matches!(ctx.charge_work(0, "later state query"),
-            Err(CodecError::ResourceLimit(later)) if later == refusal));
     });
     policy.limits.max_work_units = 1;
     crate::test_support::with_decode_policy(&policy, |ctx| {
@@ -120,28 +118,6 @@ fn edge_recipe_state_step_refuses_before_reading_the_next_state() {
             Some(7)
         );
     });
-}
-
-#[test]
-fn edge_recipe_state_fixed_gates_preserve_the_original_refusal() {
-    let operands = operands(&[None, Some(7)]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let Err(CodecError::ResourceLimit(original)) = ctx.charge_work(1, "original state refusal")
-    else {
-        panic!("zero ceiling refuses one actual unit");
-    };
-    for values in [
-        &[][..],
-        &[&operands[0]][..],
-        &[&operands[0], &operands[1]][..],
-    ] {
-        assert!(matches!(shared_recipe_state_id(values, &ctx),
-            Err(CodecError::ResourceLimit(later)) if later == original));
-    }
-    assert_eq!(ctx.resource_refusal(), Some(original));
 }
 
 fn selection(

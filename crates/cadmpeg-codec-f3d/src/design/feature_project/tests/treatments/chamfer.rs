@@ -181,8 +181,8 @@ fn chamfer_parameter_lane_publishes_only_ordered_references() {
             let lane = result.unwrap();
             assert_eq!(lane.len(), 2);
             assert_eq!(lane.capacity(), 4);
-            assert!(std::ptr::eq(lane[0], &first));
-            assert!(std::ptr::eq(lane[1], &second));
+            assert!(std::ptr::eq(lane[0], &raw const first));
+            assert!(std::ptr::eq(lane[1], &raw const second));
             assert!(ctx.resource_refusal().is_none());
         } else {
             let CodecError::ResourceLimit(limit) = result.err().unwrap() else {

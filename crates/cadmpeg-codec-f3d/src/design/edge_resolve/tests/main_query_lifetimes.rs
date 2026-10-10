@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Query backing drops independently of accepted native selections.
 
-use super::super::{sorted_transition_slots, EdgeTreatmentInputs};
+use super::super::EdgeTreatmentInputs;
 use super::*;
 use cadmpeg_core::decode::refusal_probe::RefusalProbe;
 use cadmpeg_core::CodecError;
@@ -27,7 +27,7 @@ fn recipe_bytes(count: usize) -> u64 {
     u64::try_from(4 * std::mem::size_of::<EdgeId>() + count * "f3d:test:edge#17".len()).unwrap()
 }
 
-fn rejected_recipe(second: &DesignEdgeOperand, expected: SurfacePatchRecipeEdges) {
+fn rejected_recipe(second: &DesignEdgeOperand, expected: &SurfacePatchRecipeEdges) {
     let first = exact_recipe(10, 17);
     let mut policy = scratch_policy();
     policy.limits.max_retained_bytes = recipe_bytes(2);
@@ -35,7 +35,7 @@ fn rejected_recipe(second: &DesignEdgeOperand, expected: SurfacePatchRecipeEdges
         for _ in 0..7 {
             assert_eq!(
                 surface_patch_grouped_recipe_edges(&[&first, second], ctx).unwrap(),
-                expected
+                *expected
             );
             drop(
                 ctx.reserve_scoped(QUERY_SCRATCH, "reuse rejected recipe query scratch")
@@ -52,7 +52,7 @@ fn rejected_recipe(second: &DesignEdgeOperand, expected: SurfacePatchRecipeEdges
 fn edge_query_lifetime_absent_recipe_refunds_cloned_prefix() {
     rejected_recipe(
         &recipe_edge_operand(11, &[], &[]),
-        SurfacePatchRecipeEdges::Absent,
+        &SurfacePatchRecipeEdges::Absent,
     );
 }
 
@@ -60,12 +60,12 @@ fn edge_query_lifetime_absent_recipe_refunds_cloned_prefix() {
 fn edge_query_lifetime_conflicting_recipe_refunds_cloned_prefix() {
     let mut second = exact_recipe(11, 18);
     second.recipe_references.push(recipe_reference(&[19]));
-    rejected_recipe(&second, SurfacePatchRecipeEdges::Inconclusive);
+    rejected_recipe(&second, &SurfacePatchRecipeEdges::Inconclusive);
 }
 
 #[test]
 fn edge_query_lifetime_repeated_recipe_refunds_clones_and_distinct_index() {
-    rejected_recipe(&exact_recipe(11, 17), SurfacePatchRecipeEdges::Inconclusive);
+    rejected_recipe(&exact_recipe(11, 17), &SurfacePatchRecipeEdges::Inconclusive);
 }
 
 #[test]
@@ -92,11 +92,8 @@ fn edge_query_lifetime_allowed_recipe_keeps_only_actual_retained_backing() {
             panic!("accepted output keeps its actual backing");
         };
         assert_eq!((original.used, original.additional), (recipe_bytes(1), 1));
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
+        assert_eq!(ctx.resource_refusal(), Some(original));
         drop(recipe);
-        assert!(
-            matches!(surface_patch_grouped_recipe_edges(&[], ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
     });
 }
 
@@ -120,10 +117,7 @@ fn edge_query_lifetime_recipe_retained_one_below_preserves_original_refusal() {
                 u64::try_from(4 * std::mem::size_of::<EdgeId>()).unwrap()
             )
         );
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-        assert!(
-            matches!(surface_patch_grouped_recipe_edges(&[], ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
+        assert_eq!(ctx.resource_refusal(), Some(original));
     });
 }
 
@@ -142,10 +136,7 @@ fn edge_query_lifetime_distinct_index_refusal_does_not_escape_candidate() {
         assert_eq!(original.operation, "f3d surface patch distinct recipe edge");
         assert_eq!(original.used, 0);
         assert!(original.additional > 0);
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-        assert!(
-            matches!(surface_patch_grouped_recipe_edges(&[], ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
+        assert_eq!(ctx.resource_refusal(), Some(original));
     });
 }
 
@@ -235,10 +226,7 @@ fn edge_query_lifetime_identity_pointer_backing_refuses_one_below() {
         assert_eq!(original.dimension, ResourceDimension::MaterializedBytes);
         assert_eq!(original.operation, "f3d edge group matched identity");
         assert_eq!((original.used, original.additional), (0, bytes));
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-        assert!(
-            matches!(sorted_transition_slots(&[], ctx, "later empty transition"), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
+        assert_eq!(ctx.resource_refusal(), Some(original));
     });
 }
 

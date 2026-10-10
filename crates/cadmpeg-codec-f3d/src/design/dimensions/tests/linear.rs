@@ -96,7 +96,7 @@ fn dimension_proofs_require_the_evaluated_measurement() {
             decode_ctx,
             &[&first, &second],
             10.0,
-            parameter.clone(),
+            (&parameter, "f3d directional point dimension parameter id"),
             0.0,
         )
     })
@@ -109,7 +109,7 @@ fn dimension_proofs_require_the_evaluated_measurement() {
                 decode_ctx,
                 &[&first, &second],
                 40.0,
-                parameter.clone(),
+                (&parameter, "f3d directional point dimension parameter id"),
                 0.0,
             )
         })
@@ -130,7 +130,7 @@ fn dimension_proofs_require_the_evaluated_measurement() {
                 decode_ctx,
                 &[&first, &rounded],
                 40.0,
-                parameter,
+                (&parameter, "f3d directional point dimension parameter id"),
                 1.0e-6,
             )
         })
@@ -383,7 +383,7 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
                 .expect("synthetic native geometry record");
             (("stream", record_index), entity)
         })
-        .collect::<std::collections::HashMap<_, _>>();
+        .collect::<std::collections::BTreeMap<_, _>>();
     let frame = |operands| crate::records::dimensions::DesignDimensionPresentationFrame {
         id: "stream:presentation#0".into(),
         byte_offset: 0,
@@ -587,7 +587,13 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
         .expect("identity grammar");
 
     let definition = crate::test_support::with_decode_context(|decode_ctx| {
-        directional_point_dimension(decode_ctx, &[&first, &second], 2.0, parameter.clone(), 0.0)
+        directional_point_dimension(
+            decode_ctx,
+            &[&first, &second],
+            2.0,
+            (&parameter, "f3d directional point dimension parameter id"),
+            0.0,
+        )
     })
     .transpose()
     .unwrap()
@@ -605,7 +611,7 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
             decode_ctx,
             &[&first, &second],
             3.0,
-            parameter,
+            (&parameter, "f3d directional point dimension parameter id"),
             0.0
         ))
         .transpose()
@@ -619,8 +625,11 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
             decode_ctx,
             &[&first, &diagonal],
             3.0,
-            cadmpeg_ir::features::ParameterId::mint("generated:test:parameter#horizontal")
-                .expect("identity grammar"),
+            (
+                &cadmpeg_ir::features::ParameterId::mint("generated:test:parameter#horizontal")
+                    .expect("identity grammar"),
+                "f3d directional point dimension parameter id"
+            ),
             0.0
         ))
         .transpose()
@@ -633,8 +642,11 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
             decode_ctx,
             &[&first, &square],
             2.0,
-            cadmpeg_ir::features::ParameterId::mint("generated:test:parameter#ambiguous")
-                .expect("identity grammar"),
+            (
+                &cadmpeg_ir::features::ParameterId::mint("generated:test:parameter#ambiguous")
+                    .expect("identity grammar"),
+                "f3d directional point dimension parameter id"
+            ),
             0.0
         ))
         .transpose()
@@ -676,7 +688,7 @@ fn unclassified_two_locus_linear_group_is_parameter_backed_distance() {
     .expect("resource allocation did not fail")
     .is_none());
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| two_locus_distance_dimension(decode_ctx, &[&point, &line], parameter.clone())).transpose().unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| two_locus_distance_dimension(decode_ctx, &[&point, &line], &parameter)).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::Distance {
             ref entities,
             parameter: ref actual_parameter,
@@ -1405,6 +1417,8 @@ fn repeated_linear_dimension_requires_disjoint_measurement_pairs() {
         .is_none()
     );
 }
+
+mod directional_admission;
 
 mod refusal_directional_point_dimension;
 

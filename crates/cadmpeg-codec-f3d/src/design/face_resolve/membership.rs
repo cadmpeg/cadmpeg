@@ -11,7 +11,7 @@ pub(super) fn contains_face(
     target: &FaceId,
     operation: &'static str,
 ) -> Result<bool, CodecError> {
-    ctx.charge_work(0, operation)?;
+
     if values.is_empty() {
         return Ok(false);
     }
@@ -34,7 +34,7 @@ pub(super) fn contains_slot(
     target: i64,
     operation: &'static str,
 ) -> Result<bool, CodecError> {
-    ctx.charge_work(0, operation)?;
+
     if values.is_empty() {
         return Ok(false);
     }
