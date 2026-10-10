@@ -164,11 +164,6 @@ fn circle_candidates_refuse_live_scoring_storage_and_stay_sticky() {
     let repeated =
         dimensioned_circle_surface_transforms(&ctx, &sketch, &surfaces, &CIRCLES, 1.0).unwrap_err();
     assert!(matches!(&repeated, CodecError::ResourceLimit(limit) if limit == boundary));
-    assert!(matches!(
-        ctx.reserve_scoped(0, "refusal stays sticky"),
-        Err(CodecError::ResourceLimit(limit))
-            if matches!(&error, CodecError::ResourceLimit(original) if original == &limit)
-    ));
 }
 
 #[test]

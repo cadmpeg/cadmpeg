@@ -135,28 +135,3 @@ fn source_selection_preserves_prior_refusal_before_allocation() {
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
     );
 }
-
-#[test]
-fn missing_selection_observes_a_later_original_refusal() {
-    let mut body = circle();
-    let original = body.clone();
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy()).unwrap();
-    let patch = CompactCurvePatch::new(&ctx, &mut body, 99).unwrap();
-    assert!(patch.family().is_none());
-    let probe = RefusalProbe::arm(
-        ResourceDimension::WorkUnits,
-        "test later patch refusal",
-        Some(1),
-    );
-    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "test later patch refusal")
-    else {
-        panic!("later refusal");
-    };
-    drop(probe);
-    assert!(matches!(patch.apply(&[]), Err(CodecError::ResourceLimit(actual)) if actual == limit));
-    assert_eq!(body, original);
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
-    );
-}

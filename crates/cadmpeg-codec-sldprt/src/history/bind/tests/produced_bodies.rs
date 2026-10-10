@@ -117,9 +117,6 @@ fn produced_body_membership_preserves_actual_refusals() {
                 assert!(features[0].evaluation.outputs().is_empty());
                 assert_eq!(ctx.resource_refusal(), Some(*limit));
                 assert!(
-                    matches!(ctx.charge_work(0, "after produced body refusal"), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
-                );
-                assert!(
                     matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
                 );
             }

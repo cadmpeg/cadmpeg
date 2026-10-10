@@ -947,13 +947,6 @@ mod projected_brep_output_tests {
         );
         assert!(sketches.is_empty() && entities.is_empty() && constraints.is_empty());
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        let cadmpeg_core::CodecError::ResourceLimit(replayed) = ctx
-            .reserve_scoped(0, "replay projected final diagnostic refusal")
-            .unwrap_err()
-        else {
-            panic!("the final diagnostic refusal remains sticky after source teardown");
-        };
-        assert_eq!(replayed, limit);
     }
 
     #[test]

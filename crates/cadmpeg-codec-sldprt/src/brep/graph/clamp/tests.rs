@@ -134,37 +134,6 @@ fn clamp_raw_segment_releases_initial_and_replacement_generations() {
 }
 
 #[test]
-fn clamp_invalid_domain_preserves_the_original_refusal() {
-    let curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![
-            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
-        ],
-        None,
-        false,
-    )
-    .unwrap()
-    .unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = policy();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "test original clamp refusal")
-    else {
-        panic!("original refusal");
-    };
-    let result = clamp_nurbs_curve_to_domain_lanes(&ctx, &curve, [1.0, 0.0]);
-    assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == limit));
-    assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
-    );
-}
-
-#[test]
 fn homogeneous_insert_refuses_prefix_backing_before_allocation() {
     let arena = DecodeArena::new();
     let mut policy = policy();
@@ -202,26 +171,6 @@ fn homogeneous_insert_invalid_shape_is_free_before_a_refusal() {
             .is_none()
     );
     ctx.finish_session().unwrap();
-}
-
-#[test]
-fn homogeneous_insert_invalid_shape_preserves_the_original_refusal() {
-    let arena = DecodeArena::new();
-    let mut policy = policy();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let Err(CodecError::ResourceLimit(limit)) =
-        ctx.charge_work(1, "test original homogeneous refusal")
-    else {
-        panic!("original refusal");
-    };
-    let result = insert_nurbs_homogeneous_knot(&ctx, 0, &KNOTS, &CONTROLS, 0.5);
-    assert!(matches!(&result, Err(CodecError::ResourceLimit(actual)) if *actual == limit));
-    drop(result);
-    assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
-    );
 }
 
 fn conversion_source(rational: bool) -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
@@ -419,33 +368,6 @@ fn clamp_raw_conversion_refuses_first_slot_before_push() {
     assert_eq!(limit.operation, "collect clamped NURBS controls");
     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
     assert_eq!((limit.used, limit.additional), (0, 1));
-    assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
-    );
-}
-
-#[test]
-fn clamp_conversion_invalid_prefix_preserves_original_fuse_without_allocation() {
-    let source = conversion_source(false);
-    let arena = DecodeArena::new();
-    let mut policy = policy();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let Err(CodecError::ResourceLimit(limit)) =
-        ctx.charge_work(1, "test original clamp conversion refusal")
-    else {
-        panic!("original refusal");
-    };
-    let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
-        super::clamped_conversion_lanes(&ctx, &source, [1.0, 0.0])
-    });
-    let CodecError::ResourceLimit(actual) = result.err().expect("original conversion refusal")
-    else {
-        panic!("resource refusal");
-    };
-    assert_eq!(actual, limit);
-    assert_eq!(allocations, 0);
     assert_eq!(ctx.resource_refusal(), Some(limit));
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)

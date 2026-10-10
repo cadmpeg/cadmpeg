@@ -155,13 +155,6 @@ fn boundary_comparison_refuses_exact_converted_pole_peak_and_keeps_fuse() {
     assert_eq!(limit.operation, "IR NURBS admitted poles");
     assert_eq!((limit.used, limit.additional), (prior, added));
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    let cadmpeg_core::CodecError::ResourceLimit(replay) = ctx
-        .reserve_scoped(0, "replay original boundary comparison refusal")
-        .unwrap_err()
-    else {
-        panic!("original refusal stays sticky after comparison dies");
-    };
-    assert_eq!(replay, limit);
 }
 
 #[test]

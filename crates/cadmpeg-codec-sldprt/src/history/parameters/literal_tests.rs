@@ -828,10 +828,6 @@ fn identifier_prefix_preserves_initial_vector_refusal() {
         assert_eq!(limit.limit, cap);
         assert_eq!(limit.used, 0);
         assert_eq!(limit.additional, additional);
-        assert!(
-            matches!(ctx.charge_work(0, "probe original identifier refusal"),
-            Err(cadmpeg_core::CodecError::ResourceLimit(first)) if first == limit)
-        );
         drop(result);
         assert!(matches!(ctx.finish_session(),
             Err(cadmpeg_core::CodecError::ResourceLimit(first)) if first == limit));

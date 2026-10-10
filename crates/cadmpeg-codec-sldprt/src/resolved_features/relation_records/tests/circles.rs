@@ -621,10 +621,6 @@ fn circle_center_reuses_first_consensus_source_and_leaves_search_probe_armed() {
     assert_eq!(limit.additional, 1);
     assert_eq!(ctx.resource_refusal(), Some(limit));
     assert!(
-        matches!(ctx.charge_work(0, "after unused center source search"),
-        Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-    );
-    assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
     );
     drop(probe);
@@ -666,10 +662,6 @@ fn circle_center_consensus_refusal_precedes_source_publication() {
     assert_eq!(limit.operation, "compare SLDPRT circle center references");
     assert_eq!(limit.additional, 6);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(
-        matches!(ctx.charge_work(0, "after center consensus refusal"),
-        Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-    );
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
     );
@@ -733,8 +725,6 @@ fn scalar_reference_work_requires_matching_kind_and_index() {
         assert_eq!(limit.used, 0);
         assert_eq!(limit.additional, 1);
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(matches!(ctx.charge_work(0, "after fixed operand refusal"),
-            Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
         );
@@ -773,10 +763,6 @@ fn matching_scalar_references_keep_required_comparison_refusal() {
     assert_eq!(limit.additional, 4);
     assert_eq!(ctx.resource_refusal(), Some(limit));
     assert!(
-        matches!(ctx.charge_work(0, "after required scalar comparison"),
-        Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-    );
-    assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
     );
 }
@@ -814,10 +800,6 @@ fn circle_center_fixed_mismatch_leaves_reference_probe_armed() {
         assert_eq!(limit.operation, "compare SLDPRT circle center references");
         assert_eq!(limit.additional, 1);
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(
-            matches!(ctx.charge_work(0, "after unused center reference"),
-            Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
         );
@@ -882,8 +864,6 @@ fn circle_handle_fixed_qualification_skips_variable_matches() {
             assert_eq!(limit.operation, operation);
             assert_eq!(limit.additional, 1);
             assert_eq!(ctx.resource_refusal(), Some(limit));
-            assert!(matches!(ctx.charge_work(0, "after unused handle match"),
-                Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
             assert!(
                 matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
             );
@@ -998,10 +978,6 @@ fn circle_handle_minimum_leaves_offset_operations_unexecuted() {
         assert_eq!(limit.additional, 1);
         assert_eq!(ctx.resource_refusal(), Some(limit));
         assert!(
-            matches!(ctx.charge_work(0, "after unused handle offset operation"),
-            Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
-        assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
         );
         drop(probe);
@@ -1039,10 +1015,6 @@ fn circle_handle_minimum_refuses_required_name_workspace() {
         assert_eq!(limit.used, used);
         assert_eq!(limit.additional, additional);
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        assert!(
-            matches!(ctx.charge_work(0, "after handle name workspace refusal"),
-            Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-        );
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
         );

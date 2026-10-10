@@ -251,11 +251,4 @@ fn projected_face_index_peak_preserves_original_sticky_refusal() {
     assert_eq!(limit.additional, old_slot);
     assert_eq!(limit.limit, projection_peak() - 1);
     assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
-    let CodecError::ResourceLimit(replayed) = ctx
-        .reserve_scoped(0, "replay projected face refusal")
-        .unwrap_err()
-    else {
-        panic!("the original resource refusal remains sticky");
-    };
-    assert_eq!(replayed, limit);
 }

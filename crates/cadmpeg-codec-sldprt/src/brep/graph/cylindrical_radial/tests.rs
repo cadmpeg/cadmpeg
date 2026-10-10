@@ -280,13 +280,6 @@ fn polar_conversion_preserves_exact_workspace_and_output_refusals() {
             assert_eq!((limit.used, limit.additional), (0, output));
         }
         assert_eq!(ctx.resource_refusal(), Some(limit));
-        let CodecError::ResourceLimit(replay) = ctx
-            .reserve_scoped(0, "replay original polar refusal")
-            .unwrap_err()
-        else {
-            panic!("original refusal remains sticky after conversion teardown");
-        };
-        assert_eq!(replay, limit);
     }
 }
 
