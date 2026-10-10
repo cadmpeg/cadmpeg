@@ -176,9 +176,6 @@ impl ReferenceEdge {
         ctx: &DecodeContext<'_>,
         storage: &mut ScopedReservation<'_>,
     ) -> Result<Self, CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let expected = match &self.expected {
             ReferenceExpectation::Named(label) => ReferenceExpectation::Named(*label),
             ReferenceExpectation::Type { entity_type, forms } => {
@@ -268,9 +265,6 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
         expected: ReferenceExpectation,
         accepts: impl FnOnce(&DirectoryEntry) -> bool,
     ) -> Result<Option<u32>, CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         if raw_pointer == 0 {
             return Ok(None);
         }
@@ -293,9 +287,6 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
         expected: ReferenceExpectation,
         accepts: impl FnOnce(&DirectoryEntry) -> bool,
     ) -> Result<Option<u32>, CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         if raw_pointer == 0 {
             return Ok(None);
         }
@@ -377,9 +368,6 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
         entity_type: i64,
         forms: &[i64],
     ) -> Result<Option<u32>, CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         if raw_pointer == 0 {
             return Ok(None);
         }
@@ -412,9 +400,6 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
         entity_type: i64,
         forms: &[i64],
     ) -> Result<Option<u32>, CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         if raw_pointer == 0 {
             return Ok(None);
         }
@@ -447,9 +432,6 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
         types: (i64, i64, &[i64]),
         accepts: impl FnOnce(&DirectoryEntry) -> bool,
     ) -> Result<Option<u32>, CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         if raw_pointer == 0 {
             return Ok(None);
         }

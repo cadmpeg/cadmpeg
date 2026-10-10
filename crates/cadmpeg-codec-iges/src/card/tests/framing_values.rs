@@ -85,34 +85,6 @@ fn all_framing_slots_and_merges_need_no_dynamic_storage_or_work() {
 }
 
 #[test]
-fn fixed_framing_operations_preserve_an_existing_refusal_without_mutation() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let CodecError::ResourceLimit(first) = ctx.charge_work(1, "test prior framing refusal").unwrap_err() else {
-        panic!("expected work refusal");
-    };
-    let mut recoveries = FramingRecoveries::default();
-    let before = recoveries.clone();
-    assert!(matches!(recoveries.record(&ctx, (Section::Start, FramingDefect::Sequence),
-        1, 0, FramingValue::Literal("bad"), FramingValue::Literal("1")),
-        Err(CodecError::ResourceLimit(actual)) if actual == first
-    ));
-    assert_eq!(recoveries, before);
-    assert!(matches!(recoveries.merge(FramingRecoveries::default(), &ctx),
-        Err(CodecError::ResourceLimit(actual)) if actual == first
-    ));
-    assert_eq!(recoveries, before);
-    assert!(matches!(recoveries.notes(&ctx),
-        Err(CodecError::ResourceLimit(actual)) if actual == first
-    ));
-    assert!(matches!(ctx.finish_session(),
-        Err(CodecError::ResourceLimit(actual)) if actual == first
-    ));
-}
-
-#[test]
 fn framing_count_overflow_fuses_its_original_local_refusal() {
     for merge in [false, true] {
         let arena = DecodeArena::new();

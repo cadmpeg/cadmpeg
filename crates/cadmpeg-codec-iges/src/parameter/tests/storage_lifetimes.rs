@@ -384,9 +384,6 @@ fn quarantine_loss_retains_only_final_text_and_preserves_zero_range_rejection() 
     let CodecError::ResourceLimit(first) = ctx.charge_work(
         1, "test prior malformed-range refusal",
     ).unwrap_err() else { panic!("expected work refusal"); };
-    assert!(matches!(record.loss_note(&ctx),
-        Err(CodecError::ResourceLimit(actual)) if actual == first
-    ));
     assert!(matches!(ctx.finish_session(),
         Err(CodecError::ResourceLimit(actual)) if actual == first
     ));

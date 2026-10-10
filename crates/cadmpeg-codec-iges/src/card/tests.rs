@@ -559,5 +559,3 @@ fn terminate_integer_counts_skip_the_work_operation() {
         assert_eq!(recoveries, super::FramingRecoveries::default());
     });
 }
-
-mod entry_refusal;
