@@ -290,3 +290,38 @@ fn clamp_conversion_invalid_prefix_preserves_original_fuse_without_allocation() 
     assert_eq!(ctx.resource_refusal(), Some(limit));
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit));
 }
+
+#[test]
+fn clamp_finite_rational_source_reaches_original_nonfinite_carrier_refusal() {
+    use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsError};
+    use cadmpeg_ir::math::Point3;
+
+    // Finite admitted poles and positive weights can overflow their homogeneous
+    // coordinates. Knot insertion retains that infinity; IR rejects the raw
+    // dehomogenized point with its original structural error.
+    let source = NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(f64::MAX, 0.0, 0.0), Point3::new(f64::MAX, 1.0, 0.0)],
+        Some(vec![2.0, 2.0]),
+        false,
+    ).unwrap().unwrap();
+    assert_eq!(source.pole_rows().point_at(0).unwrap().get().x, f64::MAX);
+    assert_eq!(source.pole_rows().weight_at(0), Some(2.0));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = SCRATCH_BYTES;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::clamp_nurbs_curve_to_domain(&ctx, &source, [0.25, 0.75]);
+    let Err(crate::brep::graph::nurbs_pcurves::NurbsPcurveFailure::Carrier(NurbsError::Structure(message))) = &result else {
+        panic!("finite source overflow reaches the original carrier refusal");
+    };
+    assert_eq!(message, "control_points contains a non-finite point");
+    assert!(ctx.resource_refusal().is_none());
+    // The escaping diagnostic still lives here. This proves raw and
+    // homogeneous workspace expiry, not diagnostic/output lifetime repair.
+    drop(ctx.reserve_scoped(SCRATCH_BYTES, "reuse rejected clamp workspaces").unwrap());
+    drop(result);
+    ctx.finish_session().unwrap();
+}
