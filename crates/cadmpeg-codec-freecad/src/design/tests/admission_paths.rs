@@ -270,9 +270,8 @@ fn constraint_integer_groups_have_linear_work_and_keep_malformed_groups_invalid(
         assert!(parsed.iter().all(|value| *value == 0));
         Ok(())
     });
-    // Each group has bounded scan and parse work; 64 units per item plus a
-    // fixed allowance admits linear overhead while excluding the old suffix
-    // rescan, whose 256 comma searches sum to more than 65,000 byte-visits.
+    // Each group has bounded scan and parse work. The allowance grows linearly
+    // with token count and covers fixed parser overhead.
     assert!(used <= u64::try_from(64 * ITEMS + 64).expect("linear work cap fits"));
 
     for malformed in [",1", "1,", "1,,2", "1,not-an-integer"] {
@@ -287,13 +286,14 @@ fn constraint_integer_groups_have_linear_work_and_keep_malformed_groups_invalid(
 }
 
 #[test]
-fn operation_parameter_owner_identity_is_lazy_and_scoped() {
+fn operation_parameters_reuse_owner_and_clone_only_emitted_values() {
     let object = object(
         "fcstd:native:object#Feature",
         "Part::Feature",
         0,
         Vec::new(),
     );
+    let owner = FeatureId::mint("fcstd:design:feature#Feature").expect("owner feature id");
     let valid = super::scalar_property(object.id(), "Length", "3");
     let malformed = super::scalar_property(object.id(), "Length", "not-a-number");
     let wrong_carrier = property(
@@ -309,11 +309,12 @@ fn operation_parameter_owner_identity_is_lazy_and_scoped() {
     ] {
         with_unlimited_probe(dimension, "fcstd design feature identity", |ctx| {
             let mut parameters = Vec::new();
-            super::super::append_operation_parameters(ctx, &mut parameters, &object, &[])?;
+            super::super::append_operation_parameters(ctx, &mut parameters, &object, &owner, &[])?;
             super::super::append_operation_parameters(
                 ctx,
                 &mut parameters,
                 &object,
+                &owner,
                 &[&wrong_carrier],
             )?;
             assert!(parameters.is_empty());
@@ -331,6 +332,7 @@ fn operation_parameter_owner_identity_is_lazy_and_scoped() {
                 ctx,
                 &mut parameters,
                 &object,
+                &owner,
                 &[&malformed],
             )?;
             assert!(parameters.is_empty());
@@ -339,22 +341,8 @@ fn operation_parameter_owner_identity_is_lazy_and_scoped() {
     )
     .expect("nonnumeric candidates do not retain output expressions");
 
-    let feature_identity_error =
-        crate::test_support::materialized_refusal_at("fcstd design feature identity", |ctx| {
-            let mut parameters = Vec::new();
-            super::super::append_operation_parameters(ctx, &mut parameters, &object, &[&valid])
-        });
-    let CodecError::ResourceLimit(feature_identity_limit) = feature_identity_error else {
-        panic!("feature identity should have a positive materialized boundary");
-    };
-    assert_eq!(
-        feature_identity_limit.operation,
-        "fcstd design feature identity"
-    );
-
-    let owner = FeatureId::mint("fcstd:design:feature#Feature").expect("owner feature id");
     let mut existing = single_parameter();
-    existing.owner = Some(owner);
+    existing.owner = Some(owner.clone());
     existing.name = "Width".to_owned();
     let owner_comparison_error = crate::test_support::refusal_at(
         ResourceDimension::WorkUnits,
@@ -362,7 +350,13 @@ fn operation_parameter_owner_identity_is_lazy_and_scoped() {
         "fcstd operation parameter owner",
         |ctx| {
             let mut parameters = vec![existing.clone()];
-            super::super::append_operation_parameters(ctx, &mut parameters, &object, &[&valid])
+            super::super::append_operation_parameters(
+                ctx,
+                &mut parameters,
+                &object,
+                &owner,
+                &[&valid],
+            )
         },
     );
     assert!(matches!(owner_comparison_error,
@@ -375,7 +369,13 @@ fn operation_parameter_owner_identity_is_lazy_and_scoped() {
         "fcstd operation parameter owner",
         |ctx| {
             let mut parameters = Vec::new();
-            super::super::append_operation_parameters(ctx, &mut parameters, &object, &[&valid])
+            super::super::append_operation_parameters(
+                ctx,
+                &mut parameters,
+                &object,
+                &owner,
+                &[&valid],
+            )
         },
     );
     assert!(matches!(owner_output_error,
@@ -386,7 +386,13 @@ fn operation_parameter_owner_identity_is_lazy_and_scoped() {
     let marker = "test operation owner scope release marker";
     let error = crate::test_support::materialized_refusal_at(marker, |ctx| {
         let mut parameters = Vec::new();
-        super::super::append_operation_parameters(ctx, &mut parameters, &object, &[&valid])?;
+        super::super::append_operation_parameters(
+            ctx,
+            &mut parameters,
+            &object,
+            &owner,
+            &[&valid],
+        )?;
         assert_eq!(parameters.len(), 1);
         ctx.reserve_scoped(MEASUREMENT_MARKER_BYTES, marker)
             .map(drop)
@@ -933,4 +939,103 @@ fn constraint_boolean_attributes_use_the_shared_native_boolean_grammar() {
             );
         });
     }
+}
+
+#[test]
+fn cyclic_extrusion_preserves_taper_validation_and_side_selection() {
+    let object = object(
+        "fcstd:native:object#Pad",
+        "PartDesign::Pad",
+        0,
+        vec!["fcstd:native:object#Pad".into()],
+    );
+    for (key, side, malformed) in [
+        ("TaperAngle", "0", true),
+        ("TaperAngleRev", "0", true),
+        ("TaperAngle2", "1", true),
+        ("TaperAngle2", "0", false),
+    ] {
+        let taper = super::scalar_property(object.id(), key, "90");
+        let side = property(
+            object.id(),
+            "SideType",
+            "App::PropertyEnumeration",
+            format!("<Property><Integer value=\"{side}\"/></Property>"),
+        );
+        crate::test_support::with_service_context(&[], |ctx| {
+            let mut ir = cadmpeg_ir::document::CadIr::empty();
+            let result = super::super::transfer(
+                ctx,
+                &mut ir,
+                std::slice::from_ref(&object),
+                &[taper.clone(), side.clone()],
+                &[],
+                &[],
+                None,
+            );
+            if malformed {
+                assert!(
+                    matches!(result, Err(CodecError::Malformed(ref message)) if message.starts_with(&format!("{key}: ")))
+                );
+            } else {
+                let (cycles, _storage) = result.expect("unused second-side draft");
+                assert!(cycles.contains(object.id().as_str()));
+                assert!(matches!(
+                    ir.model.features[0].evaluation.definition(),
+                    FeatureDefinition::Operation(
+                        cadmpeg_ir::features::FeatureOperation::Native { .. }
+                    )
+                ));
+            }
+        });
+    }
+}
+
+#[test]
+fn cyclic_extrusion_preserves_profile_placement_before_taper_error() {
+    let pad = object(
+        "fcstd:native:object#Pad",
+        "PartDesign::Pad",
+        0,
+        vec!["fcstd:native:object#Pad".into()],
+    );
+    let profile = object(
+        "fcstd:native:object#Profile",
+        "Sketcher::SketchObject",
+        1,
+        Vec::new(),
+    );
+    let mut link = membership_property(pad.id(), &[profile.id()]);
+    link.name = "Profile".into();
+    link.type_name = "App::PropertyLink".into();
+    let placement = placement_property(
+        profile.id(),
+        &[
+            ("Px", "0"),
+            ("Py", "0"),
+            ("Pz", "0"),
+            ("Q0", "0"),
+            ("Q1", "0"),
+            ("Q2", "0"),
+            ("Q3", "0"),
+        ],
+    );
+    let taper = super::scalar_property(pad.id(), "TaperAngle", "90");
+    crate::test_support::with_service_context(&[], |ctx| {
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        let error = super::super::transfer(
+            ctx,
+            &mut ir,
+            &[pad, profile],
+            &[link, placement, taper],
+            &[],
+            &[],
+            None,
+        )
+        .err()
+        .expect("placement must be validated");
+        assert!(
+            matches!(error, CodecError::Malformed(ref message) if message == "sketch Placement placement carrier has incomplete or invalid components")
+        );
+    });
 }

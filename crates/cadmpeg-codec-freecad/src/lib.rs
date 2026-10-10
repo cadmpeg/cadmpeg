@@ -1551,6 +1551,8 @@ impl CodecBackend for FcstdCodec {
         }
         let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
         let mut geometry_transferred = false;
+        let mut cycle_affected_design_storage =
+            ctx.reserve_scoped(0, "FCStd design cycle object storage")?;
         let mut cycle_affected_design_objects = BTreeSet::new();
         let mut gui_losses = Vec::new();
         let mut topology_losses = Vec::new();
@@ -1726,7 +1728,7 @@ impl CodecBackend for FcstdCodec {
                 &mut topology_losses,
                 !element_maps.is_empty(),
             )?;
-            cycle_affected_design_objects = design::transfer(
+            (cycle_affected_design_objects, cycle_affected_design_storage) = design::transfer(
                 ctx,
                 &mut ir,
                 &graph.objects,
@@ -1848,6 +1850,8 @@ impl CodecBackend for FcstdCodec {
         } else {
             semantic_losses(ctx, &ir, &cycle_affected_design_objects, gui_losses)?
         };
+        drop(cycle_affected_design_objects);
+        drop(cycle_affected_design_storage);
         // Charged on both decode branches: a schema outside the declared rows
         // is read with the schema-4 strategy on either path, so the charge is
         // not conditioned on the branch.

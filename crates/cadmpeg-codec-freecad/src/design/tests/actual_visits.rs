@@ -25,29 +25,9 @@ fn successful_work(run: impl FnOnce(&DecodeContext<'_>) -> Result<(), CodecError
 fn actual_visits_duplicate_state_stops_before_long_property_suffix() {
     let property = super::linked_property("State", "Visibility", "visible");
     let expected = "State states the property Visibility a second time";
-    let cap = successful_work(|ctx| {
-        let state = super::super::feature_state(ctx, "State", &[&property])?;
-        let input = [&property];
-        let mut source = input.iter();
-        ctx.next_charged(&mut source, "fcstd feature state properties")?;
-        ctx.copy_retained_text("visible", "fcstd feature state value")?;
-        let name = ctx.copy_retained_text("Visibility", "fcstd feature state name")?;
-        let name =
-            cadmpeg_core::text::NonBlankString::for_decode(ctx, name, "validate nonblank text")?
-                .expect("literal state key");
-        assert!(ctx.contains_key_btree_map(&state, &name, "fcstd feature state duplicate key")?);
-        assert_eq!(
-            ctx.format_retained(
-                format_args!("State states the property {name} a second time"),
-                "fcstd feature state duplicate key error",
-            )?,
-            expected
-        );
-        Ok(())
-    });
-    let suffix = usize::try_from(cap).expect("small oracle") + 1;
-    let mut properties = vec![&property, &property];
-    properties.extend(std::iter::repeat_n(&property, suffix));
+    let cap = 4096;
+    let properties = vec![&property; 8193];
+    assert!(cap < u64::try_from(properties.len()).expect("property count"));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_work_units = cap;
@@ -171,7 +151,7 @@ fn actual_visits_empty_design_routes_preserve_original_refusal() {
         data: None,
     };
     assert!(
-        matches!(super::super::append_operation_parameters(&ctx, &mut Vec::new(), &object, &[]),
+        matches!(super::super::append_operation_parameters(&ctx, &mut Vec::new(), &object, &cadmpeg_ir::features::FeatureId::mint(format!("fcstd:design:feature#{}", object.name())).expect("owner feature identity"), &[]),
         Err(CodecError::ResourceLimit(limit)) if limit == original)
     );
 }
@@ -198,8 +178,8 @@ fn actual_visits_nested_constraint_failure_stops_before_long_record_suffix() {
     let sketch = cadmpeg_ir::sketches::SketchId::mint("fcstd:design:sketch#Sketch")
         .expect("sketch identity");
     let mut text =
-        "<Property><ConstraintList count=\"129\"><Constrain ElementIds=\"0\"/>".to_owned();
-    for _ in 0..128 {
+        "<Property><ConstraintList count=\"8193\"><Constrain ElementIds=\"0\"/>".to_owned();
+    for _ in 0..8192 {
         text.push_str("<Constrain/>");
     }
     text.push_str("</ConstraintList></Property>");
@@ -209,7 +189,7 @@ fn actual_visits_nested_constraint_failure_stops_before_long_record_suffix() {
         property.id
     );
     // The counted-list owner must validate the whole container before the first
-    // constraint. The core oracle then visits only the malformed first record.
+    // constraint. A fixed allowance covers the first malformed diagnostic.
     let cap = successful_work(|ctx| {
         let (storage, records);
         (records, storage) = super::super::direct_counted_records(
@@ -219,41 +199,10 @@ fn actual_visits_nested_constraint_failure_stops_before_long_record_suffix() {
             "Constrain",
             &property.id,
         )?;
-        let mut source = records.iter();
-        let node = *ctx
-            .next_charged(&mut source, "FreeCAD sketch constraints")?
-            .expect("first constraint");
-        assert!(ctx
-            .xml_attribute(node, "Type", "FreeCAD design XML attribute")?
-            .is_none());
-        let (operand_storage, message);
-        (message, operand_storage) =
-            ctx.with_scoped_storage("fcstd constraint operand storage", || {
-                assert_eq!(
-                    ctx.xml_attribute(node, "ElementIds", "FreeCAD design XML attribute")?,
-                    Some("0")
-                );
-                assert!(ctx
-                    .xml_attribute(node, "ElementPositions", "FreeCAD design XML attribute")?
-                    .is_none());
-                ctx.format_retained(
-                    format_args!("ElementIds and ElementPositions must both be present"),
-                    "fcstd design diagnostic",
-                )
-            })?;
-        assert_eq!(
-            ctx.format_retained(
-                format_args!("{} constraint 1: {message}", property.id),
-                "fcstd design diagnostic",
-            )?,
-            expected
-        );
-        drop(message);
-        drop(operand_storage);
         drop(records);
         drop(storage);
         Ok(())
-    });
+    }) + 1024;
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_work_units = cap;

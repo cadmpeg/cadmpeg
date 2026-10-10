@@ -112,8 +112,9 @@ fn attachment_map_mode_invalid_index_refuses_at_retained_limit() {
         "App::PropertyEnumeration",
         vec![enum_value("Integer", Some("bad-index"))],
     );
-    crate::test_support::materialized_refusal_at(
-        "FreeCAD attachment invalid map-mode index",
+    crate::test_support::assert_retained_refusal_at(
+        &[],
+        "FreeCAD attachment map-mode error",
         |ctx| super::map_mode_value(ctx, &property),
     );
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -140,9 +141,10 @@ fn attachment_map_mode_outer_error_refuses_at_retained_limit() {
 
 #[test]
 fn attachment_owner_lookup_refuses_on_collection_limit() {
+    let object = residual_admission::object();
     let property = crate::native::PropertyRecord {
         id: "property".into(),
-        owner: "object".into(),
+        owner: object.id().clone(),
         name: "AttachmentSupport".into(),
         type_name: "App::PropertyLinkSubList".into(),
         family: crate::native::PropertyFamily::Unknown,
@@ -157,7 +159,7 @@ fn attachment_owner_lookup_refuses_on_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within input policy");
-    assert!(matches!(super::transfer(&ctx, &[], &[property]),
+    assert!(matches!(super::transfer(&ctx, &[object], &[property]),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "FreeCAD attachment owner lookup"));
 }
@@ -414,6 +416,7 @@ fn map_mode_writes_the_same_text_through_a_writer() {
 
 #[test]
 fn attachment_property_visits_propagate_work_refusal() {
+    let object = residual_admission::object();
     let property = diagnostic_property(
         "App::PropertyEnumeration",
         vec![enum_value("Integer", Some("5"))],
@@ -423,7 +426,7 @@ fn attachment_property_visits_propagate_work_refusal() {
     policy.limits.max_work_units = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root fits work policy");
-    assert!(matches!(super::transfer(&ctx, &[], &[property]),
+    assert!(matches!(super::transfer(&ctx, &[object], &[property]),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "FreeCAD attachment properties"));
 }
@@ -485,32 +488,25 @@ fn attachment_map_mode_lookup_refuses_at_work_boundary() {
 
 #[test]
 fn attachment_support_value_search_stops_at_first_invalid_tag() {
-    let property = diagnostic_property(
-        "App::PropertyLinkSubList",
-        vec![
-            enum_value("LinkSubList", None),
-            enum_value("Other", None),
-            enum_value("Link", None),
-        ],
+    let mut values = vec![enum_value("LinkSubList", None), enum_value("Other", None)];
+    values.extend((0..8192).map(|_| enum_value("Link", None)));
+    let property = diagnostic_property("App::PropertyLinkSubList", values);
+    let message = format!(
+        "attachment property {} requires one LinkSubList value",
+        property.id
     );
-    crate::test_support::with_service_context(&[], |ctx| {
-        assert!(matches!(
-            super::support_links(ctx, &property),
-            Err(cadmpeg_core::CodecError::Malformed(_))
-        ));
-        let cadmpeg_core::CodecError::ResourceLimit(limit) =
-            ctx.charge_work(u64::MAX, "probe").unwrap_err()
-        else {
-            panic!("work refusal");
-        };
-        // One support value visit, followed by the two diagnostic formatting passes.
-        let message = format!(
-            "attachment property {} requires one LinkSubList value",
-            property.id
-        );
-        assert_eq!(
-            limit.used,
-            1 + 2 * cadmpeg_core::decode::u64_from_index(message.len())
-        );
-    });
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 4096;
+    assert!(
+        policy.limits.max_work_units
+            < cadmpeg_core::decode::u64_from_index(property.values().len())
+    );
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("context");
+    assert!(matches!(
+        super::support_links(&ctx, &property),
+        Err(cadmpeg_core::CodecError::Malformed(value)) if value == message
+    ));
+    assert_eq!(ctx.resource_refusal(), None);
 }

@@ -15,6 +15,7 @@ pub(super) struct FeatureOrdering<'ctx, 'a> {
     pub(super) ordinals: HashMap<&'a str, u64>,
     pub(super) cycle_affected: BTreeSet<String>,
     pub(super) storage: ScopedReservation<'ctx>,
+    pub(super) cycle_storage: ScopedReservation<'ctx>,
 }
 
 pub(super) fn feature_ordinals<'ctx, 'a>(
@@ -82,6 +83,7 @@ pub(super) fn feature_ordinals<'ctx, 'a>(
     let mut emitted = BTreeSet::new();
     let mut ordinal_storage = ctx.reserve_scoped(0, "fcstd design ordinal result storage")?;
     let mut ordinals = HashMap::new();
+    let mut cycle_storage = ctx.reserve_scoped(0, "fcstd design cycle object storage")?;
     let mut cycle_affected = BTreeSet::new();
 
     let dependencies = storage.with_storage(|| {
@@ -291,11 +293,19 @@ pub(super) fn feature_ordinals<'ctx, 'a>(
                     )? {
                         continue;
                     }
-                    ctx.insert_btree_set(
-                        &mut cycle_affected,
-                        ctx.copy_retained_text(object.id(), "fcstd design cycle object")?,
-                        "fcstd design cycle affected objects",
-                    )?;
+                    if !ctx.contains_btree_set(
+                        &cycle_affected,
+                        object.id().as_str(),
+                        "fcstd design cycle affected object lookup",
+                    )? {
+                        cycle_storage.with_storage(|| {
+                            ctx.insert_btree_set(
+                                &mut cycle_affected,
+                                ctx.copy_retained_text(object.id(), "fcstd design cycle object")?,
+                                "fcstd design cycle affected objects",
+                            )
+                        })?;
+                    }
                     if next.is_none_or(|current| object.order < current.order) {
                         next = Some(object);
                     }
@@ -327,6 +337,7 @@ pub(super) fn feature_ordinals<'ctx, 'a>(
         ordinals,
         cycle_affected,
         storage: ordinal_storage,
+        cycle_storage,
     })
 }
 
@@ -338,32 +349,47 @@ pub(super) fn bind_parameter_dependencies<'ctx>(
 ) -> Result<(BTreeSet<FeatureId>, ScopedReservation<'ctx>), CodecError> {
     let mut dependency_storage =
         ctx.reserve_scoped(0, "fcstd parameter dependency result storage")?;
+    if parameters.is_empty() {
+        return Ok((BTreeSet::new(), dependency_storage));
+    }
     let (candidate_storage, dependencies);
     (dependencies, candidate_storage) =
         ctx.with_scoped_storage("fcstd parameter dependency candidates", || {
-            let mut object_names = HashMap::new();
-            let mut source = objects.iter();
-            while source.len() != 0 {
-                let Some(object) =
-                    ctx.next_charged(&mut source, "fcstd parameter dependency objects")?
-                else {
-                    break;
-                };
-                ctx.insert_hash_map(
-                    &mut object_names,
-                    feature_id(ctx, object)?,
-                    object.name().as_str(),
-                    "fcstd parameter dependency object names",
-                )?;
-            }
-            let mut candidates =
-                ctx.collection_vec(parameters.len(), "fcstd parameter dependency candidates")?;
+            let mut qualified_key_storage =
+                ctx.reserve_scoped(0, "fcstd qualified candidate key storage")?;
+            let mut object_names = None;
+            let mut local = HashMap::<(&FeatureId, &str), Option<&ParameterId>>::new();
+            let mut qualified = HashMap::<String, Option<&ParameterId>>::new();
             let mut source = parameters.iter();
             while source.len() != 0 {
                 let Some(parameter) =
                     ctx.next_charged(&mut source, "fcstd dependency parameters")?
                 else {
                     break;
+                };
+                let Some(owner) = parameter.owner.as_ref() else {
+                    continue;
+                };
+                let object_names = match &mut object_names {
+                    Some(names) => names,
+                    slot @ None => {
+                        let mut names = HashMap::new();
+                        let mut source = objects.iter();
+                        while source.len() != 0 {
+                            let Some(object) = ctx
+                                .next_charged(&mut source, "fcstd parameter dependency objects")?
+                            else {
+                                break;
+                            };
+                            ctx.insert_hash_map(
+                                &mut names,
+                                feature_id(ctx, object)?,
+                                object.name().as_str(),
+                                "fcstd parameter dependency object names",
+                            )?;
+                        }
+                        slot.insert(names)
+                    }
                 };
                 let source_name = match ctx.get_btree_map(
                     &parameter.properties,
@@ -373,76 +399,53 @@ pub(super) fn bind_parameter_dependencies<'ctx>(
                     Some(name)
                         if !ctx.equal(name, &parameter.name, "fcstd parameter source name")? =>
                     {
-                        Some(name)
+                        Some(name.as_str())
                     }
                     _ => None,
                 };
-                let mut names = ctx.collection_vec(
-                    1 + usize::from(source_name.is_some()),
-                    "fcstd parameter candidate names",
-                )?;
-                names.push(parameter.name.as_str());
-                if let Some(source_name) = source_name {
-                    names.push(source_name.as_str());
-                }
-                candidates.push((&parameter.id, parameter.owner.as_ref(), names));
-            }
-            let mut local_candidates = BTreeMap::<(&FeatureId, &str), Vec<&ParameterId>>::new();
-            let mut qualified_candidates = BTreeMap::<String, Vec<&ParameterId>>::new();
-            let mut source = candidates.iter();
-            while source.len() != 0 {
-                let Some((id, owner, names)) =
-                    ctx.next_charged(&mut source, "fcstd parameter candidate groups")?
-                else {
-                    break;
-                };
-                let Some(owner) = owner else { continue };
-                let mut source = names.iter();
-                while source.len() != 0 {
-                    let Some(name) =
-                        ctx.next_charged(&mut source, "fcstd parameter candidate names")?
-                    else {
-                        break;
-                    };
-                    let key = (*owner, *name);
-                    ctx.push_btree_group(
-                        &mut local_candidates,
-                        key,
-                        *id,
-                        "fcstd local candidate keys",
-                        "fcstd local candidate identities",
-                    )?;
-                    if let Some(object) =
-                        ctx.get_hash_map(&object_names, owner, "fcstd qualified candidate owner")?
+                for name in [Some(parameter.name.as_str()), source_name]
+                    .into_iter()
+                    .flatten()
+                {
+                    let key = (owner, name);
+                    if let Some(candidate) =
+                        ctx.get_mut_hash_map(&mut local, &key, "fcstd unique local candidates")?
                     {
-                        let key = ctx.format_retained(
+                        *candidate = None;
+                    } else {
+                        ctx.insert_hash_map(
+                            &mut local,
+                            key,
+                            Some(&parameter.id),
+                            "fcstd unique local candidates",
+                        )?;
+                    }
+                    if let Some(object) =
+                        ctx.get_hash_map(object_names, owner, "fcstd qualified candidate owner")?
+                    {
+                        let (mut key_storage, key);
+                        (key, key_storage) = ctx.format_scoped(
                             format_args!("{object}.{name}"),
                             "fcstd qualified candidate name",
                         )?;
-                        ctx.push_btree_group(
-                            &mut qualified_candidates,
-                            key,
-                            *id,
-                            "fcstd qualified candidate keys",
-                            "fcstd qualified candidate identities",
-                        )?;
+                        if let Some(candidate) = ctx.get_mut_hash_map(
+                            &mut qualified,
+                            key.as_str(),
+                            "fcstd unique qualified candidates",
+                        )? {
+                            *candidate = None;
+                        } else {
+                            qualified_key_storage.absorb(&mut key_storage)?;
+                            ctx.insert_hash_map(
+                                &mut qualified,
+                                key,
+                                Some(&parameter.id),
+                                "fcstd unique qualified candidates",
+                            )?;
+                        }
                     }
                 }
             }
-            let local = ctx.collect_hash_map(
-                local_candidates.into_iter().map(|(key, mut ids)| {
-                    let unique = (ids.len() == 1).then(|| ids.pop()).flatten();
-                    (key, unique)
-                }),
-                "fcstd unique local candidates",
-            )?;
-            let qualified = ctx.collect_hash_map(
-                qualified_candidates.into_iter().map(|(key, mut ids)| {
-                    let unique = (ids.len() == 1).then(|| ids.pop()).flatten();
-                    (key, unique)
-                }),
-                "fcstd unique qualified candidates",
-            )?;
             dependency_storage.with_storage(|| {
                 let mut dependencies =
                     ctx.vector_storage(parameters.len(), "fcstd parameter dependency results")?;
