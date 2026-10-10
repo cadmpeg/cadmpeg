@@ -194,3 +194,76 @@ fn free_geometry_body_name_refuses_retained_bytes() {
         },
     );
 }
+
+fn invalid_linear_knot_boundary(control_count: usize, invalid_index: usize,
+    invalid_value: f64, exact: bool) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let mut knots: Vec<_> = (0..control_count + 2)
+        .map(|index| f64::from(u32::try_from(index).unwrap())).collect();
+    knots[invalid_index] = invalid_value;
+    let before: Vec<_> = knots.iter().map(|value| value.to_bits()).collect();
+    let range = [1.0, f64::from(u32::try_from(control_count).unwrap())];
+    // The cheap domain checks pass. Validation visits each knot through
+    // the first false predicate, then returns before creating parameters.
+    let visits = u64::try_from(invalid_index + 1).unwrap();
+    let cap = visits - u64::from(!exact);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = cap;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_entities = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::super::linear_nurbs_parameters(1, &knots, control_count, false, range, &ctx);
+    let first = if exact {
+        assert!(result.unwrap().is_none());
+        assert_eq!(knots.iter().map(|value| value.to_bits()).collect::<Vec<_>>(), before);
+        let Err(CodecError::ResourceLimit(first)) = ctx.charge_work(1,
+            "test exact invalid linear knot work") else {
+            panic!("expected exact short-circuit validation work");
+        };
+        assert_eq!(first.operation, "test exact invalid linear knot work");
+        first
+    } else {
+        let first = match result.as_ref() {
+            Err(CodecError::ResourceLimit(first)) => *first,
+            _ => panic!("expected refusal before the invalid knot visit"),
+        };
+        drop(result);
+        assert_eq!(first.operation, "iges linear NURBS knot validation");
+        first
+    };
+    assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+    assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
+    for _ in 0..64 {
+        for source in [&knots[..], &[][..]] {
+            let result = super::super::linear_nurbs_parameters(1, source,
+                control_count, false, range, &ctx);
+            assert!(matches!(result.as_ref(), Err(CodecError::ResourceLimit(last)) if *last == first));
+            drop(result);
+            assert_eq!(knots.iter().map(|value| value.to_bits()).collect::<Vec<_>>(), before);
+        }
+    }
+    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+}
+
+#[test]
+fn invalid_first_and_last_linear_knots_refuse_before_the_actual_visit() {
+    for count in [2, 64] {
+        for (index, value) in [(0, f64::NAN), (count + 1, f64::NAN), (count + 1, -1.0)] {
+            invalid_linear_knot_boundary(count, index, value, false);
+        }
+    }
+}
+
+#[test]
+fn invalid_first_and_last_linear_knots_accept_exact_recovery_without_storage() {
+    for count in [2, 64] {
+        for (index, value) in [(0, f64::NAN), (count + 1, f64::NAN), (count + 1, -1.0)] {
+            invalid_linear_knot_boundary(count, index, value, true);
+        }
+    }
+}
