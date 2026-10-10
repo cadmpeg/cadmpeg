@@ -356,20 +356,18 @@ impl<A> ModelDraft<A> {
         ctx: &DecodeContext<'_>,
     ) -> Result<(), DraftError> {
         let identity = entity.identity();
-        if self.insertion_index.is_none() {
-            self.insertion_index = Some(match index_model_identities(&self.model, ctx)? {
+        let index = match self.insertion_index.take() {
+            Some(index) => index,
+            None => match index_model_identities(&self.model, ctx)? {
                 Ok(index) => index,
                 Err(identity) => {
                     return Err(DraftError::IdentityCollision(
                         ctx.copy_retained_text(identity, "draft identity collision")?,
                     ))
                 }
-            });
-        }
-        let index = self
-            .insertion_index
-            .as_mut()
-            .expect("draft insertion index rebuilt");
+            },
+        };
+        let index = self.insertion_index.insert(index);
         if identity_index_contains(&self.model, index, identity, ctx)? {
             return Err(DraftError::IdentityCollision(
                 ctx.copy_retained_text(identity, "draft identity collision")?,

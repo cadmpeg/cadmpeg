@@ -1908,15 +1908,14 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 source_object,
             });
             if has_procedural_construction {
-                if self.procedural_admission.is_none() {
-                    self.procedural_admission =
-                        Some(cadmpeg_ir::document::procedural::ProceduralAdmission::new(
-                            self.ctx, &ir.model,
-                        )?);
-                }
+                let admission = match self.procedural_admission.take() {
+                    Some(admission) => admission,
+                    None => cadmpeg_ir::document::procedural::ProceduralAdmission::new(
+                        self.ctx, &ir.model,
+                    )?,
+                };
                 self.procedural_admission
-                    .as_mut()
-                    .expect("procedural admission was installed")
+                    .insert(admission)
                     .add_surface(
                         &mut ir.model,
                         &id.try_clone_for_decode(

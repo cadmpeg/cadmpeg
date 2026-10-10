@@ -300,7 +300,9 @@ impl ProceduralIndex {
             let construction = model
                 .procedural_curves
                 .last()
-                .expect("successful attachment appends its construction")
+                .ok_or_else(|| {
+                    CodecError::malformed("procedural attachment appended no construction")
+                })?
                 .id
                 .as_str();
             with_index_storage(&mut storage, || {
@@ -381,7 +383,9 @@ impl ProceduralIndex {
             let construction = model
                 .procedural_surfaces
                 .last()
-                .expect("successful attachment appends its construction")
+                .ok_or_else(|| {
+                    CodecError::malformed("procedural attachment appended no construction")
+                })?
                 .id
                 .as_str();
             with_index_storage(&mut storage, || {

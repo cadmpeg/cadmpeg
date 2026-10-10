@@ -73,7 +73,7 @@ pub(super) fn mark_supports(
             let object_id = cadmpeg_core::text::NonBlankString::new(
                 ctx.format_retained(format_args!("#{id}"), "STEP source support identity")?,
             )
-            .expect("a STEP reference is nonblank");
+            .ok_or_else(|| CodecError::malformed("STEP source support identity is blank"))?;
             *source = Some(SourceObjectAssociation {
                 format: CodecFormat::Step,
                 geometry_role: Some(role),

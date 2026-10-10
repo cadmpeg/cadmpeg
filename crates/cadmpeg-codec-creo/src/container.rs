@@ -1118,15 +1118,15 @@ fn expanded_sections(
         if !payload.starts_with(UNIX_COMPRESS_MAGIC) {
             continue;
         }
-        let expanded = match crate::compress::decode(ctx, payload, expected_length) {
-            Ok(Some(expanded)) => expanded,
-            result => {
-                let reason = match result {
-                    Ok(None) => "invalid or incomplete LZW framing".into(),
-                    Err(CodecError::Malformed(reason)) => reason,
-                    Err(error) => return Err(error),
-                    Ok(Some(_)) => unreachable!(),
-                };
+        let expansion = match crate::compress::decode(ctx, payload, expected_length) {
+            Ok(Some(expanded)) => Ok(expanded),
+            Ok(None) => Err("invalid or incomplete LZW framing".into()),
+            Err(CodecError::Malformed(reason)) => Err(reason),
+            Err(error) => return Err(error),
+        };
+        let expanded = match expansion {
+            Ok(expanded) => expanded,
+            Err(reason) => {
                 let message = ctx.format_retained(
                     format_args!(
                         "section `{}` at offset {source_offset}, {} stored bytes: {reason}; \
