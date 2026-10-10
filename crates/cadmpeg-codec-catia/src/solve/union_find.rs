@@ -78,7 +78,7 @@ impl UnionFind<'_> {
         let index = self.parents.borrow().len();
         match &mut self.storage {
             Some(storage) => {
-                ctx.push_scoped_vec(storage, self.parents.get_mut(), index, operation)?
+                ctx.push_scoped_vec(storage, self.parents.get_mut(), index, operation)?;
             }
             None => ctx.push_vec(self.parents.get_mut(), index, operation)?,
         }

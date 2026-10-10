@@ -3682,7 +3682,7 @@ fn advance_boundary_component_states<'storage>(
                 .with_scoped_storage("catia_component_domain_edges", || {
                     mesh_boundary_domain_edges(ctx, domain)
                 })?;
-            let mut admitted_visits = (states).into_iter();
+            let mut admitted_visits = states.iter();
             while let Some((state, oriented_edges)) =
                 ctx.next_charged(&mut admitted_visits, "catia_component_states")?
             {
@@ -5142,7 +5142,7 @@ pub(super) fn mesh_assignment_endpoint_cycles_viable_by<'a>(
             let (states, mut state_storage) =
                 ctx.with_scoped_storage("catia_endpoint_viability_states", || {
                     let mut states = BTreeSet::new();
-                    let mut admitted_visits = (adjacency_of(boundary[0].edge)?).into_iter();
+                    let mut admitted_visits = adjacency_of(boundary[0].edge)?.iter();
                     while let Some(&state) =
                         ctx.next_charged(&mut admitted_visits, "catia_endpoint_viability_states")?
                     {
@@ -5298,14 +5298,14 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
         const OPERATION: &str = "catia_endpoint_relation_composition";
         let mut composed = EndpointRelation::new();
         let mut state_count = 0usize;
-        let mut admitted_visits = (left).into_iter();
+        let mut admitted_visits = left.iter();
         while let Some((&start, middles)) = ctx.next_charged(&mut admitted_visits, OPERATION)? {
-            let mut admitted_visits = (middles).into_iter();
+            let mut admitted_visits = middles.iter();
             while let Some(middle) = ctx.next_charged(&mut admitted_visits, OPERATION)? {
                 let Some(ends) = ctx.get_btree_map(right, middle, OPERATION)? else {
                     continue;
                 };
-                let mut admitted_visits = (ends).into_iter();
+                let mut admitted_visits = ends.iter();
                 while let Some(&end) = ctx.next_charged(&mut admitted_visits, OPERATION)? {
                     if budget.is_some_and(|budget| !budget.charge()) {
                         return Ok(None);
@@ -6543,12 +6543,12 @@ fn relation_coordinate_candidate_domains(
                 &mut admitted_visits,
                 "catia_relation_coordinate_possible_pairs",
             )? {
-                let mut admitted_visits = (choices).into_iter();
+                let mut admitted_visits = choices.iter();
                 while let Some(choice) = ctx.next_charged(
                     &mut admitted_visits,
                     "catia_relation_coordinate_possible_pairs",
                 )? {
-                    let mut admitted_visits = (choice.selection.edge_pairs()).into_iter();
+                    let mut admitted_visits = choice.selection.edge_pairs().iter();
                     while let Some(&(edge, [left, right])) = ctx.next_charged(
                         &mut admitted_visits,
                         "catia_relation_coordinate_possible_pairs",
@@ -6581,7 +6581,7 @@ fn relation_coordinate_candidate_domains(
     {
         return Ok(None);
     }
-    let mut admitted_visits = (assigned).into_iter().enumerate();
+    let mut admitted_visits = assigned.iter().enumerate();
     while let Some((edge, assigned)) = ctx.next_charged(
         &mut admitted_visits,
         "catia_relation_coordinate_retained_pairs",
@@ -7011,7 +7011,7 @@ fn propagate_endpoint_relation_domains(
             }
             let mut admitted_visits = (*domains).iter().enumerate();
             while let Some((face, choices)) = ctx.next_charged(&mut admitted_visits, OPERATION)? {
-                let mut admitted_visits = (choices).into_iter();
+                let mut admitted_visits = choices.iter();
                 while let Some(choice) = ctx.next_charged(&mut admitted_visits, OPERATION)? {
                     let Some(active_word) = active[face].get_mut(choice.id / 64) else {
                         return Ok(false);
@@ -7160,7 +7160,7 @@ fn propagate_endpoint_relation_domains(
                 if choices.len() != 1 {
                     continue;
                 }
-                let mut admitted_visits = (choices[0].selection.edge_pairs()).into_iter();
+                let mut admitted_visits = choices[0].selection.edge_pairs().iter();
                 while let Some(&(edge, pair)) = ctx.next_charged(&mut admitted_visits, OPERATION)? {
                     match assigned[edge] {
                         Some(selected) if !same_unordered_pair(selected, pair) => return Ok(false),
@@ -7550,7 +7550,7 @@ where
                     let Some(choice) = choices.first() else {
                         continue;
                     };
-                    let mut admitted_visits = (choice.selection.edge_pairs()).into_iter();
+                    let mut admitted_visits = choice.selection.edge_pairs().iter();
                     while let Some(&(edge, pair)) = ctx.next_charged(
                         &mut admitted_visits,
                         "catia_endpoint_relation_completed_pairs",
@@ -7703,7 +7703,7 @@ where
             })?;
         ctx.with_scoped_storage("catia_endpoint_relation_branch_order", || {
             let mut branch_order = Vec::new();
-            let mut admitted_visits = (choices).into_iter().enumerate();
+            let mut admitted_visits = choices.iter().enumerate();
             while let Some((index, choice)) =
                 ctx.next_charged(&mut admitted_visits, "catia_endpoint_relation_branch_order")?
             {
@@ -7822,7 +7822,7 @@ fn collect_endpoint_relation_face_choices(
         ctx.with_scoped_storage("catia_endpoint_relation_viable_storage", || {
             let mut viable = Vec::new();
             let mut unknown = false;
-            let mut admitted_visits = (face_configurations).into_iter().enumerate();
+            let mut admitted_visits = face_configurations.iter().enumerate();
             while let Some((assignment, configurations)) = ctx.next_charged(
                 &mut admitted_visits,
                 "catia_endpoint_relation_configuration_keys",
@@ -7831,12 +7831,12 @@ fn collect_endpoint_relation_face_choices(
                     unknown = true;
                     continue;
                 };
-                let mut admitted_visits = (configurations).into_iter();
+                let mut admitted_visits = configurations.iter();
                 while let Some(configuration) = ctx.next_charged(
                     &mut admitted_visits,
                     "catia_endpoint_relation_configuration_keys",
                 )? {
-                    let mut admitted_visits = (configuration).into_iter();
+                    let mut admitted_visits = configuration.iter();
                     while let Some(&(edge, _)) =
                         ctx.next_charged(&mut admitted_visits, "catia_endpoint_relation_covered")?
                     {
@@ -13242,7 +13242,7 @@ fn boundary_component_face_keys_refuse_unadmitted_scan() {
         let result =
             propagate_common_boundary_components(ctx, &domains, &candidates, &mut quotient);
         if let Err(CodecError::ResourceLimit(limit)) = &result {
-            assert_eq!(ctx.resource_refusal(), Some(limit.clone()));
+            assert_eq!(ctx.resource_refusal(), Some(*limit));
         }
         result
     });

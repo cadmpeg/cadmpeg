@@ -3873,7 +3873,7 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                             return Ok(false);
                         }
                         let mut degrees = BTreeMap::<(usize, usize), usize>::new();
-                        let mut admitted_visits = (edges).into_iter().enumerate();
+                        let mut admitted_visits = edges.iter().enumerate();
                         while let Some((edge, &[left, right])) = ctx.next_charged(
                             &mut admitted_visits,
                             "catia_coordinate_closure_completed_degrees",
@@ -3931,13 +3931,13 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                                         assignments,
                                         |assignment| {
                                             complete_ordered_assignment_viable(
-                                                ctx, assignment, &selected,
+                                                ctx, assignment, selected,
                                             )
                                         },
                                         OPERATION,
                                     ),
                                     domain => {
-                                        compact_boundary_domain_viable(ctx, domain, &selected, None)
+                                        compact_boundary_domain_viable(ctx, domain, selected, None)
                                     }
                                 }
                             },
