@@ -3064,9 +3064,8 @@ fn parse_binary_prefix(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<(ShapeSet, BinaryTopologyVersion), CodecError> {
-    // The cursor reads forward and reads each byte once, in fixed-size
-    // values and newline-terminated lines; this pays for that pass. Section
-    // header lines it rereads charge their length again.
+    // Prepay the supplied payload extent before binary cursor parsing.
+    // A malformed prefix can return before the cursor reaches the suffix.
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(bytes.len()),
         "FreeCAD binary B-rep read",
@@ -6131,25 +6130,14 @@ fn append_periodic_curve_poles<T: Copy>(
             "periodic B-spline has insufficient poles".into(),
         ));
     }
-    ctx.reserve_vec(
-        control_points,
-        padding,
-        "FreeCAD periodic B-rep curve poles",
-    )?;
-    // The reserved slots make these fixed-width copies infallible.
-    for index in ctx.admit_iter(0..padding, "FreeCAD periodic B-rep curve poles")? {
-        control_points.push(control_points[index]);
-    }
+    ctx.extend_from_within(control_points, 0..padding, "FreeCAD periodic B-rep curve poles")?;
     if let Some(weights) = weights {
         if weights.len() < padding {
             return Err(CodecError::Malformed(
                 "periodic B-spline has insufficient weights".into(),
             ));
         }
-        ctx.reserve_vec(weights, padding, "FreeCAD periodic B-rep curve weights")?;
-        for index in ctx.admit_iter(0..padding, "FreeCAD periodic B-rep curve weights")? {
-            weights.push(weights[index]);
-        }
+        ctx.extend_from_within(weights, 0..padding, "FreeCAD periodic B-rep curve weights")?;
     }
     Ok(())
 }
@@ -7076,10 +7064,7 @@ fn append_text_surface(
         // cross-section grows along the frame axis. The reader keeps it: the
         // slant-to-axial conversion `surface_parameter_affine` applies to the
         // cone's pcurves is `cos(half_angle)`, which is even, so a negative
-        // angle converts as consistently as a positive one. Both decode goldens
-        // that hold cones hold negative half angles, so a positive interval here
-        // would fail those decodes. Each arm of this match refuses what its IR
-        // carrier refuses and nothing more.
+        // angle uses the same slant-to-axial scale as a positive one.
         TextSurface::Cone {
             origin,
             axis,
