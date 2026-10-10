@@ -1037,7 +1037,7 @@ fn a_surface_replica_chain_past_the_admitted_depth_is_refused_at_decode() {
 }
 
 #[test]
-fn composite_over_forward_replicas_decodes_without_repeated_wakeups() {
+fn composite_over_forward_replicas_preserves_dependency_storage_bound() {
     use cadmpeg_core::decode::DecodePolicy;
 
     let mut records = String::from(
@@ -1070,8 +1070,7 @@ fn composite_over_forward_replicas_decodes_without_repeated_wakeups() {
         crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
             .expect("replica graph");
     let mut policy = DecodePolicy::service();
-    // Linear graph bookkeeping and retained replica bases fit this slot allowance.
-    // Repeated registrations and queue entries for this graph exceed it.
+    // The allowance covers indexed graph bookkeeping and retained replica bases.
     policy.limits.max_collection_items = 16_000;
     crate::test_support::with_policy_context(source.as_bytes(), &policy, |_, ctx| {
         let mut ir = CadIr::empty();
@@ -1093,5 +1092,35 @@ fn composite_over_forward_replicas_decodes_without_repeated_wakeups() {
             .losses
             .iter()
             .any(|loss| loss.message.contains("invalid or unresolved")));
+    });
+}
+
+#[test]
+fn composite_curves_preserve_first_producer_wake_order() {
+    let records =
+        "#1=COMPOSITE_CURVE('',(#101,#102),.F.);
+#2=COMPOSITE_CURVE('',(#103,#104),.F.);
+#3=CURVE_REPLICA('',#10,#20);
+#4=CURVE_REPLICA('',#10,#20);
+#5=CURVE_REPLICA('',#10,#20);
+#10=LINE('',#11,#15);
+#11=CARTESIAN_POINT('',(0.,0.,0.));
+#12=DIRECTION('',(1.,0.,0.));
+#13=DIRECTION('',(0.,1.,0.));
+#14=DIRECTION('',(0.,0.,1.));
+#15=VECTOR('',#12,1.);
+#20=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#12,#13,#11,1.,#14);
+#101=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#4);
+#102=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#5);
+#103=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#3);
+#104=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#5);";
+    let source = format!("ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;{records}#9000=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#9001=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));ENDSEC;END-ISO-10303-21;");
+    crate::test_support::with_service_context(source.as_bytes(), |bytes, ctx| {
+        let (exchange, _) = crate::parse::parse_inner(bytes, ctx).expect("complete geometry fixture");
+        let mut ir = CadIr::empty();
+        let _stage = super::super::decode(&exchange, &mut ir, ctx).expect("geometry stage admission");
+        let order: Vec<_> = ir.model.curves.iter().map(|curve| curve.id.as_str()).collect();
+    assert_eq!(order, ["step:data:curve#10", "step:data:curve#3", "step:data:curve#4",
+        "step:data:curve#5", "step:data:curve#2", "step:data:curve#1"]);
     });
 }

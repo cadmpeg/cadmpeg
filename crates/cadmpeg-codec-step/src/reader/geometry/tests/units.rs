@@ -749,11 +749,12 @@ fn resolve_unit_scales_for_test(
     let mut storage = ctx
         .reserve_scoped(0, "test selected units")
         .expect("empty scope");
+    let mut loss_storage = ctx.reserve_scoped(0, "test geometry report backing").expect("report owner");
     super::super::resolve_unit_scales(
         exchange,
         PositiveReal::ONE,
         PositiveReal::ONE,
-        losses,
+        (losses, &mut loss_storage),
         &mut storage,
         &ctx,
     )

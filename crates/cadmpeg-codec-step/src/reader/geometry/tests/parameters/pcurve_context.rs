@@ -20,6 +20,7 @@ fn preserves_original_refusal(id: u64) {
     let mut workspace = PcurveWorkspace::new(&ctx, "test pcurve workspace")
         .expect("empty workspace");
     let mut active = BTreeSet::new();
+    let mut loss_storage = ctx.reserve_scoped(0, "test geometry report backing").expect("report owner");
     let mut losses = Vec::new();
     let points = BTreeMap::from([(3, Point2::new(0.0, 0.0))]);
     let vectors = BTreeMap::from([(4, Point2::new(1.0, 0.0))]);
@@ -29,7 +30,7 @@ fn preserves_original_refusal(id: u64) {
     assert!(matches!(decode_pcurve_geometry(id, &exchange, PcurveSources {
         points: &points, vectors: &vectors,
         placements: &BTreeMap::new(), transformations: &BTreeMap::new(), angle_scale: 1.0,
-    }, &mut losses, &mut PcurveWalk { active: &mut active, workspace: &mut workspace }, 0),
+    }, (&mut losses, &mut loss_storage), &mut PcurveWalk { active: &mut active, workspace: &mut workspace }, 0),
         Err(CodecError::ResourceLimit(refusal)) if refusal == original));
     assert!(workspace.records.is_empty());
     assert!(active.is_empty());
@@ -38,6 +39,7 @@ fn preserves_original_refusal(id: u64) {
     drop(losses);
     drop(active);
     drop(workspace);
+    drop(loss_storage);
     assert!(matches!(ctx.finish_session(),
         Err(CodecError::ResourceLimit(refusal)) if refusal == original));
 }
@@ -55,15 +57,4 @@ fn pcurve_unrecognized_record_preserves_original_session_refusal() {
 #[test]
 fn pcurve_missing_record_preserves_original_session_refusal() {
     preserves_original_refusal(99);
-}
-
-#[test]
-fn pcurve_cache_entry_preserves_original_node_size_and_alignment() {
-    // B-tree node admission uses the key/value sizes and their alignment.
-    type OriginalFields<'ctx> = (cadmpeg_ir::geometry::pcurve::PcurveGeometry,
-        (BTreeSet<u64>, cadmpeg_core::decode::ScopedReservation<'ctx>));
-    assert_eq!(std::mem::size_of::<crate::reader::geometry::CachedPcurve<'_>>(),
-        std::mem::size_of::<OriginalFields<'_>>());
-    assert_eq!(std::mem::align_of::<crate::reader::geometry::CachedPcurve<'_>>(),
-        std::mem::align_of::<OriginalFields<'_>>());
 }

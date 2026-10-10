@@ -38,23 +38,23 @@ fn assert_rejected_curve_releases_poles(source: &str, is_polyline: bool) {
     let points = points();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    // Default NURBS knots precede point lookup and remain a separate IR owner.
-    let retained = if is_polyline { 0 } else { KNOT_BYTES };
-    policy.limits.max_retained_bytes = retained as u64;
-    policy.limits.max_materialized_bytes = POLE_BYTES as u64;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = u64::try_from(POLE_BYTES + KNOT_BYTES).expect("test storage fits u64");
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
+    let mut loss_storage = ctx.reserve_scoped(0, "test geometry report backing").expect("report owner");
     let mut losses = Vec::new();
     let record = &exchange.records()[&1];
     let result = if is_polyline {
-        polyline(1, record, &points, &mut losses, &ctx)
+        polyline(1, record, &points, (&mut losses, &mut loss_storage), &ctx)
     } else {
-        nurbs_curve(1, record, &points, &mut losses, &ctx)
+        nurbs_curve(1, record, &points, (&mut losses, &mut loss_storage), &ctx)
     }.expect("scratch admission");
     assert!(result.is_none());
     assert!(losses.is_empty());
-    let reuse = ctx.reserve_scoped(POLE_BYTES as u64, "test rejected polynomial reuse")
+    let reuse = ctx.reserve_scoped(u64::try_from(POLE_BYTES).expect("test storage fits u64"), "test rejected polynomial reuse")
         .expect("destroyed point backing was released");
     drop(reuse);
+    drop(loss_storage);
     ctx.finish_session().expect("unrefused session");
 }
 
@@ -80,15 +80,17 @@ fn polynomial_nurbs_surface_missing_reference_releases_rows_and_partial_poles() 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    policy.limits.max_materialized_bytes = GRID_BYTES as u64;
+    policy.limits.max_materialized_bytes = u64::try_from(GRID_BYTES).expect("test storage fits u64");
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
+    let mut loss_storage = ctx.reserve_scoped(0, "test geometry report backing").expect("report owner");
     let mut losses = Vec::new();
-    assert!(nurbs_surface(1, &exchange.records()[&1], &points, &mut losses, &ctx)
+    assert!(nurbs_surface(1, &exchange.records()[&1], &points, (&mut losses, &mut loss_storage), &ctx)
         .expect("scratch admission").is_none());
     assert!(losses.is_empty());
-    let reuse = ctx.reserve_scoped(GRID_BYTES as u64, "test rejected polynomial grid reuse")
+    let reuse = ctx.reserve_scoped(u64::try_from(GRID_BYTES).expect("test storage fits u64"), "test rejected polynomial grid reuse")
         .expect("destroyed row and point backing was released");
     drop(reuse);
+    drop(loss_storage);
     ctx.finish_session().expect("unrefused session");
 }
 
@@ -104,23 +106,25 @@ fn assert_retained_curve(source: &str, is_polyline: bool) {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     let output_bytes = POLE_BYTES + KNOT_BYTES;
-    policy.limits.max_retained_bytes = output_bytes as u64;
+    policy.limits.max_retained_bytes = u64::try_from(output_bytes).expect("test storage fits u64");
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
+    let mut loss_storage = ctx.reserve_scoped(0, "test geometry report backing").expect("report owner");
     let mut losses = Vec::new();
     let record = &exchange.records()[&1];
     let curve = if is_polyline {
-        polyline(1, record, &points, &mut losses, &ctx)
+        polyline(1, record, &points, (&mut losses, &mut loss_storage), &ctx)
     } else {
-        nurbs_curve(1, record, &points, &mut losses, &ctx)
+        nurbs_curve(1, record, &points, (&mut losses, &mut loss_storage), &ctx)
     }.expect("retained admission").expect("polynomial curve");
     assert_curve_output(&curve, &points);
     assert!(losses.is_empty());
     let CodecError::ResourceLimit(first) = ctx.charge_retained(u64::MAX, "test polynomial live backing")
         .expect_err("observation exceeds retained limit") else { panic!("resource refusal") };
     assert_eq!(first.dimension, ResourceDimension::RetainedBytes);
-    assert_eq!(first.used, output_bytes as u64);
+    assert_eq!(first.used, u64::try_from(output_bytes).expect("test storage fits u64"));
     assert_eq!(first.additional, u64::MAX);
     drop(curve);
+    drop(loss_storage);
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first));
 }
 
@@ -141,10 +145,11 @@ fn polynomial_nurbs_surface_transfers_surviving_rows_and_poles() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     let output_bytes = GRID_BYTES + 2 * KNOT_BYTES;
-    policy.limits.max_retained_bytes = output_bytes as u64;
+    policy.limits.max_retained_bytes = u64::try_from(output_bytes).expect("test storage fits u64");
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
+    let mut loss_storage = ctx.reserve_scoped(0, "test geometry report backing").expect("report owner");
     let mut losses = Vec::new();
-    let surface = nurbs_surface(1, &exchange.records()[&1], &points, &mut losses, &ctx)
+    let surface = nurbs_surface(1, &exchange.records()[&1], &points, (&mut losses, &mut loss_storage), &ctx)
         .expect("retained admission").expect("polynomial surface");
     assert_eq!(surface.u_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(surface.v_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
@@ -154,9 +159,10 @@ fn polynomial_nurbs_surface_transfers_surviving_rows_and_poles() {
     let CodecError::ResourceLimit(first) = ctx.charge_retained(u64::MAX, "test polynomial grid live backing")
         .expect_err("observation exceeds retained limit") else { panic!("resource refusal") };
     assert_eq!(first.dimension, ResourceDimension::RetainedBytes);
-    assert_eq!(first.used, output_bytes as u64);
+    assert_eq!(first.used, u64::try_from(output_bytes).expect("test storage fits u64"));
     assert_eq!(first.additional, u64::MAX);
     drop(surface);
+    drop(loss_storage);
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first));
 }
 
@@ -165,24 +171,27 @@ fn assert_first_pole_refusal(source: &str, is_polyline: bool) {
     let points = points();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    // Knots are already retained; only the new point backing is materialized.
-    policy.limits.max_materialized_bytes = (POLE_BYTES - 1) as u64;
+    // Curve knots remain in the candidate when the first pole is admitted.
+    let knot_bytes = if is_polyline { 0 } else { KNOT_BYTES };
+    policy.limits.max_materialized_bytes = u64::try_from(knot_bytes + POLE_BYTES - 1).expect("test storage fits u64");
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
+    let mut loss_storage = ctx.reserve_scoped(0, "test geometry report backing").expect("report owner");
     let mut losses = Vec::new();
     let record = &exchange.records()[&1];
     let result = if is_polyline {
-        polyline(1, record, &points, &mut losses, &ctx)
+        polyline(1, record, &points, (&mut losses, &mut loss_storage), &ctx)
     } else {
-        nurbs_curve(1, record, &points, &mut losses, &ctx)
+        nurbs_curve(1, record, &points, (&mut losses, &mut loss_storage), &ctx)
     };
     let CodecError::ResourceLimit(first) = result.expect_err("first pole backing exceeds cap")
         else { panic!("resource refusal") };
     assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
     assert_eq!(first.operation, if is_polyline { "step_polyline_points" } else { "step_nurbs_curve_control_points" });
-    assert_eq!(first.used, 0);
-    assert_eq!(first.additional, POLE_BYTES as u64);
+    assert_eq!(first.used, u64::try_from(knot_bytes).expect("test storage fits u64"));
+    assert_eq!(first.additional, u64::try_from(POLE_BYTES).expect("test storage fits u64"));
     assert!(losses.is_empty());
     assert!(matches!(ctx.charge_work(0, "later operation"), Err(CodecError::ResourceLimit(sticky)) if sticky == first));
+    drop(loss_storage);
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first));
 }
 
@@ -202,17 +211,19 @@ fn polynomial_nurbs_surface_preserves_first_pole_materialized_refusal() {
     let points = points();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = (POLE_BYTES - 1) as u64;
+    policy.limits.max_materialized_bytes = u64::try_from(POLE_BYTES - 1).expect("test storage fits u64");
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
+    let mut loss_storage = ctx.reserve_scoped(0, "test geometry report backing").expect("report owner");
     let mut losses = Vec::new();
-    let CodecError::ResourceLimit(first) = nurbs_surface(1, &exchange.records()[&1], &points, &mut losses, &ctx)
+    let CodecError::ResourceLimit(first) = nurbs_surface(1, &exchange.records()[&1], &points, (&mut losses, &mut loss_storage), &ctx)
         .expect_err("first pole backing exceeds cap") else { panic!("resource refusal") };
     assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
     assert_eq!(first.operation, "step_nurbs_surface_control_points");
     assert_eq!(first.used, 0);
-    assert_eq!(first.additional, POLE_BYTES as u64);
+    assert_eq!(first.additional, u64::try_from(POLE_BYTES).expect("test storage fits u64"));
     assert!(losses.is_empty());
     assert!(matches!(ctx.charge_work(0, "later operation"), Err(CodecError::ResourceLimit(sticky)) if sticky == first));
+    drop(loss_storage);
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first));
 }
 
@@ -224,18 +235,20 @@ fn polynomial_polyline_transfer_preserves_ambient_scoped_owner() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let output_bytes = POLE_BYTES + KNOT_BYTES;
-    policy.limits.max_materialized_bytes = output_bytes as u64;
+    policy.limits.max_materialized_bytes = u64::try_from(output_bytes).expect("test storage fits u64");
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
     let mut storage = ctx.reserve_scoped(0, "test polynomial output owner").expect("empty owner");
+    let mut loss_storage = ctx.reserve_scoped(0, "test geometry report backing").expect("report owner");
     let mut losses = Vec::new();
-    let curve = storage.with_storage(|| polyline(1, &exchange.records()[&1], &points, &mut losses, &ctx))
+    let curve = storage.with_storage(|| polyline(1, &exchange.records()[&1], &points, (&mut losses, &mut loss_storage), &ctx))
         .expect("ambient scope admission").expect("curve");
     assert_curve_output(&curve, &points);
     assert!(losses.is_empty());
     drop(curve);
     drop(storage);
-    let reuse = ctx.reserve_scoped(output_bytes as u64, "test destroyed polynomial output reuse")
+    let reuse = ctx.reserve_scoped(u64::try_from(output_bytes).expect("test storage fits u64"), "test destroyed polynomial output reuse")
         .expect("ambient owner released destroyed output");
     drop(reuse);
+    drop(loss_storage);
     ctx.finish_session().expect("unrefused session");
 }

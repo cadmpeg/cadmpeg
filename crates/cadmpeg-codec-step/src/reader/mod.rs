@@ -405,7 +405,7 @@ fn decode_exchange_mode(
         &mut session.ir,
         &carrier_index,
         &owned_carriers,
-        &mut geometry.losses,
+        (&mut geometry.losses, &mut geometry.value.loss_storage),
         session.ctx,
     )?;
     session.charge_pending_ir_entities("step_representation_association")?;
@@ -414,7 +414,7 @@ fn decode_exchange_mode(
         &mut session.ir,
         &carrier_index,
         &owned_carriers,
-        &mut geometry.losses,
+        (&mut geometry.losses, &mut geometry.value.loss_storage),
         session.ctx,
     )?;
     session.charge_pending_ir_entities("step_presentation_carrier_association")?;
@@ -423,7 +423,7 @@ fn decode_exchange_mode(
         &mut session.ir,
         &carrier_index,
         &owned_carriers,
-        &mut geometry.losses,
+        (&mut geometry.losses, &mut geometry.value.loss_storage),
         session.ctx,
     )?;
     session.charge_pending_ir_entities("step_surface_curve_association")?;

@@ -312,7 +312,7 @@ fn unit_selected_scales_refuse_collection_limit() {
     let candidates = BTreeMap::from([(1, vec![PositiveReal::ONE])]);
     let default = PositiveReal::new(2.0).expect("positive default");
     assert!(matches!(
-        super::super::finalize_unit_candidates(candidates, default, "length", &mut Vec::new(), &mut ctx.reserve_scoped(0, "test selected units").expect("empty scope"), &ctx),
+        super::super::finalize_unit_candidates(candidates, default, "length", (&mut Vec::new(), &mut ctx.reserve_scoped(0, "test report backing").expect("owner")), &mut ctx.reserve_scoped(0, "test selected units").expect("empty scope"), &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_unit_selected_scales"
@@ -334,7 +334,7 @@ fn conflicting_unit_loss_refuses_collection_limit() {
         ],
     )]);
     assert!(matches!(
-        super::super::finalize_unit_candidates(candidates, PositiveReal::ONE, "length", &mut Vec::new(), &mut ctx.reserve_scoped(0, "test selected units").expect("empty scope"), &ctx),
+        super::super::finalize_unit_candidates(candidates, PositiveReal::ONE, "length", (&mut Vec::new(), &mut ctx.reserve_scoped(0, "test report backing").expect("owner")), &mut ctx.reserve_scoped(0, "test selected units").expect("empty scope"), &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_geometry_losses"

@@ -357,7 +357,7 @@ fn a_weight_lane_shorter_than_its_pole_lane_is_stated_as_a_loss() {
 }
 
 #[test]
-fn finite_knot_staging_does_not_consume_retained_bytes() {
+fn knot_construction_retains_only_the_surviving_backing() {
     use crate::parse::Value;
     use cadmpeg_core::decode::DecodePolicy;
     for defaulted in [false, true] {
@@ -384,8 +384,7 @@ fn finite_knot_staging_does_not_consume_retained_bytes() {
             .expect("ordered knots")
             .into_values();
             assert_eq!(knots, [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
-            // Only the final f64 backing capacity survives. FiniteReal staging
-            // must not consume any of the remaining retained allowance.
+            // The admitted knot vector owns the only surviving scalar backing.
             let retained =
                 u64::try_from(knots.capacity() * std::mem::size_of::<f64>()).expect("small knots");
             ctx.charge_retained(1024 - retained, "remaining retained allowance")
@@ -425,7 +424,9 @@ fn rational_nurbs_curve_separate_lanes_have_materialized_boundaries() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_materialized_bytes = cap;
             crate::test_support::with_policy_context(source, &policy, |_, ctx| {
-                super::super::nurbs_curve(4, &exchange.records()[&4], &points, &mut Vec::new(), ctx)
+        let mut loss_storage = ctx.reserve_scoped(0, "test geometry report backing").expect("report owner");
+
+                super::super::nurbs_curve(4, &exchange.records()[&4], &points, (&mut Vec::new(), &mut loss_storage), ctx)
             })
         },
     );
@@ -433,8 +434,10 @@ fn rational_nurbs_curve_separate_lanes_have_materialized_boundaries() {
         if limit.dimension == ResourceDimension::MaterializedBytes
             && limit.operation == "step_nurbs_curve_control_points"));
     crate::test_support::with_service_context(source, |_, ctx| {
+        let mut loss_storage = ctx.reserve_scoped(0, "test geometry report backing").expect("report owner");
+
         let curve =
-            super::super::nurbs_curve(4, &exchange.records()[&4], &points, &mut Vec::new(), ctx)
+            super::super::nurbs_curve(4, &exchange.records()[&4], &points, (&mut Vec::new(), &mut loss_storage), ctx)
                 .expect("curve admission")
                 .expect("curve");
         assert_eq!(
@@ -474,7 +477,9 @@ fn rational_nurbs_surface_separate_lanes_have_materialized_boundaries() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = cap;
         crate::test_support::with_policy_context(source, &policy, |_, ctx| {
-            super::super::nurbs_surface(5, &exchange.records()[&5], &points, &mut Vec::new(), ctx)
+        let mut loss_storage = ctx.reserve_scoped(0, "test geometry report backing").expect("report owner");
+
+            super::super::nurbs_surface(5, &exchange.records()[&5], &points, (&mut Vec::new(), &mut loss_storage), ctx)
         })
     };
     let error = cadmpeg_test_support::refusal::resource_limit_at(
