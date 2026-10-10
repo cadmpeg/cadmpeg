@@ -193,6 +193,7 @@ impl RejectedCandidate {
 fn assert_rejected_candidate_storage(candidate: RejectedCandidate) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, ResourceDimension};
     use cadmpeg_ir::report::loss::LossNote;
+    type Rejection = super::super::PlacementRejection;
     let bytes = crate::test_support::test_owned::owned_test_file(&[]);
     let global = crate::test_support::with_service_context(&bytes, |setup| {
         let scan = crate::card::scan_with_context(&bytes, setup).unwrap();
@@ -202,10 +203,7 @@ fn assert_rejected_candidate_storage(candidate: RejectedCandidate) {
     let fixtures: Vec<_> = (0..REJECTED_CANDIDATES)
         .map(|i| candidate.input(u32::try_from(2 * i + 1).unwrap()))
         .collect();
-    let directory: Vec<_> = fixtures
-        .iter()
-        .map(|(entry, _, _, _, _)| entry.clone())
-        .collect();
+    let directory: Vec<_> = fixtures.iter().map(|(entry, _, _, _, _)| *entry).collect();
     let entries = directory
         .iter()
         .map(|entry| (entry.sequence, entry))
@@ -221,7 +219,6 @@ fn assert_rejected_candidate_storage(candidate: RejectedCandidate) {
     // 24 slots and is below this candidate-plus-16-slot bound.
     let slots = u64::try_from(REJECTED_CANDIDATES * std::mem::size_of::<LossNote>()).unwrap();
     assert!(peak > slots);
-    type Rejection = super::super::PlacementRejection;
     let rejection_nodes = if matches!(
         candidate,
         RejectedCandidate::InstanceDefinition | RejectedCandidate::InstancePoint
@@ -261,9 +258,10 @@ fn assert_rejected_candidate_storage(candidate: RejectedCandidate) {
             &mut sequences,
         );
         if cap == first - 1 {
-            let first_refusal = match result.err().expect("expected candidate refusal") {
-                CodecError::ResourceLimit(first) => first,
-                _ => panic!("expected the first candidate allocation to refuse"),
+            let CodecError::ResourceLimit(first_refusal) =
+                result.err().expect("expected candidate refusal")
+            else {
+                panic!("expected the first candidate allocation to refuse");
             };
             assert_eq!(
                 first_refusal.dimension,

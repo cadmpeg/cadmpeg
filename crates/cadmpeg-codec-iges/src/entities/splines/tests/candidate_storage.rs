@@ -59,7 +59,7 @@ fn rejected_type112_controls_release_candidate_storage() {
             && limit.additional == u64::try_from(7 * std::mem::size_of::<FinitePoint3>()).unwrap()));
     let repeated_directory: Vec<_> = (0..16_u32)
         .map(|index| {
-            let mut entry = directory[0].clone();
+            let mut entry = directory[0];
             entry.sequence = 2 * index + 1;
             entry
         })

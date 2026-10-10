@@ -1019,7 +1019,7 @@ fn same_basis_ruled_surface(
         return Err(refusal.into());
     }
     let mut source_values = IntoIterator::into_iter(0..first.pole_count());
-    while source_values.len() != 0 {
+    while !source_values.is_empty() {
         let Some(index) =
             ctx.next_charged(&mut source_values, "iges ruled same-basis pole traversal")?
         else {
@@ -1265,10 +1265,10 @@ fn ruled_surface_span_lanes<'ctx>(
         return Ok(None);
     };
     admit_surface_pole_count(ctx, pole_count)?;
-    let _homogeneous_storage;
+    let homogeneous_storage;
     let (mut homogeneous, result_homogeneous_storage) =
         ctx.temporary_vec(pole_count, "iges ruled homogeneous controls")?;
-    _homogeneous_storage = result_homogeneous_storage;
+    homogeneous_storage = result_homogeneous_storage;
     let Some(knot_count) = u_count
         .checked_add(degree)
         .and_then(|count| count.checked_add(1))
@@ -1372,7 +1372,7 @@ fn ruled_surface_span_lanes<'ctx>(
         weights.push(weight);
     }
     drop(homogeneous);
-    drop(_homogeneous_storage);
+    drop(homogeneous_storage);
     let weights = if ctx.all_by(
         &weights,
         |weight| Ok(weight.get() == 1.0),
@@ -2787,7 +2787,7 @@ pub(super) fn project<'ctx>(
                 return Err(refusal.into());
             }
             let mut source_values = IntoIterator::into_iter(0..pole_count);
-            while source_values.len() != 0 {
+            while !source_values.is_empty() {
                 let Some(index) =
                     ctx.next_charged(&mut source_values, "iges tabulated weight traversal")?
                 else {
@@ -3266,7 +3266,7 @@ pub(super) fn project<'ctx>(
             .map(|geometry| source_parameter_interval(geometry, cached_interval, ctx))
             .transpose()?
             .unwrap_or(cached_interval);
-        let _angular_storage;
+        let angular_storage;
         let Some(AngularBasis {
             knots: v_knots,
             controls: angular_controls,
@@ -3282,7 +3282,7 @@ pub(super) fn project<'ctx>(
             )?;
             continue;
         };
-        _angular_storage = result_angular_storage;
+        angular_storage = result_angular_storage;
         let generatrix_count = generatrix.pole_count();
         let Ok(_) = u32::try_from(generatrix_count) else {
             super::push_entity_loss_with_scoped_slots(
@@ -3330,7 +3330,7 @@ pub(super) fn project<'ctx>(
             return Err(refusal.into());
         }
         let mut source_values = IntoIterator::into_iter(0..generatrix_count);
-        while source_values.len() != 0 {
+        while !source_values.is_empty() {
             let Some(u_index) =
                 ctx.next_charged(&mut source_values, "iges revolution generatrix poles")?
             else {
@@ -3389,7 +3389,7 @@ pub(super) fn project<'ctx>(
         drop(weights);
         drop(weight_storage);
         drop(angular_controls);
-        drop(_angular_storage);
+        drop(angular_storage);
         let surface_id =
             crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
         let paired = pair_admitted_surface_poles(
@@ -4128,7 +4128,7 @@ pub(super) fn project<'ctx>(
                     return Err(refusal.into());
                 }
                 let mut source_values = IntoIterator::into_iter(0..u_count);
-                while source_values.len() != 0 {
+                while !source_values.is_empty() {
                     let Some(u) =
                         ctx.next_charged(&mut source_values, "iges NURBS surface u poles")?
                     else {
@@ -4140,7 +4140,7 @@ pub(super) fn project<'ctx>(
                         return Err(refusal.into());
                     }
                     let mut source_values = IntoIterator::into_iter(0..v_count);
-                    while source_values.len() != 0 {
+                    while !source_values.is_empty() {
                         let Some(v) =
                             ctx.next_charged(&mut source_values, "iges NURBS surface v poles")?
                         else {
@@ -4157,7 +4157,7 @@ pub(super) fn project<'ctx>(
                     return Err(refusal.into());
                 }
                 let mut source_values = IntoIterator::into_iter(0..u_count);
-                while source_values.len() != 0 {
+                while !source_values.is_empty() {
                     let Some(u) =
                         ctx.next_charged(&mut source_values, "iges NURBS surface u poles")?
                     else {
@@ -4169,7 +4169,7 @@ pub(super) fn project<'ctx>(
                         return Err(refusal.into());
                     }
                     let mut source_values = IntoIterator::into_iter(0..v_count);
-                    while source_values.len() != 0 {
+                    while !source_values.is_empty() {
                         let Some(v) =
                             ctx.next_charged(&mut source_values, "iges NURBS surface v poles")?
                         else {

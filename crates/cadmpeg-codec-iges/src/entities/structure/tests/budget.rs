@@ -300,8 +300,10 @@ fn legacy_plane_invalid_parent_boundary_does_not_visit_children() {
                 record: &record,
             },
             (1, &parent),
-            &BTreeMap::from([(1, &parent), (3, &child)]),
-            &BTreeMap::new(),
+            (
+                &BTreeMap::from([(1, &parent), (3, &child)]),
+                &BTreeMap::new(),
+            ),
             &global.length_context().unwrap(),
             ctx,
             &mut super::super::super::geometry::SourceSequences::default(),

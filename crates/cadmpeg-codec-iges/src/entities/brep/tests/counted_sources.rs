@@ -208,11 +208,11 @@ fn resolution_boundary(operation: &'static str, preceding_items: u64) {
         )
         .map(|resolved| resolved.map(drop));
         let refusal = if cap < 4 {
-            let first = match result {
-                Err(super::super::super::composite::CompositeCurveError::Budget(
-                    CodecError::ResourceLimit(first),
-                )) => first,
-                _ => panic!("expected actual resolved or mapped pcurve allocation refusal"),
+            let Err(super::super::super::composite::CompositeCurveError::Budget(
+                CodecError::ResourceLimit(first),
+            )) = result
+            else {
+                panic!("expected actual resolved or mapped pcurve allocation refusal");
             };
             assert_eq!(first.dimension, ResourceDimension::CollectionItems);
             assert_eq!(first.operation, operation);

@@ -1220,7 +1220,7 @@ pub(super) fn project<'ctx>(
             return Err(refusal.into());
         }
         let mut source_values = IntoIterator::into_iter(0..u_count);
-        while source_values.len() != 0 {
+        while !source_values.is_empty() {
             let Some(u_index) =
                 ctx.next_charged(&mut source_values, "iges spline surface pole row traversal")?
             else {

@@ -39,11 +39,7 @@ fn shared_brep_definitions_do_not_reindex_generated_edges() {
             crate::parameter::assemble_with_context(&scan, &directory, &quarantined, &global, ctx)
                 .unwrap();
         // Both solids use the same shell, faces, loops, and six source curves.
-        let mut second = directory
-            .iter()
-            .find(|entry| entry.sequence == 55)
-            .unwrap()
-            .clone();
+        let mut second = *directory.iter().find(|entry| entry.sequence == 55).unwrap();
         assert_eq!(second.entity_type, 186);
         second.sequence = 57;
         directory.push(second);

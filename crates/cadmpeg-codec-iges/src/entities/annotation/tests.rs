@@ -1659,8 +1659,8 @@ fn cached_flag_note_and_leader_validation_skips_parameter_record_queries() {
 
 #[test]
 fn shared_note_and_leader_validation_stays_linear() {
-    let count = 2_000;
     const MAX_WORK_PER_NOTE_AND_FLAG_PAIR: u64 = 144;
+    let count = 2_000;
     let mut note_entry = leader_entry(0);
     note_entry.entity_type = 212;
     note_entry.sequence = 1;
@@ -1736,7 +1736,7 @@ fn shared_note_and_leader_validation_stays_linear() {
     // primary-cache searches, two one-leader scans and one width-cache search
     // (136 units). The first note, leader and width validations scan their
     // counted fields once and fit inside this per-pair allowance.
-    policy.limits.max_work_units = count as u64 * MAX_WORK_PER_NOTE_AND_FLAG_PAIR;
+    policy.limits.max_work_units = u64::try_from(count).unwrap() * MAX_WORK_PER_NOTE_AND_FLAG_PAIR;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut validation = super::AnnotationValidation::new(&ctx).unwrap();
     for _ in 0..count {

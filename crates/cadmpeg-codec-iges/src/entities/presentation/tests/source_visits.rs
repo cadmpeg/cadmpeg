@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
 use cadmpeg_ir::geometry::analytic::{LineCurve, PlaneSurface};
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+};
 use cadmpeg_ir::ids::{BodyId, CurveId, FaceId, ShellId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, BodyKind, Color, Face, FaceLoops, Sense};
@@ -19,7 +20,11 @@ enum Source {
 fn global() -> crate::global::ProjectedGlobal {
     let bytes = owned_test_file(&[]);
     let scan = crate::test_support::scan(&bytes).unwrap();
-    crate::test_support::parse_global(&scan).unwrap().0.length_context().unwrap()
+    crate::test_support::parse_global(&scan)
+        .unwrap()
+        .0
+        .length_context()
+        .unwrap()
 }
 
 fn model(source: Source, count: usize) -> CadIr {
@@ -28,31 +33,41 @@ fn model(source: Source, count: usize) -> CadIr {
         match source {
             Source::Curve => ir.model.curves.push(Curve {
                 id: CurveId::mint(format!("test:model:curve#source-{index}")).unwrap(),
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(LineCurve::try_new(
-                    Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0),
-                ).unwrap())),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
+                        .unwrap(),
+                )),
                 source_object: None,
             }),
             Source::Surface => ir.model.surfaces.push(Surface {
                 id: SurfaceId::mint(format!("test:model:surface#source-{index}")).unwrap(),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(PlaneSurface::try_new(
-                    Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                ).unwrap())),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    PlaneSurface::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                )),
                 source_object: None,
             }),
             Source::Body => ir.model.bodies.push(Body {
                 id: BodyId::mint(format!("test:model:body#source-{index}")).unwrap(),
-                kind: BodyKind::Sheet, regions: Vec::new(), transform: None,
-                name: Some("existing body".into()), color: Color::new(0.0, 0.0, 1.0, 1.0),
+                kind: BodyKind::Sheet,
+                regions: Vec::new(),
+                transform: None,
+                name: Some("existing body".into()),
+                color: Color::new(0.0, 0.0, 1.0, 1.0),
                 visible: Some(false),
             }),
             Source::Face => ir.model.faces.push(Face {
                 id: FaceId::mint(format!("test:model:face#source-{index}")).unwrap(),
                 shell: ShellId::mint("test:model:shell#owner").unwrap(),
                 surface: SurfaceId::mint("test:model:surface#carrier").unwrap(),
-                sense: Sense::Forward, loops: FaceLoops::unspecified(Vec::new()),
-                name: Some("existing face".into()), color: Color::new(0.0, 0.0, 1.0, 1.0),
+                sense: Sense::Forward,
+                loops: FaceLoops::unspecified(Vec::new()),
+                name: Some("existing face".into()),
+                color: Color::new(0.0, 0.0, 1.0, 1.0),
                 tolerance: None,
             }),
         }
@@ -65,12 +80,20 @@ fn assert_source_bounds(source: Source, operation: &'static str, second_body_pas
     for count in [1_usize, 64] {
         let expected = model(source, count);
         let count_work = u64::try_from(count).unwrap();
-        let total = if matches!(source, Source::Body) { 2 * count_work } else { count_work };
+        let total = if matches!(source, Source::Body) {
+            2 * count_work
+        } else {
+            count_work
+        };
         let start = if second_body_pass { count_work } else { 0 };
         // The tested sources have no metadata. Curve/surface bodies are free;
         // absent body/face sequence maps perform zero key comparisons. Each
         // actual source visit admits one unit, with no terminal empty probe.
-        for (cap, accepts) in [(start, false), (start + count_work - 1, false), (total, true)] {
+        for (cap, accepts) in [
+            (start, false),
+            (start + count_work - 1, false),
+            (total, true),
+        ] {
             let mut ir = expected.clone();
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -81,9 +104,15 @@ fn assert_source_bounds(source: Source, operation: &'static str, second_body_pas
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let sequences = super::super::super::geometry::SourceSequences::default();
             let result = super::super::project(
-                &mut ir, &[], (&BTreeMap::new(), &BTreeMap::new()), &BTreeMap::new(),
-                &global, &ctx, &sequences,
-            ).map(|outcome| {
+                &mut ir,
+                &[],
+                (&BTreeMap::new(), &BTreeMap::new()),
+                &BTreeMap::new(),
+                &global,
+                &ctx,
+                &sequences,
+            )
+            .map(|outcome| {
                 assert!(outcome.decoded.is_empty());
                 assert!(outcome.losses.is_empty());
                 drop(outcome);
@@ -95,7 +124,7 @@ fn assert_source_bounds(source: Source, operation: &'static str, second_body_pas
                 let first = match result {
                     Err(CodecError::ResourceLimit(first)) => first,
                     Err(error) => panic!("unexpected presentation error: {error:?}"),
-                    Ok(_) => panic!("expected actual presentation source refusal"),
+                    Ok(()) => panic!("expected actual presentation source refusal"),
                 };
                 assert_eq!(first.dimension, ResourceDimension::WorkUnits);
                 assert_eq!(first.operation, operation);
@@ -108,7 +137,9 @@ fn assert_source_bounds(source: Source, operation: &'static str, second_body_pas
                         &global, &ctx, &sequences,
                     ), Err(CodecError::ResourceLimit(last)) if last == first));
                 }
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+                );
             }
             assert_eq!(ir.model, expected.model);
         }
@@ -148,9 +179,15 @@ fn empty_presentation_sources_execute_no_work_or_allocation() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let outcome = super::super::project(
-        &mut ir, &[], (&BTreeMap::new(), &BTreeMap::new()), &BTreeMap::new(),
-        &global, &ctx, &super::super::super::geometry::SourceSequences::default(),
-    ).unwrap();
+        &mut ir,
+        &[],
+        (&BTreeMap::new(), &BTreeMap::new()),
+        &BTreeMap::new(),
+        &global,
+        &ctx,
+        &super::super::super::geometry::SourceSequences::default(),
+    )
+    .unwrap();
     assert!(outcome.decoded.is_empty());
     assert!(outcome.losses.is_empty());
     assert_eq!(ir.model, CadIr::empty().model);
@@ -158,23 +195,56 @@ fn empty_presentation_sources_execute_no_work_or_allocation() {
     ctx.finish_session().unwrap();
 }
 
-fn font_record(count: usize, motions: usize, invalid_last: Option<bool>) -> crate::parameter::ParameterRecord {
+fn font_record(
+    count: usize,
+    motions: usize,
+    invalid_last: Option<bool>,
+) -> crate::parameter::ParameterRecord {
     use crate::parameter::{ParameterRecord, Token, TokenValue};
-    let mut values = vec![TokenValue::Integer(310), TokenValue::Integer(101),
-        TokenValue::String(b"FONT".to_vec()), TokenValue::Omitted,
-        TokenValue::Integer(10), TokenValue::Integer(i64::try_from(count).unwrap())];
+    let mut values = vec![
+        TokenValue::Integer(310),
+        TokenValue::Integer(101),
+        TokenValue::String(b"FONT".to_vec()),
+        TokenValue::Omitted,
+        TokenValue::Integer(10),
+        TokenValue::Integer(i64::try_from(count).unwrap()),
+    ];
     for index in 0..count {
-        let code = if invalid_last == Some(false) && index + 1 == count { 0 }
-            else { i64::try_from(index).unwrap() };
-        values.extend([TokenValue::Integer(code), TokenValue::Integer(8),
-            TokenValue::Integer(0), TokenValue::Integer(i64::try_from(motions).unwrap())]);
+        let code = if invalid_last == Some(false) && index + 1 == count {
+            0
+        } else {
+            i64::try_from(index).unwrap()
+        };
+        values.extend([
+            TokenValue::Integer(code),
+            TokenValue::Integer(8),
+            TokenValue::Integer(0),
+            TokenValue::Integer(i64::try_from(motions).unwrap()),
+        ]);
         for motion in 0..motions {
-            let pen = if invalid_last == Some(true) && index + 1 == count && motion + 1 == motions { 2 } else { 0 };
-            values.extend([TokenValue::Integer(pen), TokenValue::Integer(0), TokenValue::Integer(0)]);
+            let pen = if invalid_last == Some(true) && index + 1 == count && motion + 1 == motions {
+                2
+            } else {
+                0
+            };
+            values.extend([
+                TokenValue::Integer(pen),
+                TokenValue::Integer(0),
+                TokenValue::Integer(0),
+            ]);
         }
     }
-    ParameterRecord::from_test_tokens(1, 1..2, Vec::new(), values.len(),
-        values.into_iter().map(|value| Token { value, span: 0..0 }).collect(), Vec::new())
+    ParameterRecord::from_test_tokens(
+        1,
+        1..2,
+        Vec::new(),
+        values.len(),
+        values
+            .into_iter()
+            .map(|value| Token { value, span: 0..0 })
+            .collect(),
+        Vec::new(),
+    )
 }
 
 fn font_entry() -> crate::directory::DirectoryEntry {
@@ -199,14 +269,21 @@ fn assert_font_visit_bounds(motions: usize) {
         let record = font_record(count, motions, None);
         let total = u64::try_from(count * (1 + motions)).unwrap();
         let first = u64::from(motions != 0);
-        let operation = if motions == 0 { "iges text font character traversal" }
-            else { "iges text font motion traversal" };
+        let operation = if motions == 0 {
+            "iges text font character traversal"
+        } else {
+            "iges text font motion traversal"
+        };
         for (work, accepts) in [(first, false), (total - 1, false), (total, true)] {
             let arena = DecodeArena::new();
             let policy = font_policy(work);
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let result = super::super::text_font_definition(
-                &entry, &record, &BTreeMap::new(), GlobalTable::V5Later, &ctx,
+                &entry,
+                &record,
+                &BTreeMap::new(),
+                GlobalTable::V5Later,
+                &ctx,
             );
             if accepts {
                 let font = result.unwrap().unwrap();
@@ -226,7 +303,9 @@ fn assert_font_visit_bounds(motions: usize) {
                         &entry, replay, &BTreeMap::new(), GlobalTable::V5Later, &ctx,
                     ), Err(CodecError::ResourceLimit(last)) if last == first));
                 }
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+                );
             }
         }
     }
@@ -250,8 +329,14 @@ fn invalid_final_font_character_stops_before_its_motion_records() {
     let policy = font_policy(63 * 3 + 1);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(super::super::text_font_definition(
-        &entry, &record, &BTreeMap::new(), GlobalTable::V5Later, &ctx,
-    ).unwrap().is_none());
+        &entry,
+        &record,
+        &BTreeMap::new(),
+        GlobalTable::V5Later,
+        &ctx,
+    )
+    .unwrap()
+    .is_none());
     ctx.finish_session().unwrap();
 }
 
@@ -263,8 +348,14 @@ fn invalid_final_font_motion_stops_at_its_actual_visit() {
     let policy = font_policy(64 * 3);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(super::super::text_font_definition(
-        &entry, &record, &BTreeMap::new(), GlobalTable::V5Later, &ctx,
-    ).unwrap().is_none());
+        &entry,
+        &record,
+        &BTreeMap::new(),
+        GlobalTable::V5Later,
+        &ctx,
+    )
+    .unwrap()
+    .is_none());
     ctx.finish_session().unwrap();
 }
 
@@ -277,18 +368,28 @@ fn empty_font_definition_is_free_and_preserves_original_entry_refusal() {
         let policy = font_policy(0);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         if fused {
-            let first = match ctx.charge_work(1, "test original empty font refusal").unwrap_err() {
-                CodecError::ResourceLimit(first) => first,
-                _ => panic!("expected original resource refusal"),
+            let CodecError::ResourceLimit(first) = ctx
+                .charge_work(1, "test original empty font refusal")
+                .unwrap_err()
+            else {
+                panic!("expected original resource refusal");
             };
             assert!(matches!(super::super::text_font_definition(
                 &entry, &record, &BTreeMap::new(), GlobalTable::V5Later, &ctx,
             ), Err(CodecError::ResourceLimit(last)) if last == first));
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+            );
         } else {
             assert!(super::super::text_font_definition(
-                &entry, &record, &BTreeMap::new(), GlobalTable::V5Later, &ctx,
-            ).unwrap().is_none());
+                &entry,
+                &record,
+                &BTreeMap::new(),
+                GlobalTable::V5Later,
+                &ctx,
+            )
+            .unwrap()
+            .is_none());
             ctx.finish_session().unwrap();
         }
     }
@@ -312,16 +413,38 @@ fn presentation_fixed_enum_and_absent_pointer_checks_are_free() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let entries = BTreeMap::new();
     for _ in 0..64 {
-        for table in [GlobalTable::V4_0, GlobalTable::V5_0, GlobalTable::Legacy, GlobalTable::V5Later] {
+        for table in [
+            GlobalTable::V4_0,
+            GlobalTable::V5_0,
+            GlobalTable::Legacy,
+            GlobalTable::V5Later,
+        ] {
             for value in [0, 1, 2, 3, 6, 12, 13, 14, 17, 18, 19, 1001, 1002, 1003] {
-                assert!(super::super::general_note_font_valid_for_global_table(value, &entries, table, &ctx).unwrap());
+                assert!(super::super::general_note_font_valid_for_global_table(
+                    value, &entries, table, &ctx
+                )
+                .unwrap());
             }
-            for (value, accepted) in [(2001, !matches!(table, GlobalTable::V4_0)),
-                (3001, matches!(table, GlobalTable::Legacy | GlobalTable::V5Later))] {
-                assert_eq!(super::super::general_note_font_valid_for_global_table(value, &entries, table, &ctx).unwrap(), accepted);
+            for (value, accepted) in [
+                (2001, !matches!(table, GlobalTable::V4_0)),
+                (
+                    3001,
+                    matches!(table, GlobalTable::Legacy | GlobalTable::V5Later),
+                ),
+            ] {
+                assert_eq!(
+                    super::super::general_note_font_valid_for_global_table(
+                        value, &entries, table, &ctx
+                    )
+                    .unwrap(),
+                    accepted
+                );
             }
             for value in [4, 5, 7, 1000, 3002, -1, -2, i64::MIN, i64::MAX] {
-                assert!(!super::super::general_note_font_valid_for_global_table(value, &entries, table, &ctx).unwrap());
+                assert!(!super::super::general_note_font_valid_for_global_table(
+                    value, &entries, table, &ctx
+                )
+                .unwrap());
             }
         }
         for value in [1, 1001, 1002, 1003, 2001, 3001] {
@@ -331,7 +454,9 @@ fn presentation_fixed_enum_and_absent_pointer_checks_are_free() {
             assert!(!super::super::new_general_note_charset_valid(value, &entries, &ctx).unwrap());
         }
         for value in [0, 1, -1, -2, i64::MIN, i64::MAX] {
-            assert!(!super::super::text_font_definition_pointer_valid(value, &entries, &ctx).unwrap());
+            assert!(
+                !super::super::text_font_definition_pointer_valid(value, &entries, &ctx).unwrap()
+            );
         }
     }
     ctx.finish_session().unwrap();
@@ -339,22 +464,41 @@ fn presentation_fixed_enum_and_absent_pointer_checks_are_free() {
 
 #[test]
 fn presentation_scalar_checks_preserve_each_original_refusal() {
-    for dimension in [ResourceDimension::WorkUnits, ResourceDimension::CollectionItems,
-        ResourceDimension::MaterializedBytes, ResourceDimension::RetainedBytes,
-        ResourceDimension::Entities, ResourceDimension::RecursionDepth] {
+    for dimension in [
+        ResourceDimension::WorkUnits,
+        ResourceDimension::CollectionItems,
+        ResourceDimension::MaterializedBytes,
+        ResourceDimension::RetainedBytes,
+        ResourceDimension::Entities,
+        ResourceDimension::RecursionDepth,
+    ] {
         let arena = DecodeArena::new();
         let policy = zero_scalar_policy();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let refused = match dimension {
-            ResourceDimension::WorkUnits => ctx.charge_work(1, "test original presentation scalar refusal"),
-            ResourceDimension::CollectionItems => ctx.charge_collection_items(1, "test original presentation scalar refusal"),
-            ResourceDimension::MaterializedBytes => ctx.reserve_scoped(1, "test original presentation scalar refusal").map(|_| ()),
-            ResourceDimension::RetainedBytes => ctx.charge_retained(1, "test original presentation scalar refusal"),
-            ResourceDimension::Entities => ctx.charge_entities(1, "test original presentation scalar refusal"),
-            ResourceDimension::RecursionDepth => ctx.enter_nested("test original presentation scalar refusal").map(|_| ()),
+            ResourceDimension::WorkUnits => {
+                ctx.charge_work(1, "test original presentation scalar refusal")
+            }
+            ResourceDimension::CollectionItems => {
+                ctx.charge_collection_items(1, "test original presentation scalar refusal")
+            }
+            ResourceDimension::MaterializedBytes => ctx
+                .reserve_scoped(1, "test original presentation scalar refusal")
+                .map(|_| ()),
+            ResourceDimension::RetainedBytes => {
+                ctx.charge_retained(1, "test original presentation scalar refusal")
+            }
+            ResourceDimension::Entities => {
+                ctx.charge_entities(1, "test original presentation scalar refusal")
+            }
+            ResourceDimension::RecursionDepth => ctx
+                .enter_nested("test original presentation scalar refusal")
+                .map(|_| ()),
             _ => panic!("presentation scalar refusal dimension"),
         };
-        let Err(CodecError::ResourceLimit(first)) = refused else { panic!("expected original refusal"); };
+        let Err(CodecError::ResourceLimit(first)) = refused else {
+            panic!("expected original refusal");
+        };
         assert_eq!(first.dimension, dimension);
         let mut target = crate::test_support::directory_target(1, 310);
         target.form = 0;
@@ -363,17 +507,30 @@ fn presentation_scalar_checks_preserve_each_original_refusal() {
         for entries in [&empty, &populated] {
             for _ in 0..64 {
                 for value in [0, 1, 4, 2001, 3001, -1, -2, i64::MIN, i64::MAX] {
-                    assert!(matches!(super::super::text_font_definition_pointer_valid(value, entries, &ctx),
-                        Err(CodecError::ResourceLimit(last)) if last == first));
-                    assert!(matches!(super::super::new_general_note_charset_valid(value, entries, &ctx),
-                        Err(CodecError::ResourceLimit(last)) if last == first));
-                    for table in [GlobalTable::V4_0, GlobalTable::V5_0, GlobalTable::Legacy, GlobalTable::V5Later] {
-                        assert!(matches!(super::super::general_note_font_valid_for_global_table(value, entries, table, &ctx),
-                            Err(CodecError::ResourceLimit(last)) if last == first));
+                    assert!(
+                        matches!(super::super::text_font_definition_pointer_valid(value, entries, &ctx),
+                        Err(CodecError::ResourceLimit(last)) if last == first)
+                    );
+                    assert!(
+                        matches!(super::super::new_general_note_charset_valid(value, entries, &ctx),
+                        Err(CodecError::ResourceLimit(last)) if last == first)
+                    );
+                    for table in [
+                        GlobalTable::V4_0,
+                        GlobalTable::V5_0,
+                        GlobalTable::Legacy,
+                        GlobalTable::V5Later,
+                    ] {
+                        assert!(
+                            matches!(super::super::general_note_font_valid_for_global_table(value, entries, table, &ctx),
+                            Err(CodecError::ResourceLimit(last)) if last == first)
+                        );
                     }
                 }
             }
         }
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+        );
     }
 }

@@ -1464,7 +1464,7 @@ fn sectioned_area_valid<'ctx>(
     let boundary_valid = match boundary_sequence {
         Some(Some(sequence)) => ctx
             .get_btree_map(entries, &sequence, "iges section boundary lookup")?
-            .is_some_and(|entry| section_boundary_type(*entry)),
+            .is_some_and(|entry| section_boundary_type(entry)),
         Some(None) => true,
         None => false,
     };

@@ -241,6 +241,9 @@ fn bounded_plane_nonsimple_child_preserves_seeded_ancestor_storage() {
 
 #[test]
 fn plane_boundary_destroys_active_path_before_retaining_proof_cache() {
+    type Key = super::super::super::PlaneBoundaryKey;
+    type Value = super::super::super::PlaneBoundaryProof<'static>;
+
     let bytes = bounded_plane_entity_file(GLOBAL_V5_0, 100, "100,0,0,0,1,0,1,0;");
     let decoded = decode(bytes.clone());
     let scan = crate::test_support::scan(&bytes).unwrap();
@@ -254,8 +257,6 @@ fn plane_boundary_destroys_active_path_before_retaining_proof_cache() {
         .map(|entry| (entry.sequence, entry))
         .collect();
     let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
-    type Key = super::super::super::PlaneBoundaryKey;
-    type Value = super::super::super::PlaneBoundaryProof<'static>;
     let cache = u64::try_from(
         11 * (std::mem::size_of::<Key>() + std::mem::size_of::<Value>())
             + 16 * std::mem::size_of::<usize>()

@@ -54,7 +54,7 @@ fn rejected_type128_carriers_release_candidate_storage() {
             && limit.additional == u64::try_from(4 * std::mem::size_of::<f64>()).unwrap()));
     let repeated_directory: Vec<_> = (0..16_u32)
         .map(|index| {
-            let mut entry = directory[0].clone();
+            let mut entry = directory[0];
             entry.sequence = 2 * index + 1;
             entry
         })

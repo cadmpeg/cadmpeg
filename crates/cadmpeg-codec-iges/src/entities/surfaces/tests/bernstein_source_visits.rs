@@ -29,26 +29,33 @@ fn binomial_factors(count: usize, work: u64, refuses: bool) {
                     Err(CodecError::ResourceLimit(last)) if last == first));
             }
         }
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+        );
     } else {
         // C(8,4)=70; C(128,64)=23951146041928082866135587776380551750.
         let expected = match count {
             4 => 70.0,
-            64 => 2.3951146041928085e37,
+            64 => 2.395_114_604_192_808_5e37,
             _ => panic!("unsupported fixture size"),
         };
         let actual = result.unwrap().unwrap();
         assert!(actual.is_finite());
         assert!((actual - expected).abs() <= EPS_BINOMIAL_RELATIVE * expected);
         assert_eq!(super::super::bernstein_binomial(0, 1, &ctx).unwrap(), None);
-        assert_eq!(super::super::bernstein_binomial(0, 0, &ctx).unwrap(), Some(1.0));
+        assert_eq!(
+            super::super::bernstein_binomial(0, 0, &ctx).unwrap(),
+            Some(1.0)
+        );
         ctx.finish_session().unwrap();
     }
 }
 
 #[test]
 fn surface_binomial_first_factor_refuses_work() {
-    for count in [4, 64] { binomial_factors(count, 0, true); }
+    for count in [4, 64] {
+        binomial_factors(count, 0, true);
+    }
 }
 
 #[test]
