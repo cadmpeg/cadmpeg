@@ -424,9 +424,17 @@ fn rational_nurbs_curve_separate_lanes_have_materialized_boundaries() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_materialized_bytes = cap;
             crate::test_support::with_policy_context(source, &policy, |_, ctx| {
-        let mut loss_storage = ctx.reserve_scoped(0, "test geometry report backing").expect("report owner");
+                let mut loss_storage = ctx
+                    .reserve_scoped(0, "test geometry report backing")
+                    .expect("report owner");
 
-                super::super::nurbs_curve(4, &exchange.records()[&4], &points, (&mut Vec::new(), &mut loss_storage), ctx)
+                super::super::nurbs_curve(
+                    4,
+                    &exchange.records()[&4],
+                    &points,
+                    (&mut Vec::new(), &mut loss_storage),
+                    ctx,
+                )
             })
         },
     );
@@ -434,12 +442,19 @@ fn rational_nurbs_curve_separate_lanes_have_materialized_boundaries() {
         if limit.dimension == ResourceDimension::MaterializedBytes
             && limit.operation == "step_nurbs_curve_control_points"));
     crate::test_support::with_service_context(source, |_, ctx| {
-        let mut loss_storage = ctx.reserve_scoped(0, "test geometry report backing").expect("report owner");
+        let mut loss_storage = ctx
+            .reserve_scoped(0, "test geometry report backing")
+            .expect("report owner");
 
-        let curve =
-            super::super::nurbs_curve(4, &exchange.records()[&4], &points, (&mut Vec::new(), &mut loss_storage), ctx)
-                .expect("curve admission")
-                .expect("curve");
+        let curve = super::super::nurbs_curve(
+            4,
+            &exchange.records()[&4],
+            &points,
+            (&mut Vec::new(), &mut loss_storage),
+            ctx,
+        )
+        .expect("curve admission")
+        .expect("curve");
         assert_eq!(
             curve.pole_rows().points(),
             vec![points[&1], points[&2], points[&3]]
@@ -477,9 +492,17 @@ fn rational_nurbs_surface_separate_lanes_have_materialized_boundaries() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = cap;
         crate::test_support::with_policy_context(source, &policy, |_, ctx| {
-        let mut loss_storage = ctx.reserve_scoped(0, "test geometry report backing").expect("report owner");
+            let mut loss_storage = ctx
+                .reserve_scoped(0, "test geometry report backing")
+                .expect("report owner");
 
-            super::super::nurbs_surface(5, &exchange.records()[&5], &points, (&mut Vec::new(), &mut loss_storage), ctx)
+            super::super::nurbs_surface(
+                5,
+                &exchange.records()[&5],
+                &points,
+                (&mut Vec::new(), &mut loss_storage),
+                ctx,
+            )
         })
     };
     let error = cadmpeg_test_support::refusal::resource_limit_at(

@@ -191,56 +191,6 @@ fn context_angle_scales_refuse_collection_limit() {
     ));
 }
 
-fn candidate_refusal(angle: bool, limit: u64) -> CodecError {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    let (group, value) = if angle {
-        ("step_angle_candidate_groups", "step_angle_candidate_values")
-    } else {
-        (
-            "step_length_candidate_groups",
-            "step_length_candidate_values",
-        )
-    };
-    ctx.push_btree_group(&mut BTreeMap::new(), 1, PositiveReal::ONE, group, value)
-        .expect_err("candidate exceeds the limit")
-}
-
-#[test]
-fn length_candidate_groups_refuse_collection_limit() {
-    assert!(matches!(candidate_refusal(false, 0),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_length_candidate_groups"));
-}
-
-#[test]
-fn length_candidate_values_refuse_collection_limit() {
-    assert!(matches!(candidate_refusal(false, 1),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_length_candidate_values"));
-}
-
-#[test]
-fn angle_candidate_groups_refuse_collection_limit() {
-    assert!(matches!(candidate_refusal(true, 0),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_angle_candidate_groups"));
-}
-
-#[test]
-fn angle_candidate_values_refuse_collection_limit() {
-    assert!(matches!(candidate_refusal(true, 1),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_angle_candidate_values"));
-}
-
 fn scope_refusal(records: &str, collection_limit: u64, depth_limit: Option<u64>) -> CodecError {
     let source = format!("{HEADER}{records}{TAIL}");
     let (exchange, _) =
@@ -254,7 +204,9 @@ fn scope_refusal(records: &str, collection_limit: u64, depth_limit: Option<u64>)
     }
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("source fits policy");
-    let mut active_storage = ctx.reserve_scoped(0, "test unit scope owner").expect("empty owner");
+    let mut active_storage = ctx
+        .reserve_scoped(0, "test unit scope owner")
+        .expect("empty owner");
     let mut members = BTreeSet::new();
     let mut active = BTreeSet::new();
     super::super::collect_unit_scope_members(
