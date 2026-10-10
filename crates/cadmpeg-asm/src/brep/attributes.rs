@@ -468,8 +468,8 @@ pub fn attribute_chain_color_carrier<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entity: &Record,
     max_steps: usize,
-    mut by_index: impl FnMut(i64) -> Option<&'a Record>,
-) -> Result<Option<(&'a Record, DirectAttributeColor)>, cadmpeg_core::CodecError> {
+    mut by_index: impl FnMut(i64) -> Option<&'a Record<'a>>,
+) -> Result<Option<(&'a Record<'a>, DirectAttributeColor)>, cadmpeg_core::CodecError> {
     let Some(mut current) = entity.ref_at(0) else {
         return Ok(None);
     };
@@ -725,7 +725,7 @@ mod tests {
         assert_eq!(limit.operation, "ASM attribute chain walk");
     }
 
-    fn transform_record(scale: f64, x: [f64; 3]) -> Record {
+    fn transform_record(scale: f64, x: [f64; 3]) -> Record<'static> {
         crate::test_support::sab::record(
             0,
             "transform".into(),

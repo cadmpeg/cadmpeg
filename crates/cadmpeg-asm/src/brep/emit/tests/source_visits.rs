@@ -213,7 +213,7 @@ impl RecordPass {
     }
 }
 
-fn records() -> [Record; 3] {
+fn records() -> [Record<'static>; 3] {
     // A known carrier head with no reachable owner makes each main pass a
     // complete source scan. No output payload or index insertion is executed.
     std::array::from_fn(|index| {

@@ -1429,7 +1429,7 @@ mod analytic_surface_tests {
         assert_carrier_limit(Token::Double(1.0), "ASM carrier doubles");
     }
 
-    fn surface_record(head: &str, tokens: Vec<Token>) -> Record {
+    fn surface_record(head: &str, tokens: Vec<Token>) -> Record<'static> {
         crate::test_support::sab::record(1, format!("{head}-surface"), Arc::from(tokens), 0, 0)
     }
 

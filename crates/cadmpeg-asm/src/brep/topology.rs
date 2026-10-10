@@ -103,7 +103,7 @@ pub(super) fn decode_analytic_carriers(
 #[derive(Clone, Copy)]
 pub(super) struct TopologyContext<'a, 'ctx, 'record> {
     pub(super) ctx: &'a cadmpeg_core::decode::DecodeContext<'ctx>,
-    pub(super) by_index: &'a HashMap<i64, &'record Record>,
+    pub(super) by_index: &'a HashMap<i64, &'record Record<'record>>,
     pub(super) token_table: &'a nurbs::toks::SubtypeTable,
     pub(super) purpose: DecodePurpose,
     pub(super) format: IdFormat,

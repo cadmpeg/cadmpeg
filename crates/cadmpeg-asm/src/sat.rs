@@ -113,12 +113,12 @@ fn resabs_cm(scale: PositiveReal, resabs: NonNegativeReal) -> f64 {
 
 /// A parsed text stream: header, indexed records, and terminator branch.
 #[derive(Debug, Clone)]
-pub struct TextStream {
+pub struct TextStream<'ctx> {
     /// The three header lines.
     pub header: TextHeader,
     /// Records in file order. Index 0 is the first record after the header
     /// lines; the stream does not always begin with `asmheader`.
-    pub records: Vec<Record>,
+    pub records: Vec<Record<'ctx>>,
     /// Which terminator line closed the stream.
     pub terminator: Terminator,
 }
@@ -587,7 +587,7 @@ pub fn parse_container(
 }
 
 /// Parse a complete text stream into its header and typed record table.
-pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, StreamFailure> {
+pub fn parse<'ctx>(ctx: &'ctx DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream<'ctx>, StreamFailure> {
     let mut pos = 0usize;
     let header = parse_header(ctx, bytes, &mut pos)?;
     // Length conversion into the binary centimetre convention: the stream
@@ -2124,7 +2124,7 @@ mod tests {
             ResourceDimension::WorkUnits,
             operation,
             |ctx| {
-                super::parse(ctx, &source)
+                super::parse(ctx, &source).map(|_| ())
                     .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
             },
         );
@@ -2326,7 +2326,7 @@ mod tests {
                 ResourceDimension::WorkUnits,
                 operation,
                 |ctx| {
-                    super::parse(ctx, source)
+                    super::parse(ctx, source).map(|_| ())
                         .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
                 },
             );
@@ -2526,7 +2526,7 @@ mod tests {
             ResourceDimension::CollectionItems,
             operation,
             |ctx| {
-                super::parse(ctx, &source)
+                super::parse(ctx, &source).map(|_| ())
                     .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
             },
         );
@@ -2650,7 +2650,7 @@ mod tests {
         ] {
             let refusal =
                 crate::test_support::resource_limit_at(&source, dimension, operation, |ctx| {
-                    super::parse(ctx, &source)
+                    super::parse(ctx, &source).map(|_| ())
                         .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
                 });
             assert_eq!(refusal.dimension, dimension);
@@ -2667,7 +2667,7 @@ mod tests {
                 ResourceDimension::RetainedBytes,
                 "retain SAT typed string",
                 |ctx| {
-                    super::parse(ctx, &source)
+                    super::parse(ctx, &source).map(|_| ())
                         .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
                 },
             );
@@ -2720,37 +2720,32 @@ mod tests {
             crate::test_support::with_service_context(&source, |service| {
                 let mut policy = *service.policy();
                 // Retain the header, record name, payload, exact token lane,
-                // record vector, value-token index, and shared index owner.
-                let index_owner =
-                    std::mem::size_of::<Vec<usize>>() + 2 * std::mem::size_of::<usize>();
+                // and record vector. The shared value-token index is scratch.
                 let required = cadmpeg_core::decode::u64_from_index(
-                    61 + name.len()
-                        + payload
+                    61 + name.len() + payload
                         + token_count * std::mem::size_of::<Token>()
-                        + 4 * std::mem::size_of::<super::Record>()
-                        + token_count.max(4).next_power_of_two() * std::mem::size_of::<usize>()
-                        + index_owner,
+                        + 4 * std::mem::size_of::<super::Record<'_>>(),
                 );
                 let error = cadmpeg_test_support::refusal::resource_limit_at(
                     ResourceDimension::RetainedBytes,
-                    "ASM record chunk index",
+                    "retain SAT record name",
                     |cap| {
                         policy.limits.max_retained_bytes = cap;
                         let arena = DecodeArena::new();
                         let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)?;
-                        super::parse(&ctx, &source)
+                        super::parse(&ctx, &source).map(|_| ())
                             .map_err(|error| error.into_codec_error(&ctx, CodecError::malformed))
                     },
                 );
                 let CodecError::ResourceLimit(limit) = error else {
-                    panic!("shared record index owner refusal");
+                    panic!("retained record name refusal");
                 };
-                assert_eq!(limit.operation, "ASM record chunk index");
+                assert_eq!(limit.operation, "retain SAT record name");
                 assert_eq!(limit.limit, required - 1);
-                let owner_bytes = cadmpeg_core::decode::u64_from_index(index_owner);
+                let name_bytes = cadmpeg_core::decode::u64_from_index(name.len());
                 assert_eq!(
                     (limit.used, limit.additional),
-                    (required - owner_bytes, owner_bytes)
+                    (required - name_bytes, name_bytes)
                 );
 
                 policy.limits.max_retained_bytes = required;
@@ -2804,7 +2799,7 @@ mod tests {
                 ResourceDimension::RetainedBytes,
                 "SAT record error text",
                 |ctx| {
-                    super::parse(ctx, &source)
+                    super::parse(ctx, &source).map(|_| ())
                         .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
                 },
             );
@@ -2817,12 +2812,15 @@ mod tests {
         }
     }
 
-    fn parse(bytes: &[u8]) -> Result<TextStream, StreamError> {
+    fn parse(bytes: &[u8]) -> Result<TextStream<'static>, StreamError> {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
             .expect("test stream fits the service input limit");
-        match super::parse(&ctx, bytes) {
-            Ok(stream) => Ok(stream),
+        let outcome = super::parse(&ctx, bytes);
+        match outcome {
+            Ok(stream) => Ok(TextStream { header: stream.header,
+                records: stream.records.into_iter().map(crate::sab::Record::into_fixture).collect(),
+                terminator: stream.terminator }),
             Err(
                 StreamFailure::Parse(error)
                 | StreamFailure::Malformed(error)

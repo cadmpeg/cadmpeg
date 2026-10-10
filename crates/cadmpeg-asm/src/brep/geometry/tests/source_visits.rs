@@ -6,7 +6,7 @@ use crate::sab::{Record, Token};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
-fn record(tokens: Vec<Token>) -> Record {
+fn record(tokens: Vec<Token>) -> Record<'static> {
     crate::test_support::sab::record(1, "carrier".into(), tokens.into(), 0, 0)
 }
 

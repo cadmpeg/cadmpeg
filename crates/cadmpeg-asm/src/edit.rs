@@ -35,8 +35,8 @@ use cadmpeg_ir::ids::CurveId;
 /// The context owns the framed record table and the stream-wide integer width.
 /// Callers retain format-specific edit selection and pass each selected record
 /// to the typed field writers.
-pub struct AsmEditSet {
-    records: Vec<Record>,
+pub struct AsmEditSet<'ctx> {
+    records: Vec<Record<'ctx>>,
     ref_width: RefWidth,
     header_scale: Option<PositiveReal>,
 }
@@ -138,11 +138,11 @@ pub enum PcurveEdit<'a> {
     },
 }
 
-impl AsmEditSet {
+impl<'ctx> AsmEditSet<'ctx> {
     /// Frame the solved record partition and apply edits through one context.
     pub fn apply<T>(
         bytes: &mut [u8],
-        edit: impl FnOnce(&DecodeContext<'_>, &mut [u8], &Self) -> Result<T, CodecError>,
+        edit: impl FnOnce(&DecodeContext<'_>, &mut [u8], &AsmEditSet<'_>) -> Result<T, CodecError>,
     ) -> Result<T, CodecError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, root) = DecodeContext::read_root(
@@ -151,12 +151,12 @@ impl AsmEditSet {
             &cadmpeg_core::decode::DecodePolicy::desktop(),
             false,
         )?;
-        let edits = Self::frame(&ctx, root.window())?;
+        let edits = AsmEditSet::frame(&ctx, root.window())?;
         edit(&ctx, bytes, &edits)
     }
 
     /// Frame the solved record partition without changing the input bytes.
-    pub fn frame(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Self, CodecError> {
+    pub fn frame(ctx: &'ctx DecodeContext<'_>, bytes: &[u8]) -> Result<Self, CodecError> {
         let header = asm_header::parse(ctx, bytes)?
             .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
         let start = asm_header::record_stream_start_with_header(ctx, bytes, &header)?
@@ -174,7 +174,7 @@ impl AsmEditSet {
     }
 
     /// Build a context from an already framed record partition.
-    pub fn from_framed(records: Vec<Record>, ref_width: RefWidth, header_scale: f64) -> Self {
+    pub fn from_framed(records: Vec<Record<'ctx>>, ref_width: RefWidth, header_scale: f64) -> Self {
         Self {
             records,
             ref_width,
@@ -183,12 +183,12 @@ impl AsmEditSet {
     }
 
     /// The framed solved records in record-table order.
-    pub fn records(&self) -> &[Record] {
+    pub fn records(&self) -> &[Record<'ctx>] {
         &self.records
     }
 
     /// Find one solved record by its record-table index.
-    pub fn record(&self, index: usize) -> Option<&Record> {
+    pub fn record(&self, index: usize) -> Option<&Record<'ctx>> {
         self.records.iter().find(|record| record.index == index)
     }
 
@@ -2236,7 +2236,7 @@ mod tests {
         }
     }
 
-    fn projection_fixture(width: RefWidth, early_close: bool) -> (Vec<u8>, crate::sab::Record) {
+    fn projection_fixture(width: RefWidth, early_close: bool) -> (Vec<u8>, crate::sab::Record<'static>) {
         fn integer(bytes: &mut Vec<u8>, tag: u8, value: i64, width: RefWidth) {
             bytes.push(tag);
             bytes.extend_from_slice(&value.to_le_bytes()[..width.bytes()]);

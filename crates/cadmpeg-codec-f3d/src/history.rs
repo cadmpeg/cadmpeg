@@ -811,14 +811,14 @@ fn topology_entity_slots(
     Ok(slots)
 }
 
-type HistoricalRecordArchive = HashMap<i64, cadmpeg_asm::sab::Record>;
+type HistoricalRecordArchive<'ctx> = HashMap<i64, cadmpeg_asm::sab::Record<'ctx>>;
 
-fn historical_record_archive(
+fn historical_record_archive<'ctx>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     states: &[AsmDeltaState],
-    active_records: &[cadmpeg_asm::sab::Record],
-    archived_frames: HashMap<i64, cadmpeg_asm::sab::Record>,
-) -> Result<Option<HistoricalRecordArchive>, cadmpeg_core::CodecError> {
+    active_records: &[cadmpeg_asm::sab::Record<'ctx>],
+    archived_frames: HashMap<i64, cadmpeg_asm::sab::Record<'ctx>>,
+) -> Result<Option<HistoricalRecordArchive<'ctx>>, cadmpeg_core::CodecError> {
     if active_records
         .iter()
         .enumerate()
@@ -923,10 +923,10 @@ fn historical_record_archive(
     Ok(Some(records))
 }
 
-fn clone_historical_record(
+fn clone_historical_record<'ctx>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    record: &cadmpeg_asm::sab::Record,
-) -> Result<cadmpeg_asm::sab::Record, cadmpeg_core::CodecError> {
+    record: &cadmpeg_asm::sab::Record<'ctx>,
+) -> Result<cadmpeg_asm::sab::Record<'ctx>, cadmpeg_core::CodecError> {
     record.try_clone_for_decode(ctx, "copy F3D historical record text")
 }
 
@@ -9091,11 +9091,11 @@ pub(crate) fn historical_topology_with_tags(
     Ok(Some(topology))
 }
 
-fn materialize_record_table(
+fn materialize_record_table<'ctx>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     state: &AsmDeltaState,
-    archive: &HistoricalRecordArchive,
-) -> Result<Option<Vec<cadmpeg_asm::sab::Record>>, cadmpeg_core::CodecError> {
+    archive: &HistoricalRecordArchive<'ctx>,
+) -> Result<Option<Vec<cadmpeg_asm::sab::Record<'ctx>>>, cadmpeg_core::CodecError> {
     if state.entity_versions.is_empty() {
         return Ok(None);
     }

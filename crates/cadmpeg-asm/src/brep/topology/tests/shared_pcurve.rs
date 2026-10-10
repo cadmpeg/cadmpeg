@@ -4,7 +4,7 @@ use super::*;
 use cadmpeg_core::decode::refusal_probe::RefusalProbe;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-fn shared_records() -> Vec<Record> {
+fn shared_records() -> Vec<Record<'static>> {
     let edge = |index, range: [f64; 2]| {
         let mut tokens = vec![Token::Ref(-1); 10];
         tokens[4] = Token::Double(range[0]);

@@ -13,7 +13,8 @@
 
 use crate::kernel_header::RefWidth;
 use crate::stream_error::{StreamError, StreamFailure, StreamFormat};
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
+use std::rc::Rc;
 use std::sync::Arc;
 
 pub(crate) fn int_le_at(bytes: &[u8], offset: usize, width: RefWidth) -> Option<i64> {
@@ -186,7 +187,7 @@ impl Token {
 /// One framed record: its `RecordTable` index, assembled name, payload tokens
 /// (the tokens after the name chain), and byte extent within the stream.
 #[derive(Debug, Clone)]
-pub struct Record {
+pub struct Record<'ctx> {
     /// `RecordTable` index. The first framed record has index 0.
     pub index: usize,
     /// Full `-`-joined record name, e.g. `cone-surface`, `body`.
@@ -199,14 +200,16 @@ pub struct Record {
     /// Byte length of the record including its terminator.
     pub len: usize,
     head_end: usize,
-    chunk_positions: Arc<Vec<usize>>,
+    // The last shared owner releases the scoped index storage.
+    // Trusted fixtures have no live decode session.
+    chunk_positions: Rc<(Vec<usize>, Option<ScopedReservation<'ctx>>)>,
 }
 
-impl Record {
+impl<'ctx> Record<'ctx> {
     /// Build the dispatch and value-token indices once. Replacing the name or
     /// changing payload token kinds or order requires constructing a new record.
     pub fn new(
-        ctx: &DecodeContext<'_>,
+        ctx: &'ctx DecodeContext<'_>,
         index: usize,
         name: String,
         tokens: Arc<[Token]>,
@@ -224,7 +227,7 @@ impl Record {
     }
 
     pub(crate) fn with_head_end(
-        ctx: &DecodeContext<'_>,
+        ctx: &'ctx DecodeContext<'_>,
         index: usize,
         name: String,
         tokens: Arc<[Token]>,
@@ -232,6 +235,7 @@ impl Record {
         len: usize,
         head_end: usize,
     ) -> Result<Self, cadmpeg_core::CodecError> {
+        let mut storage = ctx.reserve_scoped(0, "ASM record chunk index")?;
         let mut chunk_positions = Vec::new();
         let mut source = tokens.iter().enumerate();
         while source.len() != 0 {
@@ -241,15 +245,14 @@ impl Record {
                 break;
             };
             if !token.is_payload_ident() {
-                ctx.push_vec(&mut chunk_positions, position, "ASM record chunk positions")?;
+                ctx.push_scoped_vec(&mut storage, &mut chunk_positions, position, "ASM record chunk positions")?;
             }
         }
         // Share the vector without copying its file-controlled payload.
-        ctx.charge_retained(
+        storage.grow(
             cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<Vec<usize>>() + 2 * std::mem::size_of::<usize>(),
+                std::mem::size_of::<(Vec<usize>, Option<ScopedReservation<'ctx>>)>() + 2 * std::mem::size_of::<usize>(),
             ),
-            "ASM record chunk index",
         )?;
         Ok(Self {
             index,
@@ -258,7 +261,7 @@ impl Record {
             offset,
             len,
             head_end,
-            chunk_positions: Arc::new(chunk_positions),
+            chunk_positions: Rc::new((chunk_positions, Some(storage))),
         })
     }
 
@@ -279,6 +282,16 @@ impl Record {
         })
     }
 
+    /// Detach an admitted fixture index from its temporary test session.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn into_fixture(self) -> Record<'static> {
+        Record {
+            index: self.index, name: self.name, tokens: self.tokens,
+            offset: self.offset, len: self.len, head_end: self.head_end,
+            chunk_positions: Rc::new((self.chunk_positions.0.clone(), None)),
+        }
+    }
+
     /// Leading name component used for dispatch, such as `cone` or `body`.
     #[must_use]
     pub fn head(&self) -> &str {
@@ -287,7 +300,7 @@ impl Record {
 
     /// The `i`th payload value token. Payload identifiers leave field positions unchanged.
     pub fn chunk(&self, i: usize) -> Option<&Token> {
-        self.tokens.get(*self.chunk_positions.get(i)?)
+        self.tokens.get(*self.chunk_positions.0.get(i)?)
     }
 
     /// The `chunk[i]` as a non-null entity reference index.
@@ -300,14 +313,14 @@ impl Record {
 
     /// Payload value tokens in order. Each iterator step reads one indexed token.
     pub fn chunks(&self) -> impl DoubleEndedIterator<Item = &Token> + ExactSizeIterator {
-        self.chunk_positions
+        self.chunk_positions.0
             .iter()
             .map(|position| &self.tokens[*position])
     }
 
     /// Number of indexed payload value tokens.
     pub fn chunk_len(&self) -> usize {
-        self.chunk_positions.len()
+        self.chunk_positions.0.len()
     }
 }
 
@@ -604,14 +617,14 @@ pub(crate) fn lex<'bytes>(
 /// entity population is admitted once; actual records charge only its excess. A `limit` past
 /// the end of `bytes` is a truncated stream, and it is refused with both the
 /// declared end and the available length.
-pub fn frame(
-    ctx: &DecodeContext<'_>,
+pub fn frame<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     limit: usize,
     ref_width: RefWidth,
     declared_entities: Option<u64>,
-) -> Result<Vec<Record>, StreamFailure> {
+) -> Result<Vec<Record<'ctx>>, StreamFailure> {
     frame_impl(
         ctx,
         bytes,
@@ -625,26 +638,26 @@ pub fn frame(
 
 /// Frame a history-section slice whose final record ends at the enclosing
 /// stream boundary without an explicit `0x11` terminator.
-pub fn frame_history(
-    ctx: &DecodeContext<'_>,
+pub fn frame_history<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     limit: usize,
     ref_width: RefWidth,
     declared_entities: Option<u64>,
-) -> Result<Vec<Record>, StreamFailure> {
+) -> Result<Vec<Record<'ctx>>, StreamFailure> {
     frame_impl(ctx, bytes, start, limit, ref_width, declared_entities, true)
 }
 
-fn frame_impl(
-    ctx: &DecodeContext<'_>,
+fn frame_impl<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     limit: usize,
     ref_width: RefWidth,
     declared_entities: Option<u64>,
     eof_terminates_final_record: bool,
-) -> Result<Vec<Record>, StreamFailure> {
+) -> Result<Vec<Record<'ctx>>, StreamFailure> {
     let Some(bytes) = bytes.get(..limit) else {
         return Err(StreamError {
             format: StreamFormat::Binary,
@@ -1006,7 +1019,7 @@ mod tests {
                 ResourceDimension::WorkUnits,
                 operation,
                 |ctx| {
-                    frame_stream(ctx, bytes, 0, bytes.len(), RefWidth::Eight, None)
+                    frame_stream(ctx, bytes, 0, bytes.len(), RefWidth::Eight, None).map(|_| ())
                         .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
                 },
             );
@@ -1022,7 +1035,7 @@ mod tests {
             ResourceDimension::CollectionItems,
             operation,
             |ctx| {
-                frame_stream(ctx, bytes, 0, bytes.len(), RefWidth::Eight, None)
+                frame_stream(ctx, bytes, 0, bytes.len(), RefWidth::Eight, None).map(|_| ())
                     .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
             },
         );
@@ -1099,7 +1112,7 @@ mod tests {
         limit: usize,
         width: RefWidth,
         history: bool,
-    ) -> Result<Vec<Record>, StreamError> {
+    ) -> Result<Vec<Record<'static>>, StreamError> {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
             .expect("test stream fits the service input limit");
@@ -1109,7 +1122,7 @@ mod tests {
             frame_stream(&ctx, bytes, start, limit, width, None)
         };
         match outcome {
-            Ok(records) => Ok(records),
+            Ok(records) => Ok(records.into_iter().map(Record::into_fixture).collect()),
             Err(
                 StreamFailure::Parse(error)
                 | StreamFailure::Malformed(error)
@@ -1132,7 +1145,7 @@ mod tests {
         start: usize,
         limit: usize,
         width: RefWidth,
-    ) -> Result<Vec<Record>, StreamError> {
+    ) -> Result<Vec<Record<'static>>, StreamError> {
         framed(bytes, start, limit, width, false)
     }
 
@@ -1141,7 +1154,7 @@ mod tests {
         start: usize,
         limit: usize,
         width: RefWidth,
-    ) -> Result<Vec<Record>, StreamError> {
+    ) -> Result<Vec<Record<'static>>, StreamError> {
         framed(bytes, start, limit, width, true)
     }
 
