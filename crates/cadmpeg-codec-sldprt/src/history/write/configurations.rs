@@ -507,26 +507,28 @@ pub(in crate::history) fn sync_neutral_configurations(
         })
         .collect::<std::collections::HashSet<_>>();
     let previous_slot_owners = native_configuration_slot_owners(&native.feature_histories);
-    let deleted_ids = native
-        .feature_histories
-        .iter()
-        .flat_map(|history| &history.configurations)
-        .filter(|configuration| !desired_ids.contains(&configuration.id))
-        .map(|configuration| configuration.id.clone())
-        .collect::<HashSet<_>>();
-    native.feature_input_lanes.retain(|lane| {
-        let Some(index) = lane
-            .configuration
-            .as_deref()
-            .and_then(|configuration| configuration.parse::<u32>().ok())
-        else {
-            return true;
-        };
-        previous_slot_owners
-            .get(&index)
-            .and_then(Option::as_deref)
-            .is_none_or(|owner| !deleted_ids.contains(owner))
-    });
+    {
+        let deleted_ids = native
+            .feature_histories
+            .iter()
+            .flat_map(|history| &history.configurations)
+            .filter(|configuration| !desired_ids.contains(&configuration.id))
+            .map(|configuration| configuration.id.as_str())
+            .collect::<HashSet<_>>();
+        native.feature_input_lanes.retain(|lane| {
+            let Some(index) = lane
+                .configuration
+                .as_deref()
+                .and_then(|configuration| configuration.parse::<u32>().ok())
+            else {
+                return true;
+            };
+            previous_slot_owners
+                .get(&index)
+                .and_then(Option::as_deref)
+                .is_none_or(|owner| !deleted_ids.contains(owner))
+        });
+    }
     for history in &mut native.feature_histories {
         history
             .configurations
@@ -543,7 +545,7 @@ pub(in crate::history) fn sync_neutral_configurations(
             .flat_map(|history| &mut history.configurations)
             .find(|candidate| configuration.native_ref.as_deref() == Some(candidate.id.as_str()));
         if let Some(existing) = existing {
-            let existing_id = existing.id.clone();
+            let existing_id = existing.id.as_str();
             let previous_slot = configuration_slot(&existing.properties, existing.ordinal);
             existing.ordinal = configuration.ordinal;
             existing.source_index = configuration.source_index;
@@ -555,7 +557,7 @@ pub(in crate::history) fn sync_neutral_configurations(
             if previous_slot != configuration_slot
                 && previous_slot_owners
                     .get(&previous_slot)
-                    .and_then(Clone::clone)
+                    .and_then(Option::as_deref)
                     == Some(existing_id)
             {
                 lane_configuration_remaps
