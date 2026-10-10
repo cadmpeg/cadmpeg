@@ -540,7 +540,7 @@ fn sat_annotation_stream_comparison_admits_each_visited_byte() {
         crate::test_support::with_context(&[], &policy, |ctx| {
             let result = annotation_stream_result(ctx, [&streams[0], &streams[1]]);
             if let Err(CodecError::ResourceLimit(ref refusal)) = result {
-                assert_eq!(ctx.resource_refusal(), Some(refusal.clone()));
+                assert_eq!(ctx.resource_refusal(), Some(*refusal));
                 assert!(
                     matches!(ctx.charge_work(0, "after annotation comparison refusal"),
                     Err(CodecError::ResourceLimit(original)) if original == *refusal)
