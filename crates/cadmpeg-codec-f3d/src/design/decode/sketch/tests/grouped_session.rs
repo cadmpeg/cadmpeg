@@ -215,3 +215,5 @@ fn grouped_session_late_original_refusal_dominates_the_next_native_visit() {
     drop(grouped);
     drop(storage);
 }
+
+mod callback_boundaries;
