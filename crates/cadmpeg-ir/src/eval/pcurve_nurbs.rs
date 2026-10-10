@@ -13,6 +13,7 @@ use crate::units::FinitePoint2;
 use cadmpeg_core::decode::ResourceLimit;
 
 mod higher;
+pub(super) mod pending;
 
 pub(super) type HigherPcurve = [Result<FinitePoint2, EvaluationFailure<()>>; 3];
 
@@ -78,6 +79,7 @@ impl DifferentialPoles<'_> {
     }
 }
 
+#[derive(Clone, Copy)]
 pub(super) struct PcurveDifferential {
     pub(super) higher: HigherPcurve,
     pub(super) point: FinitePoint2,
@@ -104,7 +106,7 @@ pub(super) fn differential(
 ) -> Result<PcurveDifferential, EvaluationFailure<Point2>> {
     scratch.settle(differential_unsettled(
         scratch, degree, knots, poles, t, None,
-    ))
+    ).map(|pending| pending.lower()))
 }
 
 /// Requested higher orders use the same selected span and point triangle.
@@ -116,18 +118,30 @@ pub(super) fn differential_requested(
     t: FiniteReal,
     max_order: usize,
 ) -> Result<PcurveDifferential, EvaluationFailure<Point2>> {
+    differential_pending(scratch, degree, knots, poles, t, max_order)?.complete()
+}
+
+/// Retain the actual completed lower state for higher formation in this scratch.
+pub(super) fn differential_pending<'scratch, 'ctx, 'arena, 'source>(
+    scratch: &'scratch decode::Scratch<'ctx, 'arena>,
+    degree: u32,
+    knots: &'source [f64],
+    poles: DifferentialPoles<'source>,
+    t: FiniteReal,
+    max_order: usize,
+) -> Result<pending::PendingDifferential<'scratch, 'ctx, 'arena, 'source>, EvaluationFailure<Point2>> {
     scratch.settle(differential_unsettled(scratch, degree, knots, poles, t, Some(max_order)))
 }
 
-fn differential_unsettled(
-    scratch: &decode::Scratch<'_, '_>,
+fn differential_unsettled<'scratch, 'ctx, 'arena, 'source>(
+    scratch: &'scratch decode::Scratch<'ctx, 'arena>,
     degree: u32,
-    knots: &[f64],
-    poles: DifferentialPoles<'_>,
-    t: FiniteReal,
+    knots: &'source [f64],
+    poles: DifferentialPoles<'source>,
+    parameter: FiniteReal,
     max_order: Option<usize>,
-) -> Result<PcurveDifferential, EvaluationFailure<Point2>> {
-    let t = t.get();
+) -> Result<pending::PendingDifferential<'scratch, 'ctx, 'arena, 'source>, EvaluationFailure<Point2>> {
+    let t = parameter.get();
     let unreached = EvaluationFailure::NonFinite(Point2::new(f64::NAN, f64::NAN));
     let degree = usize::try_from(degree).map_err(|_| EvaluationFailure::NoValue)?;
     let span = scratch
@@ -312,25 +326,10 @@ fn differential_unsettled(
         acceleration,
     })
     })()?;
-    let mut result = result;
-    if result.tangent.is_ok() {
-        if let Some(captured) = captured {
-            let order = max_order.unwrap_or(2);
-            result.higher = if !poles.has_weights() {
-                higher::polynomial(scratch, knots, degree, span, poles, &captured, order)
-            } else if let Some(fixed) = higher::quadratic(scratch, knots, poles,
-                FiniteReal::new(t).ok_or(EvaluationFailure::NoValue)?, order) {
-                fixed
-            } else if let Some(lower) = completed {
-                super::rational::pcurve::higher(scratch, knots, degree, span, poles, lower, &captured, order)
-            } else { [Err(EvaluationFailure::NoValue); 3] };
-        } else if degree == 1 && poles.has_weights() {
-            if let Some(order) = max_order.filter(|order| *order >= 3) {
-                result.higher = higher::linear(scratch, knots, span, poles, &basis, order);
-            }
-        }
-    }
-    Ok(result)
+    Ok(pending::PendingDifferential {
+        basis, captured, lower: result, completed, scratch, knots, poles,
+        degree, span, parameter, max_order,
+    })
 }
 
 #[cfg(test)]
