@@ -514,3 +514,39 @@ fn missing_child_rejection_admits_one_reference_before_lookup() {
     };
     assert_eq!(limit.additional, 1);
 }
+
+#[test]
+fn tessellation_texture_component_width_does_not_charge_bounded_work() {
+    let mut fixture = Fixture::new();
+    fixture.vertex_headers[0].vertex_bindings = 0x100;
+    for corner in &mut fixture.meshes[0].polygons[0].corners {
+        corner.1 = Some(0);
+    }
+    let measure = |width| {
+        let textures = [DisplayJtVertexTextureCoordinates {
+            id: "texture".into(),
+            vertex_records_header: "vertex-header".into(),
+            channel: 0,
+            values: vec![vec![FiniteBinary32::ZERO; width]],
+            texture_coordinate_hash: 0,
+            byte_len: 0,
+            source_offset: 0,
+        }];
+        work_used(|ctx| {
+            let mut inputs = fixture.inputs();
+            inputs.texture_coordinates = &textures;
+            let tessellations = display_jt_tessellations(ctx, &inputs)?;
+            assert_eq!(tessellations.len(), 1);
+            let tessellation = &tessellations[0].0;
+            assert_eq!(tessellation.vertices().len(), 3);
+            assert_eq!(tessellation.channels().len(), 1);
+            let channel = &tessellation.channels()[0];
+            assert_eq!(channel.item_size(), u32::try_from(width * 4).unwrap());
+            assert_eq!(channel.data(), vec![0; width * 12]);
+            Ok(())
+        })
+    };
+    // Each channel has at most four scalar components. Both widths visit the
+    // same input-sized records; only bounded scalar work and output size differ.
+    assert_eq!(measure(1), measure(4));
+}
