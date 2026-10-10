@@ -1143,3 +1143,5 @@ fn historical_profile_group_id_entry_refuses_collection_limit() {
 fn historical_profile_group_id_refuses_retained_limit() {
     assert_historical_face_profile_refusal("f3d historical profile group id", true);
 }
+
+mod state_membership;
