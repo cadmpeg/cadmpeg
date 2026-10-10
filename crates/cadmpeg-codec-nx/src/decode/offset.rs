@@ -3015,12 +3015,10 @@ pub(super) fn intersection_side(
         )? {
             None
         } else if let Some(geometry) = geometry {
-            let mut control_points = Vec::new();
-            let controls_storage = geometry_budget.charges.reserve_temporary_vec(
-                &mut control_points,
-                uv.len(),
-                "nx intersection support controls",
-            )?;
+            let mut controls_storage = ctx.reserve_scoped(0, "nx intersection support controls")?;
+            let mut control_points = controls_storage.with_storage(|| {
+                ctx.collection_vec(uv.len(), "nx intersection support controls")
+            })?;
             let mut valid = true;
             let mut pairs = uv.iter();
             while !pairs.as_slice().is_empty() {

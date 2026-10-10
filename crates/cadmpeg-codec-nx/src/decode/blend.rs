@@ -186,7 +186,7 @@ mod tests {
                     .expect("cache allocation succeeds");
             }
             let first = SurfaceId::mint("test:model:entity#surface-0").expect("identity grammar");
-            let get = |cache: &BlendSurfaceFrameCache, surface, parameter| {
+            let get = |cache: &BlendSurfaceFrameCache<'_>, surface, parameter| {
                 cache
                     .get(geometry_ctx, surface, parameter, false)
                     .expect("cache lookup fits the service profile")
@@ -239,7 +239,7 @@ mod tests {
 
             let first =
                 SurfaceId::mint("test:model:entity#boundary-surface-0").expect("identity grammar");
-            let get = |cache: &BlendSurfaceFrameCache, surface, parameter, boundary| {
+            let get = |cache: &BlendSurfaceFrameCache<'_>, surface, parameter, boundary| {
                 cache
                     .get_boundary_point(geometry_ctx, surface, parameter, boundary)
                     .expect("cache lookup fits the service profile")
@@ -268,32 +268,57 @@ mod tests {
     }
 
     #[test]
-    fn blend_frame_cache_refuses_retained_identity_at_limit() {
+    fn blend_frame_cache_refuses_live_identity_at_materialized_limit() {
         use cadmpeg_core::decode::ResourceDimension;
-
-        crate::test_support::with_decode_context_over(
-            &[],
-            |policy| {
-                policy.limits.max_retained_bytes = 0;
-            },
-            |ctx| {
-                let budget = GeometryWorkBudget::from_context(ctx, 100);
-                let surface =
-                    SurfaceId::mint("test:model:entity#blend-frame").expect("identity grammar");
-                let frame = (
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    Vector3::new(0.0, 1.0, 0.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    1.0,
-                );
-                let limit = BlendSurfaceFrameCache::default()
-                    .remember(&surface, 0.0, false, frame, &budget)
-                    .expect_err("frame identity exceeds retained limit");
-                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-                assert_eq!(limit.operation, "nx blend frame cache identity");
-            },
+        let surface = SurfaceId::mint("test:model:entity#blend-frame").expect("identity grammar");
+        let frame = (
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            1.0,
         );
+        crate::test_support::resource_refusal_at(&[], ResourceDimension::MaterializedBytes,
+            "nx blend frame cache identity", |ctx| {
+                let budget = GeometryWorkBudget::from_context(ctx, 100);
+                Ok(BlendSurfaceFrameCache::default().remember(&surface, 0.0, false, frame, &budget)?)
+            });
+    }
+
+    #[test]
+    fn blend_cache_eviction_and_clear_release_live_identity_storage() {
+        let surface = SurfaceId::mint("test:model:entity#blend-cache").unwrap();
+        let frame = (Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0), Vector3::new(0.0, 0.0, 1.0), 1.0);
+        for boundary in [false, true] {
+            let capacity = if boundary { MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES }
+                else { MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES };
+            // Copying the incoming identity overlaps the oldest live entry.
+            let peak = cadmpeg_core::decode::u64_from_index((capacity + 1) * surface.as_str().len());
+            crate::test_support::with_decode_context_over(&[], |policy| {
+                policy.limits.max_retained_bytes = 0;
+                policy.limits.max_materialized_bytes = peak;
+            }, |ctx| {
+                let budget = GeometryWorkBudget::from_context(ctx, 100);
+                let mut cache = BlendSurfaceFrameCache::default();
+                for ordinal in 0..2 * capacity {
+                    let parameter = cadmpeg_core::convert::f64_from_index(ordinal).unwrap();
+                    if boundary {
+                        cache.remember_boundary_point(&surface, parameter, 0, frame.0, &budget).unwrap();
+                    } else {
+                        cache.remember(&surface, parameter, false, frame, &budget).unwrap();
+                    }
+                }
+                cache.clear();
+                drop(ctx.reserve_scoped(peak, "nx cleared blend cache storage probe").unwrap());
+                assert_eq!(ctx.resource_refusal(), None);
+            });
+        }
+        crate::test_support::resource_refusal_at(&[], cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+            "nx blend boundary cache identity", |ctx| {
+                let budget = GeometryWorkBudget::from_context(ctx, 100);
+                Ok(BlendSurfaceFrameCache::default().remember_boundary_point(&surface, 0.0, 0, frame.0, &budget)?)
+            });
     }
 
     #[test]
@@ -1834,18 +1859,20 @@ type BlendSurfaceFrame = (Point3, Vector3, Vector3, Vector3, f64);
 const MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES: usize = 512;
 const MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES: usize = 2_048;
 
-struct BlendSurfaceFrameCacheEntry {
+struct BlendSurfaceFrameCacheEntry<'ctx> {
     surface: String,
     parameter_bits: u64,
     allow_offset_contact: bool,
     frame: BlendSurfaceFrame,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
-struct BlendBoundaryPointCacheEntry {
+struct BlendBoundaryPointCacheEntry<'ctx> {
     surface: String,
     parameter_bits: u64,
     boundary: usize,
     point: Point3,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
 /// Bounded certificates for deterministic blend-geometry evaluations.
@@ -1853,12 +1880,12 @@ struct BlendBoundaryPointCacheEntry {
 /// Entries belong to one [`GeometryWorkBudget`] and are valid only while its
 /// model index is unchanged. Failed evaluations are not retained because a
 /// later contact seed or route may produce a valid witness.
-pub(super) struct BlendSurfaceFrameCache {
-    entries: VecDeque<BlendSurfaceFrameCacheEntry>,
-    boundary_points: VecDeque<BlendBoundaryPointCacheEntry>,
+pub(super) struct BlendSurfaceFrameCache<'ctx> {
+    entries: VecDeque<BlendSurfaceFrameCacheEntry<'ctx>>,
+    boundary_points: VecDeque<BlendBoundaryPointCacheEntry<'ctx>>,
 }
 
-impl Default for BlendSurfaceFrameCache {
+impl Default for BlendSurfaceFrameCache<'_> {
     fn default() -> Self {
         Self {
             entries: VecDeque::with_capacity(MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES),
@@ -1870,7 +1897,7 @@ impl Default for BlendSurfaceFrameCache {
 // Each cache holds at most its fixed entry bound, so a scan visits a bounded
 // number of entries. An entry's fixed fields are tested before its identity
 // text, and only an identity comparison is input-sized work.
-impl BlendSurfaceFrameCache {
+impl<'ctx> BlendSurfaceFrameCache<'ctx> {
     fn position(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -1913,7 +1940,7 @@ impl BlendSurfaceFrameCache {
         parameter: f64,
         allow_offset_contact: bool,
         frame: BlendSurfaceFrame,
-        geometry_budget: &GeometryWorkBudget<'_>,
+        geometry_budget: &GeometryWorkBudget<'ctx>,
     ) -> Result<(), cadmpeg_core::decode::ResourceLimit> {
         if let Some(entry) = self
             .position(
@@ -1927,9 +1954,10 @@ impl BlendSurfaceFrameCache {
             entry.frame = frame;
             return Ok(());
         }
-        let surface = geometry_budget
-            .charges
-            .copy_retained_text_limit(surface.as_str(), "nx blend frame cache identity")?;
+        let mut storage = geometry_budget.charges.reserve_scoped_limit(0, "nx blend frame cache identity")?;
+        let surface = storage.with_storage_limit(|| {
+            geometry_budget.charges.copy_retained_text_limit(surface.as_str(), "nx blend frame cache identity")
+        })?;
         geometry_budget.charges.charge_collection_items_limit(
             cadmpeg_core::decode::u64_from_index(1),
             "nx blend frame cache entries",
@@ -1938,6 +1966,7 @@ impl BlendSurfaceFrameCache {
             self.entries.pop_front();
         }
         self.entries.push_back(BlendSurfaceFrameCacheEntry {
+                _storage: storage,
             surface,
             parameter_bits: parameter.to_bits(),
             allow_offset_contact,
@@ -1988,7 +2017,7 @@ impl BlendSurfaceFrameCache {
         parameter: f64,
         boundary: usize,
         point: Point3,
-        geometry_budget: &GeometryWorkBudget<'_>,
+        geometry_budget: &GeometryWorkBudget<'ctx>,
     ) -> Result<(), cadmpeg_core::decode::ResourceLimit> {
         if let Some(entry) = self
             .boundary_position(geometry_budget.charges, surface, parameter, boundary)?
@@ -1997,9 +2026,10 @@ impl BlendSurfaceFrameCache {
             entry.point = point;
             return Ok(());
         }
-        let surface = geometry_budget
-            .charges
-            .copy_retained_text_limit(surface.as_str(), "nx blend boundary cache identity")?;
+        let mut storage = geometry_budget.charges.reserve_scoped_limit(0, "nx blend boundary cache identity")?;
+        let surface = storage.with_storage_limit(|| {
+            geometry_budget.charges.copy_retained_text_limit(surface.as_str(), "nx blend boundary cache identity")
+        })?;
         geometry_budget.charges.charge_collection_items_limit(
             cadmpeg_core::decode::u64_from_index(1),
             "nx blend boundary cache entries",
@@ -2009,6 +2039,7 @@ impl BlendSurfaceFrameCache {
         }
         self.boundary_points
             .push_back(BlendBoundaryPointCacheEntry {
+                _storage: storage,
                 surface,
                 parameter_bits: parameter.to_bits(),
                 boundary,
