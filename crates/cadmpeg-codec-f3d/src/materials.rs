@@ -1260,7 +1260,11 @@ fn appearances_from_schema_records<'ctx>(
                 })?;
             }
             Some(existing) => {
-                if !ctx.equal(&existing.0, &texture, "compare F3D texture asset payloads")? {
+                if !existing.0.equal_for_decode(
+                    ctx,
+                    &texture,
+                    "compare F3D texture asset payloads",
+                )? {
                     return Err(ctx
                         .format_retained(
                             format_args!(
