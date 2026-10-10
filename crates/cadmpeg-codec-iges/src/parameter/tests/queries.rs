@@ -25,7 +25,8 @@ fn macro_analysis_resolves_its_directory_entry_once() {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let result = if with_records {
                 crate::parameter::analyze_trailing_pointer_groups_with_records_for_global_table(
-                    &record, &directory, &BTreeMap::new(), GlobalTable::V5Later, &ctx,
+                    &record, &directory, &BTreeMap::new(), GlobalTable::V5Later,
+                    &mut crate::parameter::AttributeDefinitionWidths::new(&ctx).unwrap(), &ctx,
                 )
             } else {
                 crate::parameter::analyze_trailing_pointer_groups_for_global_table_with_context(
