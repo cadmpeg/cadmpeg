@@ -289,4 +289,26 @@ mod tests {
         let error = project_pattern(&ctx, &feature, &by_source, &HashMap::new()).unwrap_err();
         assert!(matches!(error, CodecError::ResourceLimit(_)));
     }
+
+    #[test]
+    fn shared_count_parser_preserves_whitespace_sign_range_and_positive_grammar() {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        for (text, expected) in [
+            ("1", Some(1)),
+            (" +2 ", Some(2)),
+            ("\u{2003}3\u{2003}", Some(3)),
+            ("4294967295", Some(u32::MAX)),
+            ("0", None),
+            ("-1", None),
+            ("1.0", None),
+            ("4294967296", None),
+            ("", None),
+        ] {
+            assert_eq!(
+                super::parse_count(&ctx, text).unwrap(),
+                expected,
+                "{text:?}"
+            );
+        }
+    }
 }

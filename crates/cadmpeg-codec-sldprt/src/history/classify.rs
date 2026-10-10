@@ -843,4 +843,26 @@ mod tests {
             .is_none());
         assert!(ctx.resource_refusal().is_none());
     }
+
+    #[test]
+    fn indexed_radius_name_uses_the_writer_grammar_for_decode() {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        for text in [
+            "Radius",
+            "Radius0",
+            "Radius001",
+            "Radius9",
+            "Radius-1",
+            "Radius1x",
+            "Radius١",
+            "radius1",
+            "Radius ",
+        ] {
+            assert_eq!(
+                super::indexed_name_for_decode(&ctx, text, "Radius").unwrap(),
+                super::indexed_name(text, "Radius"),
+                "{text:?}"
+            );
+        }
+    }
 }
