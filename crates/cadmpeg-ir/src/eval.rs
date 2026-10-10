@@ -8313,7 +8313,7 @@ fn pcurve_uv_unsettled(
                 });
                 let angular = polar_higher::angular(
                     [Ok(radial), first, second, radial_higher[0], radial_higher[1], radial_higher[2]],
-                    max_order,
+                    max_order, None,
                 );
                 let axial_first = axial_lane(axial_derivative).map_err(|failure| failure.map(|_| ()));
                 let axial_second = if max_order >= 4 {
@@ -8439,7 +8439,7 @@ fn pcurve_uv_unsettled(
                 let angular = radial_higher.map(|higher| polar_higher::angular(
                     [Ok(radial.point), radial.tangent.map_err(|failure| failure.map(|_| ())),
                         radial.acceleration.ok_or(EvaluationFailure::NonFinite(())),
-                        higher[0], higher[1], higher[2]], max_order));
+                        higher[0], higher[1], higher[2]], max_order, None));
                 *higher = std::array::from_fn(|at| {
                     if at + 3 > max_order { return Err(EvaluationFailure::NoValue); }
                     Ok(FinitePoint2::from_coordinates(angular?[at]?, axial_higher?[at]?.coordinates()[0]))
@@ -8509,12 +8509,33 @@ fn pcurve_uv_unsettled(
                         .map_or(Some(FiniteReal::ZERO), |value| value.finite().ok())
                 })
                 .map(|value| FinitePoint2::from_coordinates(FiniteReal::ZERO, value));
-            return Some(PcurveEvaluation {
+            let evaluated = PcurveEvaluation {
                 point: Ok(FinitePoint2::from_coordinates(azimuth, latitude)),
                 tangent: planar_value(Ok(admitted_rate), latitude_rate),
                 acceleration: acceleration.into(),
                 resource: None,
-            });
+            };
+            if let Some((max_order, higher)) = requested.filter(|(order, _)| *order >= 3) {
+                // The admitted scalar carrier has an affine, nonzero phase
+                // rate. Its chart derivatives are cyclic in that phase.
+                // Apply rate powers inside the final quotient admission.
+                let rate = NonZeroReal::new(azimuth_rate)?;
+                let first = FinitePoint2::from_coordinates(FiniteReal::ZERO, tangent_v);
+                let second = FinitePoint2::from_coordinates(FiniteReal::ZERO, acceleration_v);
+                let third = FinitePoint2::from_coordinates(FiniteReal::ZERO, tangent_v.negated());
+                let fourth = if max_order >= 4 {
+                    Ok(FinitePoint2::from_coordinates(FiniteReal::ZERO, acceleration_v.negated()))
+                } else { Err(EvaluationFailure::NoValue) };
+                let fifth = if max_order >= 5 { Ok(first) }
+                    else { Err(EvaluationFailure::NoValue) };
+                *higher = polar_higher::angular(
+                    [Ok(FinitePoint2::from_coordinates(chart_u, chart_v)), Ok(first), Ok(second),
+                        Ok(third), fourth, fifth], max_order, Some(rate),
+                ).map(|value| value.map(|latitude| {
+                    FinitePoint2::from_coordinates(FiniteReal::ZERO, latitude)
+                }));
+            }
+            return Some(evaluated);
         }
         PcurveGeometry::Nurbs { nurbs } => {
             let poles = nurbs.pole_rows();
