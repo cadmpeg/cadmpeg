@@ -958,7 +958,11 @@ fn plugin_list_checksum_children(
                 "plugin-list child must be an anonymous long chunk",
             ));
         }
-        ctx.push_vec(&mut children, child.range(), "Rhino plugin-list child ranges")?;
+        ctx.push_vec(
+            &mut children,
+            child.range(),
+            "Rhino plugin-list child ranges",
+        )?;
         reader.skip(child.next_offset() - start)?;
     }
     Ok(children)
@@ -1158,7 +1162,8 @@ fn scan_with_record_limit<'a>(
     let mut definition_guards_storage =
         ctx.reserve_scoped(0, "Rhino instance definition storage guards")?;
     let mut definitions_storage = ctx.reserve_scoped(0, "Rhino instance definitions")?;
-    let mut definition_member_storage = ctx.reserve_scoped(0, "Rhino definition member identities")?;
+    let mut definition_member_storage =
+        ctx.reserve_scoped(0, "Rhino definition member identities")?;
     let mut definition_ambiguous_storage =
         ctx.reserve_scoped(0, "Rhino ambiguous definition identities")?;
     let mut definition_storage = Vec::new();
@@ -1178,18 +1183,19 @@ fn scan_with_record_limit<'a>(
             }
             validate_eof(data, offset, archive).or_else(|error| Err(framing_error(ctx, error)?))?;
             let (metadata_storage, mut metadata) = ctx
-                .with_scoped_storage(
-                    "Rhino scanned document metadata",
-                    || crate::settings::parse_metadata(ctx, data, archive, &tables, &mut warnings),
-                )
+                .with_scoped_storage("Rhino scanned document metadata", || {
+                    crate::settings::parse_metadata(ctx, data, archive, &tables, &mut warnings)
+                })
                 .map(|(metadata, storage)| (storage, metadata))?;
             let all_objects = object_storage
                 .with_storage(|| resolve_identities(ctx, all_objects, &metadata, &mut warnings))?;
-            descriptor_storage.with_storage(|| ctx.append_vec(
-                &mut opaque_records,
-                &mut metadata.opaque_records,
-                "Rhino scanned opaque records",
-            ))?;
+            descriptor_storage.with_storage(|| {
+                ctx.append_vec(
+                    &mut opaque_records,
+                    &mut metadata.opaque_records,
+                    "Rhino scanned opaque records",
+                )
+            })?;
             return Ok(Scan {
                 data,
                 archive,
@@ -1390,7 +1396,8 @@ fn scan_with_record_limit<'a>(
                     )?;
                 }
                 let typecode = descriptor.framed().map_or(0, |object| object.object_type);
-                descriptor_storage.with_storage(|| count_object_typecode(ctx, &mut object_typecodes, typecode))?;
+                descriptor_storage
+                    .with_storage(|| count_object_typecode(ctx, &mut object_typecodes, typecode))?;
                 ctx.push_scoped_vec(
                     &mut object_storage,
                     &mut all_objects,
@@ -1410,7 +1417,12 @@ fn scan_with_record_limit<'a>(
                 )?;
             }
             if retain_records {
-                ctx.push_scoped_vec(&mut descriptor_storage, &mut records, record, "Rhino scanned table records")?;
+                ctx.push_scoped_vec(
+                    &mut descriptor_storage,
+                    &mut records,
+                    record,
+                    "Rhino scanned table records",
+                )?;
             }
             child_offset = child.next_offset();
         }
@@ -1439,21 +1451,37 @@ fn scan_with_record_limit<'a>(
             )?;
         }
         if table_base(chunk.typecode) == TCODE_INSTANCE_DEFINITION {
-            let parsed = parse_definitions(ctx, data, &records, archive, chunk.typecode)?;
-            definitions = parsed.scan;
-            definition_storage = parsed._definition_storage;
-            definitions_storage = parsed._definitions_storage;
-            definition_guards_storage = parsed._definition_guards_storage;
-            definition_member_storage = parsed._member_storage;
-            definition_ambiguous_storage = parsed._ambiguous_storage;
-            descriptor_storage.with_storage(|| ctx.extend_vec(
-                &mut opaque_records,
-                parsed.opaque_records,
-                "Rhino scanned opaque records",
-            ))?;
+            let crate::instances::DefinitionParse {
+                scan: parsed_definitions,
+                opaque_records: parsed_opaque_records,
+                _definition_storage: parsed_definition_storage,
+                _definitions_storage: parsed_definitions_storage,
+                _definition_guards_storage: parsed_definition_guards_storage,
+                _member_storage: parsed_member_storage,
+                _ambiguous_storage: parsed_ambiguous_storage,
+            } = parse_definitions(ctx, data, &records, archive, chunk.typecode)?;
+            definitions = parsed_definitions;
+            definition_storage = parsed_definition_storage;
+            definitions_storage = parsed_definitions_storage;
+            definition_guards_storage = parsed_definition_guards_storage;
+            definition_member_storage = parsed_member_storage;
+            definition_ambiguous_storage = parsed_ambiguous_storage;
+            descriptor_storage.with_storage(|| {
+                ctx.extend_vec(
+                    &mut opaque_records,
+                    parsed_opaque_records,
+                    "Rhino scanned opaque records",
+                )
+            })?;
         }
         if table_base(chunk.typecode) == TCODE_HISTORY {
-            let parsed = crate::history::parse_records(
+            let crate::history::HistoryScan {
+                records: parsed_history,
+                opaque_records: parsed_opaque_records,
+                _records_storage: parsed_history_storage,
+                _record_storage: parsed_record_storage,
+                _record_guards_storage: parsed_record_guards_storage,
+            } = crate::history::parse_records(
                 ctx,
                 data,
                 &records,
@@ -1461,15 +1489,17 @@ fn scan_with_record_limit<'a>(
                 &mut warnings,
                 chunk.typecode,
             )?;
-            history = parsed.records;
-            history_storage = parsed._records_storage;
-            history_record_storage = parsed._record_storage;
-            history_record_guards_storage = parsed._record_guards_storage;
-            descriptor_storage.with_storage(|| ctx.extend_vec(
-                &mut opaque_records,
-                parsed.opaque_records,
-                "Rhino scanned opaque records",
-            ))?;
+            history = parsed_history;
+            history_storage = parsed_history_storage;
+            history_record_storage = parsed_record_storage;
+            history_record_guards_storage = parsed_record_guards_storage;
+            descriptor_storage.with_storage(|| {
+                ctx.extend_vec(
+                    &mut opaque_records,
+                    parsed_opaque_records,
+                    "Rhino scanned opaque records",
+                )
+            })?;
         }
         let table = Table::new(
             chunk.typecode,
@@ -1491,7 +1521,12 @@ fn scan_with_record_limit<'a>(
             },
             Ok,
         )?;
-        ctx.push_scoped_vec(&mut descriptor_storage, &mut tables, table, "Rhino scanned tables")?;
+        ctx.push_scoped_vec(
+            &mut descriptor_storage,
+            &mut tables,
+            table,
+            "Rhino scanned tables",
+        )?;
         offset = chunk.next_offset();
     }
     Err(CodecError::Malformed(
@@ -1520,7 +1555,7 @@ fn scan_with_test_record_limit(
     let policy = Box::leak(Box::new(cadmpeg_core::decode::DecodePolicy::desktop()));
     let (ctx, _) = DecodeContext::from_root_bytes(data, arena, policy)?;
     let ctx = Box::leak(Box::new(ctx));
-    let header = parse_header(&ctx, data).or_else(|error| Err(framing_error(&ctx, error)?))?;
+    let header = parse_header(ctx, data).or_else(|error| Err(framing_error(ctx, error)?))?;
     scan_with_record_limit(ctx, data, record_limit, header)
 }
 
@@ -1583,7 +1618,9 @@ fn summarize(ctx: &DecodeContext<'_>, scan: &Scan<'_>) -> Result<ContainerSummar
         for _ in 0..table.object_typecodes.len() {
             let (typecode, count) = ctx
                 .next_charged(&mut typecodes, "Rhino summarize traversal")?
-                .ok_or_else(|| CodecError::malformed("Rhino summary typecode source ended early"))?;
+                .ok_or_else(|| {
+                    CodecError::malformed("Rhino summary typecode source ended early")
+                })?;
             insert_summary_attribute(
                 ctx,
                 &mut attributes,

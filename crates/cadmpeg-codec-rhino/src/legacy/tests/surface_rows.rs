@@ -47,7 +47,7 @@ fn refuses_first_row(rational: bool, operation: &str) {
     let result = super::super::legacy_surface(&ctx, &data, wrapper.body(),
         super::super::MillimeterScale::IDENTITY).unwrap();
     assert_eq!((result.pole_grid().u_count(), result.pole_grid().v_count()), (2, 2));
-    assert_eq!(result.weight(0, 0).map(|weight| weight.get()), rational.then_some(2.0));
+    assert_eq!(result.weight(0, 0).map(cadmpeg_ir::scalar::NonZeroReal::get), rational.then_some(2.0));
     ctx.finish_session().unwrap();
 }
 
