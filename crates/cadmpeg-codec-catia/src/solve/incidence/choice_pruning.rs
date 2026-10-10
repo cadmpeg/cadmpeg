@@ -1,15 +1,38 @@
 //! Endpoint-choice pruning driven by changed face points.
 
-use super::{
-    incidence_choice_points, incidence_point_degree, pair_fits_degrees, unique_incidence_faces,
-};
+use super::{incidence_point_degree, pair_fits_degrees, unique_incidence_faces};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 
+/// The ascending distinct points of candidate pairs.
+fn incidence_choice_points(
+    ctx: &DecodeContext<'_>,
+    pairs: &[[usize; 2]],
+) -> Result<Vec<usize>, CodecError> {
+    const OPERATION: &str = "catia incidence choice points";
+    let mut points = ctx.collect_vec(pairs.iter().flatten().copied(), OPERATION)?;
+    if points.len() == 2 {
+        if points[0] > points[1] {
+            points.swap(0, 1);
+        }
+    } else if points.len() > 2 {
+        ctx.sort_unstable_by(&mut points, |value| value, Ord::cmp, OPERATION)?;
+    }
+    if points.len() == 2 {
+        if points[0] == points[1] {
+            points.truncate(1);
+        }
+    } else if points.len() > 2 {
+        ctx.dedup_vec(&mut points, OPERATION)?;
+    }
+    Ok(points)
+}
+
 type Supports = Vec<BTreeMap<usize, BTreeSet<usize>>>;
 
 struct Pending {
+    complete: bool,
     edges: VecDeque<usize>,
     queued: Vec<bool>,
     points: VecDeque<(usize, usize)>,
@@ -34,7 +57,7 @@ impl Pending {
         point: usize,
     ) -> Result<(), CodecError> {
         const OPERATION: &str = "catia incidence affected points";
-        if ctx.insert_hash_set(&mut self.point_keys, (face, point), OPERATION)? {
+        if self.complete && ctx.insert_hash_set(&mut self.point_keys, (face, point), OPERATION)? {
             ctx.push_back(&mut self.points, (face, point), OPERATION)?;
         }
         if let Some(edges) = ctx.get_btree_map(&supports[face], &point, OPERATION)? {
@@ -111,7 +134,15 @@ fn retain_edge_support(
                 if edges.is_empty() {
                     ctx.remove_btree_map(&mut supports[face], point, OPERATION)?;
                 }
-                pending.point(ctx, supports, face, *point)?;
+                // A support-count change affects pair viability only at zero
+                // or one surviving row. Wider support sets stay sufficient.
+                if pending.complete
+                    && ctx
+                        .get_btree_map(&supports[face], point, OPERATION)?
+                        .is_none_or(|edges| edges.len() <= 1)
+                {
+                    pending.point(ctx, supports, face, *point)?;
+                }
             }
             Ok(false)
         },
@@ -155,6 +186,7 @@ pub(super) fn prune_incidence_choices(
         }
     }
     let mut pending = Pending {
+        complete: explicit_support_complete,
         edges: VecDeque::new(),
         queued: ctx.alloc_filled(choices.len(), false, "catia incidence affected edges")?,
         points: VecDeque::new(),
@@ -306,6 +338,39 @@ mod tests {
         let mut rows = vec![vec![[0, count]]];
         rows.extend((0..count).map(|point| vec![[point, point + 1], [point + 1, point + 2]]));
         rows
+    }
+
+    #[test]
+    fn incidence_wide_support_removal_wakes_only_threshold_changes() {
+        let measure = |count| {
+            crate::test_support::with_service_context(|ctx| {
+                let mut choices = vec![vec![[0, 0]]];
+                choices.extend((1..=count).map(|point| vec![[0, point], [point, point]]));
+                let faces = vec![[0, 0]; choices.len()];
+                let (result, _storage) = ctx
+                    .with_scoped_storage("fixture pruning", || {
+                        prune_incidence_choices(ctx, &mut choices, &faces, 1, true)
+                    })
+                    .expect("worklist");
+                assert_eq!(result, Some(()));
+                for (point, row) in choices.iter().enumerate() {
+                    assert_eq!(row, &vec![[point, point]]);
+                }
+                let CodecError::ResourceLimit(limit) = ctx
+                    .charge_work(u64::MAX, "measure performed work")
+                    .expect_err("measure")
+                else {
+                    panic!("work refusal");
+                };
+                limit.used
+            })
+        };
+        let small = measure(128);
+        let large = measure(256);
+        assert!(
+            large <= 3 * small,
+            "support removals must grow below quadratic: {small}, {large}"
+        );
     }
 
     #[test]

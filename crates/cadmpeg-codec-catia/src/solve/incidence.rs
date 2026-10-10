@@ -215,30 +215,6 @@ fn pair_fits_degrees(
     Ok(true)
 }
 
-/// The ascending distinct points of candidate pairs.
-fn incidence_choice_points(
-    ctx: &DecodeContext<'_>,
-    pairs: &[[usize; 2]],
-) -> Result<Vec<usize>, CodecError> {
-    const OPERATION: &str = "catia incidence choice points";
-    let mut points = ctx.collect_vec(pairs.iter().flatten().copied(), OPERATION)?;
-    if points.len() == 2 {
-        if points[0] > points[1] {
-            points.swap(0, 1);
-        }
-    } else if points.len() > 2 {
-        ctx.sort_unstable_by(&mut points, |value| value, Ord::cmp, OPERATION)?;
-    }
-    if points.len() == 2 {
-        if points[0] == points[1] {
-            points.truncate(1);
-        }
-    } else if points.len() > 2 {
-        ctx.dedup_vec(&mut points, OPERATION)?;
-    }
-    Ok(points)
-}
-
 /// Appends the edge of every use in the boundary assignments, in use order.
 fn push_assignment_edges(
     ctx: &DecodeContext<'_>,
