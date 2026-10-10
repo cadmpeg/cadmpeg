@@ -16,7 +16,6 @@ use cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis;
 use cadmpeg_ir::geometry::pcurve::Pcurve;
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
 use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
-use cadmpeg_ir::geometry::pcurve::PolarPcurveNurbs;
 use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::ids::VertexId;
 use cadmpeg_ir::topology::Coedge;
@@ -660,64 +659,18 @@ fn derive_cylindrical_pcurves(
                         _ => continue,
                     }
                 };
-                // One pole row carries its radial and axial halves together,
-                // so the two projections are built into one list.
-                let mut poles = Vec::new();
-                ctx.reserve_capacity(
-                    &mut poles,
-                    nurbs.pole_count(),
-                    "collect cylindrical polar poles",
-                )?;
-                for (index, radial) in ctx
-                    .admit_iter(
-                        radial_control_points.values(),
-                        "scan SLDPRT derive_cylindrical_pcurves values",
-                    )?
-                    .enumerate()
-                {
-                    let Some(point) = nurbs.pole_rows().point_at(index) else {
-                        continue;
-                    };
-                    ctx.push_vec(
-                        &mut (poles),
-                        cadmpeg_ir::geometry::pcurve::PolarNurbsPole {
-                            radial: *radial,
-                            axial: dot(
-                                [point.x - origin.x, point.y - origin.y, point.z - origin.z],
-                                *axis,
-                            ),
-                        },
-                        "collect cylindrical polar poles",
-                    )?;
-                }
-                drop(radial_control_points);
-                let knots = nurbs
-                    .knots()
-                    .try_clone_for_decode(ctx, "copy cylindrical polar knots")?;
-                let weights = if let cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } =
-                    nurbs.pole_rows()
-                {
-                    Some(ctx.collect_vec(
-                        points.iter().map(|pole| pole.weight),
-                        "copy cylindrical polar weights",
-                    )?)
-                } else {
-                    None
-                };
-                let polar = match PolarPcurveNurbs::from_checked_lanes(
-                    ctx,
-                    nurbs.degree(),
-                    knots,
-                    poles,
-                    weights,
-                    nurbs.periodic(),
+                let polar = match radial_control_points.into_polar(
+                    |point| dot(
+                        [point.x - origin.x, point.y - origin.y, point.z - origin.z],
+                        *axis,
+                    ),
+                    |error| crate::loss::spline_lane_refusal(
+                        ctx,
+                        format_args!("cylindrical pcurve for edge {}: {error}", edge.id),
+                    ),
                 )? {
                     Ok(polar) => polar,
-                    Err(error) => {
-                        let note = crate::loss::spline_lane_refusal(
-                            ctx,
-                            format_args!("cylindrical pcurve for edge {}: {error}", edge.id),
-                        )?;
+                    Err(note) => {
                         ctx.push_vec(&mut refusals, note, "collect cylindrical pcurve losses")?;
                         continue;
                     }
