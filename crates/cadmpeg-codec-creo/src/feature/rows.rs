@@ -1114,6 +1114,8 @@ fn geometry_table_at(
     mut cursor: usize,
     mut kind: FeatureGeometryTableKind,
 ) -> Result<Option<(u32, u32, FeatureGeometryTableKind)>, CodecError> {
+    const ENTRY: &[u8] = b"\xe0\x01dtm_id\0";
+
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
@@ -1152,7 +1154,6 @@ fn geometry_table_at(
             let Some(_) = ctx.next_charged(&mut items, "creo named datum traversal")? else {
                 break;
             };
-            const ENTRY: &[u8] = b"\xe0\x01dtm_id\0";
             if body.get(entry_cursor..entry_cursor + ENTRY.len()) != Some(ENTRY) {
                 entries.clear();
                 break;
@@ -1760,11 +1761,12 @@ fn positional_surface_merge_affected_ids(
     row: &FeatureRow,
     extents: [Option<u32>; 3],
 ) -> Option<Result<FeatureSurfaceMergeAffectedIds, CodecError>> {
+    const ANCHOR: &[u8] = &[0xf7, 0x80, 0x96];
+    const QUILT_SEPARATOR: &[u8] = &[0xf0, 0xf7, 0x80, 0x99];
+
     if let Some(refusal) = ctx.resource_refusal() {
         return Some(Err(refusal.into()));
     }
-    const ANCHOR: &[u8] = &[0xf7, 0x80, 0x96];
-    const QUILT_SEPARATOR: &[u8] = &[0xf0, 0xf7, 0x80, 0x99];
     let mut positions = row.body.windows(ANCHOR.len()).enumerate();
     if positions.len() == 0 {
         return None;

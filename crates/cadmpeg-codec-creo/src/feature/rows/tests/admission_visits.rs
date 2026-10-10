@@ -201,7 +201,7 @@ fn replay_candidate_scans_visit_only_present_bytes_and_windows() {
         let row = empty_candidate_row(length);
         for suffix in 0..=length {
             check_visits(
-                suffix as u64,
+                u64::try_from(suffix).expect("fixture value fits u64"),
                 |_| "creo explicit replay array traversal",
                 |ctx| {
                     assert!(
@@ -214,7 +214,7 @@ fn replay_candidate_scans_visit_only_present_bytes_and_windows() {
             );
         }
         check_visits(
-            (length - 1) as u64,
+            u64::try_from(length - 1).expect("fixture value fits u64"),
             |_| "creo unanchored replay suffix traversal",
             |ctx| {
                 assert!(
@@ -233,11 +233,18 @@ fn loop_roster_visits_match_entries_and_their_four_fixed_tokens() {
     for count in 1..=3usize {
         let mut body = Vec::new();
         for index in 0..count {
-            body.extend_from_slice(&[index as u8 + 10, 1, 2, 3, 4, 0xe3]);
+            body.extend_from_slice(&[
+                u8::try_from(index).expect("fixture value fits u8") + 10,
+                1,
+                2,
+                3,
+                4,
+                0xe3,
+            ]);
         }
         // One roster visit and four admitted PSB token visits per entry.
         check_visits(
-            (5 * count) as u64,
+            u64::try_from(5 * count).expect("fixture value fits u64"),
             |used| {
                 if used % 5 == 0 {
                     "creo loop history roster traversal"
@@ -253,7 +260,10 @@ fn loop_roster_visits_match_entries_and_their_four_fixed_tokens() {
                 let entries = parts.0;
                 assert_eq!(entries.len(), count);
                 for (index, entry) in entries.iter().enumerate() {
-                    assert_eq!(entry.loop_id, index as u32 + 10);
+                    assert_eq!(
+                        entry.loop_id,
+                        u32::try_from(index).expect("fixture value fits u32") + 10
+                    );
                     assert_eq!(entry.field_bytes, [&[1][..], &[2][..], &[3][..], &[4][..]]);
                     assert!(matches!(
                         entry.boundary,
@@ -442,13 +452,15 @@ fn unanchored_replay_start_scan_visits_only_its_candidate_range() {
         let starts = (1..prefix).len();
         let total = row.body.len() - 1 + prefix + starts;
         check_visits(
-            total as u64,
+            u64::try_from(total).expect("fixture value fits u64"),
             |used| {
-                if used < (prefix + 1) as u64 {
+                if used < u64::try_from(prefix + 1).expect("fixture value fits u64") {
                     "creo unanchored replay suffix traversal"
-                } else if used < (2 * prefix + 1) as u64 {
+                } else if used < u64::try_from(2 * prefix + 1).expect("fixture value fits u64") {
                     "creo explicit replay array traversal"
-                } else if used < (2 * prefix + 1 + starts) as u64 {
+                } else if used
+                    < u64::try_from(2 * prefix + 1 + starts).expect("fixture value fits u64")
+                {
                     "creo unanchored replay start traversal"
                 } else {
                     "creo unanchored replay suffix traversal"

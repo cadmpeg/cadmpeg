@@ -5,10 +5,10 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 
 fn check(payload: &[u8], expected: &[usize]) {
-    let windows = payload.windows(4).len() as u64;
+    let windows = u64::try_from(payload.windows(4).len()).expect("fixture value fits u64");
     check_work(
         &[(windows, "creo replay marker traversal")],
-        expected.to_vec(),
+        &expected.to_vec(),
         !expected.is_empty(),
         |ctx| s2d_replay_starts(ctx, payload),
     );
@@ -39,7 +39,7 @@ fn replay_prefix_preserves_absolute_marker_offsets_and_the_twelve_byte_bound() {
 
 fn check_work<T: std::fmt::Debug + PartialEq>(
     fees: &[(u64, &'static str)],
-    expected: T,
+    expected: &T,
     allocating: bool,
     run: impl Fn(&DecodeContext<'_>) -> Result<T, CodecError>,
 ) {
@@ -63,7 +63,7 @@ fn check_work<T: std::fmt::Debug + PartialEq>(
         match result {
             Ok(value) => {
                 assert_eq!(ctx.resource_refusal(), None);
-                assert_eq!(value, expected);
+                assert_eq!(&value, expected);
                 let original = ctx
                     .charge_work_limit(1, "measure feature work")
                     .expect_err("measurement");
@@ -97,17 +97,17 @@ fn depdb_decimal_name_is_bounded_and_free_without_owned_text() {
         (b"12Xignored\0".as_slice(), None),
         (b"123".as_slice(), None),
     ] {
-        check_work(&[], expected, false, |ctx| {
+        check_work(&[], &expected, false, |ctx| {
             super::depdb_section_name_id(ctx, name)
         });
     }
     let unterminated = [b'7'; 128];
-    check_work(&[], None, false, |ctx| {
+    check_work(&[], &None, false, |ctx| {
         super::depdb_section_name_id(ctx, &unterminated)
     });
     let mut leading_zeros = vec![b'0'; 127];
     leading_zeros.push(0);
-    check_work(&[], Some(0), false, |ctx| {
+    check_work(&[], &Some(0), false, |ctx| {
         super::depdb_section_name_id(ctx, &leading_zeros)
     });
 }
@@ -117,19 +117,19 @@ fn unresolved_guess_keeps_fixed_suffix_candidates_and_first_delimiter() {
     // Five delimiter visits, then candidate starts1..5. Only start2 has three fields.
     let short = [0x00, 0x55, 0x01, 0x02, 0x03, 0xe2];
     let fees = vec![(1, "creo variable guess delimiter"); 5];
-    check_work(&fees, Some(2), false, |ctx| {
+    check_work(&fees, &Some(2), false, |ctx| {
         super::unresolved_variable_guess_end(ctx, &short, 0, short.len())
     });
     let mut long = short.to_vec();
     long.resize(65_536, 0x55);
-    check_work(&fees, Some(2), false, |ctx| {
+    check_work(&fees, &Some(2), false, |ctx| {
         super::unresolved_variable_guess_end(ctx, &long, 0, long.len())
     });
     for body in [b"".as_slice(), b"\0", b"\0\xff", b"\0\xff\xff"] {
         let visits = body.windows(2).len();
         check_work(
             &vec![(1, "creo variable guess delimiter"); visits],
-            None,
+            &None,
             false,
             |ctx| super::unresolved_variable_guess_end(ctx, body, 0, body.len()),
         );
@@ -142,7 +142,7 @@ fn relation_suffix_is_fixed_stops_at_ambiguity_and_skips_absent_rows() {
     // One present row, eight delimiter bytes, then starts2/3/4. Starts3/4 conflict.
     let mut fees = vec![(1, "creo positional relation rows traversal")];
     fees.extend([(1, "creo relation row end"); 8]);
-    check_work(&fees, Vec::<super::FeatureRelation>::new(), false, |ctx| {
+    check_work(&fees, &Vec::<super::FeatureRelation>::new(), false, |ctx| {
         super::positional_relation_rows(
             ctx,
             &body,
@@ -155,11 +155,11 @@ fn relation_suffix_is_fixed_stops_at_ambiguity_and_skips_absent_rows() {
         super::RelationBodyRows::Count(0),
         super::RelationBodyRows::InvalidZero,
     ] {
-        check_work(&[], Vec::<super::FeatureRelation>::new(), false, |ctx| {
+        check_work(&[], &Vec::<super::FeatureRelation>::new(), false, |ctx| {
             super::positional_relation_rows(ctx, &body, 0, body.len(), rows)
         });
     }
-    check_work(&[], Vec::<super::FeatureRelation>::new(), false, |ctx| {
+    check_work(&[], &Vec::<super::FeatureRelation>::new(), false, |ctx| {
         super::positional_relation_rows(ctx, &[], 0, 0, super::RelationBodyRows::Count(1))
     });
 
@@ -178,7 +178,7 @@ fn relation_suffix_is_fixed_stops_at_ambiguity_and_skips_absent_rows() {
         body: body[..6].to_vec(),
         offset: 0,
     }];
-    check_work(&fees, expected, true, |ctx| {
+    check_work(&fees, &expected, true, |ctx| {
         super::positional_relation_rows(
             ctx,
             &body,
@@ -230,8 +230,11 @@ fn saved_generated_header_is_free_within_twenty_four_byte_bound() {
     for length in [0, 1, 23, 24, 25] {
         let mut payload = vec![0xe3, 7];
         payload.extend(std::iter::repeat_n(0xff, length));
-        let fees = vec![(payload.len() as u64, "creo saved generated start traversal")];
-        check_work(&fees, (), false, |ctx| {
+        let fees = vec![(
+            u64::try_from(payload.len()).expect("fixture value fits u64"),
+            "creo saved generated start traversal",
+        )];
+        check_work(&fees, &(), false, |ctx| {
             let mut entities = Vec::new();
             super::saved_positional_generated_entities(
                 ctx,
@@ -262,7 +265,7 @@ fn equation_arguments_admit_present_tokens_without_an_absent_source_visit() {
     ] {
         check_work(
             &vec![(1, "creo equation argument traversal"); visits],
-            expected,
+            &expected,
             true,
             |ctx| {
                 let mut offset = 0;
@@ -288,7 +291,7 @@ fn skamp_boundary_admits_only_present_items_and_preserves_missing_field_recovery
     ] {
         check_work(
             &vec![(1, "creo skamp item boundary traversal"); visits],
-            expected,
+            &expected,
             false,
             |ctx| {
                 super::positional_skamp_item_array_body_end(
@@ -309,7 +312,7 @@ fn dimension_candidate_scan_admits_present_offsets_and_no_end_probe() {
     for payload in [b"".as_slice(), b"\xff", b"\xff\xff\xff"] {
         check_work(
             &vec![(1, "creo self described dimension traversal"); payload.len()],
-            None,
+            &None,
             false,
             |ctx| {
                 super::self_described_positional_dimension_table(
@@ -337,14 +340,15 @@ fn spline_parameter_count_admits_present_values_and_preserves_incomplete_recover
         payload.extend_from_slice(suffix);
         // The borrowed memmem search admits both extents; each scalar visit and copy follows.
         let mut fees = vec![(
-            (payload.len() + b"\xe0\x02params\0\xf8".len()) as u64,
+            u64::try_from(payload.len() + b"\xe0\x02params\0\xf8".len())
+                .expect("fixture value fits u64"),
             "find Creo feature definition field",
         )];
         fees.extend(vec![(1, "creo saved spline parameters traversal"); visits]);
         if body_bytes != 0 {
             fees.push((body_bytes, "creo saved spline parameter body"));
         }
-        check_work(&fees, expected, true, |ctx| {
+        check_work(&fees, &expected, true, |ctx| {
             Ok(super::saved_spline_parameters(
                 ctx,
                 &payload,
@@ -372,7 +376,7 @@ fn saved_line_preamble_and_trailer_do_not_visit_absent_source() {
         if body_bytes != 0 {
             fees.push((body_bytes, "creo saved line body"));
         }
-        check_work(&fees, expected, true, |ctx| {
+        check_work(&fees, &expected, true, |ctx| {
             let mut entities = Vec::new();
             super::saved_line_block(ctx, payload, 0, payload.len(), &cache, &mut entities)?;
             Ok(entities.len())
@@ -508,15 +512,15 @@ fn saved_spline_complete_point_count_has_no_end_probe() {
         let body_len = payload.len() - LABEL.len();
         let mut fees = vec![
             (
-                (payload.len() + LABEL.len()) as u64,
+                u64::try_from(payload.len() + LABEL.len()).expect("fixture value fits u64"),
                 "find Creo feature definition field",
             ),
             (
-                (body_len + LABEL.len()) as u64,
+                u64::try_from(body_len + LABEL.len()).expect("fixture value fits u64"),
                 "find Creo feature definition field",
             ),
             (
-                (body_len + POINTS.len()) as u64,
+                u64::try_from(body_len + POINTS.len()).expect("fixture value fits u64"),
                 "find Creo feature definition field",
             ),
         ];
@@ -526,19 +530,25 @@ fn saved_spline_complete_point_count_has_no_end_probe() {
         ]);
         fees.extend([
             (3 + 3 * u64::from(count), "creo saved spline point body"),
-            (TANGENTS.len() as u64, "find Creo feature definition field"),
             (
-                PARAMETERS.len() as u64,
+                u64::try_from(TANGENTS.len()).expect("fixture value fits u64"),
+                "find Creo feature definition field",
+            ),
+            (
+                u64::try_from(PARAMETERS.len()).expect("fixture value fits u64"),
                 "find Creo feature definition field",
             ),
             // The identifier uses named_compact_int over the empty pre-point range.
-            (b"\xe0\x01id\0".len() as u64, "find Creo named integer"),
             (
-                (body_len + LABEL.len()) as u64,
+                u64::try_from(b"\xe0\x01id\0".len()).expect("fixture value fits u64"),
+                "find Creo named integer",
+            ),
+            (
+                u64::try_from(body_len + LABEL.len()).expect("fixture value fits u64"),
                 "find Creo feature definition field",
             ),
         ]);
-        check_work(&fees, usize::from(count), true, |ctx| {
+        check_work(&fees, &usize::from(count), true, |ctx| {
             let mut entities = Vec::new();
             super::saved_spline_entities(
                 ctx,
@@ -560,7 +570,7 @@ fn saved_spline_complete_point_count_has_no_end_probe() {
 #[test]
 fn outline_empty_and_named_boundary_routes_preserve_original_refusal() {
     for payload in [b"".as_slice(), b"\xe0"] {
-        check_work(&[], (), false, |ctx| {
+        check_work(&[], &(), false, |ctx| {
             let fields =
                 super::outline_scalars(ctx, payload, &crate::scalar::ScalarCache::default())?;
             assert!(fields
@@ -573,7 +583,7 @@ fn outline_empty_and_named_boundary_routes_preserve_original_refusal() {
 
 #[test]
 fn trim_bucket_count_mismatch_preserves_original_refusal() {
-    check_work(&[], false, false, |ctx| {
+    check_work(&[], &false, false, |ctx| {
         super::complete_bucket_frame(ctx, Some(1), &[])
     });
 }
@@ -584,7 +594,7 @@ fn dimension_value_fixed_routes_preserve_original_refusal() {
         (Some(1.0), super::DimensionValue::Resolved(1.0)),
         (None, super::DimensionValue::Undefined),
     ] {
-        check_work(&[], expected, false, |ctx| {
+        check_work(&[], &expected, false, |ctx| {
             super::DimensionValue::decoded(ctx, value, &[])
         });
     }
@@ -642,7 +652,7 @@ fn variable_scalar_fixed_and_absent_routes_preserve_original_refusal() {
             (super::ScalarLane::Value(2.625), 7),
         ),
     ] {
-        check_work(&[], expected, false, |ctx| {
+        check_work(&[], &expected, false, |ctx| {
             super::decode_variable_scalar(
                 ctx,
                 payload,
@@ -664,7 +674,7 @@ fn coordinate_scalar_fixed_routes_preserve_original_refusal() {
             (super::ScalarLane::Value(2.0), 8),
         ),
     ] {
-        check_work(&[], expected, false, |ctx| {
+        check_work(&[], &expected, false, |ctx| {
             super::decode_section_coordinate_scalar(
                 ctx,
                 payload,
@@ -679,7 +689,7 @@ fn coordinate_scalar_fixed_routes_preserve_original_refusal() {
 #[test]
 fn variable_guess_fixed_suffix_preserves_original_refusal() {
     let payload = b"\x18\x01\x02\x03";
-    check_work(&[], (super::ScalarLane::Value(0.0), 1), false, |ctx| {
+    check_work(&[], &(super::ScalarLane::Value(0.0), 1), false, |ctx| {
         super::decode_variable_guess(
             ctx,
             payload,
@@ -693,7 +703,7 @@ fn variable_guess_fixed_suffix_preserves_original_refusal() {
 #[test]
 fn equation_invalid_range_preserves_original_refusal() {
     for (start, end) in [(1, 0), (0, 1)] {
-        check_work(&[], None, false, |ctx| {
+        check_work(&[], &None, false, |ctx| {
             super::equation_table(ctx, &[], start, end)
         });
     }
@@ -701,7 +711,7 @@ fn equation_invalid_range_preserves_original_refusal() {
 
 #[test]
 fn placement_absent_table_preserves_original_refusal() {
-    check_work(&[], None, false, |ctx| {
+    check_work(&[], &None, false, |ctx| {
         let mut instructions = super::PlacementInstructions {
             payload: &[],
             definition_offset: 0,
@@ -715,7 +725,7 @@ fn placement_absent_table_preserves_original_refusal() {
 #[test]
 fn segment_absent_array_preserves_original_refusal() {
     for prototype in [super::PrototypeRow::Present, super::PrototypeRow::Elided] {
-        check_work(&[], None, false, |ctx| {
+        check_work(&[], &None, false, |ctx| {
             super::segment_table_body(ctx, &[], 0, 0, 0, prototype)
         });
     }
@@ -723,7 +733,7 @@ fn segment_absent_array_preserves_original_refusal() {
 
 #[test]
 fn positional_dimension_absent_type_preserves_original_refusal() {
-    check_work(&[], None, false, |ctx| {
+    check_work(&[], &None, false, |ctx| {
         super::positional_dimension(ctx, &[], 0, 0, &crate::scalar::ScalarCache::default())
     });
 }
@@ -731,7 +741,7 @@ fn positional_dimension_absent_type_preserves_original_refusal() {
 #[test]
 fn class_close_invalid_window_and_short_extent_preserve_original_refusal() {
     for (start, end) in [(1, 0), (0, 1), (0, 0)] {
-        check_work(&[], None, false, |ctx| {
+        check_work(&[], &None, false, |ctx| {
             super::find_class_close(ctx, &[], start, end, 0xf3, &[])
         });
     }
@@ -740,7 +750,7 @@ fn class_close_invalid_window_and_short_extent_preserve_original_refusal() {
 #[test]
 fn saved_scalar_invalid_window_preserves_original_refusal() {
     for (start, end) in [(1, 0), (0, 1)] {
-        check_work(&[], None, false, |ctx| {
+        check_work(&[], &None, false, |ctx| {
             super::saved_named_scalars::<3>(
                 ctx,
                 &[],
@@ -755,7 +765,7 @@ fn saved_scalar_invalid_window_preserves_original_refusal() {
 
 #[test]
 fn saved_generated_absent_topology_preserves_original_refusal() {
-    check_work(&[], (), false, |ctx| {
+    check_work(&[], &(), false, |ctx| {
         let mut entities = Vec::new();
         super::saved_positional_generated_entities(
             ctx,
@@ -792,7 +802,8 @@ fn trimmed_ids_absent_table_preserves_original_refusal() {
         saved_section: None,
         offset: 0,
     };
-    check_work(&[], &[] as &[u32], false, |ctx| {
+    let empty: &[u32] = &[];
+    check_work(&[], &empty, false, |ctx| {
         super::unique_trimmed_external_ids(ctx, &definition)
     });
 }
@@ -842,10 +853,11 @@ fn depdb_name_marker_search_and_decimal_parse_add_no_bounded_work() {
     ] {
         check_work(
             &[(
-                payload.windows(b"gsec2d_ptr\0".len()).len() as u64,
+                u64::try_from(payload.windows(b"gsec2d_ptr\0".len()).len())
+                    .expect("fixture value fits u64"),
                 "creo DEPDB section marker traversal",
             )],
-            (),
+            &(),
             true,
             |ctx| {
                 let starts = super::depdb_gsec2d_starts(ctx, payload)?;
