@@ -16,16 +16,16 @@ use crate::rse::SegmentBulkState;
 use crate::rse::{database_band, direct_rse_child, RseInventory, SegmentMetaState};
 
 /// One parsed Inventor compound container.
-pub(crate) struct InventorContainer<'a> {
+pub(crate) struct InventorContainer<'a, 'ctx> {
     pub(crate) snapshot: CompoundSnapshot<'a>,
     pub(crate) rse: RseInventory<'a>,
     pub(crate) property_sets: Vec<PropertySetDescriptor<'a>>,
-    pub(crate) protein: ProteinState<'a>,
+    pub(crate) protein: ProteinState<'a, 'ctx>,
     pub(crate) ufrx: UfrxState<'a>,
 }
 
-impl<'a> InventorContainer<'a> {
-    pub(crate) fn open(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Self, CodecError> {
+impl<'a, 'ctx> InventorContainer<'a, 'ctx> {
+    pub(crate) fn open(ctx: &'ctx DecodeContext<'a>, root: View<'a>) -> Result<Self, CodecError> {
         let snapshot = CompoundSnapshot::new(ctx, root)?;
         if !matches!(
             snapshot.entry(ctx, "RSeStorage")?,

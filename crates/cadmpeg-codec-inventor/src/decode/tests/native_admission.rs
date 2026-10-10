@@ -204,7 +204,7 @@ fn rse_unavailable_record_frame_refuses_issue_copy() {
 
 fn rse_retained_refusal_operations(
     arena: &DecodeArena,
-    container: &InventorContainer<'_>,
+    container: &InventorContainer<'_, '_>,
 ) -> Vec<&'static str> {
     let mut cap = 0;
     let mut operations = Vec::new();
