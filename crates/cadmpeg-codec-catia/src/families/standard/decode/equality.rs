@@ -101,10 +101,20 @@ pub(super) fn surfaces_equal(
 
 fn solved_surfaces_equal(
     ctx: &DecodeContext<'_>,
-    left: &SolvedSurfaceGeometry,
-    right: &SolvedSurfaceGeometry,
+    mut left: &SolvedSurfaceGeometry,
+    mut right: &SolvedSurfaceGeometry,
     operation: &'static str,
 ) -> Result<bool, CodecError> {
+    // Admitted geometry bounds every wrapper chain by MAX_GEOMETRY_NESTING.
+    while let (SolvedSurfaceGeometry::Transformed(a), SolvedSurfaceGeometry::Transformed(b)) =
+        (left, right)
+    {
+        if a.transform() != b.transform() {
+            return Ok(false);
+        }
+        left = a.basis();
+        right = b.basis();
+    }
     match (left, right) {
         (SolvedSurfaceGeometry::Nurbs(left), SolvedSurfaceGeometry::Nurbs(right)) => {
             if left.u_degree() != right.u_degree()
@@ -144,13 +154,6 @@ fn solved_surfaces_equal(
                 && lanes_equal(ctx, left.vertices(), right.vertices(), operation)?
                 && lanes_equal(ctx, left.triangles(), right.triangles(), operation)?)
         }
-        (SolvedSurfaceGeometry::Transformed(left), SolvedSurfaceGeometry::Transformed(right)) => {
-            if left.transform() != right.transform() {
-                return Ok(false);
-            }
-            let _depth = ctx.enter_nested(operation)?;
-            solved_surfaces_equal(ctx, left.basis(), right.basis(), operation)
-        }
         (
             SolvedSurfaceGeometry::Unknown { record: left },
             SolvedSurfaceGeometry::Unknown { record: right },
@@ -176,10 +179,37 @@ fn solved_surfaces_equal(
 
 pub(super) fn pcurves_equal(
     ctx: &DecodeContext<'_>,
-    left: &PcurveGeometry,
-    right: &PcurveGeometry,
+    mut left: &PcurveGeometry,
+    mut right: &PcurveGeometry,
     operation: &'static str,
 ) -> Result<bool, CodecError> {
+    // Admitted geometry bounds every wrapper chain by MAX_GEOMETRY_NESTING.
+    loop {
+        match (left, right) {
+            (PcurveGeometry::Transformed(a), PcurveGeometry::Transformed(b)) => {
+                if a.transform() != b.transform() {
+                    return Ok(false);
+                }
+                left = a.basis();
+                right = b.basis();
+            }
+            (PcurveGeometry::Trimmed(a), PcurveGeometry::Trimmed(b)) => {
+                if a.parameter_range() != b.parameter_range() || a.same_sense() != b.same_sense() {
+                    return Ok(false);
+                }
+                left = a.basis();
+                right = b.basis();
+            }
+            (PcurveGeometry::Offset(a), PcurveGeometry::Offset(b)) => {
+                if a.distance() != b.distance() {
+                    return Ok(false);
+                }
+                left = a.basis();
+                right = b.basis();
+            }
+            _ => break,
+        }
+    }
     match (left, right) {
         (PcurveGeometry::Nurbs { nurbs: left }, PcurveGeometry::Nurbs { nurbs: right }) => {
             if left.degree() != right.degree()
@@ -232,29 +262,6 @@ pub(super) fn pcurves_equal(
                 _ => Ok(false),
             }
         }
-        (PcurveGeometry::Transformed(left), PcurveGeometry::Transformed(right)) => {
-            if left.transform() != right.transform() {
-                return Ok(false);
-            }
-            let _depth = ctx.enter_nested(operation)?;
-            pcurves_equal(ctx, left.basis(), right.basis(), operation)
-        }
-        (PcurveGeometry::Trimmed(left), PcurveGeometry::Trimmed(right)) => {
-            if left.parameter_range() != right.parameter_range()
-                || left.same_sense() != right.same_sense()
-            {
-                return Ok(false);
-            }
-            let _depth = ctx.enter_nested(operation)?;
-            pcurves_equal(ctx, left.basis(), right.basis(), operation)
-        }
-        (PcurveGeometry::Offset(left), PcurveGeometry::Offset(right)) => {
-            if left.distance() != right.distance() {
-                return Ok(false);
-            }
-            let _depth = ctx.enter_nested(operation)?;
-            pcurves_equal(ctx, left.basis(), right.basis(), operation)
-        }
         (PcurveGeometry::Line(_), PcurveGeometry::Line(_))
         | (PcurveGeometry::PolarHarmonic(_), PcurveGeometry::PolarHarmonic(_))
         | (PcurveGeometry::SphericalGreatCircle(_), PcurveGeometry::SphericalGreatCircle(_))
@@ -264,6 +271,99 @@ pub(super) fn pcurves_equal(
         | (PcurveGeometry::Parabola(_), PcurveGeometry::Parabola(_))
         | (PcurveGeometry::Hyperbola(_), PcurveGeometry::Hyperbola(_))
         | (PcurveGeometry::Hyperbolic(_), PcurveGeometry::Hyperbolic(_)) => Ok(left == right),
+        _ => Ok(false),
+    }
+}
+
+pub(super) fn rolling_ball_jets_equal(
+    ctx: &DecodeContext<'_>,
+    left: &cadmpeg_ir::geometry::ProceduralSurfaceDefinition,
+    right: &cadmpeg_ir::geometry::ProceduralSurfaceDefinition,
+    operation: &'static str,
+) -> Result<bool, CodecError> {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    match (left, right) {
+        (
+            ProceduralSurfaceDefinition::RollingBallJet(left),
+            ProceduralSurfaceDefinition::RollingBallJet(right),
+        ) => Ok(left.degree() == right.degree()
+            && lanes_equal(ctx, left.stations(), right.stations(), operation)?),
+        // The rolling-ball evidence route admits jet constructions only.
+        _ => Ok(false),
+    }
+}
+
+pub(super) fn procedures_equal(
+    ctx: &DecodeContext<'_>,
+    left: &super::StandardSurfaceProcedure,
+    right: &super::StandardSurfaceProcedure,
+    operation: &'static str,
+) -> Result<bool, CodecError> {
+    use super::StandardSurfaceProcedure;
+    use crate::families::b5::transfer::ResolvedOffsetSupport;
+    match (left, right) {
+        (
+            StandardSurfaceProcedure::RollingBall {
+                carrier_object_id: left_id,
+                definition: left,
+                source: left_source,
+            },
+            StandardSurfaceProcedure::RollingBall {
+                carrier_object_id: right_id,
+                definition: right,
+                source: right_source,
+            },
+        ) => Ok(left_id == right_id
+            && left_source == right_source
+            && rolling_ball_jets_equal(ctx, left, right, operation)?),
+        (
+            StandardSurfaceProcedure::Revolution(left),
+            StandardSurfaceProcedure::Revolution(right),
+        ) => Ok(left.axis_origin == right.axis_origin
+            && left.axis_direction == right.axis_direction
+            && left.angular_interval == right.angular_interval
+            && left.angular_parameter_interval == right.angular_parameter_interval
+            && left.parameter_interval == right.parameter_interval
+            && nurbs_curves_equal(ctx, &left.directrix, &right.directrix, operation)?),
+        (
+            StandardSurfaceProcedure::Offset {
+                carrier_object_id: left_id,
+                support_object_id: left_support_id,
+                support: left,
+                distance: left_distance,
+                parameter_bounds: left_bounds,
+            },
+            StandardSurfaceProcedure::Offset {
+                carrier_object_id: right_id,
+                support_object_id: right_support_id,
+                support: right,
+                distance: right_distance,
+                parameter_bounds: right_bounds,
+            },
+        ) => {
+            if left_id != right_id
+                || left_support_id != right_support_id
+                || left_distance != right_distance
+                || left_bounds != right_bounds
+            {
+                return Ok(false);
+            }
+            match (left, right) {
+                (ResolvedOffsetSupport::Geometry(left), ResolvedOffsetSupport::Geometry(right)) => {
+                    surfaces_equal(ctx, left, right, operation)
+                }
+                // Extrusion support has a private model-curve field.
+                (
+                    ResolvedOffsetSupport::Extrusion(left),
+                    ResolvedOffsetSupport::Extrusion(right),
+                ) => Ok(left == right),
+                _ => Ok(false),
+            }
+        }
+        // Complete extrusion equality needs a borrowed curve accessor in its owner.
+        (StandardSurfaceProcedure::Extrusion(left), StandardSurfaceProcedure::Extrusion(right)) => {
+            Ok(left == right)
+        }
         _ => Ok(false),
     }
 }
@@ -292,5 +392,22 @@ mod tests {
         assert!(
             matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "geometry lanes")
         );
+    }
+    #[test]
+    fn geometry_wrappers_use_the_fixed_ir_depth_bound_without_refusal() {
+        use cadmpeg_ir::geometry::pcurve::{LinePcurve, OffsetPcurve, PcurveGeometry};
+        let mut pcurve = PcurveGeometry::Line(LinePcurve::U_AXIS);
+        for _ in 0..cadmpeg_ir::geometry::MAX_GEOMETRY_NESTING {
+            pcurve = PcurveGeometry::Offset(
+                OffsetPcurve::try_new(1.0, Box::new(pcurve)).expect("admitted depth"),
+            );
+        }
+        crate::test_support::with_work_limit(0, |ctx| {
+            assert!(
+                super::pcurves_equal(ctx, &pcurve, &pcurve, "fixed geometry wrappers")
+                    .expect("bounded analytic chain")
+            );
+            assert!(ctx.resource_refusal().is_none());
+        });
     }
 }

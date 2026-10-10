@@ -295,14 +295,14 @@ fn standard_endpoint_degree_entries_refuse_before_growth() {
     use super::set_duplicate_degree;
 
     let operation = standard_collection_limit_operation(0, |ctx| {
-        let mut row = Vec::new();
+        let mut row = std::collections::BTreeMap::new();
         set_duplicate_degree(ctx, &mut row, 7, 1)
     });
     assert_eq!(operation, "catia_standard_endpoint_degree_entries");
     crate::test_support::with_service_context(|ctx| {
-        let mut row = Vec::new();
+        let mut row = std::collections::BTreeMap::new();
         set_duplicate_degree(ctx, &mut row, 7, 1).expect("service budget");
-        assert_eq!(row, [(7, 1)]);
+        assert_eq!(row, std::collections::BTreeMap::from([(7, 1)]));
     });
 }
 
@@ -1310,7 +1310,13 @@ fn reconstructed_union_root_sources_propagate_caller_work_refusals() {
     ] {
         let result = crate::test_support::with_work_refusal(operation, |ctx| {
             let result = if operation == "catia_reconstruct_root_edge_rows" {
-                super::reconstruct(ctx, vec![row.clone()], Vec::new(), &[])
+                super::reconstruct(
+                    ctx,
+                    vec![row.clone()],
+                    Vec::new(),
+                    &[],
+                    &mut ctx.reserve_scoped(0, "trim cache").expect("scope"),
+                )
             } else {
                 super::reconstruct_mesh_selection(
                     ctx,
@@ -1330,9 +1336,15 @@ fn reconstructed_union_root_sources_propagate_caller_work_refusals() {
         );
     }
     crate::test_support::with_service_context(|ctx| {
-        let topology = super::reconstruct(ctx, vec![row.clone()], Vec::new(), &[])
-            .expect("service work budget")
-            .expect("untrimmed edge topology");
+        let topology = super::reconstruct(
+            ctx,
+            vec![row.clone()],
+            Vec::new(),
+            &[],
+            &mut ctx.reserve_scoped(0, "trim cache").expect("scope"),
+        )
+        .expect("service work budget")
+        .expect("untrimmed edge topology");
         assert_eq!(topology.logical_vertex_count, 2);
         let topology = super::reconstruct_mesh_selection(
             ctx,
@@ -1433,4 +1445,45 @@ fn body_group_validation_stops_before_trailing_coedges_and_groups() {
             None
         );
     });
+}
+
+#[test]
+fn duplicate_face_degrees_handle_descending_polygon_without_suffix_moves() {
+    use super::{complete_duplicate_face_slots, EdgeBoundaryLayout, EdgeRow};
+    const COUNT: usize = 512;
+    let rows: Vec<_> = (0..COUNT)
+        .rev()
+        .map(|point| {
+            EdgeRow::new(
+                1,
+                vec![
+                    u32::try_from(point).expect("point"),
+                    u32::try_from((point + 1) % COUNT).expect("next point"),
+                ],
+                EdgeBoundaryLayout::CompleteBoundaryRun,
+            )
+            .expect("polygon edge")
+        })
+        .collect();
+    let points: Vec<_> = (0..COUNT)
+        .rev()
+        .map(|point| [point, (point + 1) % COUNT])
+        .collect();
+    let mut faces = vec![[0, 1]; COUNT];
+    faces[0] = [0, 0];
+    // Four endpoint updates per edge each use at most three height-four
+    // lookups: 4 * 3 * 44 * 8 = 4224 units. Amortized node work is below
+    // 700 units per edge; the remaining linear passes fit the headroom.
+    // The two descending Vec rows alone would move over four million bytes.
+    const WORK_PER_EDGE: u64 = 6000;
+    crate::test_support::with_work_limit(
+        cadmpeg_core::decode::u64_from_index(COUNT) * WORK_PER_EDGE,
+        |ctx| {
+            let completed =
+                complete_duplicate_face_slots(ctx, &rows, &faces, &points, 2, None, None)
+                    .expect("ordered degree map fits work budget")
+                    .expect("one face completion");
+            assert_eq!(completed, vec![[0, 1]; COUNT]);
+        },
+    );
 }

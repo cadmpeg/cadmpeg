@@ -290,7 +290,8 @@ fn bind_consolidated_revolution_faces_and_seams(
         })?;
     let (vertex_positions, curve_indices) = storage.with_storage(|| {
         let mut vertex_positions = HashMap::new();
-        for vertex in ctx.admit_iter(&ir.model.vertices, "catia_standard_iteration")? {
+        let mut vertex_visits = ir.model.vertices.iter();
+        while let Some(vertex) = ctx.next_charged(&mut vertex_visits, "catia_standard_iteration")? {
             if let Some(&position) = ctx.get_hash_map(
                 &point_positions,
                 &vertex.point,
@@ -1646,7 +1647,8 @@ fn attach_free_vertices(
     )?;
     admission.reserve_entity(&mut ir.model.shells, "catia_standard_free_vertex_shells")?;
     let mut free_vertices = Vec::new();
-    for vertex in ctx.admit_iter(&ir.model.vertices, "catia_standard_iteration")? {
+    let mut vertex_visits = ir.model.vertices.iter();
+    while let Some(vertex) = ctx.next_charged(&mut vertex_visits, "catia_standard_iteration")? {
         let id = vertex
             .id
             .try_clone_for_decode(ctx, "catia_standard_free_vertex_id_copy")?;
@@ -1709,7 +1711,7 @@ fn standard_extrusion_support_id(
     procedural_supports: &mut HashMap<u32, usize>,
     map_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     surface_object_id: u32,
-    geometry: SurfaceGeometry,
+    geometry: &SurfaceGeometry,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<SurfaceId, cadmpeg_core::CodecError> {
     let ctx = admission.context();
@@ -1742,7 +1744,7 @@ fn standard_extrusion_support_id(
     admission.reserve_entity(surfaces, "catia_standard_extrusion_support_surfaces")?;
     surfaces.push(Surface {
         id: id.try_clone_for_decode(ctx, "catia_extrusion_support_surface_id_copy")?,
-        geometry,
+        geometry: geometry.try_clone_for_decode(ctx, "catia_standard_offset_support_copy")?,
         source_object: Some(source_object),
     });
     map_storage.with_storage(|| {
@@ -1770,7 +1772,7 @@ fn emit_standard_extrusion_definition(
         u32,
         cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction,
     >,
-    extrusion: crate::families::b5::transfer::ResolvedExtrusionSurface,
+    extrusion: &crate::families::b5::transfer::ResolvedExtrusionSurface,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<ProceduralSurfaceDefinition, cadmpeg_core::CodecError> {
     if let Some(definition) = ctx.get_hash_map(
@@ -1792,32 +1794,36 @@ fn emit_standard_extrusion_definition(
     })?;
     let parameter_range = extrusion.directrix_parameter_range;
     let direction = extrusion.direction;
-    match extrusion.directrix {
+    match &extrusion.directrix {
         crate::families::b5::transfer::ResolvedExtrusionDirectrix::Intersection {
             supports,
             cache_fit_tolerance,
         } => {
-            let [first, second] = *supports;
-            let mut build_side = |side: crate::families::b5::transfer::ResolvedExtrusionSupport| {
-                Ok::<_, cadmpeg_core::CodecError>(IntcurveSupportSide {
-                    surface: Some(standard_extrusion_support_id(
-                        annotations,
-                        surfaces,
-                        procedural_supports,
-                        map_storage,
-                        side.surface_object_id,
-                        side.surface,
-                        admission,
-                    )?),
-                    pcurve: Some(SupportPcurve::new(
-                        side.pcurve,
-                        (side.pcurve_parameter_range
-                            != extrusion.directrix_parameter_range.endpoints())
-                        .then(|| DirectedParameterRange::new(side.pcurve_parameter_range).ok())
-                        .flatten(),
-                    )),
-                })
-            };
+            let [first, second] = supports.as_ref();
+            let mut build_side =
+                |side: &crate::families::b5::transfer::ResolvedExtrusionSupport| {
+                    Ok::<_, cadmpeg_core::CodecError>(IntcurveSupportSide {
+                        surface: Some(standard_extrusion_support_id(
+                            annotations,
+                            surfaces,
+                            procedural_supports,
+                            map_storage,
+                            side.surface_object_id,
+                            &side.surface,
+                            admission,
+                        )?),
+                        pcurve: Some(SupportPcurve::new(
+                            side.pcurve.try_clone_for_decode(
+                                ctx,
+                                "catia_standard_extrusion_pcurve_copy",
+                            )?,
+                            (side.pcurve_parameter_range
+                                != extrusion.directrix_parameter_range.endpoints())
+                            .then(|| DirectedParameterRange::new(side.pcurve_parameter_range).ok())
+                            .flatten(),
+                        )),
+                    })
+                };
             let sides = [build_side(first)?, build_side(second)?];
             annotate(
                 ctx,
@@ -1867,7 +1873,7 @@ fn emit_standard_extrusion_definition(
                     ),
                     discontinuity_flag: false,
                     cache: Some(cadmpeg_ir::geometry::LegacyCache::new(
-                        cadmpeg_ir::scalar::NonNegativeReal::from(cache_fit_tolerance).into(),
+                        cadmpeg_ir::scalar::NonNegativeReal::from(*cache_fit_tolerance).into(),
                     )),
                 },
             );
@@ -1891,7 +1897,8 @@ fn emit_standard_extrusion_definition(
             )?;
             ir.model.curves.push(Curve {
                 id: directrix_id.try_clone_for_decode(ctx, "catia_extrusion_surface_curve_id")?,
-                geometry: curve,
+                geometry: curve
+                    .try_clone_for_decode(ctx, "catia_standard_extrusion_directrix_copy")?,
                 source_object: Some(cgm_source(ctx, "curve", extrusion.directrix_object_id)?),
             });
         }
@@ -1906,7 +1913,7 @@ fn emit_standard_extrusion_definition(
             let source_id = crate::resource::compose_u32_id(
                 ctx,
                 &cadmpeg_ir::identity_namespace!("catia", "standard", "extrusion-directrix-source"),
-                source_object_id,
+                *source_object_id,
                 CurveId::mint,
                 "catia_extrusion_source_identity",
             )?;
@@ -1923,8 +1930,9 @@ fn emit_standard_extrusion_definition(
                 .reserve_entity(&mut ir.model.curves, "catia_extrusion_offset_source_curves")?;
             ir.model.curves.push(Curve {
                 id: source_id.try_clone_for_decode(ctx, "catia_extrusion_offset_source_id")?,
-                geometry: source_curve,
-                source_object: Some(cgm_source(ctx, "curve", source_object_id)?),
+                geometry: source_curve
+                    .try_clone_for_decode(ctx, "catia_standard_extrusion_source_copy")?,
+                source_object: Some(cgm_source(ctx, "curve", *source_object_id)?),
             });
             annotate(
                 ctx,
@@ -1971,7 +1979,7 @@ fn emit_standard_extrusion_definition(
                 procedural_supports,
                 map_storage,
                 support.surface_object_id,
-                support.surface,
+                &support.surface,
                 admission,
             )?;
             admission.charge()?;
@@ -1983,10 +1991,10 @@ fn emit_standard_extrusion_definition(
                     ProceduralCurveDefinition::Offset(
                         cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::along_direction(
                             source_id,
-                            distance,
-                            direction,
+                            *distance,
+                            *direction,
                             Some(support),
-                            source_parameter_range,
+                            *source_parameter_range,
                         ),
                     ),
                 ))?;
@@ -2169,114 +2177,6 @@ fn associate_standard_freeform_e5_surfaces(
         )?;
     }
     Ok(associated)
-}
-
-fn copy_standard_procedure(
-    ctx: &DecodeContext<'_>,
-    procedure: &StandardSurfaceProcedure,
-) -> Result<StandardSurfaceProcedure, CodecError> {
-    Ok(match procedure {
-        StandardSurfaceProcedure::RollingBall {
-            carrier_object_id,
-            definition,
-            source,
-        } => StandardSurfaceProcedure::RollingBall {
-            carrier_object_id: *carrier_object_id,
-            definition: Box::new(
-                crate::families::b5::transfer::surfaces::copy_rolling_ball_definition(
-                    ctx, definition,
-                )?,
-            ),
-            source: *source,
-        },
-        StandardSurfaceProcedure::Offset {
-            carrier_object_id,
-            support_object_id,
-            support,
-            distance,
-            parameter_bounds,
-        } => {
-            let support = match support {
-                crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(geometry) => {
-                    let geometry = match geometry {
-                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
-                            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                                nurbs.try_clone_for_decode(
-                                    ctx,
-                                    "catia_standard_offset_support_copy",
-                                )?,
-                            ))
-                        }
-                        SurfaceGeometry::Solved(
-                            SolvedSurfaceGeometry::Plane(_)
-                            | SolvedSurfaceGeometry::Cylinder(_)
-                            | SolvedSurfaceGeometry::Cone(_)
-                            | SolvedSurfaceGeometry::Sphere(_)
-                            | SolvedSurfaceGeometry::Torus(_),
-                        ) => geometry
-                            .try_clone_for_decode(ctx, "catia_standard_offset_support_copy")?,
-                        _ => {
-                            return Err(CodecError::malformed(
-                                "standard offset support has unexpected geometry",
-                            ))
-                        }
-                    };
-                    crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(geometry)
-                }
-                crate::families::b5::transfer::ResolvedOffsetSupport::Extrusion(extrusion) => {
-                    ctx.charge_retained(
-                        u64_from_index(std::mem::size_of::<
-                            crate::families::b5::transfer::ResolvedExtrusionSurface,
-                        >()),
-                        "catia_standard_offset_extrusion_copy",
-                    )?;
-                    crate::families::b5::transfer::ResolvedOffsetSupport::Extrusion(Box::new(
-                        crate::families::b5::transfer::copy_resolved_extrusion_surface(
-                            ctx, extrusion,
-                        )?,
-                    ))
-                }
-            };
-            StandardSurfaceProcedure::Offset {
-                carrier_object_id: *carrier_object_id,
-                support_object_id: *support_object_id,
-                support,
-                distance: *distance,
-                parameter_bounds: *parameter_bounds,
-            }
-        }
-        StandardSurfaceProcedure::Extrusion(extrusion) => {
-            ctx.charge_retained(
-                u64_from_index(std::mem::size_of::<
-                    crate::families::b5::transfer::ResolvedExtrusionSurface,
-                >()),
-                "catia_standard_extrusion_plan_copy",
-            )?;
-            StandardSurfaceProcedure::Extrusion(Box::new(
-                crate::families::b5::transfer::copy_resolved_extrusion_surface(ctx, extrusion)?,
-            ))
-        }
-        StandardSurfaceProcedure::Revolution(revolution) => {
-            ctx.charge_retained(
-                u64_from_index(std::mem::size_of::<
-                    crate::families::b5::transfer::ResolvedRevolutionSurface,
-                >()),
-                "catia_standard_revolution_plan_copy",
-            )?;
-            StandardSurfaceProcedure::Revolution(Box::new(
-                crate::families::b5::transfer::ResolvedRevolutionSurface {
-                    directrix: revolution
-                        .directrix
-                        .try_clone_for_decode(ctx, "catia_standard_revolution_directrix_copy")?,
-                    axis_origin: revolution.axis_origin,
-                    axis_direction: revolution.axis_direction,
-                    angular_interval: revolution.angular_interval,
-                    angular_parameter_interval: revolution.angular_parameter_interval,
-                    parameter_interval: revolution.parameter_interval,
-                },
-            ))
-        }
-    })
 }
 
 /// Join standard freeform faces to exact E5 class-`0xd8` rolling-ball jets.
@@ -3023,10 +2923,8 @@ fn try_decode_standard_population(
         Err(error) => return Some(Err(error)),
     };
     for (tag, procedure) in admitted!(ctx.admit_iter(e5_freeform_procedural_surfaces, "catia_standard_e5_freeform_procedures")) {
-        // Procedures hold surface geometry, which has no decode cost: this
-        // comparison is unpriced.
         match admitted!(ctx.get_hash_map(&freeform_procedural_surfaces, &tag, "catia_standard_e5_freeform_procedure_lookup")) {
-            Some(existing) if existing != &procedure => {
+            Some(existing) if !admitted!(equality::procedures_equal(ctx, existing, &procedure, "catia_standard_e5_freeform_procedure_lookup")) => {
                 admitted!(ctx.remove_hash_map(&mut freeform_procedural_surfaces, &tag, "catia_standard_e5_freeform_procedure_lookup"));
             }
             Some(_) => {}
@@ -3075,7 +2973,8 @@ fn try_decode_standard_population(
     let mut decoded_plane_targets = HashSet::new();
     let mut plane_faces = 0usize;
     let mut typed = TypedCounts::default();
-    for (i, record) in admitted!(ctx.admit_iter(&records, "catia_standard_surface_rows")).enumerate() {
+    let mut surface_rows = records.iter().enumerate();
+    while let Some((i, record)) = admitted!(ctx.next_charged(&mut surface_rows, "catia_standard_surface_rows")) {
         let prefix = match record {
             crate::families::standard::records::StandardSurfaceRecord::Analytic(prefix) => prefix,
             crate::families::standard::records::StandardSurfaceRecord::Freeform {
@@ -3120,9 +3019,8 @@ fn try_decode_standard_population(
                     geometry,
                     source_object: Some(admitted!(cgm_source(ctx, "carrier", *tag))),
                 });
-                if let Some(procedure) = admitted!(admitted!(ctx.get_hash_map(&freeform_procedural_surfaces, tag, "catia_standard_freeform_procedure_lookup"))
-                    .map(|procedure| copy_standard_procedure(ctx, procedure)).transpose()) {
-                    admitted!(ctx.push_vec(&mut procedural_surface_plans, (i, surface_index, *tag, procedure), "catia_standard_procedural_surface_plans"));
+                if let Some(procedure) = admitted!(ctx.get_hash_map(&freeform_procedural_surfaces, tag, "catia_standard_freeform_procedure_lookup")) {
+                    admitted!(setup_storage.with_storage(|| ctx.push_vec(&mut procedural_surface_plans, (i, surface_index, *tag, procedure), "catia_standard_procedural_surface_plans")));
                 }
                 continue;
             }
@@ -3209,7 +3107,8 @@ fn try_decode_standard_population(
     let mut procedural_storage = match ctx.reserve_scoped(0,"catia_standard_procedural_working_state") { Ok(storage) => storage, Err(error) => return Some(Err(error)) };
     let mut procedural_supports = HashMap::<u32, usize>::new();
     let mut extrusion_definitions = HashMap::new();
-    for (index, surface_index, tag, procedure) in admitted!(ctx.admit_iter(procedural_surface_plans, "catia_standard_procedural_surface_plans")) {
+    let mut plans = procedural_surface_plans.iter().copied();
+    while let Some((index, surface_index, tag, procedure)) = admitted!(ctx.next_charged(&mut plans, "catia_standard_procedural_surface_plans")) {
         let procedural_id = admitted!(crate::resource::compose_index_id(ctx,
             &cadmpeg_ir::identity_namespace!("catia", "standard", "procedural-surf"),
             index, ProceduralSurfaceId::mint, "catia_standard_procedural_surface_id"));
@@ -3233,8 +3132,8 @@ fn try_decode_standard_population(
                     StandardRollingBallSource::ObjectStreamA8 => "object_stream_a8_03_32",
                     StandardRollingBallSource::E5D8 => "e5_0d_03_d8",
                 },
-                carrier_object_id,
-                *definition,
+                *carrier_object_id,
+                admitted!(crate::families::b5::transfer::surfaces::copy_rolling_ball_definition(ctx, definition)),
                 Exactness::ByteExact,
             ),
             StandardSurfaceProcedure::Offset {
@@ -3246,17 +3145,17 @@ fn try_decode_standard_population(
             } => {
                 let support_id = match support {
                     crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(support) => {
-                        if let Some(&index) = admitted!(ctx.get_hash_map(&procedural_supports, &support_object_id, "catia_standard_procedural_support_lookup")) {
+                        if let Some(&index) = admitted!(ctx.get_hash_map(&procedural_supports, support_object_id, "catia_standard_procedural_support_lookup")) {
                             admitted!(surfaces[index].id.try_clone_for_decode(ctx, "catia_standard_existing_support_id"))
                         } else {
-                            let source_object = admitted!(cgm_source(ctx, "surface", support_object_id));
+                            let source_object = admitted!(cgm_source(ctx, "surface", *support_object_id));
                             let id = admitted!(crate::resource::compose_u32_id(ctx,
                                 &cadmpeg_ir::identity_namespace!(
                                     "catia",
                                     "standard",
                                     "procedural-support"
                                 ),
-                                support_object_id, SurfaceId::mint,
+                                *support_object_id, SurfaceId::mint,
                                 "catia_standard_procedural_support_id"));
                             admitted!(annotate(
                                 ctx,
@@ -3271,10 +3170,10 @@ fn try_decode_standard_population(
                             }
                             surfaces.push(Surface {
                                 id: admitted!(id.try_clone_for_decode(ctx, "catia_standard_support_record_id")),
-                                geometry: support,
+                                geometry: admitted!(support.try_clone_for_decode(ctx, "catia_standard_offset_support_copy")),
                                 source_object: Some(source_object),
                             });
-                            admitted!(procedural_storage.with_storage(|| ctx.insert_hash_map(&mut procedural_supports, support_object_id, surfaces.len() - 1, "catia_standard_procedural_supports")));
+                            admitted!(procedural_storage.with_storage(|| ctx.insert_hash_map(&mut procedural_supports, *support_object_id, surfaces.len() - 1, "catia_standard_procedural_supports")));
                             id
                         }
                     }
@@ -3286,7 +3185,7 @@ fn try_decode_standard_population(
                                 "standard",
                                 "procedural-support"
                             ),
-                            support_object_id, SurfaceId::mint,
+                            *support_object_id, SurfaceId::mint,
                             "catia_standard_procedural_support_id"));
                         admitted!(annotate(
                             ctx,
@@ -3299,7 +3198,7 @@ fn try_decode_standard_population(
                         // Supports share one identity namespace, so a support
                         // object emitted earlier owns the first surface with
                         // this identity; otherwise the surface pushed here does.
-                        let earlier_support = admitted!(ctx.get_hash_map(&procedural_supports, &support_object_id, "catia_standard_procedural_support_lookup")).copied();
+                        let earlier_support = admitted!(ctx.get_hash_map(&procedural_supports, support_object_id, "catia_standard_procedural_support_lookup")).copied();
                         let pushed_index = surfaces.len();
                         if let Err(error) = admission.reserve_entity(&mut surfaces, "catia_family_emit_surfaces") {
                             return Some(Err(error));
@@ -3309,14 +3208,14 @@ fn try_decode_standard_population(
                             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                                 record: None,
                             }),
-                            source_object: Some(admitted!(cgm_source(ctx, "surface", support_object_id))),
+                            source_object: Some(admitted!(cgm_source(ctx, "surface", *support_object_id))),
                         });
                         let definition = match emit_standard_extrusion_definition(ctx,
 &mut ir,
 &mut annotations,
 (&mut surfaces, &mut procedural_supports,&mut procedural_storage),
 &mut extrusion_definitions,
-*extrusion,
+extrusion,
 &mut admission) {
                             Ok(definition) => definition,
                             Err(error) => return Some(Err(error)),
@@ -3327,7 +3226,7 @@ fn try_decode_standard_population(
                                 "standard",
                                 "procedural-support-definition"
                             ),
-                            support_object_id, ProceduralSurfaceId::mint,
+                            *support_object_id, ProceduralSurfaceId::mint,
                             "catia_standard_support_construction_id"));
                         let support_index = earlier_support.unwrap_or(pushed_index);
                         let attached = if let Some(surface) =
@@ -3365,17 +3264,17 @@ fn try_decode_standard_population(
                                 Some(record_bounds),
                             ));
                         }
-                        admitted!(procedural_storage.with_storage(|| ctx.insert_hash_map(&mut procedural_supports, support_object_id, support_index, "catia_standard_procedural_supports")));
+                        admitted!(procedural_storage.with_storage(|| ctx.insert_hash_map(&mut procedural_supports, *support_object_id, support_index, "catia_standard_procedural_supports")));
                         support_id
                     }
                 };
                 (
                     "object_stream_b5_03_30",
-                    carrier_object_id,
+                    *carrier_object_id,
                     ProceduralSurfaceDefinition::Offset(
                         cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::legacy(
                             support_id,
-                            distance,
+                            *distance,
                             None,
                             None,
                             false,
@@ -3393,7 +3292,7 @@ fn try_decode_standard_population(
 &mut annotations,
 (&mut surfaces, &mut procedural_supports,&mut procedural_storage),
 &mut extrusion_definitions,
-*extrusion,
+extrusion,
 &mut admission) {
                     Ok(definition) => definition,
                     Err(error) => return Some(Err(error)),
@@ -3424,7 +3323,7 @@ fn try_decode_standard_population(
                 ir.model.curves.push(Curve {
                     id: admitted!(directrix_id.try_clone_for_decode(ctx, "catia_standard_revolution_curve_record_id")),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                        revolution.directrix,
+                        admitted!(revolution.directrix.try_clone_for_decode(ctx, "catia_standard_revolution_directrix_copy")),
                     )),
                     source_object: None,
                 });
@@ -3487,10 +3386,11 @@ fn try_decode_standard_population(
         }
     }
     ir.model.surfaces = surfaces;
+    let mut revolution_storage = admitted!(ctx.reserve_scoped(0, "catia_standard_resolved_revolutions"));
     let resolved_consolidated_revolutions =
-        match crate::families::b2::records::b2_resolved_revolutions_from_records(
+        match revolution_storage.with_storage(|| crate::families::b2::records::b2_resolved_revolutions_from_records(
             ctx, &scan.data, &consolidated_records,
-        ) {
+        )) {
             Ok(revolutions) => revolutions,
             Err(error) => return Some(Err(error)),
         };
@@ -3553,9 +3453,8 @@ fn try_decode_standard_population(
             tolerance: None,
         });
     }
-    for (id, stream, offset, tag, exactness) in
-        admitted!(ctx.admit_iter(&surface_annotations, "catia_standard_surface_annotations"))
-    {
+    let mut annotation_visits = surface_annotations.iter();
+    while let Some((id, stream, offset, tag, exactness)) = admitted!(ctx.next_charged(&mut annotation_visits, "catia_standard_surface_annotations")) {
         admitted!(annotate(
             ctx,
             &mut annotations,
@@ -4152,12 +4051,18 @@ impl StandardEdgeSupport {
                 (ResolvedPcurveSurface::Geometry(left), ResolvedPcurveSurface::Geometry(right)) => {
                     equality::surfaces_equal(ctx, left, right, OP)?
                 }
-                // Complete procedural equality requires a comparison in the
-                // IR owner of the private construction payloads.
                 (
-                    left @ ResolvedPcurveSurface::RollingBall { .. },
-                    right @ ResolvedPcurveSurface::RollingBall { .. },
-                ) => left == right,
+                    ResolvedPcurveSurface::RollingBall {
+                        carrier_object_id: left_id,
+                        definition: left,
+                    },
+                    ResolvedPcurveSurface::RollingBall {
+                        carrier_object_id: right_id,
+                        definition: right,
+                    },
+                ) => {
+                    left_id == right_id && equality::rolling_ball_jets_equal(ctx, left, right, OP)?
+                }
                 _ => false,
             };
             if !equal
@@ -4390,19 +4295,21 @@ impl StandardEvidenceStore {
                 .map(|candidate| candidate.equivalent(ctx, &StandardSupportRef::Offset(support)))
                 .transpose()?
                 .unwrap_or(false)),
-            StandardSurfaceProcedure::Extrusion(extrusion) => ctx.all_by(
-                extrusion.supports(),
-                |side| {
-                    Ok(self
+            StandardSurfaceProcedure::Extrusion(extrusion) => {
+                for side in extrusion.supports() {
+                    let supported = self
                         .supported_ref(ctx, conflicting_population_ids, side.surface_object_id)?
                         .map(|candidate| {
                             candidate.equivalent(ctx, &StandardSupportRef::Geometry(&side.surface))
                         })
                         .transpose()?
-                        .unwrap_or(false))
-                },
-                "catia_standard_extrusion_support_check",
-            ),
+                        .unwrap_or(false);
+                    if !supported {
+                        return Ok(false);
+                    }
+                }
+                Ok(true)
+            }
             StandardSurfaceProcedure::RollingBall { .. }
             | StandardSurfaceProcedure::Revolution(_) => Ok(true),
         }
@@ -4432,7 +4339,10 @@ impl StandardEvidenceStore {
         }
         let mut surface_geometries = HashMap::new();
         let mut procedural_surfaces = HashMap::new();
-        for (tag, indexes) in ctx.admit_iter(&self.surfaces, "catia_standard_surface_outputs")? {
+        let mut surface_visits = self.surfaces.iter();
+        while let Some((tag, indexes)) =
+            ctx.next_charged(&mut surface_visits, "catia_standard_surface_outputs")?
+        {
             if ctx.contains_hash_set(
                 conflicting_population_ids,
                 tag,
@@ -4444,22 +4354,46 @@ impl StandardEvidenceStore {
             let mut procedure = None;
             let mut procedure_valid = false;
             let mut conflict = false;
-            for &index in ctx.admit_iter(indexes, "catia_standard_surface_output_evidence")? {
+            let mut evidence_visits = indexes.iter();
+            while let Some(&index) = ctx.next_charged(
+                &mut evidence_visits,
+                "catia_standard_surface_output_evidence",
+            )? {
                 let Some(incoming) = self.evidence.get_mut(index).and_then(Option::take) else {
                     continue;
                 };
                 let (incoming_geometry, incoming_procedure) = incoming.into_parts();
                 let had_procedure = procedure.is_some();
                 let has_incoming_procedure = incoming_procedure.is_some();
-                let EvidencePart::Merged(merged_geometry) =
-                    merge_standard_evidence_part(geometry.take(), incoming_geometry)
+                let EvidencePart::Merged(merged_geometry) = merge_standard_evidence_part(
+                    geometry.take(),
+                    incoming_geometry,
+                    |left, right| {
+                        equality::surfaces_equal(
+                            ctx,
+                            left,
+                            right,
+                            "catia_standard_surface_output_evidence",
+                        )
+                    },
+                )?
                 else {
                     conflict = true;
                     break;
                 };
                 geometry = merged_geometry;
-                let EvidencePart::Merged(merged_procedure) =
-                    merge_standard_evidence_part(procedure.take(), incoming_procedure)
+                let EvidencePart::Merged(merged_procedure) = merge_standard_evidence_part(
+                    procedure.take(),
+                    incoming_procedure,
+                    |left, right| {
+                        equality::procedures_equal(
+                            ctx,
+                            left,
+                            right,
+                            "catia_standard_surface_output_evidence",
+                        )
+                    },
+                )?
                 else {
                     conflict = true;
                     break;
@@ -5156,15 +5090,22 @@ enum EvidencePart<T> {
     Merged(Option<T>),
 }
 
-fn merge_standard_evidence_part<T: PartialEq>(
+fn merge_standard_evidence_part<T>(
     stored: Option<T>,
     incoming: Option<T>,
-) -> EvidencePart<T> {
-    match (stored, incoming) {
-        (Some(stored), Some(incoming)) if stored != incoming => EvidencePart::Conflict,
+    equivalent: impl FnOnce(&T, &T) -> Result<bool, CodecError>,
+) -> Result<EvidencePart<T>, CodecError> {
+    Ok(match (stored, incoming) {
+        (Some(stored), Some(incoming)) => {
+            if equivalent(&stored, &incoming)? {
+                EvidencePart::Merged(Some(stored))
+            } else {
+                EvidencePart::Conflict
+            }
+        }
         (Some(stored), _) => EvidencePart::Merged(Some(stored)),
         (None, incoming) => EvidencePart::Merged(incoming),
-    }
+    })
 }
 
 /// Attach standard analytic carriers to faces only when every FBB face has a
@@ -5191,9 +5132,9 @@ fn attach_standard_faces(
         .copy_retained_text("catia:standard:shell#0-0", "catia_standard_shell_id")
         .and_then(|text| ShellId::mint(text).map_err(cadmpeg_core::CodecError::malformed))?;
     let mut face_ids = Vec::new();
-    for (face_index, (surface, forward, offset)) in ctx
-        .admit_iter(bindings, "catia_standard_iteration")?
-        .enumerate()
+    let mut binding_visits = bindings.iter().enumerate();
+    while let Some((face_index, (surface, forward, offset))) =
+        ctx.next_charged(&mut binding_visits, "catia_standard_iteration")?
     {
         let face_id = FaceId::mint(ctx.format_retained(
             format_args!("catia:standard:face#{face_index:01}"),
@@ -5355,10 +5296,11 @@ fn partition_standard_face_components(
         return Ok(false);
     };
     let mut region_ids = Vec::new();
-    for (component, _) in ctx
-        .admit_iter(components, "catia_standard_partition_component_ids")?
-        .enumerate()
-    {
+    let mut component_visits = components.iter().enumerate();
+    while let Some((component, _)) = ctx.next_charged(
+        &mut component_visits,
+        "catia_standard_partition_component_ids",
+    )? {
         identity_storage.with_storage(|| {
             let id = RegionId::mint(ctx.format_retained(
                 format_args!("catia:standard:region#0-{component:01}"),
@@ -5369,7 +5311,8 @@ fn partition_standard_face_components(
         })?;
     }
     let mut body_regions = Vec::new();
-    for id in ctx.admit_iter(&region_ids, "catia_standard_iteration")? {
+    let mut region_visits = region_ids.iter();
+    while let Some(id) = ctx.next_charged(&mut region_visits, "catia_standard_iteration")? {
         ctx.push_vec(
             &mut body_regions,
             id.try_clone_for_decode(ctx, "catia_standard_partition_body_region_id")?,
@@ -5392,7 +5335,10 @@ fn partition_standard_face_components(
             )?)
             .map_err(CodecError::malformed)?;
             let mut face_ids = Vec::new();
-            for &face in ctx.admit_iter(faces, "catia_standard_component_faces")? {
+            let mut face_visits = faces.iter();
+            while let Some(&face) =
+                ctx.next_charged(&mut face_visits, "catia_standard_component_faces")?
+            {
                 let id = FaceId::mint(ctx.format_retained(
                     format_args!("catia:standard:face#{face:01}"),
                     "catia_standard_partition_face_id",
@@ -6231,8 +6177,12 @@ fn attach_standard_topology(
                                 )
                                 .map_err(StandardTopologyError::Resource)?;
                             }
-                            ctx.dedup_vec(&mut limit_pairs, "catia_limit_endpoint_pairs_dedup")
-                                .map_err(StandardTopologyError::Resource)?;
+                            if limit_pairs.len() <= 2 {
+                                limit_pairs.dedup();
+                            } else {
+                                ctx.dedup_vec(&mut limit_pairs, "catia_limit_endpoint_pairs_dedup")
+                                    .map_err(StandardTopologyError::Resource)?;
+                            }
                             if options[edge].is_empty() {
                                 options[edge] = limit_pairs;
                             }
@@ -6915,8 +6865,12 @@ fn attach_standard_topology(
                                 )
                                 .map_err(StandardTopologyError::Resource)?;
                             }
-                            ctx.dedup_vec(pairs, "catia_standard_endpoint_pairs_dedup")
-                                .map_err(StandardTopologyError::Resource)?;
+                            if pairs.len() <= 2 {
+                                pairs.dedup();
+                            } else {
+                                ctx.dedup_vec(pairs, "catia_standard_endpoint_pairs_dedup")
+                                    .map_err(StandardTopologyError::Resource)?;
+                            }
                         }
                         for (edge, _) in ctx
                             .admit_iter(&supports, "catia_standard_endpoint_candidate_option_rows")?
@@ -7973,9 +7927,9 @@ fn validate_standard_topology(
             )?;
         }
     }
-    for (&arena_index, &kind) in ctx
-        .admit_iter(&body_arena_indices, "catia_standard_body_arena_indices")?
-        .zip(ctx.admit_iter(&body_kinds, "catia_standard_body_kinds")?)
+    let mut body_rows = body_arena_indices.iter().zip(&body_kinds);
+    while let Some((&arena_index, &kind)) =
+        ctx.next_charged(&mut body_rows, "catia_standard_body_arena_indices")?
     {
         ir.model.bodies[arena_index].kind = kind;
     }
@@ -8020,12 +7974,9 @@ fn standard_face_loops(
             face_topology.boundaries().len(),
             "catia_standard_face_loop_ids",
         )?;
-        for (loop_index, _) in ctx
-            .admit_iter(
-                face_topology.boundaries(),
-                "catia_standard_face_loop_boundaries",
-            )?
-            .enumerate()
+        let mut boundary_visits = face_topology.boundaries().iter().enumerate();
+        while let Some((loop_index, _)) =
+            ctx.next_charged(&mut boundary_visits, "catia_standard_face_loop_boundaries")?
         {
             ids.push(standard_id(
                 ctx,
@@ -8039,7 +7990,10 @@ fn standard_face_loops(
     })?;
     let unspecified = || -> Result<_, CodecError> {
         let mut copy = Vec::new();
-        for id in ctx.admit_iter(&ids, "catia_standard_unspecified_loop_ids")? {
+        let mut identity_visits = ids.iter();
+        while let Some(id) =
+            ctx.next_charged(&mut identity_visits, "catia_standard_unspecified_loop_ids")?
+        {
             let id = id.try_clone_for_decode(ctx, "catia_standard_unspecified_loop_id_copy")?;
             ctx.push_vec(&mut copy, id, "catia_standard_unspecified_loop_ids")?;
         }
@@ -8286,9 +8240,9 @@ fn emit_standard_topology(
 
     let mut emission_storage = ctx.reserve_scoped(0, "catia_standard_emission_storage")?;
     let mut curve_indices = HashMap::new();
-    for (index, curve) in ctx
-        .admit_iter(&ir.model.curves, "catia_standard_curve_index_rows")?
-        .enumerate()
+    let mut curve_rows = ir.model.curves.iter().enumerate();
+    while let Some((index, curve)) =
+        ctx.next_charged(&mut curve_rows, "catia_standard_curve_index_rows")?
     {
         emission_storage.with_storage(|| {
             ctx.insert_hash_map(
@@ -8299,14 +8253,16 @@ fn emit_standard_topology(
             )
         })?;
     }
-    let mut edge_coedges = ctx.collect_indexed_vec(
-        ir.model.edges.len(),
-        "catia_standard_edge_coedge_rows",
-        |_| Ok(Vec::new()),
-    )?;
-    for (face_index, face_topology) in ctx
-        .admit_iter(topology.faces(), "catia_standard_topology_faces")?
-        .enumerate()
+    let mut edge_coedges = emission_storage.with_storage(|| {
+        ctx.collect_indexed_vec(
+            ir.model.edges.len(),
+            "catia_standard_edge_coedge_rows",
+            |_| Ok(Vec::new()),
+        )
+    })?;
+    let mut face_rows = topology.faces().iter().enumerate();
+    while let Some((face_index, face_topology)) =
+        ctx.next_charged(&mut face_rows, "catia_standard_topology_faces")?
     {
         let face_loops = standard_face_loops(
             admission.context(),
@@ -8326,12 +8282,9 @@ fn emit_standard_topology(
             .flatten()
             .copied()
             .ok_or_else(|| CodecError::malformed("standard face has no bound surface"))?;
-        for (loop_index, boundary) in ctx
-            .admit_iter(
-                face_topology.boundaries(),
-                "catia_standard_topology_boundaries",
-            )?
-            .enumerate()
+        let mut boundaries = face_topology.boundaries().iter().enumerate();
+        while let Some((loop_index, boundary)) =
+            ctx.next_charged(&mut boundaries, "catia_standard_topology_boundaries")?
         {
             let loop_id = standard_id(
                 ctx,
@@ -8341,7 +8294,10 @@ fn emit_standard_topology(
                 "catia_standard_loop_identity",
             )?;
             let mut vertices = Vec::new();
-            for edge_use in ctx.admit_iter(boundary.coedges(), "catia_standard_boundary_coedges")? {
+            let mut edge_uses = boundary.coedges().iter();
+            while let Some(edge_use) =
+                ctx.next_charged(&mut edge_uses, "catia_standard_boundary_coedges")?
+            {
                 let point = point_assignment[edge_use.end_vertex];
                 let vertex = standard_id(
                     ctx,
@@ -8356,7 +8312,10 @@ fn emit_standard_topology(
                 vertices.try_into().map_err(CodecError::malformed)?;
             let mut coedges = Vec::new();
             let mut vertex_uses = Vec::new();
-            for (ordinal, vertex) in vertices.into_iter().enumerate() {
+            let mut vertices = vertices.into_iter().enumerate();
+            while let Some((ordinal, vertex)) =
+                ctx.next_charged(&mut vertices, "catia_standard_ring_members")?
+            {
                 let coedge = standard_id(
                     ctx,
                     "coedge",
@@ -8380,9 +8339,9 @@ fn emit_standard_topology(
                 .map_err(cadmpeg_core::CodecError::from)?
                 .map_err(CodecError::malformed)?;
             let coedge_ids = ring.coedges();
-            for (coedge_index, edge_use) in ctx
-                .admit_iter(boundary.coedges(), "catia_standard_boundary_pcurve_coedges")?
-                .enumerate()
+            let mut pcurve_uses = boundary.coedges().iter().enumerate();
+            while let Some((coedge_index, edge_use)) =
+                ctx.next_charged(&mut pcurve_uses, "catia_standard_boundary_pcurve_coedges")?
             {
                 let support = &supports[edge_use.edge_row];
                 let logical_vertices = edge_vertices[edge_use.edge_row];
@@ -8441,11 +8400,13 @@ refusal)?
                 })
                 .transpose()?;
                 let arena_index = ir.model.coedges.len();
-                ctx.push_vec(
-                    &mut edge_coedges[edge_use.edge_row],
-                    arena_index,
-                    "catia_standard_edge_coedge_entries",
-                )?;
+                emission_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut edge_coedges[edge_use.edge_row],
+                        arena_index,
+                        "catia_standard_edge_coedge_entries",
+                    )
+                })?;
                 let id = coedge_ids[coedge_index]
                     .try_clone_for_decode(ctx, "catia_standard_coedge_id_copy")?;
                 annotate(
@@ -8539,10 +8500,11 @@ refusal)?
         }
         ir.model.faces[face_index].loops = face_loops;
     }
-    for uses in ctx.admit_iter(&edge_coedges, "catia_standard_edge_coedge_rows")? {
-        for (position, current) in ctx
-            .admit_iter(uses, "catia_standard_edge_coedge_entries")?
-            .enumerate()
+    let mut edge_rows = edge_coedges.iter();
+    while let Some(uses) = ctx.next_charged(&mut edge_rows, "catia_standard_edge_coedge_rows")? {
+        let mut entries = uses.iter().enumerate();
+        while let Some((position, current)) =
+            ctx.next_charged(&mut entries, "catia_standard_edge_coedge_entries")?
         {
             let next = uses[(position + 1) % uses.len()];
             let next_id = ir.model.coedges[next]
@@ -8894,7 +8856,11 @@ fn resolve_standard_endpoint_pairs(
                     "catia standard line endpoint pairs sort",
                 )?;
             }
-            ctx.dedup_vec(&mut pairs, "catia standard line endpoint pairs dedup")?;
+            if pairs.len() <= 2 {
+                pairs.dedup();
+            } else {
+                ctx.dedup_vec(&mut pairs, "catia standard line endpoint pairs dedup")?;
+            }
             if pairs.len() < edges.len() {
                 continue;
             }
