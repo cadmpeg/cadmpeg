@@ -3193,6 +3193,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.design_entity_selection_operands,
         )?;
         crate::design::feature_project::bind_revolve_face_axes(
+            self.ctx,
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
             &self.native.design_construction_operand_groups,
@@ -3200,7 +3201,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.design_face_operands,
             &self.ir.model.faces,
             &self.ir.model.surfaces,
-        );
+        )?;
         (self.ir.model.sketches, self.ir.model.sketch_entities) =
             crate::design::sketch_project::project_sketch_design(
                 self.ctx,
