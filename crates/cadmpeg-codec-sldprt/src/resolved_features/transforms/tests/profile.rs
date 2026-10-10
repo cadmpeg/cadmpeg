@@ -1091,11 +1091,9 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
     ];
     assert_eq!(
         crate::resolved_features::dimensions::extended_radial_circle_index(
-            &cadmpeg_test_support::service_decode_context(),
             &lane.native_payload,
             0,
-        )
-        .unwrap(),
+        ),
         Some(1)
     );
 

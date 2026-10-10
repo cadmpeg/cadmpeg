@@ -352,9 +352,6 @@ impl<'a, 'ctx> LaneMarkerIndex<'a, 'ctx> {
         let mut storage = ctx.reserve_scoped(0, DIMENSIONED_CARRIER_OPERATION)?;
         let mut records = Vec::new();
         for record in radial_circle_records(ctx, &self.lanes[lane].native_payload)? {
-            let Some(record) = record? else {
-                continue;
-            };
             storage.with_storage(|| {
                 ctx.push_vec(&mut records, record, DIMENSIONED_CARRIER_OPERATION)
             })?;
@@ -460,7 +457,7 @@ fn native_radial_record_for_marker(
                 return Ok(Some((record.radial_index, record.construction)));
             }
             if let Some(radial_index) =
-                extended_radial_circle_index(ctx, &index.lanes[*lane].native_payload, offset)?
+                extended_radial_circle_index(&index.lanes[*lane].native_payload, offset)
             {
                 return Ok(Some((radial_index, false)));
             }
@@ -1819,69 +1816,24 @@ fn radial_circle_records<'a, 'arena>(
     ctx: &'a DecodeContext<'arena>,
     payload: &'a [u8],
 ) -> Result<
-    impl Iterator<Item = Result<Option<RadialCircleRecord>, cadmpeg_core::CodecError>>
+    impl Iterator<Item = RadialCircleRecord>
         + 'a
         + use<'a, 'arena>,
     cadmpeg_core::CodecError,
 > {
-    let Some(window) = std::num::NonZeroUsize::new(LEGACY_SKETCH_MARKER.len()) else {
-        return Err(cadmpeg_core::CodecError::malformed(
-            "empty SLDPRT sketch marker",
-        ));
-    };
+    let starts = payload
+        .len()
+        .checked_sub(LEGACY_SKETCH_MARKER.len())
+        .map_or(0, |last| last + 1);
     Ok(ctx
-        .admit_iter(payload, "scan SLDPRT radial circle records")?
-        .windows(window)
-        .enumerate()
-        .map(move |(offset, _)| {
-            let radial = if let Some(radial) = compact_radial_circle_index(payload, offset) {
-                Some(radial)
-            } else {
-                extended_terminal_repeated_radial_circle_index(ctx, payload, offset)?
-            };
-            Ok(radial.map(|radial_index| RadialCircleRecord {
+        .admit_iter(&(0..starts), "scan SLDPRT radial circle records")?
+        .filter_map(move |offset| {
+            compact_radial_circle_index(payload, offset).map(|radial_index| RadialCircleRecord {
                 offset,
                 radial_index,
                 construction: marker_profile_curve_role(payload, offset) == Some(2),
-            }))
+            })
         }))
-}
-
-fn extended_terminal_repeated_radial_circle_index(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-    offset: usize,
-) -> Result<Option<usize>, cadmpeg_core::CodecError> {
-    if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
-        != Some(LEGACY_EXTENDED_SKETCH_MARKER)
-        || marker_native_code(payload, offset) != Some(2)
-        || payload.get(offset + 23..offset + 31)
-            != Some(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00, 0x01, 0x00])
-        || payload.get(offset + 31..offset + 39)
-            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
-        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
-        || !ctx.equal(
-            &payload.get(offset + 56..offset + 58),
-            &payload.get(offset + 58..offset + 60),
-            "compare SLDPRT repeated radial indices",
-        )?
-        || payload.get(offset + 56..offset + 58) == Some(&[0; 2])
-        || payload.get(offset + 60..offset + 64) != Some(&1u32.to_le_bytes())
-        || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
-        || payload.get(offset + 72..offset + 76) != Some(&(-1i32).to_le_bytes())
-        || payload.get(offset + 78..offset + 94)
-            != Some(&[
-                0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
-                0xff, 0xff,
-            ])
-        || payload.get(offset + 94..offset + 104) != Some(&[0; 10])
-        || offset
-            .checked_add(104)
-            .is_none_or(|offset| sketch_marker_prefix_at(payload, offset))
-    {
-        return Ok(None);
-    }
-    Ok(View::u16_le_at(payload, offset + 56).map(usize::from))
 }
 
 fn terminal_repeated_radial_circle_pairs<'a>(
@@ -1973,14 +1925,8 @@ fn terminal_repeated_radial_circle_pairs<'a>(
     }
 }
 
-pub(super) fn extended_radial_circle_index(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-    offset: usize,
-) -> Result<Option<usize>, cadmpeg_core::CodecError> {
-    let Some(index) = View::u16_le_at(payload, offset + 64) else {
-        return Ok(None);
-    };
+pub(super) fn extended_radial_circle_index(payload: &[u8], offset: usize) -> Option<usize> {
+    let index = View::u16_le_at(payload, offset + 64)?;
     let supported = payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         == Some(LEGACY_EXTENDED_SKETCH_MARKER)
         && marker_native_code(payload, offset) == Some(2)
@@ -1991,16 +1937,12 @@ pub(super) fn extended_radial_circle_index(
             == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
         && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
         && payload.get(offset + 56..offset + 64) == Some(&[0; 8])
-        && ctx.equal(
-            &payload.get(offset + 64..offset + 66),
-            &payload.get(offset + 66..offset + 68),
-            "compare SLDPRT extended radial indices",
-        )?
+        && payload.get(offset + 64..offset + 66) == payload.get(offset + 66..offset + 68)
         && payload.get(offset + 64..offset + 66) != Some(&[0; 2])
         && payload.get(offset + 68..offset + 72) == Some(&1u32.to_le_bytes())
         && payload.get(offset + 72..offset + 80) == Some(&(-1.0f64).to_le_bytes())
         && payload.get(offset + 80..offset + 84) == Some(&1u32.to_le_bytes());
-    Ok(supported.then_some(usize::from(index)))
+    supported.then_some(usize::from(index))
 }
 
 fn radial_dimension_radius(parameter: &cadmpeg_ir::features::DesignParameter) -> Option<f64> {
@@ -3157,3 +3099,6 @@ pub(crate) fn project_marker_dimensioned_circles(
 
 #[cfg(test)]
 mod dimensions_tests;
+
+#[cfg(test)]
+mod fixed_radial_grammar_tests;
