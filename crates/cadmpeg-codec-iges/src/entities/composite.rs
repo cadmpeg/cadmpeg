@@ -2558,6 +2558,8 @@ fn project_native_composite(
             },
         });
     }
+    drop(endpoints);
+    drop(endpoint_storage);
     let stem = crate::ids::Stem::directory(entry.sequence);
     let start_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
     sequences.record_point(&start_point, &stem, ctx)?;
