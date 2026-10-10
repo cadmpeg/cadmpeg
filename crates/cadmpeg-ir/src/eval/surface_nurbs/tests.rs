@@ -140,3 +140,5 @@ fn actual_fourth_reuses_third_state_with_exact_additional_pole_visits() {
         else { assert!(result.higher.fourth().is_ok()); assert_eq!(budget.consumed(), 242); }
     }
 }
+
+mod polynomial_zero;

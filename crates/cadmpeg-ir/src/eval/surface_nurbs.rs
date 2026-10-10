@@ -7,7 +7,7 @@ use super::{basis, decode, periodic_parameter, EvaluationFailure, SurfaceFirstOr
 use super::rational::{finite_lanes, Homogeneous};
 use super::surface_request::{HigherPartials, RequestedJet, SurfaceRequest};
 use crate::features::{FinitePoint3, FiniteVector3};
-use crate::geometry::nurbs::NurbsSurface;
+use crate::geometry::nurbs::{NurbsPoleGrid, NurbsSurface};
 use crate::math::Point3;
 use crate::scalar::{FiniteReal, NonZeroReal};
 
@@ -408,26 +408,36 @@ pub(super) fn nurbs_surface_requested_jet(
     let result = (|| {
         let local = nurbs_surface_local(scratch, surface, u_at, v_at)?;
         let [x, y, z] = local.point;
+        // A selected polynomial tensor chart has total degree at most p+q.
+        // This stored representation proves higher zeros, not an affine
+        // chart or a constant normal. Rational weights do not prove it.
+        let polynomial_degree = if matches!(surface.pole_grid(), NurbsPoleGrid::Polynomial { .. }) {
+            local.degrees[0].checked_add(local.degrees[1])
+        } else { None };
         let first = local.first(scratch);
         let second = if request.needs_second() {
             first.as_ref().map_err(|failure| *failure)
                 .and_then(|first| local.second(scratch, first))
         } else { Err(EvaluationFailure::NoValue) };
-        let third = if request.needs_third() {
+        let third_state = if request.needs_third() && !polynomial_degree.is_some_and(|degree| degree < 3) {
             first.as_ref().map_err(|failure| *failure).and_then(|first| {
                 second.as_ref().map_err(|failure| *failure)
                     .and_then(|second| local.third(scratch, first, second))
             })
         } else { Err(EvaluationFailure::NoValue) };
-        let fourth = if request == SurfaceRequest::Fourth {
+        let fourth = if request == SurfaceRequest::Fourth && polynomial_degree.is_some_and(|degree| degree < 4) {
+            Ok([FiniteVector3::ZERO; 5])
+        } else if request == SurfaceRequest::Fourth {
             first.as_ref().map_err(|failure| *failure).and_then(|first| {
                 second.as_ref().map_err(|failure| *failure).and_then(|second| {
-                    third.as_ref().map_err(|failure| *failure)
+                    third_state.as_ref().map_err(|failure| *failure)
                         .and_then(|third| local.fourth(scratch, first, second, third))
                 })
             }).map(|lanes| lanes.map(finite_vector))
         } else { Err(EvaluationFailure::NoValue) };
-        let third = third.map(|third| third.lanes.map(finite_vector));
+        let third = if request.needs_third() && polynomial_degree.is_some_and(|degree| degree < 3) {
+            Ok([FiniteVector3::ZERO; 4])
+        } else { third_state.map(|third| third.lanes.map(finite_vector)) };
         Ok(RequestedJet {
             jet: SurfaceJet {
                 point: FinitePoint3::from_coordinates(x, y, z),
