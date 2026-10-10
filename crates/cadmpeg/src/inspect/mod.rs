@@ -723,8 +723,9 @@ fn structure(args: &StructArgs) -> Result<()> {
 
 fn container_list(args: &ContainerArgs) -> Result<()> {
     let file_path = args.file.path();
-    let bytes = read_whole(file_path)?;
-    let listing = container::list(&bytes, args.limits.limits()).with_context(|| {
+    let mut file = File::open(file_path)
+        .with_context(|| format!("reading {}", file_path.display()))?;
+    let listing = container::list(&mut file, args.limits.limits(), args.json).with_context(|| {
         format!(
             "cannot list {} as a ZIP or CFB container; `cadmpeg inspect {}` reads \
              the other container families through their codec",
@@ -732,17 +733,14 @@ fn container_list(args: &ContainerArgs) -> Result<()> {
             file_path.display()
         )
     })?;
-    if args.json {
-        print!("{}", container::render_json(&listing)?);
-    } else {
-        print!("{}", container::render(&listing));
-    }
+    print!("{listing}");
     Ok(())
 }
 
 fn extract_entry(args: &ExtractArgs) -> Result<()> {
-    let bytes = read_whole(&args.file)?;
-    let payload = container::extract(&bytes, args.limits.limits(), &args.member)
+    let mut file = File::open(&args.file)
+        .with_context(|| format!("reading {}", args.file.display()))?;
+    let payload = container::extract(&mut file, args.limits.limits(), &args.member)
         .with_context(|| format!("extracting from {}", args.file.display()))?;
     match &args.output {
         ExtractDestination::Stdout => write_payload_to_stdout(&payload),
