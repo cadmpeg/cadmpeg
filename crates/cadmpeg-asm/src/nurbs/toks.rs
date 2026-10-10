@@ -820,6 +820,108 @@ impl SubtypeTable {
     }
 }
 
+enum AdmittedSubtype<'ctx> {
+    Active,
+    Complete(usize),
+    Cyclic {
+        references: Vec<usize>,
+        _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+    },
+}
+
+struct SubtypeReferenceFrame<'tokens, 'ctx> {
+    tokens: &'tokens [Token],
+    position: usize,
+    definition: Option<usize>,
+    depth: usize,
+    cyclic: bool,
+    references: Vec<usize>,
+    reference_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+    _guard: Option<cadmpeg_core::decode::DepthGuard<'ctx>>,
+}
+
+fn admit_cached_subtype_depth(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    depth: usize,
+) -> Result<(), cadmpeg_core::CodecError> {
+    if depth == 0 {
+        return Ok(());
+    }
+    let mut storage = ctx.reserve_scoped(0, "walk ASM admitted subtype depth")?;
+    let mut guards = Vec::new();
+    let mut levels = 0..depth;
+    while !levels.is_empty() {
+        ctx.next_charged(&mut levels, "walk ASM admitted subtype depth")?;
+        let guard = ctx.enter_nested("follow admitted ASM subtype reference")?;
+        ctx.push_scoped_vec(
+            &mut storage,
+            &mut guards,
+            guard,
+            "walk ASM admitted subtype depth",
+        )?;
+    }
+    Ok(())
+}
+
+/// A cycle's depth depends on the active path. Walk cached reference indices
+/// without reading any definition's payload again; each path stops at a repeat.
+fn admit_cyclic_subtype_paths(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    admitted: &std::collections::HashMap<usize, AdmittedSubtype<'_>>,
+    index: usize,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let Some(AdmittedSubtype::Cyclic { references, .. }) = admitted.get(&index) else {
+        return Ok(());
+    };
+    let mut storage = ctx.reserve_scoped(0, "walk ASM cyclic subtype paths")?;
+    let mut path = std::collections::HashSet::new();
+    storage
+        .with_storage(|| ctx.insert_hash_set(&mut path, index, "walk ASM cyclic subtype path"))?;
+    let guard = ctx.enter_nested("follow cyclic ASM subtype reference")?;
+    let mut pending = Vec::new();
+    ctx.push_scoped_vec(
+        &mut storage,
+        &mut pending,
+        (index, references.as_slice(), 0usize, guard),
+        "walk ASM cyclic subtype stack",
+    )?;
+    while let Some((_, references, position, _)) = pending.last_mut() {
+        if *position == references.len() {
+            if let Some((index, _, _, _guard)) = pending.pop() {
+                path.remove(&index);
+            }
+            continue;
+        }
+        let mut source = references.get(*position..).unwrap_or_default().iter();
+        let Some(&target) = ctx.next_charged(&mut source, "walk ASM cyclic subtype references")?
+        else {
+            break;
+        };
+        *position += 1;
+        if path.contains(&target) {
+            continue;
+        }
+        match admitted.get(&target) {
+            Some(AdmittedSubtype::Complete(depth)) => admit_cached_subtype_depth(ctx, *depth)?,
+            Some(AdmittedSubtype::Cyclic { references, .. }) => {
+                let guard = ctx.enter_nested("follow cyclic ASM subtype reference")?;
+                storage.with_storage(|| {
+                    ctx.insert_hash_set(&mut path, target, "walk ASM cyclic subtype path")
+                })?;
+                ctx.push_scoped_vec(
+                    &mut storage,
+                    &mut pending,
+                    (target, references.as_slice(), 0usize, guard),
+                    "walk ASM cyclic subtype stack",
+                )?;
+            }
+            // Active definitions already have guards on the enclosing path.
+            Some(AdmittedSubtype::Active) | None => {}
+        }
+    }
+    Ok(())
+}
+
 /// Admit every subtype-reference walk before semantic candidates read the
 /// table. The stack holds policy depth guards for the active reference path.
 pub(crate) fn admit_subtype_references(
@@ -836,20 +938,52 @@ pub(crate) fn admit_subtype_references(
         };
         let mut stack_storage = ctx.reserve_scoped(0, "walk ASM subtype references")?;
         let mut pending = Vec::new();
-        let root = (record.tokens.as_ref(), 0usize, None, 0usize, None);
-        ctx.push_scoped_vec(&mut stack_storage, &mut pending, root, "walk ASM subtype stack")?;
-        while let Some((tokens, position, _, depth, _)) = pending.last_mut() {
+        let root = SubtypeReferenceFrame {
+            tokens: record.tokens.as_ref(),
+            position: 0,
+            definition: None,
+            depth: 0,
+            cyclic: false,
+            references: Vec::new(),
+            reference_storage: ctx.reserve_scoped(0, "ASM subtype reference targets")?,
+            _guard: None,
+        };
+        ctx.push_scoped_vec(
+            &mut stack_storage,
+            &mut pending,
+            root,
+            "walk ASM subtype stack",
+        )?;
+        while let Some(SubtypeReferenceFrame {
+            tokens,
+            position,
+            definition,
+            depth,
+            cyclic,
+            references,
+            reference_storage,
+            ..
+        }) = pending.last_mut()
+        {
             if *position < tokens.len() {
                 ctx.charge_work(1, "scan ASM subtype references")?;
             }
             let Some(token) = tokens.get(*position) else {
-                if let Some((_, _, definition, depth, _guard)) = pending.pop() {
-                    if let Some(index) = definition {
+                if let Some(frame) = pending.pop() {
+                    if let Some(index) = frame.definition {
                         if let Some(admitted) = admitted_depths.get_mut(&index) {
-                            *admitted = Some(depth);
+                            *admitted = if frame.cyclic {
+                                AdmittedSubtype::Cyclic {
+                                    references: frame.references,
+                                    _storage: frame.reference_storage,
+                                }
+                            } else {
+                                AdmittedSubtype::Complete(frame.depth)
+                            };
                         }
-                        if let Some((_, _, _, parent_depth, _)) = pending.last_mut() {
-                            *parent_depth = (*parent_depth).max(depth + 1);
+                        if let Some(parent) = pending.last_mut() {
+                            parent.cyclic |= frame.cyclic;
+                            parent.depth = parent.depth.max(frame.depth + 1);
                         }
                     }
                 }
@@ -862,38 +996,69 @@ pub(crate) fn admit_subtype_references(
             }
             let index = match (tokens.get(pos + 1), tokens.get(pos + 2)) {
                 (Some(Token::Ident(name)), Some(Token::Long(index)))
-                    if name == "ref" && *index >= 0 => usize::try_from(*index).ok(),
+                    if name == "ref" && *index >= 0 =>
+                {
+                    usize::try_from(*index).ok()
+                }
                 (Some(Token::Long(index)), Some(Token::SubtypeClose)) if *index >= 0 => {
                     usize::try_from(*index).ok()
                 }
                 _ => None,
             };
             let Some(index) = index else { continue };
+            if definition.is_some() {
+                ctx.push_scoped_vec(
+                    reference_storage,
+                    references,
+                    index,
+                    "ASM subtype reference targets",
+                )?;
+            }
             if let Some(admitted) = admitted_depths.get(&index) {
-                // An active definition ends a cycle. A completed definition
-                // contributes its full admitted depth to this reference path.
-                if let Some(admitted) = *admitted {
-                    if admitted == 0 { continue; }
-                    let mut storage = ctx.reserve_scoped(0, "walk ASM admitted subtype depth")?;
-                    let mut guards = Vec::new();
-                    let mut levels = 0..admitted;
-                    while levels.len() != 0 {
-                        ctx.next_charged(&mut levels, "walk ASM admitted subtype depth")?;
-                        let guard = ctx.enter_nested("follow admitted ASM subtype reference")?;
-                        ctx.push_scoped_vec(&mut storage, &mut guards, guard, "walk ASM admitted subtype depth")?;
+                match admitted {
+                    AdmittedSubtype::Active => *cyclic = true,
+                    AdmittedSubtype::Complete(admitted) => {
+                        admit_cached_subtype_depth(ctx, *admitted)?;
+                        *depth = (*depth).max(admitted + 1);
                     }
-                    *depth = (*depth).max(admitted + 1);
+                    AdmittedSubtype::Cyclic { .. } => {
+                        *cyclic = true;
+                        admit_cyclic_subtype_paths(ctx, &admitted_depths, index)?;
+                    }
                 }
                 continue;
             }
             let target = table.span(index);
-            scratch.with_storage(|| ctx.insert_hash_map(
-                &mut admitted_depths, index, target.is_none().then_some(0), "visit ASM subtype reference",
-            ))?;
+            scratch.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut admitted_depths,
+                    index,
+                    if target.is_some() {
+                        AdmittedSubtype::Active
+                    } else {
+                        AdmittedSubtype::Complete(0)
+                    },
+                    "visit ASM subtype reference",
+                )
+            })?;
             let Some(target) = target else { continue };
             let guard = ctx.enter_nested("follow ASM subtype reference")?;
-            let frame = (target.tokens(), 0usize, Some(index), 1usize, Some(guard));
-            ctx.push_scoped_vec(&mut stack_storage, &mut pending, frame, "walk ASM subtype stack")?;
+            let frame = SubtypeReferenceFrame {
+                tokens: target.tokens(),
+                position: 0,
+                definition: Some(index),
+                depth: 1,
+                cyclic: false,
+                references: Vec::new(),
+                reference_storage: ctx.reserve_scoped(0, "ASM subtype reference targets")?,
+                _guard: Some(guard),
+            };
+            ctx.push_scoped_vec(
+                &mut stack_storage,
+                &mut pending,
+                frame,
+                "walk ASM subtype stack",
+            )?;
         }
     }
     Ok(())
