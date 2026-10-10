@@ -113,7 +113,9 @@ mod tests {
             &[],
             |policy| policy.limits.max_work_units = 1,
             |ctx| {
-                assert!(!super::same_text(ctx, &first, &second, "nx test identity comparison").unwrap());
+                assert!(
+                    !super::same_text(ctx, &first, &second, "nx test identity comparison").unwrap()
+                );
                 assert_eq!(ctx.resource_refusal(), None);
             },
         );
@@ -121,7 +123,14 @@ mod tests {
             &[],
             cadmpeg_core::decode::ResourceDimension::WorkUnits,
             "nx test identity comparison",
-            |ctx| Ok(super::same_text(ctx, &first, &first, "nx test identity comparison")?),
+            |ctx| {
+                Ok(super::same_text(
+                    ctx,
+                    &first,
+                    &first,
+                    "nx test identity comparison",
+                )?)
+            },
         );
     }
 }

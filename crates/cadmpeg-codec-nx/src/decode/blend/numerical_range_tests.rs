@@ -97,11 +97,7 @@ fn numerical_0922_large_ellipse_keeps_inverse() {
             )
             .unwrap(),
         );
-        let r = closest_periodic_analytic_curve_parameter(
-            &g,
-            Point3::new(scale, 0., 0.),
-            None,
-        );
+        let r = closest_periodic_analytic_curve_parameter(&g, Point3::new(scale, 0., 0.), None);
         println!(
             "NX ellipse axes ({scale:e}, {}), exact major tip: {r:?}",
             scale * 0.5
@@ -121,11 +117,7 @@ fn numerical_0922_far_ellipse_query_keeps_inverse() {
         )
         .unwrap(),
     );
-    let r = closest_periodic_analytic_curve_parameter(
-        &g,
-        Point3::new(2., 0., 1e200),
-        None,
-    );
+    let r = closest_periodic_analytic_curve_parameter(&g, Point3::new(2., 0., 1e200), None);
     println!("NX ordinary ellipse with query z1e200: {r:?}");
     assert_eq!(r, Some(0.));
 }
