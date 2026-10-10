@@ -418,7 +418,8 @@ impl<'ctx, 'input> ProteinAdmission for &'ctx DecodeContext<'input> {
         protein: View<'input>,
         mut visit: impl FnMut(&str, &[u8]) -> Result<(), CodecError>,
     ) -> Result<(), CodecError> {
-        let archive = ArchiveSnapshot::new(self, protein)?;
+        let mut storage = self.reserve_scoped(0, "Protein schema archive")?;
+        let archive = storage.with_storage(|| ArchiveSnapshot::new(self, protein))?;
         for entry in self.admit_iter(archive.entries(), "Protein schema entries")? {
             if !is_schema_entry(self, &entry.name)? {
                 continue;
@@ -670,7 +671,13 @@ impl ProteinAdmission for StandardAdmission {
                 ));
             }
             let mut xml = Vec::new();
-            entry.take(MAX_SCHEMA_BYTES).read_to_end(&mut xml)?;
+            let declared_size = entry.size();
+            entry.take(declared_size + 1).read_to_end(&mut xml)?;
+            if u64_from_index(xml.len()) != declared_size {
+                return Err(CodecError::malformed(format_args!(
+                    "expanded size mismatch for {name}"
+                )));
+            }
             visit(&name, &xml)?;
         }
         Ok(())
