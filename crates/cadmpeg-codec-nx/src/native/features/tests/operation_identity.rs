@@ -15,23 +15,17 @@ use crate::native::features::feature_operation_common_frames;
 use crate::native::features::feature_operation_labels;
 use crate::native::features::feature_operation_object_references;
 use crate::native::features::feature_operation_records;
-use crate::native::features::feature_operation_state_journal_uses;
 use crate::native::features::feature_operation_terminal_frames;
 use crate::native::features::feature_payload_strings;
 use crate::native::features::feature_unlabeled_operation_records;
-use crate::native::features::operation_record::FeatureOperationRecord;
+use crate::native::features::plain_stream_bindings;
 use crate::native::features::FeatureOperationBodyWrite;
 use crate::native::features::FeatureOperationLabel;
-use crate::native::features::FeatureOperationStateJournalUse;
-use crate::native::features::FeatureOperationTerminalFrame;
-use crate::native::om::journal_group::OmOperationStateJournalGroup;
 use crate::native::segments::SegmentBodyBinding;
-use crate::om::state_journal::JournalRow;
 use crate::test_support::test_om::composed_feature_history_payload;
 use crate::test_support::test_om::composed_feature_history_payload_over_sort_scratch;
 use crate::test_support::test_om::composed_feature_history_section;
 use crate::test_support::test_prt::prt_with_named_payloads;
-use std::collections::BTreeMap;
 
 fn image_segment_uses_for_test(
     writes: &[FeatureOperationBodyWrite],
@@ -295,7 +289,7 @@ fn body_partition_join_refuses_work_limit() {
     );
 }
 
-fn label(ordinal: u32, object_indices: [Option<u32>; 4]) -> FeatureOperationLabel {
+pub(super) fn label(ordinal: u32, object_indices: [Option<u32>; 4]) -> FeatureOperationLabel {
     FeatureOperationLabel {
         id: format!("operation#{ordinal}"),
         section_link: "history#0".to_string(),
@@ -345,18 +339,20 @@ fn unlabeled_history_fixture() -> crate::container::Container<'static> {
 
 #[test]
 fn operation_header_identity_witness_survives_reordering() {
-    let block_identities = BTreeMap::from([
+    let block_identities = [
         (55, Some("block-55".to_string())),
         (56, Some("block-56".to_string())),
         (61, Some("block-61".to_string())),
-    ]);
+    ];
     let mut original = vec![
         label(0, [Some(55), Some(56), None, None]),
         label(1, [None; 4]),
         label(2, [Some(61), None, None, None]),
     ];
     crate::test_support::with_decode_context(|ctx| {
-        assign_operation_header_identities(ctx, &mut original, &block_identities)
+        let (table, _storage) =
+            ctx.unique_index(block_identities.clone(), "test block identities")?;
+        assign_operation_header_identities(ctx, &mut original, &table)
     })
     .unwrap();
     let identity = original[0]
@@ -378,7 +374,9 @@ fn operation_header_identity_witness_survives_reordering() {
         label.stable_identity = None;
     }
     crate::test_support::with_decode_context(|ctx| {
-        assign_operation_header_identities(ctx, &mut reordered, &block_identities)
+        let (table, _storage) =
+            ctx.unique_index(block_identities.clone(), "test block identities")?;
+        assign_operation_header_identities(ctx, &mut reordered, &table)
     })
     .unwrap();
     assert_eq!(
@@ -392,15 +390,23 @@ fn operation_header_identity_witness_survives_reordering() {
 fn feature_label_identity_retains_the_complete_header_ordinal() {
     let container = unlabeled_history_fixture();
 
-    let labels =
-        crate::test_support::with_decode_context(|ctx| feature_operation_labels(ctx, &container))
-            .unwrap();
+    let labels = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_labels(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
+    })
+    .unwrap();
     assert_eq!(labels.len(), 2);
     assert!(labels[0].id.ends_with("-0000000000"));
     assert!(labels[1].id.ends_with("-0000000002"));
-    let records =
-        crate::test_support::with_decode_context(|ctx| feature_operation_records(ctx, &container))
-            .unwrap();
+    let records = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_records(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
+    })
+    .unwrap();
     assert_eq!(records[1].operation_label, labels[1].id);
 }
 
@@ -414,7 +420,11 @@ fn feature_label_refusal(
         |policy| {
             configure(policy);
         },
-        |ctx| feature_operation_labels(ctx, &container).unwrap_err(),
+        |ctx| {
+            crate::native::features::FeatureHistory::new(ctx, &container)
+                .and_then(|history| feature_operation_labels(ctx, &history))
+                .unwrap_err()
+        },
     )
 }
 
@@ -422,9 +432,13 @@ fn feature_operation_record_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let container = unlabeled_history_fixture();
-    let admitted =
-        crate::test_support::with_decode_context(|ctx| feature_operation_records(ctx, &container))
-            .expect("admitted feature operation records");
+    let admitted = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_records(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
+    })
+    .expect("admitted feature operation records");
     assert_eq!(admitted.len(), 2);
 
     crate::test_support::with_decode_context_over(
@@ -433,7 +447,8 @@ fn feature_operation_record_refusal(
             configure(policy);
         },
         |ctx| {
-            feature_operation_records(ctx, &container)
+            crate::native::features::FeatureHistory::new(ctx, &container)
+                .and_then(|history| feature_operation_records(ctx, &history))
                 .expect_err("feature operation record resource limit")
         },
     )
@@ -568,7 +583,11 @@ fn unlabeled_record_refusal(
         |policy| {
             configure(policy);
         },
-        |ctx| feature_unlabeled_operation_records(ctx, &container).unwrap_err(),
+        |ctx| {
+            crate::native::features::FeatureHistory::new(ctx, &container)
+                .and_then(|history| feature_unlabeled_operation_records(ctx, &history))
+                .unwrap_err()
+        },
     )
 }
 
@@ -576,7 +595,10 @@ fn unlabeled_record_refusal(
 fn unlabeled_record_route_preserves_source_order() {
     let container = unlabeled_history_fixture();
     let records = crate::test_support::with_decode_context(|ctx| {
-        feature_unlabeled_operation_records(ctx, &container)
+        feature_unlabeled_operation_records(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
     })
     .unwrap();
     assert_eq!(records.len(), 1);
@@ -612,16 +634,18 @@ fn unlabeled_record_route_refuses_work_limit() {
 
 #[test]
 fn operation_header_identity_rejects_duplicate_tuples() {
-    let block_identities = BTreeMap::from([
+    let block_identities = [
         (55, Some("block-55".to_string())),
         (56, Some("block-56".to_string())),
-    ]);
+    ];
     let mut labels = vec![
         label(0, [Some(55), Some(56), None, None]),
         label(1, [Some(55), Some(56), None, None]),
     ];
     crate::test_support::with_decode_context(|ctx| {
-        assign_operation_header_identities(ctx, &mut labels, &block_identities)
+        let (table, _storage) =
+            ctx.unique_index(block_identities.clone(), "test block identities")?;
+        assign_operation_header_identities(ctx, &mut labels, &table)
     })
     .unwrap();
     assert!(labels.iter().all(|label| label.stable_identity.is_none()));
@@ -656,12 +680,20 @@ fn operation_header_identity_survives_offset_store_insertion() {
     })
     .expect("second synthetic container");
 
-    let first_labels =
-        crate::test_support::with_decode_context(|ctx| feature_operation_labels(ctx, &first))
-            .unwrap();
-    let second_labels =
-        crate::test_support::with_decode_context(|ctx| feature_operation_labels(ctx, &second))
-            .unwrap();
+    let first_labels = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_labels(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &first)?,
+        )
+    })
+    .unwrap();
+    let second_labels = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_labels(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &second)?,
+        )
+    })
+    .unwrap();
     assert_eq!(
         first_labels[0].objects.values(),
         [Some(1), Some(2), None, None]
@@ -675,12 +707,20 @@ fn operation_header_identity_survives_offset_store_insertion() {
         second_labels[0].stable_identity
     );
 
-    let first_records =
-        crate::test_support::with_decode_context(|ctx| feature_operation_records(ctx, &first))
-            .unwrap();
-    let second_records =
-        crate::test_support::with_decode_context(|ctx| feature_operation_records(ctx, &second))
-            .unwrap();
+    let first_records = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_records(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &first)?,
+        )
+    })
+    .unwrap();
+    let second_records = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_records(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &second)?,
+        )
+    })
+    .unwrap();
     assert_eq!(
         first_records[0].stable_identity,
         second_records[0].stable_identity
@@ -689,10 +729,12 @@ fn operation_header_identity_survives_offset_store_insertion() {
 
 #[test]
 fn operation_header_identity_requires_unique_resolved_blocks() {
-    let block_identities = BTreeMap::from([(55, None), (56, Some("block-56".to_string()))]);
+    let block_identities = [(55, None), (56, Some("block-56".to_string()))];
     let mut labels = vec![label(0, [Some(55), Some(56), None, None])];
     crate::test_support::with_decode_context(|ctx| {
-        assign_operation_header_identities(ctx, &mut labels, &block_identities)
+        let (table, _storage) =
+            ctx.unique_index(block_identities.clone(), "test block identities")?;
+        assign_operation_header_identities(ctx, &mut labels, &table)
     })
     .unwrap();
     assert!(labels[0].stable_identity.is_none());
@@ -700,7 +742,6 @@ fn operation_header_identity_requires_unique_resolved_blocks() {
 
 #[test]
 fn feature_operation_identity_refuses_scoped_keys_at_caller_limit() {
-    let block_identities = BTreeMap::from([(55, Some("block-55".to_string()))]);
     let mut labels = vec![label(0, [Some(55), None, None, None])];
 
     crate::test_support::with_decode_context_over(
@@ -709,7 +750,9 @@ fn feature_operation_identity_refuses_scoped_keys_at_caller_limit() {
             policy.limits.max_materialized_bytes = 0;
         },
         |ctx| {
-            let error = assign_operation_header_identities(ctx, &mut labels, &block_identities)
+            let table: std::collections::HashMap<u32, Option<Option<String>>> =
+                std::collections::HashMap::from([(55, Some(Some("block-55".to_string())))]);
+            let error = assign_operation_header_identities(ctx, &mut labels, &table)
                 .expect_err("scoped key refusal");
             assert!(matches!(
                 error,
@@ -719,6 +762,40 @@ fn feature_operation_identity_refuses_scoped_keys_at_caller_limit() {
             ));
         },
     );
+}
+
+#[test]
+fn operation_header_identity_walk_reaches_key_counting_and_assignment() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    for operation in [
+        "count NX operation header keys",
+        "assign NX operation header identities",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            operation,
+            |ctx| {
+                let (table, _storage) = ctx.unique_index(
+                    [(55, Some("block-55".to_string()))],
+                    "test block identities",
+                )?;
+                let mut labels = vec![
+                    label(0, [Some(55), None, None, None]),
+                    label(1, [Some(55), None, None, None]),
+                    label(2, [None; 4]),
+                ];
+                assign_operation_header_identities(ctx, &mut labels, &table)
+            },
+        );
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == operation
+        ));
+    }
 }
 
 #[test]
@@ -736,7 +813,10 @@ fn operation_body_write_retains_identity_group_and_image() {
     })
     .expect("synthetic body-write container");
     let writes = crate::test_support::with_decode_context(|ctx| {
-        feature_operation_body_writes(ctx, &container)
+        feature_operation_body_writes(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
     })
     .unwrap();
     let [first, second] = writes.as_slice() else {
@@ -779,7 +859,11 @@ fn operation_object_reference_refusal(
     })
     .expect("synthetic direct-reference container");
     let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        feature_operation_object_references(ctx, &container, kind)
+        feature_operation_object_references(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+            kind,
+        )
     };
     let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
         .expect("admitted operation object reference");
@@ -876,14 +960,26 @@ fn operation_common_frame_refusal(
     })
     .expect("synthetic common-frame container");
     let common = crate::test_support::with_decode_context(|ctx| {
-        feature_operation_common_frames(ctx, &container)
+        feature_operation_common_frames(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
     })
     .expect("admitted operation common frames");
     let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         if terminal {
-            feature_operation_terminal_frames(ctx, &container, &common).map(|records| records.len())
+            feature_operation_terminal_frames(
+                ctx,
+                &crate::native::features::FeatureHistory::new(ctx, &container)?,
+                &common,
+            )
+            .map(|records| records.len())
         } else {
-            feature_operation_common_frames(ctx, &container).map(|records| records.len())
+            feature_operation_common_frames(
+                ctx,
+                &crate::native::features::FeatureHistory::new(ctx, &container)?,
+            )
+            .map(|records| records.len())
         }
     };
     let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
@@ -927,15 +1023,21 @@ fn feature_payload_reference_refusal(
     })
     .expect("synthetic feature payload container");
     let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| match route_kind {
-        FeaturePayloadReferenceRoute::Text => {
-            feature_payload_strings(ctx, &container).map(|items| items.len())
-        }
-        FeaturePayloadReferenceRoute::PrimaryBody => {
-            feature_body_references(ctx, &container).map(|items| items.len())
-        }
-        FeaturePayloadReferenceRoute::BodyOccurrences => {
-            feature_body_reference_occurrences(ctx, &container).map(|items| items.len())
-        }
+        FeaturePayloadReferenceRoute::Text => feature_payload_strings(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
+        .map(|items| items.len()),
+        FeaturePayloadReferenceRoute::PrimaryBody => feature_body_references(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
+        .map(|items| items.len()),
+        FeaturePayloadReferenceRoute::BodyOccurrences => feature_body_reference_occurrences(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
+        .map(|items| items.len()),
     };
     let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
         .expect("admitted feature payload route");
@@ -969,8 +1071,12 @@ fn input_block_refusal(
         )
     })
     .expect("synthetic input-block container");
-    let route =
-        |ctx: &cadmpeg_core::decode::DecodeContext<'_>| feature_input_blocks(ctx, &container);
+    let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        feature_input_blocks(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
+    };
     let admitted =
         crate::test_support::with_decode_context(|ctx| route(ctx)).expect("admitted input block");
     assert_eq!(admitted.len(), 1);
@@ -1209,7 +1315,10 @@ fn operation_body_write_refusal(
     })
     .expect("synthetic body-write container");
     let admitted = crate::test_support::with_decode_context(|ctx| {
-        feature_operation_body_writes(ctx, &container)
+        feature_operation_body_writes(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
     })
     .expect("admitted operation body writes");
     assert_eq!(admitted.len(), 1);
@@ -1221,7 +1330,8 @@ fn operation_body_write_refusal(
             configure(policy);
         },
         |ctx| {
-            feature_operation_body_writes(ctx, &container)
+            crate::native::features::FeatureHistory::new(ctx, &container)
+                .and_then(|history| feature_operation_body_writes(ctx, &history))
                 .expect_err("operation body-write resource limit")
         },
     )
@@ -1280,7 +1390,10 @@ fn operation_body_write_resolves_one_unique_image_block() {
     .expect("synthetic body-image store");
 
     let writes = crate::test_support::with_decode_context(|ctx| {
-        feature_operation_body_writes(ctx, &container)
+        feature_operation_body_writes(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
     })
     .unwrap();
 
@@ -1308,7 +1421,10 @@ fn body_image_segment_use_requires_one_plain_alias() {
     })
     .expect("synthetic body-image store");
     let writes = crate::test_support::with_decode_context(|ctx| {
-        feature_operation_body_writes(ctx, &container)
+        feature_operation_body_writes(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
     })
     .unwrap();
     let binding = |id: &str, stream_kind: crate::parasolid::StreamKind| SegmentBodyBinding {
@@ -1414,7 +1530,10 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
     })
     .expect("synthetic body-image store");
     let writes = crate::test_support::with_decode_context(|ctx| {
-        feature_operation_body_writes(ctx, &container)
+        feature_operation_body_writes(
+            ctx,
+            &crate::native::features::FeatureHistory::new(ctx, &container)?,
+        )
     })
     .unwrap();
     let binding =
@@ -1489,16 +1608,12 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
     .is_empty());
 
     let repeated_terminal = [binding("plain-0", 0, 11, 16), binding("plain-1", 1, 12, 16)];
-    assert!(
-        crate::test_support::with_decode_context(|ctx| body_history_partition_stream(
-            ctx,
-            &repeated_terminal[1],
-            &repeated_terminal,
-            &streams,
-        ))
-        .expect("admitted body-history partition")
-        .is_none()
-    );
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        let (plain, _storage) = plain_stream_bindings(ctx, &repeated_terminal)?;
+        body_history_partition_stream(ctx, &repeated_terminal[1], &plain, &streams)
+    })
+    .expect("admitted body-history partition")
+    .is_none());
 
     let interrupted_streams = [
         stream(crate::parasolid::ParasolidSubtype::Plain),
@@ -1648,234 +1763,4 @@ fn body_group_partition_refuses_work_limit() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
     );
-}
-
-fn journal_row(state_ordinal: u32, source_offset: u64) -> JournalRow {
-    JournalRow::new(
-        source_offset,
-        1_700_000_000,
-        crate::om::state_tagged_value::StateTaggedValue::read_at(
-            &[
-                0xe0,
-                0,
-                0,
-                0,
-                u8::try_from(state_ordinal).expect("fixture value fits u8"),
-            ],
-            0,
-        )
-        .unwrap(),
-        crate::om::state_index::StateIndexToken::read_at(&[12], 0).unwrap(),
-        crate::om::state_index::StateIndexToken::read_at(
-            &[u8::try_from(state_ordinal).expect("fixture value fits u8")],
-            0,
-        )
-        .unwrap(),
-    )
-    .unwrap()
-}
-
-fn journal_group(
-    id: &str,
-    section_link: &str,
-    rows: Vec<JournalRow>,
-) -> OmOperationStateJournalGroup {
-    let source_offset = rows[0].offset() - 4;
-    OmOperationStateJournalGroup {
-        id: id.to_string(),
-        section_link: section_link.to_string(),
-        ordinal: 0,
-        frame: crate::om::journal_group::JournalGroup::new([4, 0], source_offset, rows).unwrap(),
-        source_entry: "/Root/UG_PART/UG_PART".to_string(),
-    }
-}
-
-fn operation_record(id: &str, operation_label: &str) -> FeatureOperationRecord {
-    FeatureOperationRecord {
-        id: id.to_string(),
-        operation_label: operation_label.to_string(),
-        ordinal: 0,
-        sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(b"record-sha256"),
-        payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(b"payload-sha256"),
-        stable_identity: None,
-        span: crate::native::features::operation_record::OperationRecordSpan::new(400, 404, 8)
-            .unwrap(),
-    }
-}
-
-fn terminal_frame(operation_record: &str, local_ordinal: u32) -> FeatureOperationTerminalFrame {
-    FeatureOperationTerminalFrame {
-        id: "nx:feature-history:operation-terminal-frame#0000000000-0000000000".to_string(),
-        operation_record: operation_record.to_string(),
-        immediate_common_frame: None,
-        frame: crate::om::common_frame::TerminalFrame::<u64, Option<String>>::new(
-            crate::om::common_frame::CommonFrameSuffix::from_wire(
-                local_ordinal,
-                &[u8::try_from(local_ordinal).expect("fixture value fits u8")],
-                None,
-                &[0xff],
-            )
-            .unwrap()
-            .with_target(None)
-            .unwrap(),
-            420,
-        )
-        .unwrap(),
-    }
-}
-
-fn state_journal_uses_for_test(
-    labels: &[FeatureOperationLabel],
-    records: &[FeatureOperationRecord],
-    terminal_frames: &[FeatureOperationTerminalFrame],
-    groups: &[OmOperationStateJournalGroup],
-) -> Vec<FeatureOperationStateJournalUse> {
-    crate::test_support::with_decode_context(|ctx| {
-        feature_operation_state_journal_uses(ctx, labels, records, terminal_frames, groups)
-    })
-    .expect("admitted operation state journal uses")
-}
-
-fn state_journal_use_refusal(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> cadmpeg_core::CodecError {
-    let label = label(0, [None; 4]);
-    let record = operation_record(
-        "nx:feature-history:operation-record#0000000000-0000000000",
-        &label.id,
-    );
-    let group = journal_group(
-        "nx:feature-history:operation-state-journal-group#0000000000-0000000000",
-        &label.section_link,
-        vec![journal_row(7, 520)],
-    );
-    let frame = terminal_frame(&record.id, 7);
-    let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        feature_operation_state_journal_uses(
-            ctx,
-            std::slice::from_ref(&label),
-            std::slice::from_ref(&record),
-            std::slice::from_ref(&frame),
-            std::slice::from_ref(&group),
-        )
-    };
-    let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
-        .expect("admitted operation journal use");
-    assert_eq!(admitted.len(), 1);
-
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            configure(policy);
-        },
-        |ctx| route(ctx).expect_err("operation journal use resource limit"),
-    )
-}
-
-#[test]
-fn state_journal_use_route_refuses_collection_limit() {
-    let error = state_journal_use_refusal(|policy| policy.limits.max_collection_items = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-}
-
-#[test]
-fn state_journal_use_route_refuses_retained_limit() {
-    let error = state_journal_use_refusal(|policy| policy.limits.max_retained_bytes = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-    );
-}
-
-#[test]
-fn state_journal_use_route_refuses_work_limit() {
-    let error = state_journal_use_refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
-    );
-}
-
-#[test]
-fn operation_terminal_ordinal_joins_unique_section_journal_row() {
-    let label = label(0, [None; 4]);
-    let record = operation_record(
-        "nx:feature-history:operation-record#0000000000-0000000000",
-        &label.id,
-    );
-    let group = journal_group(
-        "nx:feature-history:operation-state-journal-group#0000000000-0000000000",
-        &label.section_link,
-        vec![journal_row(6, 507), journal_row(7, 520)],
-    );
-    let frame = terminal_frame(&record.id, 7);
-
-    let uses = state_journal_uses_for_test(
-        std::slice::from_ref(&label),
-        std::slice::from_ref(&record),
-        std::slice::from_ref(&frame),
-        std::slice::from_ref(&group),
-    );
-
-    let [relation] = uses.as_slice() else {
-        panic!("one unique section-scoped journal row should join");
-    };
-    assert_eq!(
-        relation.id,
-        "nx:feature-history:operation-state-journal-use#0000000000-0000000000-0000000000-0000000000-0000000001"
-    );
-    assert_eq!(relation.operation_record, record.id);
-    assert_eq!(relation.journal_row_ordinal, 1);
-    assert_eq!(relation.state_ordinal, 7);
-    assert_eq!(relation.operation_source_offset, 420);
-    assert_eq!(relation.journal_source_offset, 520);
-    let wire = serde_json::to_value(relation).unwrap();
-    assert_eq!(wire["state_ordinal"], 7);
-    let admitted: FeatureOperationStateJournalUse = serde_json::from_value(wire).unwrap();
-    assert_eq!(&admitted, relation);
-}
-
-#[test]
-fn operation_terminal_ordinal_rejects_wrong_section_and_ambiguous_rows() {
-    let label = label(0, [None; 4]);
-    let record = operation_record(
-        "nx:feature-history:operation-record#0000000000-0000000000",
-        &label.id,
-    );
-    let frame = terminal_frame(&record.id, 7);
-    let wrong_section = journal_group(
-        "nx:feature-history:operation-state-journal-group#wrong",
-        "history#1",
-        vec![journal_row(7, 600)],
-    );
-    let matching = journal_group(
-        "nx:feature-history:operation-state-journal-group#matching",
-        &label.section_link,
-        vec![journal_row(7, 620)],
-    );
-    let duplicate = journal_group(
-        "nx:feature-history:operation-state-journal-group#duplicate",
-        &label.section_link,
-        vec![journal_row(7, 640)],
-    );
-
-    let section_scoped = state_journal_uses_for_test(
-        std::slice::from_ref(&label),
-        std::slice::from_ref(&record),
-        std::slice::from_ref(&frame),
-        &[wrong_section, matching.clone()],
-    );
-    assert_eq!(section_scoped.len(), 1);
-    assert_eq!(section_scoped[0].journal_source_offset, 620);
-
-    let ambiguous = state_journal_uses_for_test(
-        std::slice::from_ref(&label),
-        std::slice::from_ref(&record),
-        std::slice::from_ref(&frame),
-        &[matching, duplicate],
-    );
-    assert!(ambiguous.is_empty());
 }

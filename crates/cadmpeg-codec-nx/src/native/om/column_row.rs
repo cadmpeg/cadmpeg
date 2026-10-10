@@ -224,8 +224,10 @@ fn project_column_rows<R, F, T>(
     project: impl Fn(usize, u32, u32, F, String, (String, u32)) -> Result<T, CodecError>,
 ) -> Result<Vec<T>, CodecError> {
     let mut result = Vec::new();
-    for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections(ctx)?.into_iter().enumerate()
+    let sections = container.indexed_om_sections(ctx)?;
+    for (section_ordinal, (entry, section)) in ctx
+        .admit_iter(&sections, "NX column row input sections")?
+        .enumerate()
     {
         let Some((_, storage, records)) = section.as_offset_only() else {
             continue;
@@ -244,7 +246,7 @@ fn project_column_rows<R, F, T>(
             .ok_or_else(|| ctx.refuse_codec_limit("NX column row block count", 0, 1))?;
         let rows = scan(storage)?;
         let mut ordinal = 0usize;
-        for row in rows {
+        for row in ctx.admit_iter(rows, "NX column row rows visits")? {
             let Some((offset, frame)) = resolve(row, section_ordinal, block_count, source_base)?
             else {
                 continue;
@@ -252,12 +254,8 @@ fn project_column_rows<R, F, T>(
             let Some(opening_offset) = storage_offset.checked_add(offset) else {
                 continue;
             };
-            ctx.charge_work(
-                u64_from_index(records.len()),
-                "locate NX column row opening",
-            )?;
             let Some((block_ordinal, block_offset)) =
-                column_storage_block_at(records, opening_offset)
+                column_storage_block_at(ctx, records, opening_offset)?
             else {
                 continue;
             };

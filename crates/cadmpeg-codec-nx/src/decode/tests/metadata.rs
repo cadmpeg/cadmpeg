@@ -30,22 +30,18 @@ fn metadata_unknown_stream_slots_refuse_at_collection_limit() {
             .unwrap()
             .into_report_parts();
 
-    crate::test_support::with_decode_context_over(
+    let error = crate::test_support::resource_refusal_at(
         &[],
-        |policy| {
-            policy.limits.max_collection_items = 0;
-        },
-        |ctx| {
-            let error = super::super::build_metadata_ir(ctx, &scan, &dialects)
-                .expect_err("one unknown stream needs one collection item");
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == ResourceDimension::CollectionItems
-                        && limit.operation == "nx metadata unknown streams"
-            ));
-        },
+        ResourceDimension::CollectionItems,
+        "nx metadata unknown streams",
+        |ctx| super::super::build_metadata_ir(ctx, &scan, &dialects).map(|_| ()),
     );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "nx metadata unknown streams"
+    ));
 }
 
 #[test]
