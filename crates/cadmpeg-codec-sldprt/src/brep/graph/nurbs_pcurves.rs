@@ -591,11 +591,14 @@ fn extended_nurbs_isocurve_axis_candidate(
     let unique_fixed_values = &unique_fixed_values[..unique_count];
     // The clamp does not vary with the candidate value, and the first candidate
     // already reaches it, so it is minted once here.
-    let clamped = if unique_fixed_values.is_empty() {
-        None
-    } else {
-        clamp_nurbs_curve_to_domain(ctx, curve, varying_domain)?
-    };
+    let (clamped, _clamped_storage) =
+        ctx.with_scoped_storage("hold Parasolid clamped isocurve comparison", || {
+            if unique_fixed_values.is_empty() {
+                Ok(None)
+            } else {
+                clamp_nurbs_curve_to_domain(ctx, curve, varying_domain)
+            }
+        })?;
     let Some(clamped) = clamped else {
         return Ok(InverseResolution::NoMatch);
     };
@@ -805,7 +808,9 @@ fn nurbs_curve_surface_deviation(
     let mut seed = None;
     let mut maximum = 0.0_f64;
     let mut samples = parameters.values.iter();
-    while let Some(&parameter) = ctx.next_charged(&mut samples, "measure NURBS curve surface deviation")? {
+    while let Some(&parameter) =
+        ctx.next_charged(&mut samples, "measure NURBS curve surface deviation")?
+    {
         let Some(point) = crate::brep::evaluation::nurbs_curve_point(ctx, curve, parameter)? else {
             return Ok(None);
         };

@@ -198,11 +198,134 @@ fn id_offset_construction(attr: u16) -> ProceduralSurfaceId {
     )
 }
 
+type FaceEdgesBySurfaceCarrier = BTreeMap<u16, Vec<BTreeSet<u16>>>;
+
+/// Procedural surface resolution reads these indexes lazily. Analytic faces
+/// do not traverse the source faces for procedural support lookup.
+pub(super) struct ProceduralSupportIndexes<'source, 'ctx> {
+    faces: &'source [WalkedFace],
+    loop_set: &'source BTreeSet<u16>,
+    tables: &'source topology::Tables,
+    emitted: Option<BTreeMap<u16, u16>>,
+    face_edges: Option<FaceEdgesBySurfaceCarrier>,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl<'source, 'ctx> ProceduralSupportIndexes<'source, 'ctx> {
+    pub(super) fn new(
+        ctx: &'ctx DecodeContext<'_>,
+        faces: &'source [WalkedFace],
+        loop_set: &'source BTreeSet<u16>,
+        tables: &'source topology::Tables,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(Self {
+            faces,
+            loop_set,
+            tables,
+            emitted: None,
+            face_edges: None,
+            storage: ctx.reserve_scoped(0, "hold Parasolid procedural support indexes")?,
+        })
+    }
+
+    fn emitted(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<&BTreeMap<u16, u16>, cadmpeg_core::CodecError> {
+        let faces = self.faces;
+        let loop_set = self.loop_set;
+        match self.emitted {
+            Some(ref index) => Ok(index),
+            None => {
+                let index = self.storage.with_storage(|| {
+                    let mut emitted_face_surface_by_carrier = BTreeMap::<u16, u16>::new();
+                    for face in ctx.admit_iter(faces, "select Parasolid face surface carriers")? {
+                        if ctx.any_by(
+                            &face.loops,
+                            |(loop_attr, _)| {
+                                ctx.contains_btree_set(
+                                    loop_set,
+                                    loop_attr,
+                                    "test Parasolid loop_set",
+                                )
+                            },
+                            "select Parasolid face surface carriers",
+                        )? {
+                            match ctx.entry_btree_map(
+                                &mut emitted_face_surface_by_carrier,
+                                face.surface_attr,
+                                "index Parasolid face surface carriers",
+                            )? {
+                                std::collections::btree_map::Entry::Vacant(entry) => {
+                                    entry.insert(face.bridge_attr);
+                                }
+                                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                                    let bridge = entry.get_mut();
+                                    *bridge = (*bridge).min(face.bridge_attr);
+                                }
+                            }
+                        }
+                    }
+                    Ok::<_, cadmpeg_core::CodecError>(emitted_face_surface_by_carrier)
+                })?;
+                Ok(self.emitted.insert(index))
+            }
+        }
+    }
+
+    pub(super) fn face_edges(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<&FaceEdgesBySurfaceCarrier, cadmpeg_core::CodecError> {
+        let faces = self.faces;
+        let t = self.tables;
+        match self.face_edges {
+            Some(ref index) => Ok(index),
+            None => {
+                let index = self.storage.with_storage(|| {
+                    let mut face_edges_by_surface_carrier = FaceEdgesBySurfaceCarrier::new();
+                    for face in ctx.admit_iter(faces, "index Parasolid surface face edges")? {
+                        let mut edges = BTreeSet::new();
+                        for (_, ring) in
+                            ctx.admit_iter(&face.loops, "index Parasolid face loop edges")?
+                        {
+                            for coedge in ctx.admit_iter(ring, "index Parasolid face edges")? {
+                                if let Some(edge) = ctx
+                                    .get_btree_map(t.coedges(), coedge, "lookup Parasolid coedges")?
+                                    .map(|coedge| coedge.refs[6])
+                                {
+                                    if edge != 0 {
+                                        ctx.insert_btree_set(
+                                            &mut edges,
+                                            edge,
+                                            "track Parasolid face edges",
+                                        )?;
+                                    }
+                                }
+                            }
+                        }
+                        ctx.push_btree_group(
+                            &mut face_edges_by_surface_carrier,
+                            face.surface_attr,
+                            edges,
+                            "index Parasolid surface face edges",
+                            "collect Parasolid surface face edges",
+                        )?;
+                    }
+                    Ok::<_, cadmpeg_core::CodecError>(face_edges_by_surface_carrier)
+                })?;
+                Ok(self.face_edges.insert(index))
+            }
+        }
+    }
+}
+
 pub(super) struct BrepSink<'ctx, 'arena, 'out> {
     pub(super) ctx: &'ctx DecodeContext<'arena>,
     pub(super) out: &'out mut Brep,
     /// Carrier attrs whose hidden support surface is already in `out`.
     pub(super) hidden_supports: &'out mut BTreeSet<u16>,
+    pub(super) hidden_storage: &'out mut cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
 pub(super) fn emit_offset_surface(
@@ -269,6 +392,19 @@ pub(super) fn support_is_acyclic(
     ctx: &DecodeContext<'_>,
     attr: u16,
     carriers: &CarrierView<'_, '_>,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let (acyclic, storage) = ctx
+        .with_scoped_storage("hold Parasolid surface support walk", || {
+            support_is_acyclic_with(ctx, attr, carriers, &mut BTreeSet::new())
+        })?;
+    drop(storage);
+    Ok(acyclic)
+}
+
+fn support_is_acyclic_with(
+    ctx: &DecodeContext<'_>,
+    attr: u16,
+    carriers: &CarrierView<'_, '_>,
     resolving: &mut BTreeSet<u16>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let _depth = ctx.enter_nested("check Parasolid surface support")?;
@@ -279,7 +415,7 @@ pub(super) fn support_is_acyclic(
     let acyclic = if carriers.surface(ctx, attr)?.is_some() {
         Ok(true)
     } else if let Some(offset) = carriers.offset(ctx, attr)? {
-        support_is_acyclic(ctx, offset.support, carriers, resolving)
+        support_is_acyclic_with(ctx, offset.support, carriers, resolving)
     } else {
         Ok(true)
     };
@@ -295,18 +431,51 @@ pub(super) fn ensure_surface_support(
     sink: &mut BrepSink<'_, '_, '_>,
     attr: u16,
     carriers: &CarrierView<'_, '_>,
-    emitted_face_surface_by_carrier: &BTreeMap<u16, u16>,
+    indexes: &mut ProceduralSupportIndexes<'_, '_>,
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
-    resolving: &mut BTreeSet<u16>,
+) -> Result<Option<SurfaceId>, cadmpeg_core::CodecError> {
+    let mut walk = SurfaceSupportWalk {
+        resolving: BTreeSet::new(),
+        storage: sink
+            .ctx
+            .reserve_scoped(0, "hold resolved Parasolid support walk")?,
+    };
+    ensure_surface_support_with(
+        sink,
+        attr,
+        carriers,
+        indexes,
+        annotations,
+        source_stream,
+        &mut walk,
+    )
+}
+
+struct SurfaceSupportWalk<'ctx> {
+    resolving: BTreeSet<u16>,
+    storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+fn ensure_surface_support_with(
+    sink: &mut BrepSink<'_, '_, '_>,
+    attr: u16,
+    carriers: &CarrierView<'_, '_>,
+    indexes: &mut ProceduralSupportIndexes<'_, '_>,
+    annotations: &mut AnnotationBuilder,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
+    walk: &mut SurfaceSupportWalk<'_>,
 ) -> Result<Option<SurfaceId>, cadmpeg_core::CodecError> {
     let _depth = sink.ctx.enter_nested("resolve Parasolid surface support")?;
     sink.ctx
         .charge_work(1, "resolve Parasolid surface support")?;
-    if !sink
-        .ctx
-        .insert_btree_set(resolving, attr, "track resolved Parasolid support")?
-    {
+    if !walk.storage.with_storage(|| {
+        sink.ctx.insert_btree_set(
+            &mut walk.resolving,
+            attr,
+            "track resolved Parasolid support",
+        )
+    })? {
         return Ok(None);
     }
     // A carrier owned by an emitted face names that face's surface. Any other
@@ -314,7 +483,7 @@ pub(super) fn ensure_surface_support(
     let emitted_bridge = sink
         .ctx
         .get_btree_map(
-            emitted_face_surface_by_carrier,
+            indexes.emitted(sink.ctx)?,
             &attr,
             "lookup Parasolid emitted_face_surface_by_carrier",
         )?
@@ -360,22 +529,24 @@ pub(super) fn ensure_surface_support(
                     source_object: None,
                     geometry,
                 });
-                sink.ctx.insert_btree_set(
-                    sink.hidden_supports,
-                    attr,
-                    "track emitted Parasolid support surfaces",
-                )?;
+                sink.hidden_storage.with_storage(|| {
+                    sink.ctx.insert_btree_set(
+                        sink.hidden_supports,
+                        attr,
+                        "track emitted Parasolid support surfaces",
+                    )
+                })?;
             }
             Ok(Some(id))
         } else if let Some(offset) = carriers.offset(sink.ctx, attr)? {
-            let Some(support) = ensure_surface_support(
+            let Some(support) = ensure_surface_support_with(
                 sink,
                 offset.support,
                 carriers,
-                emitted_face_surface_by_carrier,
+                indexes,
                 annotations,
                 source_stream,
-                resolving,
+                walk,
             )?
             else {
                 return Ok(None);
@@ -395,11 +566,13 @@ pub(super) fn ensure_surface_support(
                     support,
                     offset,
                 )?;
-                sink.ctx.insert_btree_set(
-                    sink.hidden_supports,
-                    attr,
-                    "track emitted Parasolid support surfaces",
-                )?;
+                sink.hidden_storage.with_storage(|| {
+                    sink.ctx.insert_btree_set(
+                        sink.hidden_supports,
+                        attr,
+                        "track emitted Parasolid support surfaces",
+                    )
+                })?;
             }
             Ok(Some(surface))
         } else {
@@ -421,16 +594,24 @@ pub(super) fn ensure_surface_support(
                         record: None,
                     }),
                 });
-                sink.ctx.insert_btree_set(
-                    sink.hidden_supports,
-                    attr,
-                    "track emitted Parasolid support surfaces",
-                )?;
+                sink.hidden_storage.with_storage(|| {
+                    sink.ctx.insert_btree_set(
+                        sink.hidden_supports,
+                        attr,
+                        "track emitted Parasolid support surfaces",
+                    )
+                })?;
             }
             Ok(Some(surface))
         }
     })();
-    sink.ctx
-        .remove_btree_set(resolving, &attr, "finish Parasolid surface support")?;
+    sink.ctx.remove_btree_set(
+        &mut walk.resolving,
+        &attr,
+        "finish Parasolid surface support",
+    )?;
     result
 }
+
+#[cfg(test)]
+mod tests;
