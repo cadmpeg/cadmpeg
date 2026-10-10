@@ -171,7 +171,11 @@ fn rectilinear_extent_at_limit(
 
 #[test]
 fn rectilinear_cap_plane_limit_refuses() {
-    let result = rectilinear_extent_at_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo rectilinear cap planes"), rectilinear_extent_at_limit));
+    let result = rectilinear_extent_at_limit(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo rectilinear cap planes"),
+        rectilinear_extent_at_limit,
+    ));
     assert!(
         matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
         if refusal.operation == "creo rectilinear cap planes")
@@ -180,7 +184,11 @@ fn rectilinear_cap_plane_limit_refuses() {
 
 #[test]
 fn rectilinear_station_limit_refuses() {
-    let result = rectilinear_extent_at_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo rectilinear stations"), rectilinear_extent_at_limit));
+    let result = rectilinear_extent_at_limit(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo rectilinear stations"),
+        rectilinear_extent_at_limit,
+    ));
     assert!(
         matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
         if refusal.operation == "creo rectilinear stations")
@@ -189,7 +197,11 @@ fn rectilinear_station_limit_refuses() {
 
 #[test]
 fn rectilinear_family_limit_refuses() {
-    let result = rectilinear_extent_at_limit(crate::test_support::allocation_limit_at(cadmpeg_core::decode::ResourceDimension::CollectionItems, Some("creo rectilinear families"), rectilinear_extent_at_limit));
+    let result = rectilinear_extent_at_limit(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo rectilinear families"),
+        rectilinear_extent_at_limit,
+    ));
     assert!(
         matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
         if refusal.operation == "creo rectilinear families")

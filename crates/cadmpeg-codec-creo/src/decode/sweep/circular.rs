@@ -98,9 +98,10 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         else {
             continue;
         };
-        let (sketch_id, _sketch_identity_storage) = ctx.with_scoped_storage(
-            "creo sweep sketch identity scratch", || model_sketch_id(ctx, scan, definition),
-        )?;
+        let (sketch_id, _sketch_identity_storage) = ctx
+            .with_scoped_storage("creo sweep sketch identity scratch", || {
+                model_sketch_id(ctx, scan, definition)
+            })?;
         let Some(sketch_id) = sketch_id else {
             continue;
         };
@@ -121,10 +122,10 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         else {
             continue;
         };
-        let (body_id, body_id_storage) = ctx.with_scoped_storage(
-            "creo circular body identity candidate",
-            || circular_identity::<BodyId>(ctx, feature_id, "body"),
-        )?;
+        let (body_id, body_id_storage) = ctx
+            .with_scoped_storage("creo circular body identity candidate", || {
+                circular_identity::<BodyId>(ctx, feature_id, "body")
+            })?;
         // The unique first material feature reaches this lookup at most once.
         if ctx.any_by(
             &ir.model.bodies,
@@ -174,7 +175,10 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                         )?
                     } else {
                         ctx.format_retained(
-                            format_args!("Extrusion body {body_id} states no cap pcurve; its B-rep was skipped: {}", JoinedLaneRecords(&records)),
+                            format_args!(
+                                "Extrusion body {body_id} states no cap pcurve; its B-rep was skipped: {}",
+                                JoinedLaneRecords(&records),
+                            ),
                             "creo circular extrusion rejection text",
                         )?
                     };
@@ -185,7 +189,9 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             }
         };
         let PcurveGeometry::Nurbs { nurbs: cap_nurbs } = &cap_geometry else {
-            return Err(cadmpeg_core::CodecError::malformed("circular cap pcurve is not NURBS"));
+            return Err(cadmpeg_core::CodecError::malformed(
+                "circular cap pcurve is not NURBS",
+            ));
         };
         let center = section_point_in_model(transform, section_center);
         let seam =
@@ -240,7 +246,9 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 PcurveAdmission::Pending(source_carriers, &cap_surface_geometry),
                 circular_identity::<PcurveId>(ctx, feature_id, format_args!("pcurve:{side}:cap"))?,
                 transform.offset,
-                PcurveGeometry::Nurbs { nurbs: cap_nurbs.try_clone_for_decode(ctx, "creo circular cap pcurve copy")? },
+                PcurveGeometry::Nurbs {
+                    nurbs: cap_nurbs.try_clone_for_decode(ctx, "creo circular cap pcurve copy")?,
+                },
             )?;
             let side_pcurve = add_extrusion_pcurve(
                 ctx,
@@ -432,8 +440,10 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 source_object: None,
             },
         )?;
-        for (side_index, ((side, _), (cap_coedge, coedge, edge, pcurve))) in
-            sides.into_iter().zip(coedge_rows.into_iter().flatten()).enumerate()
+        for (side_index, ((side, _), (cap_coedge, coedge, edge, pcurve))) in sides
+            .into_iter()
+            .zip(coedge_rows.into_iter().flatten())
+            .enumerate()
         {
             let loop_id: LoopId =
                 circular_identity(ctx, feature_id, format_args!("loop:side:{side}"))?;
@@ -603,7 +613,7 @@ fn resolved_circular_extrusion_profile(
                 )?
                 .map(|entity| source_carriers.sketch_geometry(entity))
                 .transpose()?
-                .map(|geometry| geometry.definition())
+                .map(cadmpeg_ir::SketchGeometry::definition)
                 {
                     return Ok(Some(([center.u, center.v], radius.get())));
                 }
@@ -727,7 +737,9 @@ mod tests {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_collection_items = limit;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-                nurbs.try_clone_for_decode(&ctx, "creo circular cap pcurve copy").map(|nurbs| super::PcurveGeometry::Nurbs { nurbs })
+                nurbs
+                    .try_clone_for_decode(&ctx, "creo circular cap pcurve copy")
+                    .map(|nurbs| super::PcurveGeometry::Nurbs { nurbs })
             },
         );
         let copied = nurbs

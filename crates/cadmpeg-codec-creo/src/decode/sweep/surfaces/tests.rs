@@ -455,14 +455,28 @@ fn saved_spline_translated_curve_promotes_only_on_new_curve_transfer() {
     assert_eq!(ir.model.curves.len(), 1);
     let cadmpeg_ir::geometry::CurveGeometry::Solved(
         cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(curve),
-    ) = &ir.model.curves[0].geometry else {
+    ) = &ir.model.curves[0].geometry
+    else {
         panic!("translated spline directrix");
     };
-    assert_eq!(curve.pole_rows().point_at(0).expect("first pole").get(),
-        cadmpeg_ir::math::Point3::new(2.0, 0.0, -1.0));
-    assert_eq!(curve.pole_rows().point_at(curve.pole_count() - 1).expect("last pole").get(),
-        cadmpeg_ir::math::Point3::new(2.0, 0.0, 0.0));
-    let ids = ir.model.curves.iter().map(|curve| curve.id.clone()).collect::<Vec<_>>();
+    assert_eq!(
+        curve.pole_rows().point_at(0).expect("first pole").get(),
+        cadmpeg_ir::math::Point3::new(2.0, 0.0, -1.0)
+    );
+    assert_eq!(
+        curve
+            .pole_rows()
+            .point_at(curve.pole_count() - 1)
+            .expect("last pole")
+            .get(),
+        cadmpeg_ir::math::Point3::new(2.0, 0.0, 0.0)
+    );
+    let ids = ir
+        .model
+        .curves
+        .iter()
+        .map(|curve| curve.id.clone())
+        .collect::<Vec<_>>();
     let mut losses = Vec::new();
     let repeated = crate::decode::with_test_decode_ctx(|ctx| {
         super::transfer_feature_extrusion_surfaces(
@@ -473,9 +487,17 @@ fn saved_spline_translated_curve_promotes_only_on_new_curve_transfer() {
             &mut losses,
             &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
-    }).expect("duplicate spline route");
+    })
+    .expect("duplicate spline route");
     assert_eq!(repeated, 0);
-    assert_eq!(ir.model.curves.iter().map(|curve| curve.id.clone()).collect::<Vec<_>>(), ids);
+    assert_eq!(
+        ir.model
+            .curves
+            .iter()
+            .map(|curve| curve.id.clone())
+            .collect::<Vec<_>>(),
+        ids
+    );
     assert_eq!(ir.model.surfaces.len(), 1);
     assert_eq!(ir.model.procedural_surfaces.len(), 1);
     assert!(losses.is_empty());
@@ -486,15 +508,24 @@ fn absent_placed_curve_references_are_free_and_preserve_original_refusal() {
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition, SketchId};
     let transform = crate::placement::FeatureSectionTransform::new(
-        5, Some(5), [0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], 0,
-    ).expect("section frame");
+        5,
+        Some(5),
+        [0.0; 3],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        0,
+    )
+    .expect("section frame");
     let sketch = SketchId::mint("creo:model:sketch#5").expect("sketch identity");
     let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
-        start: Point2::new(0.0, 0.0), end: Point2::new(1.0, 0.0),
-    }).expect("line");
+        start: Point2::new(0.0, 0.0),
+        end: Point2::new(1.0, 0.0),
+    })
+    .expect("line");
     let point = SketchGeometry::try_from(SketchGeometryDefinition::Point {
         position: Point2::new(0.0, 0.0),
-    }).expect("point");
+    })
+    .expect("point");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
@@ -503,16 +534,29 @@ fn absent_placed_curve_references_are_free_and_preserve_original_refusal() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     for (placement, geometry) in [(None, &line), (Some(&transform), &point)] {
-        assert_eq!(super::placed_sketch_curve_ref(&ctx, placement, &sketch, 3, geometry)
-            .expect("fixed absent reference"), None);
+        assert_eq!(
+            super::placed_sketch_curve_ref(&ctx, placement, &sketch, 3, geometry)
+                .expect("fixed absent reference"),
+            None
+        );
     }
     assert_eq!(ctx.resource_refusal(), None);
-    let original = ctx.charge_work_limit(1, "after fixed absent curve reference").expect_err("zero work");
-    assert_eq!((original.dimension, original.used, original.additional),
-        (ResourceDimension::WorkUnits, 0, 1));
-    for (placement, geometry) in [(None, &line), (Some(&transform), &point), (Some(&transform), &line)] {
-        assert!(matches!(super::placed_sketch_curve_ref(&ctx, placement, &sketch, 3, geometry),
-            Err(CodecError::ResourceLimit(actual)) if actual == original));
+    let original = ctx
+        .charge_work_limit(1, "after fixed absent curve reference")
+        .expect_err("zero work");
+    assert_eq!(
+        (original.dimension, original.used, original.additional),
+        (ResourceDimension::WorkUnits, 0, 1)
+    );
+    for (placement, geometry) in [
+        (None, &line),
+        (Some(&transform), &point),
+        (Some(&transform), &line),
+    ] {
+        assert!(
+            matches!(super::placed_sketch_curve_ref(&ctx, placement, &sketch, 3, geometry),
+            Err(CodecError::ResourceLimit(actual)) if actual == original)
+        );
     }
     assert_eq!(ctx.resource_refusal(), Some(original));
 }
@@ -524,14 +568,20 @@ fn short_revolution_axis_is_free_and_preserves_original_refusal() {
     use cadmpeg_ir::math::{Point3, Vector3};
     let curve = NurbsCurve::from_lanes(
         &cadmpeg_test_support::service_decode_context(),
-        1, vec![0.0, 0.0, 1.0, 1.0],
-        vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)], None, false,
-    ).expect("structural admission").expect("finite directrix");
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)],
+        None,
+        false,
+    )
+    .expect("structural admission")
+    .expect("finite directrix");
     // FeatureDirection3 admits finite positive squared norm. The codec's
     // normalization requires length greater than its near-zero threshold.
     let axis = RevolutionAxis {
         origin: FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).expect("origin"),
-        direction: FeatureDirection3::new(Vector3::new(0.0, 0.0, 5.0e-13)).expect("finite nonzero norm"),
+        direction: FeatureDirection3::new(Vector3::new(0.0, 0.0, 5.0e-13))
+            .expect("finite nonzero norm"),
         reference: None,
     };
     let arena = DecodeArena::new();
@@ -542,16 +592,28 @@ fn short_revolution_axis_is_free_and_preserves_original_refusal() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let mut refusal = crate::lane_refusal::LaneRefusals::new();
-    assert!(super::revolved_nurbs_surface(&ctx, &curve, &axis, &"short axis", &mut refusal)
-        .expect("fixed absent surface").is_none());
-    assert!(refusal.take_records_checked().expect("no diagnostic").is_empty());
+    assert!(
+        super::revolved_nurbs_surface(&ctx, &curve, &axis, &"short axis", &mut refusal)
+            .expect("fixed absent surface")
+            .is_none()
+    );
+    assert!(refusal
+        .take_records_checked()
+        .expect("no diagnostic")
+        .is_empty());
     assert_eq!(ctx.resource_refusal(), None);
-    let original = ctx.charge_work_limit(1, "after fixed short axis").expect_err("zero work");
-    assert_eq!((original.dimension, original.used, original.additional),
-        (ResourceDimension::WorkUnits, 0, 1));
+    let original = ctx
+        .charge_work_limit(1, "after fixed short axis")
+        .expect_err("zero work");
+    assert_eq!(
+        (original.dimension, original.used, original.additional),
+        (ResourceDimension::WorkUnits, 0, 1)
+    );
     for _ in 0..2 {
-        assert!(matches!(super::revolved_nurbs_surface(&ctx, &curve, &axis, &"short axis", &mut refusal),
-            Err(CodecError::ResourceLimit(actual)) if actual == original));
+        assert!(
+            matches!(super::revolved_nurbs_surface(&ctx, &curve, &axis, &"short axis", &mut refusal),
+            Err(CodecError::ResourceLimit(actual)) if actual == original)
+        );
     }
     assert_eq!(ctx.resource_refusal(), Some(original));
 }
@@ -567,34 +629,67 @@ fn revolved_pole_projection_charges_only_present_poles() {
         reference: None,
     };
     for (knots, poles) in [
-        (vec![0.0, 0.0, 1.0, 1.0],
-            vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)]),
-        (vec![0.0, 0.0, 0.25, 0.5, 1.0, 1.0],
-            vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0),
-                Point3::new(2.0, 0.0, 2.0), Point3::new(2.0, 0.0, 3.0)]),
+        (
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)],
+        ),
+        (
+            vec![0.0, 0.0, 0.25, 0.5, 1.0, 1.0],
+            vec![
+                Point3::new(2.0, 0.0, 0.0),
+                Point3::new(2.0, 0.0, 1.0),
+                Point3::new(2.0, 0.0, 2.0),
+                Point3::new(2.0, 0.0, 3.0),
+            ],
+        ),
     ] {
         let count = u64::try_from(poles.len()).expect("small pole count");
         let knot_count = u64::try_from(knots.len()).expect("small knot count");
         let curve = NurbsCurve::from_lanes(
-            &cadmpeg_test_support::service_decode_context(), 1, knots, poles, None, false,
-        ).expect("fixture admission").expect("finite directrix");
+            &cadmpeg_test_support::service_decode_context(),
+            1,
+            knots,
+            poles,
+            None,
+            false,
+        )
+        .expect("fixture admission")
+        .expect("finite directrix");
         let surface = crate::test_support::assert_work_boundaries(
-            &["creo revolved NURBS pole projection", "creo revolved NURBS u knot copy"],
+            &[
+                "creo revolved NURBS pole projection",
+                "creo revolved NURBS u knot copy",
+            ],
             |ctx| {
                 let mut diagnostics = crate::lane_refusal::LaneRefusals::new();
                 let result = super::revolved_nurbs_surface(
-                    ctx, &curve, &axis, &"pole projection", &mut diagnostics,
+                    ctx,
+                    &curve,
+                    &axis,
+                    &"pole projection",
+                    &mut diagnostics,
                 );
-                assert!(diagnostics.take_records_checked().expect("no failed geometry lane").is_empty());
+                assert!(diagnostics
+                    .take_records_checked()
+                    .expect("no failed geometry lane")
+                    .is_empty());
                 result
             },
         );
         assert!(surface.is_some());
         let error = crate::test_support::last_refusal_at(
-            &[], ResourceDimension::WorkUnits, "creo revolved NURBS u knot copy",
-            |ctx| super::revolved_nurbs_surface(
-                ctx, &curve, &axis, &"pole projection", &mut crate::lane_refusal::LaneRefusals::new(),
-            ),
+            &[],
+            ResourceDimension::WorkUnits,
+            "creo revolved NURBS u knot copy",
+            |ctx| {
+                super::revolved_nurbs_surface(
+                    ctx,
+                    &curve,
+                    &axis,
+                    &"pole projection",
+                    &mut crate::lane_refusal::LaneRefusals::new(),
+                )
+            },
         );
         assert!(matches!(error, CodecError::ResourceLimit(refusal)
             if refusal.used == count && refusal.additional == knot_count));
@@ -607,12 +702,31 @@ fn duplicate_saved_spline_candidates_need_no_retained_storage() {
     let mut ir = CadIr::empty();
     let mut carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
     crate::decode::with_test_decode_ctx(|ctx| {
-        assert_eq!(super::transfer_saved_spline_curves(ctx, &scan, &mut ir,
-            &mut AnnotationBuilder::new(), &mut Vec::new(), &mut carriers)?, 1);
-        assert_eq!(super::transfer_feature_extrusion_surfaces(ctx, &scan, &mut ir,
-            &mut AnnotationBuilder::new(), &mut Vec::new(), &mut carriers)?, 1);
+        assert_eq!(
+            super::transfer_saved_spline_curves(
+                ctx,
+                &scan,
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &mut Vec::new(),
+                &mut carriers
+            )?,
+            1
+        );
+        assert_eq!(
+            super::transfer_feature_extrusion_surfaces(
+                ctx,
+                &scan,
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &mut Vec::new(),
+                &mut carriers
+            )?,
+            1
+        );
         Ok::<_, CodecError>(())
-    }).expect("initial spline transfer");
+    })
+    .expect("initial spline transfer");
     let expected = ir.clone();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -621,14 +735,38 @@ fn duplicate_saved_spline_candidates_need_no_retained_storage() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let mut losses = Vec::new();
-    assert_eq!(super::transfer_saved_spline_curves(&ctx, &scan, &mut ir,
-        &mut AnnotationBuilder::new(), &mut losses, &mut carriers).expect("duplicate curve"), 0);
-    assert_eq!(super::transfer_feature_extrusion_surfaces(&ctx, &scan, &mut ir,
-        &mut AnnotationBuilder::new(), &mut losses, &mut carriers).expect("duplicate surface"), 0);
+    assert_eq!(
+        super::transfer_saved_spline_curves(
+            &ctx,
+            &scan,
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &mut losses,
+            &mut carriers
+        )
+        .expect("duplicate curve"),
+        0
+    );
+    assert_eq!(
+        super::transfer_feature_extrusion_surfaces(
+            &ctx,
+            &scan,
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &mut losses,
+            &mut carriers
+        )
+        .expect("duplicate surface"),
+        0
+    );
     assert_eq!(ir, expected);
     assert!(losses.is_empty());
     assert_eq!(ctx.resource_refusal(), None);
-    let reservation = ctx.reserve_scoped(policy.limits.max_materialized_bytes, "test released spline scratch")
+    let reservation = ctx
+        .reserve_scoped(
+            policy.limits.max_materialized_bytes,
+            "test released spline scratch",
+        )
         .expect("all candidate scratch released");
     drop(reservation);
 }

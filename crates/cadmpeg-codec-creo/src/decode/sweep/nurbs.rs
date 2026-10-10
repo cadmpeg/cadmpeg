@@ -158,10 +158,11 @@ fn solve_vector_system(
     mut matrix: Vec<Vec<f64>>,
     mut values: Vec<[f64; 3]>,
 ) -> Result<Option<Vec<[f64; 3]>>, CodecError> {
+    const EPS_INTERPOLATION_PIVOT: f64 = 1e-14;
+
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
-    const EPS_INTERPOLATION_PIVOT: f64 = 1e-14;
     let count = matrix.len();
     if values.len() != count {
         return Ok(None);
@@ -305,7 +306,9 @@ fn interpolation_controls(
     )?;
     let mut parameters_rows = parameters.iter();
     while !parameters_rows.as_slice().is_empty() {
-        let Some(parameter) = ctx.next_charged(&mut parameters_rows, "creo interpolation parameter scan")? else {
+        let Some(parameter) =
+            ctx.next_charged(&mut parameters_rows, "creo interpolation parameter scan")?
+        else {
             break;
         };
         let mut row = Vec::new();
@@ -317,7 +320,9 @@ fn interpolation_controls(
         )?;
         let mut coefficients = 0..control_count;
         while coefficients.start < coefficients.end {
-            let Some(index) = ctx.next_charged(&mut coefficients, "creo interpolation coefficient scan")? else {
+            let Some(index) =
+                ctx.next_charged(&mut coefficients, "creo interpolation coefficient scan")?
+            else {
                 break;
             };
             let Some(basis) = bspline_basis(
@@ -343,7 +348,9 @@ fn interpolation_controls(
         )?;
         let mut coefficients = 0..control_count;
         while coefficients.start < coefficients.end {
-            let Some(index) = ctx.next_charged(&mut coefficients, "creo interpolation coefficient scan")? else {
+            let Some(index) =
+                ctx.next_charged(&mut coefficients, "creo interpolation coefficient scan")?
+            else {
                 break;
             };
             let Some(basis) = bspline_basis_derivative(
@@ -475,7 +482,9 @@ fn saved_spline_off_plane_input(
     }
     let mut points = spline.interpolation_points.iter().enumerate();
     while points.len() > 0 {
-        let Some((index, point)) = ctx.next_charged(&mut points, "creo saved spline off-plane input scan")? else {
+        let Some((index, point)) =
+            ctx.next_charged(&mut points, "creo saved spline off-plane input scan")?
+        else {
             break;
         };
         if point[2].abs() > EPS_PLANAR_COORDINATE {
@@ -643,7 +652,8 @@ pub(in super::super) fn interpolation_spline_surface(
         let Some(v) = ctx.next_charged(&mut v_samples, "creo interpolation v sample scan")? else {
             break;
         };
-        let samples_owned_storage = ctx.temporary_vec(0, "creo interpolation surface position samples")?;
+        let samples_owned_storage =
+            ctx.temporary_vec(0, "creo interpolation surface position samples")?;
         let mut sample_storage = samples_owned_storage.1;
         let mut samples = samples_owned_storage.0;
         ctx.reserve_scoped_vec(
@@ -678,7 +688,8 @@ pub(in super::super) fn interpolation_spline_surface(
     }
     let mut v_derivative_controls = [Vec::new(), Vec::new()];
     for (v_boundary, derivative_controls) in v_derivative_controls.iter_mut().enumerate() {
-        let samples_owned_storage = ctx.temporary_vec(0, "creo interpolation surface derivative samples")?;
+        let samples_owned_storage =
+            ctx.temporary_vec(0, "creo interpolation surface derivative samples")?;
         let mut sample_storage = samples_owned_storage.1;
         let mut samples = samples_owned_storage.0;
         ctx.reserve_scoped_vec(
@@ -711,7 +722,8 @@ pub(in super::super) fn interpolation_spline_surface(
         };
         *derivative_controls = controls;
     }
-    let pole_rows_owned_storage = ctx.temporary_vec(0, "creo interpolation surface NURBS pole rows")?;
+    let pole_rows_owned_storage =
+        ctx.temporary_vec(0, "creo interpolation surface NURBS pole rows")?;
     let mut pole_storage = pole_rows_owned_storage.1;
     let mut pole_rows = pole_rows_owned_storage.0;
     ctx.reserve_scoped_vec(
@@ -722,7 +734,8 @@ pub(in super::super) fn interpolation_spline_surface(
     )?;
     let mut u_controls = 0..u_control_count;
     while u_controls.start < u_controls.end {
-        let Some(u) = ctx.next_charged(&mut u_controls, "creo interpolation u control scan")? else {
+        let Some(u) = ctx.next_charged(&mut u_controls, "creo interpolation u control scan")?
+        else {
             break;
         };
         let (controls, _control_storage) =
@@ -823,7 +836,9 @@ pub(in super::super) fn extruded_nurbs_surface(
     }
     let mut source_poles = 0..count;
     while source_poles.start < source_poles.end {
-        let Some(index) = ctx.next_charged(&mut source_poles, "creo extruded NURBS source pole scan")? else {
+        let Some(index) =
+            ctx.next_charged(&mut source_poles, "creo extruded NURBS source pole scan")?
+        else {
             break;
         };
         let Some(point) = directrix.pole_rows().point_at(index) else {
@@ -919,13 +934,14 @@ pub(super) fn sketch_nurbs_curve(
     ctx: &DecodeContext<'_>,
     geometry: &SketchGeometry,
 ) -> Result<Option<NurbsCurve>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     use cadmpeg_ir::features::FinitePoint3;
     use cadmpeg_ir::geometry::nurbs::{NurbsPoles3, WeightedPole3};
     use cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles;
     use cadmpeg_ir::scalar::FiniteReal;
+
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
 
     let SketchGeometryDefinition::Nurbs { curve } = geometry.definition() else {
         return Ok(None);
@@ -1407,7 +1423,8 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
     else {
         return Ok(None);
     };
-    let controls_owned_storage = ctx.temporary_vec(0, "creo tabulated-cylinder directrix controls")?;
+    let controls_owned_storage =
+        ctx.temporary_vec(0, "creo tabulated-cylinder directrix controls")?;
     let mut control_storage = controls_owned_storage.1;
     let mut controls = controls_owned_storage.0;
     ctx.reserve_scoped_vec(

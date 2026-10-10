@@ -968,8 +968,11 @@ fn fixed_counterbore_identity_prefix_skips_foreign_surface_without_text_work() {
     policy.limits.max_collection_items = 0;
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert!(super::unique_model_surface_geometries(&ctx, &ir)
-        .expect("foreign prefix needs no text work").expect("unique empty index").is_empty());
+        .expect("foreign prefix needs no text work")
+        .expect("unique empty index")
+        .is_empty());
     assert_eq!(ctx.resource_refusal(), None);
 }
