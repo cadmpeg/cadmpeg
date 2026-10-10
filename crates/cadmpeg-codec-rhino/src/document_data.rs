@@ -600,136 +600,145 @@ pub(crate) fn install<'ctx>(
     ir: &mut CadIr,
 ) -> Result<NativeInstall<'ctx>, CodecError> {
     let properties = &scan.metadata.properties;
-    let (
-        native_records,
-        mut native_storage,
-    ) = ctx.with_scoped_storage("Rhino document native workspace", || {
-        let mut revisions = ctx.collection_vec(
-            usize::from(properties.revision_history.is_some()),
-            "Rhino document revisions",
-        )?;
-        if let Some(value) = &properties.revision_history {
-            revisions.push(RevisionRecord {
-                id: ctx
-                    .copy_retained_text("rhino:document:revision#current", "Rhino revision ID")?,
-                source_offset: cadmpeg_core::decode::u64_from_index(value.source.range.start),
-                created_by: ctx.copy_retained_text(&value.created_by, "Rhino revision creator")?,
-                created_utc_fields: value.created.fields,
-                last_edited_by: ctx
-                    .copy_retained_text(&value.last_edited_by, "Rhino revision editor")?,
-                last_edited_utc_fields: value.last_edited.fields,
-                revision_count: value.revision_count,
-            });
-        }
-        let mut notes = ctx.collection_vec(
-            usize::from(properties.notes.is_some()),
-            "Rhino document notes",
-        )?;
-        if let Some(value) = &properties.notes {
-            notes.push(NotesRecord {
-                id: ctx.copy_retained_text("rhino:document:notes#current", "Rhino notes ID")?,
-                source_offset: cadmpeg_core::decode::u64_from_index(value.source.range.start),
-                html: value.html,
-                text: ctx.copy_retained_text(&value.text, "Rhino notes text")?,
-                visible: value.visible,
-                window_rectangle: value.rectangle,
-                locked: value.locked,
-            });
-        }
-        let mut applications = ctx.collection_vec(
-            usize::from(properties.application.is_some()),
-            "Rhino document applications",
-        )?;
-        if let Some(value) = &properties.application {
-            applications.push(ApplicationRecord {
+    let (native_records, mut native_storage) =
+        ctx.with_scoped_storage("Rhino document native workspace", || {
+            let mut revisions = ctx.collection_vec(
+                usize::from(properties.revision_history.is_some()),
+                "Rhino document revisions",
+            )?;
+            if let Some(value) = &properties.revision_history {
+                revisions.push(RevisionRecord {
+                    id: ctx.copy_retained_text(
+                        "rhino:document:revision#current",
+                        "Rhino revision ID",
+                    )?,
+                    source_offset: cadmpeg_core::decode::u64_from_index(value.source.range.start),
+                    created_by: ctx
+                        .copy_retained_text(&value.created_by, "Rhino revision creator")?,
+                    created_utc_fields: value.created.fields,
+                    last_edited_by: ctx
+                        .copy_retained_text(&value.last_edited_by, "Rhino revision editor")?,
+                    last_edited_utc_fields: value.last_edited.fields,
+                    revision_count: value.revision_count,
+                });
+            }
+            let mut notes = ctx.collection_vec(
+                usize::from(properties.notes.is_some()),
+                "Rhino document notes",
+            )?;
+            if let Some(value) = &properties.notes {
+                notes.push(NotesRecord {
+                    id: ctx.copy_retained_text("rhino:document:notes#current", "Rhino notes ID")?,
+                    source_offset: cadmpeg_core::decode::u64_from_index(value.source.range.start),
+                    html: value.html,
+                    text: ctx.copy_retained_text(&value.text, "Rhino notes text")?,
+                    visible: value.visible,
+                    window_rectangle: value.rectangle,
+                    locked: value.locked,
+                });
+            }
+            let mut applications = ctx.collection_vec(
+                usize::from(properties.application.is_some()),
+                "Rhino document applications",
+            )?;
+            if let Some(value) = &properties.application {
+                applications.push(ApplicationRecord {
+                    id: ctx.copy_retained_text(
+                        "rhino:document:application#writer",
+                        "Rhino application ID",
+                    )?,
+                    source_offset: cadmpeg_core::decode::u64_from_index(value.source.range.start),
+                    name: ctx.copy_retained_text(&value.name, "Rhino application name")?,
+                    url: ctx.copy_retained_text(&value.url, "Rhino application URL")?,
+                    details: ctx.copy_retained_text(&value.details, "Rhino application details")?,
+                });
+            }
+            let settings = &scan.metadata.settings;
+            let document_settings = [DocumentSettingsRecord {
                 id: ctx.copy_retained_text(
-                    "rhino:document:application#writer",
-                    "Rhino application ID",
+                    "rhino:document:settings#current",
+                    "Rhino document settings ID",
                 )?,
-                source_offset: cadmpeg_core::decode::u64_from_index(value.source.range.start),
-                name: ctx.copy_retained_text(&value.name, "Rhino application name")?,
-                url: ctx.copy_retained_text(&value.url, "Rhino application URL")?,
-                details: ctx.copy_retained_text(&value.details, "Rhino application details")?,
-            });
-        }
-        let settings = &scan.metadata.settings;
-        let document_settings = [DocumentSettingsRecord {
-            id: ctx.copy_retained_text(
-                "rhino:document:settings#current",
-                "Rhino document settings ID",
-            )?,
-            writer_version: properties.writer_version,
-            archive_file_name: properties
-                .as_file_name
-                .as_deref()
-                .map(|value| ctx.copy_retained_text(value, "Rhino archive file name"))
-                .transpose()?,
-            model_url: settings
-                .model_url
-                .as_deref()
-                .map(|value| ctx.copy_retained_text(value, "Rhino model URL"))
-                .transpose()?,
-            current_layer_index: settings.current_layer,
-            current_material_index: settings.current_material.map(|selection| selection.value),
-            current_material_source: settings.current_material.map(|selection| selection.source),
-            current_color: settings.current_color.map(|selection| selection.value),
-            current_color_source: settings.current_color.map(|selection| selection.source),
-            current_wire_density: settings.current_wire_density,
-            current_font_index: settings.current_font,
-            current_dimension_style_index: settings.current_dimstyle,
-        }];
-        let mut previews =
-            ctx.collection_vec(properties.previews.len(), "Rhino document previews")?;
-        for (index, value) in ctx.admit_iter(&properties.previews, "Rhino install traversal")?.enumerate() {
-            previews.push(PreviewRecord {
-                id: retained_numbered_id(
-                    ctx,
-                    "rhino:document:preview#",
-                    index,
-                    "Rhino preview ID",
-                )?,
-                source_offset: cadmpeg_core::decode::u64_from_index(value.source.range.start),
-                byte_len: cadmpeg_core::decode::u64_from_index(value.source.range.len()),
-                compressed: value.compressed,
-                sha256: retained_sha256(
-                    ctx,
-                    &scan.data[value.source.range.clone()],
-                    "Rhino preview SHA-256",
-                )?,
-            });
-        }
-        let mut setting_records = ctx.collection_vec(
-            settings.unsupported.len(),
-            "Rhino unsupported setting records",
-        )?;
-        for (index, value) in ctx.admit_iter(&settings.unsupported, "Rhino install traversal")?.enumerate() {
-            setting_records.push(SettingRecord {
-                id: retained_numbered_id(
-                    ctx,
-                    "rhino:document:setting#",
-                    index,
-                    "Rhino setting ID",
-                )?,
-                source_offset: cadmpeg_core::decode::u64_from_index(value.source.range.start),
-                byte_len: cadmpeg_core::decode::u64_from_index(value.source.range.len()),
-                typecode: retained_typecode(ctx, value.typecode)?,
-                sha256: retained_sha256(
-                    ctx,
-                    &scan.data[value.source.range.clone()],
-                    "Rhino setting SHA-256",
-                )?,
-                parse_error: None,
-            });
-        }
-        Ok::<_, CodecError>((
-            revisions,
-            notes,
-            applications,
-            document_settings,
-            previews,
-            setting_records,
-        ))
-    })?;
+                writer_version: properties.writer_version,
+                archive_file_name: properties
+                    .as_file_name
+                    .as_deref()
+                    .map(|value| ctx.copy_retained_text(value, "Rhino archive file name"))
+                    .transpose()?,
+                model_url: settings
+                    .model_url
+                    .as_deref()
+                    .map(|value| ctx.copy_retained_text(value, "Rhino model URL"))
+                    .transpose()?,
+                current_layer_index: settings.current_layer,
+                current_material_index: settings.current_material.map(|selection| selection.value),
+                current_material_source: settings
+                    .current_material
+                    .map(|selection| selection.source),
+                current_color: settings.current_color.map(|selection| selection.value),
+                current_color_source: settings.current_color.map(|selection| selection.source),
+                current_wire_density: settings.current_wire_density,
+                current_font_index: settings.current_font,
+                current_dimension_style_index: settings.current_dimstyle,
+            }];
+            let mut previews =
+                ctx.collection_vec(properties.previews.len(), "Rhino document previews")?;
+            for (index, value) in ctx
+                .admit_iter(&properties.previews, "Rhino install traversal")?
+                .enumerate()
+            {
+                previews.push(PreviewRecord {
+                    id: retained_numbered_id(
+                        ctx,
+                        "rhino:document:preview#",
+                        index,
+                        "Rhino preview ID",
+                    )?,
+                    source_offset: cadmpeg_core::decode::u64_from_index(value.source.range.start),
+                    byte_len: cadmpeg_core::decode::u64_from_index(value.source.range.len()),
+                    compressed: value.compressed,
+                    sha256: retained_sha256(
+                        ctx,
+                        &scan.data[value.source.range.clone()],
+                        "Rhino preview SHA-256",
+                    )?,
+                });
+            }
+            let mut setting_records = ctx.collection_vec(
+                settings.unsupported.len(),
+                "Rhino unsupported setting records",
+            )?;
+            for (index, value) in ctx
+                .admit_iter(&settings.unsupported, "Rhino install traversal")?
+                .enumerate()
+            {
+                setting_records.push(SettingRecord {
+                    id: retained_numbered_id(
+                        ctx,
+                        "rhino:document:setting#",
+                        index,
+                        "Rhino setting ID",
+                    )?,
+                    source_offset: cadmpeg_core::decode::u64_from_index(value.source.range.start),
+                    byte_len: cadmpeg_core::decode::u64_from_index(value.source.range.len()),
+                    typecode: retained_typecode(ctx, value.typecode)?,
+                    sha256: retained_sha256(
+                        ctx,
+                        &scan.data[value.source.range.clone()],
+                        "Rhino setting SHA-256",
+                    )?,
+                    parse_error: None,
+                });
+            }
+            Ok::<_, CodecError>((
+                revisions,
+                notes,
+                applications,
+                document_settings,
+                previews,
+                setting_records,
+            ))
+        })?;
     let (revisions, notes, applications, document_settings, previews, mut setting_records) =
         native_records;
     let settings = &scan.metadata.settings;
@@ -758,9 +767,8 @@ pub(crate) fn install<'ctx>(
                 ), "Rhino unit-binding setting message"))?;
                 losses.push_admitted(
                     ctx,
-                    crate::loss::RhinoLossCode::PresentationRecordDropped.note(
-                        ctx.copy_retained_text(&message, "Rhino unit-binding loss message")?,
-                    ),
+                    crate::loss::RhinoLossCode::PresentationRecordDropped
+                        .note(ctx.copy_retained_text(&message, "Rhino unit-binding loss message")?),
                     "Rhino document setting losses",
                 )?;
                 opaque_records.push_admitted(
@@ -865,9 +873,9 @@ pub(crate) fn install<'ctx>(
                 }
             } else if record.typecode == RENDER_USERDATA {
                 if render_settings_seen {
-                    match candidate_storage.with_storage(|| {
-                        render_userdata(ctx, scan.data, record, scan.archive)
-                    }) {
+                    match candidate_storage
+                        .with_storage(|| render_userdata(ctx, scan.data, record, scan.archive))
+                    {
                         Ok(_) => {
                             opaque_records.push_admitted(
                                 ctx,

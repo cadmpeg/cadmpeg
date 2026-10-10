@@ -107,7 +107,9 @@ pub(crate) fn admitted_canonical_json(
     let mut decoder = serde_json::Deserializer::from_slice(&raw);
     let canonical = serde::de::DeserializeSeed::deserialize(CanonicalSeed, &mut decoder)
         .map_err(|error| CodecError::malformed(error.to_string()))?;
-    decoder.end().map_err(|error| CodecError::malformed(error.to_string()))?;
+    decoder
+        .end()
+        .map_err(|error| CodecError::malformed(error.to_string()))?;
     admitted_json(ctx, &canonical, operation)
 }
 
@@ -294,7 +296,11 @@ pub(crate) fn finite(
     FiniteReal::new(value).map_or_else(
         || {
             let mut message = String::new();
-            ctx.try_reserve_retained_text(&mut message, label.len() + " is not finite".len(), "Rhino finite text")?;
+            ctx.try_reserve_retained_text(
+                &mut message,
+                label.len() + " is not finite".len(),
+                "Rhino finite text",
+            )?;
             message.push_str(label);
             message.push_str(" is not finite");
             Err(FramingError::structural(offset, message))
