@@ -844,19 +844,6 @@ mod tests {
     #[test]
     fn standard_admission_matches_context_free_native_routes() {
         let standard = super::StandardAdmission;
-        let facts = super::DocumentFacts {
-            id: "document".into(),
-            file_version: "1".to_owned().try_into().unwrap(),
-            program_version: None,
-            root_name: "Document".into(),
-            object_count: 1,
-            domains: vec!["Part".into(), "TechDraw".into(), "Assembly".into()],
-        };
-        assert_eq!(
-            facts.document_kind_with_admission(&standard).unwrap(),
-            facts.document_kind()
-        );
-
         for (name, expected) in [
             ("Body.brp", true),
             ("safe/../unused", false),
@@ -865,65 +852,6 @@ mod tests {
             assert_eq!(super::is_safe_entry_name(name), expected);
             assert_eq!(super::safe_entry_name(&standard, name).unwrap(), expected);
         }
-
-        let records = (0..2)
-            .map(|index| {
-                super::StringTableRecord::try_new(index, None, false, 0, None, Vec::new()).unwrap()
-            })
-            .collect::<Vec<_>>();
-        let expected = super::StringTables::try_from(records.clone()).unwrap();
-        let admitted = super::StringTables::from_records_with_admission(records, &standard)
-            .unwrap()
-            .unwrap();
-        assert_eq!(admitted, expected);
-    }
-
-    #[test]
-    fn archive_role_mapping_charges_only_the_copied_name() {
-        use cadmpeg_container::ZipSpanRole;
-        for role in [
-            ZipSpanRole::LocalSignature("Document.xml".into()),
-            ZipSpanRole::CompressedPayload("Body.brp".into()),
-            ZipSpanRole::Padding {
-                entry: Some("Body.brp".into()),
-            },
-        ] {
-            crate::test_support::with_service_context(&[], |ctx| {
-                assert_eq!(
-                    super::ArchiveSpanRole::from_zip_role_with(&role, |entry| ctx
-                        .copy_retained_text(entry, "FreeCAD archive role entry"))
-                    .unwrap(),
-                    super::ArchiveSpanRole::from(&role)
-                );
-            });
-            crate::test_support::assert_retained_refusal_at(
-                &[],
-                "FreeCAD archive role entry",
-                |ctx| {
-                    super::ArchiveSpanRole::from_zip_role_with(&role, |entry| {
-                        ctx.copy_retained_text(entry, "FreeCAD archive role entry")
-                    })
-                },
-            );
-            crate::test_support::refusal_at(
-                cadmpeg_core::decode::ResourceDimension::WorkUnits,
-                &[],
-                "FreeCAD archive role entry",
-                |ctx| {
-                    super::ArchiveSpanRole::from_zip_role_with(&role, |entry| {
-                        ctx.copy_retained_text(entry, "FreeCAD archive role entry")
-                    })
-                },
-            );
-        }
-        let role = super::ArchiveSpanRole::from_zip_role_with(
-            &ZipSpanRole::EndRecord,
-            |_| -> Result<String, std::convert::Infallible> {
-                panic!("unnamed role must not copy")
-            },
-        )
-        .unwrap();
-        assert_eq!(role, super::ArchiveSpanRole::EndRecord);
     }
 
     #[test]
@@ -3430,44 +3358,7 @@ impl From<cadmpeg_container::ZipSpanRole> for ArchiveSpanRole {
     }
 }
 
-impl From<&cadmpeg_container::ZipSpanRole> for ArchiveSpanRole {
-    fn from(role: &cadmpeg_container::ZipSpanRole) -> Self {
-        match Self::from_zip_role_with(role, |entry| {
-            Ok::<_, std::convert::Infallible>(entry.to_owned())
-        }) {
-            Ok(role) => role,
-            Err(never) => match never {},
-        }
-    }
-}
-
 impl ArchiveSpanRole {
-    /// Maps the ledger role with one caller-owned copy operation per entry name.
-    pub(crate) fn from_zip_role_with<E>(
-        role: &cadmpeg_container::ZipSpanRole,
-        mut copy: impl FnMut(&str) -> Result<String, E>,
-    ) -> Result<Self, E> {
-        use cadmpeg_container::ZipSpanRole;
-        Ok(match role {
-            ZipSpanRole::LocalSignature(entry) => Self::LocalSignature(copy(entry)?),
-            ZipSpanRole::LocalFields(entry) => Self::LocalFields(copy(entry)?),
-            ZipSpanRole::LocalName(entry) => Self::LocalName(copy(entry)?),
-            ZipSpanRole::LocalExtra(entry) => Self::LocalExtra(copy(entry)?),
-            ZipSpanRole::CompressedPayload(entry) => Self::CompressedPayload(copy(entry)?),
-            ZipSpanRole::DataDescriptor(entry) => Self::DataDescriptor(copy(entry)?),
-            ZipSpanRole::CentralSignature(entry) => Self::CentralSignature(copy(entry)?),
-            ZipSpanRole::CentralFields(entry) => Self::CentralFields(copy(entry)?),
-            ZipSpanRole::CentralName(entry) => Self::CentralName(copy(entry)?),
-            ZipSpanRole::CentralExtra(entry) => Self::CentralExtra(copy(entry)?),
-            ZipSpanRole::CentralComment(entry) => Self::CentralComment(copy(entry)?),
-            ZipSpanRole::Padding { entry: Some(entry) } => Self::EntryArchivePadding(copy(entry)?),
-            ZipSpanRole::Padding { entry: None } => Self::ArchivePadding,
-            ZipSpanRole::Zip64EndRecord => Self::Zip64EndRecord,
-            ZipSpanRole::Zip64EndLocator => Self::Zip64EndLocator,
-            ZipSpanRole::EndRecord => Self::EndRecord,
-        })
-    }
-
     /// Stable physical-ledger label retained on the CADIR wire.
     pub(crate) fn as_str(&self) -> &'static str {
         match self {

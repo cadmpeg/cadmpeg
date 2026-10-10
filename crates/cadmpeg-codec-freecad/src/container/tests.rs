@@ -152,13 +152,13 @@ fn archive_span_identity_refuses_at_retained_limit() {
             .used
             .checked_add(limit.additional)
             .expect("finite test budget");
-        if limit.operation == "FreeCAD native identity" {
+        if limit.operation == "FCStd archive span identity" {
             policy.limits.max_retained_bytes = threshold - 1;
             let (ctx, root) =
                 DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("archive root");
             assert!(matches!(super::scan(&ctx, root),
                 Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-                    if refusal.operation == "FreeCAD native identity"));
+                    if refusal.operation == "FCStd archive span identity"));
             return;
         }
         policy.limits.max_retained_bytes = threshold;
@@ -702,7 +702,7 @@ fn x62_xml_tree_items_are_admitted_before_allocation() {
 
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::CollectionItems,
-        "FCStd Document.xml node tree",
+        "FreeCAD document XML tree",
         |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -716,7 +716,7 @@ fn x62_xml_tree_items_are_admitted_before_allocation() {
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "FCStd Document.xml node tree"
+                && limit.operation == "FreeCAD document XML tree"
     ));
 }
 
@@ -746,14 +746,11 @@ fn x62_prefixed_object_envelope_is_admitted_before_the_xml_tree() {
 #[test]
 fn xml_envelope_scan_skips_comments_cdata_and_quoted_brackets() {
     let bytes = br#"<Document SchemaVersion="4"><!-- <Objects><Object/> --><Note attr=">"> <![CDATA[<Object/>]]> </Note><Objects><Object/><Object/></Objects></Document>"#;
-    let (bound, objects) = crate::test_support::with_service_context(&[], |ctx| {
-        super::xml_envelope_counts(ctx, bytes).expect("lexical admission")
+    let objects = crate::test_support::with_service_context(&[], |ctx| {
+        super::xml_object_count(ctx, bytes).expect("lexical admission")
     })
     .expect("lexical XML count");
     assert_eq!(objects, 2);
-    let parsed = roxmltree::Document::parse(std::str::from_utf8(bytes).expect("UTF-8 XML"))
-        .expect("XML document");
-    assert!(bound >= cadmpeg_core::decode::u64_from_index(parsed.descendants().count()));
 }
 
 #[test]
@@ -778,10 +775,10 @@ fn xml_envelope_scan_admits_each_visited_name_tail_and_markup_step() {
     ];
     for (xml, operation) in cases {
         crate::test_support::refusal_at(ResourceDimension::WorkUnits, &[], operation, |ctx| {
-            super::xml_envelope_counts(ctx, xml.as_bytes())
+            super::xml_object_count(ctx, xml.as_bytes())
         });
         crate::test_support::with_service_context(&[], |ctx| {
-            assert!(super::xml_envelope_counts(ctx, xml.as_bytes())
+            assert!(super::xml_object_count(ctx, xml.as_bytes())
                 .expect("admitted scan")
                 .is_some());
         });
@@ -798,7 +795,7 @@ fn xml_envelope_scan_does_not_charge_an_unvisited_malformed_tail() {
     policy.limits.max_work_units = WORK_TO_EMPTY_NAME;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert_eq!(
-        super::xml_envelope_counts(&ctx, bytes.as_bytes()).expect("early stop"),
+        super::xml_object_count(&ctx, bytes.as_bytes()).expect("early stop"),
         None
     );
     assert_eq!(ctx.resource_refusal(), None);
@@ -1151,5 +1148,46 @@ fn source_attribute_copies_and_summary_formatting_refuse_work() {
         assert!(
             matches!(super::summary_notes(&ctx, scan), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "FCStd schema note")
         );
+    });
+}
+
+#[test]
+fn source_attributes_admit_document_domain_classification() {
+    with_scanned_document(|scan| {
+        scan.document.object_count = 1;
+        scan.document.domains = (0..128).map(|index| format!("D{index}")).collect();
+        crate::test_support::refusal_at(
+            ResourceDimension::WorkUnits,
+            &[],
+            "FreeCAD document domain visits",
+            |ctx| super::source_attributes(ctx, scan),
+        );
+        crate::test_support::with_service_context(&[], |ctx| {
+            let attributes = super::source_attributes(ctx, scan).unwrap();
+            assert_eq!(
+                attributes.get("document_kind").unwrap(),
+                "application-document"
+            );
+        });
+    });
+}
+
+#[test]
+fn summary_notes_admit_document_domain_classification() {
+    with_scanned_document(|scan| {
+        scan.document.object_count = 1;
+        scan.document.domains = (0..128).map(|index| format!("D{index}")).collect();
+        crate::test_support::refusal_at(
+            ResourceDimension::WorkUnits,
+            &[],
+            "FreeCAD document domain visits",
+            |ctx| super::summary_notes(ctx, scan),
+        );
+        crate::test_support::with_service_context(&[], |ctx| {
+            let notes = super::summary_notes(ctx, scan).unwrap();
+            assert!(notes
+                .iter()
+                .any(|note| note == "document kind=application-document"));
+        });
     });
 }
