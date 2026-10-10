@@ -139,17 +139,23 @@ fn unresolved_revolution_target() -> cadmpeg_ir::features::Feature {
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-            cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Revolve {
-                construction: cadmpeg_ir::features::RevolveConstruction::Unresolved(cadmpeg_ir::features::PartialRevolveConstruction::Axis {
-                    profile: cadmpeg_ir::features::PlanarProfileRef::Sketch(SketchId::mint("synthetic:test:id#profile").unwrap()),
-                    extent: None,
-                    solid: None,
-                    face_maker: None,
-                    fuse_order: None,
-                    allow_multi_profile_faces: None,
-                }),
-                op: cadmpeg_ir::features::BooleanOp::Join,
-            })
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Revolve {
+                    construction: cadmpeg_ir::features::RevolveConstruction::Unresolved(
+                        cadmpeg_ir::features::PartialRevolveConstruction::Axis {
+                            profile: cadmpeg_ir::features::PlanarProfileRef::Sketch(
+                                SketchId::mint("synthetic:test:id#profile").unwrap(),
+                            ),
+                            extent: None,
+                            solid: None,
+                            face_maker: None,
+                            fuse_order: None,
+                            allow_multi_profile_faces: None,
+                        },
+                    ),
+                    op: cadmpeg_ir::features::BooleanOp::Join,
+                },
+            ),
         ),
         native_ref: None,
     }
@@ -167,7 +173,14 @@ fn revolution_axis_binding_refuses_collection_limit() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-            super::bind_profile_revolution_axes(&ctx, &mut [unresolved_revolution_target()], &histories, &[], &[], &[])
+            super::bind_profile_revolution_axes(
+                &ctx,
+                &mut [unresolved_revolution_target()],
+                &histories,
+                &[],
+                &[],
+                &[],
+            )
         },
     );
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
@@ -177,7 +190,14 @@ fn revolution_axis_binding_refuses_collection_limit() {
 fn revolution_axis_binding_refuses_work_limit() {
     let histories = single_revolution_history();
     crate::test_support::work_refusal_at("index SLDPRT revolution features", |ctx| {
-        super::bind_profile_revolution_axes(ctx, &mut [unresolved_revolution_target()], &histories, &[], &[], &[])
+        super::bind_profile_revolution_axes(
+            ctx,
+            &mut [unresolved_revolution_target()],
+            &histories,
+            &[],
+            &[],
+            &[],
+        )
     });
 }
 
@@ -195,8 +215,15 @@ fn revolution_axis_binding_without_target_needs_no_index_storage() {
     super::bind_profile_revolution_axes(&ctx, &mut [], &histories, &[], &[], &[]).unwrap();
     ctx.finish_session().unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let cadmpeg_core::CodecError::ResourceLimit(refusal) = ctx.charge_work(1, "test sticky revolution refusal").unwrap_err() else { panic!("work refusal"); };
-    assert!(matches!(super::bind_profile_revolution_axes(&ctx, &mut [], &histories, &[], &[], &[]), Err(cadmpeg_core::CodecError::ResourceLimit(actual)) if actual == refusal));
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) = ctx
+        .charge_work(1, "test sticky revolution refusal")
+        .unwrap_err()
+    else {
+        panic!("work refusal");
+    };
+    assert!(
+        matches!(super::bind_profile_revolution_axes(&ctx, &mut [], &histories, &[], &[], &[]), Err(cadmpeg_core::CodecError::ResourceLimit(actual)) if actual == refusal)
+    );
 }
 
 #[test]
@@ -1387,40 +1414,50 @@ fn omitted_origin_and_principal_axes_use_unique_maximum_incidence_support_lines(
             .expect("profile axis input fits root policy");
 
     assert_eq!(
-        profile_roster_origin_axis_endpoints(&ctx,
-"profile-native",
-&super::LaneMarkerIndex::new(&ctx, markers.iter().copied()).unwrap(),
-&mut super::ProfileEndpointQueries::new(&ctx, &lane, &markers).unwrap(),)
+        profile_roster_origin_axis_endpoints(
+            &ctx,
+            "profile-native",
+            &super::LaneMarkerIndex::new(&ctx, markers.iter().copied()).unwrap(),
+            &mut super::ProfileEndpointQueries::new(&ctx, &lane, &markers).unwrap(),
+        )
         .expect("origin axis scan fits service policy"),
         Some([[0.0, 0.0], [0.0, 0.01]])
     );
     assert_eq!(
-        profile_roster_principal_axis_endpoints(&ctx,
-"profile-native",
-&super::LaneMarkerIndex::new(&ctx, markers.iter().copied()).unwrap(),
-&mut super::ProfileEndpointQueries::new(&ctx, &lane, &markers).unwrap(),)
+        profile_roster_principal_axis_endpoints(
+            &ctx,
+            "profile-native",
+            &super::LaneMarkerIndex::new(&ctx, markers.iter().copied()).unwrap(),
+            &mut super::ProfileEndpointQueries::new(&ctx, &lane, &markers).unwrap(),
+        )
         .expect("principal axis scan fits service policy"),
         Some([[0.0, 0.0], [0.0, 1.0]])
     );
     crate::test_support::work_refusal_at("collect SLDPRT principal axis candidates", |ctx| {
-        profile_roster_principal_axis_endpoints(ctx,
-"profile-native",
-&super::LaneMarkerIndex::new(ctx, markers.iter().copied())?,
-&mut super::ProfileEndpointQueries::new(ctx, &lane, &markers)?,)
+        profile_roster_principal_axis_endpoints(
+            ctx,
+            "profile-native",
+            &super::LaneMarkerIndex::new(ctx, markers.iter().copied())?,
+            &mut super::ProfileEndpointQueries::new(ctx, &lane, &markers)?,
+        )
     });
-    assert!(super::profile_roster_implicit_axis_endpoints(&ctx,
-&lane,
-"profile-native",
-&super::LaneMarkerIndex::new(&ctx, markers.iter().copied()).unwrap(),
-&mut super::ProfileEndpointQueries::new(&ctx, &lane, &markers).unwrap(),)
+    assert!(super::profile_roster_implicit_axis_endpoints(
+        &ctx,
+        &lane,
+        "profile-native",
+        &super::LaneMarkerIndex::new(&ctx, markers.iter().copied()).unwrap(),
+        &mut super::ProfileEndpointQueries::new(&ctx, &lane, &markers).unwrap(),
+    )
     .unwrap()
     .is_none());
     crate::test_support::work_refusal_at("find SLDPRT implicit profile axis", |ctx| {
-        super::profile_roster_implicit_axis_endpoints(ctx,
-&lane,
-"profile-native",
-&super::LaneMarkerIndex::new(ctx, markers.iter().copied())?,
-&mut super::ProfileEndpointQueries::new(ctx, &lane, &markers)?,)
+        super::profile_roster_implicit_axis_endpoints(
+            ctx,
+            &lane,
+            "profile-native",
+            &super::LaneMarkerIndex::new(ctx, markers.iter().copied())?,
+            &mut super::ProfileEndpointQueries::new(ctx, &lane, &markers)?,
+        )
     });
 }
 

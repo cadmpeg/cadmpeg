@@ -1,8 +1,8 @@
 //! Sketch profile projection from marker and compact records.
 
-use super::classes::is_sketch_block_object;
 use super::assembly::is_supplemental_config_lane;
 use super::bindings::history_metadata_ids;
+use super::classes::is_sketch_block_object;
 use super::compact_reference_planes::CompactReferencePlaneIndex;
 use super::curves::{
     closed_marker_profiles, closed_marker_profiles_allowing_shared_endpoints,

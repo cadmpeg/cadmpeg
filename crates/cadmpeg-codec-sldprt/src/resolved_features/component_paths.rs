@@ -118,14 +118,23 @@ impl<'a, 'ctx> FeaturesBySource<'a, 'ctx> {
         let mut seen = HashSet::new();
         let mut identities = Vec::new();
         for component in ctx.admit_iter(components, OPERATION)? {
-            let Some(ComponentProducer::Feature(feature)) = self.component(ctx, component, OPERATION)? else {
+            let Some(ComponentProducer::Feature(feature)) =
+                self.component(ctx, component, OPERATION)?
+            else {
                 continue;
             };
-            if seen_storage.with_storage(|| ctx.insert_hash_set(&mut seen, feature.id.as_str(), OPERATION))? {
-                storage.with_storage(|| ctx.push_vec(&mut identities, feature.id.as_str(), OPERATION))?;
+            if seen_storage
+                .with_storage(|| ctx.insert_hash_set(&mut seen, feature.id.as_str(), OPERATION))?
+            {
+                storage.with_storage(|| {
+                    ctx.push_vec(&mut identities, feature.id.as_str(), OPERATION)
+                })?;
             }
         }
-        Ok(ComponentInputIdentities { identities, _storage: storage })
+        Ok(ComponentInputIdentities {
+            identities,
+            _storage: storage,
+        })
     }
 
     /// The distinct retained identities in component order.
@@ -237,7 +246,8 @@ pub(super) fn component_path_input_identities<'a, 'ctx>(
         features,
         |consumer| ctx.equal(consumer.id.as_str(), consumer_ref, OPERATION),
         OPERATION,
-    )? else {
+    )?
+    else {
         return Ok(empty);
     };
     let mut producers = FeaturesBySource::new(ctx, features)?.identities(ctx, components)?;
@@ -678,7 +688,9 @@ pub(super) fn profile_owns_intervening_sketch_blocks<'a>(
         ctx.get_btree_map(&profile.properties, "DissectableChildren", OWNERSHIP)?
     {
         let mut children = BTreeSet::new();
-        for token in super::child_sources::child_tokens(ctx, encoded, "parse SLDPRT profile block children") {
+        for token in
+            super::child_sources::child_tokens(ctx, encoded, "parse SLDPRT profile block children")
+        {
             let value = ctx.trim_text(token?, "trim SLDPRT profile child identity")?;
             let Ok(source) = ctx.parse_text::<u32>(value, "parse SLDPRT profile child identity")?
             else {

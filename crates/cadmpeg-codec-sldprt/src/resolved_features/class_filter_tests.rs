@@ -68,11 +68,12 @@ fn unmatched_class_filter_charges_operand_comparisons() {
             result
         },
     );
-    let CodecError::ResourceLimit(limit) = error else { panic!("work refusal"); };
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("work refusal");
+    };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(limit.operation, "compare SLDPRT filtered class name");
     assert!(limit.additional > 1);
-
 }
 
 #[test]

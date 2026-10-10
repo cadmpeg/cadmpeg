@@ -78,9 +78,10 @@ fn unmatched_pattern_class_lookup_charges_operand_comparisons() {
             result
         },
     );
-    let CodecError::ResourceLimit(limit) = error else { panic!("work refusal"); };
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("work refusal");
+    };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(limit.operation, "compare SLDPRT linear pattern class name");
     assert!(limit.additional > 1);
-
 }

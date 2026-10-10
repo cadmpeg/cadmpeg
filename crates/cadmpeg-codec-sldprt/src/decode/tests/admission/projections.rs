@@ -1492,9 +1492,11 @@ fn selected_thread_source(geometry: bool) -> Vec<u8> {
         "Contents/Keywords",
         br#"<Keywords><Feature Name="Custom" Type="Custom" id="10"><Dimension Name="Length">1mm</Dimension></Feature><Feature Name="Thread" Type="CosmeticThread" id="12"/></Keywords>"#,
     ));
-    let mut resolved = crate::test_support::history::resolved_feature_classes_with_ids(&[
-        ("moCosmeticThread_c", "Thread", 12),
-    ]);
+    let mut resolved = crate::test_support::history::resolved_feature_classes_with_ids(&[(
+        "moCosmeticThread_c",
+        "Thread",
+        12,
+    )]);
     let class = b"moCompFace_c";
     resolved.extend_from_slice(&[0xff, 0xff, 1, 0]);
     resolved.extend_from_slice(&u16::try_from(class.len()).unwrap().to_le_bytes());
@@ -1505,13 +1507,20 @@ fn selected_thread_source(geometry: bool) -> Vec<u8> {
     resolved.extend_from_slice(&1u32.to_le_bytes());
     resolved.extend_from_slice(&[0, 2, 0, 0]);
     resolved.extend_from_slice(&[0; 4]);
-    resolved.extend_from_slice(&[0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2, 0x54, 0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2, 0x54]);
+    resolved.extend_from_slice(&[
+        0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2, 0x54, 0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2,
+        0x54,
+    ]);
     resolved.extend_from_slice(&[0, 0, 0x32, 0x80, 0, 0]);
     let mut signature = [0x34, 0x80, 0x37, 0, 0, 0, 0, 0, 2, 0, 0, 0];
     signature[4..8].copy_from_slice(&10u32.to_le_bytes());
     resolved.extend_from_slice(&signature);
     resolved.extend_from_slice(&7u32.to_le_bytes());
-    source.extend(make_block(0x45, "Contents/Config-0-ResolvedFeatures", &resolved));
+    source.extend(make_block(
+        0x45,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved,
+    ));
     source
 }
 
