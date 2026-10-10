@@ -1264,7 +1264,7 @@ pub(super) fn circle_dimension_handle_driver<'a>(
     };
     // No following relation class states no upper bound on this relation.
     let mut next_relation_offset = None;
-    let mut handle_offsets = Vec::new();
+    let mut first_handle_offset = None;
     for class in ctx.admit_iter(&lane.classes, "find SLDPRT circle relation end")? {
         if class.offset > first.offset && relation_family(&class.name).is_some() {
             next_relation_offset = Some(
@@ -1272,21 +1272,11 @@ pub(super) fn circle_dimension_handle_driver<'a>(
             );
         }
         if class.offset > first.offset && class.name == "sgEntHandle" {
-            temporary_storage.with_storage(|| {
-                ctx.push_vec(
-                    &mut handle_offsets,
-                    class.offset,
-                    "collect SLDPRT circle handle classes",
-                )
-            })?;
+            first_handle_offset = Some(
+                first_handle_offset.map_or(class.offset, |offset: u64| offset.min(class.offset)),
+            );
         }
     }
-    ctx.sort_unstable_by(
-        &mut handle_offsets,
-        |offset| offset,
-        Ord::cmp,
-        "sort SLDPRT circle handle classes",
-    )?;
     let mut previous = None;
     let mut candidate = None;
     let mut ambiguous = false;
@@ -1296,9 +1286,7 @@ pub(super) fn circle_dimension_handle_driver<'a>(
             continue;
         };
         // A handle class after the first scalar and before the display scalar.
-        let declared_handle = handle_offsets
-            .first()
-            .is_some_and(|offset| *offset < display.offset);
+        let declared_handle = first_handle_offset.is_some_and(|offset| offset < display.offset);
         let qualified_pair = declared_handle
             && display.role == FeatureInputScalarRole::Display
             && driving.role == FeatureInputScalarRole::Driving

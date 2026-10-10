@@ -746,3 +746,116 @@ fn circle_handle_fixed_qualification_skips_variable_matches() {
         }
     }
 }
+
+fn unordered_handle_fixture() -> (FeatureInputLane, crate::records::FeatureInputRelationInstance) {
+    let first = circle_scalar(20, "name", FeatureInputScalarRole::Display, None);
+    let display = circle_scalar(40, "name", FeatureInputScalarRole::Display, None);
+    let driving = circle_scalar(50, "name", FeatureInputScalarRole::Driving, None);
+    let relation = crate::records::FeatureInputRelationInstance {
+        id: "relation".into(), parent: "lane".into(), ordinal: 0, offset: 20,
+        family: FeatureInputRelationFamily::CircleDiameter,
+        class_ref: "class".into(), feature_ref: "sketch".into(),
+        scalars: crate::records::relation_scalars::RelationScalars::from_refs(
+            vec![first.id.clone()], None, Some(first.id.clone()),
+        ).unwrap(),
+        operands: first.operands.clone(),
+    };
+    let mut input = lane(
+        vec![class(10, "sgCircleDim"), class(45, "sgEntHandle"), class(31, "sgEntHandle"), class(55, "sgEntHandle")],
+        vec![first, display, driving],
+    );
+    input.names.push(FeatureInputName {
+        id: "name".into(), parent: "lane".into(), ordinal: 0, offset: 0,
+        object_id: None, value: "D1".into(),
+    });
+    (input, relation)
+}
+
+#[test]
+fn circle_handle_minimum_needs_no_offset_vector() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    assert_eq!(std::mem::size_of::<&FeatureInputScalar>(), 8);
+    assert_eq!(std::mem::size_of::<(&str, &str)>(), 32);
+    let (input, relation) = unordered_handle_fixture();
+    let mut policy = DecodePolicy::service();
+    // Four scalar-pointer slots and four name-pair buckets plus alignment/control bytes.
+    const MATERIALIZED: u64 = 4 * 8 + 4 * 32 + 15 + 4 + 16;
+    policy.limits.max_materialized_bytes = MATERIALIZED;
+    policy.limits.max_retained_bytes = 0;
+    // Three borrowed scalar slots and one name-map entry, repeated sixty-four times.
+    policy.limits.max_collection_items = 4 * 64;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    for _ in 0..64 {
+        let driver = circle_dimension_handle_driver(&ctx, &relation, &input).unwrap().unwrap();
+        assert!(std::ptr::eq(driver, &input.scalars[2]));
+        assert_eq!(driver.id, "scalar-50");
+        let released = ctx.reserve_scoped(MATERIALIZED, "released circle handle workspace").unwrap();
+        drop(released);
+    }
+    assert_eq!(ctx.resource_refusal(), None);
+}
+
+#[test]
+fn circle_handle_minimum_leaves_offset_operations_unexecuted() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let (input, relation) = unordered_handle_fixture();
+    for operation in ["collect SLDPRT circle handle classes", "sort SLDPRT circle handle classes"] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        policy.limits.max_materialized_bytes = 195;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 4;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+        let driver = circle_dimension_handle_driver(&ctx, &relation, &input).unwrap().unwrap();
+        assert!(std::ptr::eq(driver, &input.scalars[2]));
+        assert_eq!(ctx.resource_refusal(), None);
+        let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, operation)
+        else { panic!("minimum fold must leave obsolete offset operation probe armed"); };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, operation);
+        assert_eq!(limit.additional, 1);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert!(matches!(ctx.charge_work(0, "after unused handle offset operation"),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        drop(probe);
+    }
+}
+
+#[test]
+fn circle_handle_minimum_refuses_required_name_workspace() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let (input, relation) = unordered_handle_fixture();
+    for (dimension, cap, used, additional) in [
+        (ResourceDimension::MaterializedBytes, 194, 32, 163),
+        (ResourceDimension::CollectionItems, 3, 3, 1),
+    ] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 195;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 4;
+        match dimension {
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+            _ => panic!("handle workspace dimension"),
+        }
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let Err(CodecError::ResourceLimit(limit)) = circle_dimension_handle_driver(&ctx, &relation, &input)
+        else { panic!("required name workspace must be admitted before allocation"); };
+        assert_eq!(limit.dimension, dimension);
+        assert_eq!(limit.operation, "index SLDPRT relation records");
+        assert_eq!(limit.limit, cap);
+        assert_eq!(limit.used, used);
+        assert_eq!(limit.additional, additional);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert!(matches!(ctx.charge_work(0, "after handle name workspace refusal"),
+            Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit));
+    }
+}
