@@ -80,7 +80,7 @@ pub(super) struct CarrierIndex {
 
 impl CarrierIndex {
     pub(super) fn from_ir(ir: &CadIr, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        // Preserve the original empty-index route's sticky session gate.
+        // Check session refusal even when all carrier arenas are empty.
         ctx.charge_work(0, "STEP from ir traversal")?;
         let mut curves = HashMap::new();
         let mut curve_source = ir.model.curves.iter().enumerate();

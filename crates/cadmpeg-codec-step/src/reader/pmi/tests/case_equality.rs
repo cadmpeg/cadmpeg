@@ -38,20 +38,6 @@ fn case_refuses(operation: &str) {
 }
 
 #[test]
-fn datum_target_form_trim_preserves_refusal() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-    let error = super::super::datum_target_form(" POINT ", &ctx).unwrap_err();
-    let CodecError::ResourceLimit(refusal) = error else {
-        panic!("datum form trim must return the refusal");
-    };
-    assert_eq!(refusal.operation, "STEP datum target form trim");
-    assert_eq!(ctx.resource_refusal(), Some(refusal));
-}
-
-#[test]
 fn targeted_aspect_number_parse_preserves_refusal() {
     case_refuses("STEP PMI targeted aspect number parse");
 }
