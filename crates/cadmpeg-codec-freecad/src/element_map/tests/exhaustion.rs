@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Exact source exhaustion and fused empty-route admission.
+//! Exact source exhaustion and actual visited-input admission.
 
 use crate::element_map::{
     bind_topology, element_map_size, mapped_name_count, parse_legacy_records, parse_string_table,
@@ -152,32 +152,7 @@ fn field_refusal_preserves_unvisited_suffix_and_original_fuse() {
     });
 }
 
-#[test]
-fn empty_and_completed_element_helpers_return_original_refusal() {
-    with_work(0, |ctx| {
-        let mut completed = TextScanner::new("");
-        assert_eq!(completed.next_field(ctx).unwrap(), Some(""));
-        ctx.charge_work(1, "test original element fuse")
-            .unwrap_err();
-        let original = ctx.resource_refusal().unwrap();
-        let mut scanner = TextScanner::new("");
-        assert_original(scanner.skip_whitespace(ctx), original);
-        assert_original(scanner.next(ctx), original);
-        assert_original(scanner.next_field(ctx), original);
-        assert_original(completed.next_field(ctx), original);
-        assert_original(scanner.next_legacy_id(ctx), original);
-        assert_original(parse_string_table(ctx, b"", 0, false), original);
-        assert_original(
-            parse_legacy_records(ctx, &mut TextScanner::new_ascii(""), 0),
-            original,
-        );
-        let map = parsed(Vec::new());
-        assert_original(element_map_size(ctx, &map), original);
-        assert_original(mapped_name_count(ctx, &map), original);
-        assert_original(bind_topology(ctx, &mut [], &[]), original);
-        assert_eq!(ctx.resource_refusal(), Some(original));
-    });
-}
+
 
 #[test]
 fn legacy_record_and_zero_id_ranges_preserve_grouped_names() {

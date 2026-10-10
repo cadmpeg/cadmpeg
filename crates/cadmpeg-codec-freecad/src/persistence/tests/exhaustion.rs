@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Exact attribute visits and original refusal on empty scans.
+//! Exact attribute visits and empty value populations.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
 #[test]
-fn empty_link_alias_attributes_need_no_work_and_keep_original_refusal() {
+fn empty_link_alias_attributes_need_no_work() {
     let xml = roxmltree::Document::parse("<Link/>").unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -16,15 +16,6 @@ fn empty_link_alias_attributes_need_no_work_and_keep_original_refusal() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     super::super::reject_link_aliases(xml.root_element(), &["obj"], &ctx).unwrap();
     assert_eq!(ctx.resource_refusal(), None);
-    let CodecError::ResourceLimit(original) =
-        ctx.charge_work(1, "prior persistence refusal").unwrap_err()
-    else {
-        panic!("work refusal")
-    };
-    assert!(
-        matches!(super::super::reject_link_aliases(xml.root_element(), &["obj"], &ctx),
-        Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
 }
 
 #[test]

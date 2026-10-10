@@ -38,23 +38,6 @@ fn gui_color_list_validation_checks_layout_without_materializing_values() {
         super::super::validate_gui_list_payloads(&ctx, &properties, &entries, false)
             .expect("color-list layout needs no materialized values");
     assert!(material_lists.is_empty());
-
-    let cadmpeg_core::CodecError::ResourceLimit(original_refusal) = ctx
-        .charge_work(u64::MAX, "test fused refusal")
-        .expect_err("test must fuse the decode budget")
-    else {
-        panic!("expected a resource refusal");
-    };
-    let layout_refusal = super::super::validate_color_list_layout(
-        &ctx,
-        cadmpeg_core::decode::View::over_retained(&bytes),
-        "colors.bin",
-    )
-    .expect_err("color-list layout must preserve a prior refusal");
-    assert!(matches!(
-        layout_refusal,
-        cadmpeg_core::CodecError::ResourceLimit(ref failure) if failure == &original_refusal
-    ));
 }
 
 #[test]
@@ -83,18 +66,4 @@ fn presentation_without_providers_skips_the_property_owner_index() {
     let mut losses = Vec::new();
     super::super::transfer_neutral_presentation(&ctx, &mut plan, &graph, None, &mut losses)
         .expect("no provider consumes the property owner index");
-
-    let cadmpeg_core::CodecError::ResourceLimit(original_refusal) = ctx
-        .charge_work(u64::MAX, "test fused refusal")
-        .expect_err("test must fuse the decode budget")
-    else {
-        panic!("expected a resource refusal");
-    };
-    let refusal =
-        super::super::transfer_neutral_presentation(&ctx, &mut plan, &graph, None, &mut losses)
-            .expect_err("provider-free path must preserve a prior refusal");
-    assert!(matches!(
-        refusal,
-        cadmpeg_core::CodecError::ResourceLimit(ref failure) if failure == &original_refusal
-    ));
 }

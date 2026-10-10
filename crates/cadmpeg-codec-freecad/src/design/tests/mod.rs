@@ -425,7 +425,7 @@ fn draft_face_identities_refuse_at_retained_limits() {
             super::draft_definition(
                 ctx,
                 &[&faces, &neutral, &angle],
-                &super::ObjectIndex::new(ctx, &[])?,
+                &super::ObjectIndex::new(ctx, &[]),
                 &std::collections::BTreeMap::new(),
             )
         });

@@ -32,9 +32,6 @@ pub(crate) fn transfer(
     properties: &[PropertyRecord],
     entries: &BTreeMap<String, View<'_>>,
 ) -> Result<Vec<ProductNodeRecord>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut owner_index = None;
     let mut output = Vec::new();
     let mut object_visits = objects.iter();
@@ -191,7 +188,6 @@ fn linked_object_names(
     links: &[Option<crate::native::LinkTarget>],
 ) -> Result<Vec<String>, CodecError> {
     let mut names = Vec::new();
-    ctx.charge_work(0, "fcstd product linked objects")?;
     let mut link_visits = links.iter();
     while link_visits.len() != 0 {
         let Some(link) = ctx.next_charged(&mut link_visits, "fcstd product linked objects")? else {
@@ -215,7 +211,6 @@ fn nonempty_subelements(
     ctx: &DecodeContext<'_>,
     values: &[String],
 ) -> Result<Vec<String>, CodecError> {
-    ctx.charge_work(0, "fcstd product subelements")?;
     let mut subelements = Vec::new();
     let mut value_visits = values.iter();
     while value_visits.len() != 0 {
@@ -237,7 +232,6 @@ fn product_record_index<'a>(
     ctx: &DecodeContext<'_>,
     records: &'a [ProductNodeRecord],
 ) -> Result<HashMap<&'a str, &'a ProductNodeRecord>, CodecError> {
-    ctx.charge_work(0, "fcstd product record index")?;
     let mut index = HashMap::new();
     let mut record_visits = records.iter();
     while record_visits.len() != 0 {
@@ -276,9 +270,6 @@ pub(crate) fn transfer_neutral(
     payloads: &[ShapePayloadRecord],
     bodies: &[Body],
 ) -> Result<(Vec<ProductDefinition>, Vec<Occurrence>), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut storage = ctx.reserve_scoped(0, "fcstd neutral product lookups")?;
     let record_by_object = storage.with_storage(|| product_record_index(ctx, records))?;
     let mut component_objects = Vec::new();

@@ -21,8 +21,6 @@ fn grid_row_allocation_refuses_before_unmoved_values() {
         assert_eq!(original.operation, "FreeCAD B-rep surface row values");
         assert_eq!(original.used, used);
         assert_eq!(original.additional, 2);
-        assert!(matches!(grid_rows::<u8>(&ctx, (Vec::new(), None), 0),
-            Err(CodecError::ResourceLimit(actual)) if actual == original));
     }
 }
 
@@ -39,7 +37,7 @@ fn grid_rows_charge_each_moved_value_once_and_keep_order() {
 }
 
 #[test]
-fn empty_and_invalid_grid_dimensions_need_no_work_and_keep_original_refusal() {
+fn empty_and_invalid_grid_dimensions_need_no_work() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
@@ -55,13 +53,6 @@ fn empty_and_invalid_grid_dimensions_need_no_work_and_keep_original_refusal() {
         if message == "surface grid dimensions do not match pole count")
     );
     assert_eq!(ctx.resource_refusal(), None);
-    let Err(CodecError::ResourceLimit(original)) = ctx.charge_work(1, "prior grid refusal") else {
-        panic!("work refusal")
-    };
-    for width in [0, 2] {
-        assert!(matches!(grid_rows::<u8>(&ctx, (Vec::new(), None), width),
-            Err(CodecError::ResourceLimit(actual)) if actual == original));
-    }
 }
 
 #[test]
@@ -101,7 +92,7 @@ fn reference_prefix_keeps_utf8_suffix_and_digit_only_exhaustion() {
 }
 
 #[test]
-fn empty_token_cursor_returns_truncation_without_work_and_preserves_refusal() {
+fn empty_token_cursor_returns_truncation_without_work() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
@@ -112,11 +103,6 @@ fn empty_token_cursor_returns_truncation_without_work_and_preserves_refusal() {
         if message == "truncated test token in text B-rep Curves table")
     );
     assert_eq!(ctx.resource_refusal(), None);
-    let Err(CodecError::ResourceLimit(original)) = ctx.charge_work(1, "prior token refusal") else {
-        panic!("work refusal")
-    };
-    assert!(matches!(cursor.next("test token"),
-        Err(CodecError::ResourceLimit(actual)) if actual == original));
 }
 
 #[test]
@@ -228,7 +214,7 @@ fn periodic_pole_and_weight_copies_are_admitted_and_keep_source_order() {
 }
 
 #[test]
-fn periodic_copy_refuses_before_copying_and_preserves_the_original_refusal() {
+fn periodic_copy_refuses_before_copying() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
@@ -244,10 +230,6 @@ fn periodic_copy_refuses_before_copying_and_preserves_the_original_refusal() {
     assert_eq!(original.operation, "FreeCAD periodic B-rep curve poles");
     assert_eq!(original.used, 0);
     assert_eq!(points, [1, 2]);
-    assert!(
-        matches!(super::super::append_periodic_curve_poles(&ctx, &mut points, None, 0),
-        Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
 }
 
 #[test]
@@ -268,7 +250,7 @@ fn periodic_weight_error_keeps_the_original_pole_copy_phase() {
 }
 
 #[test]
-fn nonperiodic_knots_and_zero_padding_move_no_storage_and_preserve_refusal() {
+fn nonperiodic_knots_and_zero_padding_move_no_storage() {
     use cadmpeg_ir::scalar::FiniteReal;
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -288,16 +270,4 @@ fn nonperiodic_knots_and_zero_padding_move_no_storage_and_preserve_refusal() {
     super::super::append_periodic_curve_poles(&ctx, &mut points, None, 0).unwrap();
     assert_eq!(points, [1]);
     assert_eq!(ctx.resource_refusal(), None);
-    let Err(CodecError::ResourceLimit(original)) = ctx.charge_work(1, "prior periodic refusal")
-    else {
-        panic!("work refusal")
-    };
-    assert!(
-        matches!(super::super::normalize_periodic_knots(&ctx, (Vec::new(), None), 1, false),
-        Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
-    assert!(
-        matches!(super::super::append_periodic_curve_poles(&ctx, &mut points, None, 0),
-        Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
 }

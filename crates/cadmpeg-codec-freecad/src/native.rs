@@ -579,42 +579,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn empty_shared_admissions_preserve_prior_resource_refusal() {
-        crate::test_support::with_service_context(&[], |ctx| {
-            let error = ctx.charge_work(u64::MAX, "prior refusal").unwrap_err();
-            let cadmpeg_core::CodecError::ResourceLimit(expected) = error else {
-                panic!("work refusal");
-            };
-            let facts = super::DocumentFacts {
-                id: "document".into(),
-                file_version: "1".to_owned().try_into().unwrap(),
-                program_version: None,
-                root_name: "Document".into(),
-                object_count: 0,
-                domains: Vec::new(),
-            };
-            let admit = |length, operation| {
-                ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)
-            };
-            for result in [
-                super::is_safe_entry_name_charged(ctx, "").map(|_| ()),
-                facts.document_kind_with_admission(ctx).map(|_| ()),
-                super::StringTables::from_records_with_admission(Vec::new(), ctx).map(|_| ()),
-                super::StringTableRecord::from_parts_with_admission(
-                    (0, None, false, 0, None),
-                    Vec::new(),
-                    admit,
-                    |_, _| panic!("empty table has no component lookup"),
-                    |_, _| panic!("empty table has no insertion"),
-                )
-                .map(|_| ()),
-            ] {
-                assert!(matches!(result,
-                    Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == expected));
-            }
-        });
-    }
+
 
     #[test]
     fn entry_reference_admission_stops_after_first_invalid_reference() {
@@ -1837,7 +1802,6 @@ fn count_map_cost(
     operation: &'static str,
 ) -> Result<u64, CodecError> {
     let mut total = 0_u64;
-    ctx.charge_work(0, operation)?;
     for (name, count) in map {
         ctx.charge_work(1, operation)?;
         total = cost_sum(
@@ -3597,7 +3561,6 @@ impl DocumentFacts {
         &self,
         admission: &A,
     ) -> Result<DocumentKind, A::Error> {
-        admission.charge_work(0, "FreeCAD document domain visits")?;
         let mut kind = if self.object_count == 0 {
             DocumentKind::Empty
         } else {
@@ -3929,7 +3892,6 @@ impl LinkTarget {
             .transpose()?;
         let mut subelements =
             ctx.collection_vec(self.subelements.len(), "FreeCAD link subelement copies")?;
-        ctx.charge_work(0, "FreeCAD link subelement visits")?;
         for subelement in &self.subelements {
             ctx.charge_work(1, "FreeCAD link subelement visits")?;
             subelements.push(ctx.copy_retained_text(subelement, "FreeCAD link subelement text")?);
@@ -4424,7 +4386,6 @@ pub(crate) fn is_safe_entry_name_charged(
 
 /// Reads each byte once, stopping at the first unsafe path component.
 fn safe_entry_name<A: Admission>(admission: &A, name: &str) -> Result<bool, A::Error> {
-    admission.charge_work(0, "FCStd entry name check")?;
     let bytes = name.as_bytes();
     let mut start = 0;
     let mut index = 0;
@@ -4755,7 +4716,6 @@ impl StringTables {
         records: Vec<StringTableRecord>,
         admission: &A,
     ) -> Result<Result<Self, cadmpeg_ir::native::NativeConvertError>, A::Error> {
-        admission.charge_work(0, "FreeCAD string table position visits")?;
         let mut position = 0;
         while position < records.len() {
             admission.charge_work(1, "FreeCAD string table position visits")?;
@@ -4841,7 +4801,6 @@ impl StringTableRecord {
         mut known: impl FnMut(&std::collections::BTreeSet<i64>, i64) -> Result<bool, E>,
         mut remember: impl FnMut(&mut std::collections::BTreeSet<i64>, i64) -> Result<bool, E>,
     ) -> Result<Result<Self, &'static str>, E> {
-        admit(0, "FreeCAD string table entry visits")?;
         let mut seen = std::collections::BTreeSet::new();
         let mut position = 0;
         while position < entries.len() {

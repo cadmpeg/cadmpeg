@@ -291,8 +291,6 @@ fn missing_first_entry_does_not_charge_unvisited_entry_suffix() {
     with_scanned_document(|scan| {
         scan.entries[0].name = "missing".to_owned();
         let work_cap = successful_work_cap(|ctx| {
-            ctx.charge_work(0, "FCStd entry reference index")
-                .expect("the original empty property-source check succeeds");
             let mut entries = scan.entries.iter();
             let entry = ctx
                 .next_charged(&mut entries, "FCStd entry records")
@@ -465,7 +463,7 @@ fn nested_gui_refusal_does_not_charge_unvisited_document_suffix() {
 }
 
 #[test]
-fn empty_container_sources_are_work_free_and_keep_an_existing_fuse() {
+fn empty_container_sources_are_work_free() {
     let empty: [crate::native::ByteSpan; 0] = [];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
@@ -494,51 +492,6 @@ fn empty_container_sources_are_work_free_and_keep_an_existing_fuse() {
             .is_empty());
     });
     assert_eq!(ctx.resource_refusal(), None);
-
-    let arena = DecodeArena::new();
-    let (fused_ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within input limits");
-    let cadmpeg_core::CodecError::ResourceLimit(original) = fused_ctx
-        .charge_work(1, "prior source refusal")
-        .expect_err("the zero work cap fuses on positive work")
-    else {
-        panic!("the zero work cap fuses on positive work");
-    };
-    let assert_prior_fuse = |error: cadmpeg_core::CodecError| {
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit == original)
-        );
-    };
-    assert_prior_fuse(
-        super::chain_is_exact(&fused_ctx, empty.iter(), 0, "FCStd physical span chain")
-            .expect_err("empty chain preserves an existing fuse"),
-    );
-    assert_prior_fuse(
-        super::logical_ledger(
-            &fused_ctx,
-            &[],
-            &[],
-            &crate::gui::Graph::default(),
-            &[],
-            &[],
-            &[],
-        )
-        .expect_err("empty logical source preserves an existing fuse"),
-    );
-    assert_prior_fuse(
-        super::byte_coverage(&fused_ctx, &[], &[], &[], 0)
-            .expect_err("empty coverage source preserves an existing fuse"),
-    );
-    with_scanned_document(|scan| {
-        scan.entries.clear();
-        let error = super::entry_records(&fused_ctx, scan, &[])
-            .expect_err("empty entry source preserves an existing fuse");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit == original)
-        );
-    });
 }
 
 fn resource_entry_record() -> crate::native::EntryRecord {

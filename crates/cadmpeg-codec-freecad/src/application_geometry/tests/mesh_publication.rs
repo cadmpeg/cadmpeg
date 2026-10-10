@@ -146,8 +146,6 @@ fn mesh_source_refusal_preserves_original_limit() {
             if let Err(CodecError::ResourceLimit(original)) = &result {
                 assert_eq!(original.dimension, ResourceDimension::RetainedBytes);
                 assert_eq!(ctx.resource_refusal(), Some(*original));
-                assert!(matches!(ctx.charge_retained(0, "later mesh publication"),
-                    Err(CodecError::ResourceLimit(repeated)) if repeated == *original));
             }
             result
         },

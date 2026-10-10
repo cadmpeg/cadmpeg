@@ -942,9 +942,6 @@ fn scalar_value(
     type_name: &str,
     value: &ValueRecord,
 ) -> Result<Option<FiniteReal>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let allowed_attributes: &[&str] =
         if name == "Scale" && type_name == "App::PropertyFloatConstraint" {
             &["value", "min", "max", "step"]

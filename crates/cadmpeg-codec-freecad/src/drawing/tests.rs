@@ -21,7 +21,7 @@ fn drawing_diagnostic_refuses_at_matching_retained_limit() {
 }
 
 #[test]
-fn drawing_empty_exact_sources_are_free_and_keep_original_refusal() {
+fn drawing_empty_exact_sources_are_free() {
     let scalar = crate::native::ValueRecord {
         tag: "Float".into(),
         order: 0,
@@ -45,18 +45,6 @@ fn drawing_empty_exact_sources_are_free_and_keep_original_refusal() {
     let index = super::ensure_unique_property_names(&ctx, &[]).expect("empty property index");
     assert!(index.0.is_empty());
     drop(index);
-    let cadmpeg_core::CodecError::ResourceLimit(original) = ctx
-        .charge_work(1, "prior drawing source refusal")
-        .expect_err("work limit")
-    else {
-        panic!("resource refusal")
-    };
-    assert!(
-        matches!(super::scalar_value(&ctx, "X", "App::PropertyFloat", &scalar),
-        Err(cadmpeg_core::CodecError::ResourceLimit(repeated)) if repeated == original)
-    );
-    assert!(matches!(super::ensure_unique_property_names(&ctx, &[]),
-        Err(cadmpeg_core::CodecError::ResourceLimit(repeated)) if repeated == original));
 }
 
 #[test]
@@ -82,7 +70,7 @@ fn drawing_record_collection_refuses_at_caller_limit() {
 }
 
 #[test]
-fn drawing_empty_object_and_neutral_transfers_are_zero_work_and_sticky() {
+fn drawing_empty_object_and_neutral_transfers_are_zero_work() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_work_units = 0;
@@ -97,24 +85,6 @@ fn drawing_empty_object_and_neutral_transfers_are_zero_work_and_sticky() {
         .is_empty());
     super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[], &[])
         .expect("empty neutral drawing transfer does no positive work");
-
-    let prior = ctx
-        .charge_work(1, "prior drawing refusal")
-        .expect_err("work limit");
-    let object_error = super::transfer(&ctx, &[], &[])
-        .expect_err("empty drawing object scan preserves sticky refusal");
-    let neutral_error =
-        super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[], &[])
-            .expect_err("empty neutral drawing transfer preserves sticky refusal");
-    let cadmpeg_core::CodecError::ResourceLimit(prior) = prior else {
-        panic!("resource refusal")
-    };
-    assert!(
-        matches!(object_error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit == prior)
-    );
-    assert!(
-        matches!(neutral_error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit == prior)
-    );
 }
 
 #[test]

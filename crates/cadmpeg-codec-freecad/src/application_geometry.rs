@@ -28,9 +28,6 @@ pub(crate) fn transfer(
     entries: &[EntryRecord],
     admitted_entities: &mut u64,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut entry_index = None;
     let mut transferred = false;
     let mut property_sources = properties.iter();
@@ -614,7 +611,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn empty_geometry_transfer_is_free_and_preserves_original_refusal() {
+    fn empty_geometry_transfer_is_free() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
@@ -626,14 +623,6 @@ pub(crate) mod tests {
         assert!(!super::transfer(&ctx, &mut ir, &[], &[], &mut 0).expect("empty geometry"));
         assert!(ir.model.points.is_empty());
         assert!(ir.model.tessellations.is_empty());
-        let CodecError::ResourceLimit(original) = ctx
-            .charge_work(1, "prior geometry refusal")
-            .expect_err("work limit")
-        else {
-            panic!("resource refusal")
-        };
-        assert!(matches!(super::transfer(&ctx, &mut ir, &[], &[], &mut 0),
-            Err(CodecError::ResourceLimit(repeated)) if repeated == original));
     }
 
     #[test]

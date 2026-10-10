@@ -1496,7 +1496,7 @@ fn link_child_scan_propagates_work_refusal() {
 }
 
 #[test]
-fn empty_link_target_list_preserves_fused_refusal_after_successful_output() {
+fn empty_link_target_list_returns_no_targets() {
     let markup = "<Property><LinkList count=\"0\"/></Property>";
     let xml = roxmltree::Document::parse(markup).expect("empty LinkList XML");
     crate::test_support::with_service_context(markup.as_bytes(), |ctx| {
@@ -1504,25 +1504,11 @@ fn empty_link_target_list_preserves_fused_refusal_after_successful_output() {
             .expect("empty LinkList has no targets");
         assert!(targets.is_empty());
         assert_eq!(ctx.resource_refusal(), None);
-
-        let cadmpeg_core::CodecError::ResourceLimit(refusal) =
-            ctx.refuse_codec_limit("empty LinkList fuse control", 0, 1)
-        else {
-            panic!("fuse control must be a resource refusal");
-        };
-        let error = super::parse_link_targets(xml.root_element(), "App::PropertyLinkList", ctx)
-            .err()
-            .expect("reentry must preserve the original refusal");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit) if limit == refusal
-        ));
-        assert_eq!(ctx.resource_refusal(), Some(refusal));
     });
 }
 
 #[test]
-fn empty_graph_preserves_fused_refusal_after_successful_output() {
+fn empty_graph_returns_empty_native_populations() {
     let document =
         b"<Document SchemaVersion=\"4\"><Objects Count=\"0\"/><ObjectData Count=\"0\"/></Document>";
     crate::test_support::with_service_context(document, |ctx| {
@@ -1531,20 +1517,6 @@ fn empty_graph_preserves_fused_refusal_after_successful_output() {
         assert!(graph.extensions.is_empty());
         assert!(graph.properties.is_empty());
         assert_eq!(ctx.resource_refusal(), None);
-
-        let cadmpeg_core::CodecError::ResourceLimit(refusal) =
-            ctx.refuse_codec_limit("empty graph fuse control", 0, 1)
-        else {
-            panic!("fuse control must be a resource refusal");
-        };
-        let error = super::parse_with_context(document, "4", ctx)
-            .err()
-            .expect("reentry must preserve the original refusal");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit) if limit == refusal
-        ));
-        assert_eq!(ctx.resource_refusal(), Some(refusal));
     });
 }
 

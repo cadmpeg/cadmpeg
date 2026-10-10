@@ -48,19 +48,10 @@ fn application_census_without_objects_skips_source_indexes() {
     )
     .expect("no application consumer")
     .is_empty());
-    let cadmpeg_core::CodecError::ResourceLimit(original) = ctx
-        .charge_work(1, "prior application refusal")
-        .expect_err("work limit")
-    else {
-        panic!("resource refusal")
-    };
-    assert!(matches!(super::wire_records(
-        &ctx, &[], std::slice::from_ref(&property), std::slice::from_ref(&entry),
-    ), Err(cadmpeg_core::CodecError::ResourceLimit(repeated)) if repeated == original));
 }
 
 #[test]
-fn empty_application_comparison_skips_exhausted_actual_source_and_keeps_refusal() {
+fn empty_application_comparison_skips_exhausted_actual_source() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = 0;
@@ -71,18 +62,6 @@ fn empty_application_comparison_skips_exhausted_actual_source_and_keeps_refusal(
         .expect("context");
     let namespace = cadmpeg_ir::native::NativeNamespace::default();
     assert!(super::matches_native(&ctx, &namespace, &[], &[], &[]).expect("empty census"));
-    let cadmpeg_core::CodecError::ResourceLimit(original) = ctx
-        .charge_work(1, "prior application comparison refusal")
-        .expect_err("work limit")
-    else {
-        panic!("resource refusal")
-    };
-    let error = super::matches_native(&ctx, &namespace, &[], &[], &[])
-        .map_err(cadmpeg_core::CodecError::from)
-        .expect_err("original refusal");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(repeated) if repeated == original)
-    );
 }
 
 #[test]
@@ -210,14 +189,6 @@ fn application_inert_classification_stops_at_first_fixed_marker() {
         .expect("context");
     assert!(super::is_inert(&ctx, &property).expect("first marker"));
     assert_eq!(ctx.resource_refusal(), None);
-    let cadmpeg_core::CodecError::ResourceLimit(original) = ctx
-        .charge_work(1, "prior inert refusal")
-        .expect_err("work limit")
-    else {
-        panic!("resource refusal")
-    };
-    assert!(matches!(super::is_inert(&ctx, &property),
-        Err(cadmpeg_core::CodecError::ResourceLimit(repeated)) if repeated == original));
 }
 
 #[test]

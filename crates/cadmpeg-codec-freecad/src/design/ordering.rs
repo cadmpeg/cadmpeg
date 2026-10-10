@@ -762,8 +762,6 @@ pub(super) fn order_parameters_by_dependencies<'ctx>(
                 1,
                 "fcstd parameter dependency extraction",
             )?;
-        } else {
-            ctx.charge_work(0, "fcstd parameter dependency extraction")?;
         }
         let parameter = remaining
             .pop()
@@ -791,9 +789,6 @@ fn expression_identifiers_until(
     let mut identifier_start = None;
     let mut offset = 0_usize;
     let mut characters = expression.chars();
-    if let Some(limit) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(limit));
-    }
     while !characters.as_str().is_empty() {
         let Some(character) = ctx.next_charged(&mut characters, operation)? else {
             break;

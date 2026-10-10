@@ -232,23 +232,6 @@ fn product_projection_without_consumers_does_not_build_body_prefixes() {
     .expect("no product consumer");
     assert!(definitions.is_empty());
     assert!(occurrences.is_empty());
-    let cadmpeg_core::CodecError::ResourceLimit(original) = ctx
-        .charge_work(u64::MAX, "prior product refusal")
-        .expect_err("work refusal")
-    else {
-        panic!("resource refusal")
-    };
-    let error = super::transfer_neutral(
-        &ctx,
-        &[],
-        &[],
-        &[],
-        std::slice::from_ref(&property),
-        std::slice::from_ref(&payload),
-        &[],
-    )
-    .expect_err("fused empty projection");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit == original));
 }
 
 #[test]

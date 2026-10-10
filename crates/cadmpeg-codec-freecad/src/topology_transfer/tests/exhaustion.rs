@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Known-size visits and original-refusal reentry.
+//! Known-size visits and refusal before unvisited input.
 
 use crate::brep::{
     ShapePayload, ShapePayloadRecord, Tables, TextEdgeRepresentation, TextOrientation,
@@ -7,8 +7,8 @@ use crate::brep::{
 };
 use crate::native::element_map::ScopedData;
 use crate::topology_transfer::{
-    close_radial_rings, connected_components, edge_endpoint_uses, referenced_pcurve_ids,
-    select_pcurve_representation, source_topology_indices, transfer, Builder, GeometryIndexes,
+    connected_components, edge_endpoint_uses, referenced_pcurve_ids,
+    select_pcurve_representation, source_topology_indices, Builder, GeometryIndexes,
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimit};
 use cadmpeg_core::CodecError;
@@ -194,46 +194,7 @@ fn empty_builder_scans_need_no_work() {
     });
 }
 
-#[test]
-fn topology_empty_and_cached_helpers_return_original_refusal() {
-    with_work(0, |ctx| {
-        let tshapes = TextTShapes::default();
-        let payload = payload();
-        let mut builder = builder(ctx, &payload, tables(&tshapes));
-        let mut indexes = GeometryIndexes::new(ctx).unwrap();
-        indexes.ensure_procedural(ctx, &CadIr::empty()).unwrap();
-        ctx.charge_work(1, "test original fuse").unwrap_err();
-        let original = ctx.resource_refusal().unwrap();
-        assert_original(referenced_pcurve_ids(ctx, &[]), original);
-        assert_original(source_topology_indices(ctx, tables(&tshapes)), original);
-        assert_original(connected_components(ctx, &[]), original);
-        assert_original(builder.emit_pcurves(), original);
-        assert_original(
-            builder.emit_unowned_triangulations(&mut CadIr::empty()),
-            original,
-        );
-        assert_original(builder.body_roots(), original);
-        assert_original(indexes.ensure_procedural(ctx, &CadIr::empty()), original);
-        assert_original(edge_endpoint_uses(ctx, 1, &[]), original);
-        assert_original(
-            select_pcurve_representation(
-                ctx,
-                &[],
-                &tables(&tshapes),
-                Transform::identity(),
-                1,
-                Transform::identity(),
-            ),
-            original,
-        );
-        assert_original(
-            transfer(ctx, &mut CadIr::empty(), &[], &[], &mut Vec::new(), false),
-            original,
-        );
-        assert_original(close_radial_rings(ctx, &mut []), original);
-        assert_eq!(ctx.resource_refusal(), Some(original));
-    });
-}
+
 
 fn shape_use(shape: usize, orientation: TextOrientation) -> TextShapeUse {
     TextShapeUse {
@@ -269,7 +230,7 @@ fn endpoint_first_error_leaves_suffix_unvisited() {
 }
 
 #[test]
-fn endpoint_refusal_precedes_duplicate_suffix_and_survives_empty_reentry() {
+fn endpoint_refusal_precedes_duplicate_suffix() {
     let children = [
         shape_use(1, TextOrientation::Forward),
         shape_use(2, TextOrientation::Reversed),
@@ -282,7 +243,6 @@ fn endpoint_refusal_precedes_duplicate_suffix_and_survives_empty_reentry() {
         };
         assert_eq!(original.operation, "FreeCAD edge endpoint search");
         assert_eq!((original.used, original.additional), (2, 1));
-        assert_original(edge_endpoint_uses(ctx, 9, &[]), original);
     });
 }
 

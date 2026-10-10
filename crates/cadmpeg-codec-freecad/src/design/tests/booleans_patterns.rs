@@ -41,10 +41,10 @@ fn with_empty_reference_indexes<T>(
         crate::design::PatternSources<'_, '_, '_, '_>,
     ) -> Result<T, cadmpeg_core::CodecError>,
 ) -> Result<T, cadmpeg_core::CodecError> {
-    let objects = crate::design::ObjectIndex::new(ctx, &[])?;
+    let objects = crate::design::ObjectIndex::new(ctx, &[]);
     let features = std::collections::HashMap::new();
     let predecessors =
-        crate::design::BodyPredecessors::new(ctx, &[], &features, properties_by_owner)?;
+        crate::design::BodyPredecessors::new(ctx, &[], &features, properties_by_owner);
     use_sources(crate::design::PatternSources {
         objects: &[],
         object_by_id: &objects,
@@ -179,15 +179,13 @@ fn multi_transform_seed_selection_borrows_identities_and_refuses_collection_limi
     assert!(std::ptr::eq(seeds[0], features.get("base").expect("seed")));
     assert_eq!(ctx.resource_refusal(), None);
     let invalid_factor = super::scalar_property("stage", "Factor", "0");
-    let object_by_id = crate::design::ObjectIndex::new(&ctx, std::slice::from_ref(&consumer))
-        .expect("object index");
+    let object_by_id = crate::design::ObjectIndex::new(&ctx, std::slice::from_ref(&consumer));
     let predecessors = crate::design::BodyPredecessors::new(
         &ctx,
         std::slice::from_ref(&consumer),
         &features,
         &properties_by_owner,
-    )
-    .expect("predecessors");
+    );
     let definition = crate::design::pattern_definition(
         &ctx,
         "PartDesign::Scaled",
@@ -253,13 +251,13 @@ fn implicit_pattern_seed_refuses_at_matching_limits() {
     );
     let factor = super::scalar_property("stage", "Factor", "2");
     crate::test_support::assert_collection_refusal_at(&[], "fcstd implicit pattern seed", |ctx| {
-        let object_by_id = crate::design::ObjectIndex::new(ctx, std::slice::from_ref(&body))?;
+        let object_by_id = crate::design::ObjectIndex::new(ctx, std::slice::from_ref(&body));
         let predecessors = crate::design::BodyPredecessors::new(
             ctx,
             std::slice::from_ref(&body),
             &features,
             &properties_by_owner,
-        )?;
+        );
         let sources = crate::design::PatternSources {
             objects: std::slice::from_ref(&body),
             object_by_id: &object_by_id,
@@ -280,13 +278,13 @@ fn implicit_pattern_seed_refuses_at_matching_limits() {
         &[],
         "fcstd implicit pattern seed identity",
         |ctx| {
-            let object_by_id = crate::design::ObjectIndex::new(ctx, std::slice::from_ref(&body))?;
+            let object_by_id = crate::design::ObjectIndex::new(ctx, std::slice::from_ref(&body));
             let predecessors = crate::design::BodyPredecessors::new(
                 ctx,
                 std::slice::from_ref(&body),
                 &features,
                 &properties_by_owner,
-            )?;
+            );
             let sources = crate::design::PatternSources {
                 objects: std::slice::from_ref(&body),
                 object_by_id: &object_by_id,

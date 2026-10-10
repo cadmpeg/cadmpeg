@@ -144,7 +144,7 @@ pub(crate) fn transfer<'ctx>(
             }
             Ok::<_, CodecError>(by_owner)
         })?;
-    let object_by_id = ObjectIndex::new(ctx, objects)?;
+    let object_by_id = ObjectIndex::new(ctx, objects);
     let (feature_ids_storage, feature_ids);
     (feature_ids, feature_ids_storage) =
         ctx.with_scoped_storage("fcstd design feature index storage", || {
@@ -167,7 +167,7 @@ pub(crate) fn transfer<'ctx>(
             }
             Ok::<_, CodecError>(feature_ids)
         })?;
-    let predecessors = BodyPredecessors::new(ctx, objects, &feature_ids, &properties_by_owner)?;
+    let predecessors = BodyPredecessors::new(ctx, objects, &feature_ids, &properties_by_owner);
     let (parent_by_member_storage, parent_by_member);
     (parent_by_member, parent_by_member_storage) =
         ctx.with_scoped_storage("fcstd design membership index storage", || {
@@ -1148,9 +1148,6 @@ fn append_operation_parameters(
     owner: &FeatureId,
     properties: &[&PropertyRecord],
 ) -> Result<(), CodecError> {
-    if let Some(limit) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(limit));
-    }
     const NAMES: &[&str] = &[
         "Angle",
         "Angle2",
@@ -1527,9 +1524,6 @@ fn external_link_indices(
     ctx: &DecodeContext<'_>,
     references: Option<&PropertyRecord>,
 ) -> Result<HashMap<String, usize>, CodecError> {
-    if let Some(limit) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(limit));
-    }
     let mut indices = HashMap::new();
     if let Some(references) = references {
         let mut source = references.links().iter();
@@ -1563,9 +1557,6 @@ fn sketch_attributes(
     ctx: &DecodeContext<'_>,
     carrier: Option<roxmltree::Node<'_, '_>>,
 ) -> Result<BTreeMap<String, String>, CodecError> {
-    if let Some(limit) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(limit));
-    }
     let mut attributes = BTreeMap::new();
     if let Some(carrier) = carrier {
         let mut source = carrier.attributes();
@@ -2070,9 +2061,6 @@ fn builtin_reference_usage(
     ctx: &DecodeContext<'_>,
     source: Option<&roxmltree::Document<'_>>,
 ) -> Result<(bool, bool, bool), CodecError> {
-    if let Some(limit) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(limit));
-    }
     let Some(xml) = source else {
         return Ok((false, false, false));
     };
@@ -2506,9 +2494,6 @@ fn feature_state(
     object: &str,
     properties: &[&PropertyRecord],
 ) -> Result<BTreeMap<NonBlankString, String>, CodecError> {
-    if let Some(limit) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(limit));
-    }
     const STATE_NAMES: &[&str] = &[
         "Active",
         "Frozen",
@@ -6480,9 +6465,6 @@ fn native_parameters(
     ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
 ) -> Result<BTreeMap<NonBlankString, String>, CodecError> {
-    if let Some(limit) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(limit));
-    }
     let mut parameters = BTreeMap::new();
     let mut source = properties.iter();
     while source.len() != 0 {
@@ -6965,16 +6947,12 @@ fn sweep_definition(
     }
     if profiles.len() > 1 {
         ctx.dedup_vec(&mut profiles, "fcstd sweep profile deduplication")?;
-    } else {
-        ctx.charge_work(0, "fcstd sweep profile deduplication")?;
     }
     if profiles.is_empty() {
         return Ok(None);
     }
     if profiles.len() > 1 {
         ctx.rotate_left(&mut profiles, 1, "fcstd sweep primary profile removal")?;
-    } else {
-        ctx.charge_work(0, "fcstd sweep primary profile removal")?;
     }
     let profile = profiles
         .pop()
@@ -7426,9 +7404,6 @@ fn freecad_program_version(
     ctx: &DecodeContext<'_>,
     value: &str,
 ) -> Result<Option<(u64, u64)>, CodecError> {
-    if let Some(limit) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(limit));
-    }
     let mut part_start = None;
     let mut first_dot = None;
     let mut second_dot = None;
@@ -8149,9 +8124,6 @@ fn multi_transform_stage_seeds<'ctx, 'features>(
     properties_by_owner: &BTreeMap<&str, Vec<&PropertyRecord>>,
 ) -> Result<Option<(Vec<&'features FeatureId>, ScopedReservation<'ctx>)>, CodecError> {
     let mut consumers = objects.iter();
-    if let Some(limit) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(limit));
-    }
     while consumers.len() != 0 {
         let Some(consumer) = ctx.next_charged(&mut consumers, "fcstd multi-transform consumers")?
         else {
@@ -8775,9 +8747,6 @@ fn visit_link_selectors<'a>(
     mut visit: impl FnMut(&'a str) -> Result<bool, CodecError>,
 ) -> Result<bool, CodecError> {
     let mut selectors = link.subelements().iter();
-    if let Some(limit) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(limit));
-    }
     while selectors.len() != 0 {
         let Some(selector) = ctx.next_charged(&mut selectors, operation)? else {
             break;

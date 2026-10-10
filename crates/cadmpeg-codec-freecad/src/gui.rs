@@ -101,9 +101,6 @@ impl<'ctx> AppearancePlan<'ctx> {
     }
 
     fn apply(mut self, ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         if !self.body_updates.is_empty() {
             let (_position_storage, positions) = ctx
                 .with_scoped_storage("FCStd GUI body positions", || {
@@ -357,9 +354,6 @@ impl<'source, 'ctx> ShapeIndex<'source, 'ctx> {
         payloads: &'source [ShapePayloadRecord],
         maps: &'source [ElementMapRecord],
     ) -> Result<Self, CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut property_storage = ctx.reserve_scoped(0, "FCStd GUI Shape property owners")?;
         let mut properties_by_owner = BTreeMap::new();
         let mut property_sources = properties.iter();
@@ -401,9 +395,6 @@ impl<'source, 'ctx> ShapeIndex<'source, 'ctx> {
     }
 
     fn ensure_maps(&mut self, ctx: &'ctx DecodeContext<'_>) -> Result<(), CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         if self.maps_built {
             return Ok(());
         }
@@ -469,9 +460,6 @@ impl<'source, 'ctx> TopologyIndex<'source, 'ctx> {
     }
 
     fn ensure_faces(&mut self, ctx: &'ctx DecodeContext<'_>) -> Result<(), CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         if self.face_built {
             return Ok(());
         }
@@ -491,9 +479,6 @@ impl<'source, 'ctx> TopologyIndex<'source, 'ctx> {
     }
 
     fn ensure_edges(&mut self, ctx: &'ctx DecodeContext<'_>) -> Result<(), CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         if self.edge_built {
             return Ok(());
         }
@@ -513,9 +498,6 @@ impl<'source, 'ctx> TopologyIndex<'source, 'ctx> {
     }
 
     fn ensure_vertices(&mut self, ctx: &'ctx DecodeContext<'_>) -> Result<(), CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         if self.vertex_built {
             return Ok(());
         }
@@ -543,9 +525,6 @@ impl<'source, 'ctx> TopologyIndex<'source, 'ctx> {
         I: IntoIterator<Item = &'payload str>,
         I::IntoIter: std::iter::ExactSizeIterator,
     {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut payload_sources = payload_ids.into_iter();
         if payload_sources.len() == 0 {
             return Ok(());
@@ -1515,9 +1494,6 @@ fn gui_xml_attributes(
     name_operation: &'static str,
     value_operation: &'static str,
 ) -> Result<BTreeMap<String, String>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut result = BTreeMap::new();
     let mut attributes = node.attributes();
     while attributes.len() != 0 {
@@ -1542,9 +1518,6 @@ fn gui_named_entries<'ctx, 'a>(
     record: impl Fn() -> Result<String, CodecError>,
     mut entries: impl ExactSizeIterator<Item = (&'a str, &'a str)>,
 ) -> Result<GuiNamedEntries<'ctx>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     use cadmpeg_core::text::{NamedEntryError, NonBlankString};
     let mut kept = BTreeMap::new();
     let mut refused_storage = ctx.reserve_scoped(0, "FCStd GUI refused property storage")?;
@@ -1601,9 +1574,6 @@ fn transfer_neutral_presentation(
     neutral_schema_version: Option<u32>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut state_losses = Vec::new();
     let mut documents = graph.documents.iter();
     while documents.len() != 0 {
@@ -1689,9 +1659,6 @@ fn transfer_neutral_presentation(
     }
     ctx.append_vec(losses, &mut state_losses, "FCStd presentation losses")?;
     if graph.providers.is_empty() {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         return Ok(());
     }
 
@@ -1910,9 +1877,6 @@ fn charge_refused_gui_keys(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     refused: &[cadmpeg_core::text::NamedEntryError],
 ) -> Result<(), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     use cadmpeg_core::text::NamedEntryError;
     let mut refused_sources = refused.iter();
     while refused_sources.len() != 0 {
@@ -2225,9 +2189,6 @@ impl<'source, 'ctx> PrimitiveIndex<'source, 'ctx> {
         prefixes: &[String],
     ) -> Result<(), CodecError> {
         if prefixes.is_empty() {
-            if let Some(refusal) = ctx.resource_refusal() {
-                return Err(refusal.into());
-            }
             return Ok(());
         }
         let mut requested_storage =
@@ -2326,9 +2287,6 @@ fn shape_payload_prefixes(
     ctx: &DecodeContext<'_>,
     payloads: &[&str],
 ) -> Result<Vec<String>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut prefixes = Vec::new();
     let mut payload_sources = payloads.iter();
     while payload_sources.len() != 0 {
@@ -2354,9 +2312,6 @@ fn transfer_primitive_appearance(
     losses: &mut Vec<LossNote>,
     source: PrimitiveAppearanceSource<'_>,
 ) -> Result<(), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let PrimitiveAppearanceSource {
         provider_name,
         object_id,
@@ -5706,9 +5661,6 @@ fn validate_gui_list_payloads<'property, 'data>(
     entries: &BTreeMap<String, View<'data>>,
     requires_alpha_conversion: bool,
 ) -> Result<HashMap<&'property str, Vec<GuiMaterial<'data>>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut material_lists = HashMap::new();
     let mut property_sources = properties.iter();
     while property_sources.len() != 0 {
@@ -5890,9 +5842,6 @@ fn read_color_list_count(
     view: &mut View<'_>,
     entry_name: &str,
 ) -> Result<usize, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let count = view.req_u32_le()?;
     view.counted(count.into(), 4)
         .map(|count| count.get())
@@ -5912,9 +5861,6 @@ fn read_gui_counted<'a>(
     mut validate: impl FnMut(&mut View<'a>) -> Option<bool>,
     operation: &'static str,
 ) -> Result<Option<bool>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(count) = view.counted(count.into(), element_size) else {
         return Ok(None);
     };
@@ -6151,9 +6097,6 @@ fn parse_material_list<'data>(
             )));
         }
     };
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let count = view.counted(count.into(), 24).ok_or_else(|| {
         gui_malformed(
             ctx,
@@ -6258,9 +6201,6 @@ fn transfer_shape_appearances<'source, 'ir, 'ctx>(
     topology_index: &mut Option<TopologyIndex<'ir, 'ctx>>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if material_lists.is_empty() {
         return Ok(());
     }
@@ -6550,9 +6490,6 @@ where
     I: IntoIterator<Item = &'a str>,
     I::IntoIter: std::iter::ExactSizeIterator,
 {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut body_ids = Vec::new();
     let mut payload_ids = payload_ids.into_iter();
     while payload_ids.len() != 0 {
@@ -7273,7 +7210,7 @@ mod color_tests {
 mod shape_association_tests {
     use super::{
         displayed_shape_bodies, displayed_shape_group, displayed_shape_payload,
-        select_shape_bodies, PrimitiveIndex, PrimitiveSize, PrimitiveStyle, ShapeIndex,
+        select_shape_bodies, ShapeIndex,
         TopologyIndex,
     };
     use crate::brep::{ShapePayload, ShapePayloadRecord};
@@ -7674,54 +7611,7 @@ mod shape_association_tests {
         });
     }
 
-    #[test]
-    fn cached_indexes_and_empty_prefix_updates_propagate_fused_refusals() {
-        let ir = cadmpeg_ir::CadIr::empty();
-        let prefixes = [String::from("unused:")];
-        crate::test_support::with_service_context(&[], |ctx| {
-            let mut shape = ShapeIndex::new(ctx, &[], &[], &[]).expect("shape index");
-            shape.ensure_maps(ctx).expect("empty element-map index");
 
-            let mut topology = TopologyIndex::new(&ir);
-            topology.ensure_faces(ctx).expect("empty face index");
-            topology.ensure_edges(ctx).expect("empty edge index");
-            topology.ensure_vertices(ctx).expect("empty vertex index");
-            topology
-                .ensure_bodies(ctx, std::iter::empty::<&str>())
-                .expect("empty body index");
-
-            let style = PrimitiveStyle::Line(PrimitiveSize::Absent);
-            let mut primitives =
-                PrimitiveIndex::new(ctx, &ir, style, &prefixes).expect("primitive index");
-            ctx.charge_work(u64::MAX, "test fused refusal")
-                .expect_err("test must fuse the decode budget");
-
-            assert!(matches!(
-                shape.ensure_maps(ctx),
-                Err(cadmpeg_core::CodecError::ResourceLimit(_))
-            ));
-            assert!(matches!(
-                topology.ensure_faces(ctx),
-                Err(cadmpeg_core::CodecError::ResourceLimit(_))
-            ));
-            assert!(matches!(
-                topology.ensure_edges(ctx),
-                Err(cadmpeg_core::CodecError::ResourceLimit(_))
-            ));
-            assert!(matches!(
-                topology.ensure_vertices(ctx),
-                Err(cadmpeg_core::CodecError::ResourceLimit(_))
-            ));
-            assert!(matches!(
-                topology.ensure_bodies(ctx, std::iter::empty::<&str>()),
-                Err(cadmpeg_core::CodecError::ResourceLimit(_))
-            ));
-            assert!(matches!(
-                primitives.add_prefixes(ctx, &[]),
-                Err(cadmpeg_core::CodecError::ResourceLimit(_))
-            ));
-        });
-    }
 
     #[test]
     fn displayed_shape_body_collection_refuses_at_caller_limit() {

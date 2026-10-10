@@ -76,7 +76,7 @@ fn object_index_builds_only_after_a_lookup_is_requested() {
         None,
     );
 
-    let index = ObjectIndex::new(&ctx, std::slice::from_ref(&object)).expect("lazy index");
+    let index = ObjectIndex::new(&ctx, std::slice::from_ref(&object));
     assert!(ctx.resource_refusal().is_none());
 
     let error = index
@@ -101,7 +101,7 @@ fn object_index_keeps_the_first_source_object_for_a_duplicate_id() {
     let objects = [first, second];
 
     crate::test_support::with_service_context(&[], |ctx| {
-        let index = ObjectIndex::new(ctx, &objects).expect("object index");
+        let index = ObjectIndex::new(ctx, &objects);
         let found = index
             .get(objects[0].id(), "test object lookup")
             .expect("object lookup")
@@ -130,8 +130,7 @@ fn body_predecessors_build_only_after_a_lookup_is_requested() {
         std::slice::from_ref(&body),
         &features,
         &properties_by_owner,
-    )
-    .expect("lazy predecessor index");
+    );
     assert!(ctx.resource_refusal().is_none());
 
     let error = index
@@ -170,8 +169,7 @@ fn body_predecessors_keep_first_usable_body_and_first_member_winners() {
     }
 
     crate::test_support::with_service_context(&[], |ctx| {
-        let index = BodyPredecessors::new(ctx, &objects, &features, &properties_by_owner)
-            .expect("predecessor index");
+        let index = BodyPredecessors::new(ctx, &objects, &features, &properties_by_owner);
         let predecessor = index
             .get("member", "test predecessor lookup")
             .expect("predecessor lookup")
@@ -193,7 +191,7 @@ fn object_index_first_insertion_refuses_before_visiting_long_suffix() {
     policy.limits.max_work_units = work_cap;
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let index = ObjectIndex::new(&ctx, &objects).expect("lazy object index");
+    let index = ObjectIndex::new(&ctx, &objects);
     assert!(ctx.resource_refusal().is_none());
     let CodecError::ResourceLimit(limit) = index
         .get(objects[0].id(), "test object lookup")
@@ -219,8 +217,7 @@ fn body_predecessor_visits_source_objects_before_admitting_suffix() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = work_cap;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let index = BodyPredecessors::new(&ctx, &objects, &features, &properties)
-        .expect("lazy predecessor index");
+    let index = BodyPredecessors::new(&ctx, &objects, &features, &properties);
 
     let CodecError::ResourceLimit(limit) = index
         .get("member", "test predecessor lookup")
@@ -254,8 +251,7 @@ fn body_predecessor_member_first_insertion_refuses_before_long_suffix() {
     policy.limits.max_work_units = work_cap;
     policy.limits.max_collection_items = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let index = BodyPredecessors::new(&ctx, std::slice::from_ref(&body), &features, &properties)
-        .expect("lazy predecessor index");
+    let index = BodyPredecessors::new(&ctx, std::slice::from_ref(&body), &features, &properties);
     assert!(ctx.resource_refusal().is_none());
     let CodecError::ResourceLimit(limit) = index
         .get("member", "test predecessor lookup")
@@ -267,45 +263,10 @@ fn body_predecessor_member_first_insertion_refuses_before_long_suffix() {
     assert_eq!(ctx.resource_refusal(), Some(limit));
 }
 
-#[test]
-fn empty_index_routes_preserve_a_fused_resource_refusal() {
-    let objects = [];
-    let features = HashMap::new();
-    let properties = BTreeMap::new();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let object_index = ObjectIndex::new(&ctx, &objects).expect("lazy object index");
-    let body_index =
-        BodyPredecessors::new(&ctx, &objects, &features, &properties).expect("lazy body index");
-    let CodecError::ResourceLimit(prior) = ctx
-        .charge_work(2, "test prior refusal")
-        .expect_err("the work request exceeds the test limit")
-    else {
-        panic!("the initial work request must refuse");
-    };
 
-    let CodecError::ResourceLimit(object_refusal) = object_index
-        .get("missing", "test object lookup")
-        .expect_err("the empty object index must retain the prior refusal")
-    else {
-        panic!("the empty object index must refuse");
-    };
-    assert_eq!(object_refusal, prior);
-
-    let CodecError::ResourceLimit(body_refusal) = body_index
-        .get("missing", "test predecessor lookup")
-        .expect_err("the empty predecessor index must retain the prior refusal")
-    else {
-        panic!("the empty predecessor index must refuse");
-    };
-    assert_eq!(body_refusal, prior);
-    assert_eq!(ctx.resource_refusal(), Some(prior));
-}
 
 #[test]
-fn body_predecessor_empty_members_keep_a_later_fused_refusal() {
+fn body_predecessor_empty_members_return_no_predecessor() {
     let body = object("body", 0);
     let members = membership_property(body.id(), &[]);
     let properties = BTreeMap::from([(body.id().as_str(), vec![&members])]);
@@ -314,25 +275,9 @@ fn body_predecessor_empty_members_keep_a_later_fused_refusal() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let index = BodyPredecessors::new(&ctx, std::slice::from_ref(&body), &features, &properties)
-        .expect("lazy predecessor index");
+    let index = BodyPredecessors::new(&ctx, std::slice::from_ref(&body), &features, &properties);
     assert!(index
         .get("missing", "test predecessor lookup")
         .expect("empty member route")
         .is_none());
-
-    let CodecError::ResourceLimit(prior) = ctx
-        .charge_work(u64::MAX, "test prior refusal")
-        .expect_err("the work marker exceeds the empty member route")
-    else {
-        panic!("the work marker must refuse after the empty member route");
-    };
-    let CodecError::ResourceLimit(actual) = index
-        .get("missing", "test predecessor lookup")
-        .expect_err("the cached empty index must retain the prior refusal")
-    else {
-        panic!("the cached empty index must refuse");
-    };
-    assert_eq!(actual, prior);
-    assert_eq!(ctx.resource_refusal(), Some(prior));
 }

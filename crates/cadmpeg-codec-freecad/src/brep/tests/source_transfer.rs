@@ -59,18 +59,6 @@ fn geometry_without_curve_or_surface_consumers_skips_owner_storage() {
         assert!(surfaces.surfaces.is_empty());
         assert!(surfaces.procedural.is_empty());
         assert_eq!(ctx.resource_refusal(), None);
-        let CodecError::ResourceLimit(original) = ctx
-            .charge_work(policy.limits.max_work_units + 1, "prior geometry refusal")
-            .expect_err("work limit")
-        else {
-            panic!("resource refusal")
-        };
-        let Err(CodecError::ResourceLimit(repeated)) =
-            transfer_text_geometry(&ctx, payloads, std::slice::from_ref(&property))
-        else {
-            panic!("original refusal must propagate")
-        };
-        assert_eq!(repeated, original);
     }
 }
 
@@ -217,16 +205,6 @@ fn shape_payloads_without_exact_shape_consumers_skip_entry_storage() {
     )
     .expect("no exact-shape consumer")
     .is_empty());
-    let CodecError::ResourceLimit(original) = ctx
-        .charge_work(1, "prior shape payload refusal")
-        .expect_err("work limit")
-    else {
-        panic!("resource refusal")
-    };
-    assert!(
-        matches!(crate::brep::parse_payloads(&ctx, &[], std::slice::from_ref(&entry)),
-        Err(CodecError::ResourceLimit(repeated)) if repeated == original)
-    );
 }
 
 #[test]
