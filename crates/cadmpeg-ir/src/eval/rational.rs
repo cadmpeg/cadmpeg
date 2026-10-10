@@ -6,6 +6,9 @@ use crate::math::sum::{product_sum, ExactSignedSum, ProductSum, ScaledValue};
 use crate::scalar::FiniteReal;
 use cadmpeg_core::decode::ResourceLimit;
 
+mod surface_higher;
+pub(in crate::eval) mod tensor;
+
 /// Cloneable pole traversal. Admission precedes each input-dependent advance.
 #[derive(Clone)]
 struct SumTerms<'scratch, 'ctx, 'arena, I> {
@@ -233,33 +236,6 @@ impl Homogeneous {
         }
         scratch.unless_refused()?;
         Ok(Some(Self { values, constant }))
-    }
-
-    /// Sum the four homogeneous derivative lanes in one exact pole walk.
-    /// The iterator is the actual rectangular support window. Its exact length
-    /// bounds all advances; no terminal probe or replay visits the poles.
-    pub(super) fn derivative_sum(
-        scratch: &decode::Scratch<'_, '_>,
-        mut terms: impl ExactSizeIterator<Item = Option<([f64; 2], f64, FinitePoint3)>>,
-    ) -> Result<Option<Self>, ResourceLimit> {
-        const OPERATION: &str = "IR homogeneous derivative pole traversal";
-        scratch.admission.work(0, OPERATION)?;
-        let count = terms.len();
-        let input_sized = count > 2;
-        let mut sums: [ExactSignedSum; 4] = std::array::from_fn(|_| ExactSignedSum::default());
-        for _ in 0..count {
-            scratch.admission.work(u64::from(input_sized), OPERATION)?;
-            let Some(Some(([u, v], weight, point))) = terms.next() else {
-                return Ok(None);
-            };
-            if FiniteReal::array([u, v, weight]).is_none() {
-                return Ok(None);
-            }
-            for (sum, coordinate) in sums.iter_mut().zip([point.x, point.y, point.z, 1.0]) {
-                sum.add_factors([u, v, weight, coordinate]);
-            }
-        }
-        Ok(Some(Self { values: sums.map(ExactSignedSum::finish), constant: [None; 3] }))
     }
 
     /// Keep source weights when they remain normal. Otherwise choose one

@@ -5,13 +5,14 @@ use std::borrow::Cow;
 
 use super::{basis, decode, periodic_parameter, EvaluationFailure, SurfaceFirstOrder, SurfaceJet};
 use super::rational::{finite_lanes, Homogeneous};
+use super::rational::tensor::TensorWindow;
 use super::surface_request::{HigherPartials, RequestedJet, SurfaceRequest};
 use crate::features::{FinitePoint3, FiniteVector3};
 use crate::geometry::nurbs::{NurbsPoleGrid, NurbsSurface};
 use crate::math::Point3;
 use crate::scalar::{FiniteReal, NonZeroReal};
 
-mod polynomial_higher;
+pub(super) mod higher;
 
 /// A tensor-product NURBS surface at a parameter: its spans, its bases and
 /// its homogeneous base sum, with its finite point.
@@ -84,41 +85,20 @@ fn nurbs_local_sum(
 }
 
 impl NurbsSurfaceLocal<'_> {
-    /// The homogeneous sum of the local poles blended by `u_values` along
-    /// `u` and `v_values` along `v`.
-    fn sum(
-        &self,
-        scratch: &decode::Scratch<'_, '_>,
-        u_values: &[f64],
-        v_values: &[f64],
-    ) -> Option<Homogeneous> {
-        nurbs_local_sum(
-            scratch,
-            self.surface,
-            self.degrees,
-            self.spans,
-            u_values,
-            v_values,
-        )
-    }
-
-    /// A higher homogeneous derivative sum over the exact pole window.
+    /// A derivative sum over the complete active tensor support.
     fn derivative_sum(
         &self,
         scratch: &decode::Scratch<'_, '_>,
         u_values: &[f64],
         v_values: &[f64],
+        differentiate: [bool; 2],
     ) -> Option<Homogeneous> {
-        let count = u_values.len().checked_mul(v_values.len())?;
-        scratch.admit(Homogeneous::derivative_sum(scratch, (0..count).map(|local| {
-            let (i, j) = (local / v_values.len(), local % v_values.len());
-            let (pole_u, pole_v) = (self.spans[0] - self.degrees[0] + i, self.spans[1] - self.degrees[1] + j);
-            Some((
-                [u_values[i], v_values[j]],
-                self.surface.weight(pole_u, pole_v).map_or(1.0, NonZeroReal::get),
-                self.surface.pole(pole_u, pole_v)?,
-            ))
-        })))?
+        let window = TensorWindow::new(self.surface, [
+            self.spans[0] - self.degrees[0], self.spans[1] - self.degrees[1],
+        ]);
+        scratch.admit(Homogeneous::surface_derivative(
+            scratch, &window, [u_values, v_values], differentiate,
+        ))?
     }
 
     /// The first partials, or why they have none. At the finite point over
@@ -145,10 +125,10 @@ impl NurbsSurfaceLocal<'_> {
             };
             let bases = [derivative(0)?, derivative(1)?];
             let u = self
-                .sum(scratch, &bases[0], &self.bases[1])
+                .derivative_sum(scratch, &bases[0], &self.bases[1], [true, false])
                 .ok_or(non_finite)?;
             let v = self
-                .sum(scratch, &self.bases[0], &bases[1])
+                .derivative_sum(scratch, &self.bases[0], &bases[1], [false, true])
                 .ok_or(non_finite)?;
             let lane = |sum: Homogeneous| {
                 finite_lanes(
@@ -191,13 +171,13 @@ impl NurbsSurfaceLocal<'_> {
             let [u, v] = first.sums;
             let [du, dv] = first.lanes;
             let uu = self
-                .sum(scratch, &u_second, &self.bases[1])
+                .derivative_sum(scratch, &u_second, &self.bases[1], [true, false])
                 .ok_or(non_finite)?;
             let uv = self
-                .sum(scratch, &first.bases[0], &first.bases[1])
+                .derivative_sum(scratch, &first.bases[0], &first.bases[1], [true, true])
                 .ok_or(non_finite)?;
             let vv = self
-                .sum(scratch, &self.bases[0], &v_second)
+                .derivative_sum(scratch, &self.bases[0], &v_second, [false, true])
                 .ok_or(non_finite)?;
             let lane = |sum: Homogeneous, corrections: &[(Homogeneous, [FiniteReal; 3])]| {
                 finite_lanes(sum.project(self.base, corrections).ok_or(non_finite)?)
@@ -229,14 +209,14 @@ impl NurbsSurfaceLocal<'_> {
                 scratch, knots[axis], self.degrees[axis], self.spans[axis], self.parameters[axis],
             ).ok_or_else(|| scratch.failure(non_finite));
             let bases = [third(0)?, third(1)?];
-            let sum = |active, u: &[f64], v: &[f64]| if active {
-                self.derivative_sum(scratch, u, v).ok_or(non_finite)
+            let sum = |active, u: &[f64], v: &[f64], differentiate| if active {
+                self.derivative_sum(scratch, u, v, differentiate).ok_or(non_finite)
             } else { Ok(Homogeneous::zero()) };
             let [u_degree, v_degree] = self.degrees;
-            let uuu = sum(u_degree >= 3, &bases[0], &self.bases[1])?;
-            let uuv = sum(u_degree >= 2 && v_degree >= 1, &second.bases[0], &first.bases[1])?;
-            let uvv = sum(u_degree >= 1 && v_degree >= 2, &first.bases[0], &second.bases[1])?;
-            let vvv = sum(v_degree >= 3, &self.bases[0], &bases[1])?;
+            let uuu = sum(u_degree >= 3, &bases[0], &self.bases[1], [true, false])?;
+            let uuv = sum(u_degree >= 2 && v_degree >= 1, &second.bases[0], &first.bases[1], [true, true])?;
+            let uvv = sum(u_degree >= 1 && v_degree >= 2, &first.bases[0], &second.bases[1], [true, true])?;
+            let vvv = sum(v_degree >= 3, &self.bases[0], &bases[1], [false, true])?;
             let [u, v] = first.sums;
             let [uu, uv, vv] = second.sums;
             let [du, dv] = first.lanes;
@@ -435,15 +415,15 @@ pub(super) fn nurbs_surface_requested_jet(
         } else { Err(EvaluationFailure::NoValue) };
         let lower_projection_failed = matches!(first, Err(EvaluationFailure::NonFinite(())))
             || matches!(second, Err(EvaluationFailure::NonFinite(())));
-        let recover_third = request.needs_third() && polynomial_degree.is_some_and(|degree| degree >= 3)
+        let recover_third = request.needs_third() && !polynomial_degree.is_some_and(|degree| degree < 3)
             && lower_projection_failed;
-        let recover_fourth = request == SurfaceRequest::Fourth && polynomial_degree.is_some_and(|degree| degree >= 4)
+        let recover_fourth = request == SurfaceRequest::Fourth && !polynomial_degree.is_some_and(|degree| degree < 4)
             && (lower_projection_failed || matches!(third_state, Err(EvaluationFailure::NonFinite(()))));
         let recovery = match (recover_third, recover_fourth) {
             (false, false) => None,
-            (true, false) => Some(polynomial_higher::evaluate(scratch, &local, polynomial_higher::Orders::Third)),
-            (false, true) => Some(polynomial_higher::evaluate(scratch, &local, polynomial_higher::Orders::Fourth)),
-            (true, true) => Some(polynomial_higher::evaluate(scratch, &local, polynomial_higher::Orders::ThirdAndFourth)),
+            (true, false) => Some(higher::evaluate(scratch, &local, higher::Orders::Third)),
+            (false, true) => Some(higher::evaluate(scratch, &local, higher::Orders::Fourth)),
+            (true, true) => Some(higher::evaluate(scratch, &local, higher::Orders::ThirdAndFourth)),
         };
         let fourth = if request == SurfaceRequest::Fourth && polynomial_degree.is_some_and(|degree| degree < 4) {
             Ok([FiniteVector3::ZERO; 5])
@@ -524,15 +504,15 @@ impl NurbsSurfaceLocal<'_> {
                 scratch, knots[axis], self.degrees[axis], self.spans[axis], self.parameters[axis],
             ).ok_or_else(|| scratch.failure(non_finite));
             let bases = [basis(0)?, basis(1)?];
-            let sum = |active, u: &[f64], v: &[f64]| if active {
-                self.derivative_sum(scratch, u, v).ok_or(non_finite)
+            let sum = |active, u: &[f64], v: &[f64], differentiate| if active {
+                self.derivative_sum(scratch, u, v, differentiate).ok_or(non_finite)
             } else { Ok(Homogeneous::zero()) };
             let [u_degree, v_degree] = self.degrees;
-            let uuuu = sum(u_degree >= 4, &bases[0], &self.bases[1])?;
-            let uuuv = sum(u_degree >= 3 && v_degree >= 1, &third.bases[0], &first.bases[1])?;
-            let uuvv = sum(u_degree >= 2 && v_degree >= 2, &second.bases[0], &second.bases[1])?;
-            let uvvv = sum(u_degree >= 1 && v_degree >= 3, &first.bases[0], &third.bases[1])?;
-            let vvvv = sum(v_degree >= 4, &self.bases[0], &bases[1])?;
+            let uuuu = sum(u_degree >= 4, &bases[0], &self.bases[1], [true, false])?;
+            let uuuv = sum(u_degree >= 3 && v_degree >= 1, &third.bases[0], &first.bases[1], [true, true])?;
+            let uuvv = sum(u_degree >= 2 && v_degree >= 2, &second.bases[0], &second.bases[1], [true, true])?;
+            let uvvv = sum(u_degree >= 1 && v_degree >= 3, &first.bases[0], &third.bases[1], [true, true])?;
+            let vvvv = sum(v_degree >= 4, &self.bases[0], &bases[1], [false, true])?;
             let [u, v] = first.sums;
             let [uu, uv, vv] = second.sums;
             let [uuu, uuv, uvv, vvv] = third.sums;

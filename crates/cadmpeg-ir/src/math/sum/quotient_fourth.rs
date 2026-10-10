@@ -26,7 +26,7 @@ impl Numerator {
         Self { positive: [0; WORDS], negative: [0; WORDS] }
     }
 
-    // Only the twelve calls below reach this method. Their total is150.
+    // The closed pure and mixed tables each total150 signed copies.
     // None in a factor is a genuine exact zero.
     fn add_product(&mut self, factors: [Option<ScaledValue>; 5], negative: bool, copies: usize)
         -> Option<()>
@@ -64,7 +64,7 @@ impl Numerator {
         Some(())
     }
 
-    fn divide(self, weight: ScaledValue, width: ScaledValue) -> Option<Result<FiniteReal, f64>> {
+    fn divide(self, weight: ScaledValue, widths: [ScaledValue; 4]) -> Option<Result<FiniteReal, f64>> {
         let Some((negative, magnitude)) = signed_difference(&self.positive, &self.negative) else {
             return Some(Ok(FiniteReal::ZERO));
         };
@@ -87,7 +87,7 @@ impl Numerator {
             * 2.0_f64.powi(-i32::from(keep));
         if negative { mantissa = -mantissa; }
         let mut exponent = ORIGIN + i32::from(highest) + 1;
-        for denominator in [weight, weight, weight, weight, weight, width, width, width, width] {
+        for denominator in [weight, weight, weight, weight, weight, widths[0], widths[1], widths[2], widths[3]] {
             mantissa /= denominator.sign * denominator.mantissa;
             exponent -= denominator.exponent();
         }
@@ -124,8 +124,10 @@ pub(crate) fn quotient_fourth(
     numerator.add_product([h[0], w[0], w[0], w[2], w[2]], false, 6)?;
     numerator.add_product([h[0], w[0], w[1], w[1], w[2]], true, 36)?;
     numerator.add_product([h[0], w[1], w[1], w[1], w[1]], false, 24)?;
-    numerator.divide(weight, width)
+    numerator.divide(weight, [width; 4])
 }
+
+pub(crate) mod mixed;
 
 #[cfg(test)]
 mod tests;
