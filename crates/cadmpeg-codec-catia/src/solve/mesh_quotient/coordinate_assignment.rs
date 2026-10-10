@@ -4573,6 +4573,10 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                     edge_arc_supports(ctx, &edge_ids, edge_candidates, arc_budget.as_ref())?
                 else {
                     if arc_budget.as_ref().is_some_and(WorkBudget::exhausted) {
+                        // This child owns the parent's full remaining allowance.
+                        if let Some(budget) = budget {
+                            budget.exhaust();
+                        }
                         exhausted.set(true);
                     }
                     return Ok(false);
@@ -4594,6 +4598,10 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                     }
                 } else {
                     if arc_budget.as_ref().is_some_and(WorkBudget::exhausted) {
+                        // This child owns the parent's full remaining allowance.
+                        if let Some(budget) = budget {
+                            budget.exhaust();
+                        }
                         exhausted.set(true);
                     }
                     return Ok(false);
