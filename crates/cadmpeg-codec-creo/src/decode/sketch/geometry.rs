@@ -1082,7 +1082,7 @@ pub(in crate::decode) fn saved_section_missing_line_geometry(
     let Some(order) = definition.order_table.as_ref() else {
         return Ok(None);
     };
-    if !order.is_complete() {
+    if !order.is_complete() || order.rows.is_empty() {
         return Ok(None);
     }
     let Some(segments) = definition.segments.as_ref() else {
