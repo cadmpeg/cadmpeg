@@ -52,6 +52,66 @@ fn legacy_run_indexes_wait_for_value_or_relation_queries() {
 }
 
 #[test]
+fn legacy_name_index_waits_for_a_unique_value() {
+    const COUNT: usize = 64;
+    let mut bytes = Vec::new();
+    super::identity(&mut bytes, 1);
+    for _ in 0..COUNT {
+        bytes.extend_from_slice(&[5, b'n', b'a', b'm', b'e', 0xd1, 0]);
+        bytes.extend_from_slice(TEXT_OPEN);
+        bytes.extend_from_slice(&[6, b'L', b'a', b'b', b'e', b'l', 0xfe]);
+    }
+    for _ in 0..2 {
+        bytes.extend_from_slice(NAMED_SCALAR_OPEN);
+        bytes.push(0xe7);
+    }
+    for value in [b'x', b'y'] {
+        bytes.extend_from_slice(STRING_OPEN);
+        bytes.extend_from_slice(&[2, value]);
+    }
+    for value in [0x8c, 0x8d] {
+        bytes.extend_from_slice(INTEGER_OPEN);
+        bytes.push(value);
+    }
+    bytes.extend_from_slice(CATALOG_OPEN);
+    for operation in ["catia_legacy_name_fields", "catia_legacy_name_roles"] {
+        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+        crate::test_support::with_work_limit(u64::MAX, |ctx| {
+            let runs = parse_runs(ctx, &bytes)?;
+            let [run] = runs.as_slice() else {
+                panic!("one identity run");
+            };
+            assert_eq!(run.role_selectors.len(), COUNT);
+            assert_eq!(run.text_fields.len(), COUNT);
+            assert!(run.text_fields.iter().all(|field| field.value == "Label"));
+            assert_eq!(run.scalar_values.len(), 2);
+            assert!(run.scalar_values.iter().all(|value| {
+                value.name.is_none() && value.evaluation == LegacyScalarEvaluation::Unset
+            }));
+            assert_eq!(
+                run.string_values
+                    .iter()
+                    .map(|value| value.value.as_str())
+                    .collect::<Vec<_>>(),
+                ["x", "y"],
+            );
+            assert!(run.string_values.iter().all(|value| value.name.is_none()));
+            assert_eq!(
+                run.integer_values
+                    .iter()
+                    .map(|value| value.value)
+                    .collect::<Vec<_>>(),
+                [11, 12],
+            );
+            assert!(run.integer_values.iter().all(|value| value.name.is_none()));
+            assert_eq!(ctx.resource_refusal(), None);
+            Ok::<_, CodecError>(())
+        })
+        .expect("duplicate values make no name lookup or index traversal");
+    }
+}
+
+#[test]
 fn legacy_relation_identity_index_waits_for_matching_role_selectors() {
     let identities = (1..=4096)
         .map(|entity_id| LegacyEntityIdentity {
@@ -249,8 +309,8 @@ fn legacy_name_count_backing_is_temporary_through_binding() {
         })
         .collect::<Vec<_>>();
     crate::test_support::with_retained_limit(0, |ctx| {
-        let names = LegacyNameIndex::new(ctx, &[], &[], &[])?;
-        bind_value_names(ctx, &names, &[], &[], &mut values)?;
+        let mut names = None;
+        bind_value_names(ctx, &mut names, &[], &[], &[], &mut values)?;
         assert_eq!(ctx.resource_refusal(), None);
         Ok::<_, cadmpeg_core::CodecError>(())
     })
