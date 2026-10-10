@@ -1123,7 +1123,7 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
         {
             continue;
         }
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, blocks)? else {
             continue;
         };
         let Some(operation_key) = operation_key(
@@ -1179,7 +1179,7 @@ pub(in crate::native) fn feature_pattern_construction_strings(
             ctx,
             payload.content.block_ids(),
             payload.content.blocks().len(),
-            &blocks,
+            blocks,
         )?
         else {
             continue;
@@ -1235,7 +1235,7 @@ pub(in crate::native) fn feature_pattern_construction_fixed_lanes(
             ctx,
             payload.content.block_ids(),
             payload.content.blocks().len(),
-            &blocks,
+            blocks,
         )?
         else {
             continue;

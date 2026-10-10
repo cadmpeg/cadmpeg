@@ -261,7 +261,7 @@ pub(in crate::native) fn feature_thru_curve_construction_branch_groups(
 mod tests {
     use super::FeatureThruCurveConstructionBranchGroup;
 
-    fn branch_group_container() -> crate::container::Container<'static> {
+    fn branch_group_file() -> Vec<u8> {
         let mut branch = b"\x13\x00\x00\x01\x00\xf1\x01\x21\xf1\x01\x22\xf1\x01\x23\x01\x08\x02\x03\x03\x04\x01\x01\x01\x01\x07\xf1\x01\x24\xf1\x01\x25\xf1\x01\x26\xf1\x01\x27\xf1\x01\x28\xf1\x01\x29\x04\x01\xa0\x5e\x38\x13\x01".to_vec();
         branch.extend([2, 0x15, 1, 2, 0xf0, 0x31, 1, 2]);
         branch.extend([0; 5]);
@@ -271,18 +271,20 @@ mod tests {
             &[(&[0xff; 4], "THRU_CURVE", branch)],
             &[],
         );
-        let file = crate::test_support::test_prt::prt_with_named_payloads(&[(
+        crate::test_support::test_prt::prt_with_named_payloads(&[(
             "/Root/UG_PART/UG_PART",
             payload,
-        )]);
-        crate::test_support::with_decode_context(move |ctx| crate::container::scan_bytes(ctx, file))
-            .expect("synthetic THRU_CURVE branch group container")
+        )])
     }
 
     fn branch_group_route_refusal(
         configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
     ) -> cadmpeg_core::CodecError {
-        let container = branch_group_container();
+        let file = branch_group_file();
+        let container = crate::test_support::with_decode_context(|ctx| {
+            crate::container::scan_bytes(ctx, &file)
+        })
+        .expect("synthetic container");
         let groups = crate::test_support::with_decode_context(|ctx| {
             super::feature_thru_curve_construction_branch_groups(
                 ctx,

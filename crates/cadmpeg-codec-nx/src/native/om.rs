@@ -6689,8 +6689,10 @@ mod object_record_identity_tests {
 
     #[test]
     fn unique_indexed_object_records_receive_stable_identities() {
+        let source_bytes_1 = prt_with_indexed_om_section();
+
         let container = crate::test_support::with_decode_context(|ctx| {
-            crate::container::scan_bytes(ctx, prt_with_indexed_om_section())
+            crate::container::scan_bytes(ctx, &source_bytes_1)
         })
         .expect("required invariant");
         let records =

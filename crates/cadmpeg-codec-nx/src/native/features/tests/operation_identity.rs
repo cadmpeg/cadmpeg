@@ -309,7 +309,7 @@ pub(super) fn label(ordinal: u32, object_indices: [Option<u32>; 4]) -> FeatureOp
     }
 }
 
-fn unlabeled_history_fixture() -> crate::container::Container<'static> {
+fn unlabeled_history_fixture() -> Vec<u8> {
     const HEADER: &[u8] = b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff";
     let mut section = composed_feature_history_section(&[
         (&[0xff; 4], "BLOCK", b"first".to_vec()),
@@ -328,13 +328,7 @@ fn unlabeled_history_fixture() -> crate::container::Container<'static> {
     let payload_len = u32::try_from(section.len() - 16).expect("fixture value fits u32");
     section[8..12].copy_from_slice(&payload_len.to_be_bytes());
     let payload = crate::test_support::test_om::feature_history_section_over_sort_scratch(&section);
-    crate::test_support::with_decode_context(|ctx| {
-        crate::container::scan_bytes(
-            ctx,
-            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]),
-        )
-    })
-    .expect("feature-history fixture")
+    prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)])
 }
 
 #[test]
@@ -388,7 +382,10 @@ fn operation_header_identity_witness_survives_reordering() {
 
 #[test]
 fn feature_label_identity_retains_the_complete_header_ordinal() {
-    let container = unlabeled_history_fixture();
+    let file = unlabeled_history_fixture();
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
 
     let labels = crate::test_support::with_decode_context(|ctx| {
         feature_operation_labels(
@@ -413,7 +410,10 @@ fn feature_label_identity_retains_the_complete_header_ordinal() {
 fn feature_label_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
-    let container = unlabeled_history_fixture();
+    let file = unlabeled_history_fixture();
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
 
     crate::test_support::with_decode_context_over(
         &[],
@@ -431,7 +431,10 @@ fn feature_label_refusal(
 fn feature_operation_record_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
-    let container = unlabeled_history_fixture();
+    let file = unlabeled_history_fixture();
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let admitted = crate::test_support::with_decode_context(|ctx| {
         feature_operation_records(
             ctx,
@@ -576,7 +579,10 @@ fn feature_label_identity_admits_full_ordinal_width() {
 fn unlabeled_record_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
-    let container = unlabeled_history_fixture();
+    let file = unlabeled_history_fixture();
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
 
     crate::test_support::with_decode_context_over(
         &[],
@@ -593,7 +599,10 @@ fn unlabeled_record_refusal(
 
 #[test]
 fn unlabeled_record_route_preserves_source_order() {
-    let container = unlabeled_history_fixture();
+    let file = unlabeled_history_fixture();
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let records = crate::test_support::with_decode_context(|ctx| {
         feature_unlabeled_operation_records(
             ctx,
@@ -665,18 +674,16 @@ fn operation_header_identity_survives_offset_store_insertion() {
             b"beta".as_slice(),
         ],
     );
+    let source_bytes_1 = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", first_payload)]);
+
     let first = crate::test_support::with_decode_context(|ctx| {
-        crate::container::scan_bytes(
-            ctx,
-            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", first_payload)]),
-        )
+        crate::container::scan_bytes(ctx, &source_bytes_1)
     })
     .expect("first synthetic container");
+    let source_bytes_2 = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", second_payload)]);
+
     let second = crate::test_support::with_decode_context(|ctx| {
-        crate::container::scan_bytes(
-            ctx,
-            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", second_payload)]),
-        )
+        crate::container::scan_bytes(ctx, &source_bytes_2)
     })
     .expect("second synthetic container");
 
@@ -805,11 +812,10 @@ fn operation_body_write_retains_identity_group_and_image() {
         0x12, 0x80, 0xa9, 0x97, 0x75, 0x01, 0x02, 0x10, 0x86, 0x94, 0xff,
     ];
     let payload = composed_feature_history_payload(&[(&[0xff; 4], "EXTRUDE", body_writes)], &[]);
+    let source_bytes_3 = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+
     let container = crate::test_support::with_decode_context(|ctx| {
-        crate::container::scan_bytes(
-            ctx,
-            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]),
-        )
+        crate::container::scan_bytes(ctx, &source_bytes_3)
     })
     .expect("synthetic body-write container");
     let writes = crate::test_support::with_decode_context(|ctx| {
@@ -851,11 +857,10 @@ fn operation_object_reference_refusal(
         &[(&[0xff; 4], "EXTRUDE", field.to_vec())],
         &[],
     );
+    let source_bytes_4 = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+
     let container = crate::test_support::with_decode_context(|ctx| {
-        crate::container::scan_bytes(
-            ctx,
-            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]),
-        )
+        crate::container::scan_bytes(ctx, &source_bytes_4)
     })
     .expect("synthetic direct-reference container");
     let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
@@ -952,11 +957,10 @@ fn operation_common_frame_refusal(
         &[(&[0xff; 4], "FSET", frame.to_vec())],
         &[],
     );
+    let source_bytes_5 = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+
     let container = crate::test_support::with_decode_context(|ctx| {
-        crate::container::scan_bytes(
-            ctx,
-            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]),
-        )
+        crate::container::scan_bytes(ctx, &source_bytes_5)
     })
     .expect("synthetic common-frame container");
     let common = crate::test_support::with_decode_context(|ctx| {
@@ -1015,11 +1019,10 @@ fn feature_payload_reference_refusal(
         &[(&[0xff; 4], "EXTRUDE", payload_bytes.to_vec())],
         &[],
     );
+    let source_bytes_6 = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+
     let container = crate::test_support::with_decode_context(|ctx| {
-        crate::container::scan_bytes(
-            ctx,
-            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]),
-        )
+        crate::container::scan_bytes(ctx, &source_bytes_6)
     })
     .expect("synthetic feature payload container");
     let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| match route_kind {
@@ -1064,11 +1067,10 @@ fn input_block_refusal(
         )],
         &store,
     );
+    let source_bytes_7 = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+
     let container = crate::test_support::with_decode_context(|ctx| {
-        crate::container::scan_bytes(
-            ctx,
-            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]),
-        )
+        crate::container::scan_bytes(ctx, &source_bytes_7)
     })
     .expect("synthetic input-block container");
     let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
@@ -1307,11 +1309,10 @@ fn operation_body_write_refusal(
         &[(&[0xff; 4], "EXTRUDE", body_write.to_vec())],
         &store,
     );
+    let source_bytes_8 = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+
     let container = crate::test_support::with_decode_context(|ctx| {
-        crate::container::scan_bytes(
-            ctx,
-            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]),
-        )
+        crate::container::scan_bytes(ctx, &source_bytes_8)
     })
     .expect("synthetic body-write container");
     let admitted = crate::test_support::with_decode_context(|ctx| {
@@ -1381,11 +1382,10 @@ fn operation_body_write_resolves_one_unique_image_block() {
     let store_records = (0..65).map(|_| b"\0".as_slice()).collect::<Vec<_>>();
     let payload =
         composed_feature_history_payload(&[(&[0xff; 4], "EXTRUDE", body_write)], &store_records);
+    let source_bytes_9 = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+
     let container = crate::test_support::with_decode_context(|ctx| {
-        crate::container::scan_bytes(
-            ctx,
-            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]),
-        )
+        crate::container::scan_bytes(ctx, &source_bytes_9)
     })
     .expect("synthetic body-image store");
 
@@ -1413,11 +1413,10 @@ fn body_image_segment_use_requires_one_plain_alias() {
     let store_records = (0..65).map(|_| b"\0".as_slice()).collect::<Vec<_>>();
     let payload =
         composed_feature_history_payload(&[(&[0xff; 4], "EXTRUDE", body_write)], &store_records);
+    let source_bytes_10 = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+
     let container = crate::test_support::with_decode_context(|ctx| {
-        crate::container::scan_bytes(
-            ctx,
-            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]),
-        )
+        crate::container::scan_bytes(ctx, &source_bytes_10)
     })
     .expect("synthetic body-image store");
     let writes = crate::test_support::with_decode_context(|ctx| {
@@ -1522,11 +1521,10 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
     let store_records = (0..65).map(|_| b"\0".as_slice()).collect::<Vec<_>>();
     let payload =
         composed_feature_history_payload(&[(&[0xff; 4], "EXTRUDE", body_write)], &store_records);
+    let source_bytes_11 = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+
     let container = crate::test_support::with_decode_context(|ctx| {
-        crate::container::scan_bytes(
-            ctx,
-            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]),
-        )
+        crate::container::scan_bytes(ctx, &source_bytes_11)
     })
     .expect("synthetic body-image store");
     let writes = crate::test_support::with_decode_context(|ctx| {

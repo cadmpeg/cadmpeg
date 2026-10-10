@@ -488,63 +488,26 @@ impl<'a> Container<'a> {
         ctx: &'ctx DecodeContext<'_>,
     ) -> Result<SectionReaders<'_, 'ctx, crate::om::Section<'_>>, CodecError> {
         if self.om_section_cache.get().is_none() {
-            let cache = match &self.data {
-                SourceImage::Borrowed(view) => {
-                    let bytes = view.window();
-                    let bytes: &'a [u8] = bytes;
-                    let (sections, _) =
-                        parse_framed_section_cache(ctx, bytes, &self.entries, false)?;
-                    FramedSectionCache::Borrowed { sections }
-                }
-                SourceImage::Owned(bytes) => {
-                    let (sections, layouts) =
-                        parse_framed_section_cache(ctx, bytes, &self.entries, true)?;
-                    drop(sections);
-                    FramedSectionCache::Owned { layouts }
-                }
-            };
-            drop(self.om_section_cache.set(cache));
+            let bytes = self.data.view().window();
+            let sections = parse_framed_section_cache(ctx, bytes, &self.entries)?;
+            drop(self.om_section_cache.set(sections));
         }
         let framed_cache = self
             .om_section_cache
             .get()
             .ok_or_else(|| ctx.refuse_codec_limit("nx framed OM cache", 0, 1))?;
         let mut storage = ctx.reserve_scoped(0, "NX framed section readers")?;
-        let mut result = storage.with_storage(|| {
-            ctx.collection_vec(
-                match framed_cache {
-                    FramedSectionCache::Borrowed { sections } => sections.len(),
-                    FramedSectionCache::Owned { layouts } => layouts.len(),
-                },
-                "NX framed section readers",
-            )
-        })?;
-        match framed_cache {
-            FramedSectionCache::Borrowed { sections } => {
-                let mut visits = sections.iter();
-                while visits.len() != 0 {
-                    let Some((entry_index, section)) =
-                        ctx.next_charged(&mut visits, "visit NX framed cached section readers")?
-                    else {
-                        break;
-                    };
-                    if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
-                        result.push((entry, section.clone()));
-                    }
-                }
-            }
-            FramedSectionCache::Owned { layouts } => {
-                let mut visits = layouts.iter();
-                while visits.len() != 0 {
-                    let Some((entry_index, layout)) =
-                        ctx.next_charged(&mut visits, "visit NX framed owned section readers")?
-                    else {
-                        break;
-                    };
-                    if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
-                        result.push((entry, storage.with_storage(|| layout.materialize(ctx))?));
-                    }
-                }
+        let mut result = storage
+            .with_storage(|| ctx.collection_vec(framed_cache.len(), "NX framed section readers"))?;
+        let mut visits = framed_cache.iter();
+        while visits.len() != 0 {
+            let Some((entry_index, section)) =
+                ctx.next_charged(&mut visits, "visit NX framed cached section readers")?
+            else {
+                break;
+            };
+            if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
+                result.push((entry, section.clone()));
             }
         }
         Ok((result, storage))
@@ -556,71 +519,55 @@ impl<'a> Container<'a> {
         ctx: &'ctx DecodeContext<'_>,
     ) -> Result<SectionReaders<'_, 'ctx, crate::om::IndexedSection<'_>>, CodecError> {
         if self.indexed_section_layouts.get().is_none() {
-            let cache = match &self.data {
-                SourceImage::Borrowed(view) => {
-                    let bytes = view.window();
-                    let bytes: &'a [u8] = bytes;
-                    let (sections, _) =
-                        parse_indexed_section_cache(ctx, bytes, &self.entries, false)?;
-                    let mut blocks = BTreeMap::new();
-                    let mut visits = sections.iter().enumerate();
-                    while visits.len() != 0 {
-                        let Some((section_ordinal, (entry_index, section))) =
-                            ctx.next_charged(&mut visits, "index NX cached offset sections")?
-                        else {
-                            break;
-                        };
-                        let Some((control, _, records)) = section.as_offset_only() else {
-                            continue;
-                        };
-                        let entry_offset = self
-                            .entries
-                            .get(*entry_index)
-                            .and_then(crate::container::DirEntry::file_span)
-                            .map_or(0, |(offset, _)| offset);
-                        ctx.insert_btree_map(
-                            &mut blocks,
-                            offset_block_key(ctx, section_ordinal, 0)?,
-                            (
-                                control.bytes,
-                                entry_offset + cadmpeg_core::decode::u64_from_index(control.offset),
-                            ),
-                            "NX cached offset blocks",
-                        )?;
-                        let mut visits = records.iter().enumerate();
-                        while visits.len() != 0 {
-                            let Some((record_ordinal, block)) =
-                                ctx.next_charged(&mut visits, "index NX cached offset records")?
-                            else {
-                                break;
-                            };
-                            let ordinal = record_ordinal.checked_add(1).ok_or_else(|| {
-                                ctx.refuse_codec_limit(
-                                    "NX offset block ordinal",
-                                    u64::MAX,
-                                    u64::MAX,
-                                )
-                            })?;
-                            ctx.insert_btree_map(
-                                &mut blocks,
-                                offset_block_key(ctx, section_ordinal, ordinal)?,
-                                (
-                                    block.bytes,
-                                    entry_offset
-                                        + cadmpeg_core::decode::u64_from_index(block.offset),
-                                ),
-                                "NX cached offset blocks",
-                            )?;
-                        }
-                    }
-                    IndexedSectionCache::Borrowed { sections, blocks }
+            let bytes = self.data.view().window();
+            let sections = parse_indexed_section_cache(ctx, bytes, &self.entries)?;
+            let mut blocks = BTreeMap::new();
+            let mut visits = sections.iter().enumerate();
+            while visits.len() != 0 {
+                let Some((section_ordinal, (entry_index, section))) =
+                    ctx.next_charged(&mut visits, "index NX cached offset sections")?
+                else {
+                    break;
+                };
+                let Some((control, _, records)) = section.as_offset_only() else {
+                    continue;
+                };
+                let entry_offset = self
+                    .entries
+                    .get(*entry_index)
+                    .and_then(crate::container::DirEntry::file_span)
+                    .map_or(0, |(offset, _)| offset);
+                ctx.insert_btree_map(
+                    &mut blocks,
+                    offset_block_key(ctx, section_ordinal, 0)?,
+                    (
+                        control.bytes,
+                        entry_offset + cadmpeg_core::decode::u64_from_index(control.offset),
+                    ),
+                    "NX cached offset blocks",
+                )?;
+                let mut visits = records.iter().enumerate();
+                while visits.len() != 0 {
+                    let Some((record_ordinal, block)) =
+                        ctx.next_charged(&mut visits, "index NX cached offset records")?
+                    else {
+                        break;
+                    };
+                    let ordinal = record_ordinal.checked_add(1).ok_or_else(|| {
+                        ctx.refuse_codec_limit("NX offset block ordinal", u64::MAX, u64::MAX)
+                    })?;
+                    ctx.insert_btree_map(
+                        &mut blocks,
+                        offset_block_key(ctx, section_ordinal, ordinal)?,
+                        (
+                            block.bytes,
+                            entry_offset + cadmpeg_core::decode::u64_from_index(block.offset),
+                        ),
+                        "NX cached offset blocks",
+                    )?;
                 }
-                SourceImage::Owned(bytes) => {
-                    let (_, layouts) =
-                        parse_indexed_section_cache(ctx, bytes, &self.entries, true)?;
-                    IndexedSectionCache::Owned { layouts }
-                }
-            };
+            }
+            let cache = IndexedSectionCache { sections, blocks };
             drop(self.indexed_section_layouts.set(cache));
         }
         let cache = self
@@ -629,58 +576,30 @@ impl<'a> Container<'a> {
             .ok_or_else(|| ctx.refuse_codec_limit("nx indexed OM cache", 0, 1))?;
         let mut storage = ctx.reserve_scoped(0, "NX indexed section readers")?;
         let mut result = storage.with_storage(|| {
-            ctx.collection_vec(
-                match cache {
-                    IndexedSectionCache::Borrowed { sections, .. } => sections.len(),
-                    IndexedSectionCache::Owned { layouts } => layouts.len(),
-                },
-                "NX indexed section readers",
-            )
+            ctx.collection_vec(cache.sections.len(), "NX indexed section readers")
         })?;
-        match cache {
-            IndexedSectionCache::Borrowed { sections, .. } => {
-                let mut visits = sections.iter();
-                while visits.len() != 0 {
-                    let Some((entry_index, section)) =
-                        ctx.next_charged(&mut visits, "visit NX indexed cached section readers")?
-                    else {
-                        break;
-                    };
-                    if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
-                        result.push((entry, section.clone()));
-                    }
-                }
-            }
-            IndexedSectionCache::Owned { layouts } => {
-                let mut visits = layouts.iter();
-                while visits.len() != 0 {
-                    let Some((entry_index, layout)) =
-                        ctx.next_charged(&mut visits, "visit NX indexed owned section readers")?
-                    else {
-                        break;
-                    };
-                    if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
-                        result.push((entry, storage.with_storage(|| layout.materialize(ctx))?));
-                    }
-                }
+        let sections = &cache.sections;
+        let mut visits = sections.iter();
+        while visits.len() != 0 {
+            let Some((entry_index, section)) =
+                ctx.next_charged(&mut visits, "visit NX indexed cached section readers")?
+            else {
+                break;
+            };
+            if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
+                result.push((entry, section.clone()));
             }
         }
         Ok((result, storage))
     }
 
-    /// Return the cached bytes and source offsets of every borrowed offset-store block.
-    ///
-    /// Owned inputs retain independent source-backed caches; these slices refer
-    /// only to an input borrowed for the container lifetime.
+    /// Return the cached bytes and source offsets of every offset-store block.
     pub(crate) fn cached_offset_data_block_bytes(
         &self,
     ) -> Option<&BTreeMap<String, (&'a [u8], u64)>> {
         self.indexed_section_layouts
             .get()
-            .and_then(|cache| match cache {
-                IndexedSectionCache::Borrowed { blocks, .. } => Some(blocks),
-                IndexedSectionCache::Owned { .. } => None,
-            })
+            .map(|cache| &cache.blocks)
     }
 
     /// Extract child-part paths from catalogued external-reference payloads.
@@ -1414,41 +1333,21 @@ pub(crate) struct Container<'a> {
     pub(crate) segment_wrappers: Vec<SegmentStreamWrapper>,
     /// Cached source ranges for indexed object-model sections.
     pub(crate) indexed_section_layouts: OnceLock<IndexedSectionCache<'a>>,
-    /// Cached size-framed object-model sections when the container borrows its input.
-    pub(crate) om_section_cache: OnceLock<FramedSectionCache<'a>>,
+    /// Cached size-framed object-model sections.
+    pub(crate) om_section_cache: OnceLock<FramedSections<'a>>,
 }
 
-/// Parsed indexed sections borrow the input or retain an immutable source
-/// owner with checked ranges when the container owns its input.
+/// Indexed sections and block slices borrow the container input.
 #[derive(Debug, Clone)]
-pub(crate) enum IndexedSectionCache<'a> {
-    Borrowed {
-        sections: Vec<(usize, crate::om::IndexedSection<'a>)>,
-        blocks: BTreeMap<String, (&'a [u8], u64)>,
-    },
-    Owned {
-        layouts: Vec<(usize, crate::om::cache::IndexedSectionLayout)>,
-    },
-}
-
-/// Parsed size-framed sections retained when their source bytes are borrowed
-/// from the container input, or checked ranges with an immutable source owner
-/// when the container owns its input bytes.
-#[derive(Debug, Clone)]
-pub(crate) enum FramedSectionCache<'a> {
-    Borrowed {
-        sections: Vec<(usize, crate::om::Section<'a>)>,
-    },
-    Owned {
-        layouts: Vec<(usize, crate::om::cache::SectionLayout)>,
-    },
+pub(crate) struct IndexedSectionCache<'a> {
+    pub(crate) sections: Vec<(usize, crate::om::IndexedSection<'a>)>,
+    pub(crate) blocks: BTreeMap<String, (&'a [u8], u64)>,
 }
 
 /// Reader slots are scratch; each section's shared children keep their own admission.
 type SectionReaders<'a, 'ctx, T> = (Vec<(EntryRef<'a>, T)>, ScopedReservation<'ctx>);
 
 type FramedSections<'a> = Vec<(usize, crate::om::Section<'a>)>;
-type FramedSectionLayouts = Vec<(usize, crate::om::cache::SectionLayout)>;
 
 fn offset_block_key(
     ctx: &DecodeContext<'_>,
@@ -1465,11 +1364,8 @@ fn parse_framed_section_cache<'bytes>(
     ctx: &DecodeContext<'_>,
     bytes: &'bytes [u8],
     entries: &[DirEntry],
-    retain_layouts: bool,
-) -> Result<(FramedSections<'bytes>, FramedSectionLayouts), CodecError> {
-    let mut layouts_storage = ctx.reserve_scoped(0, "NX framed cache layouts")?;
+) -> Result<FramedSections<'bytes>, CodecError> {
     let mut sections = Vec::new();
-    let mut layouts = Vec::new();
     let mut visits = entries.iter().enumerate();
     while visits.len() != 0 {
         let Some((entry_index, entry)) =
@@ -1489,79 +1385,36 @@ fn parse_framed_section_cache<'bytes>(
         let Some(payload) = bytes.get(offset..end) else {
             continue;
         };
-        let mut parsed_storage = ctx.reserve_scoped(0, "NX parsed section cache scratch")?;
-        let parsed = if retain_layouts {
-            parsed_storage.with_storage(|| crate::om::sections(ctx, payload))?
-        } else {
-            crate::om::sections(ctx, payload)?
-        };
+        let parsed = crate::om::sections(ctx, payload)?;
         if parsed.is_empty() {
             continue;
         }
-        let source = if retain_layouts {
-            ctx.charge_retained(u64_from_index(payload.len()), "NX framed cache source")?;
-            Some(std::sync::Arc::<[u8]>::from(payload))
-        } else {
-            None
-        };
-        if let Some(source) = &source {
-            let mut visits = parsed.iter().enumerate();
-            while visits.len() != 0 {
-                let Some((_, section)) =
-                    ctx.next_charged(&mut visits, "form NX section cache layouts")?
-                else {
-                    break;
-                };
-                let mut candidate_storage =
-                    ctx.reserve_scoped(0, "NX framed cache layout candidate")?;
-                let Some(layout) = candidate_storage.with_storage(|| {
-                    crate::om::cache::SectionLayout::from_section(ctx, section, source)
-                })?
-                else {
-                    continue;
-                };
-                layouts_storage.with_storage(|| {
-                    ctx.reserve_vec(&mut layouts, 1, "NX framed cache layouts")?;
-                    layouts.push((entry_index, layout));
-                    candidate_storage.commit()
-                })?;
-            }
-            drop(visits);
-            drop(parsed);
-            drop(parsed_storage);
-        } else {
-            let mut visits = parsed.into_iter().enumerate();
-            while visits.len() != 0 {
-                let Some((_, section)) =
-                    ctx.next_charged(&mut visits, "form NX section cache layouts")?
-                else {
-                    break;
-                };
-                ctx.push_vec(
-                    &mut sections,
-                    (entry_index, section),
-                    "NX framed cache sections",
-                )?;
-            }
-            drop(visits);
-            drop(parsed_storage);
+        let mut visits = parsed.into_iter().enumerate();
+        while visits.len() != 0 {
+            let Some((_, section)) =
+                ctx.next_charged(&mut visits, "form NX section cache layouts")?
+            else {
+                break;
+            };
+            ctx.push_vec(
+                &mut sections,
+                (entry_index, section),
+                "NX framed cache sections",
+            )?;
         }
+        drop(visits);
     }
-    layouts_storage.commit_value((sections, layouts))
+    Ok(sections)
 }
 
 type IndexedSections<'a> = Vec<(usize, crate::om::IndexedSection<'a>)>;
-type IndexedSectionLayouts = Vec<(usize, crate::om::cache::IndexedSectionLayout)>;
 
 fn parse_indexed_section_cache<'bytes>(
     ctx: &DecodeContext<'_>,
     bytes: &'bytes [u8],
     entries: &[DirEntry],
-    retain_layouts: bool,
-) -> Result<(IndexedSections<'bytes>, IndexedSectionLayouts), CodecError> {
-    let mut layouts_storage = ctx.reserve_scoped(0, "NX indexed cache layouts")?;
+) -> Result<IndexedSections<'bytes>, CodecError> {
     let mut sections = Vec::new();
-    let mut layouts = Vec::new();
     let mut seen_storage = ctx.reserve_scoped(0, "NX indexed cache seen scratch")?;
     let mut seen = std::collections::BTreeSet::new();
     let mut visits = entries.iter().enumerate();
@@ -1583,80 +1436,35 @@ fn parse_indexed_section_cache<'bytes>(
         let Some(payload) = bytes.get(offset..end) else {
             continue;
         };
-        let mut parsed_storage = ctx.reserve_scoped(0, "NX parsed section cache scratch")?;
-        let parsed = if retain_layouts {
-            parsed_storage.with_storage(|| crate::om::indexed_sections(ctx, payload))?
-        } else {
-            crate::om::indexed_sections(ctx, payload)?
-        };
+        let parsed = crate::om::indexed_sections(ctx, payload)?;
         if parsed.is_empty() {
             continue;
         }
-        let source = if retain_layouts {
-            ctx.charge_retained(u64_from_index(payload.len()), "NX indexed cache source")?;
-            Some(std::sync::Arc::<[u8]>::from(payload))
-        } else {
-            None
-        };
-        if let Some(source) = &source {
-            let mut visits = parsed.iter().enumerate();
-            while visits.len() != 0 {
-                let Some((_, section)) =
-                    ctx.next_charged(&mut visits, "form NX section cache layouts")?
-                else {
-                    break;
-                };
-                if !seen_storage.with_storage(|| {
-                    ctx.insert_btree_set(
-                        &mut seen,
-                        (offset, section.object_id_table_offset),
-                        "NX indexed cache seen sections",
-                    )
-                })? {
-                    continue;
-                }
-                let (layout, candidate_storage) =
-                    crate::om::cache::IndexedSectionLayout::from_section(ctx, section, source)?;
-                let Some(layout) = layout else {
-                    continue;
-                };
-                layouts_storage.with_storage(|| {
-                    ctx.reserve_vec(&mut layouts, 1, "NX indexed cache layouts")?;
-                    layouts.push((entry_index, layout));
-                    candidate_storage.commit()
-                })?;
+        let mut visits = parsed.into_iter().enumerate();
+        while visits.len() != 0 {
+            let Some((_, section)) =
+                ctx.next_charged(&mut visits, "form NX section cache layouts")?
+            else {
+                break;
+            };
+            if !seen_storage.with_storage(|| {
+                ctx.insert_btree_set(
+                    &mut seen,
+                    (offset, section.object_id_table_offset),
+                    "NX indexed cache seen sections",
+                )
+            })? {
+                continue;
             }
-            drop(visits);
-            drop(parsed);
-            drop(parsed_storage);
-        } else {
-            let mut visits = parsed.into_iter().enumerate();
-            while visits.len() != 0 {
-                let Some((_, section)) =
-                    ctx.next_charged(&mut visits, "form NX section cache layouts")?
-                else {
-                    break;
-                };
-                if !seen_storage.with_storage(|| {
-                    ctx.insert_btree_set(
-                        &mut seen,
-                        (offset, section.object_id_table_offset),
-                        "NX indexed cache seen sections",
-                    )
-                })? {
-                    continue;
-                }
-                ctx.push_vec(
-                    &mut sections,
-                    (entry_index, section),
-                    "NX indexed cache sections",
-                )?;
-            }
-            drop(visits);
-            drop(parsed_storage);
+            ctx.push_vec(
+                &mut sections,
+                (entry_index, section),
+                "NX indexed cache sections",
+            )?;
         }
+        drop(visits);
     }
-    layouts_storage.commit_value((sections, layouts))
+    Ok(sections)
 }
 
 /// Return whether `prefix` starts with [`MAGIC`].
@@ -1903,7 +1711,7 @@ pub(crate) fn scan_legacy<'a>(
     drop(workspace);
     let version = payload_prefix[legacy_ugii_payload_prefix::VERSION];
     let mut container = Container {
-        data: SourceImage::Borrowed(logical_data),
+        data: SourceImage(logical_data),
         physical_size: cadmpeg_core::decode::u64_from_index(root.window().len()),
         layout: ContainerLayout::LegacyCfb { version },
         entries,

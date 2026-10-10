@@ -224,7 +224,7 @@ pub(in crate::native) fn feature_delete_construction_payloads(
     let blocks = offset_data_block_bytes(ctx, container)?;
     let mut output = Vec::new();
     for field in ctx.admit_iter(fields, "scan NX DELETE reference fields")? {
-        let Some(payload) = delete_construction_payload_from_field(ctx, field, &blocks)? else {
+        let Some(payload) = delete_construction_payload_from_field(ctx, field, blocks)? else {
             continue;
         };
         ctx.reserve_vec(&mut output, 1, "NX DELETE construction payloads")?;

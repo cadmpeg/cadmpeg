@@ -837,7 +837,7 @@ pub(in crate::native) fn feature_draft_construction_payloads(
                 "NX draft construction source blocks",
             )?;
         }
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, blocks)? else {
             continue;
         };
         let id = replace_operation_text(
@@ -934,7 +934,7 @@ pub(in crate::native) fn feature_draft_construction_graph_payloads(
         )? {
             continue;
         }
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, blocks)? else {
             continue;
         };
         let Some(key) = operation_key(ctx, &lane.id, "find NX draft graph operation key")? else {
@@ -975,7 +975,7 @@ pub(in crate::native) fn feature_draft_construction_fixed_lanes(
             ctx,
             payload.content.block_ids(),
             payload.content.blocks().len(),
-            &blocks,
+            blocks,
         )?
         else {
             continue;
@@ -1029,7 +1029,7 @@ pub(in crate::native) fn feature_draft_construction_binary32_lanes(
             ctx,
             payload.content.block_ids(),
             payload.content.blocks().len(),
-            &blocks,
+            blocks,
         )?
         else {
             continue;
@@ -1084,7 +1084,7 @@ pub(in crate::native) fn feature_draft_construction_graph_strings(
             ctx,
             payload.content.block_ids(),
             payload.content.blocks().len(),
-            &blocks,
+            blocks,
         )?
         else {
             continue;
@@ -1138,7 +1138,7 @@ pub(in crate::native) fn feature_draft_construction_identity_frames(
             ctx,
             payload.content.block_ids(),
             payload.content.blocks().len(),
-            &blocks,
+            blocks,
         )?
         else {
             continue;

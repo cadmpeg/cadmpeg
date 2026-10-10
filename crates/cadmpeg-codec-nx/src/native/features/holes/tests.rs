@@ -107,22 +107,23 @@ fn nx_symbolic_thread_requires_two_complete_type_three_text_frames() {
     .is_none());
 }
 
-fn symbolic_thread_container() -> crate::container::Container<'static> {
+fn symbolic_thread_file() -> Vec<u8> {
     let payload = b"\x03\x0bM Profile\0\x03\x0aM3_x_0.5\0\x03\x05CUT\0".to_vec();
     let part = crate::test_support::test_om::composed_feature_history_payload(
         &[(&[0xff; 4], "SYMBOLIC_THREAD", payload)],
         &[],
     );
-    let file =
-        crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
-    crate::test_support::with_decode_context(move |ctx| crate::container::scan_bytes(ctx, file))
-        .expect("symbolic thread container")
+
+    crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)])
 }
 
 fn symbolic_thread_route_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
-    let container = symbolic_thread_container();
+    let file = symbolic_thread_file();
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let records = crate::test_support::with_decode_context(|ctx| {
         crate::native::features::holes::feature_symbolic_threads(
             ctx,
@@ -646,7 +647,7 @@ fn threaded_hole_template_route_refuses_work_limit() {
     );
 }
 
-fn repeated_scalar_lane_container() -> crate::container::Container<'static> {
+fn repeated_scalar_lane_file() -> Vec<u8> {
     let mut scalar = 25.4f64.to_be_bytes();
     scalar[0] -= 0x10;
     let mut payload = scalar.to_vec();
@@ -658,13 +659,11 @@ fn repeated_scalar_lane_container() -> crate::container::Container<'static> {
         &[(&[0xff; 4], "SIMPLE HOLE", payload)],
         &[],
     );
-    let file =
-        crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
-    crate::test_support::with_decode_context(move |ctx| crate::container::scan_bytes(ctx, file))
-        .expect("repeated scalar lane container")
+
+    crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)])
 }
 
-fn repeated_scalar_block_reference_container() -> crate::container::Container<'static> {
+fn repeated_scalar_block_reference_file() -> Vec<u8> {
     let shifted = |value: f64| {
         let mut bytes = value.to_be_bytes();
         bytes[0] -= 0x10;
@@ -688,13 +687,11 @@ fn repeated_scalar_block_reference_container() -> crate::container::Container<'s
         &[(&[3, 0xff, 0xff, 0xff], "SIMPLE HOLE", payload)],
         &store,
     );
-    let file =
-        crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
-    crate::test_support::with_decode_context(move |ctx| crate::container::scan_bytes(ctx, file))
-        .expect("repeated scalar block reference container")
+
+    crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)])
 }
 
-fn hole_package_lane_container() -> crate::container::Container<'static> {
+fn hole_package_lane_file() -> Vec<u8> {
     let payload = vec![
         0x7e, 0x00, 0x00, 0x01, 0x00, 0x00, 0x46, 0x00, 0x11, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xcd,
         0xf0, 0xce, 0x11, 0x00, 0x00, 0x00, 0x00, 0xf0, 0xcf, 0xf0, 0xd0, 0x00, 0x00, 0xff, 0x7f,
@@ -704,16 +701,17 @@ fn hole_package_lane_container() -> crate::container::Container<'static> {
         &[(&[0xff; 4], "HOLE PACKAGE", payload)],
         &store,
     );
-    let file =
-        crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
-    crate::test_support::with_decode_context(move |ctx| crate::container::scan_bytes(ctx, file))
-        .expect("hole package lane container")
+
+    crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)])
 }
 
 fn hole_package_lane_route_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
-    let container = hole_package_lane_container();
+    let file = hole_package_lane_file();
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let admitted = crate::test_support::with_decode_context(|ctx| {
         crate::native::features::holes::feature_hole_package_construction_group_lanes(
             ctx,
@@ -779,7 +777,10 @@ fn hole_package_lane_route_refuses_work_limit() {
 fn repeated_scalar_block_reference_route_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
-    let container = repeated_scalar_block_reference_container();
+    let file = repeated_scalar_block_reference_file();
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let admitted = crate::test_support::with_decode_context(|ctx| {
         let history = crate::native::features::FeatureHistory::new(ctx, &container)?;
         let inputs = crate::native::features::feature_input_blocks(ctx, &history)?;
@@ -827,7 +828,10 @@ fn repeated_scalar_block_reference_route_refuses_retained_limit() {
 
 #[test]
 fn repeated_scalar_block_reference_route_refuses_digest_storage_limit() {
-    let container = repeated_scalar_block_reference_container();
+    let file = repeated_scalar_block_reference_file();
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         let history = crate::native::features::FeatureHistory::new(ctx, &container)?;
         let inputs = crate::native::features::feature_input_blocks(ctx, &history)?;
@@ -860,7 +864,10 @@ fn repeated_scalar_block_reference_route_refuses_work_limit() {
 fn repeated_scalar_lane_route_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
-    let container = repeated_scalar_lane_container();
+    let file = repeated_scalar_lane_file();
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let admitted = crate::test_support::with_decode_context(|ctx| {
         crate::native::features::holes::feature_simple_hole_repeated_scalar_lanes(
             ctx,

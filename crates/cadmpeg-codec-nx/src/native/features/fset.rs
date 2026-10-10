@@ -266,7 +266,7 @@ pub(in crate::native) fn feature_fset_construction_payloads(
             ),
         ] {
             let Some(payload) =
-                fset_construction_payload_from_group(ctx, graph, group, source_blocks, &blocks)?
+                fset_construction_payload_from_group(ctx, graph, group, source_blocks, blocks)?
             else {
                 continue;
             };
