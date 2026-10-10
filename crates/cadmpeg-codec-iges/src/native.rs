@@ -3427,68 +3427,72 @@ pub(crate) fn store<'ctx>(
                         .and_then(|record| record.count_with_stride_before(5, 1, end))
                         .unwrap_or_default();
                     let supersedes_code = record.and_then(|record| record.integer(3));
-                    let mut cursor = 6_usize;
-                    let (mut layouts, mut layout_storage) =
-                        ctx.temporary_vec(0, "iges native glyph layouts")?;
-                    let complete = ctx.all_by(
-                        0..count,
-                        |_| {
-                            let Some(record) = record else {
-                                return Ok(false);
-                    };
-                            let Some(count_index) = cursor.checked_add(3) else {
-                                return Ok(false);
-                    };
-                            let Some(motion_count) = record.count_with_stride_before(
-                                count_index,
-                                3,
-                                end,
-                            ) else {
-                                return Ok(false);
-                    };
-                            let Some(next) = motion_count
-                                .checked_mul(3)
-                                .and_then(|width| cursor.checked_add(4 + width))
-                            else {
-                                return Ok(false);
-                    };
-                            ctx.push_scoped_vec(
-                                &mut layout_storage,
-                                &mut layouts,
-                                (record, cursor, motion_count),
-                                "iges native glyph layouts",
-                            )?;
-                            cursor = next;
-                            Ok(true)
-                        },
-                        "iges native glyph layout scan",
-                    )?;
-                    let characters = if complete {
-                        ctx.try_collect_retained_with::<_, _, CodecError>(
-                            layouts,
-                            "iges native text font glyph slots",
-                            |(record, cursor, motion_count)| {
-                                let motions = ctx.collect_indexed_vec(
-                                    motion_count,
-                                    "iges native text font motion slots",
-                                    |offset| {
-                                        let start = cursor + 4 + offset * 3;
-                                        Ok(NativeGlyphMotion {
-                                            pen_up: record.integer(start).map(|value| value == 1),
-                                            point: [record.integer(start + 1), record.integer(start + 2)],
-                                        })
-                                    },
+                    let characters = {
+                        let mut cursor = 6_usize;
+                        let mut layout_storage;
+                        let (mut layouts, storage) =
+                            ctx.temporary_vec(0, "iges native glyph layouts")?;
+                        layout_storage = storage;
+                        let complete = ctx.all_by(
+                            0..count,
+                            |_| {
+                                let Some(record) = record else {
+                                    return Ok(false);
+                        };
+                                let Some(count_index) = cursor.checked_add(3) else {
+                                    return Ok(false);
+                        };
+                                let Some(motion_count) = record.count_with_stride_before(
+                                    count_index,
+                                    3,
+                                    end,
+                                ) else {
+                                    return Ok(false);
+                        };
+                                let Some(next) = motion_count
+                                    .checked_mul(3)
+                                    .and_then(|width| cursor.checked_add(4 + width))
+                                else {
+                                    return Ok(false);
+                        };
+                                ctx.push_scoped_vec(
+                                    &mut layout_storage,
+                                    &mut layouts,
+                                    (record, cursor, motion_count),
+                                    "iges native glyph layouts",
                                 )?;
-                                Ok(NativeGlyph {
-                                    character_code: record.integer(cursor),
-                                    next_origin: [record.integer(cursor + 1), record.integer(cursor + 2)],
-                                    declared_motion_count: record.integer(cursor + 3),
-                                    motions,
-                                })
+                                cursor = next;
+                                Ok(true)
                             },
-                        )?
-                    } else {
-                        Vec::new()
+                            "iges native glyph layout scan",
+                        )?;
+                        if complete {
+                            ctx.try_collect_retained_with::<_, _, CodecError>(
+                                layouts,
+                                "iges native text font glyph slots",
+                                |(record, cursor, motion_count)| {
+                                    let motions = ctx.collect_indexed_vec(
+                                        motion_count,
+                                        "iges native text font motion slots",
+                                        |offset| {
+                                            let start = cursor + 4 + offset * 3;
+                                            Ok(NativeGlyphMotion {
+                                                pen_up: record.integer(start).map(|value| value == 1),
+                                                point: [record.integer(start + 1), record.integer(start + 2)],
+                                            })
+                                        },
+                                    )?;
+                                    Ok(NativeGlyph {
+                                        character_code: record.integer(cursor),
+                                        next_origin: [record.integer(cursor + 1), record.integer(cursor + 2)],
+                                        declared_motion_count: record.integer(cursor + 3),
+                                        motions,
+                                    })
+                                },
+                            )?
+                        } else {
+                            Vec::new()
+                        }
                     };
                     NativeTextFontDefinition {
                         id: ctx.format_retained(
@@ -5977,140 +5981,144 @@ pub(crate) fn store<'ctx>(
                     } else {
                         record.and_then(|record| record.count_with_stride_before(3, 1, end))
                     };
-                    let mut cursor = 4;
-                    let (mut layouts, mut layout_storage) =
-                        ctx.temporary_vec(0, "iges native attribute layouts")?;
-                    let complete = ctx.all_by(
-                        0..count.unwrap_or_default(),
-                        |_| {
-                            let Some(record) = record else {
-                                return Ok(false);
-                    };
-                            let stride = if entry.form == 2 { 2 } else { 1 };
-                            let value_count = if entry.form == 0 {
-                                Some(0)
-                            } else {
-                                match record.value(cursor + 2) {
-                                    Some(TokenValue::Omitted) => cursor
-                                        .checked_add(3)
-                                        .and_then(|start| end.checked_sub(start))
-                                        .filter(|available| stride <= *available)
-                                        .map(|_| 1),
-                                    Some(TokenValue::Integer(_)) => {
-                                        record.count_with_stride_before(cursor + 2, stride, end)
+                    let attributes = {
+                        let mut cursor = 4;
+                        let mut layout_storage;
+                        let (mut layouts, storage) =
+                            ctx.temporary_vec(0, "iges native attribute layouts")?;
+                        layout_storage = storage;
+                        let complete = ctx.all_by(
+                            0..count.unwrap_or_default(),
+                            |_| {
+                                let Some(record) = record else {
+                                    return Ok(false);
+                        };
+                                let stride = if entry.form == 2 { 2 } else { 1 };
+                                let value_count = if entry.form == 0 {
+                                    Some(0)
+                                } else {
+                                    match record.value(cursor + 2) {
+                                        Some(TokenValue::Omitted) => cursor
+                                            .checked_add(3)
+                                            .and_then(|start| end.checked_sub(start))
+                                            .filter(|available| stride <= *available)
+                                            .map(|_| 1),
+                                        Some(TokenValue::Integer(_)) => {
+                                            record.count_with_stride_before(cursor + 2, stride, end)
+                                        }
+                                        None | Some(TokenValue::Real(_) | TokenValue::String(_)) => None,
                                     }
-                                    None | Some(TokenValue::Real(_) | TokenValue::String(_)) => None,
-                                }
-                    };
-                            let Some(value_start) = cursor.checked_add(3) else {
-                                return Ok(false);
-                    };
-                            let Some(value_count) = value_count else {
-                                return Ok(false);
-                    };
-                            let Some(next) = value_count
-                                .checked_mul(stride)
-                                .and_then(|width| value_start.checked_add(width))
-                                .filter(|next| *next <= end)
-                            else {
-                                return Ok(false);
-                    };
-                            let mut display_sequences = if entry.form == 2 {
-                                layout_storage.with_storage(|| {
-                                    ctx.collection_vec(
-                                        value_count,
-                                        "iges native attribute display sequence slots",
-                                    )
-                                })?
-                            } else {
-                                Vec::new()
-                    };
-                            if entry.form == 2 {
-                                let mut display_source = 0..value_count;
-                                while !display_source.is_empty() || ctx.resource_refusal().is_some() {
-                                    let Some(offset) = ctx.next_charged(
-                                    &mut display_source,
-                                    "iges native attribute display sequence scan",
-                                )? else { break; };
-                                    let pointer_index = value_start + offset * stride + 1;
-                                    let sequence = record
-                                        .integer(pointer_index)
-                                        .filter(|sequence| *sequence != 0)
-                                        .map(|sequence| {
-                                            parameter_resolver.resolve_type(
-                                                entry.sequence,
-                                                pointer_index,
-                                                sequence,
-                                                312,
-                                                &[0, 1],
-                                            )
-                                        })
-                                        .transpose()?
-                                        .flatten();
-                                    display_sequences.push(sequence);
-                                }
-                            }
-                            ctx.push_scoped_vec(
-                                &mut layout_storage,
-                                &mut layouts,
-                                (
-                                    record,
-                                    cursor,
-                                    value_start,
-                                    value_count,
-                                    stride,
-                                    display_sequences,
-                                ),
-                                "iges native attribute layouts",
-                            )?;
-                            cursor = next;
-                            Ok(true)
-                        },
-                        "iges native attribute layout scan",
-                    )?;
-                    let attributes = if complete {
-                        ctx.try_collect_retained_with::<_, _, CodecError>(
-                            layouts,
-                            "iges native attribute definition attributes",
-                            |(record, cursor, value_start, value_count, stride, display_sequences)| {
-                                let values = ctx.collect_indexed_vec(
-                                    value_count,
-                                    "iges native attribute definition values",
-                                    |offset| {
-                                        let value_index = value_start + offset * stride;
-                                        let value = record
-                                            .tokens()
-                                            .get(value_index)
-                                            .map_or(Ok(TokenValue::Omitted), |token| {
-                                                copy_native_token_value(ctx, &token.value)
-                                            })?;
-                                        let display_template = display_sequences
-                                            .get(offset)
-                                            .copied()
-                                            .flatten()
+                        };
+                                let Some(value_start) = cursor.checked_add(3) else {
+                                    return Ok(false);
+                        };
+                                let Some(value_count) = value_count else {
+                                    return Ok(false);
+                        };
+                                let Some(next) = value_count
+                                    .checked_mul(stride)
+                                    .and_then(|width| value_start.checked_add(width))
+                                    .filter(|next| *next <= end)
+                                else {
+                                    return Ok(false);
+                        };
+                                let mut display_sequences = if entry.form == 2 {
+                                    layout_storage.with_storage(|| {
+                                        ctx.collection_vec(
+                                            value_count,
+                                            "iges native attribute display sequence slots",
+                                        )
+                                    })?
+                                } else {
+                                    Vec::new()
+                        };
+                                if entry.form == 2 {
+                                    let mut display_source = 0..value_count;
+                                    while !display_source.is_empty() || ctx.resource_refusal().is_some() {
+                                        let Some(offset) = ctx.next_charged(
+                                        &mut display_source,
+                                        "iges native attribute display sequence scan",
+                                    )? else { break; };
+                                        let pointer_index = value_start + offset * stride + 1;
+                                        let sequence = record
+                                            .integer(pointer_index)
+                                            .filter(|sequence| *sequence != 0)
                                             .map(|sequence| {
-                                                ctx.format_retained(
-                                                    format_args!("iges:entity:directory#{sequence}"),
-                                                    "iges native attribute display template",
+                                                parameter_resolver.resolve_type(
+                                                    entry.sequence,
+                                                    pointer_index,
+                                                    sequence,
+                                                    312,
+                                                    &[0, 1],
                                                 )
                                             })
-                                            .transpose()?;
-                                        Ok(NativeAttributeValue {
-                                            value,
-                                            display_template,
-                                        })
-                                    },
+                                            .transpose()?
+                                            .flatten();
+                                        display_sequences.push(sequence);
+                                    }
+                                }
+                                ctx.push_scoped_vec(
+                                    &mut layout_storage,
+                                    &mut layouts,
+                                    (
+                                        record,
+                                        cursor,
+                                        value_start,
+                                        value_count,
+                                        stride,
+                                        display_sequences,
+                                    ),
+                                    "iges native attribute layouts",
                                 )?;
-                                Ok(NativeAttributeDefinition {
-                                    attribute_type: record.integer(cursor),
-                                    value_data_type: record.integer(cursor + 1),
-                                    declared_value_count: record.integer(cursor + 2),
-                                    values,
-                                })
+                                cursor = next;
+                                Ok(true)
                             },
-                        )?
-                    } else {
-                        Vec::new()
+                            "iges native attribute layout scan",
+                        )?;
+                        if complete {
+                            ctx.try_collect_retained_with::<_, _, CodecError>(
+                                layouts,
+                                "iges native attribute definition attributes",
+                                |(record, cursor, value_start, value_count, stride, display_sequences)| {
+                                    let values = ctx.collect_indexed_vec(
+                                        value_count,
+                                        "iges native attribute definition values",
+                                        |offset| {
+                                            let value_index = value_start + offset * stride;
+                                            let value = record
+                                                .tokens()
+                                                .get(value_index)
+                                                .map_or(Ok(TokenValue::Omitted), |token| {
+                                                    copy_native_token_value(ctx, &token.value)
+                                                })?;
+                                            let display_template = display_sequences
+                                                .get(offset)
+                                                .copied()
+                                                .flatten()
+                                                .map(|sequence| {
+                                                    ctx.format_retained(
+                                                        format_args!("iges:entity:directory#{sequence}"),
+                                                        "iges native attribute display template",
+                                                    )
+                                                })
+                                                .transpose()?;
+                                            Ok(NativeAttributeValue {
+                                                value,
+                                                display_template,
+                                            })
+                                        },
+                                    )?;
+                                    Ok(NativeAttributeDefinition {
+                                        attribute_type: record.integer(cursor),
+                                        value_data_type: record.integer(cursor + 1),
+                                        declared_value_count: record.integer(cursor + 2),
+                                        values,
+                                    })
+                                },
+                            )?
+                        } else {
+                            Vec::new()
+                        }
                     };
                     NativeAttributeTableDefinition {
                         id: ctx.format_retained(
@@ -6406,8 +6414,10 @@ pub(crate) fn store<'ctx>(
                                 let count_start = 5 + independent_count;
                                 let mut cursor = header_end;
                                 let mut point_count = 1_usize;
-                                let (mut layouts, mut layout_storage) =
+                                let mut layout_storage;
+                                let (mut layouts, storage) =
                                     ctx.temporary_vec(0, "iges native tabular layouts")?;
+                                layout_storage = storage;
                                 let valid = ctx.all_by(
                                     0..independent_count,
                                     |offset| {
@@ -6448,8 +6458,8 @@ pub(crate) fn store<'ctx>(
                                             .is_some_and(|available| *count <= available)
                                     });
                                 match dependent_value_count {
-                                    Some(count) => (
-                                        ctx.try_collect_retained_with::<_, _, CodecError>(
+                                    Some(count) => {
+                                        let independent_variables = ctx.try_collect_retained_with::<_, _, CodecError>(
                                             layouts,
                                             "iges native tabular independent variables",
                                             |(offset, start, count)| {
@@ -6464,13 +6474,14 @@ pub(crate) fn store<'ctx>(
                                                     )?,
                                                 })
                                             },
-                                        )?,
-                                        ctx.collect_indexed_vec(
+                                        )?;
+                                        drop(layout_storage);
+                                        (independent_variables, ctx.collect_indexed_vec(
                                             count,
                                             "iges native tabular dependent values",
                                             |offset| Ok(record.number(cursor + offset)),
-                                        )?,
-                                    ),
+                                        )?)
+                                    },
                                     None => (Vec::new(), Vec::new()),
                                 }
                             }

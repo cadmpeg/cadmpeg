@@ -755,3 +755,5 @@ fn absent_native_parameter_record_keeps_empty_wire_fields() {
 
 mod source_visits;
 mod entry_refusal;
+
+mod layout_lifetimes;
