@@ -457,3 +457,41 @@ fn zero_provider_transfer_does_not_visit_source_arenas() {
         assert_eq!(plan.presentation_documents.len(), 1);
     });
 }
+
+fn primitive_prefix_selection_work(key_prefix: &str, suffix: usize, style: PrimitiveStyle) -> u64 {
+    let key = format!("{key_prefix}{}:0", "x".repeat(suffix));
+    let mut ir = topology();
+    ir.model.edges.truncate(1);
+    ir.model.vertices.truncate(1);
+    ir.model.edges[0].id = EdgeId::mint(format!("fcstd:model:edge#{key}")).expect("edge identity");
+    ir.model.vertices[0].id = VertexId::mint(format!("fcstd:model:vertex#{key}")).expect("vertex identity");
+    let index_arena = DecodeArena::new();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (index_ctx, _) = DecodeContext::from_root_bytes(&[], &index_arena, &policy).expect("setup context");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("selection context");
+    let mut index = PrimitiveIndex::new(&index_ctx, &ir, style, &[]).expect("candidate setup");
+    index.add_prefixes(&ctx, &["a:".into()]).expect("prefix selection");
+    if key_prefix == "a:" {
+        assert_eq!(index.by_prefix["a:"].len(), 1);
+    } else {
+        assert!(index.by_prefix.is_empty());
+    }
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "measure prefix work").expect_err("work measurement") else { panic!("work refusal"); };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    limit.used
+}
+
+#[test]
+fn primitive_prefix_lower_bound_skips_uncompared_key_suffix() {
+    for style in [PrimitiveStyle::Line(PrimitiveSize::Absent), PrimitiveStyle::Point(PrimitiveSize::Absent)] {
+        assert_eq!(primitive_prefix_selection_work("z", 1, style), primitive_prefix_selection_work("z", 65_536, style));
+    }
+}
+
+#[test]
+fn primitive_prefix_lower_bound_stops_at_requested_prefix_end() {
+    for style in [PrimitiveStyle::Line(PrimitiveSize::Absent), PrimitiveStyle::Point(PrimitiveSize::Absent)] {
+        assert_eq!(primitive_prefix_selection_work("a:", 1, style), primitive_prefix_selection_work("a:", 65_536, style));
+    }
+}
