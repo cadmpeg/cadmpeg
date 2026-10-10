@@ -95,7 +95,9 @@ fn pcurve_endpoint_is_ambiguous(
     };
     let mut remaining = candidates[1..].iter();
     while !remaining.as_slice().is_empty() {
-        let Some(candidate) = ctx.next_charged(&mut remaining, "creo pcurve endpoint ambiguity search")? else {
+        let Some(candidate) =
+            ctx.next_charged(&mut remaining, "creo pcurve endpoint ambiguity search")?
+        else {
             break;
         };
         if !finite_model_point(*first)
@@ -445,24 +447,23 @@ fn incident_analytic_vertex_domain(
         {
             let first_curve = *first_curve;
             let second_curve = *second_curve;
-            let conic_points_parts = ctx.with_scoped_storage(
-                "creo incident conic pair intersections scratch",
-                || conic_conic_intersections(ctx, first_curve, second_curve),
-            )?;
+            let conic_points_parts = ctx
+                .with_scoped_storage("creo incident conic pair intersections scratch", || {
+                    conic_conic_intersections(ctx, first_curve, second_curve)
+                })?;
             let conic_points_storage = conic_points_parts.1;
             let conic_points = conic_points_parts.0;
             let line_line_point = line_line_intersection(first_curve, second_curve);
-            let first_line_conic_points_parts = ctx
-                .with_scoped_storage("creo incident line-conic pair intersections scratch", || {
-                    line_conic_intersections(ctx, first_curve, second_curve)
-                })?;
+            let first_line_conic_points_parts = ctx.with_scoped_storage(
+                "creo incident line-conic pair intersections scratch",
+                || line_conic_intersections(ctx, first_curve, second_curve),
+            )?;
             let first_line_conic_points_storage = first_line_conic_points_parts.1;
             let first_line_conic_points = first_line_conic_points_parts.0;
-            let second_line_conic_points_parts = ctx
-                .with_scoped_storage(
-                    "creo incident conic-line pair intersections scratch",
-                    || line_conic_intersections(ctx, second_curve, first_curve),
-                )?;
+            let second_line_conic_points_parts = ctx.with_scoped_storage(
+                "creo incident conic-line pair intersections scratch",
+                || line_conic_intersections(ctx, second_curve, first_curve),
+            )?;
             let second_line_conic_points_storage = second_line_conic_points_parts.1;
             let second_line_conic_points = second_line_conic_points_parts.0;
             if let Some(point) = line_line_point {
@@ -502,7 +503,9 @@ fn incident_analytic_vertex_domain(
         |point| {
             let mut remaining = curves.iter();
             while !remaining.as_slice().is_empty() {
-                let Some(curve) = ctx.next_charged(&mut remaining, "creo incident analytic curve containment")? else {
+                let Some(curve) =
+                    ctx.next_charged(&mut remaining, "creo incident analytic curve containment")?
+                else {
                     break;
                 };
                 if !curve_contains_points(curve, [*point, *point]) {
@@ -520,7 +523,9 @@ fn incident_analytic_vertex_domain(
         let mut remaining = unique.iter();
         let mut duplicate = false;
         while !remaining.as_slice().is_empty() {
-            let Some(candidate) = ctx.next_charged(&mut remaining, "creo unique analytic candidate search")? else {
+            let Some(candidate) =
+                ctx.next_charged(&mut remaining, "creo unique analytic candidate search")?
+            else {
                 break;
             };
             if finite_model_point(*candidate)
@@ -605,20 +610,17 @@ pub(in crate::decode) fn solve_topological_vertices(
         topological_vertices: scan.topology.vertices.len(),
         ..TopologicalVertexSolveDiagnostics::default()
     };
-    let vertex_faces_parts = ctx.with_scoped_storage(
-        "creo vertex incident-face projection storage",
-        || {
+    let vertex_faces_parts =
+        ctx.with_scoped_storage("creo vertex incident-face projection storage", || {
             crate::topology::vertex_incident_faces(
                 ctx,
                 &scan.topology.vertices,
                 &scan.topology.half_edges,
             )
-        },
-    )?;
+        })?;
     let vertex_faces_storage = vertex_faces_parts.1;
     let vertex_faces = vertex_faces_parts.0;
-    let mut fixed_points_storage =
-        ctx.reserve_scoped(0, "creo fixed vertex point storage")?;
+    let mut fixed_points_storage = ctx.reserve_scoped(0, "creo fixed vertex point storage")?;
     let mut fixed_points = BTreeMap::new();
     for vertex in ctx.admit_iter(&scan.topology.vertices, "creo topological vertices")? {
         let Some(face_ids) = ctx.get_btree_map(
@@ -717,10 +719,10 @@ pub(in crate::decode) fn solve_topological_vertices(
     diagnostics.carrier_points = fixed_points.len();
     drop(vertex_faces);
     drop(vertex_faces_storage);
-    let edge_start_vertices_parts = ctx.with_scoped_storage(
-        "creo edge-start vertex projection storage",
-        || crate::topology::edge_start_vertex_pairs(ctx, &scan.topology.half_edge_vertex_incidence),
-    )?;
+    let edge_start_vertices_parts = ctx
+        .with_scoped_storage("creo edge-start vertex projection storage", || {
+            crate::topology::edge_start_vertex_pairs(ctx, &scan.topology.half_edge_vertex_incidence)
+        })?;
     let edge_start_vertices_storage = edge_start_vertices_parts.1;
     let edge_start_vertices = edge_start_vertices_parts.0;
     let mut endpoint_evidence_storage =
@@ -734,18 +736,18 @@ pub(in crate::decode) fn solve_topological_vertices(
         Some(&mut endpoint_evidence_storage),
     )?;
     diagnostics.pcurve = pcurve_diagnostics;
-    let topology_rows_parts = crate::identity::uniquely_identified_rows_checked(ctx, &scan.curves.topology_rows, |row| {
-            row.id
-        })?;
-    let _topology_rows_storage = topology_rows_parts.1;
+    let topology_rows_parts = crate::identity::uniquely_identified_rows_checked(
+        ctx,
+        &scan.curves.topology_rows,
+        |row| row.id,
+    )?;
+    let topology_rows_storage = topology_rows_parts.1;
     let topology_rows = topology_rows_parts.0;
-    let pcurve_constraints_parts = ctx.scoped_vector_storage::<(
-        [u32; 2],
-        [[f64; 3]; 2],
-        Option<[[f64; 3]; 2]>,
-        bool,
-        bool,
-    )>(0, "creo vertex pcurve constraint scratch")?;
+    let pcurve_constraints_parts =
+        ctx.scoped_vector_storage::<([u32; 2], [[f64; 3]; 2], Option<[[f64; 3]; 2]>, bool, bool)>(
+            0,
+            "creo vertex pcurve constraint scratch",
+        )?;
     let mut pcurve_constraints_storage = pcurve_constraints_parts.1;
     let mut pcurve_constraints = pcurve_constraints_parts.0;
     let mut pcurve_endpoint_candidates_storage =
@@ -844,11 +846,10 @@ pub(in crate::decode) fn solve_topological_vertices(
     diagnostics.pcurve_ambiguous_endpoint_vertices = ambiguous_pcurve_vertices.len();
     drop(pcurve_endpoint_candidates);
     drop(pcurve_endpoint_candidates_storage);
-    let constraints_parts = ctx
-        .scoped_vector_storage::<([u32; 2], [[f64; 3]; 2])>(
-            0,
-            "creo vertex endpoint constraint scratch",
-        )?;
+    let constraints_parts = ctx.scoped_vector_storage::<([u32; 2], [[f64; 3]; 2])>(
+        0,
+        "creo vertex endpoint constraint scratch",
+    )?;
     let mut constraints_storage = constraints_parts.1;
     let mut constraints = constraints_parts.0;
     let mut authoritative_points_storage =
@@ -1005,7 +1006,7 @@ pub(in crate::decode) fn solve_topological_vertices(
         }
     }
     drop(topology_rows);
-    drop(_topology_rows_storage);
+    drop(topology_rows_storage);
     drop(curve_index);
     let mut incident_curves = BTreeMap::new();
     for vertex in ctx.admit_iter(&scan.topology.vertices, "creo topological vertices")? {
@@ -1113,8 +1114,8 @@ mod tests {
     use cadmpeg_ir::ids::CurveId;
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    mod intersection_storage;
     mod admission_visits;
+    mod intersection_storage;
 
     const CHART_ORIGIN: [f64; 3] = [0.0, 0.0, 0.0];
     const CHART_U_AXIS: [f64; 3] = [1.0, 0.0, 0.0];
