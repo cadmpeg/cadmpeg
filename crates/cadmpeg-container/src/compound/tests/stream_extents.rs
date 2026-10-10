@@ -57,7 +57,7 @@ fn partial_mini_fixture(logical_size: u64, mini_sector: u32) -> Vec<u8> {
 }
 
 #[test]
-fn mini_stream_recovers_available_payload_from_a_partial_regular_sector() {
+fn mini_stream_rejects_a_partial_regular_sector_boundary() {
     let mut file = partial_mini_fixture(5, 0);
     // One 64-byte logical mini sector suffices for the five-byte payload.
     sector_mut(&mut file, 0)[120..128].copy_from_slice(&64_u64.to_le_bytes());
@@ -76,16 +76,16 @@ fn mini_stream_recovers_available_payload_from_a_partial_regular_sector() {
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_collection_items = 0;
         with_context(&[], &policy, |open_ctx| {
-            let opened = snapshot.open(open_ctx, stream).expect("available logical payload");
-            assert_eq!(opened.window(), b"small");
-            assert_eq!(opened.start(), prefix + 4 * SECTOR_SIZE);
+            let error = snapshot.open(open_ctx, stream).expect_err("a full mini sector must be available");
+            assert!(matches!(error, CodecError::Malformed(message)
+                if message == "CFB mini sector crosses a regular-sector boundary"));
             assert_eq!(open_ctx.resource_refusal(), None);
         });
     }
 }
 
 #[test]
-fn partial_mini_stream_rejects_missing_logical_payload() {
+fn partial_mini_stream_rejects_boundary_before_logical_payload_check() {
     let file = partial_mini_fixture(6, 0);
     let arena = DecodeArena::new();
     let (ctx, root) = DecodeContext::from_root_bytes(&file, &arena, &DecodePolicy::service()).expect("root");
@@ -96,9 +96,9 @@ fn partial_mini_stream_rejects_missing_logical_payload() {
     policy.limits.max_retained_bytes = u64::try_from("CFB stream Small is shorter than declared".len())
         .expect("diagnostic bytes");
     with_context(&[], &policy, |open_ctx| {
-        let error = snapshot.open(open_ctx, stream).expect_err("one payload byte is absent");
+        let error = snapshot.open(open_ctx, stream).expect_err("the physical mini sector is incomplete");
         assert!(matches!(error, CodecError::Malformed(message)
-            if message == "CFB stream Small is shorter than declared"));
+            if message == "CFB mini sector crosses a regular-sector boundary"));
         assert_eq!(open_ctx.resource_refusal(), None);
     });
 }
@@ -123,27 +123,7 @@ fn partial_mini_stream_rejects_a_wholly_absent_mini_sector() {
 }
 
 #[test]
-fn accepted_empty_stream_preserves_a_raw_start_marker_in_summary() {
-    let mut file = fixture();
-    directory_entry(sector_mut(&mut file, 0), 1, "Small", 2,
-        NO_STREAM, 2, NO_STREAM, 0, 0);
-    put_u32(sector_mut(&mut file, 10), 0, FREE_SECTOR);
-    let arena = DecodeArena::new();
-    let (ctx, root) = DecodeContext::from_root_bytes(&file, &arena, &DecodePolicy::service()).expect("root");
-    let snapshot = CompoundSnapshot::new(&ctx, root).expect("accepted empty stream");
-    let stream = snapshot.stream(&ctx, "Small").expect("lookup").expect("stream");
-    assert_eq!(stream.start_sector(), 0);
-    assert_eq!(stream.logical_size(), 0);
-    assert_eq!(stream.allocation(), None);
-    assert!(snapshot.open(&ctx, stream).expect("empty stream").window().is_empty());
-    let summary = snapshot.container_entries(&ctx, |_| ContainerRole::Stream).expect("summaries");
-    let summary = summary.iter().find(|entry| entry.name == "Small").expect("small summary");
-    assert_eq!(summary.attributes["start_sector"], "0");
-}
-
-
-#[test]
-fn stream_extent_stops_at_the_first_absent_tail_sector() {
+fn stream_extent_stops_at_the_first_partial_mini_sector() {
     let mut file = partial_mini_fixture(130, 0);
     sector_mut(&mut file, 0)[120..128].copy_from_slice(&192_u64.to_le_bytes());
     let mini_fat = sector_mut(&mut file, 1);
@@ -163,22 +143,33 @@ fn stream_extent_stops_at_the_first_absent_tail_sector() {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = work;
             with_context(&[], &policy, |ctx| {
-                let error = snapshot.open(ctx, stream).expect_err("second mini sector has no physical bytes");
-                if work == 1 {
-                    assert!(matches!(error, CodecError::Malformed(message)
-                        if message == "CFB mini sector crosses a regular-sector boundary"));
-                    assert_eq!(ctx.resource_refusal(), None);
-                    let CodecError::ResourceLimit(refusal) = ctx.charge_work(1, "after absent CFB tail sector")
-                        .expect_err("only one reached tail visit executes") else { panic!("resource refusal") };
-                    assert_eq!((refusal.used, refusal.additional), (1, 1));
-                } else {
-                    let CodecError::ResourceLimit(refusal) = error else { panic!("first tail step refusal") };
-                    assert_eq!(refusal.operation, "visit CFB stream sectors");
-                    assert_eq!((refusal.used, refusal.additional), (0, 1));
-                    let repeated = snapshot.open(ctx, stream).expect_err("original tail refusal");
-                    assert!(matches!(repeated, CodecError::ResourceLimit(limit) if limit == refusal));
-                }
+                let error = snapshot.open(ctx, stream).expect_err("first mini sector is partial");
+                assert!(matches!(error, CodecError::Malformed(message)
+                    if message == "CFB mini sector crosses a regular-sector boundary"));
+                assert_eq!(ctx.resource_refusal(), None);
+                let CodecError::ResourceLimit(refusal) = ctx.charge_work(work + 1, "after absent CFB first sector")
+                    .expect_err("the fixed first sector uses no work") else { panic!("resource refusal") };
+                assert_eq!((refusal.used, refusal.additional), (0, work + 1));
             });
         }
     }
+}
+
+#[test]
+fn accepted_empty_stream_reports_end_of_chain_for_zero_start_in_summary() {
+    let mut file = fixture();
+    directory_entry(sector_mut(&mut file, 0), 1, "Small", 2,
+        NO_STREAM, 2, NO_STREAM, 0, 0);
+    put_u32(sector_mut(&mut file, 10), 0, FREE_SECTOR);
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(&file, &arena, &DecodePolicy::service()).expect("root");
+    let snapshot = CompoundSnapshot::new(&ctx, root).expect("accepted empty stream");
+    let stream = snapshot.stream(&ctx, "Small").expect("lookup").expect("stream");
+    assert_eq!(stream.start_sector(), END_OF_CHAIN);
+    assert_eq!(stream.logical_size(), 0);
+    assert_eq!(stream.allocation(), None);
+    assert!(snapshot.open(&ctx, stream).expect("empty stream").window().is_empty());
+    let summary = snapshot.container_entries(&ctx, |_| ContainerRole::Stream).expect("summaries");
+    let summary = summary.iter().find(|entry| entry.name == "Small").expect("small summary");
+    assert_eq!(summary.attributes["start_sector"], END_OF_CHAIN.to_string());
 }

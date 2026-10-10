@@ -116,6 +116,12 @@ pub struct CompoundStreamEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+enum EmptyStreamStart {
+    EndOfChain,
+    FreeSector,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct SectorChain {
     first: u32,
     rest: Vec<u32>,
@@ -145,7 +151,7 @@ impl SectorChain {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum StreamData {
-    Empty(u32),
+    Empty(EmptyStreamStart),
     Allocated {
         logical_size: NonZeroU64,
         allocation: CompoundAllocation,
@@ -172,10 +178,11 @@ impl CompoundStreamEntry {
         }
     }
 
-    /// Returns the first sector or the source marker for an empty stream.
+    /// Returns the first sector or the empty stream marker.
     pub const fn start_sector(&self) -> u32 {
         match &self.data {
-            StreamData::Empty(start) => *start,
+            StreamData::Empty(EmptyStreamStart::EndOfChain) => END_OF_CHAIN,
+            StreamData::Empty(EmptyStreamStart::FreeSector) => FREE_SECTOR,
             StreamData::Allocated { chain, .. } => chain.first,
         }
     }
@@ -610,15 +617,12 @@ impl<'a, 'ctx> CompoundSnapshot<'a, 'ctx> {
                 CodecError::Malformed("CFB mini sector escapes the root mini stream".into())
             })?;
         let sector = self.regular_sector_view(regular_sector)?;
-        if within >= sector.window().len() {
-            return malformed("CFB mini sector crosses a regular-sector boundary");
-        }
         let start = sector.start().checked_add(within).ok_or_else(|| {
             CodecError::Malformed("CFB absolute mini-sector start overflows".into())
         })?;
         let end = start.checked_add(MINI_SECTOR_SIZE).ok_or_else(|| {
             CodecError::Malformed("CFB absolute mini-sector end overflows".into())
-        })?.min(sector.end());
+        })?;
         sector.child(start, end).ok_or_else(|| {
             CodecError::Malformed("CFB mini sector crosses a regular-sector boundary".into())
         })
@@ -640,6 +644,7 @@ impl CompoundState {
                 .ok_or_else(|| CodecError::malformed(format_args!("truncated CFB {what}")))
         };
         if bytes.get(8..24) != Some(&[0; 16])
+            || View::u16_le_at(bytes, 24) != Some(0x003e)
             || View::u16_le_at(bytes, 28) != Some(0xfffe)
         {
             return malformed("invalid CFB header identity or byte order");
@@ -1056,7 +1061,13 @@ impl CompoundState {
                             ChainRole::MiniStream,
                         ),
                     };
-                    let empty = || StreamData::Empty(entry.start_sector);
+                    let empty = || {
+                        StreamData::Empty(if entry.start_sector == FREE_SECTOR {
+                            EmptyStreamStart::FreeSector
+                        } else {
+                            EmptyStreamStart::EndOfChain
+                        })
+                    };
                     let data = match NonZeroU64::new(entry.size) {
                         None => empty(),
                         Some(logical_size) => {
@@ -1307,6 +1318,7 @@ fn probe_directory_availability<'ctx>(
         return Ok(PrefixDirectoryAvailability::Incomplete);
     }
     if prefix.get(8..24) != Some(&[0; 16])
+        || View::u16_le_at(prefix, 24) != Some(0x003e)
         || View::u16_le_at(prefix, 28) != Some(0xfffe)
         || View::u16_le_at(prefix, 32) != Some(6)
         || prefix.get(34..40) != Some(&[0; 6])
@@ -1876,13 +1888,6 @@ fn parse_directory_records(
         let raw = records.get(index)?;
         let object_type = raw[directory_layout::OBJECT_TYPE];
         if object_type == 0 {
-            if raw[..directory_layout::LEFT] != [0; directory_layout::LEFT]
-                || raw[directory_layout::LEFT..directory_layout::CLSID]
-                    != [0xff; directory_layout::CLSID - directory_layout::LEFT]
-                || raw[directory_layout::CLSID..] != [0; directory_layout::LEN - directory_layout::CLSID]
-            {
-                return malformed("invalid CFB unallocated directory entry");
-            }
             ctx.reserve_capacity(&mut entries, 1, "CFB directory record slot")?;
             entries.push(DirectorySlot::Free);
             continue;
@@ -1899,24 +1904,6 @@ fn parse_directory_records(
         let mut size = View::u64_le_at(raw, directory_layout::STREAM_SIZE).ok_or_else(|| CodecError::Malformed("CFB directory field is truncated".into()))?;
         if version == CompoundVersion::V3 {
             size &= 0xffff_ffff;
-        }
-        match kind {
-            DirectoryKind::Stream
-                if child != NO_STREAM
-                    || raw[directory_layout::CLSID..directory_layout::STATE_BITS] != [0; 16]
-                    || raw[directory_layout::CREATION_TIME..directory_layout::START_SECTOR] != [0; 16] =>
-            {
-                return malformed("invalid CFB stream directory fields");
-            }
-            DirectoryKind::Storage if start_sector != 0 || size != 0 => {
-                return malformed("invalid CFB storage directory fields");
-            }
-            DirectoryKind::Root
-                if raw[directory_layout::CREATION_TIME..directory_layout::MODIFIED_TIME] != [0; 8] =>
-            {
-                return malformed("invalid CFB root directory fields");
-            }
-            _ => {}
         }
         if version == CompoundVersion::V3
             && matches!(kind, DirectoryKind::Stream | DirectoryKind::Root)
@@ -1937,11 +1924,6 @@ fn parse_directory_records(
             // the required final terminator; uncounted padding is ignored.
             let name_field = raw[directory_layout::NAME..directory_layout::NAME_LENGTH]
                 .as_chunks::<{ directory_layout::NAME_LENGTH - directory_layout::NAME }>().0[0];
-            for index in 0..(directory_layout::NAME_LENGTH - directory_layout::NAME) / 2 {
-                if index < (name_len - 2) / 2 && name_field[index * 2..index * 2 + 2] == [0, 0] {
-                    return malformed("CFB directory name has an earlier terminator");
-                }
-            }
             let name =
                 ctx.utf16le_text(&name_field, (name_len - 2) / 2, false, "decode CFB directory name")?;
             DirectoryName::new(ctx, name)?
@@ -2140,18 +2122,6 @@ fn path_key(ctx: &DecodeContext<'_>, path: &str) -> Result<Vec<Vec<u16>>, CodecE
 }
 
 fn cfb_upper_unit(unit: u16) -> u16 {
-    // These Greek characters have one-unit uppercase values. Full uppercase
-    // expands them, so map their simple uppercase values before conversion.
-    let simple_exception = match unit {
-        0x1f80..=0x1f87 | 0x1f90..=0x1f97 | 0x1fa0..=0x1fa7 => unit + 8,
-        0x1fb3 => 0x1fbc,
-        0x1fc3 => 0x1fcc,
-        0x1ff3 => 0x1ffc,
-        _ => unit,
-    };
-    if simple_exception != unit {
-        return simple_exception;
-    }
     let Some(character) = char::from_u32(u32::from(unit)) else {
         return unit;
     };
@@ -3503,96 +3473,21 @@ mod tests {
                 path_key(ctx, "ß").expect("key"),
                 path_key(ctx, "SS").expect("key")
             );
-            assert_eq!(
-                cfb_name_cmp(ctx, "ᾠ", "ᾨ").expect("simple uppercase comparison"),
-                Ordering::Equal
-            );
-            assert_eq!(
-                path_key(ctx, "ᾠ").expect("key"),
-                path_key(ctx, "ᾨ").expect("key")
-            );
         });
         assert_eq!(cfb_upper_unit(0xd800), 0xd800);
     }
-
     #[test]
-    fn cfb_upper_unit_maps_every_expansion_with_a_distinct_simple_target() {
-        for (first, last) in [(0x1f80, 0x1f87), (0x1f90, 0x1f97), (0x1fa0, 0x1fa7)] {
-            for unit in first..=last {
-                assert_eq!(cfb_upper_unit(unit), unit + 8, "U+{unit:04X}");
-            }
-        }
-        for (unit, uppercase) in [(0x1fb3, 0x1fbc), (0x1fc3, 0x1fcc), (0x1ff3, 0x1ffc)] {
-            assert_eq!(cfb_upper_unit(unit), uppercase, "U+{unit:04X}");
-        }
-    }
-
-    #[test]
-    fn stream_lookup_uses_simple_uppercase_for_full_expansion() {
-        let mut file = fixture();
-        sector_mut(&mut file, 0)[3 * 128..4 * 128].fill(0);
-        directory_entry(
-            sector_mut(&mut file, 0),
-            3,
-            "ᾠ",
-            2,
-            NO_STREAM,
-            NO_STREAM,
-            NO_STREAM,
-            2,
-            4096,
-        );
-        let arena = DecodeArena::new();
-        let (ctx, root) =
-            DecodeContext::from_root_bytes(&file, &arena, &DecodePolicy::service())
-                .expect("synthetic CFB fits the service policy");
-        let snapshot = CompoundSnapshot::new(&ctx, root).expect("synthetic CFB parses");
-        let stream = snapshot
-            .stream(&ctx, "Store/ᾨ")
-            .expect("lookup admission")
-            .expect("simple-uppercase stream lookup succeeds");
-        assert_eq!(stream.path(), "Store/ᾠ");
-        assert_eq!(stream.logical_size(), 4096);
-    }
-
-    #[test]
-    fn sibling_tree_rejects_names_equal_under_simple_uppercase() {
-        let mut directory = [0_u8; 3 * 128];
-        initialize_empty_directory_entries(&mut directory);
-        directory_entry(
-            &mut directory,
-            1,
-            "ᾠ",
-            2,
-            NO_STREAM,
-            2,
-            NO_STREAM,
-            END_OF_CHAIN,
-            0,
-        );
-        directory_entry(
-            &mut directory,
-            2,
-            "ᾨ",
-            2,
-            NO_STREAM,
-            NO_STREAM,
-            NO_STREAM,
-            END_OF_CHAIN,
-            0,
-        );
-        let error = with_context(&directory, &DecodePolicy::service(), |ctx| {
-            let entries = parse_directory(ctx, &directory, CompoundVersion::V3)?;
-            validate_sibling_tree(ctx, &entries, 1)
+    fn accepts_stale_unallocated_directory_fields() {
+        let mut directory = vec![0_u8; 128];
+        directory[68..80].fill(0xff);
+        directory[8] = 1;
+        let entries = with_context(&directory, &DecodePolicy::service(), |ctx| {
+            parse_directory(ctx, &directory, CompoundVersion::V3)
         })
-        .expect_err("siblings with the same simple uppercase key are invalid");
-        assert!(matches!(
-            error,
-            CodecError::Malformed(message)
-                if message == "CFB sibling tree violates directory-name ordering"
-        ));
+        .expect("unallocated slot is skipped");
+        assert_eq!(entries.len(), 1);
+        assert!(matches!(entries[0], DirectorySlot::Free));
     }
-
     #[test]
     fn directory_utf16_name_charges_exact_retained_utf8_bytes() {
         let mut directory = [0_u8; 128];
@@ -3632,19 +3527,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn rejects_stale_unallocated_directory_fields() {
-        let mut directory = vec![0_u8; 128];
-        directory[68..80].fill(0xff);
-        directory[8] = 1;
-        let error = with_context(&directory, &DecodePolicy::service(), |ctx| {
-            parse_directory(ctx, &directory, CompoundVersion::V3)
-        })
-        .expect_err("free entries allow only NOSTREAM pointers");
-        assert!(matches!(error, CodecError::Malformed(message)
-            if message == "invalid CFB unallocated directory entry"));
     }
 
     #[test]
