@@ -2280,11 +2280,13 @@ fn historical_selection_regions(
             &mut source_states,
             "visit F3D historical selection first member state",
         )? {
-            if state_ids.is_empty() || !ctx.any_by(
-                &state_ids,
-                |existing| Ok(*existing == state_id),
-                "visit F3D historical selection duplicate state",
-            )? {
+            if state_ids.is_empty()
+                || !ctx.any_by(
+                    &state_ids,
+                    |existing| Ok(*existing == state_id),
+                    "visit F3D historical selection duplicate state",
+                )?
+            {
                 ctx.push_scoped_vec(
                     &mut state_storage,
                     &mut state_ids,
@@ -2299,7 +2301,8 @@ fn historical_selection_regions(
         let Some(member) = ctx.next_charged(
             &mut remaining_members,
             "visit F3D historical selection intersecting member",
-        )? else {
+        )?
+        else {
             break;
         };
         let Some(binding) = member.historical.as_ref() else {
@@ -2313,11 +2316,13 @@ fn historical_selection_regions(
             "visit F3D historical selection intersection state",
         )? {
             let state_id = state_ids[index];
-            if !binding.state_ids.is_empty() && ctx.any_by(
-                &binding.state_ids,
-                |candidate| Ok(*candidate == state_id),
-                "visit F3D historical selection member binding state",
-            )? {
+            if !binding.state_ids.is_empty()
+                && ctx.any_by(
+                    &binding.state_ids,
+                    |candidate| Ok(*candidate == state_id),
+                    "visit F3D historical selection member binding state",
+                )?
+            {
                 state_ids[kept] = state_id;
                 kept += 1;
             }

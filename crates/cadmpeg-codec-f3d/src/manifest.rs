@@ -47,7 +47,9 @@ impl ManifestFailure<'_> {
     }
     fn into_codec(self) -> CodecError {
         if let Some(reservation) = self.reservation {
-            return reservation.commit_value(self.error).unwrap_or_else(std::convert::identity);
+            return reservation
+                .commit_value(self.error)
+                .unwrap_or_else(std::convert::identity);
         }
         self.error
     }

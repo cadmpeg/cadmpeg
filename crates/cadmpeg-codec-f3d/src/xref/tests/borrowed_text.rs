@@ -17,8 +17,15 @@ fn occurrence_path_keeps_one_link_copy_and_no_header_or_inline_guid_copy() {
     let header_name = 256_u32.to_le_bytes().into_iter().chain(name.bytes());
     bytes.splice(15..19, header_name);
     let reference_at = 24 + name.len();
-    let inline_guid = 36_u32.to_le_bytes().into_iter().chain(GUID.bytes()).collect::<Vec<_>>();
-    bytes.splice(reference_at + 9..reference_at + 9, inline_guid.iter().copied());
+    let inline_guid = 36_u32
+        .to_le_bytes()
+        .into_iter()
+        .chain(GUID.bytes())
+        .collect::<Vec<_>>();
+    bytes.splice(
+        reference_at + 9..reference_at + 9,
+        inline_guid.iter().copied(),
+    );
     let required = u64::try_from(4 * std::mem::size_of::<String>() + LINK.len()).unwrap();
     let end = reference_at + cross_document_reference(100, LINK).len() + inline_guid.len() + 5;
     for cap in [required, required - 1] {
@@ -36,12 +43,16 @@ fn occurrence_path_keeps_one_link_copy_and_no_header_or_inline_guid_copy() {
                 assert_eq!(links[0].capacity(), LINK.len());
                 assert_eq!(ctx.resource_refusal(), None);
             } else {
-                let cadmpeg_core::CodecError::ResourceLimit(limit) = result.unwrap_err()
-                else { panic!("the output backing must refuse one byte below its actual size"); };
+                let cadmpeg_core::CodecError::ResourceLimit(limit) = result.unwrap_err() else {
+                    panic!("the output backing must refuse one byte below its actual size");
+                };
                 assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
                 assert_eq!(limit.operation, "collect F3D xref placement link names");
                 assert_eq!(limit.used, u64::try_from(LINK.len()).unwrap());
-                assert_eq!(limit.additional, u64::try_from(4 * std::mem::size_of::<String>()).unwrap());
+                assert_eq!(
+                    limit.additional,
+                    u64::try_from(4 * std::mem::size_of::<String>()).unwrap()
+                );
                 assert_eq!(ctx.resource_refusal(), Some(limit));
             }
         });
@@ -105,12 +116,19 @@ fn repeated_target_placement_retains_only_its_published_role_and_path() {
                 assert_eq!(details.transform, None);
                 assert_eq!(ctx.resource_refusal(), None);
             } else {
-                let error = match result { Err(error) => error, Ok(_) => panic!("the published role must refuse one byte below its storage") };
-                let cadmpeg_core::CodecError::ResourceLimit(limit) = error
-                else { panic!("published role storage must retain the original refusal"); };
+                let error = match result {
+                    Err(error) => error,
+                    Ok(_) => panic!("the published role must refuse one byte below its storage"),
+                };
+                let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                    panic!("published role storage must retain the original refusal");
+                };
                 assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
                 assert_eq!(limit.operation, "retain F3D UTF-16 string");
-                assert_eq!(limit.used, u64::try_from(4 * std::mem::size_of::<String>() + ROLE.len()).unwrap());
+                assert_eq!(
+                    limit.used,
+                    u64::try_from(4 * std::mem::size_of::<String>() + ROLE.len()).unwrap()
+                );
                 assert_eq!(limit.additional, u64::try_from(ROLE.len()).unwrap());
                 assert_eq!(ctx.resource_refusal(), Some(limit));
             }
@@ -119,11 +137,14 @@ fn repeated_target_placement_retains_only_its_published_role_and_path() {
     // A suffix prevents role publication; no owned role copy is needed.
     bytes.push(0);
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = u64::try_from(4 * std::mem::size_of::<String>() + ROLE.len()).unwrap();
+    policy.limits.max_retained_bytes =
+        u64::try_from(4 * std::mem::size_of::<String>() + ROLE.len()).unwrap();
     policy.limits.max_collection_items = 1;
     policy.limits.max_materialized_bytes = 0;
     crate::test_support::with_decode_policy(&policy, |ctx| {
-        assert!(repeated_target_occurrence_placement_details(ctx, &bytes).unwrap().is_none());
+        assert!(repeated_target_occurrence_placement_details(ctx, &bytes)
+            .unwrap()
+            .is_none());
         assert_eq!(ctx.resource_refusal(), None);
     });
 }
@@ -132,7 +153,10 @@ fn repeated_target_placement_retains_only_its_published_role_and_path() {
 fn legacy_occurrence_name_validation_uses_the_original_context() {
     use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
     let mut bytes = legacy_occurrence_record("aaaabbbb-cccc-dddd-eeee-ffff00001111", 10, None);
-    let name = 256_u32.to_le_bytes().into_iter().chain(std::iter::repeat_n(0xff, 256));
+    let name = 256_u32
+        .to_le_bytes()
+        .into_iter()
+        .chain(std::iter::repeat_n(0xff, 256));
     bytes.splice(15..19, name);
     let mut policy = DecodePolicy::service();
     // The class tag is admitted first. The name must refuse before validation.
@@ -143,7 +167,9 @@ fn legacy_occurrence_name_validation_uses_the_original_context() {
     crate::test_support::with_decode_policy(&policy, |ctx| {
         let cadmpeg_core::CodecError::ResourceLimit(limit) =
             legacy_occurrence_prefix(ctx, &bytes).unwrap_err()
-        else { panic!("the name validation must refuse before its UTF-8 error"); };
+        else {
+            panic!("the name validation must refuse before its UTF-8 error");
+        };
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, "decode F3D ASCII string");
         assert_eq!(limit.used, 3);

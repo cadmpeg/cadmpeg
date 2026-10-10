@@ -14,14 +14,19 @@ use cadmpeg_ir::features::{
 fn inputs(overlap: bool) -> (Feature, DesignParameterScope, AsmHistory) {
     let (mut feature, mut scope, mut history, _) =
         crate::history::test_support::output_binding_inputs();
-    scope.try_edit(|draft| {
-        draft.payload = crate::records::feature::scope::DesignFeatureKind::Combine
-            .try_into().expect("Combine payload");
-        draft.layout_fixture_tail();
-    }).expect("Combine scope");
+    scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Combine
+                .try_into()
+                .expect("Combine payload");
+            draft.layout_fixture_tail();
+        })
+        .expect("Combine scope");
     let crate::records::feature::scope::DesignScopePayloadMut::Combine(operation) =
         scope.payload_mut()
-    else { panic!("Combine payload") };
+    else {
+        panic!("Combine payload")
+    };
     *operation = Some(crate::records::feature::combine::DesignCombineOperation {
         form: crate::records::feature::combine::DesignCombineForm::ExtendedReference,
         operation: BooleanKind::Join,
@@ -37,36 +42,46 @@ fn inputs(overlap: bool) -> (Feature, DesignParameterScope, AsmHistory) {
             additional: Vec::new(),
         },
     });
-    let transition = history.states[0].transition.as_mut().expect("current transition");
+    let transition = history.states[0]
+        .transition
+        .as_mut()
+        .expect("current transition");
     transition.topology.bodies.inserted.clear();
     transition.topology.bodies.updated.push(1);
     let crate::history_records::AsmTopologyCache::Complete(previous) =
         &mut history.states[1].topology_cache
-    else { panic!("previous topology") };
+    else {
+        panic!("previous topology")
+    };
     previous.bodies.push(1);
     let setup = cadmpeg_test_support::service_decode_context();
     let tools = if overlap {
         BodySelection::historical(
             crate::ids::history_input_state_id_charged(&setup, &feature.id, 0)
                 .expect("input state"),
-            vec![crate::ids::history_input_body_id_charged(&setup, &feature.id, 0, 1)
-                .expect("input body")],
+            vec![
+                crate::ids::history_input_body_id_charged(&setup, &feature.id, 0, 1)
+                    .expect("input body"),
+            ],
             "native:tool".into(),
             &setup,
-        ).expect("historical storage").expect("historical tool")
+        )
+        .expect("historical storage")
+        .expect("historical tool")
     } else {
         BodySelection::Unresolved
     };
-    let operands = CombineOperands::new(
-        BodySelection::Native("native:target".into()), tools, &setup,
-    ).expect("initial pair admission").expect("initial pair is disjoint");
-    feature.evaluation = FeatureEvaluation::from_definition(
-        FeatureDefinition::Operation(FeatureOperation::Combine {
+    let operands =
+        CombineOperands::new(BodySelection::Native("native:target".into()), tools, &setup)
+            .expect("initial pair admission")
+            .expect("initial pair is disjoint");
+    feature.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+        FeatureOperation::Combine {
             operands,
             op: BooleanKind::Join,
             keep_tools: false,
-        }),
-    );
+        },
+    ));
     (feature, scope, history)
 }
 
@@ -76,17 +91,21 @@ fn bind(
     scopes: &[DesignParameterScope],
     histories: &[AsmHistory],
 ) -> Result<(), CodecError> {
-    bind_feature_body_selections(ctx, features, &FeatureBodySelectionInputs {
-        scopes,
-        groups: &[],
-        body_recipe_operands: &[],
-        construction_recipes: &[],
-        persistent_design_links: &[],
-        histories,
-        bodies: &[],
-        regions: &[],
-        shells: &[],
-    })
+    bind_feature_body_selections(
+        ctx,
+        features,
+        &FeatureBodySelectionInputs {
+            scopes,
+            groups: &[],
+            body_recipe_operands: &[],
+            construction_recipes: &[],
+            persistent_design_links: &[],
+            histories,
+            bodies: &[],
+            regions: &[],
+            shells: &[],
+        },
+    )
 }
 
 #[test]
@@ -104,12 +123,18 @@ fn combine_callback_refusal_wins_over_post_edit_overlap_rejection() {
         // must not replace the earlier authentic callback refusal.
         let operation = "index F3D scope-reference body recipe operands";
         let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-            ResourceDimension::WorkUnits, operation, None,
+            ResourceDimension::WorkUnits,
+            operation,
+            None,
         );
         let Err(CodecError::ResourceLimit(original)) = bind(
-            ctx, std::slice::from_mut(&mut feature),
-            std::slice::from_ref(&scope), std::slice::from_ref(&history),
-        ) else { panic!("original tool query refusal") };
+            ctx,
+            std::slice::from_mut(&mut feature),
+            std::slice::from_ref(&scope),
+            std::slice::from_ref(&history),
+        ) else {
+            panic!("original tool query refusal")
+        };
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
         assert_eq!(original.operation, operation);
         assert!(original.additional > 0);
@@ -129,10 +154,17 @@ fn combine_post_edit_overlap_keeps_ordinary_grammar_rejection_and_native_pair() 
     let original_feature = feature.clone();
     crate::test_support::with_decode_context(|ctx| {
         let Err(CodecError::Malformed(message)) = bind(
-            ctx, std::slice::from_mut(&mut feature),
-            std::slice::from_ref(&scope), std::slice::from_ref(&history),
-        ) else { panic!("overlapping edited pair rejects") };
-        assert_eq!(message, "target and tools must have valid arity and disjoint membership");
+            ctx,
+            std::slice::from_mut(&mut feature),
+            std::slice::from_ref(&scope),
+            std::slice::from_ref(&history),
+        ) else {
+            panic!("overlapping edited pair rejects")
+        };
+        assert_eq!(
+            message,
+            "target and tools must have valid arity and disjoint membership"
+        );
         assert_eq!(ctx.resource_refusal(), None);
     });
     assert_eq!(feature, original_feature);
@@ -149,15 +181,29 @@ fn combine_nonoverlapping_target_retains_exact_historical_and_native_identity() 
     let expected_body = crate::ids::history_input_body_id_charged(&setup, &feature.id, 0, 1)
         .expect("expected input body");
     crate::test_support::with_decode_context(|ctx| {
-        bind(ctx, std::slice::from_mut(&mut feature),
-            std::slice::from_ref(&scope), std::slice::from_ref(&history))
-            .expect("nonoverlapping edited pair");
+        bind(
+            ctx,
+            std::slice::from_mut(&mut feature),
+            std::slice::from_ref(&scope),
+            std::slice::from_ref(&history),
+        )
+        .expect("nonoverlapping edited pair");
         assert_eq!(ctx.resource_refusal(), None);
     });
-    let FeatureDefinition::Operation(FeatureOperation::Combine { operands, op, keep_tools }) =
-        feature.evaluation.definition()
-    else { panic!("Combine definition preserved") };
-    let BodySelection::Historical { state, bodies, native } = operands.target() else {
+    let FeatureDefinition::Operation(FeatureOperation::Combine {
+        operands,
+        op,
+        keep_tools,
+    }) = feature.evaluation.definition()
+    else {
+        panic!("Combine definition preserved")
+    };
+    let BodySelection::Historical {
+        state,
+        bodies,
+        native,
+    } = operands.target()
+    else {
         panic!("revised historical target")
     };
     assert_eq!(state, &expected_state);

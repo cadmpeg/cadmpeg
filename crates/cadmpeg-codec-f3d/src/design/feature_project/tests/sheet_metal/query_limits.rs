@@ -10,14 +10,18 @@ fn assert_refusal(operation: &'static str) {
     policy.limits.max_work_units = u64::MAX;
     crate::test_support::with_decode_policy(&policy, |ctx| {
         let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, Some(1));
-        let Err(CodecError::ResourceLimit(original)) = super::edge_flange_to_object_fixture(ctx, false, false) else {
+        let Err(CodecError::ResourceLimit(original)) =
+            super::edge_flange_to_object_fixture(ctx, false, false)
+        else {
             panic!("original to-object fixture must reach actual source query");
         };
         assert_eq!(original.operation, operation);
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
         assert_eq!(original.additional, 1);
         assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-        assert!(matches!(ctx.charge_work(0, "later EdgeFlange query boundary"), Err(CodecError::ResourceLimit(later)) if later == original));
+        assert!(
+            matches!(ctx.charge_work(0, "later EdgeFlange query boundary"), Err(CodecError::ResourceLimit(later)) if later == original)
+        );
     });
 }
 

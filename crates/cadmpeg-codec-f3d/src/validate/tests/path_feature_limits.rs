@@ -40,15 +40,18 @@ fn path_result(max_items: u64, max_retained_bytes: u64) -> Result<(), cadmpeg_co
 fn path_feature_operand_groups_skip_redundant_collection() {
     let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "collect F3D path-feature operand groups", None,
+        "collect F3D path-feature operand groups",
+        None,
     );
     path_result(u64::MAX, u64::MAX).unwrap();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = u64::MAX;
     crate::test_support::with_decode_policy(&policy, |decode| {
-        assert!(matches!(decode.collect_vec([0_u32], "collect F3D path-feature operand groups"),
+        assert!(
+            matches!(decode.collect_vec([0_u32], "collect F3D path-feature operand groups"),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "collect F3D path-feature operand groups"));
+            if limit.operation == "collect F3D path-feature operand groups")
+        );
     });
 }
 

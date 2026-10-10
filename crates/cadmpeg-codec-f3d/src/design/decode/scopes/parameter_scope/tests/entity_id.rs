@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{
+    u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 
@@ -11,7 +13,10 @@ fn rewritten_scope_entity_id_keeps_admitted_not_implemented_diagnostics() {
     for (target, message) in [
         ("invalid", "entity_id requires a decimal suffix"),
         ("entity_bad", "entity_id requires a decimal u64 suffix"),
-        ("entity_18446744073709551616", "entity_id requires a decimal u64 suffix"),
+        (
+            "entity_18446744073709551616",
+            "entity_id requires a decimal u64 suffix",
+        ),
     ] {
         let source = crate::test_support::with_decode_context(|ctx| {
             let replacements = [("source_7".to_owned(), target.to_owned())];
@@ -29,7 +34,10 @@ fn rewritten_scope_entity_id_keeps_admitted_not_implemented_diagnostics() {
         let copied = u64_from_index(target.len());
         let diagnostic = u64_from_index(message.len());
         let total = copied + diagnostic;
-        for dimension in [ResourceDimension::RetainedBytes, ResourceDimension::WorkUnits] {
+        for dimension in [
+            ResourceDimension::RetainedBytes,
+            ResourceDimension::WorkUnits,
+        ] {
             for ceiling in [total, total - 1] {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::default();
@@ -58,8 +66,9 @@ fn rewritten_scope_entity_id_keeps_admitted_not_implemented_diagnostics() {
                     assert_eq!(limit.additional, 1);
                     assert_eq!(limit.limit, ceiling);
                     assert_eq!(held, message);
-                    let CodecError::ResourceLimit(later) =
-                        ctx.charge_work(0, "after held diagnostic refusal").unwrap_err()
+                    let CodecError::ResourceLimit(later) = ctx
+                        .charge_work(0, "after held diagnostic refusal")
+                        .unwrap_err()
                     else {
                         panic!("the original refusal must remain fused");
                     };

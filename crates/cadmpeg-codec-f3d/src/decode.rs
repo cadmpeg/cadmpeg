@@ -6979,8 +6979,7 @@ fn geometry_losses(
         .sum::<usize>();
     if missing_face_surfaces > 0 {
         let _kind_counts_storage;
-        let (kind_counts, held_storage) =
-            format_kind_counts(ctx, &s.missing_face_surface_kinds)?;
+        let (kind_counts, held_storage) = format_kind_counts(ctx, &s.missing_face_surface_kinds)?;
         _kind_counts_storage = held_storage;
         push_loss_vec(ctx, &mut losses, F3dLossCode::FaceSurfaceReferenceDangling, format_args!("{missing_face_surfaces} face(s) were omitted because their required surface reference was null or dangling. Reference conditions: {kind_counts}."), "collect F3D geometry losses", "retain F3D geometry loss")?;
     }
@@ -6990,8 +6989,7 @@ fn geometry_losses(
         .sum::<usize>();
     if unknown_surface_faces > 0 {
         let _kind_counts_storage;
-        let (kind_counts, held_storage) =
-            format_kind_counts(ctx, &s.unknown_surface_kinds)?;
+        let (kind_counts, held_storage) = format_kind_counts(ctx, &s.unknown_surface_kinds)?;
         _kind_counts_storage = held_storage;
         push_loss_vec(
             ctx,
@@ -7019,8 +7017,7 @@ fn geometry_losses(
         .sum::<usize>();
     if procedural_curve_edges > 0 {
         let _kind_counts_storage;
-        let (kind_counts, held_storage) =
-            format_kind_counts(ctx, &s.procedural_curve_kinds)?;
+        let (kind_counts, held_storage) = format_kind_counts(ctx, &s.procedural_curve_kinds)?;
         _kind_counts_storage = held_storage;
         push_loss_vec(
             ctx,
@@ -7039,8 +7036,7 @@ fn geometry_losses(
         .sum::<usize>();
     if undecoded_pcurve_refs > 0 {
         let _kind_counts_storage;
-        let (kind_counts, held_storage) =
-            format_kind_counts(ctx, &s.undecoded_pcurve_kinds)?;
+        let (kind_counts, held_storage) = format_kind_counts(ctx, &s.undecoded_pcurve_kinds)?;
         _kind_counts_storage = held_storage;
         push_loss_vec(
             ctx,

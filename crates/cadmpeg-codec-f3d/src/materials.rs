@@ -879,9 +879,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
         let (_catalog_storage, catalog) = definition_catalog(ctx, protein)?;
         let schema_catalog = cadmpeg_protein::SchemaCatalog::load(ctx, protein)?;
         let _appearances_storage;
-        let (mut appearances, held_storage) = if let Some(mut schema_catalog) =
-            schema_catalog
-        {
+        let (mut appearances, held_storage) = if let Some(mut schema_catalog) = schema_catalog {
             let outcome = cadmpeg_protein::decode_frames_admitted(
                 ctx,
                 &mut schema_catalog,

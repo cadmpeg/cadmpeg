@@ -325,26 +325,34 @@ fn rejected_point_companion_releases_only_its_candidate_backing() {
         policy.limits.max_retained_bytes = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let queries = Cell::new(0);
-        let form = SketchPointRecordForm::version11(
-            500, SketchPointClosure::Selector0State0, None, 0.0,
+        let form =
+            SketchPointRecordForm::version11(500, SketchPointClosure::Selector0State0, None, 0.0);
+        assert!(
+            decode_sketch_point_companion(&ctx, &payload, POINT, form, |target| {
+                queries.set(queries.get() + 1);
+                Ok(if missing == Some(target) {
+                    None
+                } else {
+                    Some(LINE)
+                })
+            })
+            .unwrap()
+            .is_none()
         );
-        assert!(decode_sketch_point_companion(&ctx, &payload, POINT, form, |target| {
-            queries.set(queries.get() + 1);
-            Ok(if missing == Some(target) { None } else { Some(LINE) })
-        })
-        .unwrap()
-        .is_none());
         assert_eq!(queries.get(), expected_queries);
-        let mut storage = ctx.reserve_scoped(0, "after rejected point companion").unwrap();
+        let mut storage = ctx
+            .reserve_scoped(0, "after rejected point companion")
+            .unwrap();
         let mut later = Vec::<u32>::new();
-        storage.with_storage(|| {
-            ctx.reserve_capacity(&mut later, 2, "after rejected point companion")
-        })
-        .unwrap();
+        storage
+            .with_storage(|| ctx.reserve_capacity(&mut later, 2, "after rejected point companion"))
+            .unwrap();
         later.extend_from_slice(&[73, 74]);
         assert_eq!(later, [73, 74]);
         assert_eq!(later.capacity(), 4);
-        let held = ctx.copy_retained_text("a", "after rejected point companion").unwrap();
+        let held = ctx
+            .copy_retained_text("a", "after rejected point companion")
+            .unwrap();
         assert_eq!(held, "a");
         assert_eq!(held.capacity(), 1);
     }
@@ -360,19 +368,27 @@ fn accepted_point_companion_retains_exact_surviving_backing() {
 
     let payload = candidate_companion_payload(POINT);
     let backing = u64_from_index(4 * std::mem::size_of::<u32>());
-    for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::RetainedBytes] {
+    for dimension in [
+        ResourceDimension::MaterializedBytes,
+        ResourceDimension::RetainedBytes,
+    ] {
         for ceiling in [backing, backing - 1] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::default();
             match dimension {
-                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = ceiling,
+                ResourceDimension::MaterializedBytes => {
+                    policy.limits.max_materialized_bytes = ceiling
+                }
                 ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = ceiling,
                 _ => unreachable!(),
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let queries = Cell::new(0);
             let form = SketchPointRecordForm::version11(
-                500, SketchPointClosure::Selector0State0, None, 0.0,
+                500,
+                SketchPointClosure::Selector0State0,
+                None,
+                0.0,
             );
             let result = decode_sketch_point_companion(&ctx, &payload, POINT, form.clone(), |_| {
                 queries.set(queries.get() + 1);
@@ -385,12 +401,14 @@ fn accepted_point_companion_retains_exact_surviving_backing() {
                 assert_eq!(held.incident_curves, [71, 72]);
                 assert_eq!(held.incident_curves.capacity(), 4);
                 if dimension == ResourceDimension::MaterializedBytes {
-                    let mut later_storage = ctx.reserve_scoped(0, "after companion transfer").unwrap();
+                    let mut later_storage =
+                        ctx.reserve_scoped(0, "after companion transfer").unwrap();
                     let mut later = Vec::<u32>::new();
-                    later_storage.with_storage(|| {
-                        ctx.reserve_capacity(&mut later, 2, "after companion transfer")
-                    })
-                    .unwrap();
+                    later_storage
+                        .with_storage(|| {
+                            ctx.reserve_capacity(&mut later, 2, "after companion transfer")
+                        })
+                        .unwrap();
                     later.extend_from_slice(&[73, 74]);
                     assert_eq!(later, [73, 74]);
                     assert_eq!(held.incident_curves, [71, 72]);
@@ -398,7 +416,9 @@ fn accepted_point_companion_retains_exact_surviving_backing() {
                     let CodecError::ResourceLimit(limit) = ctx
                         .copy_retained_text("a", "after companion transfer")
                         .unwrap_err()
-                    else { panic!("surviving companion backing must remain retained"); };
+                    else {
+                        panic!("surviving companion backing must remain retained");
+                    };
                     assert_eq!(limit.dimension, dimension);
                     assert_eq!(limit.operation, "after companion transfer");
                     assert_eq!(limit.used, backing);
@@ -406,8 +426,11 @@ fn accepted_point_companion_retains_exact_surviving_backing() {
                     assert_eq!(limit.limit, ceiling);
                     assert_eq!(held.incident_curves, [71, 72]);
                     let CodecError::ResourceLimit(later) = ctx
-                        .charge_work(0, "after companion retained refusal").unwrap_err()
-                    else { panic!("the original refusal must remain fused"); };
+                        .charge_work(0, "after companion retained refusal")
+                        .unwrap_err()
+                    else {
+                        panic!("the original refusal must remain fused");
+                    };
                     assert_eq!(later, limit);
                 }
             } else {
@@ -419,10 +442,20 @@ fn accepted_point_companion_retains_exact_surviving_backing() {
                 assert_eq!(limit.used, 0);
                 assert_eq!(limit.additional, backing);
                 assert_eq!(limit.limit, ceiling);
-                assert_eq!(queries.get(), if dimension == ResourceDimension::MaterializedBytes { 0 } else { 2 });
+                assert_eq!(
+                    queries.get(),
+                    if dimension == ResourceDimension::MaterializedBytes {
+                        0
+                    } else {
+                        2
+                    }
+                );
                 let CodecError::ResourceLimit(later) = ctx
-                    .charge_work(0, "after companion backing refusal").unwrap_err()
-                else { panic!("the original refusal must remain fused"); };
+                    .charge_work(0, "after companion backing refusal")
+                    .unwrap_err()
+                else {
+                    panic!("the original refusal must remain fused");
+                };
                 assert_eq!(later, limit);
             }
         }
@@ -431,7 +464,9 @@ fn accepted_point_companion_retains_exact_surviving_backing() {
 
 #[test]
 fn point_companion_callback_diagnostic_escapes_candidate_storage() {
-    use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{
+        u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+    };
     use cadmpeg_core::CodecError;
     use std::cell::Cell;
 
@@ -445,13 +480,14 @@ fn point_companion_callback_diagnostic_escapes_candidate_storage() {
         policy.limits.max_retained_bytes = u64_from_index(message.len());
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let queries = Cell::new(0);
-        let form = SketchPointRecordForm::version11(
-            500, SketchPointClosure::Selector0State0, None, 0.0,
-        );
+        let form =
+            SketchPointRecordForm::version11(500, SketchPointClosure::Selector0State0, None, 0.0);
         let result = decode_sketch_point_companion(&ctx, &payload, POINT, form, |target| {
             queries.set(queries.get() + 1);
             if target == rejected_target {
-                Err(CodecError::Malformed(ctx.copy_retained_text(message, "companion type diagnostic")?))
+                Err(CodecError::Malformed(
+                    ctx.copy_retained_text(message, "companion type diagnostic")?,
+                ))
             } else {
                 Ok(Some(LINE))
             }
@@ -464,13 +500,17 @@ fn point_companion_callback_diagnostic_escapes_candidate_storage() {
         assert_eq!(held.capacity(), message.len());
         let mut storage = ctx.reserve_scoped(0, "after companion callback").unwrap();
         let mut later = Vec::<u32>::new();
-        storage.with_storage(|| ctx.reserve_capacity(&mut later, 2, "after companion callback"))
+        storage
+            .with_storage(|| ctx.reserve_capacity(&mut later, 2, "after companion callback"))
             .unwrap();
         later.extend_from_slice(&[73, 74]);
         assert_eq!(later, [73, 74]);
         let CodecError::ResourceLimit(limit) = ctx
-            .copy_retained_text("a", "after companion callback diagnostic").unwrap_err()
-        else { panic!("the callback diagnostic must remain retained"); };
+            .copy_retained_text("a", "after companion callback diagnostic")
+            .unwrap_err()
+        else {
+            panic!("the callback diagnostic must remain retained");
+        };
         assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
         assert_eq!(limit.operation, "after companion callback diagnostic");
         assert_eq!(limit.used, u64_from_index(message.len()));
@@ -478,8 +518,11 @@ fn point_companion_callback_diagnostic_escapes_candidate_storage() {
         assert_eq!(limit.limit, u64_from_index(message.len()));
         assert_eq!(held, message);
         let CodecError::ResourceLimit(later) = ctx
-            .charge_work(0, "after companion callback refusal").unwrap_err()
-        else { panic!("the original refusal must remain fused"); };
+            .charge_work(0, "after companion callback refusal")
+            .unwrap_err()
+        else {
+            panic!("the original refusal must remain fused");
+        };
         assert_eq!(later, limit);
     }
 }
@@ -496,9 +539,8 @@ fn point_companion_preserves_member_callback_and_collection_refusal_order() {
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let visited = RefCell::new(Vec::new());
-    let form = SketchPointRecordForm::version11(
-        500, SketchPointClosure::Selector0State0, None, 0.0,
-    );
+    let form =
+        SketchPointRecordForm::version11(500, SketchPointClosure::Selector0State0, None, 0.0);
     let result = decode_sketch_point_companion(&ctx, &payload, POINT, form, |target| {
         visited.borrow_mut().push(target);
         Ok(Some(LINE))
@@ -513,14 +555,19 @@ fn point_companion_preserves_member_callback_and_collection_refusal_order() {
     assert_eq!(limit.additional, 1);
     assert_eq!(limit.limit, 1);
     let CodecError::ResourceLimit(later) = ctx
-        .charge_work(0, "after companion member refusal").unwrap_err()
-    else { panic!("the original refusal must remain fused"); };
+        .charge_work(0, "after companion member refusal")
+        .unwrap_err()
+    else {
+        panic!("the original refusal must remain fused");
+    };
     assert_eq!(later, limit);
 }
 
 #[test]
 fn point_companion_callback_refusal_keeps_original_resource_failure() {
-    use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{
+        u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+    };
     use cadmpeg_core::CodecError;
     use std::cell::RefCell;
 
@@ -532,13 +579,14 @@ fn point_companion_callback_refusal_keeps_original_resource_failure() {
         policy.limits.max_retained_bytes = u64_from_index(message.len() - 1);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let visited = RefCell::new(Vec::new());
-        let form = SketchPointRecordForm::version11(
-            500, SketchPointClosure::Selector0State0, None, 0.0,
-        );
+        let form =
+            SketchPointRecordForm::version11(500, SketchPointClosure::Selector0State0, None, 0.0);
         let result = decode_sketch_point_companion(&ctx, &payload, POINT, form, |target| {
             visited.borrow_mut().push(target);
             if target == rejected_target {
-                Err(CodecError::Malformed(ctx.copy_retained_text(message, "companion type diagnostic")?))
+                Err(CodecError::Malformed(
+                    ctx.copy_retained_text(message, "companion type diagnostic")?,
+                ))
             } else {
                 Ok(Some(LINE))
             }
@@ -546,15 +594,25 @@ fn point_companion_callback_refusal_keeps_original_resource_failure() {
         let Err(CodecError::ResourceLimit(limit)) = result else {
             panic!("the original callback diagnostic admission must refuse");
         };
-        assert_eq!(*visited.borrow(), if rejected_target == 71 { vec![71] } else { vec![71, 72] });
+        assert_eq!(
+            *visited.borrow(),
+            if rejected_target == 71 {
+                vec![71]
+            } else {
+                vec![71, 72]
+            }
+        );
         assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
         assert_eq!(limit.operation, "companion type diagnostic");
         assert_eq!(limit.used, 0);
         assert_eq!(limit.additional, u64_from_index(message.len()));
         assert_eq!(limit.limit, u64_from_index(message.len() - 1));
         let CodecError::ResourceLimit(later) = ctx
-            .charge_work(0, "after companion callback copy refusal").unwrap_err()
-        else { panic!("the original refusal must remain fused"); };
+            .charge_work(0, "after companion callback copy refusal")
+            .unwrap_err()
+        else {
+            panic!("the original refusal must remain fused");
+        };
         assert_eq!(later, limit);
     }
 }
@@ -571,12 +629,14 @@ fn point_companion_original_fuse_stops_before_registered_callback() {
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let CodecError::ResourceLimit(original) = ctx
-        .copy_retained_text("a", "original companion refusal").unwrap_err()
-    else { panic!("the original copy must refuse"); };
+        .copy_retained_text("a", "original companion refusal")
+        .unwrap_err()
+    else {
+        panic!("the original copy must refuse");
+    };
     let queried = Cell::new(false);
-    let form = SketchPointRecordForm::version11(
-        500, SketchPointClosure::Selector0State0, None, 0.0,
-    );
+    let form =
+        SketchPointRecordForm::version11(500, SketchPointClosure::Selector0State0, None, 0.0);
     let result = decode_sketch_point_companion(&ctx, &payload, POINT, form, |_| {
         queried.set(true);
         Ok(Some(LINE))

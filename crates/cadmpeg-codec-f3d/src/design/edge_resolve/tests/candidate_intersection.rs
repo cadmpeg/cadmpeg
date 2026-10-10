@@ -4,273 +4,319 @@ use crate::design::edge_resolve::resolved_edge_candidate_intersection;
 #[test]
 fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
     crate::test_support::with_decode_context(|ctx| {
-    use crate::records::topology::{
-        edge_recipe::DesignEdgeRecipeSelectorContext, edge_recipe::DesignTopologyIncidentSide,
-        edge_recipe::DesignTopologyRecipeEntry, edge_recipe::DesignTopologyRecipeTriplet,
-    };
+        use crate::records::topology::{
+            edge_recipe::DesignEdgeRecipeSelectorContext, edge_recipe::DesignTopologyIncidentSide,
+            edge_recipe::DesignTopologyRecipeEntry, edge_recipe::DesignTopologyRecipeTriplet,
+        };
 
-    let selector = |selector, edges: &[i64]| DesignEdgeRecipeSelectorContext {
-        selector,
-        clauses: vec![None, None],
-        incidence_matching_edge_slots: edges.to_vec(),
+        let selector = |selector, edges: &[i64]| DesignEdgeRecipeSelectorContext {
+            selector,
+            clauses: vec![None, None],
+            incidence_matching_edge_slots: edges.to_vec(),
 
-        boundary_count_matching_edge_slots: Vec::new(),
-    };
-    let selector_with_counts = |ordinal: i32, incidence: &[i64], counts: &[i64]| {
-        let mut context = selector(ordinal, incidence);
-        context.boundary_count_matching_edge_slots = counts.to_vec();
-        context
-    };
-    assert_eq!(
-        resolved_edge_candidate_intersection(ctx,
-            &[selector(0, &[17, 18]), selector(1, &[17, 19])],
-            [&[17, 20][..], &[15, 17][..]],
-        ).unwrap(),
-        Some(17)
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(ctx,
-            &[selector(0, &[17, 18]), selector(1, &[17, 18])],
-            [&[17, 18][..]],
-        ).unwrap(),
-        None
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(ctx,
-            &[selector(0, &[17]), selector(1, &[18])],
-            [&[17, 18][..]],
-        ).unwrap(),
-        None
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(ctx, &[selector(0, &[17]), selector(1, &[])], [&[17][..]],).unwrap(),
-        None
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(ctx, &[selector(0, &[17])], [&[][..]]).unwrap(),
-        None
-    );
-    assert_eq!(resolved_edge_candidate_intersection(ctx, &[], [&[17][..]]).unwrap(), None);
-    assert_eq!(
-        resolved_edge_candidate_intersection(ctx,
-            &[
-                selector_with_counts(0, &[17, 18], &[17, 19]),
-                selector_with_counts(1, &[17, 20], &[17, 21]),
-            ],
-            std::iter::empty::<&[i64]>(),
-        ).unwrap(),
-        Some(17)
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(ctx,
-            &[
-                selector_with_counts(0, &[17, 18], &[17, 18]),
-                selector_with_counts(1, &[17, 18], &[17, 18]),
-            ],
-            std::iter::empty::<&[i64]>(),
-        ).unwrap(),
-        None
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(ctx,
-            &[
-                selector_with_counts(0, &[17], &[18]),
-                selector_with_counts(1, &[17], &[18]),
-            ],
-            std::iter::empty::<&[i64]>(),
-        ).unwrap(),
-        None
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(ctx, &[], [&[17, 18][..], &[17, 19][..]]).unwrap(),
-        Some(17)
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(ctx, &[], [&[][..], &[17, 18][..], &[][..], &[17, 19][..]],).unwrap(),
-        Some(17)
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(ctx, &[], [&[17, 18][..], &[17, 18][..]]).unwrap(),
-        None
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(ctx, &[selector(0, &[18])], [&[17, 18][..], &[17, 19][..]],).unwrap(),
-        Some(17)
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(ctx,
-            &[
-                selector_with_counts(0, &[], &[17, 18]),
-                selector_with_counts(1, &[], &[17, 19]),
-            ],
-            [&[17, 20][..]],
-        ).unwrap(),
-        Some(17)
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(ctx,
-            &[selector_with_counts(0, &[17], &[18])],
-            [&[17, 18][..]],
-        ).unwrap(),
-        None
-    );
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::edge_assignment_candidates(
-                &[selector_with_counts(0, &[], &[17, 18])],
-                [&[17][..]].into_iter().map(Some),
-                decode_ctx,
+            boundary_count_matching_edge_slots: Vec::new(),
+        };
+        let selector_with_counts = |ordinal: i32, incidence: &[i64], counts: &[i64]| {
+            let mut context = selector(ordinal, incidence);
+            context.boundary_count_matching_edge_slots = counts.to_vec();
+            context
+        };
+        assert_eq!(
+            resolved_edge_candidate_intersection(
+                ctx,
+                &[selector(0, &[17, 18]), selector(1, &[17, 19])],
+                [&[17, 20][..], &[15, 17][..]],
             )
-        })
-        .unwrap(),
-        Some(vec![17])
-    );
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::edge_assignment_candidates(
-                &[selector_with_counts(0, &[18], &[17, 18])],
-                [&[17, 18][..]].into_iter().map(Some),
-                decode_ctx,
+            .unwrap(),
+            Some(17)
+        );
+        assert_eq!(
+            resolved_edge_candidate_intersection(
+                ctx,
+                &[selector(0, &[17, 18]), selector(1, &[17, 18])],
+                [&[17, 18][..]],
             )
-        })
-        .unwrap(),
-        Some(vec![18])
-    );
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::edge_assignment_candidates(
-                &[selector_with_counts(0, &[18], &[17, 18])],
-                [&[17][..]].into_iter().map(Some),
-                decode_ctx,
+            .unwrap(),
+            None
+        );
+        assert_eq!(
+            resolved_edge_candidate_intersection(
+                ctx,
+                &[selector(0, &[17]), selector(1, &[18])],
+                [&[17, 18][..]],
             )
-        })
-        .unwrap(),
-        None
-    );
-    let assignment_candidates = [
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::edge_assignment_candidates(
-                &[selector_with_counts(0, &[], &[17, 18])],
-                [&[17, 18][..]].into_iter().map(Some),
-                decode_ctx,
+            .unwrap(),
+            None
+        );
+        assert_eq!(
+            resolved_edge_candidate_intersection(
+                ctx,
+                &[selector(0, &[17]), selector(1, &[])],
+                [&[17][..]],
             )
-        })
-        .unwrap()
-        .unwrap(),
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::edge_assignment_candidates(
-                &[selector_with_counts(0, &[18], &[17, 18])],
-                [&[17, 18][..]].into_iter().map(Some),
-                decode_ctx,
+            .unwrap(),
+            None
+        );
+        assert_eq!(
+            resolved_edge_candidate_intersection(ctx, &[selector(0, &[17])], [&[][..]]).unwrap(),
+            None
+        );
+        assert_eq!(
+            resolved_edge_candidate_intersection(ctx, &[], [&[17][..]]).unwrap(),
+            None
+        );
+        assert_eq!(
+            resolved_edge_candidate_intersection(
+                ctx,
+                &[
+                    selector_with_counts(0, &[17, 18], &[17, 19]),
+                    selector_with_counts(1, &[17, 20], &[17, 21]),
+                ],
+                std::iter::empty::<&[i64]>(),
             )
-        })
-        .unwrap()
-        .unwrap(),
-    ];
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::edge_resolve::unique_bipartite_assignment(
-                &assignment_candidates,
-                decode_ctx,
+            .unwrap(),
+            Some(17)
+        );
+        assert_eq!(
+            resolved_edge_candidate_intersection(
+                ctx,
+                &[
+                    selector_with_counts(0, &[17, 18], &[17, 18]),
+                    selector_with_counts(1, &[17, 18], &[17, 18]),
+                ],
+                std::iter::empty::<&[i64]>(),
             )
-        })
-        .unwrap(),
-        Some(vec![17, 18])
-    );
-    let triplet = DesignTopologyRecipeTriplet {
-        outer: std::num::NonZeroU32::new(3).unwrap(),
-        middle: 2,
-        incident: Some(
-            crate::records::topology::edge_recipe::DesignTopologyIncident {
-                ordinal: 1,
-                side: DesignTopologyIncidentSide::Preceding,
-            },
-        ),
-    };
-    let mut common = selector(0, &[]);
-    common.clauses[0] = Some(
-        crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorClause {
-            entry: DesignTopologyRecipeEntry {
-                selector: 0,
-                boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
-                topology_triplets: [triplet, triplet],
-            },
-            triplet_edge_slots: [vec![17, 18], vec![17]],
-        },
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(ctx, &[common.clone()], [&[17, 18][..]]).unwrap(),
-        Some(17)
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(ctx, &[common], [&[][..]]).unwrap(),
-        Some(17)
-    );
-    let mut common = selector(0, &[]);
-    common.clauses[0] = Some(
-        crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorClause {
-            entry: DesignTopologyRecipeEntry {
-                selector: 0,
-                boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
-                topology_triplets: [triplet, triplet],
-            },
-            triplet_edge_slots: [vec![17, 18, 19], vec![17, 18]],
-        },
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(ctx, &[common.clone()], [&[17][..]]).unwrap(),
-        Some(17)
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(ctx, &[common], [&[19][..]]).unwrap(),
-        None
-    );
-    let clause = |triplet_edge_slots| {
-        Some(
+            .unwrap(),
+            None
+        );
+        assert_eq!(
+            resolved_edge_candidate_intersection(
+                ctx,
+                &[
+                    selector_with_counts(0, &[17], &[18]),
+                    selector_with_counts(1, &[17], &[18]),
+                ],
+                std::iter::empty::<&[i64]>(),
+            )
+            .unwrap(),
+            None
+        );
+        assert_eq!(
+            resolved_edge_candidate_intersection(ctx, &[], [&[17, 18][..], &[17, 19][..]]).unwrap(),
+            Some(17)
+        );
+        assert_eq!(
+            resolved_edge_candidate_intersection(
+                ctx,
+                &[],
+                [&[][..], &[17, 18][..], &[][..], &[17, 19][..]],
+            )
+            .unwrap(),
+            Some(17)
+        );
+        assert_eq!(
+            resolved_edge_candidate_intersection(ctx, &[], [&[17, 18][..], &[17, 18][..]]).unwrap(),
+            None
+        );
+        assert_eq!(
+            resolved_edge_candidate_intersection(
+                ctx,
+                &[selector(0, &[18])],
+                [&[17, 18][..], &[17, 19][..]],
+            )
+            .unwrap(),
+            Some(17)
+        );
+        assert_eq!(
+            resolved_edge_candidate_intersection(
+                ctx,
+                &[
+                    selector_with_counts(0, &[], &[17, 18]),
+                    selector_with_counts(1, &[], &[17, 19]),
+                ],
+                [&[17, 20][..]],
+            )
+            .unwrap(),
+            Some(17)
+        );
+        assert_eq!(
+            resolved_edge_candidate_intersection(
+                ctx,
+                &[selector_with_counts(0, &[17], &[18])],
+                [&[17, 18][..]],
+            )
+            .unwrap(),
+            None
+        );
+        assert_eq!(
+            crate::test_support::with_decode_context(|decode_ctx| {
+                crate::design::edge_resolve::edge_assignment_candidates(
+                    &[selector_with_counts(0, &[], &[17, 18])],
+                    [&[17][..]].into_iter().map(Some),
+                    decode_ctx,
+                )
+            })
+            .unwrap(),
+            Some(vec![17])
+        );
+        assert_eq!(
+            crate::test_support::with_decode_context(|decode_ctx| {
+                crate::design::edge_resolve::edge_assignment_candidates(
+                    &[selector_with_counts(0, &[18], &[17, 18])],
+                    [&[17, 18][..]].into_iter().map(Some),
+                    decode_ctx,
+                )
+            })
+            .unwrap(),
+            Some(vec![18])
+        );
+        assert_eq!(
+            crate::test_support::with_decode_context(|decode_ctx| {
+                crate::design::edge_resolve::edge_assignment_candidates(
+                    &[selector_with_counts(0, &[18], &[17, 18])],
+                    [&[17][..]].into_iter().map(Some),
+                    decode_ctx,
+                )
+            })
+            .unwrap(),
+            None
+        );
+        let assignment_candidates = [
+            crate::test_support::with_decode_context(|decode_ctx| {
+                crate::design::edge_resolve::edge_assignment_candidates(
+                    &[selector_with_counts(0, &[], &[17, 18])],
+                    [&[17, 18][..]].into_iter().map(Some),
+                    decode_ctx,
+                )
+            })
+            .unwrap()
+            .unwrap(),
+            crate::test_support::with_decode_context(|decode_ctx| {
+                crate::design::edge_resolve::edge_assignment_candidates(
+                    &[selector_with_counts(0, &[18], &[17, 18])],
+                    [&[17, 18][..]].into_iter().map(Some),
+                    decode_ctx,
+                )
+            })
+            .unwrap()
+            .unwrap(),
+        ];
+        assert_eq!(
+            crate::test_support::with_decode_context(|decode_ctx| {
+                crate::design::edge_resolve::unique_bipartite_assignment(
+                    &assignment_candidates,
+                    decode_ctx,
+                )
+            })
+            .unwrap(),
+            Some(vec![17, 18])
+        );
+        let triplet = DesignTopologyRecipeTriplet {
+            outer: std::num::NonZeroU32::new(3).unwrap(),
+            middle: 2,
+            incident: Some(
+                crate::records::topology::edge_recipe::DesignTopologyIncident {
+                    ordinal: 1,
+                    side: DesignTopologyIncidentSide::Preceding,
+                },
+            ),
+        };
+        let mut common = selector(0, &[]);
+        common.clauses[0] = Some(
             crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorClause {
                 entry: DesignTopologyRecipeEntry {
                     selector: 0,
                     boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
-                    topology_triplets: [
-                        triplet,
-                        DesignTopologyRecipeTriplet {
-                            outer: std::num::NonZeroU32::new(4).unwrap(),
-                            incident: Some(
-                                crate::records::topology::edge_recipe::DesignTopologyIncident {
-                                    ordinal: 2,
-                                    side: DesignTopologyIncidentSide::Preceding,
-                                },
-                            ),
-                            ..triplet
-                        },
-                    ],
+                    topology_triplets: [triplet, triplet],
                 },
-                triplet_edge_slots,
+                triplet_edge_slots: [vec![17, 18], vec![17]],
             },
-        )
-    };
-    let mut cross_clause = selector(0, &[]);
-    cross_clause.clauses = vec![
-        clause([vec![18], vec![17, 19]]),
-        clause([vec![20], vec![17]]),
-    ];
-    assert_eq!(
-        resolved_edge_candidate_intersection(ctx, &[cross_clause.clone()], std::iter::empty::<&[i64]>(),).unwrap(),
-        Some(17)
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(ctx, &[cross_clause.clone()], [&[17, 21][..]],).unwrap(),
-        Some(17)
-    );
-    assert_eq!(
-        resolved_edge_candidate_intersection(ctx, &[cross_clause.clone()], [&[18][..]]).unwrap(),
-        None
-    );
-    cross_clause.clauses = vec![clause([vec![18], vec![17]]), clause([vec![18], vec![17]])];
-    assert_eq!(
-        resolved_edge_candidate_intersection(ctx, &[cross_clause], std::iter::empty::<&[i64]>(),).unwrap(),
-        None
-    );
+        );
+        assert_eq!(
+            resolved_edge_candidate_intersection(ctx, &[common.clone()], [&[17, 18][..]]).unwrap(),
+            Some(17)
+        );
+        assert_eq!(
+            resolved_edge_candidate_intersection(ctx, &[common], [&[][..]]).unwrap(),
+            Some(17)
+        );
+        let mut common = selector(0, &[]);
+        common.clauses[0] = Some(
+            crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorClause {
+                entry: DesignTopologyRecipeEntry {
+                    selector: 0,
+                    boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
+                    topology_triplets: [triplet, triplet],
+                },
+                triplet_edge_slots: [vec![17, 18, 19], vec![17, 18]],
+            },
+        );
+        assert_eq!(
+            resolved_edge_candidate_intersection(ctx, &[common.clone()], [&[17][..]]).unwrap(),
+            Some(17)
+        );
+        assert_eq!(
+            resolved_edge_candidate_intersection(ctx, &[common], [&[19][..]]).unwrap(),
+            None
+        );
+        let clause = |triplet_edge_slots| {
+            Some(
+                crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorClause {
+                    entry: DesignTopologyRecipeEntry {
+                        selector: 0,
+                        boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
+                        topology_triplets: [
+                            triplet,
+                            DesignTopologyRecipeTriplet {
+                                outer: std::num::NonZeroU32::new(4).unwrap(),
+                                incident: Some(
+                                    crate::records::topology::edge_recipe::DesignTopologyIncident {
+                                        ordinal: 2,
+                                        side: DesignTopologyIncidentSide::Preceding,
+                                    },
+                                ),
+                                ..triplet
+                            },
+                        ],
+                    },
+                    triplet_edge_slots,
+                },
+            )
+        };
+        let mut cross_clause = selector(0, &[]);
+        cross_clause.clauses = vec![
+            clause([vec![18], vec![17, 19]]),
+            clause([vec![20], vec![17]]),
+        ];
+        assert_eq!(
+            resolved_edge_candidate_intersection(
+                ctx,
+                &[cross_clause.clone()],
+                std::iter::empty::<&[i64]>(),
+            )
+            .unwrap(),
+            Some(17)
+        );
+        assert_eq!(
+            resolved_edge_candidate_intersection(ctx, &[cross_clause.clone()], [&[17, 21][..]],)
+                .unwrap(),
+            Some(17)
+        );
+        assert_eq!(
+            resolved_edge_candidate_intersection(ctx, &[cross_clause.clone()], [&[18][..]])
+                .unwrap(),
+            None
+        );
+        cross_clause.clauses = vec![clause([vec![18], vec![17]]), clause([vec![18], vec![17]])];
+        assert_eq!(
+            resolved_edge_candidate_intersection(
+                ctx,
+                &[cross_clause],
+                std::iter::empty::<&[i64]>(),
+            )
+            .unwrap(),
+            None
+        );
     });
 }
 

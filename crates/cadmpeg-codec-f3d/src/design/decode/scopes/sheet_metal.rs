@@ -8,8 +8,8 @@
 //! that context for parameter-owner searches and the original refusal after
 //! each parameter-kind callback.
 
-use super::shared_frames::marked_record_reference;
 use self::flange_frame::{EdgeFlangeFrame, FixedAuxiliaryReferences, FixedEdges, FixedShape};
+use super::shared_frames::marked_record_reference;
 use crate::design::decode::byte_fields::zeros_at;
 use crate::design::decode::record_streams::{in_stream, record_stream};
 use crate::layout::edge_flange_class286_two_sided_per_edge_fixed_operation as edge_flange_286_per_edge;
@@ -557,7 +557,9 @@ fn legacy_edge_flange_operation_at<const EDGES: usize, const RESULTS: usize>(
         *operand = remaining.next()?;
     }
     if remaining.next().is_some()
-        || (EDGES == 1 && Some(aggregate_operand_record_indices[0]) != aggregate_group_record_index.checked_add(3))
+        || (EDGES == 1
+            && Some(aggregate_operand_record_indices[0])
+                != aggregate_group_record_index.checked_add(3))
     {
         return None;
     }
@@ -807,18 +809,18 @@ fn edge_flange_to_object_operation_at(
         height_datum,
         bend_position,
         shape: FixedShape::FullEdge {
-                edges: FixedEdges::One(DesignEdgeFlangeEdge {
-                    wrapper: edge_wrapper_record_index,
-                    group_record_index: edge_group_record_index.try_into().ok()?,
-                    aggregate_operand_record_index,
-                }),
-                height: DesignEdgeFlangeHeightExtent::ToObject {
-                    target_group_record_index,
-                    target_operand_record_index,
-                    offset_owner_record_index,
-                    reference_record_indices,
-                },
+            edges: FixedEdges::One(DesignEdgeFlangeEdge {
+                wrapper: edge_wrapper_record_index,
+                group_record_index: edge_group_record_index.try_into().ok()?,
+                aggregate_operand_record_index,
+            }),
+            height: DesignEdgeFlangeHeightExtent::ToObject {
+                target_group_record_index,
+                target_operand_record_index,
+                offset_owner_record_index,
+                reference_record_indices,
             },
+        },
         aggregate_group_record_index,
     })
 }

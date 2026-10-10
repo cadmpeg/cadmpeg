@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Selected plane rows own only live temporary and returned backing.
 
-use cadmpeg_core::decode::{DecodePolicy, ResourceDimension, u64_from_index};
-use cadmpeg_core::CodecError;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
-use crate::records::topology::construction::{DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame};
-use crate::records::topology::extrude_selection::DesignOperandRole;
+use crate::records::topology::construction::{
+    DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
+};
 use crate::records::topology::entity_selection::DesignEntitySelectionOperand;
+use crate::records::topology::extrude_selection::DesignOperandRole;
+use cadmpeg_core::decode::{u64_from_index, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 
 const SCRATCH_ALLOWANCE: u64 = 4096;
 
@@ -123,7 +125,11 @@ fn plane(record: u32) -> DesignParameterScope {
 }
 
 fn scope() -> DesignParameterScope {
-    DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#77", DesignFeatureKind::SplitFace, 77)
+    DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#77",
+        DesignFeatureKind::SplitFace,
+        77,
+    )
 }
 
 fn row_bytes() -> u64 {
@@ -135,15 +141,24 @@ fn assert_discarded_prefix(second_primary: u64, include_second: bool) {
     let scope = scope();
     let group = group(77, 0, 100, vec![101, 102], DesignOperandRole::ROLE_0X21);
     let mut selections = vec![selection(101, 0, 600)];
-    if include_second { selections.push(selection(102, 1, second_primary)); }
+    if include_second {
+        selections.push(selection(102, 1, second_primary));
+    }
     let planes = [plane(601)];
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = SCRATCH_ALLOWANCE;
     policy.limits.max_retained_bytes = 0;
     crate::test_support::with_decode_policy(&policy, |ctx| {
         for _ in 0..7 {
-            assert!(super::super::selected_work_planes(ctx, &scope, &group, &selections, &planes).unwrap().is_none());
-            drop(ctx.reserve_scoped(SCRATCH_ALLOWANCE, "reuse discarded selected plane rows").unwrap());
+            assert!(
+                super::super::selected_work_planes(ctx, &scope, &group, &selections, &planes)
+                    .unwrap()
+                    .is_none()
+            );
+            drop(
+                ctx.reserve_scoped(SCRATCH_ALLOWANCE, "reuse discarded selected plane rows")
+                    .unwrap(),
+            );
         }
         assert_eq!(ctx.resource_refusal(), None);
     });
@@ -175,12 +190,22 @@ fn selected_plane_lifetime_survivor_retains_only_rows_in_source_order() {
     policy.limits.max_retained_bytes = row_bytes();
     crate::test_support::with_decode_policy(&policy, |ctx| {
         for _ in 0..7 {
-            let mut storage = ctx.provisional_retained("test actual selected plane output lifetime").unwrap();
-            let selected = storage.with_storage(|| super::super::selected_work_planes(ctx, &scope, &group, &selections, &planes)).unwrap().unwrap();
+            let mut storage = ctx
+                .provisional_retained("test actual selected plane output lifetime")
+                .unwrap();
+            let selected = storage
+                .with_storage(|| {
+                    super::super::selected_work_planes(ctx, &scope, &group, &selections, &planes)
+                })
+                .unwrap()
+                .unwrap();
             assert_eq!(selected.len(), 2);
             assert!(std::ptr::eq(selected[0], &planes[1]));
             assert!(std::ptr::eq(selected[1], &planes[0]));
-            drop(ctx.reserve_scoped(SCRATCH_ALLOWANCE, "reuse selected plane index scratch").unwrap());
+            drop(
+                ctx.reserve_scoped(SCRATCH_ALLOWANCE, "reuse selected plane index scratch")
+                    .unwrap(),
+            );
             assert_eq!(selected[0].id, planes[1].id);
             assert_eq!(selected[1].id, planes[0].id);
             drop(selected);
@@ -201,13 +226,29 @@ fn selected_plane_lifetime_parent_scratch_keeps_rows_until_data_drop() {
     policy.limits.max_retained_bytes = 0;
     crate::test_support::with_decode_policy(&policy, |ctx| {
         for _ in 0..7 {
-            let mut storage = ctx.reserve_scoped(0, "test actual selected plane temporary caller").unwrap();
-            let selected = storage.with_storage(|| super::super::selected_work_planes(ctx, &scope, &group, &selections, &planes)).unwrap().unwrap();
-            drop(ctx.reserve_scoped(SCRATCH_ALLOWANCE - row_bytes(), "reuse remaining plane scratch while rows live").unwrap());
+            let mut storage = ctx
+                .reserve_scoped(0, "test actual selected plane temporary caller")
+                .unwrap();
+            let selected = storage
+                .with_storage(|| {
+                    super::super::selected_work_planes(ctx, &scope, &group, &selections, &planes)
+                })
+                .unwrap()
+                .unwrap();
+            drop(
+                ctx.reserve_scoped(
+                    SCRATCH_ALLOWANCE - row_bytes(),
+                    "reuse remaining plane scratch while rows live",
+                )
+                .unwrap(),
+            );
             assert!(std::ptr::eq(selected[0], &planes[0]));
             drop(selected);
             drop(storage);
-            drop(ctx.reserve_scoped(SCRATCH_ALLOWANCE, "reuse all plane scratch after data drop").unwrap());
+            drop(
+                ctx.reserve_scoped(SCRATCH_ALLOWANCE, "reuse all plane scratch after data drop")
+                    .unwrap(),
+            );
         }
         assert_eq!(ctx.resource_refusal(), None);
     });
@@ -223,11 +264,17 @@ fn selected_plane_lifetime_retained_transfer_refuses_one_below_real_rows() {
     policy.limits.max_materialized_bytes = SCRATCH_ALLOWANCE;
     policy.limits.max_retained_bytes = row_bytes() - 1;
     crate::test_support::with_decode_policy(&policy, |ctx| {
-        let Err(CodecError::ResourceLimit(original)) = super::super::selected_work_planes(ctx, &scope, &group, &selections, &planes) else { panic!("actual returned row backing must refuse transfer"); };
+        let Err(CodecError::ResourceLimit(original)) =
+            super::super::selected_work_planes(ctx, &scope, &group, &selections, &planes)
+        else {
+            panic!("actual returned row backing must refuse transfer");
+        };
         assert_eq!(original.dimension, ResourceDimension::RetainedBytes);
         assert_eq!(original.operation, "hold F3D selected work plane rows");
         assert_eq!((original.used, original.additional), (0, row_bytes()));
         assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-        assert!(matches!(super::super::selected_work_planes(ctx, &scope, &group, &[], &planes), Err(CodecError::ResourceLimit(later)) if later == original));
+        assert!(
+            matches!(super::super::selected_work_planes(ctx, &scope, &group, &[], &planes), Err(CodecError::ResourceLimit(later)) if later == original)
+        );
     });
 }

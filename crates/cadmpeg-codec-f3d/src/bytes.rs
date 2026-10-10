@@ -857,7 +857,8 @@ mod tests {
         policy.limits.max_collection_items = 0;
         crate::test_support::with_decode_policy(&policy, |ctx| {
             let (value, end) = super::lp_ascii_strict_view(ctx, &bytes, 0, 3..=3)
-                .unwrap().unwrap();
+                .unwrap()
+                .unwrap();
             assert_eq!(value, "ABC");
             assert_eq!(value.as_ptr(), bytes[4..].as_ptr());
             assert_eq!(end, bytes.len());
@@ -867,7 +868,9 @@ mod tests {
         crate::test_support::with_decode_policy(&policy, |ctx| {
             let cadmpeg_core::CodecError::ResourceLimit(limit) =
                 super::lp_ascii_strict_view(ctx, &bytes, 0, 3..=3).unwrap_err()
-            else { panic!("UTF-8 validation must refuse before reading the payload"); };
+            else {
+                panic!("UTF-8 validation must refuse before reading the payload");
+            };
             assert_eq!(limit.operation, "decode F3D ASCII string");
             assert_eq!(limit.used, 0);
             assert_eq!(limit.additional, 3);
@@ -883,15 +886,29 @@ mod tests {
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_collection_items = 0;
         crate::test_support::with_decode_policy(&policy, |ctx| {
-            assert_eq!(super::lp_ascii_strict_view(ctx, &[0; 4], 0, 0..=0).unwrap(), Some(("", 4)));
-            assert_eq!(super::lp_ascii_strict_view(ctx, &[1, 0, 0, 0, 0xff], 0, 0..=0).unwrap(), None);
-            assert_eq!(super::lp_ascii_strict_view(ctx, &[], usize::MAX, 0..=0).unwrap(), None);
+            assert_eq!(
+                super::lp_ascii_strict_view(ctx, &[0; 4], 0, 0..=0).unwrap(),
+                Some(("", 4))
+            );
+            assert_eq!(
+                super::lp_ascii_strict_view(ctx, &[1, 0, 0, 0, 0xff], 0, 0..=0).unwrap(),
+                None
+            );
+            assert_eq!(
+                super::lp_ascii_strict_view(ctx, &[], usize::MAX, 0..=0).unwrap(),
+                None
+            );
             assert_eq!(ctx.resource_refusal(), None);
-            let cadmpeg_core::CodecError::ResourceLimit(original) =
-                ctx.charge_work(1, "prior borrowed ASCII refusal").unwrap_err()
-            else { panic!("zero work ceiling must refuse"); };
+            let cadmpeg_core::CodecError::ResourceLimit(original) = ctx
+                .charge_work(1, "prior borrowed ASCII refusal")
+                .unwrap_err()
+            else {
+                panic!("zero work ceiling must refuse");
+            };
             let error = super::lp_ascii_strict_view(ctx, &[], usize::MAX, 0..=0).unwrap_err();
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit == original));
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit == original)
+            );
             assert_eq!(ctx.resource_refusal(), Some(original));
         });
     }
@@ -899,8 +916,14 @@ mod tests {
     #[test]
     fn strict_ascii_view_preserves_invalid_utf8_and_truncated_spans() {
         crate::test_support::with_decode_context(|ctx| {
-            assert_eq!(super::lp_ascii_strict_view(ctx, &[1, 0, 0, 0, 0xff], 0, 1..=1).unwrap(), None);
-            assert_eq!(super::lp_ascii_strict_view(ctx, &[2, 0, 0, 0, b'A'], 0, 0..=2).unwrap(), None);
+            assert_eq!(
+                super::lp_ascii_strict_view(ctx, &[1, 0, 0, 0, 0xff], 0, 1..=1).unwrap(),
+                None
+            );
+            assert_eq!(
+                super::lp_ascii_strict_view(ctx, &[2, 0, 0, 0, b'A'], 0, 0..=2).unwrap(),
+                None
+            );
             assert_eq!(ctx.resource_refusal(), None);
         });
     }
@@ -930,8 +953,9 @@ mod tests {
                     assert_eq!(reference.local(), Some((7, Some(GUID))));
                     assert_eq!(ctx.resource_refusal(), None);
                 } else {
-                    let cadmpeg_core::CodecError::ResourceLimit(limit) = result.unwrap_err()
-                    else { panic!("the single actual copy must refuse"); };
+                    let cadmpeg_core::CodecError::ResourceLimit(limit) = result.unwrap_err() else {
+                        panic!("the single actual copy must refuse");
+                    };
                     assert_eq!(limit.operation, "retain F3D ASCII string");
                     assert_eq!(limit.used, u64::try_from(GUID.len()).unwrap());
                     assert_eq!(limit.additional, u64::try_from(GUID.len()).unwrap());
@@ -952,15 +976,22 @@ mod tests {
             let mut at = 0;
             assert_eq!(super::take_reference(ctx, &[], &mut at).unwrap(), None);
             assert_eq!(at, 0);
-            assert_eq!(super::take_reference(ctx, &[0], &mut at).unwrap(), Some(super::Reference::Null));
+            assert_eq!(
+                super::take_reference(ctx, &[0], &mut at).unwrap(),
+                Some(super::Reference::Null)
+            );
             assert_eq!(at, 1);
             assert_eq!(ctx.resource_refusal(), None);
             let cadmpeg_core::CodecError::ResourceLimit(original) =
                 ctx.charge_work(1, "prior reference refusal").unwrap_err()
-            else { panic!("zero work ceiling must refuse"); };
+            else {
+                panic!("zero work ceiling must refuse");
+            };
             let mut at = 0;
             let error = super::take_reference(ctx, &[0], &mut at).unwrap_err();
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit == original));
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit == original)
+            );
             assert_eq!(ctx.resource_refusal(), Some(original));
             assert_eq!(at, 0);
         });

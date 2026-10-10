@@ -112,13 +112,22 @@ pub(super) fn resolved_face_group(
     if group.members().is_empty() || operands.is_empty() {
         return Ok(None);
     }
-    let Some(stream) = crate::ids::native_stream_charged(ctx, &group.id, "resolve F3D face group stream")? else {
+    let Some(stream) =
+        crate::ids::native_stream_charged(ctx, &group.id, "resolve F3D face group stream")?
+    else {
         return Ok(None);
     };
     let mut faces = Vec::new();
     let mut members = group.members().iter();
     while let Some(member) = ctx.next_charged(&mut members, "visit F3D face group member")? {
-        let Some(operand) = unique_face_operand(ctx, operands, Some(stream), group.scope_record_index, member.value)? else {
+        let Some(operand) = unique_face_operand(
+            ctx,
+            operands,
+            Some(stream),
+            group.scope_record_index,
+            member.value,
+        )?
+        else {
             return Ok(None);
         };
         if operand.resolved_active_face.is_none()
@@ -190,7 +199,12 @@ pub(super) fn resolved_explicit_bounded_face_group(
             faces
         };
         for face in candidate_faces {
-            if !contains_face(ctx, &faces, &face, "find F3D explicit bounded face group member")? {
+            if !contains_face(
+                ctx,
+                &faces,
+                &face,
+                "find F3D explicit bounded face group member",
+            )? {
                 ctx.push_vec(&mut faces, face, "f3d explicit bounded face group member")?;
             }
         }
@@ -681,7 +695,11 @@ fn collect_extrude_profile_group_operands(
         };
         ctx.charge_work(0, "find F3D Extrude leaf index")?;
         if !indices.is_empty()
-            && ctx.any_by(&indices, |candidate| Ok(*candidate == index), "find F3D Extrude leaf index")?
+            && ctx.any_by(
+                &indices,
+                |candidate| Ok(*candidate == index),
+                "find F3D Extrude leaf index",
+            )?
         {
             return Ok(None);
         }
@@ -1575,7 +1593,12 @@ fn explicit_bounded_face_candidates(
         }
         for face in &reference.candidate_faces {
             if operand.candidate_faces.is_empty()
-                || contains_face(ctx, &operand.candidate_faces, face, "find F3D explicit bounded face candidate")?
+                || contains_face(
+                    ctx,
+                    &operand.candidate_faces,
+                    face,
+                    "find F3D explicit bounded face candidate",
+                )?
             {
                 if !lanes.contains_key(&reference.design_reference) {
                     {
@@ -1583,7 +1606,12 @@ fn explicit_bounded_face_candidates(
                     }
                 }
                 let lane = lanes.entry(reference.design_reference).or_default();
-                if !contains_face(ctx, lane, face, "find F3D explicit bounded face lane member")? {
+                if !contains_face(
+                    ctx,
+                    lane,
+                    face,
+                    "find F3D explicit bounded face lane member",
+                )? {
                     let face =
                         (face).try_clone_for_decode(ctx, "f3d explicit bounded face lane id")?;
                     ctx.push_vec(lane, face, "f3d explicit bounded face lane member")?;
@@ -1801,7 +1829,12 @@ pub(crate) fn resolve_stable_bounded_face_history_set(
         else {
             return Ok(None);
         };
-        if contains_slot(ctx, &active_faces, slot, "find F3D stable bounded active face")? {
+        if contains_slot(
+            ctx,
+            &active_faces,
+            slot,
+            "find F3D stable bounded active face",
+        )? {
             return Ok(None);
         }
         ctx.push_vec(&mut active_faces, slot, "f3d stable bounded active face")?;
@@ -1840,8 +1873,12 @@ pub(crate) fn resolve_surface_delete_face_history_set(
     }
     let mut covered = HashSet::new();
     for context in &operand.historical_support_contexts {
-        if !contains_slot(ctx, &active_faces, context.active_face_slot, "find F3D SurfaceDeleteFace active face")?
-            || context.preceding_face_slots != [context.active_face_slot]
+        if !contains_slot(
+            ctx,
+            &active_faces,
+            context.active_face_slot,
+            "find F3D SurfaceDeleteFace active face",
+        )? || context.preceding_face_slots != [context.active_face_slot]
             || context.changed_preceding_face_slots != [context.active_face_slot]
         {
             return Ok(None);
@@ -1935,8 +1972,12 @@ fn stable_face_support_set(
     }
     let mut covered = HashSet::new();
     for context in contexts {
-        if !contains_slot(ctx, active_faces, context.active_face_slot, "find F3D stable bounded support face")?
-            || context.preceding_face_slots != [context.active_face_slot]
+        if !contains_slot(
+            ctx,
+            active_faces,
+            context.active_face_slot,
+            "find F3D stable bounded support face",
+        )? || context.preceding_face_slots != [context.active_face_slot]
             || !context.changed_preceding_face_slots.is_empty()
         {
             return Ok(None);
@@ -2781,7 +2822,9 @@ fn extrude_target_plane_candidate(
     let mut found = None;
     let mut ambiguous = false;
     let mut consider = |candidate: &cadmpeg_ir::ids::FaceId| -> Result<(), CodecError> {
-        let Some((index, plane_surface)) = plane_for_face(ctx, candidate, resolution.faces, resolution.surfaces)? else {
+        let Some((index, plane_surface)) =
+            plane_for_face(ctx, candidate, resolution.faces, resolution.surfaces)?
+        else {
             return Ok(());
         };
         let origin = plane_surface.origin().get();
@@ -2805,18 +2848,28 @@ fn extrude_target_plane_candidate(
             return Ok(None);
         }
         let mut references = operand.recipe_references.iter();
-        while let Some(reference) = ctx.next_charged(&mut references, "visit F3D target plane reference")? {
-            if reference.candidate_faces.is_empty() && reference.alternate_selector_faces.is_empty() {
+        while let Some(reference) =
+            ctx.next_charged(&mut references, "visit F3D target plane reference")?
+        {
+            if reference.candidate_faces.is_empty() && reference.alternate_selector_faces.is_empty()
+            {
                 continue;
             }
-            let mut candidates = reference.candidate_faces.iter().chain(&reference.alternate_selector_faces);
-            while let Some(candidate) = ctx.next_charged(&mut candidates, "visit F3D target plane nested candidate")? {
+            let mut candidates = reference
+                .candidate_faces
+                .iter()
+                .chain(&reference.alternate_selector_faces);
+            while let Some(candidate) =
+                ctx.next_charged(&mut candidates, "visit F3D target plane nested candidate")?
+            {
                 consider(candidate)?;
             }
         }
     } else {
         let mut candidates = direct.iter();
-        while let Some(candidate) = ctx.next_charged(&mut candidates, "visit F3D target plane candidate")? {
+        while let Some(candidate) =
+            ctx.next_charged(&mut candidates, "visit F3D target plane candidate")?
+        {
             consider(candidate)?;
         }
     }
@@ -2840,32 +2893,49 @@ pub(super) fn retain_face_operand_resolution(
     face: &cadmpeg_ir::ids::FaceId,
 ) -> Result<bool, CodecError> {
     let Some(stream) = crate::ids::native_stream_charged(
-        ctx, &group.id, "resolve F3D retained face group stream",
-    )? else {
+        ctx,
+        &group.id,
+        "resolve F3D retained face group stream",
+    )?
+    else {
         return Ok(false);
     };
     let mut selected = None;
     let mut input = operands.iter_mut();
     while let Some(operand) = ctx.next_charged(&mut input, "visit F3D retained face operand")? {
         let same_stream = match crate::ids::native_stream_charged(
-            ctx, &operand.id, "resolve F3D retained face operand stream",
+            ctx,
+            &operand.id,
+            "resolve F3D retained face operand stream",
         )? {
-            Some(candidate) => ctx.equal_bytes(candidate.as_bytes(), stream.as_bytes(), "compare F3D retained face operand stream")?,
+            Some(candidate) => ctx.equal_bytes(
+                candidate.as_bytes(),
+                stream.as_bytes(),
+                "compare F3D retained face operand stream",
+            )?,
             None => false,
         };
         if !same_stream || operand.scope_record_index != group.scope_record_index {
             continue;
         }
         if group.members().is_empty()
-            || !ctx.any_by(group.members(), |member| Ok(member.value == operand.record_index()), "find F3D retained face group member")?
+            || !ctx.any_by(
+                group.members(),
+                |member| Ok(member.value == operand.record_index()),
+                "find F3D retained face group member",
+            )?
         {
             continue;
         }
-        if !(contains_face(ctx, face_operand_candidates(operand), face, "find F3D retained face operand candidate")?
-                || (face_operand_candidates(operand).is_empty()
-                    && operand.resolved_face_slots.is_empty()
-                    && operand.resolved_active_face.is_none()
-                    && has_nested_bounded_face_history_candidates(operand)))
+        if !(contains_face(
+            ctx,
+            face_operand_candidates(operand),
+            face,
+            "find F3D retained face operand candidate",
+        )? || (face_operand_candidates(operand).is_empty()
+            && operand.resolved_face_slots.is_empty()
+            && operand.resolved_active_face.is_none()
+            && has_nested_bounded_face_history_candidates(operand)))
         {
             continue;
         }
@@ -2874,7 +2944,9 @@ pub(super) fn retain_face_operand_resolution(
         }
         selected = Some(operand);
     }
-    let Some(operand) = selected else { return Ok(false); };
+    let Some(operand) = selected else {
+        return Ok(false);
+    };
     let geometry_bound = face_operand_candidates(operand).is_empty()
         && operand.resolved_face_slots.is_empty()
         && operand.resolved_active_face.is_none()

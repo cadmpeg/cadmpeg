@@ -2,10 +2,8 @@
 //! Feature parameter scopes and their operand frames.
 
 use super::{
-    folded_guid, group_records, reference_member_at, valid_vertex_recipe, Ctx,
-    RecordGroups,
+    folded_guid, group_records, reference_member_at, valid_vertex_recipe, Ctx, RecordGroups,
 };
-use crate::ids::design_stream;
 use crate::design::decode::scopes::extrude::is_class_296_legacy_one_sided_distance_layout;
 use crate::design::decode::scopes::extrude::is_class_296_legacy_one_sided_to_face_layout;
 use crate::design::decode::scopes::extrude::is_class_296_one_sided_to_face_layout;
@@ -13,6 +11,7 @@ use crate::design::decode::scopes::extrude::is_class_296_symmetric_distance_layo
 use crate::design::decode::scopes::extrude::is_class_296_two_sided_to_faces_layout;
 use crate::design::decode::scopes::legacy_class_397::Class397SymmetricFrame;
 use crate::design::decode::scopes::legacy_class_415;
+use crate::ids::design_stream;
 use crate::layout::assembly_class_307_264_joint_origin_scope as class_307_joint_origin;
 use crate::layout::assembly_class_363_264_frame_363_carrier as class_363_carrier;
 use crate::layout::assembly_class_363_264_frame_388_identity as class_363_identity;
@@ -2293,8 +2292,7 @@ pub(super) fn validate_parameter_scopes(
                             Ok(assembly.class_tag.as_str() == "276"
                                 && assembly.paired_class_tag.as_str() == "258"
                                 && assembly.frame_length() == 604
-                                && Some(transform_offset)
-                                    == assembly.byte_offset().checked_add(36)
+                                && Some(transform_offset) == assembly.byte_offset().checked_add(36)
                                 && (ctx.decode.contains(
                                     plain,
                                     &reference.joint_origin_reference,

@@ -311,7 +311,8 @@ fn presentation_stream_prefixes_commit_only_surviving_prefixes() {
     policy.limits.max_retained_bytes = u64::try_from(4 * std::mem::size_of::<&str>()).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let storage;
-    let (prefixes, held_storage) = super::super::presentation_stream_prefixes(&ctx, &types).unwrap();
+    let (prefixes, held_storage) =
+        super::super::presentation_stream_prefixes(&ctx, &types).unwrap();
     storage = held_storage;
     assert_eq!(prefixes.capacity(), 4);
     let prefixes = storage.commit_value(prefixes).unwrap();

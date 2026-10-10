@@ -399,8 +399,7 @@ pub(crate) fn decode(
         }
 
         let _merged_entities_storage;
-        let (merged_entities, held_storage) =
-            merge_entities(ctx, &entry.name, table, groups)?;
+        let (merged_entities, held_storage) = merge_entities(ctx, &entry.name, table, groups)?;
         _merged_entities_storage = held_storage;
         ctx.extend_vec(&mut entities, merged_entities, "collect F3D ACT entities")?;
         ctx.extend_vec(&mut guids, stream_guids, "collect F3D ACT GUIDs")?;

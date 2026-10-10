@@ -4,33 +4,49 @@
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::recipes::ConstructionRecipeKind;
 use crate::records::topology::body_recipe::DesignOperandGroup;
-use crate::records::topology::construction::{DesignConstructionOperandGroup, DesignConstructionOperandRole};
+use crate::records::topology::construction::{
+    DesignConstructionOperandGroup, DesignConstructionOperandRole,
+};
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use crate::records::topology::face::{DesignFaceOperand, DesignFaceOperandDraft};
 
 pub(super) fn scope(kind: DesignFeatureKind, historical: bool) -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#12", kind, 12);
     if historical {
-        scope.try_edit(|draft| {
-            draft.previous_history_state_id = Some(7);
-            draft.layout_fixture_tail();
-        }).unwrap();
+        scope
+            .try_edit(|draft| {
+                draft.previous_history_state_id = Some(7);
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
     }
     scope
 }
 
-pub(super) fn group(index: u32, ordinal: u32, role: DesignOperandRole) -> DesignConstructionOperandGroup {
+pub(super) fn group(
+    index: u32,
+    ordinal: u32,
+    role: DesignOperandRole,
+) -> DesignConstructionOperandGroup {
     let mut group = super::super::extrude_limits::profile_group(index, ordinal);
     group.operand_role = DesignConstructionOperandRole::Other(role);
     group
 }
 
-pub(super) fn face(index: u32, ordinal: u32, group: Option<u32>, slots: Vec<i64>) -> DesignFaceOperand {
+pub(super) fn face(
+    index: u32,
+    ordinal: u32,
+    group: Option<u32>,
+    slots: Vec<i64>,
+) -> DesignFaceOperand {
     DesignFaceOperand::try_new(DesignFaceOperandDraft {
         id: format!("f3d:Design/BulkStream.dat:face-operand#{index}"),
         scope_record_index: 12,
         scope_reference_ordinal: ordinal,
-        group: group.map(|group_record_index| DesignOperandGroup { group_record_index, group_member_ordinal: 0 }),
+        group: group.map(|group_record_index| DesignOperandGroup {
+            group_record_index,
+            group_member_ordinal: 0,
+        }),
         record_index: index,
         byte_offset: 1200,
         class_tag: "297".to_owned().try_into().unwrap(),
@@ -56,21 +72,36 @@ pub(super) fn face(index: u32, ordinal: u32, group: Option<u32>, slots: Vec<i64>
         resolved_active_face: None,
         next_record_index: index + 4,
         next_byte_offset: 1411,
-    }).unwrap()
+    })
+    .unwrap()
 }
 
-pub(super) fn historical_faces(scope: &DesignParameterScope, slots: &[i64]) -> Vec<cadmpeg_ir::ids::HistoricalFaceId> {
+pub(super) fn historical_faces(
+    scope: &DesignParameterScope,
+    slots: &[i64],
+) -> Vec<cadmpeg_ir::ids::HistoricalFaceId> {
     let feature = crate::ids::neutral_feature_id(scope);
     let prefix = crate::ids::history_input_prefix(&feature.key(), 7);
-    slots.iter().map(|slot| crate::ids::history_input_face_id(&prefix, *slot)).collect()
+    slots
+        .iter()
+        .map(|slot| crate::ids::history_input_face_id(&prefix, *slot))
+        .collect()
 }
 
-pub(super) fn historical_state(scope: &DesignParameterScope) -> cadmpeg_ir::ids::FeatureInputTopologyId {
+pub(super) fn historical_state(
+    scope: &DesignParameterScope,
+) -> cadmpeg_ir::ids::FeatureInputTopologyId {
     crate::ids::feature_input_topology_id(&crate::ids::neutral_feature_id(scope), 7)
 }
 
-pub(super) fn selection(index: u32, ordinal: u32, slot: i64) -> crate::records::topology::entity_selection::DesignEntitySelectionOperand {
-    use crate::records::topology::entity_selection::{DesignEntitySelectionOperand, DesignEntitySelectionOperandDraft};
+pub(super) fn selection(
+    index: u32,
+    ordinal: u32,
+    slot: i64,
+) -> crate::records::topology::entity_selection::DesignEntitySelectionOperand {
+    use crate::records::topology::entity_selection::{
+        DesignEntitySelectionOperand, DesignEntitySelectionOperandDraft,
+    };
     DesignEntitySelectionOperand::try_new(DesignEntitySelectionOperandDraft {
         id: format!("f3d:Design/BulkStream.dat:entity-selection#{index}"),
         scope_record_index: 12,
@@ -79,9 +110,15 @@ pub(super) fn selection(index: u32, ordinal: u32, slot: i64) -> crate::records::
         record_index: index,
         byte_offset: 0,
         class_tag: "277".to_owned().try_into().unwrap(),
-        asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned().try_into().unwrap(),
+        asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+            .to_owned()
+            .try_into()
+            .unwrap(),
         asset_id_offset: 0,
-        context_id: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned().try_into().unwrap(),
+        context_id: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e"
+            .to_owned()
+            .try_into()
+            .unwrap(),
         context_id_offset: 0,
         identity_record_index: index + 3,
         identity_record_offset: 0,
@@ -93,5 +130,6 @@ pub(super) fn selection(index: u32, ordinal: u32, slot: i64) -> crate::records::
         resolved_edge_slot: Some(slot),
         next_record_index: index + 4,
         next_byte_offset: 29,
-    }).unwrap()
+    })
+    .unwrap()
 }

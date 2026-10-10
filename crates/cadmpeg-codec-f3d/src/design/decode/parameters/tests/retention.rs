@@ -6,8 +6,8 @@ use std::io::{Cursor, Write};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use zip::CompressionMethod;
 
-use super::class_287_parameter_record;
 use super::super::decode_parameters;
+use super::class_287_parameter_record;
 use crate::design::test_support::parameter_record;
 use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::zip_test::with_scan;
@@ -78,7 +78,6 @@ fn design_parameter_class_tag_refuses_retained_bytes() {
     ));
 }
 
-
 #[test]
 fn design_parameter_text_fields_refuse_each_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -98,10 +97,12 @@ fn design_parameter_text_fields_refuse_each_retained_limit() {
                 && refusal.additional == u64::try_from(field.len()).unwrap())
         );
     }
-    let parsed =
-        super::super::parse_design_parameter(&cadmpeg_test_support::service_decode_context(), &payload)
-            .unwrap()
-            .unwrap();
+    let parsed = super::super::parse_design_parameter(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(parsed.name, "d71");
 
     let legacy = class_287_parameter_record("HoleDepth", "d20");
@@ -112,7 +113,9 @@ fn design_parameter_text_fields_refuse_each_retained_limit() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = u64::try_from(charged - 1).unwrap();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::super::parse_design_parameter(&ctx, &legacy).err().unwrap();
+        let error = super::super::parse_design_parameter(&ctx, &legacy)
+            .err()
+            .unwrap();
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::RetainedBytes
@@ -120,4 +123,3 @@ fn design_parameter_text_fields_refuse_each_retained_limit() {
         );
     }
 }
-

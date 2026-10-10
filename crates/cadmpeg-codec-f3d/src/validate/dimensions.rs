@@ -367,9 +367,11 @@ pub(super) fn validate_dimension_locus_pairs<'a>(
             },
             None => false,
         };
-        let governs_following_dimension =
-            ctx.governing_companions()?.governing(ctx.decode, &pair.id, pair.paired_byte_offset())?
-                == Some(pair.governing_companion_record_index);
+        let governs_following_dimension = ctx.governing_companions()?.governing(
+            ctx.decode,
+            &pair.id,
+            pair.paired_byte_offset(),
+        )? == Some(pair.governing_companion_record_index);
         let valid = companion_contains_frame
             && dimension_companion
             && governs_following_dimension
@@ -1092,9 +1094,11 @@ pub(super) fn validate_dimension_null_locus_pairs<'a>(
             },
             None => false,
         };
-        let governs_following_dimension =
-            ctx.governing_companions()?.governing(ctx.decode, &pair.id, pair.paired_byte_offset())?
-                == Some(pair.governing_companion_record_index);
+        let governs_following_dimension = ctx.governing_companions()?.governing(
+            ctx.decode,
+            &pair.id,
+            pair.paired_byte_offset(),
+        )? == Some(pair.governing_companion_record_index);
         let companion_has_typed_frame = ctx.decode.contains_hash_set(
             locus_pair_companions,
             &(native_stream, pair.companion_record_index),

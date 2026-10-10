@@ -663,10 +663,9 @@ fn copy_sketch_entity_id(
     let text = ctx.copy_retained_text(source.as_str(), "f3d Sketch scope entity ID")?;
     match crate::records::identity::DesignEntityId::try_from(text) {
         Ok(entity_id) => Ok(entity_id),
-        Err(message) => Err(CodecError::NotImplemented(ctx.copy_retained_text(
-            message,
-            "f3d Sketch scope entity ID",
-        )?)),
+        Err(message) => Err(CodecError::NotImplemented(
+            ctx.copy_retained_text(message, "f3d Sketch scope entity ID")?,
+        )),
     }
 }
 
@@ -801,9 +800,7 @@ fn admitted_scope_variant(
                 Some(first_json) => ctx.all_by(
                     following,
                     |(_, _, index)| match scope_variant_json(ctx, &scopes[*index])? {
-                        Some(json) => {
-                            equivalent_scope_json(ctx, &first_json.0, &json.0, true)
-                        }
+                        Some(json) => equivalent_scope_json(ctx, &first_json.0, &json.0, true),
                         None => Ok(false),
                     },
                     "scan F3D equivalent scope admission candidates",

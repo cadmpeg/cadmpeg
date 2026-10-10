@@ -303,10 +303,14 @@ fn extrude_member_without_selected_sketch_skips_target_index() {
 
 #[test]
 fn extrude_member_invalid_header_skips_selected_sketch_target_index() {
-    use crate::records::feature::scope::{DesignExtrudeScope, DesignParameterScope, DesignScopePayload};
-    use crate::records::topology::sketch_profile::{DesignSketchProfileOperand, DesignSketchProfileOperandDraft};
+    use crate::records::feature::scope::{
+        DesignExtrudeScope, DesignParameterScope, DesignScopePayload,
+    };
     use crate::records::sketch_geometry::{
         SketchPoint, SketchPointCompanion, SketchPointDraft, SketchPointRecordForm,
+    };
+    use crate::records::topology::sketch_profile::{
+        DesignSketchProfileOperand, DesignSketchProfileOperandDraft,
     };
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = u64::MAX;
@@ -339,30 +343,45 @@ fn extrude_member_invalid_header_skips_selected_sketch_target_index() {
             record_index: 8,
             byte_offset: 300,
             class_tag: "277".to_owned().try_into().unwrap(),
-            asset_id: "11111111-2222-4333-8444-555555555555".to_owned().try_into().unwrap(),
+            asset_id: "11111111-2222-4333-8444-555555555555"
+                .to_owned()
+                .try_into()
+                .unwrap(),
             asset_id_offset: 320,
             entity_id: crate::records::identity::DesignEntityId::from_parts("sketch", 7),
             entity_reference_offset: 400,
             region_selection: None,
             paired_class_tag: "259".to_owned().try_into().unwrap(),
             paired_byte_offset: 450,
-        }).unwrap();
+        })
+        .unwrap();
         let mut draft = native.design_parameter_scopes.remove(0).into_draft();
         draft.payload = DesignScopePayload::Extrude(Some(DesignExtrudeScope {
-            extrude_profile: Some(profile), ..Default::default()
+            extrude_profile: Some(profile),
+            ..Default::default()
         }));
-        native.design_parameter_scopes.push(DesignParameterScope::try_new(draft).unwrap());
-        native.design_record_headers.retain(|header| header.record_index != 10);
+        native
+            .design_parameter_scopes
+            .push(DesignParameterScope::try_new(draft).unwrap());
+        native
+            .design_record_headers
+            .retain(|header| header.record_index != 10);
         let ctx = super::super::Ctx::new(&ir, &native, decode).unwrap();
         let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
             cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            "scan F3D Extrude selection point targets", None,
+            "scan F3D Extrude selection point targets",
+            None,
         );
         let mut findings = Vec::new();
         super::super::validate_extrude_selection_members(&ctx, &mut findings).unwrap();
         assert_eq!(findings.len(), 1);
-        assert_eq!(findings[0].entity.as_deref(), Some(native.design_extrude_selection_members[0].id.as_str()));
+        assert_eq!(
+            findings[0].entity.as_deref(),
+            Some(native.design_extrude_selection_members[0].id.as_str())
+        );
         assert!(decode.resource_refusal().is_none());
-        assert!(decode.admit_iter(&[0], "scan F3D Extrude selection point targets").is_err());
+        assert!(decode
+            .admit_iter(&[0], "scan F3D Extrude selection point targets")
+            .is_err());
     });
 }

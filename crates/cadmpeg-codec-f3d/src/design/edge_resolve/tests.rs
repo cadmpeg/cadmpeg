@@ -35,7 +35,6 @@ use cadmpeg_ir::ids::EdgeId;
 
 mod boundary_candidate_allocation;
 mod context_only_allocation;
-mod terminal_admission;
 mod contextual_deleted_allocation;
 mod edge_flange_allocation;
 mod fixed_fillet_allocation;
@@ -46,6 +45,7 @@ mod partition_allocation;
 mod radius_allocation;
 mod reference_assignment_allocation;
 mod surface_patch_allocation;
+mod terminal_admission;
 mod transition_recipe_allocation;
 mod treatment_allocation;
 mod unique_assignment_allocation;
@@ -810,7 +810,11 @@ fn unstructured_local_support_face_references_do_not_resolve_an_edge() {
     operand.preceding_boundary_edge_slots =
         vec![63, 106, 109, 139, 142, 164, 168, 180, 183, 195, 197, 210];
 
-    assert_eq!(crate::test_support::with_decode_context(|ctx| resolved_edge_operand(&operand, ctx)).unwrap(), None);
+    assert_eq!(
+        crate::test_support::with_decode_context(|ctx| resolved_edge_operand(&operand, ctx))
+            .unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -840,14 +844,26 @@ fn primary_terminal_support_references_resolve_one_shared_edge() {
     ];
     operand.terminal_boundary_edge_slots = vec![25, 35, 38, 39, 55, 57, 62, 69, 83];
 
-    assert_eq!(crate::test_support::with_decode_context(|ctx| resolved_edge_operand(&operand, ctx)).unwrap(), Some(25));
+    assert_eq!(
+        crate::test_support::with_decode_context(|ctx| resolved_edge_operand(&operand, ctx))
+            .unwrap(),
+        Some(25)
+    );
 
     operand.terminal_reference_edge_slots[0].push(69);
-    assert_eq!(crate::test_support::with_decode_context(|ctx| resolved_edge_operand(&operand, ctx)).unwrap(), None);
+    assert_eq!(
+        crate::test_support::with_decode_context(|ctx| resolved_edge_operand(&operand, ctx))
+            .unwrap(),
+        None
+    );
 
     operand.terminal_reference_edge_slots[0].pop();
     operand.recipe_structure.as_mut().unwrap().sides[0] = side(0, [2, 0]);
-    assert_eq!(crate::test_support::with_decode_context(|ctx| resolved_edge_operand(&operand, ctx)).unwrap(), None);
+    assert_eq!(
+        crate::test_support::with_decode_context(|ctx| resolved_edge_operand(&operand, ctx))
+            .unwrap(),
+        None
+    );
 
     operand.recipe_structure.as_mut().unwrap().sides[0] = side(0, [2, 1]);
     operand.recipe_reference_contexts = vec![serde_json::from_value(serde_json::json!({
@@ -859,7 +875,11 @@ fn primary_terminal_support_references_resolve_one_shared_edge() {
         "changed_shared_edge_slots": []
     }))
     .expect("historical edge recipe reference context")];
-    assert_eq!(crate::test_support::with_decode_context(|ctx| resolved_edge_operand(&operand, ctx)).unwrap(), None);
+    assert_eq!(
+        crate::test_support::with_decode_context(|ctx| resolved_edge_operand(&operand, ctx))
+            .unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -1708,7 +1728,9 @@ fn edge_group_ignores_members_without_changed_edge_candidates() {
                     (Some(17), &[17, 18][..]),
                     (Some(17), &[17][..]),
                     (None, &[][..]),
-                ].into_iter().map(Ok),
+                ]
+                .into_iter()
+                .map(Ok),
                 decode_ctx,
             )
         })
@@ -1718,7 +1740,9 @@ fn edge_group_ignores_members_without_changed_edge_candidates() {
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| {
             crate::design::edge_resolve::context_only_edge_group_candidates(
-                [(Some(17), &[17][..]), (None, &[18][..])].into_iter().map(Ok),
+                [(Some(17), &[17][..]), (None, &[18][..])]
+                    .into_iter()
+                    .map(Ok),
                 decode_ctx,
             )
         })
@@ -1743,7 +1767,9 @@ fn edge_group_resolves_only_one_perfect_candidate_assignment() {
         crate::test_support::with_decode_context(|decode_ctx| {
             crate::design::edge_resolve::edge_group_assignment_candidates(
                 &[],
-                [&[17, 18][..], &[18, 19][..], &[20][..]].into_iter().map(Some),
+                [&[17, 18][..], &[18, 19][..], &[20][..]]
+                    .into_iter()
+                    .map(Some),
                 decode_ctx,
             )
         })
@@ -1923,45 +1949,62 @@ mod assignment_limits;
 #[test]
 fn sweep_recipe_edge_requires_incidence_and_two_reference_faces() {
     crate::test_support::with_decode_context(|ctx| {
-    use crate::design::edge_resolve::unique_incidence_edge_shared_by_reference_faces;
+        use crate::design::edge_resolve::unique_incidence_edge_shared_by_reference_faces;
 
-    let selector = |edges| crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext {
-        selector: 0,
-        clauses: Vec::new(),
-        incidence_matching_edge_slots: edges,
+        let selector =
+            |edges| crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext {
+                selector: 0,
+                clauses: Vec::new(),
+                incidence_matching_edge_slots: edges,
 
-        boundary_count_matching_edge_slots: Vec::new(),
-    };
-    let selectors = [selector(vec![11, 12]), selector(vec![13])];
-    assert_eq!(
-        unique_incidence_edge_shared_by_reference_faces(ctx,
-            &selectors,
-            [&[10, 11][..], &[11, 12][..], &[13, 14][..]],
-        ).unwrap(),
-        Some(11)
-    );
-    assert_eq!(
-        unique_incidence_edge_shared_by_reference_faces(ctx, &selectors, [&[11, 13][..], &[11, 13][..]],).unwrap(),
-        None
-    );
-    assert_eq!(
-        unique_incidence_edge_shared_by_reference_faces(ctx, &[selector(vec![11])], [&[10, 11][..]],).unwrap(),
-        None
-    );
-    assert_eq!(
-        unique_incidence_edge_shared_by_reference_faces(ctx,
-            &[selector(vec![11])],
-            [&[10, 11][..], &[10, 11][..]],
-        ).unwrap(),
-        None
-    );
-    assert_eq!(
-        unique_incidence_edge_shared_by_reference_faces(ctx,
-            &[selector(vec![11])],
-            [&[10, 11, 11][..], &[11, 10][..]],
-        ).unwrap(),
-        None
-    );
+                boundary_count_matching_edge_slots: Vec::new(),
+            };
+        let selectors = [selector(vec![11, 12]), selector(vec![13])];
+        assert_eq!(
+            unique_incidence_edge_shared_by_reference_faces(
+                ctx,
+                &selectors,
+                [&[10, 11][..], &[11, 12][..], &[13, 14][..]],
+            )
+            .unwrap(),
+            Some(11)
+        );
+        assert_eq!(
+            unique_incidence_edge_shared_by_reference_faces(
+                ctx,
+                &selectors,
+                [&[11, 13][..], &[11, 13][..]],
+            )
+            .unwrap(),
+            None
+        );
+        assert_eq!(
+            unique_incidence_edge_shared_by_reference_faces(
+                ctx,
+                &[selector(vec![11])],
+                [&[10, 11][..]],
+            )
+            .unwrap(),
+            None
+        );
+        assert_eq!(
+            unique_incidence_edge_shared_by_reference_faces(
+                ctx,
+                &[selector(vec![11])],
+                [&[10, 11][..], &[10, 11][..]],
+            )
+            .unwrap(),
+            None
+        );
+        assert_eq!(
+            unique_incidence_edge_shared_by_reference_faces(
+                ctx,
+                &[selector(vec![11])],
+                [&[10, 11, 11][..], &[11, 10][..]],
+            )
+            .unwrap(),
+            None
+        );
     });
 }
 

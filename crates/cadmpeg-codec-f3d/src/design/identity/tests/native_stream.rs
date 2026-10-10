@@ -22,16 +22,29 @@ fn construct(owner: &str, native: &str, ctx: &DecodeContext<'_>) -> Result<Strin
         "feature" => super::super::neutral_feature_id(ctx, &scope).map(|id| id.into_string()),
         "parameter" => {
             let mut parameter = crate::design::decode::parameters::parse_design_parameter_record(
-                &crate::design::test_support::parameter_record(Some(40), "1 cm", "AlongDistance", Some("cm"), "d9", 1.0),
-            ).unwrap();
+                &crate::design::test_support::parameter_record(
+                    Some(40),
+                    "1 cm",
+                    "AlongDistance",
+                    Some("cm"),
+                    "d9",
+                    1.0,
+                ),
+            )
+            .unwrap();
             parameter.id = native.to_owned();
-            super::super::neutral_parameter_id(ctx, &parameter).map(|id| cadmpeg_ir::ids::Identity::from(id).into_string())
+            super::super::neutral_parameter_id(ctx, &parameter)
+                .map(|id| cadmpeg_ir::ids::Identity::from(id).into_string())
         }
         "sketch" => super::super::neutral_sketch_id(ctx, &placement).map(|id| id.into_string()),
-        "spatial" => super::super::neutral_spatial_sketch_id(ctx, &placement).map(|id| cadmpeg_ir::ids::Identity::from(id).into_string()),
-        "constraint" => super::super::neutral_sketch_constraint_id(ctx, native, u32::MAX).map(|id| cadmpeg_ir::ids::Identity::from(id).into_string()),
-        "occurrence" => super::super::neutral_component_insert_occurrence_id(ctx, &scope).map(|id| cadmpeg_ir::ids::Identity::from(id).into_string()),
-        "joint" => super::super::neutral_assembly_joint_id(ctx, &scope).map(|id| cadmpeg_ir::ids::Identity::from(id).into_string()),
+        "spatial" => super::super::neutral_spatial_sketch_id(ctx, &placement)
+            .map(|id| cadmpeg_ir::ids::Identity::from(id).into_string()),
+        "constraint" => super::super::neutral_sketch_constraint_id(ctx, native, u32::MAX)
+            .map(|id| cadmpeg_ir::ids::Identity::from(id).into_string()),
+        "occurrence" => super::super::neutral_component_insert_occurrence_id(ctx, &scope)
+            .map(|id| cadmpeg_ir::ids::Identity::from(id).into_string()),
+        "joint" => super::super::neutral_assembly_joint_id(ctx, &scope)
+            .map(|id| cadmpeg_ir::ids::Identity::from(id).into_string()),
         _ => panic!("unknown identity test owner"),
     }
 }
@@ -40,8 +53,11 @@ fn measure(owner: &str, native: &str) -> (String, u64) {
     crate::test_support::with_decode_context(|ctx| {
         let id = construct(owner, native, ctx).unwrap();
         let Err(CodecError::ResourceLimit(usage)) = ctx.charge_work(
-            DecodePolicy::service().limits.max_work_units + 1, "measure identity native stream work",
-        ) else { panic!("finite ceiling exposes executed work"); };
+            DecodePolicy::service().limits.max_work_units + 1,
+            "measure identity native stream work",
+        ) else {
+            panic!("finite ceiling exposes executed work");
+        };
         assert_eq!(usage.dimension, ResourceDimension::WorkUnits);
         (id, usage.used)
     })
@@ -55,8 +71,9 @@ fn assert_source_refusal(owner: &str, operation: &str) {
         policy.limits.max_materialized_bytes = 0;
         policy.limits.max_retained_bytes = 0;
         crate::test_support::with_decode_policy(&policy, |ctx| {
-            let Err(CodecError::ResourceLimit(original)) = construct(owner, &native, ctx)
-            else { panic!("the next suffix byte must be admitted before source or output"); };
+            let Err(CodecError::ResourceLimit(original)) = construct(owner, &native, ctx) else {
+                panic!("the next suffix byte must be admitted before source or output");
+            };
             assert_eq!(original.dimension, ResourceDimension::WorkUnits);
             assert_eq!(original.operation, operation);
             assert_eq!((original.used, original.additional), (work, 1));
@@ -124,8 +141,14 @@ fn identity_native_stream_unqualified_ids_preserve_default_and_executed_end_prob
 #[test]
 fn identity_native_stream_last_separator_and_empty_stream_preserve_identity_grammar() {
     for (owner, _) in OWNERS {
-        assert_eq!(measure(owner, "f3d:asset:path:tail").0, measure(owner, "f3d:asset:path:other").0);
-        assert_ne!(measure(owner, "f3d:asset:path:tail").0, measure(owner, "f3d:asset:tail").0);
+        assert_eq!(
+            measure(owner, "f3d:asset:path:tail").0,
+            measure(owner, "f3d:asset:path:other").0
+        );
+        assert_ne!(
+            measure(owner, "f3d:asset:path:tail").0,
+            measure(owner, "f3d:asset:tail").0
+        );
         assert_eq!(measure(owner, ":tail").0, measure(owner, ":").0);
         assert_ne!(measure(owner, ":tail").0, measure(owner, "tail").0);
     }
@@ -137,8 +160,11 @@ fn identity_native_stream_original_refusal_precedes_even_empty_source() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
         crate::test_support::with_decode_policy(&policy, |ctx| {
-            let Err(CodecError::ResourceLimit(original)) = ctx.charge_work(1, "original identity scan refusal")
-            else { panic!("zero ceiling refuses one executed unit"); };
+            let Err(CodecError::ResourceLimit(original)) =
+                ctx.charge_work(1, "original identity scan refusal")
+            else {
+                panic!("zero ceiling refuses one executed unit");
+            };
             for native in ["", ":", "unqualified", "f3d:test:tail"] {
                 assert!(matches!(construct(owner, native, ctx),
                     Err(CodecError::ResourceLimit(later)) if later == original));

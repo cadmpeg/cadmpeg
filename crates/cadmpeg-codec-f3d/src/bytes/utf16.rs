@@ -179,7 +179,9 @@ mod tests {
                 let view = Utf16View::new(ctx, &raw)?.unwrap();
                 let longer = Utf16View::new(ctx, &longer)?.unwrap();
                 assert!(!view.eq_str(ctx, "Abc").unwrap());
-                assert!(!view.eq_ignore_ascii_case(ctx, longer, "compare F3D UTF-16 text").unwrap());
+                assert!(!view
+                    .eq_ignore_ascii_case(ctx, longer, "compare F3D UTF-16 text")
+                    .unwrap());
                 view.eq_str(ctx, "Ab")
             },
         );

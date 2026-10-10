@@ -1218,7 +1218,9 @@ impl DesignWorkPointRule {
         } else {
             inputs.next()
         } {
-            if let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) = input.carrier.as_deref_mut() {
+            if let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) =
+                input.carrier.as_deref_mut()
+            {
                 let visited = visit(recipe);
                 ctx.charge_work(0, operation)?;
                 visited?;

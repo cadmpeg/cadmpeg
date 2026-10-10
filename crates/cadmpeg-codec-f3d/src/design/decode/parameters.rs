@@ -233,9 +233,9 @@ impl ParsedDesignParameter {
         ctx.charge_work(0, "validate parameter source kind")?;
         let source_kind = match self.source_kind {
             ParsedParameterSourceKind::User => None,
-            ParsedParameterSourceKind::Owned(text) => Some(
-                ctx.validate_nonblank_text(text, "validate parameter source kind")?,
-            ),
+            ParsedParameterSourceKind::Owned(text) => {
+                Some(ctx.validate_nonblank_text(text, "validate parameter source kind")?)
+            }
         };
         let expression =
             ctx.validate_nonblank_text(self.expression, "validate parameter expression")?;
@@ -269,7 +269,9 @@ impl ParsedDesignParameter {
                 else {
                     return Ok(None);
                 };
-                crate::records::parameters::DesignParameterSource::User { family_discriminator }
+                crate::records::parameters::DesignParameterSource::User {
+                    family_discriminator,
+                }
             }
             Some(source_kind) => {
                 let Ok(source) = crate::records::parameters::DesignParameterSource::new(
@@ -1537,7 +1539,8 @@ impl<'a, 'ctx, 'arena> CompanionPayloadRecords<'a, 'ctx, 'arena> {
         &self,
         stream: &str,
     ) -> Result<Option<&StreamPayloadRecords<'a, 'ctx, 'arena>>, CodecError> {
-        Ok(self.ctx
+        Ok(self
+            .ctx
             .get_hash_map(&self.slots, stream, "find F3D companion payload stream")?
             .and_then(|slot| self.streams.get(*slot)))
     }
@@ -1545,7 +1548,12 @@ impl<'a, 'ctx, 'arena> CompanionPayloadRecords<'a, 'ctx, 'arena> {
 
 impl<'a, 'ctx, 'arena> StreamPayloadRecords<'a, 'ctx, 'arena> {
     fn new(ctx: &'ctx DecodeContext<'arena>) -> Self {
-        Self { ctx, recipes: Vec::new(), entities: Vec::new(), last_sketch_scope: HashMap::new() }
+        Self {
+            ctx,
+            recipes: Vec::new(),
+            entities: Vec::new(),
+            last_sketch_scope: HashMap::new(),
+        }
     }
     /// The end of a companion's owned interval `start..end` after scope
     /// preambles are excluded.
@@ -1558,11 +1566,7 @@ impl<'a, 'ctx, 'arena> StreamPayloadRecords<'a, 'ctx, 'arena> {
     /// in it whose entity is the sketch entity of a scope record at or after
     /// `end`. A bisection finds the first header at or after `start`; the walk
     /// then stops at the first header that ends the interval.
-    fn preamble_start(
-        &self,
-        start: usize,
-        end: usize,
-    ) -> Result<usize, CodecError> {
+    fn preamble_start(&self, start: usize, end: usize) -> Result<usize, CodecError> {
         let ctx = self.ctx;
         ctx.charge_work(0, "find F3D companion preamble entity")?;
         let first = ctx.partition_point(
@@ -1592,11 +1596,7 @@ impl<'a, 'ctx, 'arena> StreamPayloadRecords<'a, 'ctx, 'arena> {
 
     /// The identities of the recipes in `start..end`, in byte order, copied
     /// into retained storage. Two bisections locate the range.
-    fn owned_recipe_ids(
-        &self,
-        start: usize,
-        end: usize,
-    ) -> Result<Vec<String>, CodecError> {
+    fn owned_recipe_ids(&self, start: usize, end: usize) -> Result<Vec<String>, CodecError> {
         let ctx = self.ctx;
         ctx.charge_work(0, "find F3D companion owned recipes")?;
         let (start, end) = (u64_from_index(start), u64_from_index(end));

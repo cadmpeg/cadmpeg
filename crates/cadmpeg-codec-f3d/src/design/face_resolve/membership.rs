@@ -17,7 +17,13 @@ pub(super) fn contains_face(
     }
     ctx.any_by(
         values,
-        |candidate| ctx.equal_bytes(candidate.as_str().as_bytes(), target.as_str().as_bytes(), operation),
+        |candidate| {
+            ctx.equal_bytes(
+                candidate.as_str().as_bytes(),
+                target.as_str().as_bytes(),
+                operation,
+            )
+        },
         operation,
     )
 }

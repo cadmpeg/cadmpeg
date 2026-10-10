@@ -120,7 +120,9 @@ pub(crate) fn project_decal_images(
                 {
                     if ctx.any_by(
                         &faces,
-                        |kept: &cadmpeg_ir::ids::FaceId| ctx.equal(kept, face, "compare F3D Decal face candidates"),
+                        |kept: &cadmpeg_ir::ids::FaceId| {
+                            ctx.equal(kept, face, "compare F3D Decal face candidates")
+                        },
                         "find F3D repeated Decal face candidate",
                     )? {
                         continue;

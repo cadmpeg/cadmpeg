@@ -6,7 +6,12 @@ use crate::design::edge_resolve::EdgeTreatmentInputs;
 use crate::ids;
 use cadmpeg_core::CodecError;
 
-fn proof_inputs() -> (DesignConstructionOperandGroup, DesignEdgeOperand, DesignEdgeIdentityOperand, cadmpeg_ir::features::FeatureId) {
+fn proof_inputs() -> (
+    DesignConstructionOperandGroup,
+    DesignEdgeOperand,
+    DesignEdgeIdentityOperand,
+    cadmpeg_ir::features::FeatureId,
+) {
     (
         group(2, 10),
         recipe_edge_operand(10, &[17, 18], &[]),
@@ -49,7 +54,9 @@ fn edge_transition_proof_reuse_preserves_the_first_actual_recipe_refusal() {
     assert_eq!(limit.used, 7);
     assert_eq!(limit.additional, 1);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(matches!(ctx.charge_work(0, "later transition proof"), Err(CodecError::ResourceLimit(original)) if original == limit));
+    assert!(
+        matches!(ctx.charge_work(0, "later transition proof"), Err(CodecError::ResourceLimit(original)) if original == limit)
+    );
 }
 
 #[test]
@@ -68,17 +75,27 @@ fn edge_transition_proof_reuse_skips_the_second_identical_recipe_query() {
     assert_eq!(limit.used, 10);
     assert_eq!(limit.additional, 1);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(matches!(selection(&ctx), Err(CodecError::ResourceLimit(original)) if original == limit));
+    assert!(
+        matches!(selection(&ctx), Err(CodecError::ResourceLimit(original)) if original == limit)
+    );
 }
 
 #[test]
 fn edge_transition_proof_reuse_preserves_native_historical_identity_and_order() {
     crate::test_support::with_decode_context(|ctx| {
-        let cadmpeg_ir::features::EdgeSelection::Historical { edges, native, .. } = selection(ctx).unwrap() else {
+        let cadmpeg_ir::features::EdgeSelection::Historical { edges, native, .. } =
+            selection(ctx).unwrap()
+        else {
             panic!("complete transition proof");
         };
         assert_eq!(native.as_str(), "f3d:test:group-2");
         let prefix = ids::history_input_prefix(&cadmpeg_ir::identity_key!("single-proof"), 7);
-        assert_eq!(edges.as_slice(), [ids::history_input_edge_id(&prefix, 17), ids::history_input_edge_id(&prefix, 18)]);
+        assert_eq!(
+            edges.as_slice(),
+            [
+                ids::history_input_edge_id(&prefix, 17),
+                ids::history_input_edge_id(&prefix, 18)
+            ]
+        );
     });
 }

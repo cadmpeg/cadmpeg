@@ -27,8 +27,8 @@ use crate::test_support::lp_utf16;
 use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::zip_test::with_scan;
 
-mod retention;
 mod payload_session;
+mod retention;
 mod user_source_kind;
 
 impl ParsedParameterOwner {
