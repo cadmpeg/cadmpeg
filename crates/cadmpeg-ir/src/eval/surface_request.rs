@@ -25,6 +25,8 @@ pub(super) enum SurfaceRequest {
     Fourth,
     // An offset's requested fourth needs fifth support partials.
     Fifth,
+    // An offset's requested fifth needs sixth support partials.
+    Sixth,
 }
 
 impl SurfaceRequest {
@@ -33,7 +35,8 @@ impl SurfaceRequest {
             Self::First => Self::Second,
             Self::Second => Self::Third,
             Self::Third => Self::Fourth,
-            Self::Fourth | Self::Fifth => Self::Fifth,
+            Self::Fourth => Self::Fifth,
+            Self::Fifth | Self::Sixth => Self::Sixth,
         }
     }
 
@@ -42,11 +45,15 @@ impl SurfaceRequest {
     }
 
     pub(super) fn needs_third(self) -> bool {
-        matches!(self, Self::Third | Self::Fourth | Self::Fifth)
+        matches!(self, Self::Third | Self::Fourth | Self::Fifth | Self::Sixth)
     }
 
     pub(super) fn needs_fourth(self) -> bool {
-        matches!(self, Self::Fourth | Self::Fifth)
+        matches!(self, Self::Fourth | Self::Fifth | Self::Sixth)
+    }
+
+    pub(super) fn needs_fifth(self) -> bool {
+        matches!(self, Self::Fifth | Self::Sixth)
     }
 }
 
@@ -71,6 +78,12 @@ pub(super) enum HigherPartials {
         fourth: Result<[FiniteVector3; 5], EvaluationFailure<()>>,
         fifth: Result<[FiniteVector3; 6], EvaluationFailure<()>>,
     },
+    Sixth {
+        third: Result<[FiniteVector3; 4], EvaluationFailure<()>>,
+        fourth: Result<[FiniteVector3; 5], EvaluationFailure<()>>,
+        fifth: Result<[FiniteVector3; 6], EvaluationFailure<()>>,
+        sixth: Result<[FiniteVector3; 7], EvaluationFailure<()>>,
+    },
 }
 
 impl HigherPartials {
@@ -78,7 +91,7 @@ impl HigherPartials {
         match self {
             Self::Affine => Ok([FiniteVector3::ZERO; 4]),
             Self::Third(result) => result,
-            Self::Fourth { third, .. } | Self::Fifth { third, .. } => third,
+            Self::Fourth { third, .. } | Self::Fifth { third, .. } | Self::Sixth { third, .. } => third,
         }
     }
 
@@ -86,15 +99,23 @@ impl HigherPartials {
         match self {
             Self::Affine => Ok([FiniteVector3::ZERO; 5]),
             Self::Third(_) => Err(EvaluationFailure::NoValue),
-            Self::Fourth { fourth, .. } | Self::Fifth { fourth, .. } => fourth,
+            Self::Fourth { fourth, .. } | Self::Fifth { fourth, .. } | Self::Sixth { fourth, .. } => fourth,
         }
     }
 
     pub(super) fn fifth(self) -> Result<[FiniteVector3; 6], EvaluationFailure<()>> {
         match self {
             Self::Affine => Ok([FiniteVector3::ZERO; 6]),
-            Self::Fifth { fifth, .. } => fifth,
+            Self::Fifth { fifth, .. } | Self::Sixth { fifth, .. } => fifth,
             Self::Third(_) | Self::Fourth { .. } => Err(EvaluationFailure::NoValue),
+        }
+    }
+
+    pub(super) fn sixth(self) -> Result<[FiniteVector3; 7], EvaluationFailure<()>> {
+        match self {
+            Self::Affine => Ok([FiniteVector3::ZERO; 7]),
+            Self::Sixth { sixth, .. } => sixth,
+            Self::Third(_) | Self::Fourth { .. } | Self::Fifth { .. } => Err(EvaluationFailure::NoValue),
         }
     }
 
@@ -110,6 +131,12 @@ impl HigherPartials {
                 third: third.and_then(|lanes| super::placed_vectors(transform, lanes)),
                 fourth: fourth.and_then(|lanes| super::placed_vectors(transform, lanes)),
                 fifth: fifth.and_then(|lanes| super::placed_vectors(transform, lanes)),
+            },
+            Self::Sixth { third, fourth, fifth, sixth } => Self::Sixth {
+                third: third.and_then(|lanes| super::placed_vectors(transform, lanes)),
+                fourth: fourth.and_then(|lanes| super::placed_vectors(transform, lanes)),
+                fifth: fifth.and_then(|lanes| super::placed_vectors(transform, lanes)),
+                sixth: sixth.and_then(|lanes| super::placed_vectors(transform, lanes)),
             },
         }
     }
@@ -127,6 +154,12 @@ impl HigherPartials {
                 third: third.map(reverse),
                 fourth: fourth.map(|lanes| reverse_partial_lanes(lanes, reversed)),
                 fifth: fifth.map(|lanes| reverse_partial_lanes(lanes, reversed)),
+            },
+            Self::Sixth { third, fourth, fifth, sixth } => Self::Sixth {
+                third: third.map(reverse),
+                fourth: fourth.map(|lanes| reverse_partial_lanes(lanes, reversed)),
+                fifth: fifth.map(|lanes| reverse_partial_lanes(lanes, reversed)),
+                sixth: sixth.map(|lanes| reverse_partial_lanes(lanes, reversed)),
             },
         }
     }
@@ -378,11 +411,17 @@ fn offset(
         } else { Err(EvaluationFailure::NoValue) };
         let third = third_orders.as_ref().map_err(|failure| *failure).and_then(|orders| orders.offset);
         let higher = if request.needs_fourth() {
-            let fourth = third_orders.and_then(|orders| differentials::normal_fourth::offset_fourth(
+            let fourth_orders = third_orders.and_then(|orders| differentials::normal_fourth::offset_fourth(
                 base, source.higher, distance, orders.normal?,
             ));
-            if request == SurfaceRequest::Fifth {
-                HigherPartials::Fifth { third, fourth, fifth: Err(EvaluationFailure::NoValue) }
+            let fourth = fourth_orders.as_ref().map_err(|failure| *failure).and_then(|orders| orders.offset);
+            if request.needs_fifth() {
+                let fifth = fourth_orders.and_then(|orders| differentials::normal_fifth::offset_fifth(
+                    base, source.higher, distance, orders.normal?,
+                ));
+                if request == SurfaceRequest::Sixth {
+                    HigherPartials::Sixth { third, fourth, fifth, sixth: Err(EvaluationFailure::NoValue) }
+                } else { HigherPartials::Fifth { third, fourth, fifth } }
             } else { HigherPartials::Fourth { third, fourth } }
         } else { HigherPartials::Third(third) };
         (orders.and_then(|orders| orders.offset), higher)

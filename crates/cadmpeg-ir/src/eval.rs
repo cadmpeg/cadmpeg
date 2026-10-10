@@ -3452,7 +3452,7 @@ enum ModelCurveRequest {
 
 impl ModelCurveRequest {
     fn for_surface_partials(request: SurfaceRequest) -> Self {
-        if request == SurfaceRequest::Fifth { Self::Fifth }
+        if request.needs_fifth() { Self::Fifth }
         else if request.needs_fourth() { Self::Fourth }
         else if request.needs_third() { Self::Third }
         else if request.needs_second() { Self::Second } else { Self::First }
@@ -3857,7 +3857,7 @@ fn model_axis_revolution_jet(
             rotate_vector_about_axis(differential.fourth?.get(), axis, angle),
         ]))()
     } else { Err(EvaluationFailure::NoValue) };
-    let higher = if request == SurfaceRequest::Fifth {
+    let higher = if request.needs_fifth() {
         let fifth = (|| admit_lanes([
             axis.cross(axis.cross(axis.cross(axis.cross(du)))),
             axis.cross(axis.cross(axis.cross(axis.cross(rotated_tangent?)))),
@@ -4179,7 +4179,7 @@ fn model_native_extrusion_jet(
             FiniteVector3::ZERO, FiniteVector3::ZERO, FiniteVector3::ZERO, FiniteVector3::ZERO,
         ]))
     } else { Err(EvaluationFailure::NoValue) };
-    let higher = if request == SurfaceRequest::Fifth {
+    let higher = if request.needs_fifth() {
         let fifth = derivative.and_then(|derivative| Ok([
             curve_higher::scale_fifth(differential.fifth?, [derivative; 5])?,
             FiniteVector3::ZERO, FiniteVector3::ZERO, FiniteVector3::ZERO, FiniteVector3::ZERO, FiniteVector3::ZERO,
@@ -4393,7 +4393,7 @@ fn model_native_revolution_jet(
             Ok(if transposed { mapped } else { [mapped[4], mapped[3], mapped[2], mapped[1], mapped[0]] })
         })()
     } else { Err(EvaluationFailure::NoValue) };
-    let higher = if request == SurfaceRequest::Fifth {
+    let higher = if request.needs_fifth() {
         let fifth = (|| {
             let angular = FiniteReal::new(angular_derivative).ok_or(EvaluationFailure::NonFinite(()))?;
             let carrier = carrier.derivative?;
@@ -5796,11 +5796,12 @@ fn surface_requested_jet_solved(
                 let third = surface_request::differentials::analytic_third(geometry, u, v, jet);
                 if request.needs_fourth() {
                     let fourth = surface_request::differentials::analytic_fourth(geometry, u, v, jet);
-                    if request == SurfaceRequest::Fifth {
-                        HigherPartials::Fifth {
-                            third, fourth,
-                            fifth: surface_request::differentials::analytic_fifth(geometry, jet, third),
-                        }
+                    if request.needs_fifth() {
+                        let fifth = surface_request::differentials::analytic_fifth(geometry, jet, third);
+                        if request == SurfaceRequest::Sixth {
+                            HigherPartials::Sixth { third, fourth, fifth,
+                                sixth: surface_request::differentials::analytic_sixth(geometry, jet, fourth) }
+                        } else { HigherPartials::Fifth { third, fourth, fifth } }
                     } else { HigherPartials::Fourth { third, fourth } }
                 } else { HigherPartials::Third(third) }
             } else { HigherPartials::Third(Err(EvaluationFailure::NoValue)) };
@@ -6101,7 +6102,7 @@ fn model_linear_sweep_jet(
         differential.fourth.map(|fourth| [fourth, FiniteVector3::ZERO,
             FiniteVector3::ZERO, FiniteVector3::ZERO, FiniteVector3::ZERO])
     } else { Err(EvaluationFailure::NoValue) };
-    let higher = if request == SurfaceRequest::Fifth {
+    let higher = if request.needs_fifth() {
         let fifth = differential.fifth.map(|fifth| [fifth, FiniteVector3::ZERO,
             FiniteVector3::ZERO, FiniteVector3::ZERO, FiniteVector3::ZERO, FiniteVector3::ZERO]);
         HigherPartials::Fifth { third, fourth, fifth }
@@ -6656,7 +6657,7 @@ fn variable_blend_contact_track(
             let parameter = FiniteReal::new(parameter).ok_or(no_value)?;
             let mut higher = [Err(no_value); 3];
             let evaluated = if let ContactRequest::Higher(order) = request {
-                let max_order = if order == SurfaceRequest::Fifth { 5 }
+                let max_order = if order.needs_fifth() { 5 }
                     else if order.needs_fourth() { 4 } else if order.needs_third() { 3 } else { 2 };
                 pcurve_uv_unsettled(&scratch, geometry, parameter, Some((max_order, &mut higher)))
                     .ok_or(no_value)?
@@ -7638,7 +7639,7 @@ fn model_ruled_surface_jet(
             Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0),
         ]))()
     } else { Err(EvaluationFailure::NoValue) };
-    let higher = if request == SurfaceRequest::Fifth {
+    let higher = if request.needs_fifth() {
         let fifth = (|| admit_lanes([
             blend(first.fifth?.get(), second.fifth?.get()),
             vector_sum(&[(-1.0, first.fourth?.get()), (1.0, second.fourth?.get())]),
@@ -7693,7 +7694,7 @@ fn model_sum_surface_jet(
         first.fourth.and_then(|first| Ok([first, FiniteVector3::ZERO,
             FiniteVector3::ZERO, FiniteVector3::ZERO, second.fourth?]))
     } else { Err(EvaluationFailure::NoValue) };
-    let higher = if request == SurfaceRequest::Fifth {
+    let higher = if request.needs_fifth() {
         let fifth = first.fifth.and_then(|first| Ok([first, FiniteVector3::ZERO,
             FiniteVector3::ZERO, FiniteVector3::ZERO, FiniteVector3::ZERO, second.fifth?]));
         HigherPartials::Fifth { third, fourth, fifth }
