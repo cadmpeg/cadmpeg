@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::native::{attribute_table_value_width, OverdeclaredCounts, UnstatableAttributeTable};
+use crate::native::{OverdeclaredCounts};
 use crate::parameter::{DefaultTailCount, ParameterRecord};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceLimit};
 use cadmpeg_core::CodecError;
@@ -74,18 +74,6 @@ fn native_counted_tail_at_without_record_preserves_original_refusal() {
 #[test]
 fn native_counted_complete_without_record_preserves_original_refusal() {
     with_count_owner(|counts, original| scalar_count(counts.counted_complete(1, None, 0, 1, 2, 1), original, 0));
-}
-
-#[test]
-fn native_missing_attribute_count_preserves_original_refusal() {
-    let record = ParameterRecord::from_test_tokens(1, 1..2, Vec::new(), 0, Vec::new(), Vec::new());
-    crate::test_support::with_entry_context(|ctx, original| {
-        let result = attribute_table_value_width(&record, 0, ctx);
-        match original {
-            Some(first) => assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first)),
-            None => assert!(matches!(result, Ok(Err(UnstatableAttributeTable::AttributeCount)))),
-        }
-    });
 }
 
 #[test]

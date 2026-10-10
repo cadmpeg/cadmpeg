@@ -294,6 +294,7 @@ fn native_ambiguity_and_entity_slots_refuse_after_input_indexes() {
                         directory: &directory,
                         parameters: &assembly.records,
                         trailing_pointer_analysis: &analysis,
+                        attribute_definition_widths: &assembly.attribute_definition_widths,
                         quarantine: super::QuarantinedRecords {
                             directory: &quarantined_directory,
                             parameters: &assembly.quarantined,
@@ -375,6 +376,7 @@ fn native_required_back_pointer_member_refuses_node_limit() {
                     directory: &directory,
                     parameters: &assembly.records,
                     trailing_pointer_analysis: &assembly.trailing_pointer_analysis,
+                    attribute_definition_widths: &assembly.attribute_definition_widths,
                     quarantine: super::QuarantinedRecords {
                         directory: &quarantined_directory,
                         parameters: &assembly.quarantined,
