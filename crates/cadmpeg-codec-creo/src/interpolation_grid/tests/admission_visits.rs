@@ -10,15 +10,22 @@ fn fixed_mixed_validation_keeps_only_variable_grid_work() {
         for nonfinite in [false, true] {
             let actual = super::work_output(|ctx| {
                 let mut mixed = [[1.0; 3]; 4];
-                if nonfinite { mixed[3][2] = f64::INFINITY; }
-                InterpolationGrid::try_new(ctx,
+                if nonfinite {
+                    mixed[3][2] = f64::INFINITY;
+                }
+                InterpolationGrid::try_new(
+                    ctx,
                     vec![[0.0; 3]; u * v],
                     (0..u_count).map(f64::from).collect(),
                     (0..v_count).map(f64::from).collect(),
-                    vec![[0.0; 3]; 2 * v], vec![[0.0; 3]; 2 * u], mixed,
+                    vec![[0.0; 3]; 2 * v],
+                    vec![[0.0; 3]; 2 * u],
+                    mixed,
                 )
             });
-            if nonfinite { assert!(actual.is_none()); } else {
+            if nonfinite {
+                assert!(actual.is_none());
+            } else {
                 let grid = actual.expect("finite complete grid");
                 assert_eq!(grid.points().len(), u * v);
                 assert_eq!(grid.mixed_derivatives(), &[[1.0; 3]; 4]);

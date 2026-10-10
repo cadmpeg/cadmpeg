@@ -371,7 +371,10 @@ fn geometry_array_elements<'a>(
     )?;
     let mut ids = elements.iter();
     while ids.len() != 0 {
-        let Some(element_id) = ctx.next_charged(&mut ids, "creo legacy geometry element search")? else { break; };
+        let Some(element_id) = ctx.next_charged(&mut ids, "creo legacy geometry element search")?
+        else {
+            break;
+        };
         let Some(element) = ctx
             .get_btree_map(
                 object_ids,
@@ -656,7 +659,9 @@ fn spline_surface_carrier(
     drop(v_tangents);
     drop(u_tangents);
     drop(derivative_scope);
-    let Some(spline) = spline else { return Ok(None); };
+    let Some(spline) = spline else {
+        return Ok(None);
+    };
     let spline = grid_scope.commit_value(spline)?;
     Ok(Some(LegacySurfaceCarrier {
         namespace,
@@ -813,10 +818,13 @@ fn surface_carrier(
 /// Map legacy pcurve `v` coordinates into the positive-angle frame emitted by
 /// [`LegacySurfaceGeometry::Cone`].
 pub(crate) fn canonicalize_legacy_cone_pcurve_endpoints(
-    carrier: Option<&LegacySurfaceCarrier>, endpoints: [[f64; 2]; 2],
+    carrier: Option<&LegacySurfaceCarrier>,
+    endpoints: [[f64; 2]; 2],
 ) -> [[f64; 2]; 2] {
     let sign = match carrier.map(|carrier| &carrier.geometry) {
-        Some(LegacySurfaceGeometry::Cone { parameter_v_sign, .. }) => *parameter_v_sign,
+        Some(LegacySurfaceGeometry::Cone {
+            parameter_v_sign, ..
+        }) => *parameter_v_sign,
         _ => 1.0,
     };
     endpoints.map(|[u, v]| [u, v * sign])
@@ -842,18 +850,24 @@ fn real_vector_array(
         return Ok(None);
     }
     let mut vectors = Vec::new();
-    ctx.reserve_vec(&mut vectors, record.payload.element_count() / 3,
-        "creo legacy real vector array")?;
+    ctx.reserve_vec(
+        &mut vectors,
+        record.payload.element_count() / 3,
+        "creo legacy real vector array",
+    )?;
     let mut tuple = [0.0; 3];
     let mut lane = 0;
     let mut runs = array.runs().iter();
     while runs.len() != 0 {
-        let Some(run) = ctx.next_charged(&mut runs, "creo legacy real vector run traversal")? else {
+        let Some(run) = ctx.next_charged(&mut runs, "creo legacy real vector run traversal")?
+        else {
             break;
         };
         let mut elements = 0..run.count;
-        while elements.len() != 0 {
-            let Some(_) = ctx.next_charged(&mut elements, "creo legacy real vector element expansion")? else {
+        while !elements.is_empty() {
+            let Some(_) =
+                ctx.next_charged(&mut elements, "creo legacy real vector element expansion")?
+            else {
                 break;
             };
             tuple[lane] = run.value.value();
@@ -894,7 +908,9 @@ fn real_array_values(
     ctx: &DecodeContext<'_>,
     record: &RealRecord,
 ) -> Result<Option<Vec<f64>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() { return Err(refusal.into()); }
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let NumericPayload::Array(array) = &record.payload else {
         return Ok(None);
     };
@@ -916,7 +932,9 @@ fn object_id_index<'a>(
     ctx: &DecodeContext<'_>,
     objects: &'a [ObjectRecord],
 ) -> Result<ObjectIdIndex<'a>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() { return Err(refusal.into()); }
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut index = BTreeMap::new();
     for object in ctx.admit_iter(objects, "creo legacy object index rows")? {
         let id =
@@ -930,7 +948,9 @@ fn child_index<'a>(
     ctx: &DecodeContext<'_>,
     objects: &'a [ObjectRecord],
 ) -> Result<ChildIndex<'a>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() { return Err(refusal.into()); }
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut index = HashMap::new();
     for object in ctx.admit_iter(objects, "creo legacy primitive index rows")? {
         if !object.name.starts_with("srf_prim_ptr(") {
@@ -1028,7 +1048,9 @@ fn local_system_slots(
     ctx: &DecodeContext<'_>,
     record: &RealRecord,
 ) -> Result<Option<[f64; 12]>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() { return Err(refusal.into()); }
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let NumericPayload::Array(array) = &record.payload else {
         return Ok(None);
     };
@@ -1071,7 +1093,12 @@ mod tests {
         face_id: u32,
         endpoints: [[f64; 2]; 2],
     ) -> [[f64; 2]; 2] {
-        canonicalize_for_carrier(carriers.iter().find(|carrier| carrier.surface_id == face_id), endpoints)
+        canonicalize_for_carrier(
+            carriers
+                .iter()
+                .find(|carrier| carrier.surface_id == face_id),
+            endpoints,
+        )
     }
 
     fn scan(persistence: &Persistence) -> super::LegacyGeometryScan {

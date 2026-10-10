@@ -2,7 +2,6 @@
 use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
 
-
 #[test]
 fn inline_envelope_search_stops_at_second_close() {
     use crate::surface::{

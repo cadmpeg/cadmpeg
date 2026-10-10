@@ -133,12 +133,16 @@ impl Loop {
         let mut ids = half_edges.iter();
         let mut index = 0;
         while ids.len() != 0 {
-            let Some(id) = ctx.next_charged(&mut ids, "creo closed ring validation work")? else { break; };
-            if index != 0 && ctx.any_by(
-                &half_edges[..index],
-                |previous| Ok(previous == id),
-                "creo closed ring validation work",
-            )? {
+            let Some(id) = ctx.next_charged(&mut ids, "creo closed ring validation work")? else {
+                break;
+            };
+            if index != 0
+                && ctx.any_by(
+                    &half_edges[..index],
+                    |previous| Ok(previous == id),
+                    "creo closed ring validation work",
+                )?
+            {
                 return Ok(None);
             }
             let Some(edge) = crate::decode::uniqueness::exactly_one_by(
@@ -194,16 +198,18 @@ impl FaceComponent {
         }
         if face_ids.is_empty()
             || face_ids[0] == 0
-            || (face_ids.len() > 1 && ctx.any_by(
-                face_ids.windows(2),
-                |pair| Ok(pair[0] >= pair[1]),
-                "creo face component validation work",
-            )?)
-            || (curve_ids.len() > 1 && ctx.any_by(
-                curve_ids.windows(2),
-                |pair| Ok(pair[0] >= pair[1]),
-                "creo face component validation work",
-            )?)
+            || (face_ids.len() > 1
+                && ctx.any_by(
+                    face_ids.windows(2),
+                    |pair| Ok(pair[0] >= pair[1]),
+                    "creo face component validation work",
+                )?)
+            || (curve_ids.len() > 1
+                && ctx.any_by(
+                    curve_ids.windows(2),
+                    |pair| Ok(pair[0] >= pair[1]),
+                    "creo face component validation work",
+                )?)
         {
             return Ok(None);
         }
@@ -251,11 +257,12 @@ impl TopologicalVertex {
             return Ok(None);
         };
         if half_edges.is_empty()
-            || (half_edges.len() > 1 && ctx.any_by(
-                half_edges.windows(2),
-                |pair| Ok(pair[0] >= pair[1]),
-                "creo vertex orbit validation work",
-            )?)
+            || (half_edges.len() > 1
+                && ctx.any_by(
+                    half_edges.windows(2),
+                    |pair| Ok(pair[0] >= pair[1]),
+                    "creo vertex orbit validation work",
+                )?)
         {
             return Ok(None);
         }
@@ -540,7 +547,13 @@ pub(crate) fn vertex_orbits(
             .with_storage(|| ctx.reserve_vec(&mut pending, 1, "creo vertex orbit pending edges"))?;
         pending.push(start);
         while !pending.is_empty() {
-            let Some(half_edge) = ctx.next_charged(&mut std::iter::from_fn(|| pending.pop()), "creo vertex graph traversal")? else { break; };
+            let Some(half_edge) = ctx.next_charged(
+                &mut std::iter::from_fn(|| pending.pop()),
+                "creo vertex graph traversal",
+            )?
+            else {
+                break;
+            };
             if ctx.contains_btree_set(&visited, &half_edge, "creo vertex visited edges")? {
                 continue;
             }
@@ -642,7 +655,8 @@ pub(crate) fn face_components(
     rows: &[CurveTopologyRow],
 ) -> Result<Vec<FaceComponent>, CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "creo topology scratch")?;
-    let (rows, _rows_storage) = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
+    let (rows, _rows_storage) =
+        crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
     let mut adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
     let mut face_curves = BTreeMap::<u32, BTreeSet<u32>>::new();
     for row in ctx.admit_iter(&rows, "creo face graph assembly")? {
@@ -696,7 +710,13 @@ pub(crate) fn face_components(
         let mut faces = BTreeSet::new();
         let mut curves = BTreeSet::new();
         while !pending.is_empty() {
-            let Some(face) = ctx.next_charged(&mut std::iter::from_fn(|| pending.pop()), "creo face graph traversal")? else { break; };
+            let Some(face) = ctx.next_charged(
+                &mut std::iter::from_fn(|| pending.pop()),
+                "creo face graph traversal",
+            )?
+            else {
+                break;
+            };
             component_scope.with_storage(|| {
                 ctx.insert_btree_set(&mut faces, face, "creo component face nodes")
             })?;
@@ -779,7 +799,8 @@ pub(crate) fn build(
     rows: &[CurveTopologyRow],
 ) -> Result<(Vec<HalfEdge>, Vec<Loop>), CodecError> {
     let mut scratch = ctx.reserve_scoped(0, "creo topology scratch")?;
-    let (rows, _rows_storage) = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
+    let (rows, _rows_storage) =
+        crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
     let mut successors = BTreeMap::<(Option<NonZeroU32>, u32), SingleSide<HalfEdgeId>>::new();
     for row in ctx.admit_iter(&rows, "creo topology successor rows")? {
         for side in [Side::Zero, Side::One] {

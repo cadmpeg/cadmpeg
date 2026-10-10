@@ -729,12 +729,15 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                     _ => None,
                 };
                 let overrides = match crate::surface::unique_surface_parameter(
-                    &scan.surfaces.parameters, row.id,
-                ).filter(|parameter| parameter.offset == row.offset) {
+                    &scan.surfaces.parameters,
+                    row.id,
+                ).filter(|parameter| parameter.offset == row.offset)
+                {
                     Some(parameter) => parameter.torus_radius_overrides_checked(ctx)?,
                     None => None,
                 };
-                let radii = overrides.map(|overrides| [overrides.radius1, overrides.radius2])
+                let radii = overrides
+                    .map(|overrides| [overrides.radius1, overrides.radius2])
                     .or(prototype_radii);
                 let Some([radius1, radius2]) = radii else {
                     continue;

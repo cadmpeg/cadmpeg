@@ -106,20 +106,22 @@ impl<Shape> Scalars<Shape> {
         let mut complete = true;
         let mut increasing = true;
         let mut previous = None;
-        if !values.is_empty() && !ctx.all_by(
-            &values,
-            |value| {
-                complete &= value.is_some();
-                increasing &= match (previous, *value) {
-                    (Some(previous), Some(value)) => previous < value,
-                    (None, Some(_)) => true,
-                    (_, None) => false,
-                };
-                previous = *value;
-                Ok(value.is_none_or(|value| FiniteReal::new(value).is_some()))
-            },
-            "creo scalar array validation",
-        )? {
+        if !values.is_empty()
+            && !ctx.all_by(
+                &values,
+                |value| {
+                    complete &= value.is_some();
+                    increasing &= match (previous, *value) {
+                        (Some(previous), Some(value)) => previous < value,
+                        (None, Some(_)) => true,
+                        (_, None) => false,
+                    };
+                    previous = *value;
+                    Ok(value.is_none_or(|value| FiniteReal::new(value).is_some()))
+                },
+                "creo scalar array validation",
+            )?
+        {
             return Ok(None);
         }
         Ok(Some(Self {
@@ -151,7 +153,11 @@ impl<Shape> Scalars<Shape> {
         let mut source = slots.into_iter();
         let count = source.len();
         while source.len() != 0 {
-            let Some((value, token)) = ctx.next_charged(&mut source, "creo scalar array validation")? else { break; };
+            let Some((value, token)) =
+                ctx.next_charged(&mut source, "creo scalar array validation")?
+            else {
+                break;
+            };
             if value.is_some_and(|value| FiniteReal::new(value).is_none()) {
                 return Ok(None);
             }
@@ -163,11 +169,17 @@ impl<Shape> Scalars<Shape> {
             };
             previous = value;
             if values.is_empty() {
-                value_storage.with_storage_limit(|| ctx.reserve_capacity_limit(&mut values, count, "creo scalar array values"))?;
-                token_storage.with_storage_limit(|| ctx.reserve_capacity_limit(&mut tokens, count, "creo scalar array tokens"))?;
+                value_storage.with_storage_limit(|| {
+                    ctx.reserve_capacity_limit(&mut values, count, "creo scalar array values")
+                })?;
+                token_storage.with_storage_limit(|| {
+                    ctx.reserve_capacity_limit(&mut tokens, count, "creo scalar array tokens")
+                })?;
             }
-            value_storage.with_storage(|| ctx.reserve_vec(&mut values, 1, "creo scalar array values"))?;
-            token_storage.with_storage(|| ctx.reserve_vec(&mut tokens, 1, "creo scalar array tokens"))?;
+            value_storage
+                .with_storage(|| ctx.reserve_vec(&mut values, 1, "creo scalar array values"))?;
+            token_storage
+                .with_storage(|| ctx.reserve_vec(&mut tokens, 1, "creo scalar array tokens"))?;
             values.push(value);
             tokens.push(token);
         }
@@ -260,9 +272,9 @@ impl<Shape: Copy> Scalars<Shape> {
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use super::{CountedScalars, DimensionedScalars};
     use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_core::CodecError;
 
     #[test]
@@ -423,17 +435,36 @@ mod tests {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = 0;
-            if first { policy.limits.max_materialized_bytes = 0; }
+            if first {
+                policy.limits.max_materialized_bytes = 0;
+            }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             let extent = CountedScalars::extent(3).expect("extent");
-            let values = if first { [f64::INFINITY, 1.0, 2.0] } else { [1.0, f64::INFINITY, 2.0] };
+            let values = if first {
+                [f64::INFINITY, 1.0, 2.0]
+            } else {
+                [1.0, f64::INFINITY, 2.0]
+            };
             for _ in 0..7 {
-                assert_eq!(CountedScalars::from_tokens(&ctx, extent,
-                    values.into_iter().map(|value| (Some(value), vec![0xe4])).collect())
-                    .expect("invalid scalar candidate"), None);
+                assert_eq!(
+                    CountedScalars::from_tokens(
+                        &ctx,
+                        extent,
+                        values
+                            .into_iter()
+                            .map(|value| (Some(value), vec![0xe4]))
+                            .collect()
+                    )
+                    .expect("invalid scalar candidate"),
+                    None
+                );
             }
-            let refusal = ctx.reserve_scoped_limit(policy.limits.max_materialized_bytes + 1,
-                "after rejected scalar tokens").expect_err("probe live candidate backing");
+            let refusal = ctx
+                .reserve_scoped_limit(
+                    policy.limits.max_materialized_bytes + 1,
+                    "after rejected scalar tokens",
+                )
+                .expect_err("probe live candidate backing");
             assert_eq!(refusal.used, 0);
         }
     }
@@ -463,16 +494,26 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         for refused in [false, true] {
             if refused {
-                ctx.charge_work_limit(1, "scalar mismatch seed").expect_err("zero work cap");
+                ctx.charge_work_limit(1, "scalar mismatch seed")
+                    .expect_err("zero work cap");
             }
             for len in [0, 2] {
                 let extent = CountedScalars::extent(1).expect("extent");
-                let values = CountedScalars::from_values(&ctx, extent, vec![Some(f64::INFINITY); len]);
-                let tokens = CountedScalars::from_tokens(&ctx, extent, vec![(Some(f64::INFINITY), vec![0xe4]); len]);
+                let values =
+                    CountedScalars::from_values(&ctx, extent, vec![Some(f64::INFINITY); len]);
+                let tokens = CountedScalars::from_tokens(
+                    &ctx,
+                    extent,
+                    vec![(Some(f64::INFINITY), vec![0xe4]); len],
+                );
                 if refused {
                     let original = ctx.resource_refusal().expect("original refusal");
-                    assert!(matches!(values, Err(CodecError::ResourceLimit(actual)) if actual == original));
-                    assert!(matches!(tokens, Err(CodecError::ResourceLimit(actual)) if actual == original));
+                    assert!(
+                        matches!(values, Err(CodecError::ResourceLimit(actual)) if actual == original)
+                    );
+                    assert!(
+                        matches!(tokens, Err(CodecError::ResourceLimit(actual)) if actual == original)
+                    );
                 } else {
                     assert_eq!(values.expect("fixed length comparison"), None);
                     assert_eq!(tokens.expect("fixed length comparison"), None);
@@ -494,28 +535,46 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let counted = CountedScalars::extent(0).expect("count");
         let dimensioned = DimensionedScalars::extent(0, 2).expect("shape");
-        let values = CountedScalars::from_values(&ctx, counted, Vec::new()).expect("zero work").expect("extent");
+        let values = CountedScalars::from_values(&ctx, counted, Vec::new())
+            .expect("zero work")
+            .expect("extent");
         assert_eq!(values.count(), 0);
         assert_eq!(values.values(), &[]);
         assert_eq!(values.tokens(), None);
-        let tokens = CountedScalars::from_tokens(&ctx, counted, Vec::new()).expect("zero work").expect("extent");
+        let tokens = CountedScalars::from_tokens(&ctx, counted, Vec::new())
+            .expect("zero work")
+            .expect("extent");
         assert_eq!(tokens.count(), 0);
         assert_eq!(tokens.values(), &[]);
         assert_eq!(tokens.tokens(), Some([].as_slice()));
-        let values = DimensionedScalars::from_values(&ctx, dimensioned, Vec::new()).expect("zero work").expect("extent");
+        let values = DimensionedScalars::from_values(&ctx, dimensioned, Vec::new())
+            .expect("zero work")
+            .expect("extent");
         assert_eq!((values.dimensions(), values.count()), (0, 2));
         assert_eq!(values.values(), &[]);
         assert_eq!(values.tokens(), None);
-        let tokens = DimensionedScalars::from_tokens(&ctx, dimensioned, Vec::new()).expect("zero work").expect("extent");
+        let tokens = DimensionedScalars::from_tokens(&ctx, dimensioned, Vec::new())
+            .expect("zero work")
+            .expect("extent");
         assert_eq!((tokens.dimensions(), tokens.count()), (0, 2));
         assert_eq!(tokens.values(), &[]);
         assert_eq!(tokens.tokens(), Some([].as_slice()));
         assert_eq!(ctx.resource_refusal(), None);
-        let original = ctx.charge_work_limit(1, "empty scalar seed").expect_err("zero work cap");
-        assert!(matches!(CountedScalars::from_values(&ctx, counted, Vec::new()), Err(CodecError::ResourceLimit(actual)) if actual == original));
-        assert!(matches!(CountedScalars::from_tokens(&ctx, counted, Vec::new()), Err(CodecError::ResourceLimit(actual)) if actual == original));
-        assert!(matches!(DimensionedScalars::from_values(&ctx, dimensioned, Vec::new()), Err(CodecError::ResourceLimit(actual)) if actual == original));
-        assert!(matches!(DimensionedScalars::from_tokens(&ctx, dimensioned, Vec::new()), Err(CodecError::ResourceLimit(actual)) if actual == original));
+        let original = ctx
+            .charge_work_limit(1, "empty scalar seed")
+            .expect_err("zero work cap");
+        assert!(
+            matches!(CountedScalars::from_values(&ctx, counted, Vec::new()), Err(CodecError::ResourceLimit(actual)) if actual == original)
+        );
+        assert!(
+            matches!(CountedScalars::from_tokens(&ctx, counted, Vec::new()), Err(CodecError::ResourceLimit(actual)) if actual == original)
+        );
+        assert!(
+            matches!(DimensionedScalars::from_values(&ctx, dimensioned, Vec::new()), Err(CodecError::ResourceLimit(actual)) if actual == original)
+        );
+        assert!(
+            matches!(DimensionedScalars::from_tokens(&ctx, dimensioned, Vec::new()), Err(CodecError::ResourceLimit(actual)) if actual == original)
+        );
         assert_eq!(ctx.resource_refusal(), Some(original));
     }
 
@@ -527,12 +586,21 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        assert_eq!(array.fill_tokens(&ctx, Vec::new()).expect("fixed length comparison"), None);
+        assert_eq!(
+            array
+                .fill_tokens(&ctx, Vec::new())
+                .expect("fixed length comparison"),
+            None
+        );
         assert_eq!(array, original_array);
         assert_eq!(ctx.resource_refusal(), None);
-        let original = ctx.charge_work_limit(1, "scalar fill seed").expect_err("zero work cap");
+        let original = ctx
+            .charge_work_limit(1, "scalar fill seed")
+            .expect_err("zero work cap");
         for slots in [Vec::new(), vec![(Some(1.0), vec![0xe4])]] {
-            assert!(matches!(array.fill_tokens(&ctx, slots), Err(CodecError::ResourceLimit(actual)) if actual == original));
+            assert!(
+                matches!(array.fill_tokens(&ctx, slots), Err(CodecError::ResourceLimit(actual)) if actual == original)
+            );
             assert_eq!(array, original_array);
             assert_eq!(ctx.resource_refusal(), Some(original));
         }

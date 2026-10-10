@@ -1198,25 +1198,25 @@ fn checked_topology_constructors_propagate_work_refusal() {
         panic!("resource refusal");
     };
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    policy.limits.max_work_units = crate::test_support::allocation_limit_at(
-        ResourceDimension::WorkUnits,
-        None,
-        |cap| {
+    policy.limits.max_work_units =
+        crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             super::FaceComponent::new(&ctx, vec![1], vec![])
-        },
-    );
+        });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let component = super::FaceComponent::new(&ctx, vec![1], vec![])
-        .expect("singleton has no adjacent comparison").expect("one face");
+        .expect("singleton has no adjacent comparison")
+        .expect("one face");
     assert_eq!(component.face_ids(), [1]);
     assert!(component.curve_ids().is_empty());
-    let original = ctx.charge_work_limit(1, "after singleton component").expect_err("exact Work cap");
-    let error =
-        super::FaceComponent::new(&ctx, vec![1], vec![]).expect_err("component replays original refusal");
+    let original = ctx
+        .charge_work_limit(1, "after singleton component")
+        .expect_err("exact Work cap");
+    let error = super::FaceComponent::new(&ctx, vec![1], vec![])
+        .expect_err("component replays original refusal");
     let CodecError::ResourceLimit(limit) = error else {
         panic!("resource refusal");
     };
@@ -1251,17 +1251,14 @@ fn vertex_orbit_constructor_rejects_zero_empty_repeated_and_unordered_members() 
     });
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = crate::test_support::allocation_limit_at(
-        ResourceDimension::WorkUnits,
-        None,
-        |cap| {
+    policy.limits.max_work_units =
+        crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             super::TopologicalVertex::new(&ctx, 1, vec![a])
-        },
-    );
+        });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let singleton = super::TopologicalVertex::new(&ctx, 1, vec![a])
         .expect("one member has no adjacent comparison")
@@ -1290,8 +1287,8 @@ fn topology_successor_and_open_tail_walks_refuse_work() {
     assert!(loops.is_empty());
 }
 
-mod work_admission;
 mod validation_visits;
+mod work_admission;
 
 #[test]
 fn half_edge_id_cost_excludes_struct_padding() {
@@ -1336,8 +1333,12 @@ fn work_output<T>(
         if let Err(CodecError::ResourceLimit(original)) = &result {
             assert_eq!(original.dimension, ResourceDimension::WorkUnits);
             assert_eq!(ctx.resource_refusal().as_ref(), Some(original));
-            assert!(matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if &actual == original));
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if &actual == original));
+            assert!(
+                matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if &actual == original)
+            );
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if &actual == original)
+            );
         }
         result
     };
@@ -1345,15 +1346,19 @@ fn work_output<T>(
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = work;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        policy.limits.max_entities = 0;
-        policy.limits.max_recursion_depth = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_entities = 0;
+    policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let value = run(&ctx).expect("walker admits the unchanged fixture");
-    let original = ctx.charge_work_limit(1, "after owner work route").expect_err("exact work cap");
+    let original = ctx
+        .charge_work_limit(1, "after owner work route")
+        .expect_err("exact work cap");
     assert!(matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
+    );
     value
 }

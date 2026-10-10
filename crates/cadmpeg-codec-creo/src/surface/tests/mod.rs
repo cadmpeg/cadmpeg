@@ -3,8 +3,8 @@ mod close_scan;
 mod contours;
 mod cost;
 mod dump;
-mod envelope_admission;
 mod early_search;
+mod envelope_admission;
 mod inline;
 mod inline_visits;
 mod named_value_visits;
@@ -15,8 +15,8 @@ mod positional;
 mod positional_mixed;
 mod resource_cache;
 mod round_envelopes;
-mod rows;
 mod row_scan;
+mod rows;
 mod scalar_dispatch;
 mod scalar_spans;
 mod scan;
@@ -151,8 +151,12 @@ fn work_output<T>(
         if let Err(CodecError::ResourceLimit(original)) = &result {
             assert_eq!(original.dimension, ResourceDimension::WorkUnits);
             assert_eq!(ctx.resource_refusal().as_ref(), Some(original));
-            assert!(matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if &actual == original));
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if &actual == original));
+            assert!(
+                matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if &actual == original)
+            );
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if &actual == original)
+            );
         }
         result
     };
@@ -162,9 +166,13 @@ fn work_output<T>(
     policy.limits.max_work_units = work;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let value = run(&ctx).expect("walker admits the unchanged fixture");
-    let original = ctx.charge_work_limit(1, "after owner work route").expect_err("exact work cap");
+    let original = ctx
+        .charge_work_limit(1, "after owner work route")
+        .expect_err("exact work cap");
     assert!(matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
+    );
     value
 }
 

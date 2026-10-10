@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use crate::scalar::ScalarCache;
@@ -10,7 +10,8 @@ use crate::surface::{
 };
 
 fn assert_work_bound(
-    expected: Option<usize>, run: impl Fn(&DecodeContext<'_>) -> Result<Option<usize>, CodecError>,
+    expected: Option<usize>,
+    run: impl Fn(&DecodeContext<'_>) -> Result<Option<usize>, CodecError>,
 ) {
     assert_eq!(super::work_output(run), expected);
 }
@@ -95,11 +96,19 @@ fn absent_surface_close_routes_are_free_and_preserve_original_refusal() {
             Ok(cone_half_angle_before_close(ctx, &body[..count])?.map(|layout| layout.end))
         });
     }
-    for kind in [SurfaceKind::Plane, SurfaceKind::Cylinder, SurfaceKind::Cone,
-        SurfaceKind::TorusOrSphere, SurfaceKind::Spline, SurfaceKind::Fillet,
+    for kind in [
+        SurfaceKind::Plane,
+        SurfaceKind::Cylinder,
+        SurfaceKind::Cone,
+        SurfaceKind::TorusOrSphere,
+        SurfaceKind::Spline,
+        SurfaceKind::Fillet,
         SurfaceKind::Extrusion(ExtrusionVariant::Linear),
-        SurfaceKind::Extrusion(ExtrusionVariant::TabulatedCylinder)] {
-        assert_work_bound(None, |ctx| surface_body_compound_close(ctx, kind, &[], &cache));
+        SurfaceKind::Extrusion(ExtrusionVariant::TabulatedCylinder),
+    ] {
+        assert_work_bound(None, |ctx| {
+            surface_body_compound_close(ctx, kind, &[], &cache)
+        });
     }
     for (start, end) in [(0, 0), (1, 0), (0, 1)] {
         assert_work_bound(None, |ctx| first_compound_close(ctx, &[], start, end));

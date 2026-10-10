@@ -981,7 +981,8 @@ pub(super) fn surface_parameter_coverage(
             continue;
         };
         coverage.extrusion_directions += usize::from(record.extrusion_direction().is_some());
-        coverage.radius_overrides += usize::from(record.torus_radius_overrides_checked(ctx)?.is_some());
+        coverage.radius_overrides +=
+            usize::from(record.torus_radius_overrides_checked(ctx)?.is_some());
         coverage.replayed_minor_radii = coverage
             .replayed_minor_radii
             .checked_add(usize::from(
