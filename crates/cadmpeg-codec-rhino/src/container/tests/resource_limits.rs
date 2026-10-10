@@ -315,3 +315,46 @@ fn summary_admits_only_the_first_object_before_refusal() {
             && limit.used == 0 && limit.additional == 1
             && ctx.resource_refusal() == Some(limit)));
 }
+
+
+#[test]
+fn scan_descriptor_backings_are_released_with_the_scan() {
+    let bytes = crate::test_support::test_archive::archive(&[
+        crate::test_support::test_archive::object_record(1,
+            crate::test_support::test_dump::POINT_CLASS,
+            &crate::test_support::test_dump::point_payload([0.0, 0.0, 0.0])),
+    ]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 64 * 1024;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, &bytes).unwrap();
+    assert_eq!(scan.objects.len(), 1);
+    assert!(scan.tables.iter().any(|table| !table.object_typecodes.is_empty()));
+    drop(scan);
+    let reclaimed = ctx.reserve_scoped(64 * 1024, "reclaimed scan storage")
+        .expect("descriptor and candidate storage is released when the scan drops");
+    drop(reclaimed);
+    ctx.finish_session().unwrap();
+}
+
+
+#[test]
+fn scan_tables_and_typecode_maps_consume_materialized_budget() {
+    let bytes = crate::test_support::test_archive::archive(&[
+        crate::test_support::test_archive::object_record(1,
+            crate::test_support::test_dump::POINT_CLASS,
+            &crate::test_support::test_dump::point_payload([0.0, 0.0, 0.0])),
+    ]);
+    for operation in ["Rhino scanned tables", "Rhino object typecode counts"] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes, operation, |cap| {
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_materialized_bytes = cap;
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)?;
+                crate::container::scan(&ctx, &bytes).map(drop)
+            },
+        );
+    }
+}

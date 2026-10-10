@@ -306,3 +306,93 @@ fn v1_curve_evaluation_refuses_first_blends_before_unused_degree_levels() {
     assert_eq!(ctx.resource_refusal(), Some(refusal));
     assert!(matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == refusal));
 }
+
+
+#[test]
+fn standalone_v1_curve_promotes_its_owned_lanes() {
+    let data = super::legacy_line([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], 3);
+    let chunk = chunk_at(&data, 0, data.len(), ArchiveVersion::V1, false).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
+    let mut workspace = ctx.reserve_scoped(0, "curve fixture backing").unwrap();
+    let mut segments = super::super::legacy_curve_segments(
+        &ctx, &mut workspace, &data, chunk.body(), super::super::MillimeterScale::IDENTITY,
+    ).expect("valid curve lanes are scoped during parsing");
+    assert_eq!(segments.len(), 1);
+    let (curve, storage) = segments.pop().unwrap();
+    assert_eq!(curve.pole_count(), 2);
+    assert_eq!(curve.knots().as_slice(), &[0.0, 0.0, 1.0, 1.0]);
+    let error = storage.commit_value(curve).expect_err("surviving lanes need retained admission");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "Rhino V1 curve segment" && limit.additional > 0));
+}
+
+#[test]
+fn rejected_v1_meshes_release_partial_vertices_before_the_next_record() {
+    const POINTS: i32 = 256;
+    const RECORDS: usize = 16;
+    const SCRATCH_BYTES: u64 = 32 * 1024;
+    let mut body = Vec::new();
+    for value in [POINTS, 1, 0, 0] { body.extend(value.to_le_bytes()); }
+    for value in [0.0_f64, 0.0, 0.0, 1.0, 1.0, 1.0] { body.extend(value.to_le_bytes()); }
+    for _ in 0..POINTS { body.extend([0; 6]); }
+    for value in [256_u16, 0, 0, 0] { body.extend(value.to_le_bytes()); }
+    let record = super::legacy_chunk(super::super::TCODE_MESH_OBJECT,
+        &super::legacy_chunk(super::super::TCODE_COMPRESSED_MESH_GEOMETRY, &body));
+    let mut data = super::archive(&[]);
+    for _ in 0..RECORDS { data.extend(&record); }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = SCRATCH_BYTES;
+    policy.limits.max_retained_bytes = 64 * 1024;
+    let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
+    let decoded = super::super::decode_v1(&ctx, &data)
+        .expect("failed mesh candidates release their partial vertex lanes");
+    assert!(decoded.ir.model.tessellations.is_empty());
+    assert_eq!(decoded.source_fidelity.retained_records().len(), RECORDS);
+    assert_eq!(decoded.body.notes.iter().filter(|note| note.starts_with("V1 mesh at offset ")).count(), RECORDS);
+    let reclaimed = ctx.reserve_scoped(SCRATCH_BYTES, "reclaimed mesh scratch")
+        .expect("mesh parsing storage is released after decode");
+    drop(reclaimed);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn v1_brep_session_keeps_consecutive_commits_and_direct_model_mutations() {
+    let data = legacy_face_archive();
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut session = cadmpeg_ir::draft::CommitSession::new(CadIr::empty(), &ctx, None).unwrap();
+    for suffix in ["first", "second"] {
+        super::super::append_legacy_brep_in_session(&ctx, &mut session, parsed_brep(&data), suffix).unwrap();
+    }
+    assert_eq!(session.document().model.bodies.len(), 2);
+    let mut existing = session.document().model.bodies[0].clone();
+    existing.id = cadmpeg_ir::ids::BodyId::compose(
+        &cadmpeg_ir::identity_namespace!("rhino", "object", "body"),
+        super::super::legacy_identity_key("third".to_owned()).unwrap(),
+    );
+    session.document_mut().unwrap().model.bodies.push(existing);
+    let error = super::super::append_legacy_brep_in_session(
+        &ctx, &mut session, parsed_brep(&data), "third",
+    ).expect_err("direct mutation invalidates the cached identity index");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(message) if message.contains("collision")));
+    assert_eq!(session.document().model.bodies.len(), 3);
+}
+
+
+#[test]
+fn standalone_v1_curve_decode_requires_retained_admission() {
+    let mut data = super::archive(&[]);
+    data.extend(super::legacy_line([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], 3));
+    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes,
+        "Rhino V1 curve segment", |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy)?;
+            super::super::decode_v1(&ctx, &data)
+        });
+}

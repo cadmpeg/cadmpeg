@@ -293,6 +293,8 @@ pub(crate) struct Scan<'a> {
     _object_record_storage: Vec<ScopedReservation<'a>>,
     /// Source object records are scratch until projection completes.
     _object_storage: ScopedReservation<'a>,
+    /// Table, record, opaque-descriptor, and count-map backing storage.
+    _descriptor_storage: ScopedReservation<'a>,
 }
 
 /// Borrows the session root bytes after the shared input budget admitted them.
@@ -1138,6 +1140,7 @@ fn scan_with_record_limit<'a>(
             format_args!("{note}"),
         )?;
     }
+    let mut descriptor_storage = ctx.reserve_scoped(0, "Rhino scan descriptors")?;
     let mut tables = Vec::new();
     let mut offset = comment.range.end;
     let mut last_rank = 0_u8;
@@ -1182,11 +1185,11 @@ fn scan_with_record_limit<'a>(
                 .map(|(metadata, storage)| (storage, metadata))?;
             let all_objects = object_storage
                 .with_storage(|| resolve_identities(ctx, all_objects, &metadata, &mut warnings))?;
-            ctx.append_vec(
+            descriptor_storage.with_storage(|| ctx.append_vec(
                 &mut opaque_records,
                 &mut metadata.opaque_records,
                 "Rhino scanned opaque records",
-            )?;
+            ))?;
             return Ok(Scan {
                 data,
                 archive,
@@ -1210,6 +1213,7 @@ fn scan_with_record_limit<'a>(
                 _metadata_storage: metadata_storage,
                 _object_record_storage: object_record_storage,
                 _object_storage: object_storage,
+                _descriptor_storage: descriptor_storage,
             });
         }
         let rank = table_rank(chunk.typecode).ok_or_else(|| {
@@ -1386,7 +1390,7 @@ fn scan_with_record_limit<'a>(
                     )?;
                 }
                 let typecode = descriptor.framed().map_or(0, |object| object.object_type);
-                count_object_typecode(ctx, &mut object_typecodes, typecode)?;
+                descriptor_storage.with_storage(|| count_object_typecode(ctx, &mut object_typecodes, typecode))?;
                 ctx.push_scoped_vec(
                     &mut object_storage,
                     &mut all_objects,
@@ -1395,7 +1399,8 @@ fn scan_with_record_limit<'a>(
                 )?;
             }
             if opaque {
-                ctx.push_vec(
+                ctx.push_scoped_vec(
+                    &mut descriptor_storage,
                     &mut opaque_records,
                     OpaqueRecord {
                         table_typecode: chunk.typecode,
@@ -1405,7 +1410,7 @@ fn scan_with_record_limit<'a>(
                 )?;
             }
             if retain_records {
-                ctx.push_vec(&mut records, record, "Rhino scanned table records")?;
+                ctx.push_scoped_vec(&mut descriptor_storage, &mut records, record, "Rhino scanned table records")?;
             }
             child_offset = child.next_offset();
         }
@@ -1441,11 +1446,11 @@ fn scan_with_record_limit<'a>(
             definition_guards_storage = parsed._definition_guards_storage;
             definition_member_storage = parsed._member_storage;
             definition_ambiguous_storage = parsed._ambiguous_storage;
-            ctx.extend_vec(
+            descriptor_storage.with_storage(|| ctx.extend_vec(
                 &mut opaque_records,
                 parsed.opaque_records,
                 "Rhino scanned opaque records",
-            )?;
+            ))?;
         }
         if table_base(chunk.typecode) == TCODE_HISTORY {
             let parsed = crate::history::parse_records(
@@ -1460,11 +1465,11 @@ fn scan_with_record_limit<'a>(
             history_storage = parsed._records_storage;
             history_record_storage = parsed._record_storage;
             history_record_guards_storage = parsed._record_guards_storage;
-            ctx.extend_vec(
+            descriptor_storage.with_storage(|| ctx.extend_vec(
                 &mut opaque_records,
                 parsed.opaque_records,
                 "Rhino scanned opaque records",
-            )?;
+            ))?;
         }
         let table = Table::new(
             chunk.typecode,
@@ -1486,7 +1491,7 @@ fn scan_with_record_limit<'a>(
             },
             Ok,
         )?;
-        ctx.push_vec(&mut tables, table, "Rhino scanned tables")?;
+        ctx.push_scoped_vec(&mut descriptor_storage, &mut tables, table, "Rhino scanned tables")?;
         offset = chunk.next_offset();
     }
     Err(CodecError::Malformed(
