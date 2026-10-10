@@ -1,9 +1,82 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Higher polynomial pcurve orders over the actual borrowed local poles.
+//! Higher pcurve orders over the actual selected span and borrowed poles.
 
 use super::{basis, decode, DifferentialPoles, EvaluationFailure, FinitePoint2, HigherPcurve};
 use crate::math::sum::{scaled_finite, ExactSignedSum, ScaledValue};
 use crate::scalar::{FiniteReal, PositiveReal};
+
+/// Degree-one rational orders from the existing point basis. The fixed two
+/// poles, their weights and exact span differences form the quotient law;
+/// no new span selection or point evaluation runs here.
+pub(super) fn linear(
+    scratch: &decode::Scratch<'_, '_>,
+    knots: &[f64],
+    span: usize,
+    poles: DifferentialPoles<'_>,
+    basis: &[f64],
+    max_order: usize,
+) -> HigherPcurve {
+    let mut output = [Err(EvaluationFailure::NoValue); 3];
+    let evaluated = (|| {
+        scratch.unless_refused()?;
+        let no_value = EvaluationFailure::NoValue;
+        let first = poles.point_at(span - 1).ok_or(no_value)?;
+        let last = poles.point_at(span).ok_or(no_value)?;
+        let w0 = poles.weight_at(span - 1).unwrap_or(1.0);
+        let w1 = poles.weight_at(span).unwrap_or(1.0);
+        let mut width = ExactSignedSum::default();
+        width.add_factors([knots[span + 1]]);
+        width.add_factors([-knots[span]]);
+        let width = width.finish().ok_or(no_value)?;
+        let mut weight = ExactSignedSum::default();
+        weight.add_product(*basis.first().ok_or(no_value)?, w0);
+        weight.add_product(*basis.get(1).ok_or(no_value)?, w1);
+        let weight = weight.finish().ok_or(no_value)?;
+        let mut difference = ExactSignedSum::default();
+        difference.add_factors([w1]);
+        difference.add_factors([-w0]);
+        let zero = FinitePoint2::from_coordinates(FiniteReal::ZERO, FiniteReal::ZERO);
+        let Some(difference) = difference.finish() else {
+            return Ok(std::array::from_fn(|at| if at + 3 <= max_order { Ok(zero) } else { Err(no_value) }));
+        };
+        let coordinate = |left, right| {
+            let mut coefficient = ExactSignedSum::default();
+            coefficient.add_factors([w0, w1, right]);
+            coefficient.add_factors([-w0, w1, left]);
+            let coefficient = coefficient.finish();
+            std::array::from_fn(|at| {
+                if at + 3 > max_order { return Err(no_value); }
+                let Some(coefficient) = coefficient else { return Ok(FiniteReal::ZERO); };
+                let value = match at {
+                    0 => ScaledValue::product_quotient(
+                        [scaled_finite(6.0).ok_or(no_value)?, coefficient, difference, difference],
+                        [width, width, width, weight, weight, weight, weight]),
+                    1 => ScaledValue::product_quotient(
+                        [scaled_finite(-24.0).ok_or(no_value)?, coefficient, difference, difference, difference],
+                        [width, width, width, width, weight, weight, weight, weight, weight]),
+                    _ => crate::math::sum::quotient_fifth::product_fifth(
+                        [scaled_finite(120.0), Some(coefficient), Some(difference), Some(difference), Some(difference), Some(difference)],
+                        weight, width).ok_or(no_value)?,
+                };
+                value.map_err(|_| EvaluationFailure::NonFinite(()))
+            })
+        };
+        let u: [Result<FiniteReal, EvaluationFailure<()>>; 3] = coordinate(first.x, last.x);
+        let v: [Result<FiniteReal, EvaluationFailure<()>>; 3] = coordinate(first.y, last.y);
+        Ok(std::array::from_fn(|at| u[at].and_then(|u| {
+            Ok(FinitePoint2::from_coordinates(u, v[at]?))
+        })))
+    })();
+    match evaluated {
+        Ok(values) => values,
+        Err(failure) => {
+            for (at, value) in output.iter_mut().enumerate() {
+                if at + 3 <= max_order { *value = Err(failure); }
+            }
+            output
+        }
+    }
+}
 
 pub(super) fn polynomial(
     scratch: &decode::Scratch<'_, '_>,
