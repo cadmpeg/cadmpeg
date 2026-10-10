@@ -765,8 +765,7 @@ fn parse_positional_spline_replay(
     else {
         return Ok(None);
     };
-    let Some(mixed_derivatives) =
-        take_spline_mixed_derivatives(ctx, body, &mut cursor, cache)?
+    let Some(mixed_derivatives) = take_spline_mixed_derivatives(ctx, body, &mut cursor, cache)?
     else {
         return Ok(None);
     };
@@ -3645,10 +3644,9 @@ fn parsed_named_surface_value(
             let mut remaining = count;
             let mut positions = cursor..body.len();
             while remaining != 0 && !positions.is_empty() {
-                let Some(position) = (match ctx.next_charged(
-                    &mut positions,
-                    "creo compact surface integer dispatch",
-                ) {
+                let Some(position) = (match ctx
+                    .next_charged(&mut positions, "creo compact surface integer dispatch")
+                {
                     Ok(position) => position,
                     Err(error) => return Some(Err(error)),
                 }) else {
@@ -3759,13 +3757,12 @@ fn parsed_named_surface_value(
     let mut values = Vec::new();
     let mut positions = 0..body.len();
     while !positions.is_empty() {
-        let Some(cursor) = (match ctx.next_charged(
-            &mut positions,
-            "creo named surface scalar dispatch",
-        ) {
-            Ok(cursor) => cursor,
-            Err(error) => return Some(Err(error)),
-        }) else {
+        let Some(cursor) =
+            (match ctx.next_charged(&mut positions, "creo named surface scalar dispatch") {
+                Ok(cursor) => cursor,
+                Err(error) => return Some(Err(error)),
+            })
+        else {
             break;
         };
         if matches!(body[cursor], 0xe0..=0xe3 | 0xf1 | 0xf7 | 0xfb) {
@@ -4249,7 +4246,9 @@ fn scalar_tokens(
     };
     let mut positions = 0..body.len();
     while !positions.is_empty() {
-        let Some(cursor) = ctx.next_charged(&mut positions, "creo surface scalar token dispatch")? else {
+        let Some(cursor) =
+            ctx.next_charged(&mut positions, "creo surface scalar token dispatch")?
+        else {
             break;
         };
         if let Some(&(value, start, end)) = positional_plane_corners
@@ -4392,7 +4391,8 @@ fn opaque_spans(
     let mut cursor = 0;
     let mut remaining = tokens.iter();
     while remaining.len() != 0 {
-        let Some(token) = ctx.next_charged(&mut remaining, "creo surface opaque token spans")? else {
+        let Some(token) = ctx.next_charged(&mut remaining, "creo surface opaque token spans")?
+        else {
             break;
         };
         if cursor < token.offset {
@@ -4435,10 +4435,14 @@ fn scalar_frames(
         let mut end = start + 1;
         let mut candidates = end..tokens.len();
         while !candidates.is_empty() {
-            let Some(candidate) = ctx.next_charged(&mut candidates, "creo surface scalar frame adjacency")? else {
+            let Some(candidate) =
+                ctx.next_charged(&mut candidates, "creo surface scalar frame adjacency")?
+            else {
                 break;
             };
-            if tokens[candidate - 1].offset + tokens[candidate - 1].raw.len() != tokens[candidate].offset {
+            if tokens[candidate - 1].offset + tokens[candidate - 1].raw.len()
+                != tokens[candidate].offset
+            {
                 break;
             }
             end = candidate + 1;
@@ -4447,7 +4451,9 @@ fn scalar_frames(
         ctx.reserve_vec(&mut slots, end - start, "creo surface scalar frame slots")?;
         let mut selected = tokens[start..end].iter();
         while selected.len() != 0 {
-            let Some(token) = ctx.next_charged(&mut selected, "creo surface scalar frame token copies")? else {
+            let Some(token) =
+                ctx.next_charged(&mut selected, "creo surface scalar frame token copies")?
+            else {
                 break;
             };
             slots.push(SurfaceParameterScalar {
@@ -4516,14 +4522,15 @@ fn named_record_length(
         return Err(refusal.into());
     }
     if body.get(offset) != Some(&psb::token::NAMED_RECORD)
-        || !body.get(offset + 1).is_some_and(|field_type| *field_type <= 0x24)
+        || !body
+            .get(offset + 1)
+            .is_some_and(|field_type| *field_type <= 0x24)
     {
         return Ok(None);
     }
     let mut name = body[offset + 2..].iter().take(96).enumerate();
     while name.len() != 0 {
-        let Some((index, byte)) =
-            ctx.next_charged(&mut name, "creo surface name prefix scan")?
+        let Some((index, byte)) = ctx.next_charged(&mut name, "creo surface name prefix scan")?
         else {
             break;
         };
@@ -4561,8 +4568,7 @@ fn named_record_boundary(
                 continue;
             }
         }
-        let Some(cursor) =
-            ctx.next_charged(&mut positions, "creo surface named boundary scan")?
+        let Some(cursor) = ctx.next_charged(&mut positions, "creo surface named boundary scan")?
         else {
             break;
         };
@@ -4657,10 +4663,9 @@ fn inline_local_starts<'a, 'ctx>(
                 return Ok(Some(0));
             }
             while positions.len() != 0 {
-                let Some((offset, byte)) = ctx.next_charged(
-                    &mut positions,
-                    "creo inline local-system boundary visits",
-                )? else {
+                let Some((offset, byte)) =
+                    ctx.next_charged(&mut positions, "creo inline local-system boundary visits")?
+                else {
                     break;
                 };
                 if *byte == psb::token::COMPOUND_CLOSE {
@@ -4705,7 +4710,8 @@ fn inline_surface_body(
         let Some(terminal_close) = ctx.next_charged(
             &mut terminal_closes,
             "creo inline terminal-close candidate visits",
-        )? else {
+        )?
+        else {
             break;
         };
         if body.get(terminal_close) != Some(&psb::token::COMPOUND_CLOSE) {
@@ -5951,6 +5957,9 @@ fn parse_surface_contour_chain(
             *value = decoded;
             cursor = next;
         }
+        if cursor >= end {
+            return Ok(None);
+        }
         let Some(&close) = payload.get(cursor) else {
             return Ok(None);
         };
@@ -6548,7 +6557,8 @@ fn surface_body_compound_close(
         let Some(&byte) = ctx.next_charged(
             &mut body[cursor..].iter(),
             "creo surface compound-close scalar dispatch",
-        )? else {
+        )?
+        else {
             break;
         };
         if byte == psb::token::COMPOUND_CLOSE {
@@ -6579,10 +6589,9 @@ fn first_compound_close(
     let mut windows = body.windows(OUTLINE_PAIR_CLOSE.len()).enumerate();
     let mut separator_close = None;
     while windows.len() != 0 {
-        let Some((offset, window)) = ctx.next_charged(
-            &mut windows,
-            "creo outline pair close scan",
-        )? else {
+        let Some((offset, window)) =
+            ctx.next_charged(&mut windows, "creo outline pair close scan")?
+        else {
             break;
         };
         if window == OUTLINE_PAIR_CLOSE {
@@ -6626,7 +6635,8 @@ fn plane_local_system_compound_close(
     }
     let mut closes = start..end;
     while !closes.is_empty() {
-        let Some(close) = ctx.next_charged(&mut closes, "creo plane local-system close scan")? else {
+        let Some(close) = ctx.next_charged(&mut closes, "creo plane local-system close scan")?
+        else {
             break;
         };
         if payload.get(close) == Some(&psb::token::COMPOUND_CLOSE)
@@ -6666,7 +6676,8 @@ fn named_spline_scalar_slots(
     let mut continued_tuple = false;
     let mut positions = 0..body.len();
     while slots.len() < count && !positions.is_empty() {
-        let Some(start) = ctx.next_charged(&mut positions, "creo named spline scalar dispatch")? else {
+        let Some(start) = ctx.next_charged(&mut positions, "creo named spline scalar dispatch")?
+        else {
             break;
         };
         if matches!(name, "i_pnts" | "i_points")
@@ -6833,7 +6844,11 @@ fn counted_parameter_scalar_slots(
                         advance_counted_parameter_parse(ctx, parse, || {
                             let mut slots =
                                 counted_parameter_suffix(ctx, Some(0.0), &body[cursor..=cursor])?;
-                            ctx.reserve_vec(&mut slots, run - 1, "creo counted parameter zero-run slots")?;
+                            ctx.reserve_vec(
+                                &mut slots,
+                                run - 1,
+                                "creo counted parameter zero-run slots",
+                            )?;
                             slots.extend(std::iter::repeat_n((Some(0.0), Vec::new()), run - 1));
                             Ok(slots)
                         })?,
@@ -6860,11 +6875,9 @@ fn counted_parameter_scalar_slots(
                         ctx,
                         &mut states[next].0,
                         slots_used + 1,
-                        advance_counted_parameter_parse(
-                            ctx,
-                            parse,
-                            || counted_parameter_suffix(ctx, Some(value), &body[cursor..next]),
-                        )?,
+                        advance_counted_parameter_parse(ctx, parse, || {
+                            counted_parameter_suffix(ctx, Some(value), &body[cursor..next])
+                        })?,
                     )?;
                 }
                 continue;
@@ -6881,11 +6894,9 @@ fn counted_parameter_scalar_slots(
                     ctx,
                     &mut states[next].0,
                     slots_used + 1,
-                    advance_counted_parameter_parse(
-                        ctx,
-                        parse,
-                        || counted_parameter_suffix(ctx, value, &body[cursor..next]),
-                    )?,
+                    advance_counted_parameter_parse(ctx, parse, || {
+                        counted_parameter_suffix(ctx, value, &body[cursor..next])
+                    })?,
                 )?;
             }
         }
@@ -7479,7 +7490,8 @@ fn sequential_named_local_system_slots(
     ctx.reserve_vec(&mut slots, count, "creo local-system scalar slots")?;
     let mut positions = 0..body.len();
     while !positions.is_empty() && slots.len() < count {
-        let Some(cursor) = ctx.next_charged(&mut positions, "creo local-system scalar dispatch")? else {
+        let Some(cursor) = ctx.next_charged(&mut positions, "creo local-system scalar dispatch")?
+        else {
             break;
         };
         if body.get(cursor) == Some(&0xe7) {
@@ -7496,10 +7508,10 @@ fn sequential_named_local_system_slots(
             {
                 return Ok(None);
             }
-            slots.extend(ctx.admit_iter(
-                0..inherited_count,
-                "creo local-system inherited slots",
-            )?.map(|_| None));
+            slots.extend(
+                ctx.admit_iter(0..inherited_count, "creo local-system inherited slots")?
+                    .map(|_| None),
+            );
             positions.start = next;
             continue;
         }
@@ -7989,7 +8001,9 @@ fn plane_envelopes_for_rows(
     let mut rows = all_rows.iter().enumerate();
     let mut envelopes = Vec::new();
     while rows.len() != 0 {
-        let Some((index, row)) = ctx.next_charged(&mut rows, "creo positional plane envelope rows")? else {
+        let Some((index, row)) =
+            ctx.next_charged(&mut rows, "creo positional plane envelope rows")?
+        else {
             break;
         };
         if row.kind != SurfaceKind::Plane {
@@ -8098,7 +8112,8 @@ fn plane_envelopes_for_rows(
     }
     let mut rows = all_rows.iter().enumerate();
     while rows.len() != 0 {
-        let Some((index, row)) = ctx.next_charged(&mut rows, "creo named plane envelope rows")? else {
+        let Some((index, row)) = ctx.next_charged(&mut rows, "creo named plane envelope rows")?
+        else {
             break;
         };
         if row.kind != SurfaceKind::Plane {
@@ -8112,7 +8127,9 @@ fn plane_envelopes_for_rows(
             .enumerate();
         let mut prototype_offset = None;
         while prototypes.len() != 0 {
-            let Some((offset, window)) = ctx.next_charged(&mut prototypes, "creo named plane prototype boundary")? else {
+            let Some((offset, window)) =
+                ctx.next_charged(&mut prototypes, "creo named plane prototype boundary")?
+            else {
                 break;
             };
             if window == b"srf_prim_ptr(" {
@@ -8129,10 +8146,14 @@ fn plane_envelopes_for_rows(
                 })
                 .unwrap_or(prototype)
         });
-        let mut outlines = payload[row.offset..named_end].windows(NAMED_OUTLINE.len()).enumerate();
+        let mut outlines = payload[row.offset..named_end]
+            .windows(NAMED_OUTLINE.len())
+            .enumerate();
         let mut outline_offset = None;
         while outlines.len() != 0 {
-            let Some((offset, window)) = ctx.next_charged(&mut outlines, "creo named plane outline boundary")? else {
+            let Some((offset, window)) =
+                ctx.next_charged(&mut outlines, "creo named plane outline boundary")?
+            else {
                 break;
             };
             if window == NAMED_OUTLINE {
