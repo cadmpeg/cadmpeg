@@ -1163,9 +1163,13 @@ pub(crate) fn rational_pcurve_arc(
     drop(input_storage);
     match result {
         Ok(nurbs) => {
-            knot_storage.commit()?;
-            output_storage.commit()?;
-            Ok(Some(PcurveGeometry::Nurbs { nurbs }))
+            let mut owner = (
+                PcurveGeometry::Nurbs { nurbs },
+                knot_storage,
+                output_storage,
+            );
+            owner.1.absorb(&mut owner.2)?;
+            Ok(Some(owner.1.commit_value(owner.0)?))
         }
         Err(error) => crate::nurbs::note_refusal(ctx, Err(error), refusal, record),
     }
@@ -1198,16 +1202,16 @@ pub(crate) fn quintic_jet_pcurve(
         false,
     )?;
     match result {
-        Ok(nurbs) => {
-            jet_storage.commit()?;
-            Ok(Some(PcurveGeometry::Nurbs { nurbs }))
-        }
+        Ok(nurbs) => Ok(Some(
+            jet_storage.commit_value(PcurveGeometry::Nurbs { nurbs })?,
+        )),
         Err(error) => crate::nurbs::note_refusal(ctx, Err(error), refusal, record),
     }
 }
 
 #[cfg(test)]
 mod route_tests {
+    mod pcurve_owners;
     use crate::assemble::{
         circle_parameter_range_from_surface_branch, neutral_model_is_admissible, source_meta,
         unresolved_carrier_counts,

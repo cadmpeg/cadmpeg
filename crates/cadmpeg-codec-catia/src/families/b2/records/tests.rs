@@ -10,8 +10,8 @@ use crate::test_support::test_a5a8::a5_surface_stream;
 use crate::test_support::test_b2::{
     b2_adjacent_face_counted_owner_stream, b2_adjacent_face_owner_stream,
     b2_adjacent_secondary_face_owner_stream, b2_all_compact_owner_packet_stream, b2_circle_stream,
-    b2_class5b5c_stream, b2_cone_face_stream, b2_cone_stream, b2_construction_use_stream,
-    b2_counted_61_stream, b2_cylinder_stream, b2_edge_node_stream, b2_edge_parameter_stream,
+    b2_class5b5c_stream, b2_cone_face_stream, b2_cone_stream, b2_counted_61_stream,
+    b2_cylinder_stream, b2_edge_node_stream, b2_edge_parameter_stream,
     b2_edge_parameter_stream_for, b2_face_node_5f_stream, b2_group_stream,
     b2_implicit_axis_cylinder_stream, b2_line_profile_stream, b2_long_61_stream,
     b2_offset_support_stream, b2_owner_chart_stream, b2_owner_chart_stream_with_extended_bridge,
@@ -1322,10 +1322,14 @@ fn b2_class25_scalar_lane_and_descriptor_refuse_collection_limits() {
     for limit in [1, 2] {
         let descriptors = crate::test_support::with_collection_limit(limit, |ctx| {
             super::b2_class25_descriptors_from_records(ctx, &bytes, &records)
-        }).expect("fixed scalar lane needs only one descriptor slot");
+        })
+        .expect("fixed scalar lane needs only one descriptor slot");
         assert_eq!(descriptors.len(), 1);
         assert_eq!(descriptors[0].record_id, 0x1234);
-        assert_eq!(FiniteReal::raw_lane(descriptors[0].values.as_slice()), [3.0, 7.0]);
+        assert_eq!(
+            FiniteReal::raw_lane(descriptors[0].values.as_slice()),
+            [3.0, 7.0]
+        );
     }
     let result = crate::test_support::with_collection_limit(0, |ctx| {
         let result = super::b2_class25_descriptors_from_records(ctx, &bytes, &records);
@@ -1334,8 +1338,10 @@ fn b2_class25_scalar_lane_and_descriptor_refuse_collection_limits() {
         }
         result
     });
-    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b2_class25_descriptors"));
+    assert!(
+        matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b2_class25_descriptors")
+    );
 }
 
 #[test]
@@ -1345,13 +1351,22 @@ fn b2_class25_fixed_lane_preserves_arity_signed_zero_and_finiteness() {
         for value in &values {
             payload.extend_from_slice(&value.to_le_bytes());
         }
-        let mut bytes = vec![0xb2, 0x03, 0x18, u8::try_from(payload.len()).expect("fixed lane"), 0x05];
+        let mut bytes = vec![
+            0xb2,
+            0x03,
+            0x18,
+            u8::try_from(payload.len()).expect("fixed lane"),
+            0x05,
+        ];
         bytes.extend_from_slice(&payload);
         let records = crate::wire::records::consolidated_records(&bytes);
         let descriptors = crate::test_support::with_collection_limit(1, |ctx| {
             super::b2_class25_descriptors_from_records(ctx, &bytes, &records)
-        }).expect("one fixed descriptor");
-        let [descriptor] = descriptors.as_slice() else { panic!("one descriptor") };
+        })
+        .expect("one fixed descriptor");
+        let [descriptor] = descriptors.as_slice() else {
+            panic!("one descriptor")
+        };
         assert_eq!(descriptor.control, 0x0a);
         let lane = descriptor.values.as_slice();
         assert_eq!(lane.len(), values.len());
@@ -1362,7 +1377,8 @@ fn b2_class25_fixed_lane_preserves_arity_signed_zero_and_finiteness() {
             bytes[9..17].copy_from_slice(&invalid.to_le_bytes());
             let rejected = crate::test_support::with_collection_limit(0, |ctx| {
                 super::b2_class25_descriptors_from_records(ctx, &bytes, &records)
-            }).expect("nonfinite fixed lane rejects before descriptor allocation");
+            })
+            .expect("nonfinite fixed lane rejects before descriptor allocation");
             assert!(rejected.is_empty());
         }
     }
@@ -1908,42 +1924,6 @@ fn b2_offset_support_parser_reads_carrier_distance_and_domain() {
     );
 }
 
-#[test]
-fn b2_offset_support_parser_refuses_collection_limit() {
-    let bytes = b2_offset_support_stream();
-    let records = crate::wire::records::consolidated_records(&bytes);
-    let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        crate::families::b2::records::b2_offset_supports_from_records(ctx, &bytes, &records)
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_b2_offset_supports")
-    );
-    let service = crate::test_support::with_service_context(|ctx| {
-        crate::families::b2::records::b2_offset_supports_from_records(ctx, &bytes, &records)
-    })
-    .expect("service profile admits offset support");
-    assert_eq!(service.len(), 1);
-}
-
-#[test]
-fn b2_construction_offset_support_refuses_collection_limit() {
-    let bytes = b2_construction_use_stream();
-    let records = crate::wire::records::consolidated_records(&bytes);
-    let refused = crate::test_support::with_collection_limit(0, |ctx| {
-        crate::families::b2::records::b2_offset_supports_from_records(ctx, &bytes, &records)
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_b2_construction_offset_supports")
-    );
-    let service = crate::test_support::with_service_context(|ctx| {
-        crate::families::b2::records::b2_offset_supports_from_records(ctx, &bytes, &records)
-    })
-    .expect("service profile admits construction offset support");
-    assert_eq!(service.len(), 1);
-}
-
 fn b2_nurbs_curve_stream(weights: [f64; 4]) -> Vec<u8> {
     let knot_end = 41.693_759_535_8_f64;
     let mut payload = vec![0x0d, 0x09, 0x0c];
@@ -2002,6 +1982,5 @@ fn b2_spatial_circle_stream() -> Vec<u8> {
 
 mod carrier_records;
 mod indexed_wrappers;
-mod spatial_and_consolidated;
-
 mod range_admission;
+mod spatial_and_consolidated;

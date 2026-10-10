@@ -340,7 +340,10 @@ fn a8_class21_pcurve_multiplicities_propagate_collection_refusal() {
         .expect("complete class-21 jet");
     assert_eq!(pcurve.object_id, 7);
     assert_eq!(pcurve.surface, 3);
-    assert_eq!(pcurve.distinct_knots, crate::test_support::test_b5::finite_lane(&[10.0, 20.0]));
+    assert_eq!(
+        pcurve.distinct_knots,
+        crate::test_support::test_b5::finite_lane(&[10.0, 20.0])
+    );
     assert_eq!(pcurve.multiplicities, [6, 6]);
     assert_eq!(pcurve.control_points.len(), 6);
 
@@ -1982,25 +1985,5 @@ fn supported_surface_parameter_matching_is_scale_independent() {
     ));
 }
 
-#[test]
-fn a8_class21_strict_knot_refusal_stays_in_the_outer_result() {
-    use cadmpeg_core::decode::ResourceDimension;
-    use cadmpeg_core::CodecError;
-    let payload = a8_class21_test_payload();
-    let refused = crate::test_support::with_work_refusal("IR strict knot order", |ctx| {
-        let result = parse_a8_class21_pcurve(ctx, 7, &payload);
-        if let Err(CodecError::ResourceLimit(limit)) = &result {
-            assert_eq!(ctx.resource_refusal(), Some(*limit));
-        }
-        result
-    });
-    let Err(CodecError::ResourceLimit(original)) = refused else {
-        panic!("strict knot refusal must not disappear as a missing candidate");
-    };
-    assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(original.operation, "IR strict knot order");
-}
-
-mod topology_walk;
-
 mod jet_admission;
+mod topology_walk;

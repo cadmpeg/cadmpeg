@@ -33,3 +33,39 @@ fn b2_counted_owner_reference_lane_refuses_work() {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits && limit.operation == OPERATION));
 }
+
+#[test]
+fn b2_offset_support_parser_refuses_collection_limit() {
+    let bytes = crate::test_support::test_b2::b2_offset_support_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        crate::families::b2::records::b2_offset_supports_from_records(ctx, &bytes, &records)
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_b2_offset_supports")
+    );
+    let service = crate::test_support::with_service_context(|ctx| {
+        crate::families::b2::records::b2_offset_supports_from_records(ctx, &bytes, &records)
+    })
+    .expect("service profile admits offset support");
+    assert_eq!(service.len(), 1);
+}
+
+#[test]
+fn b2_construction_offset_support_refuses_collection_limit() {
+    let bytes = crate::test_support::test_b2::b2_construction_use_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        crate::families::b2::records::b2_offset_supports_from_records(ctx, &bytes, &records)
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_b2_construction_offset_supports")
+    );
+    let service = crate::test_support::with_service_context(|ctx| {
+        crate::families::b2::records::b2_offset_supports_from_records(ctx, &bytes, &records)
+    })
+    .expect("service profile admits construction offset support");
+    assert_eq!(service.len(), 1);
+}
