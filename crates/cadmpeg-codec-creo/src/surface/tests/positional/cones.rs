@@ -76,9 +76,9 @@ fn positional_cone_frame_requires_complete_support_apex_and_angle() {
     let angle = terminal_cone_half_angle_layout(&body).expect("terminal half-angle");
     let mut local_system_body = vec![0xf9, 0x04, 0x03];
     local_system_body.extend_from_slice(&body[..angle.start]);
-    let prototype = SurfacePrototypeRecord {
-        family: SurfacePrototypeFamily::Cone,
-        parameters: vec![
+    let prototype = SurfacePrototypeRecord::new_for_test(
+        SurfacePrototypeFamily::Cone,
+        vec![
             SurfaceNamedParameter {
                 name: "local_sys".to_string(),
                 value: SurfaceNamedValue::Opaque(local_system_body.clone()),
@@ -94,8 +94,8 @@ fn positional_cone_frame_requires_complete_support_apex_and_angle() {
                 value_offset: 0,
             },
         ],
-        offset: 0,
-    };
+        0,
+    );
     assert_eq!(prototype_cone_frame(&prototype), Some(frame));
 
     let mut incomplete = body.to_vec();

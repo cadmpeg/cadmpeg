@@ -374,15 +374,12 @@ fn selector_envelope_places_a_compact_y_cylinder() {
     let frame = decode(&build(&[])).expect("complete selector envelope");
     assert_eq!(decode(&build(&[5])), Some(frame));
     for placeholder_slots in [&[1][..], &[3, 5][..]] {
-        assert!(crate::decode::with_test_decode_ctx(|ctx| {
-            decode_inline_selector_cylinder_envelope(
-                ctx,
-                SurfaceKind::Cylinder,
-                &build(placeholder_slots),
-                &scalar::ScalarCache::default(),
-            )
-        })
-        .expect("admitted selector envelope")
+        assert!(crate::decode::with_test_decode_ctx(|ctx| decode_inline_selector_cylinder_envelope(
+            ctx,
+            SurfaceKind::Cylinder,
+            &build(placeholder_slots),
+            &scalar::ScalarCache::default(),
+        )).expect("selector fixture admission")
         .is_none());
     }
     assert_eq!(frame.frame().origin(), [0.0, 0.0, 0.0]);

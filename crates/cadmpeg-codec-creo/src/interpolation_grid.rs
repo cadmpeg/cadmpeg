@@ -17,11 +17,37 @@ fn finite_vectors(
     vectors: &[[f64; 3]],
     operation: &'static str,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let work = cadmpeg_core::decode::u64_from_index(vectors.len())
-        .checked_mul(3)
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-    ctx.charge_work(work, operation)?;
-    Ok(vectors.iter().flatten().all(|value| value.is_finite()))
+    ctx.all_by(
+        vectors,
+        |vector| Ok(vector.iter().all(|value| value.is_finite())),
+        operation,
+    )
+}
+
+fn valid_grid_points(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    points: &[[f64; 3]],
+    u_parameters: &[f64],
+    v_parameters: &[f64],
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let ordered_finite = |parameters: &[f64]| -> Result<bool, cadmpeg_core::CodecError> {
+        let mut previous = None;
+        ctx.all_by(
+            parameters,
+            |&value| {
+                let valid = value.is_finite() && previous.is_none_or(|previous| previous < value);
+                previous = Some(value);
+                Ok(valid)
+            },
+            "creo interpolation grid parameter validation",
+        )
+    };
+    Ok(u_parameters.len() >= 2
+        && v_parameters.len() >= 2
+        && Some(points.len()) == u_parameters.len().checked_mul(v_parameters.len())
+        && ordered_finite(u_parameters)?
+        && ordered_finite(v_parameters)?
+        && finite_vectors(ctx, points, "creo interpolation grid vector validation")?)
 }
 
 impl InterpolationGrid {
@@ -38,25 +64,9 @@ impl InterpolationGrid {
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
         let u_count = u_parameters.len();
         let v_count = v_parameters.len();
-        let ordered_finite = |parameters: &[f64]| -> Result<bool, cadmpeg_core::CodecError> {
-            let work = cadmpeg_core::decode::u64_from_index(parameters.len())
-                .checked_mul(3)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "creo interpolation grid parameter validation",
-                        u64::MAX,
-                        u64::MAX,
-                    )
-                })?;
-            ctx.charge_work(work, "creo interpolation grid parameter validation")?;
-            Ok(parameters.iter().all(|value| value.is_finite())
-                && parameters.windows(2).all(|pair| pair[0] < pair[1]))
-        };
-        if !(u_count >= 2
-            && v_count >= 2
-            && ordered_finite(&u_parameters)?
-            && ordered_finite(&v_parameters)?
-            && finite_vectors(ctx, &points, "creo interpolation grid vector validation")?
+        if !(Some(u_derivatives.len()) == v_count.checked_mul(2)
+            && Some(v_derivatives.len()) == u_count.checked_mul(2)
+            && valid_grid_points(ctx, &points, &u_parameters, &v_parameters)?
             && finite_vectors(
                 ctx,
                 &u_derivatives,
@@ -99,15 +109,13 @@ impl InterpolationGrid {
         let Some(point_count) = u_count.checked_mul(v_count) else {
             return Ok(None);
         };
-        if !(u_count >= 2
-            && v_count >= 2
-            && points.len() == point_count
+        if !(u_tangents.len() == point_count
+            && v_tangents.len() == point_count
+            && mixed_derivatives.len() == point_count
+            && valid_grid_points(ctx, &points, &u_parameters, &v_parameters)?
             && finite_vectors(ctx, u_tangents, "creo full tangent grid validation")?
             && finite_vectors(ctx, v_tangents, "creo full tangent grid validation")?
-            && finite_vectors(ctx, mixed_derivatives, "creo full tangent grid validation")?
-            && u_tangents.len() == point_count
-            && v_tangents.len() == point_count
-            && mixed_derivatives.len() == point_count)
+            && finite_vectors(ctx, mixed_derivatives, "creo full tangent grid validation")?)
         {
             return Ok(None);
         }
@@ -125,23 +133,11 @@ impl InterpolationGrid {
             u_derivative_count,
             "creo legacy spline u derivatives",
         )?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(u_derivative_count)
-                .checked_mul(3)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "creo tangent grid boundary projection",
-                        u64::MAX,
-                        u64::MAX,
-                    )
-                })?,
-            "creo tangent grid boundary projection",
-        )?;
-        u_derivatives.extend(
-            (0..v_count)
-                .map(|v| u_tangents[v])
-                .chain((0..v_count).map(|v| u_tangents[upper_u + v])),
-        );
+        for base in [0, upper_u] {
+            for coordinate in ctx.admit_iter(0..v_count, "creo tangent grid boundary projection")? {
+                u_derivatives.push(u_tangents[base + coordinate]);
+            }
+        }
         let Some(v_derivative_count) = u_count.checked_mul(2) else {
             return Ok(None);
         };
@@ -151,39 +147,55 @@ impl InterpolationGrid {
             v_derivative_count,
             "creo legacy spline v derivatives",
         )?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(v_derivative_count)
-                .checked_mul(3)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "creo tangent grid boundary projection",
-                        u64::MAX,
-                        u64::MAX,
-                    )
-                })?,
-            "creo tangent grid boundary projection",
-        )?;
-        v_derivatives.extend(
-            (0..u_count)
-                .map(|u| v_tangents[u * v_count])
-                .chain((0..u_count).map(|u| v_tangents[u * v_count + upper_v])),
-        );
-        ctx.charge_work(12, "creo tangent grid corner projection")?;
+        for base in [0, upper_v] {
+            for coordinate in ctx.admit_iter(0..u_count, "creo tangent grid boundary projection")? {
+                v_derivatives.push(v_tangents[coordinate * v_count + base]);
+            }
+        }
         let mixed_derivatives = [
             mixed_derivatives[0],
             mixed_derivatives[upper_v],
             mixed_derivatives[upper_u],
             mixed_derivatives[upper_u + upper_v],
         ];
-        Self::try_new(
-            ctx,
+        Ok(Some(Self {
             points,
             u_parameters,
             v_parameters,
             u_derivatives,
             v_derivatives,
             mixed_derivatives,
-        )
+        }))
+    }
+
+    /// Copy a checked scratch grid into retained decode storage.
+    pub(crate) fn copy_retained(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(Self {
+            points: ctx.collect_retained_vec(
+                self.points.iter().copied(),
+                "creo interpolation retained points",
+            )?,
+            u_parameters: ctx.collect_retained_vec(
+                self.u_parameters.iter().copied(),
+                "creo interpolation retained u parameters",
+            )?,
+            v_parameters: ctx.collect_retained_vec(
+                self.v_parameters.iter().copied(),
+                "creo interpolation retained v parameters",
+            )?,
+            u_derivatives: ctx.collect_retained_vec(
+                self.u_derivatives.iter().copied(),
+                "creo interpolation retained u derivatives",
+            )?,
+            v_derivatives: ctx.collect_retained_vec(
+                self.v_derivatives.iter().copied(),
+                "creo interpolation retained v derivatives",
+            )?,
+            mixed_derivatives: self.mixed_derivatives,
+        })
     }
 
     /// Interpolation points in u-major order.
@@ -291,11 +303,17 @@ mod tests {
 
     #[test]
     fn legacy_spline_u_derivatives_refuse_collection_limit() {
-        assert!(derivative_limit_result(8)
+        assert!(
+            derivative_limit_result(crate::test_support::allocation_limit_at(
+                ResourceDimension::CollectionItems,
+                None,
+                derivative_limit_result
+            ))
             .expect("service admits derivatives")
-            .is_some());
+            .is_some()
+        );
         assert!(matches!(
-            derivative_limit_result(3),
+            derivative_limit_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo legacy spline u derivatives"), derivative_limit_result)),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::CollectionItems
                     && limit.operation == "creo legacy spline u derivatives"
@@ -305,7 +323,7 @@ mod tests {
     #[test]
     fn legacy_spline_v_derivatives_refuse_collection_limit() {
         assert!(matches!(
-            derivative_limit_result(7),
+            derivative_limit_result(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo legacy spline v derivatives"), derivative_limit_result)),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::CollectionItems
                     && limit.operation == "creo legacy spline v derivatives"
@@ -496,7 +514,6 @@ mod tests {
             &[
                 "creo full tangent grid validation",
                 "creo tangent grid boundary projection",
-                "creo tangent grid corner projection",
                 "creo interpolation grid parameter validation",
                 "creo interpolation grid vector validation",
             ],

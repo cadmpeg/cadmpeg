@@ -271,7 +271,7 @@ pub(in super::super) fn transfer_positional_tori(
         // Class-913 type-26 rows can be rolling-radius samples from the same
         // generated round family. A positional torus frame is a neutral
         // carrier only after the complete family proves one constant radius.
-        let inline_non_plane = record.has_inline_non_plane_envelope()
+        let inline_non_plane = record.has_inline_non_plane_envelope_checked(ctx)?
             || record.has_inline_non_plane_local_system_suffix(ctx)?;
         if row.kind == crate::surface::SurfaceKind::TorusOrSphere
             && feature_schema_class(ctx, scan, row.feature_id)? == Some(SchemaClass::Round)

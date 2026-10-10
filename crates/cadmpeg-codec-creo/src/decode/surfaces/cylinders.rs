@@ -1360,7 +1360,7 @@ pub(in super::super) fn transfer_positional_cylinders(
             continue;
         };
         let feature_class = feature_schema_class(ctx, scan, row.feature_id)?;
-        let inline_non_plane = record.has_inline_non_plane_envelope()
+        let inline_non_plane = record.has_inline_non_plane_envelope_checked(ctx)?
             || record.has_inline_non_plane_local_system_suffix(ctx)?;
         let selector_corner_interval = record.selector_corner_interval_cylinder_frame().is_some();
         let axial_interval_corner_candidates = if feature_class == Some(SchemaClass::Round)

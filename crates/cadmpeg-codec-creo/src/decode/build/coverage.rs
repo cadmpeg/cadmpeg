@@ -981,7 +981,7 @@ pub(super) fn surface_parameter_coverage(
             continue;
         };
         coverage.extrusion_directions += usize::from(record.extrusion_direction().is_some());
-        coverage.radius_overrides += usize::from(record.torus_radius_overrides().is_some());
+        coverage.radius_overrides += usize::from(record.torus_radius_overrides_checked(ctx)?.is_some());
         coverage.replayed_minor_radii = coverage
             .replayed_minor_radii
             .checked_add(usize::from(
@@ -994,7 +994,7 @@ pub(super) fn surface_parameter_coverage(
                     u64::MAX,
                 )
             })?;
-        coverage.outline_extents += usize::from(record.torus_outline_frame().is_some());
+        coverage.outline_extents += usize::from(record.torus_outline_frame_checked(ctx)?.is_some());
         coverage.five_coordinate_envelopes +=
             usize::from(record.type26_five_coordinate_envelope().is_some());
         coverage.split_coordinate_envelopes +=

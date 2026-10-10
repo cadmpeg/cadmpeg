@@ -11,13 +11,14 @@ fn fixed_short_loop_prototype_and_frame_routes_are_free_and_keep_original_refusa
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut storage = ctx.reserve_scoped(0, "loop test scratch").expect("scratch");
     assert_eq!(super::super::find_named_field(&ctx, &data, 0, data.len(), b"lo_id")
         .expect("no complete field window"), None);
     assert_eq!(super::super::prototype_close(&ctx, &data, 0, data.len(), 42)
         .expect("no complete close window"), None);
     assert_eq!(super::super::named_prototype_end(&ctx, &data, 0, data.len(), 42)
         .expect("no complete prototype"), None);
-    assert_eq!(super::super::parse_frame(&ctx, &data, 0, data.len())
+    assert_eq!(super::super::parse_frame(&ctx, &mut storage, &data, 0, data.len())
         .expect("no frame header"), None);
     assert_eq!(super::super::row_end(&ctx, &data, data.len(), data.len())
         .expect("no row token"), None);
@@ -30,7 +31,7 @@ fn fixed_short_loop_prototype_and_frame_routes_are_free_and_keep_original_refusa
         Err(CodecError::ResourceLimit(actual)) if actual == original));
     assert!(matches!(super::super::named_prototype_end(&ctx, &data, 0, data.len(), 42),
         Err(CodecError::ResourceLimit(actual)) if actual == original));
-    assert!(matches!(super::super::parse_frame(&ctx, &data, 0, data.len()),
+    assert!(matches!(super::super::parse_frame(&ctx, &mut storage, &data, 0, data.len()),
         Err(CodecError::ResourceLimit(actual)) if actual == original));
     assert!(matches!(super::super::row_end(&ctx, &data, data.len(), data.len()),
         Err(CodecError::ResourceLimit(actual)) if actual == original));

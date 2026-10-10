@@ -4,9 +4,9 @@ use crate::surface::{
 };
 
 fn record(values: [f64; 12]) -> SurfacePrototypeRecord {
-    SurfacePrototypeRecord {
-        family: SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
-        parameters: vec![SurfaceNamedParameter {
+    SurfacePrototypeRecord::new_for_test(
+SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
+vec![SurfaceNamedParameter {
             name: "local_sys".to_string(),
             value: SurfaceNamedValue::ScalarArray({
                 let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
@@ -20,16 +20,16 @@ fn record(values: [f64; 12]) -> SurfacePrototypeRecord {
             offset: 0,
             value_offset: 0,
         }],
-        offset: 0,
-    }
+0,
+)
 }
 
 fn tabulated_cylinder_record(values: Vec<Option<f64>>) -> SurfacePrototypeRecord {
-    SurfacePrototypeRecord {
-        family: SurfacePrototypeFamily::Extrusion(
+    SurfacePrototypeRecord::new_for_test(
+SurfacePrototypeFamily::Extrusion(
             crate::surface::ExtrusionLabel::TabulatedCylinder,
         ),
-        parameters: vec![SurfaceNamedParameter {
+vec![SurfaceNamedParameter {
             name: "local_sys".to_string(),
             value: SurfaceNamedValue::ScalarArray({
                 let mut array = crate::surface::arrays::DimensionedScalars::empty(4, 3)
@@ -41,8 +41,8 @@ fn tabulated_cylinder_record(values: Vec<Option<f64>>) -> SurfacePrototypeRecord
             offset: 0,
             value_offset: 0,
         }],
-        offset: 0,
-    }
+0,
+)
 }
 
 #[test]

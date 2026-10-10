@@ -2,15 +2,15 @@
 
 use super::*;
 use super::super::{LegacyGeometryIndex, LegacyGeometryScan};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 #[test]
 fn empty_legacy_geometry_routes_are_free_and_keep_original_refusal() {
     let persistence = Persistence::default();
     let object_ids = BTreeMap::new();
-    let children = BTreeMap::new();
-    let integer_fields = BTreeMap::new();
-    let real_fields = BTreeMap::new();
+    let children = HashMap::new();
+    let integer_fields = HashMap::new();
+    let real_fields = HashMap::new();
     let index = LegacyGeometryIndex {
         objects: &[], object_ids: &object_ids, children: &children,
         integer_fields: &integer_fields, real_fields: &real_fields,
@@ -28,7 +28,7 @@ fn empty_legacy_geometry_routes_are_free_and_keep_original_refusal() {
         let results = [
             super::super::scan(&ctx, &persistence).map(|v| v == LegacyGeometryScan::default()),
             super::super::namespace(&ctx, &index, "Sld_VisGeom", "active_geom",
-                LegacySurfaceNamespace::Visible).map(|v| v.0.is_empty() && v.1.is_empty()),
+                LegacySurfaceNamespace::Visible, &mut Vec::new()).map(|v| v.is_empty()),
             super::super::curve_namespace(&ctx, &[], &object_ids, &integer_fields, &real_fields)
                 .map(|v| v.0.is_empty() && v.1.is_empty()),
         ];
@@ -49,10 +49,8 @@ fn singleton_legacy_surface_namespace_uses_no_ordering_scratch() {
         crate::decode::with_test_decode_ctx(|ctx| {
             let object_ids = super::super::object_id_index(ctx, &persistence.objects)?;
             let children = super::super::child_index(ctx, &persistence.objects)?;
-            let mut integer_fields = BTreeMap::new();
-            let mut real_fields = BTreeMap::new();
-            crate::legacy::value_index(ctx, &persistence.integer_values.rows, &mut integer_fields)?;
-            crate::legacy::value_index(ctx, &persistence.real_values.rows, &mut real_fields)?;
+            let integer_fields = super::super::geometry_value_index(ctx, &persistence.integer_values.rows)?;
+            let real_fields = super::super::geometry_value_index(ctx, &persistence.real_values.rows)?;
             Ok::<_, CodecError>((object_ids, children, integer_fields, real_fields))
         }).expect("fixture indexes");
     let index = LegacyGeometryIndex {
@@ -65,8 +63,9 @@ fn singleton_legacy_surface_namespace_uses_no_ordering_scratch() {
     // One element reference, one row and one carrier. No sort index slots.
     policy.limits.max_collection_items = 3;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let (rows, carriers) = super::super::namespace(&ctx, &index,
-        "Sld_VisGeom", "active_geom", LegacySurfaceNamespace::Visible)
+    let mut carriers = Vec::new();
+    let rows = super::super::namespace(&ctx, &index,
+        "Sld_VisGeom", "active_geom", LegacySurfaceNamespace::Visible, &mut carriers)
         .expect("one surface needs no ordering scratch");
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].id, 42);
@@ -82,7 +81,7 @@ fn singleton_legacy_surface_namespace_uses_no_ordering_scratch() {
     assert_eq!((original.dimension, original.used, original.additional),
         (ResourceDimension::MaterializedBytes, 0, 1));
     assert!(matches!(super::super::namespace(&ctx, &index,
-        "Sld_VisGeom", "active_geom", LegacySurfaceNamespace::Visible),
+        "Sld_VisGeom", "active_geom", LegacySurfaceNamespace::Visible, &mut Vec::new()),
         Err(CodecError::ResourceLimit(actual)) if actual == original));
 }
 
@@ -99,10 +98,8 @@ fn singleton_legacy_curve_namespace_uses_no_ordering_or_dedup_scratch() {
     elements.truncate(1);
     let (object_ids, integer_fields, real_fields) = crate::decode::with_test_decode_ctx(|ctx| {
         let object_ids = super::super::object_id_index(ctx, &persistence.objects)?;
-        let mut integer_fields = BTreeMap::new();
-        let mut real_fields = BTreeMap::new();
-        crate::legacy::value_index(ctx, &persistence.integer_values.rows, &mut integer_fields)?;
-        crate::legacy::value_index(ctx, &persistence.real_values.rows, &mut real_fields)?;
+        let integer_fields = super::super::geometry_value_index(ctx, &persistence.integer_values.rows)?;
+        let real_fields = super::super::geometry_value_index(ctx, &persistence.real_values.rows)?;
         Ok::<_, CodecError>((object_ids, integer_fields, real_fields))
     }).expect("fixture indexes");
     let arena = DecodeArena::new();

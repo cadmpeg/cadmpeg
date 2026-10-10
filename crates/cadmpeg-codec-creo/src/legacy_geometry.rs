@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometry records owned by the legacy ASCII persistence object graph.
 
-use crate::legacy::value_index;
 use cadmpeg_core::decode::{index_from_u32, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::PositiveLength;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::curve::{CurveTopologyRow, PcurveEndpoints};
 use crate::legacy::{self, NumericPayload, ObjectPayload, ObjectRecord, Persistence, RealRecord};
@@ -118,9 +117,80 @@ pub(crate) struct LegacyGeometryScan {
 }
 
 type ObjectIdIndex<'a> = BTreeMap<String, &'a ObjectRecord>;
-type ChildIndex<'a> = BTreeMap<usize, Vec<&'a ObjectRecord>>;
-type IntegerFieldIndex<'a> = BTreeMap<(usize, &'a str), Vec<&'a legacy::IntegerRecord>>;
-type RealFieldIndex<'a> = BTreeMap<(usize, &'a str), Vec<&'a RealRecord>>;
+type ChildIndex<'a> = HashMap<usize, UniqueRecord<&'a ObjectRecord>>;
+type GeometryValueIndex<'a, K> = HashMap<(usize, usize), UniqueRecord<&'a legacy::ValueRecord<K>>>;
+type IntegerFieldIndex<'a> = GeometryValueIndex<'a, legacy::IntegerCode>;
+type RealFieldIndex<'a> = GeometryValueIndex<'a, legacy::RealCode>;
+
+enum UniqueRecord<T> {
+    One(T),
+    Many,
+}
+
+impl<T> UniqueRecord<T> {
+    fn sole(&self) -> Option<&T> {
+        match self {
+            Self::One(value) => Some(value),
+            Self::Many => None,
+        }
+    }
+}
+
+// Only these fixed field names participate in geometry joins.
+const GEOMETRY_FIELDS: &[&str] = &[
+    "geom_type",
+    "feat_id",
+    "geom_id",
+    "boundary_type",
+    "orient",
+    "next_geom_ptr",
+    "crv_id",
+    "type",
+    "crv_pnt_dir",
+    "crv_hdr_geom_ptr[0]",
+    "crv_hdr_geom_ptr[1]",
+    "next_crv_hdr_ptr[0]",
+    "next_crv_hdr_ptr[1]",
+    "crv_pnt_arr",
+    "local_sys",
+    "radius",
+    "half_angle",
+    "radius1",
+    "radius2",
+    "i_points",
+    "u_params",
+    "v_params",
+    "u_tangts",
+    "v_tangts",
+    "uv_deriv",
+];
+
+fn geometry_field(name: &str) -> Option<usize> {
+    GEOMETRY_FIELDS
+        .iter()
+        .position(|candidate| *candidate == name)
+}
+
+fn geometry_value_index<'a, K: legacy::LegacyCode>(
+    ctx: &DecodeContext<'_>,
+    records: &'a [legacy::ValueRecord<K>],
+) -> Result<GeometryValueIndex<'a, K>, CodecError> {
+    let mut index = HashMap::new();
+    for record in ctx.admit_iter(records, "creo legacy geometry value rows")? {
+        let (Some(parent), Some(field)) = (record.parent, geometry_field(&record.name)) else {
+            continue;
+        };
+        match ctx.entry_hash_map(&mut index, (parent, field), "creo legacy value index nodes")? {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(UniqueRecord::One(record));
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                entry.insert(UniqueRecord::Many);
+            }
+        }
+    }
+    Ok(index)
+}
 
 /// Decode the surface portions of one legacy persistence object graph.
 pub(crate) fn scan(
@@ -130,12 +200,13 @@ pub(crate) fn scan(
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
-    let object_ids = object_id_index(ctx, &persistence.objects)?;
-    let children = child_index(ctx, &persistence.objects)?;
-    let mut integer_fields = BTreeMap::new();
-    value_index(ctx, &persistence.integer_values.rows, &mut integer_fields)?;
-    let mut real_fields = BTreeMap::new();
-    value_index(ctx, &persistence.real_values.rows, &mut real_fields)?;
+    let mut scratch = ctx.reserve_scoped(0, "creo legacy geometry scratch")?;
+    let object_ids = scratch.with_storage(|| object_id_index(ctx, &persistence.objects))?;
+    let children = scratch.with_storage(|| child_index(ctx, &persistence.objects))?;
+    let integer_fields =
+        scratch.with_storage(|| geometry_value_index(ctx, &persistence.integer_values.rows))?;
+    let real_fields =
+        scratch.with_storage(|| geometry_value_index(ctx, &persistence.real_values.rows))?;
     let index = LegacyGeometryIndex {
         objects: &persistence.objects,
         object_ids: &object_ids,
@@ -143,33 +214,29 @@ pub(crate) fn scan(
         integer_fields: &integer_fields,
         real_fields: &real_fields,
     };
-    let (rows, mut carriers) = namespace(
+    let mut carriers = Vec::new();
+    let rows = namespace(
         ctx,
         &index,
         "Sld_VisGeom",
         "active_geom",
         LegacySurfaceNamespace::Visible,
+        &mut carriers,
     )?;
-    let (nonvisible_rows, mut nonvisible_carriers) = namespace(
+    let nonvisible_rows = namespace(
         ctx,
         &index,
         "Sld_NonVisGeom",
         "inactive_geom",
         LegacySurfaceNamespace::NonVisible,
-    )?;
-    ctx.append_vec(
         &mut carriers,
-        &mut nonvisible_carriers,
-        "creo legacy nonvisible carrier aggregation",
     )?;
-    if carriers.len() > 1 {
-        ctx.stable_sort_by(
-            carriers.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
-            "creo scan carriers ordering",
-        )?;
-    }
+    ctx.stable_sort_by(
+        carriers.as_mut_slice(),
+        |value| &value.offset,
+        Ord::cmp,
+        "creo scan carriers ordering",
+    )?;
     let (topology_rows, pcurves) = curve_namespace(
         ctx,
         &persistence.objects,
@@ -196,25 +263,29 @@ fn curve_namespace(
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
-    let Some(elements) = geometry_array_elements(
-        ctx,
-        objects,
-        object_ids,
-        "Sld_VisGeom",
-        "active_geom",
-        "crv_array",
-    )?
+    let mut elements_scope = ctx.reserve_scoped(0, "creo legacy geometry element scratch")?;
+    let Some(elements) = elements_scope.with_storage(|| {
+        geometry_array_elements(
+            ctx,
+            objects,
+            object_ids,
+            "Sld_VisGeom",
+            "active_geom",
+            "crv_array",
+        )
+    })?
     else {
         return Ok((Vec::new(), Vec::new()));
     };
     let mut topology_rows = Vec::new();
     let mut pcurves = Vec::new();
-    let mut elements = elements.into_iter();
-    while elements.len() != 0 {
-        let Some(curve_object) = ctx.next_charged(&mut elements, "creo legacy curve element traversal")? else {
-            break;
+    for curve_object in ctx.admit_iter(elements, "creo legacy curve rows")? {
+        let Some(directions) =
+            integer_pair(ctx, integer_fields, curve_object.offset, "crv_pnt_dir")?
+        else {
+            continue;
         };
-        let Some(row) = curve_topology_row(ctx, curve_object, integer_fields)? else {
+        let Some(row) = curve_topology_row(curve_object, integer_fields, directions) else {
             continue;
         };
         if let Some(pcurve) = curve_pcurve(ctx, curve_object, &row, real_fields)? {
@@ -224,32 +295,28 @@ fn curve_namespace(
         ctx.reserve_vec(&mut topology_rows, 1, "creo legacy topology rows")?;
         topology_rows.push(row);
     }
-    if topology_rows.len() > 1 {
-        ctx.stable_sort_by(
-            topology_rows.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
-            "creo curve namespace topology rows ordering",
-        )?;
-        ctx.dedup_by_key(
-            &mut topology_rows,
-            |row| Ok(row.offset),
-            "creo curve namespace topology_rows deduplication",
-        )?;
-    }
-    if pcurves.len() > 1 {
-        ctx.stable_sort_by(
-            pcurves.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
-            "creo curve namespace pcurves ordering",
-        )?;
-        ctx.dedup_by_key(
-            &mut pcurves,
-            |pcurve| Ok(pcurve.offset),
-            "creo curve namespace pcurves deduplication",
-        )?;
-    }
+    ctx.stable_sort_by(
+        topology_rows.as_mut_slice(),
+        |value| &value.offset,
+        Ord::cmp,
+        "creo curve namespace topology rows ordering",
+    )?;
+    ctx.dedup_by_key(
+        &mut topology_rows,
+        |row| Ok(row.offset),
+        "creo curve namespace topology_rows deduplication",
+    )?;
+    ctx.stable_sort_by(
+        pcurves.as_mut_slice(),
+        |value| &value.offset,
+        Ord::cmp,
+        "creo curve namespace pcurves ordering",
+    )?;
+    ctx.dedup_by_key(
+        &mut pcurves,
+        |pcurve| Ok(pcurve.offset),
+        "creo curve namespace pcurves deduplication",
+    )?;
     Ok((topology_rows, pcurves))
 }
 
@@ -262,26 +329,33 @@ fn geometry_array_elements<'a>(
     array_name: &str,
 ) -> Result<Option<Vec<&'a ObjectRecord>>, CodecError> {
     let Some(root) = crate::decode::uniqueness::exactly_one_by(
-        ctx, objects,
+        ctx,
+        objects,
         |object| Ok(object.name == root_name && object.parent.is_none()),
-        "creo legacy geometry root selection",
-    )? else { return Ok(None); };
+        "creo legacy geometry root search",
+    )?
+    else {
+        return Ok(None);
+    };
     let Some(branch) = crate::decode::uniqueness::exactly_one_by(
-        ctx, objects,
+        ctx,
+        objects,
         |object| Ok(object.parent == Some(root.offset) && object.name == branch_name),
-        "creo legacy geometry branch selection",
-    )? else { return Ok(None); };
-
+        "creo legacy geometry branch search",
+    )?
+    else {
+        return Ok(None);
+    };
     let Some(array) = crate::decode::uniqueness::exactly_one_by(
         ctx,
         objects,
         |object| {
             Ok(object.parent == Some(branch.offset)
                 && object.name == array_name
-                && matches!(&object.payload, ObjectPayload::Array { .. })
+                && matches!(object.payload, ObjectPayload::Array { .. })
                 && object.payload.is_complete(ctx)?)
         },
-        "creo legacy geometry complete array selection",
+        "creo legacy geometry array search",
     )?
     else {
         return Ok(None);
@@ -289,20 +363,24 @@ fn geometry_array_elements<'a>(
     let ObjectPayload::Array { elements, .. } = &array.payload else {
         return Ok(None);
     };
-
     let mut rows = Vec::new();
     ctx.reserve_vec(
         &mut rows,
         elements.len(),
         "creo legacy geometry array elements",
     )?;
-    let mut elements = elements.iter();
-    while elements.len() != 0 {
-        let Some(element_id) = ctx.next_charged(&mut elements, "creo legacy array element traversal")? else {
-            break;
-        };
-        let Some(element) = ctx.get_btree_map(object_ids, element_id.as_str(),
-            "creo legacy array element lookup")?.copied() else {
+    let mut ids = elements.iter();
+    while let Some(element_id) =
+        ctx.next_charged(&mut ids, "creo legacy geometry element search")?
+    {
+        let Some(element) = ctx
+            .get_btree_map(
+                object_ids,
+                element_id.as_str(),
+                "creo legacy object ID lookup",
+            )?
+            .copied()
+        else {
             return Ok(None);
         };
         if element.parent != Some(array.offset) || element.name != array_name {
@@ -314,41 +392,56 @@ fn geometry_array_elements<'a>(
 }
 
 fn curve_topology_row(
-    ctx: &DecodeContext<'_>,
     curve_object: &ObjectRecord,
     integers: &IntegerFieldIndex<'_>,
-) -> Result<Option<CurveTopologyRow>, CodecError> {
-    let Some(id_record) = integer_record(ctx, integers, curve_object.offset, "crv_id")? else {
-        return Ok(None);
-    };
-    let NumericPayload::Scalar { value: id } = &id_record.payload else { return Ok(None); };
-    let Ok(id) = u32::try_from(*id) else { return Ok(None); };
-    let Some(type_byte) = integer_field(ctx, integers, curve_object.offset, "type")?
-        .and_then(|value| u8::try_from(value).ok()) else { return Ok(None); };
-    let Some(feature_id) = integer_field(ctx, integers, curve_object.offset, "feat_id")?
-        .and_then(|value| u32::try_from(value).ok()) else { return Ok(None); };
-    let Some([first_direction, second_direction]) =
-        integer_pair(ctx, integers, curve_object.offset, "crv_pnt_dir")?
-        else { return Ok(None); };
-    let (Some(first_direction), Some(second_direction)) =
-        (legacy_direction(first_direction), legacy_direction(second_direction))
-        else { return Ok(None); };
-    let mut faces = [0; 2];
-    for (face, name) in faces.iter_mut().zip(["crv_hdr_geom_ptr[0]", "crv_hdr_geom_ptr[1]"]) {
-        let Some(value) = integer_field(ctx, integers, curve_object.offset, name)?
-            .and_then(|value| u32::try_from(value).ok()) else { return Ok(None); };
-        *face = value;
-    }
-    let mut next_edges = [0; 2];
-    for (edge, name) in next_edges.iter_mut().zip(["next_crv_hdr_ptr[0]", "next_crv_hdr_ptr[1]"]) {
-        let Some(value) = integer_field(ctx, integers, curve_object.offset, name)?
-            .and_then(|value| u32::try_from(value).ok()) else { return Ok(None); };
-        *edge = value;
-    }
-    Ok(Some(CurveTopologyRow {
-        id, type_byte, feature_id, directions: [first_direction, second_direction],
-        faces: faces.map(std::num::NonZeroU32::new), next_edges, offset: id_record.offset,
-    }))
+    directions: [i32; 2],
+) -> Option<CurveTopologyRow> {
+    let id = u32::try_from(integer_field(integers, curve_object.offset, "crv_id")?).ok()?;
+    let type_byte = u8::try_from(integer_field(integers, curve_object.offset, "type")?).ok()?;
+    let feature_id =
+        u32::try_from(integer_field(integers, curve_object.offset, "feat_id")?).ok()?;
+    let [first_direction, second_direction] = directions;
+    let directions = [
+        legacy_direction(first_direction)?,
+        legacy_direction(second_direction)?,
+    ];
+    let faces = [
+        u32::try_from(integer_field(
+            integers,
+            curve_object.offset,
+            "crv_hdr_geom_ptr[0]",
+        )?)
+        .ok()?,
+        u32::try_from(integer_field(
+            integers,
+            curve_object.offset,
+            "crv_hdr_geom_ptr[1]",
+        )?)
+        .ok()?,
+    ];
+    let next_edges = [
+        u32::try_from(integer_field(
+            integers,
+            curve_object.offset,
+            "next_crv_hdr_ptr[0]",
+        )?)
+        .ok()?,
+        u32::try_from(integer_field(
+            integers,
+            curve_object.offset,
+            "next_crv_hdr_ptr[1]",
+        )?)
+        .ok()?,
+    ];
+    Some(CurveTopologyRow {
+        id,
+        type_byte,
+        feature_id,
+        directions,
+        faces: faces.map(std::num::NonZeroU32::new),
+        next_edges,
+        offset: integer_record(integers, curve_object.offset, "crv_id")?.offset,
+    })
 }
 
 fn curve_pcurve(
@@ -357,37 +450,51 @@ fn curve_pcurve(
     topology: &CurveTopologyRow,
     reals: &RealFieldIndex<'_>,
 ) -> Result<Option<PcurveEndpoints>, CodecError> {
-    let Some(record) = real_record(ctx, reals, curve_object.offset, "crv_pnt_arr")? else {
+    let Some(record) = real_record(reals, curve_object.offset, "crv_pnt_arr") else {
         return Ok(None);
     };
-    let NumericPayload::Array(array) = &record.payload else { return Ok(None); };
-    let [sample_count, lane_width] = array.dimensions() else { return Ok(None); };
-    if *lane_width != 4 || *sample_count < 2 { return Ok(None); }
-    let last_start = record.payload.element_count() - 4;
+    let NumericPayload::Array(array) = &record.payload else {
+        return Ok(None);
+    };
+    let [sample_count, lane_width] = array.dimensions() else {
+        return Ok(None);
+    };
+    if *lane_width != 4 || *sample_count < 2 {
+        return Ok(None);
+    }
     let mut first = [0.0; 4];
-    let mut last = [0.0; 4];
-    let mut start = 0;
+    let mut filled = 0;
     let mut runs = array.runs().iter();
-    while runs.len() != 0 {
-        let Some(run) = ctx.next_charged(&mut runs, "creo legacy pcurve run traversal")? else {
-            break;
+    while filled < first.len() {
+        let Some(run) = ctx.next_charged(&mut runs, "creo legacy pcurve first endpoint runs")?
+        else {
+            return Ok(None);
         };
-        // The admitted run-count sum equals the complete array extent.
-        let end = start + index_from_u32(run.count);
-        for (lane, value) in first.iter_mut().enumerate() {
-            if start <= lane && lane < end { *value = run.value.value(); }
-        }
-        for (lane, value) in last.iter_mut().enumerate() {
-            let position = last_start + lane;
-            if start <= position && position < end { *value = run.value.value(); }
-        }
-        start = end;
-        if start == record.payload.element_count() { break; }
+        let end = filled + (first.len() - filled).min(index_from_u32(run.count));
+        first[filled..end].fill(run.value.value());
+        filled = end;
+    }
+    let mut last = [0.0; 4];
+    let mut remaining = last.len();
+    let mut runs = array.runs().iter().rev();
+    while remaining > 0 {
+        let Some(run) = ctx.next_charged(&mut runs, "creo legacy pcurve last endpoint runs")?
+        else {
+            return Ok(None);
+        };
+        let width = remaining.min(index_from_u32(run.count));
+        let Some(start) = remaining.checked_sub(width) else {
+            return Ok(None);
+        };
+        last[start..remaining].fill(run.value.value());
+        remaining = start;
     }
     Ok(Some(PcurveEndpoints {
-        curve_id: topology.id, faces: topology.faces,
+        curve_id: topology.id,
+        faces: topology.faces,
         face_0_endpoints: [[first[0], first[1]], [last[0], last[1]]],
-        face_1_endpoints: [[first[2], first[3]], [last[2], last[3]]], offset: record.offset,
+        face_1_endpoints: [[first[2], first[3]], [last[2], last[3]]],
+        offset: record.offset,
     }))
 }
 
@@ -414,30 +521,29 @@ fn namespace(
     root_name: &str,
     branch_name: &str,
     namespace: LegacySurfaceNamespace,
-) -> Result<(Vec<SurfaceRow>, Vec<LegacySurfaceCarrier>), CodecError> {
+    carriers: &mut Vec<LegacySurfaceCarrier>,
+) -> Result<Vec<SurfaceRow>, CodecError> {
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
-    let Some(elements) = geometry_array_elements(
-        ctx,
-        index.objects,
-        index.object_ids,
-        root_name,
-        branch_name,
-        "srf_array",
-    )?
+    let mut elements_scope = ctx.reserve_scoped(0, "creo legacy geometry element scratch")?;
+    let Some(elements) = elements_scope.with_storage(|| {
+        geometry_array_elements(
+            ctx,
+            index.objects,
+            index.object_ids,
+            root_name,
+            branch_name,
+            "srf_array",
+        )
+    })?
     else {
-        return Ok((Vec::new(), Vec::new()));
+        return Ok(Vec::new());
     };
 
     let mut rows = Vec::new();
-    let mut carriers = Vec::new();
-    let mut elements = elements.into_iter();
-    while elements.len() != 0 {
-        let Some(row_object) = ctx.next_charged(&mut elements, "creo legacy surface element traversal")? else {
-            break;
-        };
-        let Some(row) = surface_row(ctx, row_object, index.integer_fields)? else {
+    for row_object in ctx.admit_iter(elements, "creo legacy surface rows")? {
+        let Some(row) = surface_row(row_object, index.integer_fields) else {
             continue;
         };
         let carrier = if row.kind == SurfaceKind::Spline {
@@ -450,39 +556,44 @@ fn namespace(
                 namespace,
             )?
         } else {
-            surface_carrier(
-                ctx,
-                row_object,
-                &row,
-                index.children,
-                index.real_fields,
-                namespace,
-            )?
+            let expected_name = match row.kind {
+                SurfaceKind::Plane => Some("srf_prim_ptr(plane)"),
+                SurfaceKind::Cylinder => Some("srf_prim_ptr(cylinder)"),
+                SurfaceKind::Cone => Some("srf_prim_ptr(cone)"),
+                SurfaceKind::TorusOrSphere => Some("srf_prim_ptr(torus)"),
+                _ => None,
+            };
+            let primitive = unique_primitive(index.children, row_object.offset)
+                .filter(|primitive| Some(primitive.name.as_str()) == expected_name);
+            match primitive {
+                Some(primitive) => {
+                    let local_system =
+                        real_record(index.real_fields, primitive.offset, "local_sys");
+                    let slots = match local_system {
+                        Some(record) => local_system_slots(ctx, record)?,
+                        None => None,
+                    };
+                    slots.and_then(|slots| {
+                        surface_carrier(primitive, &row, slots, index.real_fields, namespace)
+                    })
+                }
+                None => None,
+            }
         };
         if let Some(carrier) = carrier {
-            ctx.reserve_vec(&mut carriers, 1, "creo legacy surface carriers")?;
+            ctx.reserve_vec(carriers, 1, "creo legacy surface carriers")?;
             carriers.push(carrier);
         }
         ctx.reserve_vec(&mut rows, 1, "creo legacy surface rows")?;
         rows.push(row);
     }
-    if rows.len() > 1 {
-        ctx.stable_sort_by(
-            rows.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
-            "creo namespace rows ordering",
-        )?;
-    }
-    if carriers.len() > 1 {
-        ctx.stable_sort_by(
-            carriers.as_mut_slice(),
-            |value| &value.offset,
-            Ord::cmp,
-            "creo namespace carriers ordering",
-        )?;
-    }
-    Ok((rows, carriers))
+    ctx.stable_sort_by(
+        rows.as_mut_slice(),
+        |value| &value.offset,
+        Ord::cmp,
+        "creo namespace rows ordering",
+    )?;
+    Ok(rows)
 }
 
 fn spline_surface_carrier(
@@ -493,40 +604,56 @@ fn spline_surface_carrier(
     reals: &RealFieldIndex<'_>,
     namespace: LegacySurfaceNamespace,
 ) -> Result<Option<LegacySurfaceCarrier>, CodecError> {
-    let Some(primitive) = unique_primitive(ctx, children, row_object.offset)? else {
+    let Some(primitive) = unique_primitive(children, row_object.offset) else {
         return Ok(None);
     };
     if primitive.name != "srf_prim_ptr(splsrf)" {
         return Ok(None);
     }
-    let Some(points) = real_vector_array(ctx, reals, primitive.offset, "i_points")? else {
-        return Ok(None);
-    };
-    let Some(u_parameters) = real_scalar_array(ctx, reals, primitive.offset, "u_params")? else {
-        return Ok(None);
-    };
-    let Some(v_parameters) = real_scalar_array(ctx, reals, primitive.offset, "v_params")? else {
-        return Ok(None);
-    };
-    let Some(u_tangents) = real_vector_array(ctx, reals, primitive.offset, "u_tangts")? else {
-        return Ok(None);
-    };
-    let Some(v_tangents) = real_vector_array(ctx, reals, primitive.offset, "v_tangts")? else {
-        return Ok(None);
-    };
-    let Some(mixed_derivatives) = real_vector_array(ctx, reals, primitive.offset, "uv_deriv")?
+    let mut grid_scope = ctx.reserve_scoped(0, "creo legacy spline grid scratch")?;
+    let Some(points) =
+        grid_scope.with_storage(|| real_vector_array(ctx, reals, primitive.offset, "i_points"))?
     else {
         return Ok(None);
     };
-    let spline = crate::interpolation_grid::InterpolationGrid::from_full_tangent_grid(
-        ctx,
-        points,
-        u_parameters,
-        v_parameters,
-        &u_tangents,
-        &v_tangents,
-        &mixed_derivatives,
-    )?;
+    let Some(u_parameters) =
+        grid_scope.with_storage(|| real_scalar_array(ctx, reals, primitive.offset, "u_params"))?
+    else {
+        return Ok(None);
+    };
+    let Some(v_parameters) =
+        grid_scope.with_storage(|| real_scalar_array(ctx, reals, primitive.offset, "v_params"))?
+    else {
+        return Ok(None);
+    };
+    let mut derivative_scope = ctx.reserve_scoped(0, "creo legacy spline derivative scratch")?;
+    let Some(u_tangents) = derivative_scope
+        .with_storage(|| real_vector_array(ctx, reals, primitive.offset, "u_tangts"))?
+    else {
+        return Ok(None);
+    };
+    let Some(v_tangents) = derivative_scope
+        .with_storage(|| real_vector_array(ctx, reals, primitive.offset, "v_tangts"))?
+    else {
+        return Ok(None);
+    };
+    let Some(mixed_derivatives) = derivative_scope
+        .with_storage(|| real_vector_array(ctx, reals, primitive.offset, "uv_deriv"))?
+    else {
+        return Ok(None);
+    };
+    let spline = grid_scope.with_storage(|| {
+        crate::interpolation_grid::InterpolationGrid::from_full_tangent_grid(
+            ctx,
+            points,
+            u_parameters,
+            v_parameters,
+            &u_tangents,
+            &v_tangents,
+            &mixed_derivatives,
+        )
+    })?;
+    let spline = spline.map(|grid| grid.copy_retained(ctx)).transpose()?;
     Ok(spline.map(|spline| LegacySurfaceCarrier {
         namespace,
         surface_id: row.id,
@@ -535,44 +662,35 @@ fn spline_surface_carrier(
     }))
 }
 
-fn unique_primitive<'a>(
-    ctx: &DecodeContext<'_>,
-    children: &ChildIndex<'a>,
-    row_offset: usize,
-) -> Result<Option<&'a ObjectRecord>, CodecError> {
-    let Some(children) = ctx.get_btree_map(children, &row_offset,
-        "creo legacy primitive child lookup")? else { return Ok(None); };
-    // The prefix compare has the fixed grammar width; the child count is variable.
-    Ok(crate::decode::uniqueness::exactly_one_by(ctx, children,
-        |object| Ok(object.name.starts_with("srf_prim_ptr(")),
-        "creo legacy primitive child traversal")?.copied())
+fn unique_primitive<'a>(children: &ChildIndex<'a>, row_offset: usize) -> Option<&'a ObjectRecord> {
+    children.get(&row_offset)?.sole().copied()
 }
 
-fn surface_row(
-    ctx: &DecodeContext<'_>,
-    row_object: &ObjectRecord,
-    integers: &IntegerFieldIndex<'_>,
-) -> Result<Option<SurfaceRow>, CodecError> {
-    let Some(type_byte) = integer_field(ctx, integers, row_object.offset, "geom_type")?
-        .and_then(|value| u8::try_from(value).ok()) else { return Ok(None); };
-    let Some(kind) = SurfaceKind::from_byte(type_byte) else { return Ok(None); };
-    let Some(feature_id) = integer_field(ctx, integers, row_object.offset, "feat_id")?
-        .and_then(|value| u32::try_from(value).ok()) else { return Ok(None); };
-    let Some(id_record) = integer_record(ctx, integers, row_object.offset, "geom_id")?
-        else { return Ok(None); };
-    let NumericPayload::Scalar { value: id } = &id_record.payload else { return Ok(None); };
-    let Ok(id) = u32::try_from(*id) else { return Ok(None); };
-    let Some(boundary_type) = integer_field(ctx, integers, row_object.offset, "boundary_type")?
-        .and_then(|value| u8::try_from(value).ok()).and_then(surface::BoundaryType::from_byte)
-        else { return Ok(None); };
-    let reversed = match integer_field(ctx, integers, row_object.offset, "orient")? {
-        Some(1) => false, Some(-1) => true, _ => return Ok(None),
+fn surface_row(row_object: &ObjectRecord, integers: &IntegerFieldIndex<'_>) -> Option<SurfaceRow> {
+    let type_byte = u8::try_from(integer_field(integers, row_object.offset, "geom_type")?).ok()?;
+    let kind = SurfaceKind::from_byte(type_byte)?;
+    let feature_id = u32::try_from(integer_field(integers, row_object.offset, "feat_id")?).ok()?;
+    let id = u32::try_from(integer_field(integers, row_object.offset, "geom_id")?).ok()?;
+    let boundary_type =
+        u8::try_from(integer_field(integers, row_object.offset, "boundary_type")?).ok()?;
+    let boundary_type = surface::BoundaryType::from_byte(boundary_type)?;
+    let orientation = integer_field(integers, row_object.offset, "orient")?;
+    let reversed = match orientation {
+        1 => false,
+        -1 => true,
+        _ => return None,
     };
-    let Some(next_surface) = integer_field(ctx, integers, row_object.offset, "next_geom_ptr")?
-        .and_then(|value| u32::try_from(value).ok()) else { return Ok(None); };
-    Ok(Some(SurfaceRow {
-        id, kind, feature_id, reversed, boundary_type, next_surface, offset: id_record.offset,
-    }))
+    let next_surface =
+        u32::try_from(integer_field(integers, row_object.offset, "next_geom_ptr")?).ok()?;
+    Some(SurfaceRow {
+        id,
+        kind,
+        feature_id,
+        reversed,
+        boundary_type,
+        next_surface,
+        offset: integer_record(integers, row_object.offset, "geom_id")?.offset,
+    })
 }
 
 /// Whether the three columns of a `local_sys` matrix are a right-handed orthonormal basis.
@@ -607,87 +725,112 @@ fn valid_right_handed_local_system(first: [f64; 3], second: [f64; 3], third: [f6
 }
 
 fn surface_carrier(
-    ctx: &DecodeContext<'_>,
-    row_object: &ObjectRecord,
+    primitive: &ObjectRecord,
     row: &SurfaceRow,
-    children: &ChildIndex<'_>,
+    slots: [f64; 12],
     reals: &RealFieldIndex<'_>,
     namespace: LegacySurfaceNamespace,
-) -> Result<Option<LegacySurfaceCarrier>, CodecError> {
-    enum AnalyticFamily { Plane, Cylinder, Cone, TorusOrSphere }
-    let Some(primitive) = unique_primitive(ctx, children, row_object.offset)? else {
-        return Ok(None);
-    };
+) -> Option<LegacySurfaceCarrier> {
+    enum AnalyticFamily {
+        Plane,
+        Cylinder,
+        Cone,
+        TorusOrSphere,
+    }
+
     let (family, expected_name) = match row.kind {
         SurfaceKind::Plane => (AnalyticFamily::Plane, "srf_prim_ptr(plane)"),
         SurfaceKind::Cylinder => (AnalyticFamily::Cylinder, "srf_prim_ptr(cylinder)"),
         SurfaceKind::Cone => (AnalyticFamily::Cone, "srf_prim_ptr(cone)"),
         SurfaceKind::TorusOrSphere => (AnalyticFamily::TorusOrSphere, "srf_prim_ptr(torus)"),
-        SurfaceKind::Spline | SurfaceKind::Fillet | SurfaceKind::Extrusion(_) => return Ok(None),
+        SurfaceKind::Spline => return None,
+        SurfaceKind::Fillet | SurfaceKind::Extrusion(_) => return None,
     };
-    if primitive.name != expected_name { return Ok(None); }
-    let Some(local_system) = real_record(ctx, reals, primitive.offset, "local_sys")? else {
-        return Ok(None);
-    };
-    let Some(slots) = local_system_slots(ctx, local_system)? else { return Ok(None); };
+    (primitive.name == expected_name).then_some(())?;
+
     let first = [slots[0], slots[3], slots[6]];
     let second = [slots[1], slots[4], slots[7]];
     let third = [slots[2], slots[5], slots[8]];
-    if !valid_right_handed_local_system(first, second, third) { return Ok(None); }
+    valid_right_handed_local_system(first, second, third).then_some(())?;
     let origin = [slots[9], slots[10], slots[11]];
-    let Some(frame) = surface::PositionalFrame::new(origin, third, first) else { return Ok(None); };
+    // The matrix admission above states the finite origin and the unit-length orthogonal
+    // pair the frame holds, so this construction is the one the carrier keeps.
+    let frame = surface::PositionalFrame::new(origin, third, first)?;
     let geometry = match family {
         AnalyticFamily::Plane => LegacySurfaceGeometry::Plane { frame },
-        AnalyticFamily::Cylinder => {
-            let Some(radius) = real_scalar(ctx, reals, primitive.offset, "radius")?
-                .and_then(PositiveLength::new) else { return Ok(None); };
-            LegacySurfaceGeometry::Cylinder { frame, radius }
-        }
+        AnalyticFamily::Cylinder => LegacySurfaceGeometry::Cylinder {
+            frame,
+            radius: real_scalar(reals, primitive.offset, "radius").and_then(PositiveLength::new)?,
+        },
         AnalyticFamily::Cone => {
-            let Some(signed_half_angle) = real_scalar(ctx, reals, primitive.offset, "half_angle")?
-                else { return Ok(None); };
-            let Some(half_angle) = surface::ApexConeHalfAngle::new(signed_half_angle.abs())
-                else { return Ok(None); };
+            // The legacy record signs the half angle: the magnitude is the half angle and the
+            // sign gives the axis direction. The magnitude is an apex cone half angle, because
+            // `decode::surfaces::prototypes` builds the same `radius = 0.0`, `ratio = 1.0`
+            // cone from this carrier as the positional cone rows do.
+            let signed_half_angle = real_scalar(reals, primitive.offset, "half_angle")?;
+            let half_angle = surface::ApexConeHalfAngle::new(signed_half_angle.abs())?;
             LegacySurfaceGeometry::Cone {
-                frame: if signed_half_angle.is_sign_positive() { frame } else { frame.with_reversed_axis() },
-                half_angle, parameter_v_sign: signed_half_angle.signum(),
+                frame: if signed_half_angle.is_sign_positive() {
+                    frame
+                } else {
+                    frame.with_reversed_axis()
+                },
+                half_angle,
+                parameter_v_sign: signed_half_angle.signum(),
             }
         }
         AnalyticFamily::TorusOrSphere => {
-            let Some(major_radius) = real_scalar(ctx, reals, primitive.offset, "radius1")?
-                .filter(|radius| *radius >= 0.0) else { return Ok(None); };
-            let Some(minor_radius) = real_scalar(ctx, reals, primitive.offset, "radius2")?
-                .and_then(PositiveLength::new) else { return Ok(None); };
+            let major_radius =
+                real_scalar(reals, primitive.offset, "radius1").filter(|radius| *radius >= 0.0)?;
+            let minor_radius =
+                real_scalar(reals, primitive.offset, "radius2").and_then(PositiveLength::new)?;
             if major_radius == 0.0 {
-                LegacySurfaceGeometry::Sphere { frame, radius: minor_radius }
+                LegacySurfaceGeometry::Sphere {
+                    frame,
+                    radius: minor_radius,
+                }
             } else {
-                let Some(major_radius) = PositiveLength::new(major_radius) else { return Ok(None); };
-                LegacySurfaceGeometry::Torus { frame, major_radius, minor_radius }
+                LegacySurfaceGeometry::Torus {
+                    frame,
+                    major_radius: PositiveLength::new(major_radius)?,
+                    minor_radius,
+                }
             }
         }
     };
-    Ok(Some(LegacySurfaceCarrier { namespace, surface_id: row.id, geometry, offset: primitive.offset }))
+    Some(LegacySurfaceCarrier {
+        namespace,
+        surface_id: row.id,
+        geometry,
+        offset: primitive.offset,
+    })
 }
 
 /// Map legacy pcurve `v` coordinates into the positive-angle frame emitted by
 /// [`LegacySurfaceGeometry::Cone`].
 pub(crate) fn canonicalize_legacy_cone_pcurve_endpoints(
+    ctx: &DecodeContext<'_>,
     carriers: &[LegacySurfaceCarrier],
     face_id: u32,
     endpoints: [[f64; 2]; 2],
-) -> [[f64; 2]; 2] {
-    let sign = carriers
-        .iter()
-        .find_map(|carrier| {
-            (carrier.surface_id == face_id).then_some(match carrier.geometry {
-                LegacySurfaceGeometry::Cone {
-                    parameter_v_sign, ..
-                } => parameter_v_sign,
-                _ => 1.0,
-            })
-        })
+) -> Result<[[f64; 2]; 2], CodecError> {
+    let sign = ctx
+        .find_map(
+            carriers,
+            |carrier| {
+                Ok(
+                    (carrier.surface_id == face_id).then_some(match carrier.geometry {
+                        LegacySurfaceGeometry::Cone {
+                            parameter_v_sign, ..
+                        } => parameter_v_sign,
+                        _ => 1.0,
+                    }),
+                )
+            },
+            "creo legacy cone chart lookup",
+        )?
         .unwrap_or(1.0);
-    endpoints.map(|[u, v]| [u, v * sign])
+    Ok(endpoints.map(|[u, v]| [u, v * sign]))
 }
 
 fn real_vector_array(
@@ -696,7 +839,7 @@ fn real_vector_array(
     parent: usize,
     name: &str,
 ) -> Result<Option<Vec<[f64; 3]>>, CodecError> {
-    let Some(record) = real_record(ctx, records, parent, name)? else {
+    let Some(record) = real_record(records, parent, name) else {
         return Ok(None);
     };
     let NumericPayload::Array(array) = &record.payload else {
@@ -741,7 +884,7 @@ fn real_scalar_array(
     parent: usize,
     name: &str,
 ) -> Result<Option<Vec<f64>>, CodecError> {
-    let Some(record) = real_record(ctx, records, parent, name)? else {
+    let Some(record) = real_record(records, parent, name) else {
         return Ok(None);
     };
     let NumericPayload::Array(array) = &record.payload else {
@@ -772,16 +915,8 @@ fn real_array_values(
         record.payload.element_count(),
         "creo legacy real array expansion",
     )?;
-    let mut runs = array.runs().iter();
-    while runs.len() != 0 {
-        let Some(run) = ctx.next_charged(&mut runs, "creo legacy real array run traversal")? else {
-            break;
-        };
-        let mut elements = 0..run.count;
-        while elements.len() != 0 {
-            let Some(_) = ctx.next_charged(&mut elements, "creo legacy real array element expansion")? else {
-                break;
-            };
+    for run in ctx.admit_iter(array.runs(), "creo legacy real array runs")? {
+        for _ in ctx.admit_iter(0..run.count, "creo legacy real array elements")? {
             values.push(run.value.value());
         }
     }
@@ -794,11 +929,7 @@ fn object_id_index<'a>(
 ) -> Result<ObjectIdIndex<'a>, CodecError> {
     if let Some(refusal) = ctx.resource_refusal() { return Err(refusal.into()); }
     let mut index = BTreeMap::new();
-    let mut objects = objects.iter();
-    while objects.len() != 0 {
-        let Some(object) = ctx.next_charged(&mut objects, "creo legacy object index traversal")? else {
-            break;
-        };
+    for object in ctx.admit_iter(objects, "creo legacy object index rows")? {
         let id =
             legacy::checked_object_node_id(ctx, object.offset, "creo legacy object index IDs")?;
         ctx.insert_btree_map(&mut index, id, object, "creo legacy object index nodes")?;
@@ -811,25 +942,20 @@ fn child_index<'a>(
     objects: &'a [ObjectRecord],
 ) -> Result<ChildIndex<'a>, CodecError> {
     if let Some(refusal) = ctx.resource_refusal() { return Err(refusal.into()); }
-    let mut index = BTreeMap::new();
-    let mut objects = objects.iter();
-    while objects.len() != 0 {
-        let Some(object) = ctx.next_charged(&mut objects, "creo legacy child index traversal")? else {
-            break;
+    let mut index = HashMap::new();
+    for object in ctx.admit_iter(objects, "creo legacy primitive index rows")? {
+        if !object.name.starts_with("srf_prim_ptr(") {
+            continue;
+        }
+        let Some(parent) = object.parent else {
+            continue;
         };
-        if let Some(parent) = object.parent {
-            match ctx.entry_btree_map(&mut index, parent, "creo legacy child index nodes")? {
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    let mut children = Vec::new();
-                    ctx.reserve_vec(&mut children, 1, "creo legacy child index rows")?;
-                    children.push(object);
-                    entry.insert(children);
-                }
-                std::collections::btree_map::Entry::Occupied(mut entry) => {
-                    let children = entry.get_mut();
-                    ctx.reserve_vec(children, 1, "creo legacy child index rows")?;
-                    children.push(object);
-                }
+        match ctx.entry_hash_map(&mut index, parent, "creo legacy child index nodes")? {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(UniqueRecord::One(object));
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                entry.insert(UniqueRecord::Many);
             }
         }
     }
@@ -837,21 +963,22 @@ fn child_index<'a>(
 }
 
 fn integer_record<'a>(
-    ctx: &DecodeContext<'_>,
     records: &'a IntegerFieldIndex<'a>,
     parent: usize,
     name: &str,
-) -> Result<Option<&'a legacy::IntegerRecord>, CodecError> {
-    Ok(ctx.get_btree_map(records, &(parent, name), "creo legacy integer field lookup")?
-        .and_then(|matches| if matches.len() == 1 { matches.first().copied() } else { None }))
+) -> Option<&'a legacy::IntegerRecord> {
+    records
+        .get(&(parent, geometry_field(name)?))?
+        .sole()
+        .copied()
 }
 
-fn integer_field(
-    ctx: &DecodeContext<'_>, records: &IntegerFieldIndex<'_>, parent: usize, name: &str,
-) -> Result<Option<i32>, CodecError> {
-    Ok(integer_record(ctx, records, parent, name)?.and_then(|record| match &record.payload {
-        NumericPayload::Scalar { value } => Some(*value), NumericPayload::Array(_) => None,
-    }))
+fn integer_field(records: &IntegerFieldIndex<'_>, parent: usize, name: &str) -> Option<i32> {
+    let record = integer_record(records, parent, name)?;
+    match &record.payload {
+        NumericPayload::Scalar { value } => Some(*value),
+        NumericPayload::Array(_) => None,
+    }
 }
 
 /// Expand one integer array's runs into its elements, in element order.
@@ -859,61 +986,77 @@ fn integer_field(
 /// The array states a run-count sum equal to its extent product, so the result
 /// holds one element per declared array element.
 fn integer_pair(
-    ctx: &DecodeContext<'_>, records: &IntegerFieldIndex<'_>, parent: usize, name: &str,
+    ctx: &DecodeContext<'_>,
+    records: &IntegerFieldIndex<'_>,
+    parent: usize,
+    name: &str,
 ) -> Result<Option<[i32; 2]>, CodecError> {
-    let Some(record) = integer_record(ctx, records, parent, name)? else { return Ok(None); };
-    let NumericPayload::Array(array) = &record.payload else { return Ok(None); };
-    if record.payload.element_count() != 2 { return Ok(None); }
+    let Some(record) = integer_record(records, parent, name) else {
+        return Ok(None);
+    };
+    let NumericPayload::Array(array) = &record.payload else {
+        return Ok(None);
+    };
+    if record.payload.element_count() != 2 {
+        return Ok(None);
+    }
     let mut pair = [0; 2];
     let mut filled = 0;
     let mut runs = array.runs().iter();
-    while runs.len() != 0 {
-        let Some(run) = ctx.next_charged(&mut runs, "creo legacy integer pair run traversal")? else {
-            break;
+    while filled < pair.len() {
+        let Some(run) = ctx.next_charged(&mut runs, "creo legacy integer pair runs")? else {
+            return Ok(None);
         };
-        // All run counts sum to two. Zero runs still require one source visit.
-        for slot in pair.iter_mut().skip(filled).take(index_from_u32(run.count)) { *slot = run.value; }
-        filled += index_from_u32(run.count);
-        if filled == pair.len() { break; }
+        for _ in 0..run.count {
+            pair[filled] = run.value;
+            filled += 1;
+        }
     }
     Ok(Some(pair))
 }
 
 fn real_record<'a>(
-    ctx: &DecodeContext<'_>, records: &'a RealFieldIndex<'a>, parent: usize, name: &str,
-) -> Result<Option<&'a RealRecord>, CodecError> {
-    Ok(ctx.get_btree_map(records, &(parent, name), "creo legacy real field lookup")?
-        .and_then(|matches| if matches.len() == 1 { matches.first().copied() } else { None }))
+    records: &'a RealFieldIndex<'a>,
+    parent: usize,
+    name: &str,
+) -> Option<&'a RealRecord> {
+    records
+        .get(&(parent, geometry_field(name)?))?
+        .sole()
+        .copied()
 }
 
-fn real_scalar(
-    ctx: &DecodeContext<'_>, records: &RealFieldIndex<'_>, parent: usize, name: &str,
-) -> Result<Option<f64>, CodecError> {
-    Ok(real_record(ctx, records, parent, name)?.and_then(|record| match &record.payload {
-        NumericPayload::Scalar { value } => Some(value.value()), NumericPayload::Array(_) => None,
-    }))
+fn real_scalar(records: &RealFieldIndex<'_>, parent: usize, name: &str) -> Option<f64> {
+    let record = real_record(records, parent, name)?;
+    match &record.payload {
+        NumericPayload::Scalar { value } => Some(value.value()),
+        NumericPayload::Array(_) => None,
+    }
 }
 
 /// The twelve row-major slots of a `[4][3]` local-system real array.
 fn local_system_slots(
-    ctx: &DecodeContext<'_>, record: &RealRecord,
+    ctx: &DecodeContext<'_>,
+    record: &RealRecord,
 ) -> Result<Option<[f64; 12]>, CodecError> {
     if let Some(refusal) = ctx.resource_refusal() { return Err(refusal.into()); }
-    let NumericPayload::Array(array) = &record.payload else { return Ok(None); };
-    if array.dimensions() != [4, 3] { return Ok(None); }
+    let NumericPayload::Array(array) = &record.payload else {
+        return Ok(None);
+    };
+    if array.dimensions() != [4, 3] {
+        return Ok(None);
+    }
     let mut slots = [0.0; 12];
     let mut filled = 0;
     let mut runs = array.runs().iter();
-    while runs.len() != 0 {
-        let Some(run) = ctx.next_charged(&mut runs, "creo legacy local system run traversal")? else {
-            break;
+    while filled < slots.len() {
+        let Some(run) = ctx.next_charged(&mut runs, "creo legacy local system runs")? else {
+            return Ok(None);
         };
-        // The [4][3] extent admits exactly twelve output lanes, including zero-run prefixes.
-        for slot in slots.iter_mut().skip(filled).take(index_from_u32(run.count)) {
-            *slot = run.value.value();
+        for _ in 0..run.count {
+            slots[filled] = run.value.value();
+            filled += 1;
         }
-        filled += index_from_u32(run.count);
-        if filled == slots.len() { break; }
     }
     Ok(Some(slots))
 }
@@ -923,8 +1066,8 @@ mod tests {
     mod admission_ordering;
     mod admission_work;
     use super::{
-        canonicalize_legacy_cone_pcurve_endpoints, scan as scan_checked, LegacySurfaceCarrier,
-        LegacySurfaceGeometry, LegacySurfaceNamespace,
+        canonicalize_legacy_cone_pcurve_endpoints as checked_canonicalize_legacy_cone_pcurve_endpoints,
+        scan as scan_checked, LegacySurfaceCarrier, LegacySurfaceGeometry, LegacySurfaceNamespace,
     };
     use crate::legacy::{
         IntegerPayload, IntegerRun, ObjectPayload, Persistence, Real, RealPayload, RealRecord,
@@ -933,6 +1076,17 @@ mod tests {
     use crate::test_support::{fixture_offset, object};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
+
+    fn canonicalize_legacy_cone_pcurve_endpoints(
+        carriers: &[LegacySurfaceCarrier],
+        face_id: u32,
+        endpoints: [[f64; 2]; 2],
+    ) -> [[f64; 2]; 2] {
+        crate::decode::with_test_decode_ctx(|ctx| {
+            checked_canonicalize_legacy_cone_pcurve_endpoints(ctx, carriers, face_id, endpoints)
+        })
+        .expect("legacy cone fixture admission")
+    }
 
     fn scan(persistence: &Persistence) -> super::LegacyGeometryScan {
         let arena = DecodeArena::new();
@@ -954,32 +1108,29 @@ mod tests {
         scan_checked(&ctx, persistence)
     }
 
-    fn scan_with_retained_limit(
+    fn scan_with_materialized_limit(
         persistence: &Persistence,
         limit: u64,
     ) -> Result<super::LegacyGeometryScan, CodecError> {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = limit;
+        policy.limits.max_materialized_bytes = limit;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
         scan_checked(&ctx, persistence)
     }
 
     fn assert_collection_refusal(persistence: &Persistence, operation: &'static str) {
-        let refusal = (0..128).find_map(|limit| {
-            let Err(CodecError::ResourceLimit(refusal)) =
-                scan_with_collection_limit(persistence, limit)
-            else {
-                return None;
-            };
-            (refusal.operation == operation).then_some(refusal)
-        });
+        let limit = crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some(operation),
+            |limit| scan_with_collection_limit(persistence, limit),
+        );
+        let refusal =
+            scan_with_collection_limit(persistence, limit).expect_err("collection refusal");
         assert!(
-            matches!(
-                refusal,
-                Some(limit) if limit.dimension == ResourceDimension::CollectionItems
-            ),
+            matches!(refusal, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation),
             "missing collection refusal for {operation}"
         );
     }
@@ -1089,9 +1240,9 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
                 "srf_array",
                 Some(branch),
                 ObjectPayload::Array {
+                    complete: true,
                     dimensions: vec![1],
                     elements: vec![row.to_string()],
-                    complete: true,
                 },
             ),
             object(row, "srf_array", Some(array), ObjectPayload::Arrow),
@@ -1182,9 +1333,9 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
                 "srf_array",
                 Some(branch),
                 ObjectPayload::Array {
+                    complete: true,
                     dimensions: vec![1],
                     elements: vec![row.to_string()],
-                    complete: true,
                 },
             ),
             object(row, "srf_array", Some(array), ObjectPayload::Arrow),
@@ -1275,9 +1426,9 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
                 "srf_array",
                 Some(branch),
                 ObjectPayload::Array {
+                    complete: true,
                     dimensions: vec![1],
                     elements: vec![row.to_string()],
-                    complete: true,
                 },
             ),
             object(row, "srf_array", Some(array), ObjectPayload::Arrow),
@@ -1771,9 +1922,9 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
                 "crv_array",
                 Some(branch),
                 ObjectPayload::Array {
+                    complete: true,
                     dimensions: vec![2],
                     elements: vec![first.to_string(), second.to_string()],
-                    complete: true,
                 },
             ),
             object(first, "crv_array", Some(array), ObjectPayload::Arrow),
@@ -1852,7 +2003,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
     }
 
     #[test]
-    fn legacy_child_index_nodes_refuse_before_btree_insertion() {
+    fn legacy_child_index_nodes_refuse_before_hash_insertion() {
         let persistence = cylinder_persistence(false);
         assert_eq!(scan(&persistence).rows.len(), 1);
         assert_collection_refusal(&persistence, "creo legacy child index nodes");
@@ -1862,10 +2013,15 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
     fn legacy_object_index_ids_refuse_before_string_growth() {
         let persistence = cylinder_persistence(false);
         assert_eq!(scan(&persistence).rows.len(), 1);
+        let boundary = crate::test_support::allocation_limit_at(
+            ResourceDimension::MaterializedBytes,
+            Some("creo legacy object index IDs"),
+            |limit| scan_with_materialized_limit(&persistence, limit),
+        );
         assert!(matches!(
-            scan_with_retained_limit(&persistence, 0),
+            scan_with_materialized_limit(&persistence, boundary),
             Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
+                if limit.dimension == ResourceDimension::MaterializedBytes
                     && limit.operation == "creo legacy object index IDs"
         ));
     }
@@ -1899,24 +2055,10 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
     }
 
     #[test]
-    fn legacy_value_index_nodes_refuse_before_btree_insertion() {
+    fn legacy_value_index_nodes_refuse_before_hash_insertion() {
         let persistence = cylinder_persistence(false);
         assert_eq!(scan(&persistence).rows.len(), 1);
         assert_collection_refusal(&persistence, "creo legacy value index nodes");
-    }
-
-    #[test]
-    fn legacy_value_index_rows_refuse_before_vec_growth() {
-        let persistence = cylinder_persistence(false);
-        assert_eq!(scan(&persistence).rows.len(), 1);
-        assert_collection_refusal(&persistence, "creo legacy value index rows");
-    }
-
-    #[test]
-    fn legacy_child_index_rows_refuse_before_vec_growth() {
-        let persistence = cylinder_persistence(false);
-        assert_eq!(scan(&persistence).rows.len(), 1);
-        assert_collection_refusal(&persistence, "creo legacy child index rows");
     }
 
     #[test]
@@ -1931,13 +2073,6 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         let persistence = cylinder_persistence(false);
         assert_eq!(scan(&persistence).rows.len(), 1);
         assert_collection_refusal(&persistence, "creo legacy surface rows");
-    }
-
-    #[test]
-    fn legacy_nonvisible_carriers_refuse_before_aggregation() {
-        let persistence = cylinder_persistence(true);
-        assert_eq!(scan(&persistence).carriers.len(), 1);
-        assert_collection_refusal(&persistence, "creo legacy nonvisible carrier aggregation");
     }
 
     #[test]
@@ -1971,21 +2106,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
 
     #[test]
     fn legacy_pcurves_deduplication_refuses_work() {
-        let mut persistence = topology_persistence();
-        persistence.real_values.rows.push(real_array("curve_11",
-            [[8.0, 9.0, 10.0, 11.0], [12.0, 13.0, 14.0, 15.0]], 811));
-        let admitted = scan(&persistence);
-        assert_eq!(admitted.pcurves, [crate::curve::PcurveEndpoints {
-            curve_id: 10,
-            faces: [std::num::NonZeroU32::new(100), std::num::NonZeroU32::new(200)],
-            face_0_endpoints: [[0.0, 1.0], [4.0, 5.0]],
-            face_1_endpoints: [[2.0, 3.0], [6.0, 7.0]], offset: 810,
-        }, crate::curve::PcurveEndpoints {
-            curve_id: 11,
-            faces: [std::num::NonZeroU32::new(100), std::num::NonZeroU32::new(200)],
-            face_0_endpoints: [[8.0, 9.0], [12.0, 13.0]],
-            face_1_endpoints: [[10.0, 11.0], [14.0, 15.0]], offset: 811,
-        }]);
+        let persistence = topology_persistence();
         let error = crate::test_support::last_refusal_at(
             &[],
             cadmpeg_core::decode::ResourceDimension::WorkUnits,
