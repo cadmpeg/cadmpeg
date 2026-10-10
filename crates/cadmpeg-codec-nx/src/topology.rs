@@ -1248,8 +1248,8 @@ impl Graph {
         const OPERATION: &str = "NX topology candidates";
         let mut storage = ctx.reserve_scoped(0, OPERATION)?;
         let mut domains: [DomainCandidates; 2] = Default::default();
-        let last = stream.len().saturating_sub(3);
-        for pos in ctx.admit_iter(0..last, "scan NX topology candidates")? {
+        let positions = stream.len().checked_sub(3).map_or(0..0, |end| 0..end);
+        for pos in ctx.admit_iter(positions, "scan NX topology candidates")? {
             if stream[pos] != 0 {
                 continue;
             }

@@ -871,7 +871,8 @@ fn surface_payloads<'bytes, 'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     bytes: &'bytes [u8],
 ) -> Result<RecordIndex<'ctx, Payload<'bytes>>, CodecError> {
-    let records = (0..bytes.len().saturating_sub(96)).map(|pos| {
+    let positions = bytes.len().checked_sub(96).map_or(0..0, |end| 0..end);
+    let records = positions.map(|pos| {
         surface_payload_at(ctx, bytes, pos)
             .map(|candidate| candidate.map(|(xmt, payload, _)| (xmt, payload)))
     });
@@ -953,7 +954,8 @@ fn curve_payloads<'bytes, 'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     bytes: &'bytes [u8],
 ) -> Result<RecordIndex<'ctx, Payload<'bytes>>, CodecError> {
-    let records = (0..bytes.len().saturating_sub(14)).map(|pos| {
+    let positions = bytes.len().checked_sub(14).map_or(0..0, |end| 0..end);
+    let records = positions.map(|pos| {
         curve_payload_at(ctx, bytes, pos)
             .map(|candidate| candidate.map(|(xmt, payload, _)| (xmt, payload)))
     });
