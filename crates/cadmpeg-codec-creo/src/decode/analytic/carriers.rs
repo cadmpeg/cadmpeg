@@ -615,7 +615,7 @@ fn positional_cylinder_carrier(
     let Some(record) = crate::surface::unique_surface_parameter(parameters, row.id) else {
         return Ok(None);
     };
-    let inline = record.has_inline_non_plane_envelope()
+    let inline = record.has_inline_non_plane_envelope_checked(ctx)?
         || record.has_inline_non_plane_local_system_suffix(ctx)?
         || record.selector_corner_interval_cylinder_frame().is_some();
     let round_feature =

@@ -10,17 +10,17 @@ use cadmpeg_core::CodecError;
 const FIELD: &str = "end_uv_deriv";
 
 fn record(value: SurfaceNamedValue) -> SurfacePrototypeRecord {
-    SurfacePrototypeRecord {
-        family: SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Splsrf),
-        parameters: vec![SurfaceNamedParameter {
+    SurfacePrototypeRecord::new_for_test(
+        SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Splsrf),
+        vec![SurfaceNamedParameter {
             name: FIELD.to_owned(),
             value,
             body: Vec::new(),
             offset: 0,
             value_offset: 0,
         }],
-        offset: 0,
-    }
+        0,
+    )
 }
 
 fn array(dimensions: u32, count: u32, values: Vec<Option<f64>>) -> SurfaceNamedValue {
@@ -35,7 +35,7 @@ fn assert_projection(record: &SurfacePrototypeRecord, expected: Option<[[f64; 3]
     // All fixtures use the same field name. The checked 12-slot projection has
     // fixed size and no allocation, collection, entity or nesting admission.
     let events: Vec<_> = record
-        .parameters
+        .parameters()
         .iter()
         .flat_map(|_| {
             [
@@ -154,8 +154,12 @@ fn mixed_derivatives_preserve_absent_partial_shape_and_ambiguity_routes() {
     }
     assert_projection(&record(SurfaceNamedValue::ScalarSequence(vec![1.0])), None);
     let mut duplicate = record(array(4, 3, vec![Some(1.0); 12]));
-    duplicate.parameters.push(duplicate.parameters[0].clone());
+    let mut parameters = duplicate.parameters().to_vec();
+    parameters.push(parameters[0].clone());
+    duplicate =
+        SurfacePrototypeRecord::new_for_test(duplicate.family, parameters, duplicate.offset);
     assert_projection(&duplicate, None);
-    duplicate.parameters.clear();
+    duplicate =
+        SurfacePrototypeRecord::new_for_test(duplicate.family, Vec::new(), duplicate.offset);
     assert_projection(&duplicate, None);
 }

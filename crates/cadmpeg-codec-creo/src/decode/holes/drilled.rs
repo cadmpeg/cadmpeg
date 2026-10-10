@@ -473,8 +473,10 @@ fn simple_drilled_hole_corner_envelopes(
 ) -> Result<Option<[[[f64; 3]; 2]; 2]>, CodecError> {
     let feature_id = table.feature_id;
     let resolve = |row: &crate::surface::SurfaceRow| -> Result<Option<[[f64; 3]; 2]>, CodecError> {
-        Ok(unique_surface_parameter_record(ctx, scan, row)?
-            .and_then(crate::surface::SurfaceParameterRecord::type24_terminal_corner_envelope))
+        let Some(record) = unique_surface_parameter_record(ctx, scan, row)? else {
+            return Ok(None);
+        };
+        record.type24_terminal_corner_envelope_checked(ctx)
     };
     let mut entries = table.entries.iter();
     let mut next = || {

@@ -73,8 +73,13 @@ fn scan(payload: &[u8]) -> super::LoopArrayScan {
     scan_with_limits(payload, u64::MAX, u64::MAX).expect("service loop array scan")
 }
 
-fn assert_loop_array_collection_refusal(limit: u64, operation: &'static str) {
+fn assert_loop_array_collection_refusal(operation: &'static str) {
     let payload = frame(1, &row(1, &[0xe2, 0x10]));
+    let limit = crate::test_support::allocation_limit_at(
+        ResourceDimension::CollectionItems,
+        Some(operation),
+        |limit| scan_with_limits(&payload, limit, u64::MAX),
+    );
     let error = scan_with_limits(&payload, limit, u64::MAX)
         .expect_err("loop array exceeds collection limit");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
@@ -84,17 +89,17 @@ fn assert_loop_array_collection_refusal(limit: u64, operation: &'static str) {
 
 #[test]
 fn loop_array_refuses_frame_record_before_growth() {
-    assert_loop_array_collection_refusal(0, "creo loop array frame records");
+    assert_loop_array_collection_refusal("creo loop array frame records");
 }
 
 #[test]
 fn loop_array_refuses_frame_before_growth() {
-    assert_loop_array_collection_refusal(1, "creo loop array frames");
+    assert_loop_array_collection_refusal("creo loop array frames");
 }
 
 #[test]
 fn loop_array_refuses_section_record_before_growth() {
-    assert_loop_array_collection_refusal(2, "creo loop array section records");
+    assert_loop_array_collection_refusal("creo loop array section records");
 }
 
 #[test]
@@ -257,3 +262,52 @@ fn loop_array_framing_and_token_walks_refuse_work() {
 }
 
 mod prototype_visits;
+
+fn work_output<T>(
+    run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+) -> T {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let capped = |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_entities = 0;
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let result = run(&ctx);
+        if let Err(CodecError::ResourceLimit(original)) = &result {
+            assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(original));
+            assert!(
+                matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if &actual == original)
+            );
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if &actual == original)
+            );
+        }
+        result
+    };
+    let work = crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, capped);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = work;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_entities = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let value = run(&ctx).expect("walker admits the unchanged fixture");
+    let original = ctx
+        .charge_work_limit(1, "after owner work route")
+        .expect_err("exact work cap");
+    assert!(matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
+    );
+    value
+}

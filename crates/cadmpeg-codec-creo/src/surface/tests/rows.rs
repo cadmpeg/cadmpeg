@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 use super::counted_parameter_scalar_slots;
 use super::cross_section_parameter_records;
@@ -13,7 +14,7 @@ use crate::surface::complete_surface_array_bounds as checked_complete_surface_ar
 use crate::surface::contour_records_for_rows;
 use crate::surface::counted_row_bounds as checked_counted_row_bounds;
 use crate::surface::cross_section_rows as checked_cross_section_rows;
-use crate::surface::cylinder_frame_readers::decode_compound_local_system_cylinder_frame;
+use crate::surface::cylinder_frame_readers::decode_compound_local_system_cylinder_frame as checked_decode_compound_local_system_cylinder_frame;
 use crate::surface::decode_positional_spline_replay;
 use crate::surface::decode_tabulated_cylinder_frame;
 use crate::surface::plane_envelopes_for_rows;
@@ -70,32 +71,20 @@ fn surface_limit_result<T>(
     decode(&ctx, payload)
 }
 
-fn last_limit_before_counted_scalar_array(payload: &[u8]) -> u64 {
-    use cadmpeg_core::decode::ResourceDimension;
-    let error = crate::test_support::last_refusal_at(
-        &[],
-        ResourceDimension::CollectionItems,
-        "creo scalar array values",
-        |ctx| {
-            crate::surface::named_prototype_records(
-                ctx,
-                payload,
-                &mut crate::lane_refusal::LaneRefusals::new(),
-            )
-        },
-    );
-    let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
-        panic!("scalar array boundary must refuse");
-    };
-    refusal.limit
-}
-
 #[test]
 fn surface_rows_refuse_before_row_vector_growth() {
     use cadmpeg_core::decode::ResourceDimension;
     let payload = [7, 0x22, 4, 0x01, 0, 0];
-    let error = surface_limit_result(&payload, 0, checked_rows)
-        .expect_err("one row needs one collection item");
+    let error = surface_limit_result(
+        &payload,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some("creo surface rows"),
+            |cap| surface_limit_result(&payload, cap, checked_rows),
+        ),
+        checked_rows,
+    )
+    .expect_err("one row needs one collection item");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
@@ -107,17 +96,33 @@ fn surface_rows_refuse_before_row_vector_growth() {
 fn surface_row_id_nodes_refuse_before_btree_insertion() {
     use cadmpeg_core::decode::ResourceDimension;
     let payload = [7, 0x22, 4, 0x01, 0, 0];
-    let error = surface_limit_result(&payload, 1, checked_rows)
-        .expect_err("one unique row ID needs a BTree node");
+    let error = surface_limit_result(
+        &payload,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some("creo surface row ID nodes"),
+            |cap| surface_limit_result(&payload, cap, checked_rows),
+        ),
+        checked_rows,
+    )
+    .expect_err("one unique row ID needs a BTree node");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo surface row ID nodes")
     );
     assert_eq!(
-        surface_limit_result(&payload, 2, checked_rows)
-            .expect("row and ID admitted")
-            .len(),
+        surface_limit_result(
+            &payload,
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                None,
+                |cap| surface_limit_result(&payload, cap, checked_rows)
+            ),
+            checked_rows
+        )
+        .expect("row and ID admitted")
+        .len(),
         1
     );
 }
@@ -126,17 +131,33 @@ fn surface_row_id_nodes_refuse_before_btree_insertion() {
 fn surface_framed_rows_refuse_before_result_growth() {
     use cadmpeg_core::decode::ResourceDimension;
     let payload = b"srf_array\0\xf8\x01\x07\x22\x04\x01\x00\x00";
-    let error = surface_limit_result(payload, 2, checked_rows)
-        .expect_err("framed row needs a collection item");
+    let error = surface_limit_result(
+        payload,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some("creo framed surface rows"),
+            |cap| surface_limit_result(payload, cap, checked_rows),
+        ),
+        checked_rows,
+    )
+    .expect_err("framed row needs a collection item");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo framed surface rows")
     );
     assert_eq!(
-        surface_limit_result(payload, 3, checked_rows)
-            .expect("frame admitted")
-            .len(),
+        surface_limit_result(
+            payload,
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                None,
+                |cap| surface_limit_result(payload, cap, checked_rows)
+            ),
+            checked_rows
+        )
+        .expect("frame admitted")
+        .len(),
         1
     );
 }
@@ -145,17 +166,33 @@ fn surface_framed_rows_refuse_before_result_growth() {
 fn counted_surface_row_bounds_refuse_before_result_growth() {
     use cadmpeg_core::decode::ResourceDimension;
     let payload = b"srf_array\0\xf8\x01\x07\x22\x04\x01\x00\x00";
-    let error = surface_limit_result(payload, 3, checked_counted_row_bounds)
-        .expect_err("counted row bound needs a collection item");
+    let error = surface_limit_result(
+        payload,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some("creo counted surface row bounds"),
+            |cap| surface_limit_result(payload, cap, checked_counted_row_bounds),
+        ),
+        checked_counted_row_bounds,
+    )
+    .expect_err("counted row bound needs a collection item");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo counted surface row bounds")
     );
     assert_eq!(
-        surface_limit_result(payload, 4, checked_counted_row_bounds)
-            .expect("bound admitted")
-            .len(),
+        surface_limit_result(
+            payload,
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                None,
+                |cap| surface_limit_result(payload, cap, checked_counted_row_bounds)
+            ),
+            checked_counted_row_bounds
+        )
+        .expect("bound admitted")
+        .len(),
         1
     );
 }
@@ -164,17 +201,33 @@ fn counted_surface_row_bounds_refuse_before_result_growth() {
 fn complete_surface_array_bounds_refuse_before_result_growth() {
     use cadmpeg_core::decode::ResourceDimension;
     let payload = b"srf_array\0\xf8\x01\x07\x22\x04\x01\x00\x00";
-    let error = surface_limit_result(payload, 3, checked_complete_surface_array_bounds)
-        .expect_err("complete frame needs a collection item");
+    let error = surface_limit_result(
+        payload,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some("creo complete surface array bounds"),
+            |cap| surface_limit_result(payload, cap, checked_complete_surface_array_bounds),
+        ),
+        checked_complete_surface_array_bounds,
+    )
+    .expect_err("complete frame needs a collection item");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo complete surface array bounds")
     );
     assert_eq!(
-        surface_limit_result(payload, 4, checked_complete_surface_array_bounds)
-            .expect("bound admitted")
-            .len(),
+        surface_limit_result(
+            payload,
+            crate::test_support::allocation_limit_at(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                None,
+                |cap| surface_limit_result(payload, cap, checked_complete_surface_array_bounds)
+            ),
+            checked_complete_surface_array_bounds
+        )
+        .expect("bound admitted")
+        .len(),
         1
     );
 }
@@ -183,11 +236,20 @@ fn complete_surface_array_bounds_refuse_before_result_growth() {
 fn named_prototype_scan_refuses_each_vector_boundary() {
     use cadmpeg_core::decode::ResourceDimension;
     let payload = b"srf_prim_ptr(torus)\0\xe0\x01radius1\0\x18\xe3";
-    for (limit, operation) in [
-        (0, "creo named prototype field positions"),
-        (2, "creo named prototype field ranges"),
-        (3, "creo named prototype frames"),
+    for operation in [
+        "creo named prototype field positions",
+        "creo named prototype field ranges",
+        "creo named prototype frames",
     ] {
+        let limit = crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            Some(operation),
+            |cap| {
+                surface_limit_result(payload, cap, |ctx, input| {
+                    super::frames_with_checked_cache(ctx, input).map(|frames| frames.len())
+                })
+            },
+        );
         let error = surface_limit_result(payload, limit, |ctx, input| {
             super::frames_with_checked_cache(ctx, input).map(|frames| frames.len())
         })
@@ -211,21 +273,37 @@ fn named_prototype_scan_refuses_each_vector_boundary() {
 fn prototype_parameter_spans_refuse_before_row_filter_growth() {
     use cadmpeg_core::decode::ResourceDimension;
     let payload = b"srf_prim_ptr(torus)\0\xe0\x01radius1\0\x18\xe3";
-    let error = surface_limit_result(payload, 4, checked_rows)
-        .expect_err("one named parameter needs a span item");
+    let error = surface_limit_result(
+        payload,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some("creo prototype parameter spans"),
+            |cap| surface_limit_result(payload, cap, checked_rows),
+        ),
+        checked_rows,
+    )
+    .expect_err("one named parameter needs a span item");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo prototype parameter spans")
     );
-    assert!(surface_limit_result(payload, 5, checked_rows)
-        .expect("span admitted")
-        .is_empty());
+    assert!(surface_limit_result(
+        payload,
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            None,
+            |cap| surface_limit_result(payload, cap, checked_rows)
+        ),
+        checked_rows
+    )
+    .expect("span admitted")
+    .is_empty());
 }
 
 #[test]
 fn unknown_prototype_family_refuses_before_name_copy() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     let payload = b"srf_prim_ptr(foobar)\0";
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -239,21 +317,22 @@ fn unknown_prototype_family_refuses_before_name_copy() {
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo prototype family name")
     );
-    let frames = crate::decode::with_test_decode_ctx(|ctx| {
-        super::frames_with_checked_cache(ctx, payload)
-    })
-    .expect("unknown family admitted under service policy");
+    let frames =
+        crate::decode::with_test_decode_ctx(|ctx| super::frames_with_checked_cache(ctx, payload))
+            .expect("unknown family admitted under service policy");
     assert_eq!(frames.len(), 1);
     assert_eq!(frames[0].family.name(), "foobar");
 }
 
 #[test]
-fn lossy_prototype_family_formatter_preserves_utf8_replacement() {
+fn lossy_prototype_family_preserves_utf8_replacement() {
     let raw = b"a\xff\xf0\x9f\x92z";
-    assert_eq!(
-        format!("{}", crate::surface::LossyPrototypeName(raw)),
-        String::from_utf8_lossy(raw)
-    );
+    let mut payload = b"srf_prim_ptr(".to_vec();
+    payload.extend_from_slice(raw);
+    payload.extend_from_slice(b")\0");
+    let frames = super::work_output(|ctx| super::frames_with_checked_cache(ctx, &payload));
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0].family.name(), String::from_utf8_lossy(raw));
 }
 
 #[test]
@@ -285,7 +364,12 @@ fn named_prototype_parameter_name_refuses_before_retained_copy() {
             && refusal.operation == "creo named prototype parameter name")
     );
     assert_eq!(
-        run(u64::MAX).expect("prototype admitted under service limits"),
+        run(crate::test_support::allocation_limit_at(
+            ResourceDimension::RetainedBytes,
+            None,
+            run
+        ))
+        .expect("prototype admitted under finite limits"),
         1
     );
 }
@@ -302,8 +386,21 @@ fn contour_surface_frames_refuse_before_aggregate_growth() {
             .expect("surface frame fixture fits root limit");
         contour_records_for_rows(&ctx, payload, &[]).map(|records| records.len())
     };
-    assert_eq!(run(1).expect("one frame admitted"), 0);
-    let error = run(0).expect_err("frame lookup needs one slot");
+    assert_eq!(
+        run(crate::test_support::allocation_limit_at(
+            ResourceDimension::CollectionItems,
+            None,
+            run
+        ))
+        .expect("one frame admitted"),
+        0
+    );
+    let error = run(crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some("creo contour surface frames"),
+        run,
+    ))
+    .expect_err("frame lookup needs one slot");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
@@ -362,8 +459,6 @@ fn scalar_slots(
 
 #[test]
 fn scalar_body_slots_refuse_before_declared_count_reserve() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
     let body = [0xe4];
     assert_eq!(
         scalar_slots(
@@ -374,19 +469,20 @@ fn scalar_body_slots_refuse_before_declared_count_reserve() {
         ),
         Some(vec![Some(1.0)])
     );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy)
-        .expect("one scalar token fits the input limit");
-    let error = crate::surface::scalar_slots(
-        &ctx,
+    let error = crate::test_support::last_refusal_at(
         &body,
-        1,
-        &scalar::ScalarCache::default(),
-        &mut ScalarBodyRefusal::default(),
-    )
-    .expect_err("one declared scalar slot exceeds zero collection items");
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "creo scalar body slots",
+        |ctx| {
+            crate::surface::scalar_slots(
+                ctx,
+                &body,
+                1,
+                &scalar::ScalarCache::default(),
+                &mut ScalarBodyRefusal::default(),
+            )
+        },
+    );
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -473,7 +569,19 @@ fn named_spline_slots_refuse_before_declared_count_reserve() {
         ),
         Some(vec![(Some(1.0), vec![0xe4])])
     );
-    let error = named_spline_limit_error(0, u64::MAX);
+    let error = named_spline_limit_error(
+        crate::test_support::allocation_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            Some("creo named spline scalar slots"),
+            |cap| {
+                Err::<(), _>(named_spline_limit_error(
+                    cap,
+                    DecodePolicy::service().limits.max_retained_bytes,
+                ))
+            },
+        ),
+        DecodePolicy::service().limits.max_retained_bytes,
+    );
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -484,11 +592,16 @@ fn named_spline_slots_refuse_before_declared_count_reserve() {
 #[test]
 fn named_spline_token_refuses_before_retained_copy() {
     let error = named_spline_limit_error(
-        u64::MAX,
+        DecodePolicy::service().limits.max_collection_items,
         crate::test_support::allocation_limit_at(
             cadmpeg_core::decode::ResourceDimension::RetainedBytes,
             Some("creo named spline scalar token"),
-            |cap| Err::<(), _>(named_spline_limit_error(u64::MAX, cap)),
+            |cap| {
+                Err::<(), _>(named_spline_limit_error(
+                    DecodePolicy::service().limits.max_collection_items,
+                    cap,
+                ))
+            },
         ),
     );
     assert!(matches!(
@@ -617,15 +730,24 @@ fn positional_spline_replay_uses_the_named_array_extents() {
 }
 
 fn spline_collection_error(
-    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecError>,
+    operation: &str,
+    run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecError>,
 ) -> cadmpeg_core::CodecError {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[0x0f], &arena, &policy)
-        .expect("one scalar fits root limit");
-    run(&ctx).expect_err("one spline item exceeds collection limit")
+    let trial = |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0x0f], &arena, &policy)
+            .expect("one scalar fits root limit");
+        run(&ctx)
+    };
+    let cap = crate::test_support::allocation_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        Some(operation),
+        trial,
+    );
+    trial(cap).expect_err("one spline item exceeds collection limit")
 }
 
 #[test]
@@ -633,7 +755,7 @@ fn positional_spline_replay_refuses_scalar_vector() {
     use cadmpeg_core::decode::ResourceDimension;
     let body = [0x0f];
     let cache = scalar::ScalarCache::from_section(&body);
-    let error = spline_collection_error(|ctx| {
+    let error = spline_collection_error("creo spline replay scalar values", |ctx| {
         crate::surface::take_spline_scalars(ctx, &body, &mut 0, 1, "i_points", &cache).map(|_| ())
     });
     assert!(
@@ -646,8 +768,16 @@ fn positional_spline_replay_refuses_scalar_vector() {
 #[test]
 fn positional_spline_replay_refuses_point_vector() {
     use cadmpeg_core::decode::ResourceDimension;
-    let error = spline_collection_error(|ctx| {
-        crate::surface::spline_vectors(ctx, &[0.0, 1.0, 2.0]).map(|_| ())
+    let error = spline_collection_error("creo spline replay vectors", |ctx| {
+        crate::surface::take_spline_vectors(
+            ctx,
+            &[0x0f, 0xe4, 0x2f, 0, 0],
+            &mut 0,
+            3,
+            "i_points",
+            &scalar::ScalarCache::default(),
+        )
+        .map(|_| ())
     });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1132,174 +1262,6 @@ fn retains_named_spline_point_and_tangent_arrays() {
 }
 
 #[test]
-fn u_params_refuses_collection_limit_before_allocating_slots() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let payload = b"srf_prim_ptr(splsrf)\0\xe0\x02u_params\0\xf8\x04\x0f\x0f\x0f\x0f\xe3";
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = last_limit_before_counted_scalar_array(payload);
-    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
-        .expect("small prototype payload is admitted");
-    let error = crate::surface::named_prototype_records(
-        &ctx,
-        payload,
-        &mut crate::lane_refusal::LaneRefusals::new(),
-    )
-    .expect_err("four scalar slots exceed the three-item limit");
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo scalar array values"
-    ));
-
-    let service = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &service)
-        .expect("small prototype payload is admitted");
-    let records = crate::surface::named_prototype_records(
-        &ctx,
-        payload,
-        &mut crate::lane_refusal::LaneRefusals::new(),
-    )
-    .expect("service profile admits four slots");
-    let Some(SurfaceNamedValue::CountedScalarArray(array)) =
-        records[0].field("u_params").map(|field| &field.value)
-    else {
-        panic!("u_params must decode as a counted array");
-    };
-    assert_eq!(array.values(), &[Some(0.0); 4]);
-}
-
-#[test]
-fn v_params_refuses_collection_limit_before_allocating_slots() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let payload = b"srf_prim_ptr(splsrf)\0\xe0\x02v_params\0\xf8\x04\x0f\x0f\x0f\x0f\xe3";
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = last_limit_before_counted_scalar_array(payload);
-    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
-        .expect("small prototype payload is admitted");
-    let error = crate::surface::named_prototype_records(
-        &ctx,
-        payload,
-        &mut crate::lane_refusal::LaneRefusals::new(),
-    )
-    .expect_err("four scalar slots exceed the three-item limit");
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo scalar array values"
-    ));
-
-    let service = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &service)
-        .expect("small prototype payload is admitted");
-    let records = crate::surface::named_prototype_records(
-        &ctx,
-        payload,
-        &mut crate::lane_refusal::LaneRefusals::new(),
-    )
-    .expect("service profile admits four slots");
-    let Some(SurfaceNamedValue::CountedScalarArray(array)) =
-        records[0].field("v_params").map(|field| &field.value)
-    else {
-        panic!("v_params must decode as a counted array");
-    };
-    assert_eq!(array.values(), &[Some(0.0); 4]);
-}
-
-#[test]
-fn params_refuses_collection_limit_before_allocating_slots() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let payload = b"srf_prim_ptr(tab_cyl)\0\xe0\x02params\0\xf8\x03\xe6\xe3";
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = last_limit_before_counted_scalar_array(payload);
-    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
-        .expect("small prototype payload is admitted");
-    let error = crate::surface::named_prototype_records(
-        &ctx,
-        payload,
-        &mut crate::lane_refusal::LaneRefusals::new(),
-    )
-    .expect_err("three scalar slots exceed the two-item limit");
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo scalar array values"
-    ));
-
-    let service = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &service)
-        .expect("small prototype payload is admitted");
-    let records = crate::surface::named_prototype_records(
-        &ctx,
-        payload,
-        &mut crate::lane_refusal::LaneRefusals::new(),
-    )
-    .expect("service profile admits three slots");
-    let Some(SurfaceNamedValue::CountedScalarArray(array)) =
-        records[0].field("params").map(|field| &field.value)
-    else {
-        panic!("params must decode as a counted array");
-    };
-    assert_eq!(array.values(), &[Some(0.0); 3]);
-}
-
-#[test]
-fn counted_surface_arrays_share_the_collection_item_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let payload = b"srf_prim_ptr(splsrf)\0\
-        \xe0\x02u_params\0\xf8\x02\x0f\x0f\
-        \xe0\x02v_params\0\xf8\x02\x0f\x0f\xe3";
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = last_limit_before_counted_scalar_array(payload);
-    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
-        .expect("small prototype payload is admitted");
-    let error = crate::surface::named_prototype_records(
-        &ctx,
-        payload,
-        &mut crate::lane_refusal::LaneRefusals::new(),
-    )
-    .expect_err("the second array exceeds the shared collection budget");
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo scalar array values"
-    ));
-
-    let service = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &service)
-        .expect("small prototype payload is admitted");
-    let records = crate::surface::named_prototype_records(
-        &ctx,
-        payload,
-        &mut crate::lane_refusal::LaneRefusals::new(),
-    )
-    .expect("service profile admits both arrays");
-    for name in ["u_params", "v_params"] {
-        let Some(SurfaceNamedValue::CountedScalarArray(array)) =
-            records[0].field(name).map(|field| &field.value)
-        else {
-            panic!("{name} must decode as a counted array");
-        };
-        assert_eq!(array.values(), &[Some(0.0); 2]);
-    }
-}
-
-#[test]
 fn spline_slots_consume_unresolved_tokens_without_scanning_their_payloads() {
     let body = [0xaa, 0xe4, 1, 2, 3, 4, 5, 0xe4];
     let slots = named_spline_scalar_slots(
@@ -1430,207 +1392,6 @@ fn tabulated_cylinder_control_point_field_expands_contiguous_ids() {
     assert_eq!(
         records[0].tabulated_cylinder_control_point_ids(),
         Some([80, 81, 82, 83])
-    );
-}
-
-#[test]
-fn counted_parameters_expand_compact_zero_runs() {
-    let body = [0xe4, 0xe5, 0x0f, 0xe6];
-
-    assert_eq!(
-        counted_parameter_scalar_slots(&body, 7, &scalar::ScalarCache::default()),
-        Some(vec![
-            (Some(1.0), vec![0xe4]),
-            (Some(0.0), vec![0xe5]),
-            (Some(0.0), vec![]),
-            (Some(0.0), vec![0x0f]),
-            (Some(0.0), vec![0xe6]),
-            (Some(0.0), vec![]),
-            (Some(0.0), vec![]),
-        ])
-    );
-}
-
-#[test]
-fn counted_parameter_slots_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
-    let error = crate::surface::counted_parameter_scalar_slots(
-        &ctx,
-        &[0xe4],
-        1,
-        &scalar::ScalarCache::default(),
-    )
-    .expect_err("two parser states exceed the collection limit");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo_counted_parameter_slots"
-    ));
-}
-
-fn counted_slot_error(
-    body: &[u8],
-    count: usize,
-    collection_limit: u64,
-    retained_limit: u64,
-) -> cadmpeg_core::CodecError {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = collection_limit;
-    policy.limits.max_retained_bytes = retained_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(body, &arena, &policy)
-        .expect("counted parameter input fits the root limit");
-    crate::surface::counted_parameter_scalar_slots(
-        &ctx,
-        body,
-        count,
-        &scalar::ScalarCache::default(),
-    )
-    .expect_err("the selected parser allocation exceeds its limit")
-}
-
-#[test]
-fn counted_parameter_initial_tree_entry_refuses_before_insert() {
-    let body = [0xe4];
-    assert_eq!(
-        counted_parameter_scalar_slots(&body, 1, &scalar::ScalarCache::default()),
-        Some(vec![(Some(1.0), vec![0xe4])])
-    );
-    let error = counted_slot_error(&body, 1, 2, u64::MAX);
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "creo counted parameter initial state"
-    ));
-}
-
-#[test]
-fn counted_parameter_token_bytes_refuse_before_copy() {
-    let error = counted_slot_error(
-        &[0xe4],
-        1,
-        u64::MAX,
-        crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            Some("creo counted parameter token bytes"),
-            |cap| Err::<(), _>(counted_slot_error(&[0xe4], 1, u64::MAX, cap)),
-        ),
-    );
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "creo counted parameter token bytes"
-    ));
-}
-
-#[test]
-fn counted_parameter_suffix_slot_refuses_before_growth() {
-    let error = counted_slot_error(&[0xe4], 1, 3, u64::MAX);
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "creo counted parameter suffix slot"
-    ));
-}
-
-#[test]
-fn counted_parameter_accumulated_slots_refuse_before_growth() {
-    let error = counted_slot_error(&[0xe4], 1, 4, u64::MAX);
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "creo counted parameter accumulated slots"
-    ));
-}
-
-#[test]
-fn counted_parameter_next_tree_entry_refuses_before_insert() {
-    let error = counted_slot_error(&[0xe4], 1, 5, u64::MAX);
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "creo counted parameter state entries"
-    ));
-}
-
-#[test]
-fn counted_parameter_zero_run_slots_refuse_before_growth() {
-    let body = [0xe5];
-    assert_eq!(
-        counted_parameter_scalar_slots(&body, 2, &scalar::ScalarCache::default()),
-        Some(vec![(Some(0.0), vec![0xe5]), (Some(0.0), vec![])])
-    );
-    let error = counted_slot_error(&body, 2, 4, u64::MAX);
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "creo counted parameter zero-run slots"
-    ));
-}
-
-#[test]
-fn counted_parameter_branch_slots_refuse_before_clone() {
-    let body = [0xe4, 0x18];
-    assert_eq!(
-        counted_parameter_scalar_slots(&body, 2, &scalar::ScalarCache::default()),
-        Some(vec![(Some(1.0), vec![0xe4]), (Some(0.0), vec![0x18])])
-    );
-    let error = counted_slot_error(&body, 2, 7, u64::MAX);
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "creo counted parameter branch slots"
-    ));
-}
-
-#[test]
-fn counted_parameters_use_the_exact_extent_to_select_cache_or_zero() {
-    let cache = scalar::ScalarCache::from_section(&[0x46, 0, 0, 0, 0, 0, 0, 0]);
-
-    assert_eq!(
-        counted_parameter_scalar_slots(&[0x18, 0x00], 1, &cache),
-        Some(vec![(Some(2.0), vec![0x18, 0x00])])
-    );
-    assert_eq!(
-        counted_parameter_scalar_slots(&[0x18, 0, 1, 2, 3, 4, 5, 6], 2, &cache),
-        Some(vec![
-            (Some(0.0), vec![0x18]),
-            (
-                Some(f64::from_be_bytes([0x40, 0x75, 1, 2, 3, 4, 5, 6])),
-                vec![0, 1, 2, 3, 4, 5, 6],
-            ),
-        ])
-    );
-}
-
-#[test]
-fn counted_parameters_reject_multiple_complete_tokenizations() {
-    let cache = scalar::ScalarCache::from_section(&[0x46, 0, 0, 0, 0, 0, 0, 0]);
-    let body = [0x18, 0, 0xe5, 0x29, 0x18, 4, 0x29, 5, 0xe6];
-
-    assert_eq!(counted_parameter_scalar_slots(&body, 5, &cache), None);
-}
-
-#[test]
-fn counted_parameters_require_exact_zero_run_cardinality() {
-    let body = [0xe4, 0xe5, 0x0f, 0xe6];
-
-    assert_eq!(
-        counted_parameter_scalar_slots(&body, 6, &scalar::ScalarCache::default()),
-        None
-    );
-    assert_eq!(
-        counted_parameter_scalar_slots(&body, 8, &scalar::ScalarCache::default()),
-        None
     );
 }
 
@@ -1980,5 +1741,15 @@ fn a_spline_scalar_body_that_is_not_exactly_its_declared_slots_is_refused() {
 }
 
 mod deduplication;
+
+fn decode_compound_local_system_cylinder_frame(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<crate::surface::PositionalCylinderFrame> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        checked_decode_compound_local_system_cylinder_frame(ctx, body, cache)
+    })
+    .expect("cylinder fixture admission")
+}
 
 mod counted_parameters;
