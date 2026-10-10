@@ -5906,7 +5906,11 @@ fn parse_surface_contour_chain(
     row: &SurfaceRow,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<Vec<SurfaceContourRecord>>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let mut cursor = start;
+    let mut heads = start..end.min(payload.len());
     let mut chain = Vec::new();
     loop {
         let contour_start = cursor;
@@ -5914,6 +5918,9 @@ fn parse_surface_contour_chain(
             return Ok(None);
         }
         let Some(head) = payload.get(cursor..cursor + 2) else {
+            return Ok(None);
+        };
+        let Some(_) = ctx.next_charged(&mut heads, "creo contour chain head visits")? else {
             return Ok(None);
         };
         if !(0x80..=0xbf).contains(&head[0]) {
@@ -5983,6 +5990,7 @@ fn parse_surface_contour_chain(
             envelope_offset,
             surface_row_offset: row.offset,
         });
+        heads.start = cursor;
         if terminal {
             return Ok(Some(chain));
         }
@@ -7978,20 +7986,21 @@ fn plane_envelopes_for_rows(
 ) -> Result<Vec<PlaneEnvelopeRecord>, CodecError> {
     const NAMED_OUTLINE: &[u8] = b"outline\0\xf9\x02\x03";
     let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
-    let headers = all_rows
-        .iter()
-        .enumerate()
-        .filter(|(_, row)| row.kind == SurfaceKind::Plane)
-        .filter_map(|(index, row)| {
-            positional_body_start(payload, row).map(|body_start| {
-                let row_end = all_rows
-                    .get(index + 1)
-                    .map_or(payload.len(), |next| next.offset);
-                (row, body_start, row_end)
-            })
-        });
+    let mut rows = all_rows.iter().enumerate();
     let mut envelopes = Vec::new();
-    for (row, body_start, row_end) in headers {
+    while rows.len() != 0 {
+        let Some((index, row)) = ctx.next_charged(&mut rows, "creo positional plane envelope rows")? else {
+            break;
+        };
+        if row.kind != SurfaceKind::Plane {
+            continue;
+        }
+        let Some(body_start) = positional_body_start(payload, row) else {
+            continue;
+        };
+        let row_end = all_rows
+            .get(index + 1)
+            .map_or(payload.len(), |next| next.offset);
         let Some(body) = payload.get(body_start..row_end) else {
             continue;
         };
@@ -8087,30 +8096,51 @@ fn plane_envelopes_for_rows(
             offset: body_start,
         });
     }
-    for (index, row) in all_rows
-        .iter()
-        .enumerate()
-        .filter(|(_, row)| row.kind == SurfaceKind::Plane)
-    {
+    let mut rows = all_rows.iter().enumerate();
+    while rows.len() != 0 {
+        let Some((index, row)) = ctx.next_charged(&mut rows, "creo named plane envelope rows")? else {
+            break;
+        };
+        if row.kind != SurfaceKind::Plane {
+            continue;
+        }
         let row_end = all_rows
             .get(index + 1)
             .map_or(payload.len(), |next| next.offset);
-        let named_end = payload[row.offset..row_end]
+        let mut prototypes = payload[row.offset..row_end]
             .windows(b"srf_prim_ptr(".len())
-            .position(|window| window == b"srf_prim_ptr(")
-            .map_or(row_end, |relative| {
-                let prototype = row.offset + relative;
-                prototype
-                    .checked_sub(2)
-                    .filter(|start| {
-                        payload.get(*start..prototype) == Some(&[psb::token::NAMED_RECORD, 0x00])
-                    })
-                    .unwrap_or(prototype)
-            });
-        let Some(relative) = payload[row.offset..named_end]
-            .windows(NAMED_OUTLINE.len())
-            .position(|window| window == NAMED_OUTLINE)
-        else {
+            .enumerate();
+        let mut prototype_offset = None;
+        while prototypes.len() != 0 {
+            let Some((offset, window)) = ctx.next_charged(&mut prototypes, "creo named plane prototype boundary")? else {
+                break;
+            };
+            if window == b"srf_prim_ptr(" {
+                prototype_offset = Some(offset);
+                break;
+            }
+        }
+        let named_end = prototype_offset.map_or(row_end, |relative| {
+            let prototype = row.offset + relative;
+            prototype
+                .checked_sub(2)
+                .filter(|start| {
+                    payload.get(*start..prototype) == Some(&[psb::token::NAMED_RECORD, 0x00])
+                })
+                .unwrap_or(prototype)
+        });
+        let mut outlines = payload[row.offset..named_end].windows(NAMED_OUTLINE.len()).enumerate();
+        let mut outline_offset = None;
+        while outlines.len() != 0 {
+            let Some((offset, window)) = ctx.next_charged(&mut outlines, "creo named plane outline boundary")? else {
+                break;
+            };
+            if window == NAMED_OUTLINE {
+                outline_offset = Some(offset);
+                break;
+            }
+        }
+        let Some(relative) = outline_offset else {
             continue;
         };
         let outline = row.offset + relative;
