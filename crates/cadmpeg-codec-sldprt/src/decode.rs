@@ -4321,6 +4321,12 @@ fn assign_native_configuration_indices(
     {
         let mut record_storage = ctx.reserve_scoped(0, OPERATION)?;
         let mut records = BTreeMap::<&str, (usize, usize)>::new();
+        let mut indexed = false;
+        for configuration in ctx.admit_iter(&ir.model.configurations, OPERATION)? {
+            let Some(native_ref) = configuration.native_ref.as_deref() else {
+                continue;
+            };
+            if !indexed {
         for (history_index, history) in ctx
             .admit_iter(&native.feature_histories, OPERATION)?
             .enumerate()
@@ -4341,10 +4347,8 @@ fn assign_native_configuration_indices(
                 }
             }
         }
-        for configuration in ctx.admit_iter(&ir.model.configurations, OPERATION)? {
-            let Some(native_ref) = configuration.native_ref.as_deref() else {
-                continue;
-            };
+                indexed = true;
+            }
             if let Some(&position) = ctx.get_btree_map(&records, native_ref, OPERATION)? {
                 assignment_storage.with_storage(|| {
                     ctx.push_vec(
