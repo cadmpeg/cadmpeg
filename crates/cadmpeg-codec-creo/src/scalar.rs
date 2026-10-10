@@ -332,11 +332,13 @@ impl ScalarCache {
             let mut ieee = raw;
             ieee[0] = 0x40;
             let tail = [raw[2], raw[3], raw[4], raw[5], raw[6], raw[7]];
-            match cache_storage.with_storage(|| ctx.entry_hash_map(
-                &mut paired_byte_1_by_tail,
-                tail,
-                "creo scalar cache paired tails",
-            ))? {
+            match cache_storage.with_storage(|| {
+                ctx.entry_hash_map(
+                    &mut paired_byte_1_by_tail,
+                    tail,
+                    "creo scalar cache paired tails",
+                )
+            })? {
                 std::collections::hash_map::Entry::Vacant(entry) => {
                     entry.insert(Some(raw[1]));
                 }
@@ -346,9 +348,8 @@ impl ScalarCache {
                     }
                 }
             }
-            cache_storage.with_storage(|| {
-                ctx.reserve_vec(&mut entries, 1, "creo scalar cache entries")
-            })?;
+            cache_storage
+                .with_storage(|| ctx.reserve_vec(&mut entries, 1, "creo scalar cache entries"))?;
             // endian-exception: reconstructed-scalar
             entries.push(f64::from_be_bytes(ieee));
         }
@@ -965,14 +966,7 @@ pub(crate) fn decode_inline_non_plane_local_system_prefix(
     let mut explicit = [None; 16];
     let mut count = 0;
     let mut values = [0.0; 12];
-    walk_inline_explicit_local_system(
-        body,
-        cache,
-        (0, 0),
-        &mut values,
-        &mut explicit,
-        &mut count,
-    );
+    walk_inline_explicit_local_system(body, cache, (0, 0), &mut values, &mut explicit, &mut count);
     Ok(compact
         .into_iter()
         .chain(explicit.into_iter().flatten().map(|(values, cursor)| {
@@ -1181,14 +1175,7 @@ fn walk_inline_explicit_local_system(
 
     for (value, next) in decode_inline_local_system_coordinates(body, cursor, slot, cache) {
         values[slot] = value;
-        walk_inline_explicit_local_system(
-            body,
-            cache,
-            (slot + 1, next),
-            values,
-            results,
-            count,
-        );
+        walk_inline_explicit_local_system(body, cache, (slot + 1, next), values, results, count);
     }
 }
 
@@ -2371,6 +2358,9 @@ fn ieee7_dict(data: &[u8], offset: usize, high: u16) -> Option<(f64, usize)> {
 }
 
 #[cfg(test)]
+mod admission_tests;
+
+#[cfg(test)]
 mod cache_storage_tests;
 
 #[cfg(test)]
@@ -2414,75 +2404,21 @@ mod tests {
     }
 
     #[test]
-    fn scalar_cache_discovery_and_duplicate_hashing_refuse_work() {
-        let images = [0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x46, 0x08, 0, 0, 0, 0, 0, 0];
-        let cache = crate::test_support::assert_work_boundaries(
-            &[
-                "creo scalar cache discovery",
-                "creo scalar cache unique images",
-            ],
-            |ctx| ScalarCache::from_section_checked(ctx, &images).map(|cache| cache.entries.len()),
-        );
-        assert_eq!(cache, 1, "equal images remain deduplicated");
-        let error = crate::test_support::last_refusal_at(
-            &[0; 16],
-            cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            "creo scalar cache discovery",
-            |ctx| ScalarCache::from_section_checked(ctx, &[0; 16]).map(|_| ()),
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "creo scalar cache discovery")
-        );
-    }
-
-    #[test]
-    fn duplicate_scalar_image_hashing_refuses_after_the_first_image() {
-        let images = [0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x46, 0x08, 0, 0, 0, 0, 0, 0];
-        // The last image-set refusal is the duplicate's lookup: it hashes and
-        // compares its eight bytes once and adds no table growth.
-        let error = crate::test_support::last_refusal_at(
-            &images,
-            cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            "creo scalar cache unique images",
-            |ctx| ScalarCache::from_section_checked(ctx, &images).map(|_| ()),
-        );
-        let cadmpeg_core::CodecError::ResourceLimit(resource) = error else {
-            panic!("hash work refusal");
-        };
-        assert_eq!(resource.operation, "creo scalar cache unique images");
-        assert_eq!(resource.additional, 8);
-    }
-
-    #[test]
-    fn double_xar_discovery_and_slot_parsing_refuse_work() {
-        let bytes = b"double_xar\0\xf8\x02\x10\xe0";
-        let tables = crate::test_support::assert_work_boundaries(
-            &["creo double_xar discovery", "creo double_xar slot parsing"],
-            |ctx| double_xar_tables(ctx, bytes),
-        );
-        assert_eq!(tables.len(), 1);
-        let error = crate::test_support::last_refusal_at(
-            &[0; 16],
-            cadmpeg_core::decode::ResourceDimension::WorkUnits,
-            "creo double_xar discovery",
-            |ctx| double_xar_tables(ctx, &[0; 16]),
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "creo double_xar discovery")
-        );
-    }
-
-    #[test]
     fn inline_explicit_frame_fixed_grammar_is_free_before_absent_candidate() {
         let bytes = [0xe4];
         let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
             super::decode_inline_non_plane_local_system_prefix(ctx, &bytes, &ScalarCache::default())
                 .map(std::iter::Iterator::count)
         };
-        assert_eq!(with_recursive_limits(&bytes, 0, 0, decode)
-            .expect("fixed grammar has no input-sized recursion"), 0);
-        assert_eq!(with_context(&bytes, decode)
-            .expect("service profile preserves the absent candidate"), 0);
+        assert_eq!(
+            with_recursive_limits(&bytes, 0, 0, decode)
+                .expect("fixed grammar has no input-sized recursion"),
+            0
+        );
+        assert_eq!(
+            with_context(&bytes, decode).expect("service profile preserves the absent candidate"),
+            0
+        );
     }
 
     #[test]
@@ -2492,10 +2428,15 @@ mod tests {
             super::decode_inline_non_plane_origin_prefix(ctx, &bytes, 0, &ScalarCache::default())
                 .map(std::iter::Iterator::count)
         };
-        assert_eq!(with_recursive_limits(&bytes, 0, 0, decode)
-            .expect("fixed grammar has no input-sized recursion"), 0);
-        assert_eq!(with_context(&bytes, decode)
-            .expect("service profile preserves the absent candidate"), 0);
+        assert_eq!(
+            with_recursive_limits(&bytes, 0, 0, decode)
+                .expect("fixed grammar has no input-sized recursion"),
+            0
+        );
+        assert_eq!(
+            with_context(&bytes, decode).expect("service profile preserves the absent candidate"),
+            0
+        );
     }
 
     #[test]
@@ -2505,25 +2446,15 @@ mod tests {
             super::decode_plane_support_lane_variants(ctx, &bytes, &ScalarCache::default())
                 .map(std::iter::Iterator::count)
         };
-        assert_eq!(with_recursive_limits(&bytes, 0, 0, decode)
-            .expect("fixed grammar has no input-sized recursion"), 0);
-        assert_eq!(with_context(&bytes, decode)
-            .expect("service profile preserves the absent candidate"), 0);
-    }
-
-    fn checked_cache_with_collection_limit(
-        limit: u64,
-    ) -> Result<(usize, Option<u8>), cadmpeg_core::CodecError> {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
-        let bytes = [0x46, 0x08, 1, 2, 3, 4, 5, 6];
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("the scalar image fits the root limit");
-        ScalarCache::from_section_checked(&ctx, &bytes)
-            .map(|cache| (cache.entries.len(), cache.paired_byte_1(&[1, 2, 3, 4, 5, 6])))
+        assert_eq!(
+            with_recursive_limits(&bytes, 0, 0, decode)
+                .expect("fixed grammar has no input-sized recursion"),
+            0
+        );
+        assert_eq!(
+            with_context(&bytes, decode).expect("service profile preserves the absent candidate"),
+            0
+        );
     }
 
     fn with_context<T>(
@@ -2536,165 +2467,6 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
             .expect("the scalar fixture fits the root limit");
         f(&ctx)
-    }
-
-    fn double_xar_with_limits(
-        bytes: &[u8],
-        items: u64,
-        retained: u64,
-    ) -> Result<Vec<super::DoubleXarTable>, cadmpeg_core::CodecError> {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = items;
-        policy.limits.max_retained_bytes = retained;
-        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
-            .expect("the dictionary fixture fits the root limit");
-        double_xar_tables(&ctx, bytes)
-    }
-
-    #[test]
-    fn double_xar_slots_refuse_before_counted_growth() {
-        use cadmpeg_core::decode::ResourceDimension;
-        let bytes = b"double_xar\0\xf8\x02\x10\xe0";
-        assert_eq!(
-            double_xar_with_limits(
-                bytes,
-                crate::test_support::allocation_limit_at(
-                    ResourceDimension::CollectionItems,
-                    None,
-                    |cap| double_xar_with_limits(bytes, cap, u64::MAX)
-                ),
-                u64::MAX
-            )
-            .expect("table admitted")
-            .len(),
-            1
-        );
-        let error = double_xar_with_limits(
-            bytes,
-            crate::test_support::allocation_limit_at(
-                ResourceDimension::CollectionItems,
-                Some("creo double_xar slots"),
-                |cap| double_xar_with_limits(bytes, cap, u64::MAX),
-            ),
-            u64::MAX,
-        )
-        .expect_err("second slot needs admission");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo double_xar slots")
-        );
-    }
-
-    #[test]
-    fn double_xar_table_refuses_before_result_growth() {
-        use cadmpeg_core::decode::ResourceDimension;
-        let bytes = b"double_xar\0\xf8\x02\x10\xe0";
-        let error = double_xar_with_limits(
-            bytes,
-            crate::test_support::allocation_limit_at(
-                ResourceDimension::CollectionItems,
-                Some("creo double_xar tables"),
-                |cap| double_xar_with_limits(bytes, cap, u64::MAX),
-            ),
-            u64::MAX,
-        )
-        .expect_err("table needs admission");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "creo double_xar tables")
-        );
-    }
-
-    #[test]
-    fn double_xar_literal_refuses_before_retained_copy() {
-        use cadmpeg_core::decode::ResourceDimension;
-        let bytes = b"double_xar\0\xf8\x02\x46\x08\x00\x00\x00\x00\x00\x00\xe0";
-        assert_eq!(
-            double_xar_with_limits(
-                bytes,
-                u64::MAX,
-                crate::test_support::allocation_limit_at(
-                    cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                    None,
-                    |cap| double_xar_with_limits(bytes, u64::MAX, cap)
-                )
-            )
-            .expect("literal admitted")
-            .len(),
-            1
-        );
-        let error = double_xar_with_limits(
-            bytes,
-            u64::MAX,
-            crate::test_support::allocation_limit_at(
-                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                Some("creo double_xar literal bytes"),
-                |cap| double_xar_with_limits(bytes, u64::MAX, cap),
-            ),
-        )
-        .expect_err("literal bytes need admission");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "creo double_xar literal bytes")
-        );
-    }
-
-    #[test]
-    fn scalar_cache_unique_image_refuses_before_hash_growth() {
-        let cache = checked_cache_with_collection_limit(crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            None,
-            checked_cache_with_collection_limit,
-        ))
-        .expect("service-sized collection budget admits one scalar");
-        assert_eq!(cache.0, 1);
-        assert_eq!(cache.1, Some(0x08));
-        let error = checked_cache_with_collection_limit(crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            Some("creo scalar cache unique images"),
-            checked_cache_with_collection_limit,
-        ))
-        .expect_err("the unique image needs one collection item");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "creo scalar cache unique images"
-        ));
-    }
-
-    #[test]
-    fn scalar_cache_paired_tail_refuses_before_tree_insert() {
-        let error = checked_cache_with_collection_limit(crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            Some("creo scalar cache paired tails"),
-            checked_cache_with_collection_limit,
-        ))
-        .expect_err("the paired tail follows the unique image");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "creo scalar cache paired tails"
-        ));
-    }
-
-    #[test]
-    fn scalar_cache_entry_refuses_before_vector_growth() {
-        let error = checked_cache_with_collection_limit(crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            Some("creo scalar cache entries"),
-            checked_cache_with_collection_limit,
-        ))
-        .expect_err("the scalar entry follows the hash and tree nodes");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "creo scalar cache entries"
-        ));
     }
 
     #[test]
@@ -4214,10 +3986,17 @@ mod tests {
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        for bytes in [b"".as_slice(), b"double_xar\0".as_slice(), b"double_xar\0\xf8".as_slice()] {
-            assert!(double_xar_tables(&ctx, bytes).expect("no complete dictionary header").is_empty());
+        for bytes in [
+            b"".as_slice(),
+            b"double_xar\0".as_slice(),
+            b"double_xar\0\xf8".as_slice(),
+        ] {
+            assert!(double_xar_tables(&ctx, bytes)
+                .expect("no complete dictionary header")
+                .is_empty());
         }
-        let original = ctx.charge_work_limit(1, "seed short double_xar refusal")
+        let original = ctx
+            .charge_work_limit(1, "seed short double_xar refusal")
             .expect_err("zero work cap");
         assert_eq!((original.used, original.additional), (0, 1));
         assert!(matches!(double_xar_tables(&ctx, &[]),
@@ -4229,36 +4008,45 @@ mod tests {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
         const LABEL: &[u8] = b"double_xar\0";
-        for bytes in [b"double_xar\0\xf8\x00".as_slice(), b"double_xar\0\xf8\x01".as_slice(),
-            b"double_xar\0\xf8\x02".as_slice()] {
+        for bytes in [
+            b"double_xar\0\xf8\x00".as_slice(),
+            b"double_xar\0\xf8\x01".as_slice(),
+            b"double_xar\0\xf8\x02".as_slice(),
+        ] {
             let discovery = cadmpeg_core::decode::u64_from_index(bytes.len() + LABEL.len());
             crate::test_support::assert_refusal_order(
-                ResourceDimension::WorkUnits, &["creo double_xar discovery"], |allowed| {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_work_units = allowed;
-                policy.limits.max_materialized_bytes = 0;
-                policy.limits.max_retained_bytes = 0;
-                policy.limits.max_collection_items = 0;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-                match double_xar_tables(&ctx, bytes) {
-                    Err(CodecError::ResourceLimit(r)) => {
-                        assert_eq!(r.dimension, ResourceDimension::WorkUnits);
-                        assert_eq!(r.operation, "creo double_xar discovery");
-                        assert_eq!((r.used, r.additional), (0, discovery));
-                        assert!(matches!(double_xar_tables(&ctx, &[]),
+                ResourceDimension::WorkUnits,
+                &["creo double_xar discovery"],
+                |allowed| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = allowed;
+                    policy.limits.max_materialized_bytes = 0;
+                    policy.limits.max_retained_bytes = 0;
+                    policy.limits.max_collection_items = 0;
+                    let (ctx, _) =
+                        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                    match double_xar_tables(&ctx, bytes) {
+                        Err(CodecError::ResourceLimit(r)) => {
+                            assert_eq!(r.dimension, ResourceDimension::WorkUnits);
+                            assert_eq!(r.operation, "creo double_xar discovery");
+                            assert_eq!((r.used, r.additional), (0, discovery));
+                            assert!(matches!(double_xar_tables(&ctx, &[]),
                             Err(CodecError::ResourceLimit(original)) if original == r));
-                        Err(CodecError::ResourceLimit(r))
+                            Err(CodecError::ResourceLimit(r))
+                        }
+                        result => {
+                            assert!(result?.is_empty());
+                            assert_eq!(allowed, discovery);
+                            let r = ctx
+                                .charge_work_limit(1, "after double_xar discovery")
+                                .expect_err("exact cap");
+                            assert_eq!((r.used, r.additional), (discovery, 1));
+                            Ok(())
+                        }
                     }
-                    result => {
-                        assert!(result?.is_empty());
-                        assert_eq!(allowed, discovery);
-                        let r = ctx.charge_work_limit(1, "after double_xar discovery").expect_err("exact cap");
-                        assert_eq!((r.used, r.additional), (discovery, 1));
-                        Ok(())
-                    }
-                }
-            });
+                },
+            );
         }
     }
 
@@ -4273,43 +4061,55 @@ mod tests {
             let discovery = cadmpeg_core::decode::u64_from_index(bytes.len() + LABEL.len());
             let need = discovery + present;
             crate::test_support::assert_refusal_order(
-                ResourceDimension::WorkUnits, &["creo double_xar slot parsing"], |allowed| {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_work_units = allowed;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-                match double_xar_tables(&ctx, bytes) {
-                    Err(CodecError::ResourceLimit(r)) => {
-                        assert_eq!(r.dimension, ResourceDimension::WorkUnits);
-                        if allowed == 0 {
-                            assert_eq!(r.operation, "creo double_xar discovery");
-                            assert_eq!((r.used, r.additional), (0, discovery));
-                        } else {
-                            assert_eq!(r.operation, "creo double_xar slot parsing");
-                            assert_eq!((r.used, r.additional), (allowed, 1));
-                        }
-                        assert!(matches!(double_xar_tables(&ctx, &[]),
+                ResourceDimension::WorkUnits,
+                &["creo double_xar slot parsing"],
+                |allowed| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = allowed;
+                    let (ctx, _) =
+                        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+                    match double_xar_tables(&ctx, bytes) {
+                        Err(CodecError::ResourceLimit(r)) => {
+                            assert_eq!(r.dimension, ResourceDimension::WorkUnits);
+                            if allowed == 0 {
+                                assert_eq!(r.operation, "creo double_xar discovery");
+                                assert_eq!((r.used, r.additional), (0, discovery));
+                            } else {
+                                assert_eq!(r.operation, "creo double_xar slot parsing");
+                                assert_eq!((r.used, r.additional), (allowed, 1));
+                            }
+                            assert!(matches!(double_xar_tables(&ctx, &[]),
                             Err(CodecError::ResourceLimit(original)) if original == r));
-                        Err(CodecError::ResourceLimit(r))
-                    }
-                    result => {
-                        let tables = result?;
-                        assert_eq!(allowed, need);
-                        if complete_table {
-                            assert_eq!(tables.len(), 1);
-                            assert_eq!(tables[0].offset, 0);
-                            assert_eq!(tables[0].entries, [super::DoubleXarSlot::StockOne, super::DoubleXarSlot::TerminalNull]);
-                            assert_eq!(tables[0].entries[0].raw(), &[0x10]);
-                            assert_eq!(tables[0].entries[1].raw(), &[0xe0]);
-                        } else {
-                            assert!(tables.is_empty());
+                            Err(CodecError::ResourceLimit(r))
                         }
-                        let r = ctx.charge_work_limit(1, "after double_xar present slots").expect_err("exact cap");
-                        assert_eq!((r.used, r.additional), (need, 1));
-                        Ok(())
+                        result => {
+                            let tables = result?;
+                            assert_eq!(allowed, need);
+                            if complete_table {
+                                assert_eq!(tables.len(), 1);
+                                assert_eq!(tables[0].offset, 0);
+                                assert_eq!(
+                                    tables[0].entries,
+                                    [
+                                        super::DoubleXarSlot::StockOne,
+                                        super::DoubleXarSlot::TerminalNull
+                                    ]
+                                );
+                                assert_eq!(tables[0].entries[0].raw(), &[0x10]);
+                                assert_eq!(tables[0].entries[1].raw(), &[0xe0]);
+                            } else {
+                                assert!(tables.is_empty());
+                            }
+                            let r = ctx
+                                .charge_work_limit(1, "after double_xar present slots")
+                                .expect_err("exact cap");
+                            assert_eq!((r.used, r.additional), (need, 1));
+                            Ok(())
+                        }
                     }
-                }
-            });
+                },
+            );
         }
     }
 
@@ -4326,31 +4126,49 @@ mod tests {
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let cache = ScalarCache::default();
-        let explicit = [0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x0f, 0x0f, 0x0f];
+        let explicit = [
+            0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x0f, 0x0f, 0x0f,
+        ];
         let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0];
-        assert!(super::decode_inline_non_plane_local_system_prefix(&ctx, &explicit, &cache)
-            .expect("fixed explicit frame").any(|prefix| matches!(prefix,
+        assert!(
+            super::decode_inline_non_plane_local_system_prefix(&ctx, &explicit, &cache)
+                .expect("fixed explicit frame")
+                .any(|prefix| matches!(prefix,
                 InlineNonPlaneLocalSystemPrefix::Explicit(frame)
-                    if frame.cursor == explicit.len() && frame.values.get() == identity)));
+                    if frame.cursor == explicit.len() && frame.values.get() == identity))
+        );
         let mut origins = super::decode_inline_non_plane_origin_prefix(&ctx, &[0x18; 3], 0, &cache)
             .expect("three fixed origin slots");
         assert_eq!(origins.next(), Some(([0.0; 3], 3)));
         assert_eq!(origins.next(), None);
         let support = [0x0f, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x10, 0x18, 0x18, 0x18];
         let (values, layout) = super::decode_plane_support_local_system(&ctx, &support, &cache)
-            .expect("fixed support frame").expect("complete support image");
-        assert_eq!(values.get(), [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]);
+            .expect("fixed support frame")
+            .expect("complete support image");
+        assert_eq!(
+            values.get(),
+            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+        );
         assert_eq!(layout, PlaneSupportFrameLayout::DirectNormalTriples);
-        let original = ctx.charge_work_limit(1, "seed fixed scalar frame refusal")
+        let original = ctx
+            .charge_work_limit(1, "seed fixed scalar frame refusal")
             .expect_err("zero work cap");
         assert_eq!((original.used, original.additional), (0, 1));
-        assert!(matches!(super::decode_inline_non_plane_local_system_prefix(&ctx, &explicit, &cache),
-            Err(CodecError::ResourceLimit(r)) if r == original));
-        assert!(matches!(super::decode_inline_non_plane_origin_prefix(&ctx, &[0x18; 3], 0, &cache),
-            Err(CodecError::ResourceLimit(r)) if r == original));
-        assert!(matches!(super::decode_plane_support_local_system(&ctx, &support, &cache),
-            Err(CodecError::ResourceLimit(r)) if r == original));
-        assert!(matches!(super::decode_plane_support_lane_variants(&ctx, &[], &cache),
-            Err(CodecError::ResourceLimit(r)) if r == original));
+        assert!(
+            matches!(super::decode_inline_non_plane_local_system_prefix(&ctx, &explicit, &cache),
+            Err(CodecError::ResourceLimit(r)) if r == original)
+        );
+        assert!(
+            matches!(super::decode_inline_non_plane_origin_prefix(&ctx, &[0x18; 3], 0, &cache),
+            Err(CodecError::ResourceLimit(r)) if r == original)
+        );
+        assert!(
+            matches!(super::decode_plane_support_local_system(&ctx, &support, &cache),
+            Err(CodecError::ResourceLimit(r)) if r == original)
+        );
+        assert!(
+            matches!(super::decode_plane_support_lane_variants(&ctx, &[], &cache),
+            Err(CodecError::ResourceLimit(r)) if r == original)
+        );
     }
 }
