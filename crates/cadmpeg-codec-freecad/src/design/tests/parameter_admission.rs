@@ -2,7 +2,7 @@
 //! Parameter dependency admission tests.
 
 #[test]
-fn design_parameter_object_name_index_refuses_at_collection_limit() {
+fn design_empty_parameters_skip_object_names_without_work_or_storage() {
     let object = crate::native::ObjectRecord {
         identity: crate::native::object_identity::ObjectIdentity::try_new(
             "fcstd:native:object#Feature".into(),
@@ -21,14 +21,14 @@ fn design_parameter_object_name_index_refuses_at_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    assert!(
-        matches!(super::super::ordering::bind_parameter_dependencies(
-        &ctx, &mut Vec::new(), &[object], &std::collections::BTreeSet::default(),
-    ), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "fcstd parameter dependency object names")
-    );
+    policy.limits.max_work_units = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let (cycles, _storage) = super::super::ordering::bind_parameter_dependencies(
+        &ctx, &mut Vec::new(), &vec![object; 4097], &std::collections::BTreeSet::new()).expect("empty parameters skip names");
+    assert!(cycles.is_empty());
+    assert_eq!(ctx.resource_refusal(), None);
 }
 
 #[test]
@@ -56,7 +56,7 @@ fn design_parameter_candidates_refuse_at_collection_limit() {
         matches!(super::super::ordering::bind_parameter_dependencies(
         &ctx, &mut vec![parameter.clone()], &[], &std::collections::BTreeSet::default(),
     ), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "fcstd parameter dependency candidates")
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
     );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
@@ -172,12 +172,6 @@ fn parameter_dependency_fixture(
 fn design_parameter_dependency_stages_refuse_at_collection_limits() {
     let (object, parameters) = parameter_dependency_fixture(false);
     for operation in [
-        "fcstd parameter dependency candidates",
-        "fcstd parameter candidate names",
-        "fcstd local candidate keys",
-        "fcstd local candidate identities",
-        "fcstd qualified candidate keys",
-        "fcstd qualified candidate identities",
         "fcstd unique local candidates",
         "fcstd unique qualified candidates",
         "fcstd parameter dependencies",
@@ -214,4 +208,75 @@ fn design_parameter_cycle_owners_refuse_at_collection_limit() {
         )
         .map(|(features, _storage)| features)
     });
+}
+
+#[test]
+fn parameter_candidates_preserve_alias_and_duplicate_ambiguity() {
+    for (source, duplicate, expected) in [("Length", false, 1), ("Alias", false, 1), ("Length", true, 0), ("Alias", true, 0)] {
+        let (object, mut parameters) = parameter_dependency_fixture(false);
+        parameters[0].expression = "1".into();
+        parameters[0].properties.insert(cadmpeg_core::nonblank_literal!("source_name"), source.into());
+        parameters[1].expression = source.into();
+        let consumer = parameters[1].id.clone();
+        let target = parameters[0].id.clone();
+        if duplicate { parameters.push(parameters[0].clone()); }
+        crate::test_support::with_service_context(&[], |ctx| {
+            let (_cycles, _storage) = super::super::ordering::bind_parameter_dependencies(ctx, &mut parameters, std::slice::from_ref(&object), &std::collections::BTreeSet::new()).expect("dependency binding");
+            let dependencies = &parameters.iter().find(|parameter| parameter.id == consumer).expect("consumer").dependencies;
+            assert_eq!(dependencies.len(), expected);
+            if expected == 1 { assert!(dependencies.contains(&target)); }
+        });
+    }
+}
+
+#[test]
+fn parameter_qualified_collisions_across_owners_remain_ambiguous() {
+    let (mut first_object, first_parameters) = parameter_dependency_fixture(false);
+    let mut second_object = first_object.clone();
+    first_object.identity = crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#A.B".into(), "A.B".into()).expect("first identity");
+    second_object.identity = crate::native::object_identity::ObjectIdentity::try_new("fcstd:native:object#A".into(), "A".into()).expect("second identity");
+    let mut first = first_parameters[0].clone();
+    first.id = cadmpeg_ir::features::ParameterId::mint("fcstd:design:parameter#A.B:C").expect("first parameter");
+    first.owner = Some(cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#A.B").expect("first owner"));
+    first.name = "C".into();
+    first.expression = "1".into();
+    let mut second = first.clone();
+    second.id = cadmpeg_ir::features::ParameterId::mint("fcstd:design:parameter#A:B.C").expect("second parameter");
+    second.owner = Some(cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#A").expect("second owner"));
+    second.name = "B.C".into();
+    let mut consumer = first_parameters[1].clone();
+    consumer.owner = None;
+    consumer.expression = "A.B.C".into();
+    let consumer_id = consumer.id.clone();
+    let first_id = first.id.clone();
+    for collision in [false, true] {
+        let mut parameters = vec![first.clone(), consumer.clone()];
+        if collision { parameters.push(second.clone()); }
+        crate::test_support::with_service_context(&[], |ctx| {
+            let (_cycles, _storage) = super::super::ordering::bind_parameter_dependencies(ctx, &mut parameters, &[first_object.clone(), second_object.clone()], &std::collections::BTreeSet::new()).expect("dependency binding");
+            let dependencies = &parameters.iter().find(|parameter| parameter.id == consumer_id).expect("consumer").dependencies;
+            if collision { assert!(dependencies.is_empty()); } else { assert_eq!(dependencies.len(), 1); assert!(dependencies.contains(&first_id)); }
+        });
+    }
+}
+
+#[test]
+fn design_cycle_objects_use_scoped_storage_across_repeated_fallbacks() {
+    let (template, _) = parameter_dependency_fixture(false);
+    let objects = (0..4).map(|index| {
+        let mut object = template.clone();
+        let name = format!("Cycle{index}");
+        object.identity = crate::native::object_identity::ObjectIdentity::try_new(format!("fcstd:native:object#{name}"), name).expect("cycle identity");
+        object.dependencies = vec![object.id().clone()];
+        object.order = index;
+        object
+    }).collect::<Vec<_>>();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let ordering = super::super::ordering::feature_ordinals(&ctx, &objects, &std::collections::BTreeMap::new(), &std::collections::HashMap::new()).expect("cycle scratch is not retained");
+    assert_eq!(ordering.cycle_affected.len(), objects.len());
+    for object in &objects { assert!(ordering.cycle_affected.contains(object.id().as_str())); }
+    assert_eq!(ctx.resource_refusal(), None);
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Assembly joints recovered without executing Python proxy payloads.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 use crate::native::joint::{JointBody, JointConnectorRecord, JointRecord, PairedJointFamily};
 use crate::native::{sole_named_property, LinkTarget, ObjectRecord, PropertyRecord};
@@ -22,8 +22,6 @@ pub(crate) fn transfer(
         return Ok(Vec::new());
     }
     let mut by_owner = BTreeMap::<&str, Vec<&PropertyRecord>>::new();
-    let mut object_storage = ctx.reserve_scoped(0, "fcstd joint object index")?;
-    let mut object_ids = HashSet::new();
     let mut candidates = properties.iter();
     while candidates.len() != 0 {
         let Some(property) = ctx.next_charged(&mut candidates, "fcstd joint owner index")? else {
@@ -33,30 +31,7 @@ pub(crate) fn transfer(
             continue;
         }
         let owner = property.owner.as_str();
-        if ctx.equal_bytes(
-            owner.as_bytes(),
-            b"fcstd:native:document#0",
-            "fcstd joint candidate owner",
-        )? {
-            continue;
-        }
-        if object_ids.is_empty() {
-            let mut input = objects.iter();
-            while input.len() != 0 {
-                let Some(object) = ctx.next_charged(&mut input, "fcstd joint owner objects")?
-                else {
-                    break;
-                };
-                object_storage.with_storage(|| {
-                    ctx.insert_hash_set(
-                        &mut object_ids,
-                        object.id().as_str(),
-                        "fcstd joint object index",
-                    )
-                })?;
-            }
-        }
-        if !ctx.contains_hash_set(&object_ids, owner, "fcstd joint object lookup")? {
+        if !owner.starts_with("fcstd:native:object#") {
             continue;
         }
         if ctx.contains_key_btree_map(&by_owner, owner, "fcstd joint owner index")? {
@@ -66,7 +41,6 @@ pub(crate) fn transfer(
             ctx.insert_btree_map(&mut by_owner, owner, Vec::new(), "fcstd joint owner index")
         })?;
     }
-    drop((object_ids, object_storage));
     if by_owner.is_empty() {
         return Ok(Vec::new());
     }
@@ -204,8 +178,7 @@ pub(crate) fn transfer(
         } else {
             continue;
         };
-        let mut parameter_storage = ctx.reserve_scoped(0, "fcstd joint raw parameters")?;
-        let mut parameters = BTreeMap::new();
+        let mut parameters = crate::native::joint::JointParameters::default();
         let mut input = owned.iter();
         while input.len() != 0 {
             let Some(property) =
@@ -216,11 +189,9 @@ pub(crate) fn transfer(
             if !is_parameter_property(&property.name) {
                 continue;
             }
-            if let Some(value) = scalar_parameter(ctx, property)? {
+            if let Some(value) = crate::native::joint::parameter_from_property(ctx, property)? {
                 let name = ctx.copy_retained_text(&property.name, "fcstd joint parameter name")?;
-                parameter_storage.with_storage(|| {
-                    ctx.insert_btree_map(&mut parameters, name, value, "fcstd joint parameters")
-                })?;
+                parameters.insert(ctx, name, value)?;
             }
         }
         ctx.reserve_vec(&mut output, 1, "fcstd joint records")?;
@@ -272,6 +243,39 @@ pub(crate) fn transfer_neutral(
         let Some(record) = ctx.next_charged(&mut records, "fcstd neutral joint records")? else {
             break;
         };
+        let usable_references = match &record.body {
+            JointBody::Grounded { reference, .. } => reference.as_ref()
+                .filter(|reference| reference.object().is_some()).map(|reference| [Some(reference), None]),
+            JointBody::Pair { connectors, .. } => match (&connectors[0].reference, &connectors[1].reference) {
+                (Some(first), Some(second)) if first.object().is_some() && second.object().is_some() => Some([Some(first), Some(second)]),
+                _ => None,
+            },
+        };
+        if !occurrence_indexed && usable_references.is_some_and(|references| references.into_iter().flatten().any(|reference| reference.document().is_none())) {
+                let mut input = occurrences.iter();
+                while input.len() != 0 {
+                    let Some(occurrence) =
+                        ctx.next_charged(&mut input, "fcstd joint occurrences")?
+                    else {
+                        break;
+                    };
+                    if let Some(native) = occurrence.native_ref.as_deref() {
+                        lookup_storage.with_storage(|| {
+                            ctx.insert_btree_map(
+                                &mut occurrence_by_native,
+                                native,
+                                &occurrence.id,
+                                "fcstd joint occurrence index",
+                            )
+                        })?;
+                    }
+                }
+                occurrence_indexed = true;
+        }
+        let id = usable_references.map(|_| {
+            JointId::mint(crate::native::model_id_charged(ctx, "joint", record.object(), "constraint")?)
+                .map_err(CodecError::malformed)
+        }).transpose()?;
         let parameters = record.parameters();
         let bool_value = |name: &str| parameters.bool_value(ctx, name);
         let scalar = |name: &str| parameters.scalar_value(ctx, name);
@@ -310,7 +314,7 @@ pub(crate) fn transfer_neutral(
                         })
                 }
             };
-        let mut operand = |reference: &LinkTarget,
+        let operand = |reference: &LinkTarget,
                            name: &str|
          -> Result<JointOperand, CodecError> {
             let object = ctx.copy_retained_text(name, "fcstd joint operand object")?;
@@ -336,27 +340,6 @@ pub(crate) fn transfer_neutral(
                     document.attribute(),
                 )?;
                 return Ok(JointOperand::external(document, object, subelements));
-            }
-            if !occurrence_indexed {
-                let mut input = occurrences.iter();
-                while input.len() != 0 {
-                    let Some(occurrence) =
-                        ctx.next_charged(&mut input, "fcstd joint occurrences")?
-                    else {
-                        break;
-                    };
-                    if let Some(native) = occurrence.native_ref.as_deref() {
-                        lookup_storage.with_storage(|| {
-                            ctx.insert_btree_map(
-                                &mut occurrence_by_native,
-                                native,
-                                &occurrence.id,
-                                "fcstd joint occurrence index",
-                            )
-                        })?;
-                    }
-                }
-                occurrence_indexed = true;
             }
             Ok(
                 match ctx
@@ -389,15 +372,7 @@ pub(crate) fn transfer_neutral(
             "EnableLengthMax",
             1.0,
         )?;
-        let id = || {
-            JointId::mint(crate::native::model_id_charged(
-                ctx,
-                "joint",
-                record.object(),
-                "constraint",
-            )?)
-            .map_err(CodecError::malformed)
-        };
+        let Some(id) = id else { continue; };
         let mut joint = match &record.body {
             JointBody::Grounded {
                 reference,
@@ -409,7 +384,6 @@ pub(crate) fn transfer_neutral(
                 let Some(name) = reference.object() else {
                     continue;
                 };
-                let id = id()?;
                 let operand = operand(reference, name)?;
                 AssemblyJoint::grounded(
                     id,
@@ -433,7 +407,6 @@ pub(crate) fn transfer_neutral(
                 else {
                     continue;
                 };
-                let id = id()?;
                 let kind = joint_kind(
                     ctx,
                     kind,
@@ -779,77 +752,6 @@ fn enumeration_value(
     }
 }
 
-fn scalar_parameter(
-    ctx: &DecodeContext<'_>,
-    property: &PropertyRecord,
-) -> Result<Option<String>, CodecError> {
-    let (expected_type, expected_tag) = match property.name.as_str() {
-        "Angle" | "AngleMin" | "AngleMax" => ("App::PropertyAngle", "Float"),
-        "Distance" | "Distance2" | "LengthMin" | "LengthMax" => ("App::PropertyLength", "Float"),
-        "EnableAngleMin" | "EnableAngleMax" | "EnableLengthMin" | "EnableLengthMax" | "Detach1"
-        | "Detach2" | "Suppressed" => ("App::PropertyBool", "Bool"),
-        _ => return Ok(None),
-    };
-    if property.type_name != expected_type {
-        return Err(crate::resource::malformed_charged(
-            ctx,
-            format_args!(
-                "joint parameter property {} has runtime type {}, expected {expected_type}",
-                property.id, property.type_name
-            ),
-            "fcstd joint diagnostic",
-        ));
-    }
-    let [value] = property.values() else {
-        return Err(crate::resource::malformed_charged(
-            ctx,
-            format_args!(
-                "joint parameter property {} requires one {expected_tag} value",
-                property.id
-            ),
-            "fcstd joint diagnostic",
-        ));
-    };
-    if value.tag != expected_tag {
-        return Err(crate::resource::malformed_charged(
-            ctx,
-            format_args!(
-                "joint parameter property {} requires a {expected_tag} value",
-                property.id
-            ),
-            "fcstd joint diagnostic",
-        ));
-    }
-    let value = ctx
-        .get_btree_map(&value.attributes, "value", "fcstd joint scalar attribute")?
-        .ok_or_else(|| {
-            crate::resource::malformed_charged(
-                ctx,
-                format_args!("joint parameter property {} has no value", property.id),
-                "fcstd joint diagnostic",
-            )
-        })?;
-    if expected_tag == "Float"
-        && ctx
-            .parse_text::<f64>(value, "fcstd joint scalar parse")?
-            .ok()
-            .and_then(FiniteReal::new)
-            .is_none()
-    {
-        return Err(crate::resource::malformed_charged(
-            ctx,
-            format_args!(
-                "joint parameter property {}: joint parameter {} has an invalid value {value:?}",
-                property.id, property.name,
-            ),
-            "fcstd joint diagnostic",
-        ));
-    }
-    Ok(Some(ctx.copy_retained_text(
-        value,
-        "fcstd joint scalar parameter",
-    )?))
-}
 
 fn connector(
     ctx: &DecodeContext<'_>,
@@ -1017,7 +919,7 @@ pub(crate) mod tests {
                 cadmpeg_core::decode::ResourceDimension::WorkUnits,
                 &[],
                 operation,
-                |ctx| super::scalar_parameter(ctx, &property),
+                |ctx| crate::native::joint::parameter_from_property(ctx, &property),
             );
         }
     }
@@ -1102,7 +1004,7 @@ pub(crate) mod tests {
         for (type_name, xml) in cases {
             let property = scalar_property(type_name, xml);
             let error =
-                super::scalar_parameter(&ctx, &property).expect_err("diagnostic must be admitted");
+                crate::native::joint::parameter_from_property(&ctx, &property).expect_err("diagnostic must be admitted");
             assert!(
                 matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
                 if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
@@ -1121,14 +1023,14 @@ pub(crate) mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let service = cadmpeg_core::decode::DecodePolicy::service();
         let admitted = diagnostic_context(&arena, &service);
-        let message = super::scalar_parameter(&admitted, &property)
+        let message = crate::native::joint::parameter_from_property(&admitted, &property)
             .expect_err("invalid source scalar")
             .to_string();
         assert_eq!(message, "malformed container: joint parameter property property: joint parameter Angle has an invalid value \"bad\"");
         let mut constrained = cadmpeg_core::decode::DecodePolicy::service();
         constrained.limits.max_retained_bytes = 0;
         let refused = diagnostic_context(&arena, &constrained);
-        let error = super::scalar_parameter(&refused, &property)
+        let error = crate::native::joint::parameter_from_property(&refused, &property)
             .expect_err("diagnostic must be admitted before allocation");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
@@ -1331,7 +1233,7 @@ pub(crate) mod tests {
                 })).expect("local reference")),
                 placement: crate::native::frame::FiniteFrame::default(),
             },
-            std::collections::BTreeMap::default(),
+            crate::native::joint::JointParameters::default(),
         )
         .expect("grounded joint record");
         let arena = cadmpeg_core::decode::DecodeArena::new();

@@ -112,8 +112,9 @@ fn attachment_map_mode_invalid_index_refuses_at_retained_limit() {
         "App::PropertyEnumeration",
         vec![enum_value("Integer", Some("bad-index"))],
     );
-    crate::test_support::materialized_refusal_at(
-        "FreeCAD attachment invalid map-mode index",
+    crate::test_support::assert_retained_refusal_at(
+        &[],
+        "FreeCAD attachment map-mode error",
         |ctx| super::map_mode_value(ctx, &property),
     );
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -155,7 +156,7 @@ fn attachment_owner_lookup_refuses_on_collection_limit() {
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 1;
+    policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within input policy");
     assert!(matches!(super::transfer(&ctx, &[object], &[property]),

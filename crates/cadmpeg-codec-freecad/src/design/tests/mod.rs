@@ -1211,7 +1211,7 @@ fn design_operation_scalar_expression_refuses_at_retained_limit() {
     crate::test_support::assert_retained_refusal_at(
         &[],
         "fcstd operation scalar expression",
-        |ctx| super::append_operation_parameters(ctx, &mut Vec::new(), &object, &[&property]),
+        |ctx| super::append_operation_parameters(ctx, &mut Vec::new(), &object, &cadmpeg_ir::features::FeatureId::mint(format!("fcstd:design:feature#{}", object.name())).expect("owner feature identity"), &[&property]),
     );
 }
 
@@ -1348,7 +1348,7 @@ fn design_body_output_prefix_refuses_at_materialized_limit() {
     };
     crate::test_support::with_service_context(&[], |ctx| {
         let mut ir = cadmpeg_ir::document::CadIr::empty();
-        let cycles = super::transfer(
+        let (cycles, _cycle_storage) = super::transfer(
             ctx,
             &mut ir,
             std::slice::from_ref(&object),
@@ -1569,7 +1569,7 @@ fn design_unresolved_profile_identity_refuses_at_retained_limit() {
                 &[],
                 &[],
                 None,
-            )
+            ).map(drop)
         },
     );
 }

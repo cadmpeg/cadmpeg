@@ -482,17 +482,7 @@ fn explicit_endpoint_relations<'ctx>(
 > {
     let mut storage = ctx.reserve_scoped(0, "FCStd explicit profile relations")?;
     let relations = storage.with_storage(|| {
-        let (_entity_index_storage, entity_indices);
-        (entity_indices, _entity_index_storage) =
-            ctx.with_scoped_storage("FCStd profile entity lookup storage", || {
-                ctx.collect_hash_map(
-                    entities
-                        .iter()
-                        .enumerate()
-                        .map(|(index, entity)| (entity.id().as_str(), index)),
-                    "FCStd profile entity lookup",
-                )
-            })?;
+        let mut entity_lookup = None;
         let mut relations = BTreeMap::new();
         let mut source = constraints.iter();
         while source.len() != 0 {
@@ -508,6 +498,20 @@ fn explicit_endpoint_relations<'ctx>(
                 constraint.definition.kind()
             else {
                 continue;
+            };
+            let (entity_indices, _entity_index_storage) = match &mut entity_lookup {
+                Some(lookup) => lookup,
+                slot @ None => slot.insert(
+                    ctx.with_scoped_storage("FCStd profile entity lookup storage", || {
+                        ctx.collect_hash_map(
+                            entities
+                                .iter()
+                                .enumerate()
+                                .map(|(index, entity)| (entity.id().as_str(), index)),
+                            "FCStd profile entity lookup",
+                        )
+                    })?,
+                ),
             };
             let mut endpoint_storage = ctx.reserve_scoped(0, "FCStd explicit profile loci")?;
             let mut endpoints = BTreeSet::new();
@@ -526,7 +530,7 @@ fn explicit_endpoint_relations<'ctx>(
                     };
                     let Some(index) = ctx
                         .get_hash_map(
-                            &entity_indices,
+                            entity_indices,
                             entity.as_str(),
                             "FCStd profile entity index",
                         )?
