@@ -1770,3 +1770,4 @@ fn typed_omitted_descent_refuses_work_limit() {
 mod typed_work;
 
 mod characteristic_claims;
+mod characteristic_analysis;

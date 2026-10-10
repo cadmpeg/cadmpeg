@@ -1035,11 +1035,8 @@ fn record_measure_length_prefix_does_not_scan_name_suffix() {
     .expect("long measure record exchange");
     let value = crate::parse::Value::Reference(1);
     let mut policy = DecodePolicy::service();
-    // The one-record path uses 696 work for active-set insertion, 240 for its
-    // removal, 8 for the record lookup, 9 for three one-partial queries, and 2
-    // for the classifier's partial and first name-window visits: 955 total.
-    // The cap admits that route; the old 4,108-unit full-name-plus-pattern
-    // scan cannot fit.
+    // The active-map operations and classifier's first name-window visit
+    // fit in 2048 units. Scanning the 4096-byte name suffix cannot fit.
     policy.limits.max_work_units = 2048;
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
         let mut losses = Vec::new();
