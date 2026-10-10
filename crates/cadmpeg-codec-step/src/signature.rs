@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::ops::Range;
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
+use cadmpeg_core::decode::DecodeContext;
 
 use crate::parse::ParseError;
 
@@ -110,22 +110,6 @@ impl<'a> BerValue<'a> {
     }
 }
 
-/// End-of-contents offsets found during indefinite-length scanning.
-#[derive(Debug)]
-struct BerExtents<'ctx> {
-    ends: BTreeMap<usize, usize>,
-    storage: ScopedReservation<'ctx>,
-}
-
-impl<'ctx> BerExtents<'ctx> {
-    fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self, CmsError> {
-        Ok(Self {
-            ends: BTreeMap::new(),
-            storage: ctx.reserve_scoped(0, "STEP BER extent storage")?,
-        })
-    }
-}
-
 #[derive(Debug)]
 struct Ber<'a> {
     input: &'a [u8],
@@ -152,7 +136,7 @@ impl<'a> Ber<'a> {
     fn take(
         &mut self,
         ctx: &DecodeContext<'_>,
-        extents: &mut BerExtents<'_>,
+        extents: &mut BTreeMap<usize, usize>,
     ) -> Result<(u8, BerValue<'a>), CmsError> {
         let _depth = ctx.enter_nested("STEP BER nesting")?;
         let tag = self.take_tag_octet()?;
@@ -166,22 +150,19 @@ impl<'a> Ber<'a> {
             }
             let value_start = self.at;
             let offset = self.origin + value_start;
-            let value_end = if let Some(end) =
-                ctx.get_btree_map(&extents.ends, &offset, "STEP BER extent lookup")?
-            {
-                *end - self.origin
-            } else {
-                let end = self.indefinite_end(ctx, extents, value_start)?;
-                extents.storage.with_storage(|| {
+            let value_end =
+                if let Some(end) = ctx.get_btree_map(extents, &offset, "STEP BER extent lookup")? {
+                    *end - self.origin
+                } else {
+                    let end = self.indefinite_end(ctx, extents, value_start)?;
                     ctx.insert_btree_map(
-                        &mut extents.ends,
+                        extents,
                         offset,
                         self.origin + end,
                         "STEP BER extent entries",
-                    )
-                })?;
-                end
-            };
+                    )?;
+                    end
+                };
             if !self
                 .input
                 .get(value_end..)
@@ -246,7 +227,7 @@ impl<'a> Ber<'a> {
     fn indefinite_end(
         &self,
         ctx: &DecodeContext<'_>,
-        extents: &mut BerExtents<'_>,
+        extents: &mut BTreeMap<usize, usize>,
         start: usize,
     ) -> Result<usize, CmsError> {
         let mut contents = Self {
@@ -273,7 +254,7 @@ impl<'a> Ber<'a> {
     fn take_tag(
         &mut self,
         ctx: &DecodeContext<'_>,
-        extents: &mut BerExtents<'_>,
+        extents: &mut BTreeMap<usize, usize>,
         expected: u8,
     ) -> Result<BerValue<'a>, CmsError> {
         let (tag, value) = self.take(ctx, extents)?;
@@ -298,7 +279,7 @@ fn validate_integer(value: BerValue<'_>) -> Result<(), &'static str> {
 
 fn validate_algorithm_identifier(
     ctx: &DecodeContext<'_>,
-    extents: &mut BerExtents<'_>,
+    extents: &mut BTreeMap<usize, usize>,
     value: BerValue<'_>,
 ) -> Result<(), CmsError> {
     let mut algorithm = Ber::new(value);
@@ -319,7 +300,7 @@ fn validate_algorithm_identifier(
 
 fn validate_octet_string(
     ctx: &DecodeContext<'_>,
-    extents: &mut BerExtents<'_>,
+    extents: &mut BTreeMap<usize, usize>,
     tag: u8,
     value: BerValue<'_>,
 ) -> Result<(), CmsError> {
@@ -341,7 +322,7 @@ fn validate_octet_string(
 
 fn validate_subject_key_identifier(
     ctx: &DecodeContext<'_>,
-    extents: &mut BerExtents<'_>,
+    extents: &mut BTreeMap<usize, usize>,
     tag: u8,
     value: BerValue<'_>,
 ) -> Result<(), CmsError> {
@@ -362,7 +343,7 @@ fn validate_subject_key_identifier(
 
 fn validate_digest_algorithms(
     ctx: &DecodeContext<'_>,
-    extents: &mut BerExtents<'_>,
+    extents: &mut BTreeMap<usize, usize>,
     value: BerValue<'_>,
 ) -> Result<(), CmsError> {
     let mut algorithms = Ber::new(value);
@@ -379,7 +360,7 @@ fn validate_digest_algorithms(
 
 fn validate_signer_identifier(
     ctx: &DecodeContext<'_>,
-    extents: &mut BerExtents<'_>,
+    extents: &mut BTreeMap<usize, usize>,
     tag: u8,
     value: BerValue<'_>,
 ) -> Result<(), CmsError> {
@@ -402,7 +383,7 @@ fn validate_signer_identifier(
 
 fn validate_signer_info(
     ctx: &DecodeContext<'_>,
-    extents: &mut BerExtents<'_>,
+    extents: &mut BTreeMap<usize, usize>,
     value: BerValue<'_>,
 ) -> Result<(), CmsError> {
     let mut signer = Ber::new(value);
@@ -426,7 +407,7 @@ fn validate_signer_info(
 
 fn validate_signer_infos(
     ctx: &DecodeContext<'_>,
-    extents: &mut BerExtents<'_>,
+    extents: &mut BTreeMap<usize, usize>,
     value: BerValue<'_>,
 ) -> Result<(), CmsError> {
     let mut signers = Ber::new(value);
@@ -452,61 +433,64 @@ fn require_empty(ber: &Ber<'_>) -> Result<(), &'static str> {
 /// This admits structure only. It does not compute a content digest, verify a
 /// signature value, select a public key, or apply a caller trust policy.
 fn validate_detached_cms(ctx: &DecodeContext<'_>, input: &[u8]) -> Result<(), CmsError> {
-    let mut extent_storage = BerExtents::new(ctx)?;
-    let extents = &mut extent_storage;
-    let mut content_info = Ber::new(BerValue::root(input));
-    let content_info_value = content_info.take_tag(ctx, extents, 0x30)?;
-    require_empty(&content_info)?;
+    let mut storage = ctx.reserve_scoped(0, "STEP BER extent storage")?;
+    storage.with_storage(|| {
+        let mut ends = BTreeMap::new();
+        let extents = &mut ends;
+        let mut content_info = Ber::new(BerValue::root(input));
+        let content_info_value = content_info.take_tag(ctx, extents, 0x30)?;
+        require_empty(&content_info)?;
 
-    let mut content_info = Ber::new(content_info_value);
-    let content_type = content_info.take_tag(ctx, extents, 0x06)?;
-    if content_type.input != CMS_SIGNED_DATA_OID {
-        return Err(CmsError::Invalid("CMS content type is not signedData"));
-    }
-    let signed_data_wrapper = content_info.take_tag(ctx, extents, 0xa0)?;
-    require_empty(&content_info)?;
-
-    let mut wrapper = Ber::new(signed_data_wrapper);
-    let signed_data_value = wrapper.take_tag(ctx, extents, 0x30)?;
-    require_empty(&wrapper)?;
-
-    let mut signed_data = Ber::new(signed_data_value);
-    validate_integer(signed_data.take_tag(ctx, extents, 0x02)?)?;
-    let digest_algorithms = signed_data.take_tag(ctx, extents, 0x31)?;
-    validate_digest_algorithms(ctx, extents, digest_algorithms)?;
-    let encap_content_info = signed_data.take_tag(ctx, extents, 0x30)?;
-    let mut encap_content_info = Ber::new(encap_content_info);
-    encap_content_info.take_tag(ctx, extents, 0x06)?;
-    if encap_content_info.remaining()? != 0 {
-        return Err(CmsError::Invalid("CMS SignedData is not detached"));
-    }
-
-    let mut optional_stage = 0;
-    while signed_data.remaining()? > 0 {
-        ctx.charge_work(1, "STEP signature cursor traversal")?;
-        let (tag, value) = signed_data.take(ctx, extents)?;
-        match tag {
-            0xa0 | 0xa1 => {
-                let stage = if tag == 0xa0 { 1 } else { 2 };
-                if stage <= optional_stage {
-                    return Err(CmsError::Invalid("CMS optional fields are out of order"));
-                }
-                optional_stage = stage;
-                let mut optional = Ber::new(value);
-                while optional.remaining()? > 0 {
-                    ctx.charge_work(1, "STEP signature cursor traversal")?;
-                    optional.take(ctx, extents)?;
-                }
-            }
-            0x31 => {
-                validate_signer_infos(ctx, extents, value)?;
-                require_empty(&signed_data)?;
-                return Ok(());
-            }
-            _ => return Err(CmsError::Invalid("unexpected CMS SignedData field")),
+        let mut content_info = Ber::new(content_info_value);
+        let content_type = content_info.take_tag(ctx, extents, 0x06)?;
+        if content_type.input != CMS_SIGNED_DATA_OID {
+            return Err(CmsError::Invalid("CMS content type is not signedData"));
         }
-    }
-    Err(CmsError::Invalid("CMS SignedData has no signer set"))
+        let signed_data_wrapper = content_info.take_tag(ctx, extents, 0xa0)?;
+        require_empty(&content_info)?;
+
+        let mut wrapper = Ber::new(signed_data_wrapper);
+        let signed_data_value = wrapper.take_tag(ctx, extents, 0x30)?;
+        require_empty(&wrapper)?;
+
+        let mut signed_data = Ber::new(signed_data_value);
+        validate_integer(signed_data.take_tag(ctx, extents, 0x02)?)?;
+        let digest_algorithms = signed_data.take_tag(ctx, extents, 0x31)?;
+        validate_digest_algorithms(ctx, extents, digest_algorithms)?;
+        let encap_content_info = signed_data.take_tag(ctx, extents, 0x30)?;
+        let mut encap_content_info = Ber::new(encap_content_info);
+        encap_content_info.take_tag(ctx, extents, 0x06)?;
+        if encap_content_info.remaining()? != 0 {
+            return Err(CmsError::Invalid("CMS SignedData is not detached"));
+        }
+
+        let mut optional_stage = 0;
+        while signed_data.remaining()? > 0 {
+            ctx.charge_work(1, "STEP signature cursor traversal")?;
+            let (tag, value) = signed_data.take(ctx, extents)?;
+            match tag {
+                0xa0 | 0xa1 => {
+                    let stage = if tag == 0xa0 { 1 } else { 2 };
+                    if stage <= optional_stage {
+                        return Err(CmsError::Invalid("CMS optional fields are out of order"));
+                    }
+                    optional_stage = stage;
+                    let mut optional = Ber::new(value);
+                    while optional.remaining()? > 0 {
+                        ctx.charge_work(1, "STEP signature cursor traversal")?;
+                        optional.take(ctx, extents)?;
+                    }
+                }
+                0x31 => {
+                    validate_signer_infos(ctx, extents, value)?;
+                    require_empty(&signed_data)?;
+                    return Ok(());
+                }
+                _ => return Err(CmsError::Invalid("unexpected CMS SignedData field")),
+            }
+        }
+        Err(CmsError::Invalid("CMS SignedData has no signer set"))
+    })
 }
 
 #[cfg(test)]

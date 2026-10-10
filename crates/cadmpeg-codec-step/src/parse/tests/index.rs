@@ -8,7 +8,7 @@ fn entity_index_is_not_part_of_exchange_equality() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=POINT();ENDSEC;END-ISO-10303-21;";
     let (indexed, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner)
         .expect("required invariant");
-    let (untouched, _) =
+    let (mut untouched, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
             .expect("required invariant");
     crate::test_support::with_service_context(source, |_, ctx| {
@@ -23,6 +23,9 @@ fn entity_index_is_not_part_of_exchange_equality() {
             1
         );
     });
+    untouched.entity_ids = super::super::EntityIndex::default();
+    assert!(!indexed.entity_ids.0.is_empty());
+    assert!(untouched.entity_ids.0.is_empty());
     assert_eq!(indexed, untouched);
 }
 
