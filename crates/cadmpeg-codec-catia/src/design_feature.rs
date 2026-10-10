@@ -484,13 +484,17 @@ fn assign_feature_parameter_ordinals(
             match parameters.len() {
                 0 | 1 => {}
                 2 => {
-                    if ctx
-                        .compare(
-                            &parameters[0],
-                            &parameters[1],
-                            "catia_feature_parameter_order_sort",
-                        )?
-                        .is_gt()
+                    let order =
+                        (parameters[0].0, parameters[0].1).cmp(&(parameters[1].0, parameters[1].1));
+                    if order.is_gt()
+                        || (order.is_eq()
+                            && ctx
+                                .compare(
+                                    &parameters[0].2,
+                                    &parameters[1].2,
+                                    "catia_feature_parameter_order_sort",
+                                )?
+                                .is_gt())
                     {
                         parameters.swap(0, 1);
                     }
@@ -566,13 +570,16 @@ fn assign_document_parameter_ordinals(
             match parameters.len() {
                 0 | 1 => {}
                 2 => {
-                    if ctx
-                        .compare(
-                            &parameters[0],
-                            &parameters[1],
-                            "catia_document_parameter_order_sort",
-                        )?
-                        .is_gt()
+                    let order = parameters[0].0.cmp(&parameters[1].0);
+                    if order.is_gt()
+                        || (order.is_eq()
+                            && ctx
+                                .compare(
+                                    &parameters[0].1,
+                                    &parameters[1].1,
+                                    "catia_document_parameter_order_sort",
+                                )?
+                                .is_gt())
                     {
                         parameters.swap(0, 1);
                     }

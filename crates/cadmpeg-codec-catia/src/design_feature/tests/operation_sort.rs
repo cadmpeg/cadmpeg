@@ -204,3 +204,133 @@ fn operation_source_larger_sorts_preserve_refusal_and_order() {
         );
     }
 }
+
+fn parameter_ordering(
+    ctx: &DecodeContext<'_>,
+    count: usize,
+    tie: bool,
+    document: bool,
+) -> Result<Vec<(String, u32)>, CodecError> {
+    let feature = super::feature("owner", "owner-object").id;
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let mut entities = Vec::new();
+    let mut records = Vec::new();
+    let mut owners = HashMap::new();
+    for index in (1..=count).rev() {
+        let id = format!("value-{index}");
+        let record_id = format!("record-{index}");
+        let mut parameter = super::parameter(&id, &id);
+        parameter.ordinal = if tie {
+            0
+        } else {
+            u32::try_from(index).expect("fixture ordinal")
+        };
+        owners.insert(parameter.id.clone(), feature.clone());
+        ir.model.parameters.push(parameter);
+        let offset = if tie {
+            0
+        } else {
+            u64::try_from(index).expect("fixture position")
+        };
+        entities.push(entity_record(&id, &record_id, offset, 1));
+        let mut record = object_record(&record_id, None, Some(1), None, None, None);
+        record.byte_offset = offset;
+        records.push(record);
+    }
+    if document {
+        super::super::assign_document_parameter_ordinals(ctx, &mut ir)?;
+    } else {
+        let entities = entities
+            .iter()
+            .map(|entity| (entity.id.as_str(), entity))
+            .collect();
+        let records = records
+            .iter()
+            .map(|record| (record.id.as_str(), record))
+            .collect();
+        super::super::assign_feature_parameter_ordinals(
+            ctx, &mut ir, &entities, &records, &owners,
+        )?;
+    }
+    assert_eq!(ctx.resource_refusal(), None);
+    Ok(ir
+        .model
+        .parameters
+        .into_iter()
+        .map(|parameter| (parameter.name, parameter.ordinal))
+        .collect())
+}
+
+#[test]
+fn parameter_small_sorts_skip_numeric_comparison_admission() {
+    for (document, operation) in [
+        (false, "catia_feature_parameter_order_sort"),
+        (true, "catia_document_parameter_order_sort"),
+    ] {
+        for count in 0..=2 {
+            let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+            let values = crate::test_support::with_work_limit(u64::MAX, |ctx| {
+                parameter_ordering(ctx, count, false, document)
+            })
+            .expect("numeric positions need no identity comparison");
+            assert_eq!(
+                values,
+                (1..=count)
+                    .rev()
+                    .map(|index| (
+                        format!("value-{index}"),
+                        u32::try_from(index - 1).expect("fixture ordinal")
+                    ))
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+}
+
+#[test]
+fn parameter_equal_positions_admit_identity_tiebreak() {
+    for (document, operation) in [
+        (false, "catia_feature_parameter_order_sort"),
+        (true, "catia_document_parameter_order_sort"),
+    ] {
+        let values = crate::test_support::with_service_context(|ctx| {
+            parameter_ordering(ctx, 2, true, document)
+        })
+        .expect("identity tiebreak preserves order");
+        assert_eq!(
+            values,
+            [("value-2".to_owned(), 1), ("value-1".to_owned(), 0)]
+        );
+        let error = crate::test_support::with_work_refusal(operation, |ctx| {
+            parameter_ordering(ctx, 2, true, document)
+        })
+        .expect_err("identity tiebreak needs admission");
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == operation));
+    }
+}
+
+#[test]
+fn parameter_larger_sorts_preserve_order_and_refusal() {
+    for (document, operation) in [
+        (false, "catia_feature_parameter_order_sort"),
+        (true, "catia_document_parameter_order_sort"),
+    ] {
+        let values = crate::test_support::with_service_context(|ctx| {
+            parameter_ordering(ctx, 3, false, document)
+        })
+        .expect("larger numeric order");
+        assert_eq!(
+            values,
+            [
+                ("value-3".to_owned(), 2),
+                ("value-2".to_owned(), 1),
+                ("value-1".to_owned(), 0)
+            ]
+        );
+        let error = crate::test_support::with_work_refusal(operation, |ctx| {
+            parameter_ordering(ctx, 3, false, document)
+        })
+        .expect_err("larger sort needs admission");
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == operation));
+    }
+}
