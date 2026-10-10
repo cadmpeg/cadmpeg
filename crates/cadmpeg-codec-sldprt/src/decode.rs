@@ -3566,7 +3566,7 @@ fn build_geometry_ir(
             ctx.push_vec(
                 &mut (face_producers),
                 (
-                    ctx.copy_retained_text(target.as_str(), "retain SLDPRT face producer ID")?,
+                    target.as_str(),
                     identity.feature_source_id.value(),
                 ),
                 "collect SLDPRT face producers",
@@ -3601,6 +3601,7 @@ fn build_geometry_ir(
         &ir.model.shells,
         &ir.model.regions,
     )?;
+    drop((face_producers, face_producers_storage));
     let topology_selection_inputs = crate::history::selections::TopologySelectionInputs {
         bodies: &ir.model.bodies,
         faces: &ir.model.faces,

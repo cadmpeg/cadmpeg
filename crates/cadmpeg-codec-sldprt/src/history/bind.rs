@@ -894,7 +894,7 @@ fn output_body_id(ctx: &DecodeContext<'_>, id: &str) -> Result<Option<BodyId>, C
 /// or ambiguous across history records is ignored.
 #[derive(Clone, Copy)]
 pub(crate) struct FeatureOutputSources<'a> {
-    pub face_producers: &'a [(String, u32)],
+    pub face_producers: &'a [(&'a str, u32)],
     pub body_modifiers: &'a [(String, u32)],
 }
 
@@ -1008,7 +1008,7 @@ pub(crate) fn derive_feature_outputs(
     let mut produced: HashMap<u32, Vec<&BodyId>> = HashMap::new();
     let mut seen = std::collections::HashSet::new();
     for (face, source_id) in ctx.admit_iter(face_producers, "collect SLDPRT produced bodies")? {
-        let Some(&body) = ctx.get_hash_map(&owners, face.as_str(), "look up SLDPRT hash key")?
+        let Some(&body) = ctx.get_hash_map(&owners, *face, "look up SLDPRT hash key")?
         else {
             continue;
         };
