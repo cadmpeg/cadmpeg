@@ -458,14 +458,25 @@ fn assign_ext11_support_uv_to_surfaces_with_index(
         }
     }
     let mut assigned = [None, None];
-    for lane in 0..2 {
-        let Some(support) = assigned_lanes.iter().position(|assigned| *assigned == Some(lane)) else {
+    for (lane, values) in lanes.iter().enumerate() {
+        let Some(support) = assigned_lanes
+            .iter()
+            .position(|assigned| *assigned == Some(lane))
+        else {
             continue;
         };
-        let Some(lane) = lanes[lane].as_ref() else { continue; };
-        assigned[support] = Some(SupportUvLane::from_checked(
-            ctx.copy_slice(lane.as_slice(), "NX solved support-UV lane copy")?, lane.len(),
-        ).ok_or_else(|| cadmpeg_core::CodecError::malformed("NX copied support-UV lane count"))?);
+        let Some(lane) = values.as_ref() else {
+            continue;
+        };
+        assigned[support] = Some(
+            SupportUvLane::from_checked(
+                ctx.copy_slice(lane.as_slice(), "NX solved support-UV lane copy")?,
+                lane.len(),
+            )
+            .ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("NX copied support-UV lane count")
+            })?,
+        );
     }
     Ok(assigned.iter().any(Option::is_some).then_some(assigned))
 }
@@ -576,11 +587,23 @@ pub(super) fn validated_support_uv_endpoint_witnesses(
             let Some(pcurve) = &support.pcurve else {
                 continue;
             };
-            endpoint_witnesses.push(ctx, (owner, surface),
-                (&pcurve.geometry, context.parameter_range().endpoints(), samples.endpoints()), EndpointWitnessOperations {
-                    lookup_key: "nx validated witness lookup key", curve: "nx validated witness owner", support: "nx validated witness surface",
-                    pcurve: "nx validated witness pcurve", index: "nx validated witness index", witnesses: "nx validated endpoint witnesses",
-                })?;
+            endpoint_witnesses.push(
+                ctx,
+                (owner, surface),
+                (
+                    &pcurve.geometry,
+                    context.parameter_range().endpoints(),
+                    samples.endpoints(),
+                ),
+                EndpointWitnessOperations {
+                    lookup_key: "nx validated witness lookup key",
+                    curve: "nx validated witness owner",
+                    support: "nx validated witness surface",
+                    pcurve: "nx validated witness pcurve",
+                    index: "nx validated witness index",
+                    witnesses: "nx validated endpoint witnesses",
+                },
+            )?;
         }
     }
     Ok(())
@@ -948,7 +971,9 @@ pub(super) fn complete_support_uv_with_budget(
     coupled_support_budget: &SupportUvBudget<'_>,
     coupled_geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let mut witness_storage = geometry_budget.charges.reserve_scoped(0, "nx test endpoint witnesses")?;
+    let mut witness_storage = geometry_budget
+        .charges
+        .reserve_scoped(0, "nx test endpoint witnesses")?;
     let mut endpoint_witnesses = BTreeMap::new();
     complete_support_uv_with_budget_and_endpoint_witnesses(
         geometry_budget.charges,
@@ -1200,11 +1225,23 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                     }
                 } else if fully_validated {
                     if let [Some(first), Some(last)] = endpoints {
-                        endpoint_witnesses.push(ctx, (owner, surface),
-                            (&pcurve.geometry, context.parameter_range().endpoints(), [first, last]), EndpointWitnessOperations {
-                                lookup_key: "nx validated endpoint lookup key", curve: "nx validated endpoint owner", support: "nx validated endpoint support",
-                                pcurve: "nx validated endpoint pcurve", index: "nx validated endpoint index", witnesses: "nx validated endpoint witnesses",
-                            })?;
+                        endpoint_witnesses.push(
+                            ctx,
+                            (owner, surface),
+                            (
+                                &pcurve.geometry,
+                                context.parameter_range().endpoints(),
+                                [first, last],
+                            ),
+                            EndpointWitnessOperations {
+                                lookup_key: "nx validated endpoint lookup key",
+                                curve: "nx validated endpoint owner",
+                                support: "nx validated endpoint support",
+                                pcurve: "nx validated endpoint pcurve",
+                                index: "nx validated endpoint index",
+                                witnesses: "nx validated endpoint witnesses",
+                            },
+                        )?;
                     }
                 }
             }
@@ -1798,11 +1835,19 @@ geometry_budget,
                         let parameter_range = samples.parameter_range();
                         let pcurve = linear_pcurve_geometry(ctx, parameters, &uv, geometry_budget)?;
                         if let [Some(first), Some(last)] = endpoint_values {
-                            endpoint_witnesses.push(ctx, (owner, surface_id),
-                                (&pcurve, parameter_range, [first, last]), EndpointWitnessOperations {
-                                    lookup_key: "nx support UV witness lookup key", curve: "nx support UV witness owner", support: "nx support UV witness surface",
-                                    pcurve: "nx support UV witness pcurve", index: "nx support UV witness index", witnesses: "nx support UV endpoint witnesses",
-                                })?;
+                            endpoint_witnesses.push(
+                                ctx,
+                                (owner, surface_id),
+                                (&pcurve, parameter_range, [first, last]),
+                                EndpointWitnessOperations {
+                                    lookup_key: "nx support UV witness lookup key",
+                                    curve: "nx support UV witness owner",
+                                    support: "nx support UV witness surface",
+                                    pcurve: "nx support UV witness pcurve",
+                                    index: "nx support UV witness index",
+                                    witnesses: "nx support UV endpoint witnesses",
+                                },
+                            )?;
                         }
                         if let Some(position) =
                             procedural_curve_position(ctx, &positions, procedural_id)?
@@ -2291,11 +2336,19 @@ fn complete_coupled_support_uv(
                     let pcurve =
                         linear_pcurve_geometry(ctx, parameters, &lanes[side], geometry_budget)?;
                     if let Some([Some(first), Some(last)]) = endpoint_values {
-                        endpoint_witnesses.push(ctx, (owner, &surfaces[side]),
-                            (&pcurve, parameter_range, [first, last]), EndpointWitnessOperations {
-                                lookup_key: "nx coupled support UV witness lookup key", curve: "nx coupled support UV witness owner", support: "nx coupled support UV witness surface",
-                                pcurve: "nx coupled support UV witness pcurve", index: "nx coupled support UV witness index", witnesses: "nx coupled support UV endpoint witnesses",
-                            })?;
+                        endpoint_witnesses.push(
+                            ctx,
+                            (owner, surfaces[side]),
+                            (&pcurve, parameter_range, [first, last]),
+                            EndpointWitnessOperations {
+                                lookup_key: "nx coupled support UV witness lookup key",
+                                curve: "nx coupled support UV witness owner",
+                                support: "nx coupled support UV witness surface",
+                                pcurve: "nx coupled support UV witness pcurve",
+                                index: "nx coupled support UV witness index",
+                                witnesses: "nx coupled support UV endpoint witnesses",
+                            },
+                        )?;
                     }
                     if let Some(position) =
                         procedural_curve_position(ctx, &positions, procedural_id)?
@@ -3267,27 +3320,50 @@ mod tests {
         use cadmpeg_ir::geometry::analytic::PlaneSurface;
         use cadmpeg_ir::math::Vector3;
         let mut ir = CadIr::empty();
-        let surfaces = [SurfaceId::mint("test:model:surface#first").unwrap(),
-            SurfaceId::mint("test:model:surface#second").unwrap()];
+        let surfaces = [
+            SurfaceId::mint("test:model:surface#first").unwrap(),
+            SurfaceId::mint("test:model:surface#second").unwrap(),
+        ];
         for (index, z) in [0.0, 1.0].into_iter().enumerate() {
             ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-                id: surfaces[index].clone(), source_object: None,
+                id: surfaces[index].clone(),
+                source_object: None,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                    PlaneSurface::try_new(Point3::new(0.0, 0.0, z),
-                        Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0)).unwrap())),
+                    PlaneSurface::try_new(
+                        Point3::new(0.0, 0.0, z),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                )),
             });
         }
-        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+        let index =
+            cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
         let points = [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)];
-        let lanes = [SupportUvLane::new(vec![[0.0, 0.0], [0.01, 0.0]], 2),
-            SupportUvLane::new(vec![[0.0, 0.0], [0.01, 0.0]], 2)];
-        crate::test_support::with_decode_context_over(&[], |policy| policy.limits.max_retained_bytes = 0,
+        let lanes = [
+            SupportUvLane::new(vec![[0.0, 0.0], [0.01, 0.0]], 2),
+            SupportUvLane::new(vec![[0.0, 0.0], [0.01, 0.0]], 2),
+        ];
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_retained_bytes = 0,
             |ctx| {
                 let budget = GeometryWorkBudget::from_context(ctx, 1000);
-                assert!(super::assign_ext11_support_uv_to_surfaces_with_index(ctx, &index,
-                    [&surfaces[0], &surfaces[1]], &points, 0.01, &lanes, &budget).unwrap().is_none());
+                assert!(super::assign_ext11_support_uv_to_surfaces_with_index(
+                    ctx,
+                    &index,
+                    [&surfaces[0], &surfaces[1]],
+                    &points,
+                    0.01,
+                    &lanes,
+                    &budget
+                )
+                .unwrap()
+                .is_none());
                 assert_eq!(ctx.resource_refusal(), None);
-            });
+            },
+        );
     }
 
     use std::collections::BTreeMap;
@@ -3404,7 +3480,10 @@ mod tests {
 
     #[test]
     fn linear_knots_storage_refusal_precedes_copy_work() {
-        for dimension in [ResourceDimension::CollectionItems, ResourceDimension::RetainedBytes] {
+        for dimension in [
+            ResourceDimension::CollectionItems,
+            ResourceDimension::RetainedBytes,
+        ] {
             crate::test_support::resource_refusal_at(&[], dimension, "nx linear knots", |ctx| {
                 let budget = GeometryWorkBudget::from_context(ctx, 100);
                 super::linear_knots(&[0.0, 1.0], &budget)
@@ -3414,7 +3493,9 @@ mod tests {
                 |policy| {
                     policy.limits.max_work_units = 0;
                     match dimension {
-                        ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+                        ResourceDimension::CollectionItems => {
+                            policy.limits.max_collection_items = 0;
+                        }
                         ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
                         _ => unreachable!(),
                     }
@@ -3422,8 +3503,10 @@ mod tests {
                 |ctx| {
                     let budget = GeometryWorkBudget::from_context(ctx, 100);
                     let error = super::linear_knots(&[0.0, 1.0], &budget).unwrap_err();
-                    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                        if limit.dimension == dimension && limit.operation == "nx linear knots"));
+                    assert!(
+                        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                        if limit.dimension == dimension && limit.operation == "nx linear knots")
+                    );
                 },
             );
         }
@@ -3501,7 +3584,8 @@ mod tests {
             |ctx| {
                 let support_budget = WorkBudget::new(1);
                 let geometry_budget = GeometryWorkBudget::from_context(ctx, 100);
-                let mut witness_storage = ctx.reserve_scoped(0, "nx test endpoint witnesses").unwrap();
+                let mut witness_storage =
+                    ctx.reserve_scoped(0, "nx test endpoint witnesses").unwrap();
                 let mut endpoint_witnesses = BTreeMap::new();
 
                 let error = complete_support_uv_with_budget_and_endpoint_witnesses(
@@ -3561,7 +3645,8 @@ mod tests {
                 let support_budget = ctx.work_budget(10);
                 let geometry_budget = GeometryWorkBudget::from_context(ctx, 100);
                 let mut ir = ir.clone();
-                let mut witness_storage = ctx.reserve_scoped(0, "nx test endpoint witnesses").unwrap();
+                let mut witness_storage =
+                    ctx.reserve_scoped(0, "nx test endpoint witnesses").unwrap();
                 let mut endpoint_witnesses = BTreeMap::new();
 
                 complete_support_uv_with_budget_and_endpoint_witnesses(
