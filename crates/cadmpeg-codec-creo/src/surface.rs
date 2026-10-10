@@ -7206,7 +7206,14 @@ fn plane_envelope_compound_close(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Result<Option<usize>, CodecError> {
-    for (offset, byte) in body.iter().enumerate() {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    // The standard prefix has nine scalar slots, each at most eight bytes;
+    // the compact prefix has one marker and eight such slots. The final
+    // positive-DICT scalar consumes seven bytes. No later close can qualify.
+    const MAX_ENVELOPE_CLOSE: usize = 9 * 8 + 7;
+    for (offset, byte) in body.iter().take(MAX_ENVELOPE_CLOSE + 1).enumerate() {
         if *byte != psb::token::COMPOUND_CLOSE {
             continue;
         }
