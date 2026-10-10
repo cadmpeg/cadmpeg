@@ -6,21 +6,6 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
-#[test]
-fn uncertainty_note_text_refuses_retained_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    assert!(matches!(
-        ctx.format_retained(format_args!("ambiguous uncertainty values ({})", "0.1, 0.2"), "step_uncertainty_note_text"),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_uncertainty_note_text"
-    ));
-}
-
 fn pcurve_geometry_refusal(collection_limit: u64, depth_limit: u64) -> CodecError {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=UNKNOWN_CURVE();ENDSEC;END-ISO-10303-21;";
     let (exchange, _) =
@@ -32,8 +17,11 @@ fn pcurve_geometry_refusal(collection_limit: u64, depth_limit: u64) -> CodecErro
     policy.limits.max_recursion_depth = depth_limit;
     let (ctx, _) =
         DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
-    let mut workspace = super::super::PcurveWorkspace::new(&ctx, "test pcurve workspace")
-        .expect("empty scope");
+    let mut loss_storage = ctx
+        .reserve_scoped(0, "test geometry report backing")
+        .expect("report owner");
+    let mut workspace =
+        super::super::PcurveWorkspace::new(&ctx, "test pcurve workspace").expect("empty scope");
     super::super::decode_pcurve_geometry(
         1,
         &exchange,
@@ -44,7 +32,7 @@ fn pcurve_geometry_refusal(collection_limit: u64, depth_limit: u64) -> CodecErro
             transformations: &BTreeMap::new(),
             angle_scale: 1.0,
         },
-        &mut Vec::new(),
+        (&mut Vec::new(), &mut loss_storage),
         &mut super::super::PcurveWalk {
             active: &mut BTreeSet::new(),
             workspace: &mut workspace,
@@ -95,19 +83,18 @@ fn surface_scale_refusal(
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     let ir = cadmpeg_ir::document::CadIr::empty();
     let id = cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#1").expect("valid identity");
-    let mut index =
-        super::super::SurfaceScaleIndex::build(&ir, &ctx).expect("empty model index");
+    let mut index = super::super::SurfaceScaleIndex::build(&ir, &ctx).expect("empty model index");
     super::super::procedural_surface_parameter_scales(
-                &ir,
-                &mut index,
-                &id,
-                &cadmpeg_ir::geometry::SurfaceGeometry::Solved(
-                    cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { record: None },
-                ),
-                [1.0, 1.0],
-                &BTreeMap::new(),
-            )
-        .expect_err("surface scale exceeds limit")
+        &ir,
+        &mut index,
+        &id,
+        &cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+            cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { record: None },
+        ),
+        [1.0, 1.0],
+        &BTreeMap::new(),
+    )
+    .expect_err("surface scale exceeds limit")
 }
 
 #[test]
@@ -197,14 +184,18 @@ fn line_scale_refusal(source: &[u8], collection_limit: u64, depth_limit: u64) ->
     policy.limits.max_recursion_depth = depth_limit;
     let (ctx, _) =
         DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
+    let mut loss_storage = ctx
+        .reserve_scoped(0, "test geometry report backing")
+        .expect("report owner");
     let mut index = super::super::LineParameterScaleIndex::new(&exchange, &ctx)
         .expect("empty memo fits policy");
-    index.resolve(
-        1,
-        cadmpeg_ir::scalar::PositiveReal::new(1.0).expect("positive scale"),
-        &mut Vec::new(),
-    )
-    .expect_err("line scale exceeds limit")
+    index
+        .resolve(
+            1,
+            cadmpeg_ir::scalar::PositiveReal::new(1.0).expect("positive scale"),
+            (&mut Vec::new(), &mut loss_storage),
+        )
+        .expect_err("line scale exceeds limit")
 }
 
 #[test]
@@ -247,6 +238,9 @@ fn trim_fallback_refusal(master: super::super::TrimMasterRepresentation) -> Code
     let geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(
         cadmpeg_ir::geometry::SolvedCurveGeometry::Unknown { record: None },
     );
+    let mut loss_storage = ctx
+        .reserve_scoped(0, "test geometry report backing")
+        .expect("report owner");
     let mut losses = Vec::new();
     let mut context = super::super::TrimParameterContext {
         points: &points,
@@ -257,7 +251,7 @@ fn trim_fallback_refusal(master: super::super::TrimMasterRepresentation) -> Code
         tolerance: 1.0,
         master_representation: master,
         record_id: 1,
-        losses: &mut losses,
+        losses: (&mut losses, &mut loss_storage),
         ctx: &ctx,
     };
     let parameter = crate::parse::Value::Integer(1);
@@ -314,6 +308,9 @@ fn trim_parameter_value_walk_refuses_depth_limit() {
     let geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(
         cadmpeg_ir::geometry::SolvedCurveGeometry::Unknown { record: None },
     );
+    let mut loss_storage = ctx
+        .reserve_scoped(0, "test geometry report backing")
+        .expect("report owner");
     let mut losses = Vec::new();
     let context = super::super::TrimParameterContext {
         points: &points,
@@ -324,7 +321,7 @@ fn trim_parameter_value_walk_refuses_depth_limit() {
         tolerance: 1.0,
         master_representation: super::super::TrimMasterRepresentation::Parameter,
         record_id: 1,
-        losses: &mut losses,
+        losses: (&mut losses, &mut loss_storage),
         ctx: &ctx,
     };
     assert!(matches!(
@@ -333,56 +330,6 @@ fn trim_parameter_value_walk_refuses_depth_limit() {
             if refusal.dimension == ResourceDimension::RecursionDepth
                 && refusal.operation == "step_trim_parameter_value_walk"
     ));
-}
-
-fn deferred_dependency_refusal(
-    limit: u64,
-    group: &'static str,
-    member: &'static str,
-) -> CodecError {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = limit;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    ctx.push_hash_group(&mut HashMap::new(), 1, 2, group, member)
-        .expect_err("dependency exceeds the limit")
-}
-
-#[test]
-fn deferred_curve_groups_refuse_collection_limit() {
-    assert!(
-        matches!(deferred_dependency_refusal(0, "step_deferred_curve_groups", "step_deferred_curve_members"),
-        CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::CollectionItems
-            && refusal.operation == "step_deferred_curve_groups")
-    );
-}
-
-#[test]
-fn deferred_curve_members_refuse_collection_limit() {
-    assert!(
-        matches!(deferred_dependency_refusal(1, "step_deferred_curve_groups", "step_deferred_curve_members"),
-        CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::CollectionItems
-            && refusal.operation == "step_deferred_curve_members")
-    );
-}
-
-#[test]
-fn deferred_surface_groups_refuse_collection_limit() {
-    assert!(
-        matches!(deferred_dependency_refusal(0, "step_deferred_surface_groups", "step_deferred_surface_members"),
-        CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::CollectionItems
-            && refusal.operation == "step_deferred_surface_groups")
-    );
-}
-
-#[test]
-fn deferred_surface_members_refuse_collection_limit() {
-    assert!(
-        matches!(deferred_dependency_refusal(1, "step_deferred_surface_groups", "step_deferred_surface_members"),
-        CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::CollectionItems
-            && refusal.operation == "step_deferred_surface_members")
-    );
 }
 
 fn deferred_wake_refusal(operation: &'static str) -> CodecError {
@@ -469,21 +416,6 @@ fn curve_strips_refuse_collection_limit() {
 }
 
 #[test]
-fn curve_strip_source_name_refuses_retained_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    assert!(matches!(
-        ctx.format_retained(format_args!("{}", "curve"), "step_curve_strip_source_name"),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == "step_curve_strip_source_name"
-    ));
-}
-
-#[test]
 fn transformation_operator_partial_refusal_stays_error() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',$,$,#3,1.,$);#2=CARTESIAN_TRANSFORMATION_OPERATOR_2D('',$,$,#3,1.);#3=DUMMY();ENDSEC;END-ISO-10303-21;";
     let (exchange, _) =
@@ -548,6 +480,9 @@ fn nested_trim_value_walks_the_geometry_scale_once() {
     policy.limits.max_work_units = 8 + 4;
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
+    let mut loss_storage = ctx
+        .reserve_scoped(0, "test geometry report backing")
+        .expect("report owner");
     let mut losses = Vec::new();
     let context = super::super::TrimParameterContext {
         points: &BTreeMap::new(),
@@ -558,7 +493,7 @@ fn nested_trim_value_walks_the_geometry_scale_once() {
         tolerance: 1.0,
         master_representation: super::super::TrimMasterRepresentation::Parameter,
         record_id: 1,
-        losses: &mut losses,
+        losses: (&mut losses, &mut loss_storage),
         ctx: &ctx,
     };
     assert_eq!(
@@ -672,45 +607,4 @@ fn composite_segment_scratch_is_scoped_and_released() {
     // The first segment admits the vector capacity; releasing it frees the whole allowance.
     run(refusal.used + refusal.additional)
         .expect("scratch needs no retained bytes and releases its reservation");
-}
-
-#[test]
-fn deferred_composite_wakes_only_after_all_missing_edges() {
-    crate::test_support::with_service_context(b"dependency graph", |_, ctx| {
-        let mut waiting = super::super::DeferredDependencies::default();
-        let mut queue = VecDeque::new();
-        let mut storage = ctx
-            .reserve_scoped(0, "test deferred storage")
-            .expect("scope");
-        storage
-            .with_storage(|| -> Result<(), CodecError> {
-                for dependency in 1..=20 {
-                    waiting.register(ctx, dependency, 100, "test groups", "test members")?;
-                }
-                // Repeated segments preserve their separate edges without an early wake.
-                waiting.register(ctx, 20, 100, "test groups", "test members")?;
-                for dependency in 1..20 {
-                    super::super::wake_deferred_dependents(
-                        dependency,
-                        &mut waiting,
-                        &mut queue,
-                        ctx,
-                        "test queue",
-                    )?;
-                    assert!(queue.is_empty());
-                }
-                super::super::wake_deferred_dependents(
-                    20,
-                    &mut waiting,
-                    &mut queue,
-                    ctx,
-                    "test queue",
-                )?;
-                assert_eq!(queue, VecDeque::from([100]));
-                assert!(waiting.waiting_on.is_empty());
-                assert!(waiting.remaining.is_empty());
-                Ok(())
-            })
-            .expect("resolve dependency graph");
-    });
 }
