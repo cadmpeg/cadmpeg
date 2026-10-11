@@ -7669,8 +7669,11 @@ fn relation_string_pattern_admitted(
     let Ok(compiled) = compiled else {
         return Ok(None);
     };
+    let match_work = pattern.len().checked_mul(value.len()).ok_or_else(|| {
+        ctx.refuse_codec_limit("creo relation regex match work", u64::MAX, u64::MAX)
+    })?;
     ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(value.len()),
+        cadmpeg_core::decode::u64_from_index(match_work),
         "creo relation regex match work",
     )?;
     Ok(Some(compiled.is_match(value)))

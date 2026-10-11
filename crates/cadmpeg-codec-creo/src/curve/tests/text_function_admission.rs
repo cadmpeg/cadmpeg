@@ -174,22 +174,61 @@ fn relation_regex_refuses_compiler_scratch() {
 
 #[test]
 fn relation_regex_refuses_match_work() {
-    assert_work(
-        &crate::test_support::last_refusal_at(
+    let error = crate::test_support::last_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "creo relation regex match work",
+        |ctx| {
+            crate::curve::parse_relation_expression::<CurveExpressionValue>(
+                ctx,
+                "string_pattern('abc','a')",
+                &BTreeMap::new(),
+                RelationEvaluationContext::default(),
+            )
+        },
+    );
+    assert_work(&error, "creo relation regex match work");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.additional == 3));
+}
+
+#[test]
+fn relation_regex_match_work_scales_with_pattern_and_text_lengths() {
+    for (value, pattern, expected_match) in [("abc", "a.c", true), ("abcd", "a.c", false)] {
+        let run = |ctx: &DecodeContext<'_>| {
+            crate::curve::relation_string_pattern_admitted(ctx, value, pattern)
+        };
+        let error = crate::test_support::last_refusal_at(
             &[],
             ResourceDimension::WorkUnits,
             "creo relation regex match work",
-            |ctx| {
-                crate::curve::parse_relation_expression::<CurveExpressionValue>(
-                    ctx,
-                    "string_pattern('abc','a')",
-                    &BTreeMap::new(),
-                    RelationEvaluationContext::default(),
-                )
-            },
-        ),
-        "creo relation regex match work",
-    );
+            run,
+        );
+        assert_work(&error, "creo relation regex match work");
+        let CodecError::ResourceLimit(resource) = error else {
+            panic!("expected match work refusal");
+        };
+        assert_eq!(
+            resource.additional,
+            cadmpeg_core::decode::u64_from_index(pattern.len() * value.len())
+        );
+        // Source formatting charges both the length pass and the write pass.
+        let source_bytes = r"\A(?:".len() + pattern.len() + r")\z".len();
+        assert_eq!(
+            resource.used,
+            cadmpeg_core::decode::u64_from_index(pattern.len() + 2 * source_bytes)
+        );
+        assert_eq!(
+            crate::test_support::assert_work_boundaries(
+                &[
+                    "creo relation regex compile work",
+                    "creo relation regex match work"
+                ],
+                run,
+            ),
+            Some(expected_match)
+        );
+    }
 }
 
 #[test]
