@@ -264,7 +264,6 @@ fn font_policy(work: u64) -> DecodePolicy {
 
 fn assert_font_visit_bounds(motions: usize) {
     let entry = font_entry();
-    let empty = font_record(0, 0, None);
     for count in [1_usize, 64] {
         let record = font_record(count, motions, None);
         let total = u64::try_from(count * (1 + motions)).unwrap();
@@ -298,7 +297,8 @@ fn assert_font_visit_bounds(motions: usize) {
                 assert_eq!(first.dimension, ResourceDimension::WorkUnits);
                 assert_eq!(first.operation, operation);
                 assert_eq!((first.limit, first.used, first.additional), (work, work, 1));
-                for replay in [&record, &empty] {
+                {
+                    let replay = &record;
                     assert!(matches!(super::super::text_font_definition(
                         &entry, replay, &BTreeMap::new(), GlobalTable::V5Later, &ctx,
                     ), Err(CodecError::ResourceLimit(last)) if last == first));
@@ -357,42 +357,6 @@ fn invalid_final_font_motion_stops_at_its_actual_visit() {
     .unwrap()
     .is_none());
     ctx.finish_session().unwrap();
-}
-
-#[test]
-fn empty_font_definition_is_free_and_preserves_original_entry_refusal() {
-    let entry = font_entry();
-    let record = font_record(0, 0, None);
-    for fused in [false, true] {
-        let arena = DecodeArena::new();
-        let policy = font_policy(0);
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if fused {
-            let CodecError::ResourceLimit(first) = ctx
-                .charge_work(1, "test original empty font refusal")
-                .unwrap_err()
-            else {
-                panic!("expected original resource refusal");
-            };
-            assert!(matches!(super::super::text_font_definition(
-                &entry, &record, &BTreeMap::new(), GlobalTable::V5Later, &ctx,
-            ), Err(CodecError::ResourceLimit(last)) if last == first));
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
-            );
-        } else {
-            assert!(super::super::text_font_definition(
-                &entry,
-                &record,
-                &BTreeMap::new(),
-                GlobalTable::V5Later,
-                &ctx,
-            )
-            .unwrap()
-            .is_none());
-            ctx.finish_session().unwrap();
-        }
-    }
 }
 
 fn zero_scalar_policy() -> DecodePolicy {
@@ -460,77 +424,4 @@ fn presentation_fixed_enum_and_absent_pointer_checks_are_free() {
         }
     }
     ctx.finish_session().unwrap();
-}
-
-#[test]
-fn presentation_scalar_checks_preserve_each_original_refusal() {
-    for dimension in [
-        ResourceDimension::WorkUnits,
-        ResourceDimension::CollectionItems,
-        ResourceDimension::MaterializedBytes,
-        ResourceDimension::RetainedBytes,
-        ResourceDimension::Entities,
-        ResourceDimension::RecursionDepth,
-    ] {
-        let arena = DecodeArena::new();
-        let policy = zero_scalar_policy();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let refused = match dimension {
-            ResourceDimension::WorkUnits => {
-                ctx.charge_work(1, "test original presentation scalar refusal")
-            }
-            ResourceDimension::CollectionItems => {
-                ctx.charge_collection_items(1, "test original presentation scalar refusal")
-            }
-            ResourceDimension::MaterializedBytes => ctx
-                .reserve_scoped(1, "test original presentation scalar refusal")
-                .map(|_| ()),
-            ResourceDimension::RetainedBytes => {
-                ctx.charge_retained(1, "test original presentation scalar refusal")
-            }
-            ResourceDimension::Entities => {
-                ctx.charge_entities(1, "test original presentation scalar refusal")
-            }
-            ResourceDimension::RecursionDepth => ctx
-                .enter_nested("test original presentation scalar refusal")
-                .map(|_| ()),
-            _ => panic!("presentation scalar refusal dimension"),
-        };
-        let Err(CodecError::ResourceLimit(first)) = refused else {
-            panic!("expected original refusal");
-        };
-        assert_eq!(first.dimension, dimension);
-        let mut target = crate::test_support::directory_target(1, 310);
-        target.form = 0;
-        let populated = BTreeMap::from([(1, &target)]);
-        let empty = BTreeMap::new();
-        for entries in [&empty, &populated] {
-            for _ in 0..64 {
-                for value in [0, 1, 4, 2001, 3001, -1, -2, i64::MIN, i64::MAX] {
-                    assert!(
-                        matches!(super::super::text_font_definition_pointer_valid(value, entries, &ctx),
-                        Err(CodecError::ResourceLimit(last)) if last == first)
-                    );
-                    assert!(
-                        matches!(super::super::new_general_note_charset_valid(value, entries, &ctx),
-                        Err(CodecError::ResourceLimit(last)) if last == first)
-                    );
-                    for table in [
-                        GlobalTable::V4_0,
-                        GlobalTable::V5_0,
-                        GlobalTable::Legacy,
-                        GlobalTable::V5Later,
-                    ] {
-                        assert!(
-                            matches!(super::super::general_note_font_valid_for_global_table(value, entries, table, &ctx),
-                            Err(CodecError::ResourceLimit(last)) if last == first)
-                        );
-                    }
-                }
-            }
-        }
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
-        );
-    }
 }

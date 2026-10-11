@@ -1267,11 +1267,6 @@ fn invalid_last_native_composite_pointer_releases_earlier_ids_and_slots() {
     assert_native_composite_child_storage(-1, false);
 }
 
-#[test]
-fn native_composite_child_allocation_refusals_preserve_original_error() {
-    assert_native_composite_child_storage(3, true);
-}
-
 fn source_control_fixture() -> (
     CadIr,
     CurveId,

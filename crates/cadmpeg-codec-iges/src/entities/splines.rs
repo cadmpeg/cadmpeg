@@ -164,9 +164,6 @@ fn add_edge(
     sequences: &mut super::geometry::SourceSequences<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<EdgeId>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(parameter_range) =
         IncreasingParameterInterval::between(parameter_range[0], parameter_range[1])
     else {
@@ -492,7 +489,7 @@ pub(super) fn project<'ctx>(
         let mut previous_terminal_tangent = None;
         let mut previous_terminal_curvature = None;
         let mut segments = coefficients.chunks_exact(12).enumerate();
-        while segments.len() != 0 || ctx.resource_refusal().is_some() {
+        while segments.len() != 0 {
             let Some((segment, admitted_values)) =
                 ctx.next_charged(&mut segments, "iges spline curve segments")?
             else {
@@ -1091,14 +1088,14 @@ pub(super) fn project<'ctx>(
         })?;
         let mut valid = true;
         let mut u_patches = 0..u_segments;
-        'patches: while !u_patches.is_empty() || ctx.resource_refusal().is_some() {
+        'patches: while !u_patches.is_empty() {
             let Some(u_patch) =
                 ctx.next_charged(&mut u_patches, "iges spline surface u patches")?
             else {
                 break;
             };
             let mut v_patches = 0..v_segments;
-            while !v_patches.is_empty() || ctx.resource_refusal().is_some() {
+            while !v_patches.is_empty() {
                 let Some(v_patch) =
                     ctx.next_charged(&mut v_patches, "iges spline surface v patches")?
                 else {
@@ -1216,9 +1213,6 @@ pub(super) fn project<'ctx>(
             continue;
         };
         let mut rows = ctx.collection_vec(u_count, "iges spline surface pole rows")?;
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut source_values = IntoIterator::into_iter(0..u_count);
         while !source_values.is_empty() {
             let Some(u_index) =

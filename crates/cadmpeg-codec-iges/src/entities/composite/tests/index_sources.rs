@@ -14,12 +14,7 @@ fn first_index_step(ir: &CadIr, operation: &'static str) {
     assert_eq!(first.dimension, ResourceDimension::WorkUnits);
     assert_eq!(first.operation, operation);
     assert_eq!((first.limit, first.used, first.additional), (0, 0, 1));
-    for replay in [ir, &CadIr::empty()] {
-        assert!(matches!(CompositeIndex::from_ir(replay, &ctx),
-            Err(CodecError::ResourceLimit(last)) if last == first));
-    }
-    let mut empty = CompositeIndex::default();
-    assert!(matches!(empty.refresh_topology(&CadIr::empty(), &ctx),
+    assert!(matches!(CompositeIndex::from_ir(ir, &ctx),
         Err(CodecError::ResourceLimit(last)) if last == first));
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
 }

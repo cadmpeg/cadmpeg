@@ -44,12 +44,11 @@ impl CopiousProjectionOutcome<'_> {
         free_vertices: &mut Vec<VertexId>,
         ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut source_values = IntoIterator::into_iter(self.decoded);
         while source_values.len() != 0 {
-            let Some(sequence) = ctx.next_charged(&mut source_values, "iges copious merged sequences")? else {
+            let Some(sequence) =
+                ctx.next_charged(&mut source_values, "iges copious merged sequences")?
+            else {
                 break;
             };
             ctx.insert_scoped_btree_set(
@@ -110,9 +109,6 @@ fn has_forbidden_form_63_duplicate(
     resolution: f64,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if points.len() == 2 {
         return Ok(true);
     }
@@ -132,8 +128,11 @@ fn has_forbidden_form_63_duplicate(
     let mut cells = HashMap::new();
     let cell_size = resolution * 0.5;
     let mut input = points.iter().copied().enumerate();
-    while input.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some((index, point)) = ctx.next_charged(&mut input, "iges copious duplicate points")? else { break; };
+    while input.len() != 0 {
+        let Some((index, point)) = ctx.next_charged(&mut input, "iges copious duplicate points")?
+        else {
+            break;
+        };
         if cell_size <= 0.0 {
             let exact_points = exact_points.get_or_insert_with(HashMap::new);
             let previous = storage.with_storage(|| {
@@ -187,9 +186,9 @@ fn has_forbidden_form_63_duplicate(
                     else {
                         continue;
                     };
-                    let Some(&(previous, previous_point)) = ctx.get_hash_map(
-                        &cells, &neighbor, "iges copious proximity lookup",
-                    )? else {
+                    let Some(&(previous, previous_point)) =
+                        ctx.get_hash_map(&cells, &neighbor, "iges copious proximity lookup")?
+                    else {
                         continue;
                     };
                     if points_coincident(point, previous_point, resolution)
@@ -200,9 +199,11 @@ fn has_forbidden_form_63_duplicate(
                 }
             }
         }
-        storage.with_storage(|| {
-            ctx.entry_hash_map(&mut cells, (x, y, z), "iges copious proximity cells")
-        })?.or_insert((index, point));
+        storage
+            .with_storage(|| {
+                ctx.entry_hash_map(&mut cells, (x, y, z), "iges copious proximity cells")
+            })?
+            .or_insert((index, point));
     }
     Ok(false)
 }
@@ -218,7 +219,7 @@ fn has_form_63_self_intersection(
             Ok([point.x, point.y])
         })
     })?;
-    super::geometry::planar_polyline_has_self_intersection(&planar_points, ctx)
+    super::geometry::planar_polyline_has_self_intersection(&planar_points, None, ctx)
 }
 
 pub(super) fn project<'ctx>(
@@ -230,9 +231,6 @@ pub(super) fn project<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences<'_>,
 ) -> Result<CopiousProjectionOutcome<'ctx>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal));
-    }
     let mut decoded_storage = ctx.reserve_scoped(0, "iges copious decoded sequences")?;
     let mut decoded = BTreeSet::new();
     let mut loss_slots_storage = ctx.reserve_scoped(0, "iges entity loss slots")?;
@@ -263,8 +261,10 @@ pub(super) fn project<'ctx>(
             continue;
         }
         let factor = global.length_factor_mm();
-        let Some(record) = ctx.get_btree_map(records, &entry.sequence,
-            "iges copious parameter lookup")?.copied() else {
+        let Some(record) = ctx
+            .get_btree_map(records, &entry.sequence, "iges copious parameter lookup")?
+            .copied()
+        else {
             push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -389,7 +389,13 @@ pub(super) fn project<'ctx>(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
+                push_entity_loss_with_scoped_slots(
+                    ctx,
+                    &mut loss_slots_storage,
+                    &mut losses,
+                    entry,
+                    format_args!("{message}"),
+                )?;
                 continue;
             }
         };
@@ -451,8 +457,11 @@ pub(super) fn project<'ctx>(
         let mut tuples_valid = true;
         let mut positions_valid = true;
         let mut indices = (tuple_start..tuple_end).step_by(tuple_width);
-        while indices.len() != 0 || ctx.resource_refusal().is_some() {
-            let Some(start) = ctx.next_charged(&mut indices, "iges copious tuple traversal")? else { break; };
+        while indices.len() != 0 {
+            let Some(start) = ctx.next_charged(&mut indices, "iges copious tuple traversal")?
+            else {
+                break;
+            };
             let mut tuple = [FiniteReal::ZERO; 6];
             for (offset, value) in tuple.iter_mut().enumerate().take(tuple_width) {
                 let Some(number) = record.number(start + offset).and_then(FiniteReal::new) else {
@@ -527,12 +536,11 @@ pub(super) fn project<'ctx>(
             continue;
         }
         if projects_as_points {
-            if let Some(refusal) = ctx.resource_refusal() {
-                return Err(refusal.into());
-            }
             let mut source_values = IntoIterator::into_iter(positions).enumerate();
             while source_values.len() != 0 {
-                let Some((index, position)) = ctx.next_charged(&mut source_values, "iges copious point projection")? else {
+                let Some((index, position)) =
+                    ctx.next_charged(&mut source_values, "iges copious point projection")?
+                else {
                     break;
                 };
                 let point = crate::ids::point_admitted(
@@ -562,7 +570,12 @@ pub(super) fn project<'ctx>(
                     point,
                     tolerance: None,
                 });
-                ctx.reserve_scoped_vec(&mut free_vertex_slots_storage, &mut free_vertices, 1, "iges copious free vertices")?;
+                ctx.reserve_scoped_vec(
+                    &mut free_vertex_slots_storage,
+                    &mut free_vertices,
+                    1,
+                    "iges copious free vertices",
+                )?;
                 free_vertices.push(vertex);
             }
             drop(source_values);
@@ -603,7 +616,13 @@ pub(super) fn project<'ctx>(
                     } else {
                         "simple closed path has coincident non-endpoint points"
                     };
-                    push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{reason}"))?;
+                    push_entity_loss_with_scoped_slots(
+                        ctx,
+                        &mut loss_slots_storage,
+                        &mut losses,
+                        entry,
+                        format_args!("{reason}"),
+                    )?;
                     continue;
                 }
             }
@@ -722,7 +741,12 @@ pub(super) fn project<'ctx>(
             end: end_vertex,
             tolerance: topology_tolerance,
         });
-        ctx.reserve_scoped_vec(&mut wire_slots_storage, &mut wire_edges, 1, "iges copious wire edges")?;
+        ctx.reserve_scoped_vec(
+            &mut wire_slots_storage,
+            &mut wire_edges,
+            1,
+            "iges copious wire edges",
+        )?;
         wire_edges.push(edge);
         ctx.insert_scoped_btree_set(
             &mut decoded_storage,

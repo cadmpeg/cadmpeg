@@ -209,7 +209,7 @@ fn source_edge_for_vertices<'a>(
 ) -> Result<&'a Edge, SourceEdgeSelectionError> {
     let mut matching = None;
     let mut positions = candidates.iter();
-    while positions.len() != 0 || ctx.resource_refusal().is_some() {
+    while positions.len() != 0 {
         let Some(position) = ctx
             .next_charged(&mut positions, "iges B-rep source edge candidates")
             .map_err(SourceEdgeSelectionError::Codec)?
@@ -273,7 +273,7 @@ fn project_pcurve_uses(
 ) -> Result<Vec<PcurveUse>, PcurveProjectionError> {
     let mut projected = ctx.collection_vec(resolved.len(), "iges B-rep projected pcurve uses")?;
     let mut pcurve_uses = uses.iter().zip(resolved).enumerate();
-    while pcurve_uses.len() != 0 || ctx.resource_refusal().is_some() {
+    while pcurve_uses.len() != 0 {
         let Some((index, ((isoparametric, _), (geometry, range)))) =
             ctx.next_charged(&mut pcurve_uses, "iges B-rep pcurve projection traversal")?
         else {
@@ -330,23 +330,21 @@ struct PcurveEndpointCheck {
     tolerance: f64,
 }
 
-fn resolve_pcurve_uses<'a>(
-    source: &'a CadIr,
+fn resolve_pcurve_uses<'ctx, 'geometry>(
+    source: &CadIr,
     uses: &[(bool, u32)],
     support: &SurfaceSupport<'_>,
     endpoints: PcurveEndpointCheck,
-    ctx: &'a DecodeContext<'_>,
-    (model_index, composite): (
-        &mut Option<cadmpeg_ir::index::DecodeModelIndex<'a, 'a>>,
+    ctx: &'ctx DecodeContext<'_>,
+    (model_index, snapshot, composite): (
+        &mut Option<cadmpeg_ir::index::DecodeModelIndex<'ctx, 'geometry>>,
+        &'geometry super::evaluation_copy::SourceGeometrySnapshot<'ctx>,
         (
             &mut Option<super::composite::CompositeIndex>,
             &mut ScopedReservation<'_>,
         ),
     ),
-) -> Result<Option<ResolvedPcurveUses<'a>>, super::composite::CompositeCurveError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::from(refusal).into());
-    }
+) -> Result<Option<ResolvedPcurveUses<'ctx>>, super::composite::CompositeCurveError> {
     let PcurveEndpointCheck {
         start: expected_start,
         end: expected_end,
@@ -360,7 +358,10 @@ fn resolve_pcurve_uses<'a>(
     }
     // A model without procedural surface records evaluates the support directly.
     if !source.model.procedural_surfaces.is_empty() && model_index.is_none() {
-        *model_index = Some(cadmpeg_ir::index::ModelIndex::new_model_only(source, ctx)?);
+        let geometry = snapshot.model(source, ctx)?;
+        *model_index = Some(cadmpeg_ir::index::ModelIndex::new_model_only(
+            geometry, ctx,
+        )?);
     }
     let index = model_index.as_ref();
     let (composite_index, composite_storage) = composite;
@@ -396,7 +397,7 @@ fn resolve_pcurve_uses<'a>(
         ctx.temporary_vec(uses.len(), "iges B-rep mapped pcurves")?;
     _mapped_storage = result_mapped_storage;
     let mut use_sequences = uses.iter();
-    while use_sequences.len() != 0 || ctx.resource_refusal().is_some() {
+    while use_sequences.len() != 0 {
         let Some((_, sequence)) =
             ctx.next_charged(&mut use_sequences, "iges B-rep pcurve resolution traversal")?
         else {
@@ -524,7 +525,7 @@ pub(super) fn project<'ctx>(
         let mut points = record_storage
             .with_storage(|| ctx.collection_vec(count, "iges B-rep vertex-list points"))?;
         let mut tuples = 0..count;
-        while !tuples.is_empty() || ctx.resource_refusal().is_some() {
+        while !tuples.is_empty() {
             let Some(index) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? else {
                 break;
             };
@@ -612,7 +613,7 @@ pub(super) fn project<'ctx>(
         let mut edges = record_storage
             .with_storage(|| ctx.collection_vec(count, "iges B-rep edge-list edges"))?;
         let mut tuples = 0..count;
-        while !tuples.is_empty() || ctx.resource_refusal().is_some() {
+        while !tuples.is_empty() {
             let Some(item) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? else {
                 break;
             };
@@ -724,7 +725,7 @@ pub(super) fn project<'ctx>(
         let mut uses =
             record_storage.with_storage(|| ctx.collection_vec(count, "iges B-rep loop uses"))?;
         let mut tuples = 0..count;
-        while (!tuples.is_empty() || ctx.resource_refusal().is_some())
+        while (!tuples.is_empty())
             && ctx
                 .next_charged(&mut tuples, "iges B-rep definition tuples")?
                 .is_some()
@@ -748,7 +749,7 @@ pub(super) fn project<'ctx>(
             let mut pcurves = record_storage
                 .with_storage(|| ctx.collection_vec(pcurve_count, "iges B-rep use pcurves"))?;
             let mut pcurve_tuples = 0..pcurve_count;
-            while !pcurve_tuples.is_empty() || ctx.resource_refusal().is_some() {
+            while !pcurve_tuples.is_empty() {
                 let Some(pcurve_index) =
                     ctx.next_charged(&mut pcurve_tuples, "iges B-rep definition tuples")?
                 else {
@@ -927,7 +928,7 @@ pub(super) fn project<'ctx>(
             .with_storage(|| ctx.collection_vec(count - 1, "iges B-rep face loop pointers"))?;
         let mut valid_pointers = true;
         let mut tuples = 1..count;
-        while !tuples.is_empty() || ctx.resource_refusal().is_some() {
+        while !tuples.is_empty() {
             let Some(index) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? else {
                 break;
             };
@@ -1036,7 +1037,7 @@ pub(super) fn project<'ctx>(
         let mut face_uses = record_storage
             .with_storage(|| ctx.collection_vec(count, "iges B-rep shell face uses"))?;
         let mut tuples = 0..count;
-        while !tuples.is_empty() || ctx.resource_refusal().is_some() {
+        while !tuples.is_empty() {
             let Some(index) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? else {
                 break;
             };
@@ -1183,7 +1184,7 @@ pub(super) fn project<'ctx>(
         shell_uses.push((outer, outer_sense));
         let mut valid = true;
         let mut tuples = 0..void_count;
-        while !tuples.is_empty() || ctx.resource_refusal().is_some() {
+        while !tuples.is_empty() {
             let Some(index) = ctx.next_charged(&mut tuples, "iges B-rep definition tuples")? else {
                 break;
             };
@@ -1220,9 +1221,6 @@ pub(super) fn project<'ctx>(
                 format_args!("{}", "solid shell-use tuple is invalid or not closed"),
             )?;
             continue;
-        }
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
         }
         let mut source_values = IntoIterator::into_iter(&shell_uses);
         while source_values.len() != 0 {
@@ -1385,13 +1383,12 @@ pub(super) fn project<'ctx>(
 
     // The session holds the document's exclusive borrow. Its identity index
     // remains unbuilt until the first body reaches commit admission.
+    let snapshot = super::evaluation_copy::SourceGeometrySnapshot::new(ctx)?;
+    let mut model_index = None;
     let source_edge_count = ir.model.edges.len();
     let mut commit_session = CommitSession::new(ir, ctx, None)?;
     let mut edges_by_curve = BTreeMap::<String, Vec<usize>>::new();
     let mut indexed_edge_count = 0;
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(body_definitions);
     while source_values.len() != 0 {
         let Some(definition) = ctx.next_charged(&mut source_values, "iges B-rep body traversal")?
@@ -1407,7 +1404,6 @@ pub(super) fn project<'ctx>(
         let mut candidate_storage = ctx.reserve_scoped(0, "iges B-rep candidate storage")?;
         let accepted = candidate_storage.with_storage(|| -> Result<bool, CodecError> {
         let ir = commit_session.document();
-        let mut model_index = None;
         // Source edges precede explicit topology. Body commits append derived
         // edges, which must not become additional source occurrences.
         let mut radial_identity_storage = ctx.reserve_scoped(0, "iges B-rep radial identities")?;
@@ -1421,7 +1417,7 @@ pub(super) fn project<'ctx>(
             ctx.collection_vec(definition.shells.len(), "iges B-rep region shell ids")?;
         let mut valid = true;
         let mut shell_uses = definition.shells.iter();
-        while shell_uses.len() != 0 || ctx.resource_refusal().is_some() {
+        while shell_uses.len() != 0 {
             let Some(&(shell_sequence, shell_sense)) = ctx.next_charged(&mut shell_uses, "iges B-rep body shell traversal")? else { break; };
             let shell_definition = ctx.get_btree_map(&shell_definitions, &shell_sequence, "iges B-rep shell lookup")?
                 .ok_or_else(|| CodecError::malformed("IGES B-rep shell definition is absent"))?;
@@ -1434,7 +1430,7 @@ pub(super) fn project<'ctx>(
             let mut shell_faces =
                 ctx.collection_vec(shell_definition.faces.len(), "iges B-rep shell face ids")?;
             let mut face_uses = shell_definition.faces.iter();
-            while face_uses.len() != 0 || ctx.resource_refusal().is_some() {
+            while face_uses.len() != 0 {
                 let Some(&(face_sequence, native_face_sense)) = ctx.next_charged(&mut face_uses, "iges B-rep shell face traversal")? else { break; };
                 let face_sense = compose_sense(native_face_sense, shell_sense);
                 let face_definition = ctx.get_btree_map(&faces, &face_sequence, "iges B-rep face lookup")?
@@ -1460,7 +1456,7 @@ pub(super) fn project<'ctx>(
                 let loop_id_for =
                     |sequence| crate::ids::loop_admitted(&shell_stem.child(sequence), ctx);
                 let mut loop_sequences = face_definition.loops.iter();
-                while loop_sequences.size_hint().0 != 0 || ctx.resource_refusal().is_some() {
+                while loop_sequences.size_hint().0 != 0 {
                     let Some(loop_sequence) = ctx.next_charged(&mut loop_sequences, "iges B-rep face loop traversal")? else { break; };
                     let uses = ctx.get_btree_map(&loops, &loop_sequence, "iges B-rep loop lookup")?
                         .ok_or_else(|| CodecError::malformed("IGES B-rep loop definition is absent"))?;
@@ -1471,9 +1467,6 @@ pub(super) fn project<'ctx>(
                         .count();
                     let mut coedge_ids =
                         ctx.collection_vec(edge_use_count, "iges B-rep coedge ids")?;
-                    if let Some(refusal) = ctx.resource_refusal() {
-                        return Err(refusal.into());
-                    }
                     let mut source_values = IntoIterator::into_iter(uses).enumerate();
                     while source_values.len() != 0 {
                         let Some((index, use_)) = ctx.next_charged(&mut source_values, "iges B-rep coedge identity traversal")? else {
@@ -1494,7 +1487,7 @@ pub(super) fn project<'ctx>(
                         ctx.temporary_vec(vertex_use_count, "iges B-rep loop vertex uses")?;
                     vertex_use_storage = result_vertex_use_storage;
                     let mut loop_uses = uses.iter().enumerate();
-                    while loop_uses.len() != 0 || ctx.resource_refusal().is_some() {
+                    while loop_uses.len() != 0 {
                         let Some((use_index, use_)) = ctx.next_charged(&mut loop_uses, "iges B-rep loop use traversal")? else { break; };
                         let LoopUse::Edge {
                             edge_list,
@@ -1547,6 +1540,7 @@ pub(super) fn project<'ctx>(
                                 ctx,
                                 (
                                     &mut model_index,
+                                    &snapshot,
                                     (&mut composite_index, &mut composite_storage),
                                 ),
                             ) {
@@ -1670,6 +1664,7 @@ pub(super) fn project<'ctx>(
                             ctx,
                             (
                                 &mut model_index,
+                                    &snapshot,
                                 (&mut composite_index, &mut composite_storage),
                             ),
                         ) {
@@ -2006,9 +2001,6 @@ pub(super) fn project<'ctx>(
                     FaceLoopPointers::OuterFirst { outer, inner } => {
                         let mut inner_ids =
                             ctx.collection_vec(inner.len(), "iges B-rep face inner loop ids")?;
-                        if let Some(refusal) = ctx.resource_refusal() {
-                            return Err(refusal.into());
-                        }
                         let mut source_values = IntoIterator::into_iter(inner).copied();
                         while source_values.len() != 0 {
                             let Some(sequence) = ctx.next_charged(&mut source_values, "iges B-rep inner loop traversal")? else {
@@ -2029,9 +2021,6 @@ pub(super) fn project<'ctx>(
                         let mut loop_ids =
                             ctx.collection_vec(count, "iges B-rep face unspecified loop ids")?;
                         loop_ids.push(loop_id_for(*first)?);
-                        if let Some(refusal) = ctx.resource_refusal() {
-                            return Err(refusal.into());
-                        }
                         let mut source_values = IntoIterator::into_iter(rest).copied();
                         while source_values.len() != 0 {
                             let Some(sequence) = ctx.next_charged(&mut source_values, "iges B-rep unspecified loop traversal")? else {
@@ -2130,17 +2119,11 @@ pub(super) fn project<'ctx>(
             ))?;
             return Ok(false);
         }
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut source_values = IntoIterator::into_iter(&radial);
         while source_values.len() != 0 {
             let Some((_, ring)) = ctx.next_charged(&mut source_values, "iges B-rep radial ring traversal")? else {
                 break;
             };
-            if let Some(refusal) = ctx.resource_refusal() {
-                return Err(refusal.into());
-            }
             let mut source_values = IntoIterator::into_iter(ring).enumerate();
             while source_values.len() != 0 {
                 let Some((index, position)) = ctx.next_charged(&mut source_values, "iges B-rep radial member traversal")? else {
@@ -2180,7 +2163,6 @@ pub(super) fn project<'ctx>(
             visible: None,
         });
         candidate.model_mut().finalize(ctx)?;
-        drop(model_index);
         if commit_session.commit_model(candidate)?.is_err() {
             with_session_storage(ctx, || super::push_entity_loss_with_scoped_slots(
                 ctx,

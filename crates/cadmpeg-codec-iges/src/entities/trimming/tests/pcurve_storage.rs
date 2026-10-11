@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::*;
 use super::super::super::composite::{CompositeCurveError, CompositeIndex};
+use super::*;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::PlaneSurface;
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoles3};
@@ -125,9 +125,7 @@ fn project_source_pcurve(
 }
 
 fn composite_index(ir: &CadIr) -> CompositeIndex {
-    crate::test_support::with_service_context(&[], |ctx| {
-        CompositeIndex::from_ir(ir, ctx).unwrap()
-    })
+    crate::test_support::with_service_context(&[], |ctx| CompositeIndex::from_ir(ir, ctx).unwrap())
 }
 
 fn assert_source_pcurve_exists(ir: &CadIr, index: &CompositeIndex) {
@@ -160,10 +158,7 @@ fn bounded_source_peak_bytes(ir: &CadIr) -> u64 {
     // The generated source identity stays live while the bounded 3D lanes are
     // constructed. Its last use precedes the parameter-space mapping.
     u64::try_from(
-        bytes
-            + SOURCE_CURVE_ID.len()
-            + BOUNDED_EDGE_START_ID.len()
-            + BOUNDED_EDGE_END_ID.len(),
+        bytes + SOURCE_CURVE_ID.len() + BOUNDED_EDGE_START_ID.len() + BOUNDED_EDGE_END_ID.len(),
     )
     .unwrap()
 }
@@ -245,7 +240,10 @@ fn mapped_pcurve_knots_remain_retained_after_source_storage_is_released() {
             Ok(_) => panic!("missing retained mapped-knot boundary"),
         }
     };
-    assert_eq!(additional, 4 * u64::try_from(std::mem::size_of::<f64>()).unwrap());
+    assert_eq!(
+        additional,
+        4 * u64::try_from(std::mem::size_of::<f64>()).unwrap()
+    );
 
     crate::test_support::with_service_context(&[], |ctx| {
         let Some((PcurveGeometry::Nurbs { nurbs }, range)) =
@@ -257,37 +255,4 @@ fn mapped_pcurve_knots_remain_retained_after_source_storage_is_released() {
         assert_eq!(nurbs.degree(), 1);
         assert_eq!(nurbs.knots().as_slice(), &[0.0, 0.0, 1.0, 1.0]);
     });
-}
-
-#[test]
-fn mapped_pcurve_knot_refusal_preserves_original_session_refusal() {
-    let ir = pcurve_source_ir();
-    let before = serde_json::to_vec(&ir).unwrap();
-    let index = composite_index(&ir);
-    let empty = CadIr::empty();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = bounded_source_peak_bytes(&ir);
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let Err(CodecError::ResourceLimit(first)) = project_source_pcurve(&ir, &index, &ctx) else {
-        panic!("expected retained output-knot refusal");
-    };
-    assert_eq!(first.dimension, ResourceDimension::RetainedBytes);
-    assert_eq!(first.operation, "iges pcurve output knots");
-    assert_eq!((first.limit, first.used, first.additional),
-        (0, 0, 4 * u64::try_from(std::mem::size_of::<f64>()).unwrap()));
-    let surface = &ir.model.surfaces[0];
-    for _ in 0..64 {
-        assert!(matches!(project_source_pcurve(&ir, &index, &ctx),
-            Err(CodecError::ResourceLimit(last)) if last == first));
-        assert!(matches!(super::super::pcurve_geometry(&empty, None, 5,
-            &super::super::PcurveSupport {
-                surface_id: &surface.id, geometry: &surface.geometry, factor: 1.0,
-            }, Some(0.001), &ctx, &index).map_err(composite_error_as_codec),
-            Err(CodecError::ResourceLimit(last)) if last == first));
-    }
-    assert_eq!(serde_json::to_vec(&ir).unwrap(), before);
-    assert!(matches!(ctx.finish_session(),
-        Err(CodecError::ResourceLimit(last)) if last == first));
 }

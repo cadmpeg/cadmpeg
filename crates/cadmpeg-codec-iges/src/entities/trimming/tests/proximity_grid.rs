@@ -39,8 +39,12 @@ fn boundary_proximity_grid_charges_cell_insertion_and_candidate_comparison() {
 
 #[test]
 fn boundary_proximity_grid_refuses_index_storage_before_allocation() {
-    let points = [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)]
-        .map(|point| cadmpeg_ir::features::FinitePoint3::new(point).unwrap());
+    let points: Vec<_> = (0..64)
+        .map(|index| {
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(f64::from(index) * 10.0, 0.0, 0.0))
+                .unwrap()
+        })
+        .collect();
     for operation in [
         "iges boundary proximity links",
         "iges boundary proximity cells",
@@ -59,10 +63,10 @@ fn boundary_proximity_grid_refuses_index_storage_before_allocation() {
         );
         assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.operation == operation && limit.additional == if operation == "iges boundary proximity links" {
-            u64::try_from(2 * std::mem::size_of::<Option<usize>>()).unwrap()
+            u64::try_from(64 * std::mem::size_of::<Option<usize>>()).unwrap()
         } else {
-            // Core's growth bound for four entries uses eight buckets.
-            u64::try_from(8 * (std::mem::size_of::<([i64; 3], usize)>() + 1) + 31).unwrap()
+            // Core admits growth to twice 64 entries, which needs 256 buckets.
+            u64::try_from(256 * (std::mem::size_of::<([i64; 3], usize)>() + 1) + 31).unwrap()
         }));
     }
 }

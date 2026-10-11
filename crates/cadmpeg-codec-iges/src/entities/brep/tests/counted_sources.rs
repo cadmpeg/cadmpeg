@@ -194,6 +194,7 @@ fn resolution_boundary(operation: &'static str, preceding_items: u64) {
             .reserve_scoped(0, "test actual composite index")
             .unwrap();
         let mut composite_index = None;
+        let snapshot = crate::entities::evaluation_copy::SourceGeometrySnapshot::new(&ctx).unwrap();
         let mut model_index = None;
         let result = super::super::resolve_pcurve_uses(
             &source,
@@ -203,6 +204,7 @@ fn resolution_boundary(operation: &'static str, preceding_items: u64) {
             &ctx,
             (
                 &mut model_index,
+                &snapshot,
                 (&mut composite_index, &mut composite_storage),
             ),
         )
@@ -229,6 +231,7 @@ fn resolution_boundary(operation: &'static str, preceding_items: u64) {
                     &ctx,
                     (
                         &mut model_index,
+                        &snapshot,
                         (&mut composite_index, &mut composite_storage),
                     ),
                 );
@@ -250,6 +253,7 @@ fn resolution_boundary(operation: &'static str, preceding_items: u64) {
                 &ctx,
                 (
                     &mut model_index,
+                    &snapshot,
                     (&mut composite_index, &mut composite_storage),
                 ),
             )
@@ -260,6 +264,7 @@ fn resolution_boundary(operation: &'static str, preceding_items: u64) {
             None
         };
         drop(model_index);
+        drop(snapshot);
         drop(composite_index);
         drop(composite_storage);
         if let Some(first) = refusal {
