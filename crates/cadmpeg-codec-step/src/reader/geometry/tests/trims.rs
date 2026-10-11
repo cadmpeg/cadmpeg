@@ -611,3 +611,76 @@ fn trimmed_curve_reports_a_fallback_when_the_preferred_form_is_absent() {
         1
     );
 }
+
+#[test]
+fn offset_surface_scaled_distance_overflow_keeps_one_represented_fallback() {
+    let decoded = decode_inline(
+        "#1=OFFSET_SURFACE('overflow',#10,1.E308,.F.);
+#10=PLANE('',#11);
+#11=AXIS2_PLACEMENT_3D('',#12,$,$);
+#12=CARTESIAN_POINT('',(0.,0.,0.));
+#20=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT($,.METRE.));
+#21=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#20)) REPRESENTATION_CONTEXT('',''));
+#22=SHAPE_REPRESENTATION('overflow',(#1),#21);",
+    );
+    let surfaces: Vec<_> = decoded
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .filter(|surface| surface.id.as_str() == "step:data:surface#1")
+        .collect();
+    assert_eq!(surfaces.len(), 1);
+    let surface = surfaces[0];
+    assert!(matches!(
+        surface.geometry.solved(),
+        Some(SolvedSurfaceGeometry::Unknown { record: Some(_) })
+    ));
+    let source = surface
+        .source_object
+        .as_ref()
+        .expect("representation member");
+    assert_eq!(source.object_id.as_str(), "#1");
+    assert_eq!(source.name.as_deref(), Some("overflow"));
+    assert!(decoded.ir().model.procedural_surfaces.is_empty());
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.starts_with("procedural surface #1:")));
+}
+
+#[test]
+fn trimmed_surface_scaled_range_underflow_keeps_one_represented_fallback() {
+    let decoded = decode_inline(
+        "#1=RECTANGULAR_TRIMMED_SURFACE('underflow',#10,1.E-310,2.E-310,0.,1.,.T.,.T.);
+#10=PLANE('',#11);
+#11=AXIS2_PLACEMENT_3D('',#12,$,$);
+#12=CARTESIAN_POINT('',(0.,0.,0.));
+#20=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.ATTO.,.METRE.));
+#21=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#20)) REPRESENTATION_CONTEXT('',''));
+#22=SHAPE_REPRESENTATION('underflow',(#1),#21);",
+    );
+    let surfaces: Vec<_> = decoded
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .filter(|surface| surface.id.as_str() == "step:data:surface#1")
+        .collect();
+    assert_eq!(surfaces.len(), 1);
+    let surface = surfaces[0];
+    assert!(matches!(
+        surface.geometry.solved(),
+        Some(SolvedSurfaceGeometry::Unknown { record: Some(_) })
+    ));
+    let source = surface
+        .source_object
+        .as_ref()
+        .expect("representation member");
+    assert_eq!(source.object_id.as_str(), "#1");
+    assert_eq!(source.name.as_deref(), Some("underflow"));
+    assert!(decoded.ir().model.procedural_surfaces.is_empty());
+    assert!(decoded.report().losses.iter().any(|loss| loss.message
+        == "procedural surface #1: surface subset ranges are not finite and non-zero"));
+}

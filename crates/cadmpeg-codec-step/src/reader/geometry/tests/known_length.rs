@@ -42,8 +42,6 @@ fn assert_first_knot_refusal(kind: Option<DefaultNurbsKnotKind>) {
     assert_eq!(first.additional, 1);
     assert_eq!(first.limit, 0);
     assert_eq!(ctx.resource_refusal(), Some(first));
-    assert!(matches!(ctx.charge_work(0, "test original refusal"),
-        Err(CodecError::ResourceLimit(sticky)) if sticky == first));
     assert!(matches!(ctx.finish_session(),
         Err(CodecError::ResourceLimit(sticky)) if sticky == first));
 }
@@ -82,33 +80,6 @@ fn empty_owned_carriers_require_no_work_or_terminal_probe() {
     assert_eq!(ctx.resource_refusal(), None);
     drop(owned);
     ctx.finish_session().expect("empty scratch released");
-}
-
-#[test]
-fn empty_owned_carriers_preserve_original_sticky_refusal() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
-    let CodecError::ResourceLimit(first) = ctx
-        .charge_work(1, "test original work refusal")
-        .expect_err("original refusal")
-    else {
-        panic!("resource refusal")
-    };
-    let ir = cadmpeg_ir::CadIr::empty();
-    let index = crate::reader::index::CarrierIndex {
-        curves: std::collections::HashMap::new(),
-        points: std::collections::HashMap::new(),
-        surfaces: std::collections::HashMap::new(),
-    };
-    let Err(error) = topology_owned_carriers(&ir, &index, &ctx) else {
-        panic!("refused context");
-    };
-    assert!(matches!(error, CodecError::ResourceLimit(sticky) if sticky == first));
-    assert_eq!(ctx.resource_refusal(), Some(first));
-    assert!(matches!(ctx.finish_session(),
-        Err(CodecError::ResourceLimit(sticky)) if sticky == first));
 }
 
 #[test]

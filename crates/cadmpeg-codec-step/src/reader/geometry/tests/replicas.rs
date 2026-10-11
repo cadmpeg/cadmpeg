@@ -1139,3 +1139,68 @@ fn composite_curves_preserve_first_producer_wake_order() {
         );
     });
 }
+
+#[test]
+fn composite_curves_preserve_chained_producer_retry_order_and_trim_warning_order() {
+    let records = "#1=COMPOSITE_CURVE('',(#101,#102),.F.);
+#2=COMPOSITE_CURVE('',(#103,#104,#105),.F.);
+#3=CURVE_REPLICA('',#4,#20);
+#4=CURVE_REPLICA('',#10,#20);
+#5=CURVE_REPLICA('',#3,#20);
+#10=LINE('',#11,#15);
+#11=CARTESIAN_POINT('',(0.,0.,0.));
+#12=DIRECTION('',(1.,0.,0.));
+#13=DIRECTION('',(0.,1.,0.));
+#14=DIRECTION('',(0.,0.,1.));
+#15=VECTOR('',#12,1.);
+#20=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#12,#13,#11,1.,#14);
+#101=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#4);
+#102=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#5);
+#103=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#3);
+#104=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#4);
+#105=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#5);
+#6=TRIMMED_CURVE('',#1,(PARAMETER_VALUE(0.)),(PARAMETER_VALUE(1.)),.T.,.CARTESIAN.);
+#7=TRIMMED_CURVE('',#2,(PARAMETER_VALUE(0.)),(PARAMETER_VALUE(1.)),.T.,.CARTESIAN.);";
+    let source = format!("ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;{records}#9000=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#9001=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));ENDSEC;END-ISO-10303-21;");
+    crate::test_support::with_service_context(source.as_bytes(), |bytes, ctx| {
+        let (exchange, _) =
+            crate::parse::parse_inner(bytes, ctx).expect("complete geometry fixture");
+        let mut ir = CadIr::empty();
+        let stage =
+            super::super::decode(&exchange, &mut ir, ctx).expect("geometry stage admission");
+        let order: Vec<_> = ir
+            .model
+            .curves
+            .iter()
+            .map(|curve| curve.id.as_str())
+            .collect();
+        assert_eq!(
+            order,
+            [
+                "step:data:curve#10",
+                "step:data:curve#4",
+                "step:data:curve#3",
+                "step:data:curve#5",
+                "step:data:curve#2",
+                "step:data:curve#1",
+                "step:data:curve#7",
+                "step:data:curve#6"
+            ]
+        );
+        let warnings: Vec<_> = stage
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.message
+                    .contains("fell back to a parameter trim selector")
+            })
+            .map(|loss| loss.message.as_str())
+            .collect();
+        assert_eq!(warnings, [
+            "TRIMMED_CURVE #7 fell back to a parameter trim selector because master_representation is .CARTESIAN.",
+            "TRIMMED_CURVE #7 fell back to a parameter trim selector because master_representation is .CARTESIAN.",
+            "TRIMMED_CURVE #6 fell back to a parameter trim selector because master_representation is .CARTESIAN.",
+            "TRIMMED_CURVE #6 fell back to a parameter trim selector because master_representation is .CARTESIAN.",
+        ]);
+    });
+}

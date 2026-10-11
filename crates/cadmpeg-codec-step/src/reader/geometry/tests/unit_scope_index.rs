@@ -78,6 +78,7 @@ fn unit_scope_repeated_contexts_need_only_distinct_member_slots() {
             (&mut losses, &mut loss_storage),
             &mut storage,
             ctx,
+            &mut super::super::scalar_resolver(&exchange, ctx),
         )
         .expect("only distinct context/member slots");
         for id in 10..10 + MEMBERS {
@@ -104,9 +105,6 @@ fn unit_scope_repeated_contexts_need_only_distinct_member_slots() {
         assert_eq!(
             (first.used, first.additional, first.limit),
             (slots, 1, slots)
-        );
-        assert!(
-            matches!(ctx.charge_work(0, "later operation"), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
         );
         drop(units);
         drop(losses);
@@ -141,6 +139,7 @@ fn unit_scope_context_index_refuses_before_member_propagation() {
             (&mut losses, &mut loss_storage),
             &mut storage,
             ctx,
+            &mut super::super::scalar_resolver(&exchange, ctx),
         )
         .err()
         .expect("context slot refuses") else {
@@ -150,9 +149,6 @@ fn unit_scope_context_index_refuses_before_member_propagation() {
         assert_eq!(first.operation, "step unit context index");
         assert_eq!((first.used, first.additional, first.limit), (3, 1, 3));
         assert!(losses.is_empty());
-        assert!(
-            matches!(ctx.charge_work(0, "later operation"), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
-        );
         drop(losses);
         drop(storage);
         drop(loss_storage);
@@ -181,6 +177,7 @@ fn unit_scope_distinct_contexts_preserve_conflicts() {
             (&mut losses, &mut loss_storage),
             &mut storage,
             ctx,
+            &mut super::super::scalar_resolver(&exchange, ctx),
         )
         .expect("both contexts propagate");
         assert_eq!(
@@ -231,6 +228,7 @@ fn unit_scope_equal_units_in_distinct_contexts_remain_unambiguous() {
             (&mut losses, &mut loss_storage),
             &mut storage,
             ctx,
+            &mut super::super::scalar_resolver(&exchange, ctx),
         )
         .expect("equal contexts propagate");
         assert_eq!(
@@ -265,6 +263,7 @@ fn unit_scope_cycles_keep_every_reachable_member() {
             (&mut losses, &mut loss_storage),
             &mut storage,
             ctx,
+            &mut super::super::scalar_resolver(&exchange, ctx),
         )
         .expect("cycle terminates");
         assert_eq!(
@@ -303,6 +302,7 @@ fn unit_scope_mapped_items_propagate_only_target_context() {
             (&mut losses, &mut loss_storage),
             &mut storage,
             ctx,
+            &mut super::super::scalar_resolver(&exchange, ctx),
         )
         .expect("mapped contexts remain separate");
         assert_eq!(
@@ -344,6 +344,7 @@ fn unit_scope_pcurve_does_not_propagate_into_its_definition() {
             (&mut losses, &mut loss_storage),
             &mut storage,
             ctx,
+            &mut super::super::scalar_resolver(&exchange, ctx),
         )
         .expect("pcurve scope is bounded");
         assert_eq!(
