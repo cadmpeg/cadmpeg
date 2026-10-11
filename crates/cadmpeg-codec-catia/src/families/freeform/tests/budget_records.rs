@@ -345,11 +345,11 @@ fn fallback_nurbs_traversal_has_no_source_vector_backing() {
     use cadmpeg_core::decode::{
         refusal_probe::RefusalProbe, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
     };
+    const MATERIALIZED_LIMIT: u64 = 16 * 1024;
     let mut bytes = crate::test_support::test_a5a8::a8_surface_stream();
     let a5_pos = bytes.len();
     bytes.extend(crate::test_support::test_a5a8::a5_surface_stream());
     let records = crate::wire::records::consolidated_records(&bytes);
-    const MATERIALIZED_LIMIT: u64 = 16 * 1024;
     for operation in ["catia_a8_resolved_surfaces", "catia_a5_surfaces"] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();

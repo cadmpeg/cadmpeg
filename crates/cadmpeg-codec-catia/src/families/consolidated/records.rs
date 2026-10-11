@@ -3081,6 +3081,27 @@ mod tests {
     }
     #[test]
     fn support_loci_with_an_overflowing_site_do_not_agree() {
+        fn carriers<'a>(
+            ctx: &'a DecodeContext<'a>,
+            planes: &'a [B2PlaneCarrier],
+            no_identities: &'a BTreeMap<u32, Vec<usize>>,
+        ) -> super::ConsolidatedCarriers<'a> {
+            super::ConsolidatedCarriers {
+                ctx,
+                cylinders: &[],
+                embedded_cylinders: &[],
+                embedded_identities: no_identities,
+                circles: &[],
+                circle_identities: no_identities,
+                cones: &[],
+                spheres: &[],
+                tori: &[],
+                planes,
+                nurbs_surfaces: &[],
+                positions: std::array::from_fn(|_| RefCell::new(None)),
+            }
+        }
+
         // The plane's origin is the largest finite x coordinate: the site
         // u = MAX lifts to a point without a finite x, and u = -MAX lifts to
         // the model origin.
@@ -3138,26 +3159,6 @@ mod tests {
         };
         let planes = [plane];
         let no_identities = std::collections::BTreeMap::new();
-        fn carriers<'a>(
-            ctx: &'a DecodeContext<'a>,
-            planes: &'a [B2PlaneCarrier],
-            no_identities: &'a BTreeMap<u32, Vec<usize>>,
-        ) -> super::ConsolidatedCarriers<'a> {
-            super::ConsolidatedCarriers {
-                ctx,
-                cylinders: &[],
-                embedded_cylinders: &[],
-                embedded_identities: no_identities,
-                circles: &[],
-                circle_identities: no_identities,
-                cones: &[],
-                spheres: &[],
-                tori: &[],
-                planes,
-                nurbs_surfaces: &[],
-                positions: std::array::from_fn(|_| RefCell::new(None)),
-            }
-        }
         let binding = || Some(super::ConsolidatedSupportBinding::Plane { pos: 7 });
         assert_eq!(
             crate::test_support::with_service_context(|ctx| super::resolved_support_loci(
@@ -3250,6 +3251,27 @@ mod tests {
 
     #[test]
     fn resolved_cylinder_winner_and_loci_refuse_collection_limits() {
+        fn carriers<'a>(
+            ctx: &'a DecodeContext<'a>,
+            cylinders: &'a [B2Cylinder],
+            no_identities: &'a BTreeMap<u32, Vec<usize>>,
+        ) -> super::ConsolidatedCarriers<'a> {
+            super::ConsolidatedCarriers {
+                ctx,
+                cylinders,
+                embedded_cylinders: &[],
+                embedded_identities: no_identities,
+                circles: &[],
+                circle_identities: no_identities,
+                cones: &[],
+                spheres: &[],
+                tori: &[],
+                planes: &[],
+                nurbs_surfaces: &[],
+                positions: std::array::from_fn(|_| RefCell::new(None)),
+            }
+        }
+
         let pcurve_bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
         let pcurve_records = crate::wire::records::consolidated_records(&pcurve_bytes);
         let pcurves = crate::test_support::with_service_context(|ctx| {
@@ -3276,26 +3298,6 @@ mod tests {
         })
         .expect("service context admits cylinders");
         let no_identities = std::collections::BTreeMap::new();
-        fn carriers<'a>(
-            ctx: &'a DecodeContext<'a>,
-            cylinders: &'a [B2Cylinder],
-            no_identities: &'a BTreeMap<u32, Vec<usize>>,
-        ) -> super::ConsolidatedCarriers<'a> {
-            super::ConsolidatedCarriers {
-                ctx,
-                cylinders,
-                embedded_cylinders: &[],
-                embedded_identities: no_identities,
-                circles: &[],
-                circle_identities: no_identities,
-                cones: &[],
-                spheres: &[],
-                tori: &[],
-                planes: &[],
-                nurbs_surfaces: &[],
-                positions: std::array::from_fn(|_| RefCell::new(None)),
-            }
-        }
         let cylinder = &cylinders[0];
         let points: Vec<_> = pcurve
             .sites
