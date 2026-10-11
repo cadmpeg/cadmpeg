@@ -678,7 +678,7 @@ pub(super) fn decode<'ctx>(
                     push_scalar_candidate(
                         &mut scalar_color_candidates,
                         &target,
-                        style_id,
+                        (style_id, style.span.start),
                         color,
                         ctx,
                     )
@@ -828,10 +828,28 @@ pub(super) fn decode<'ctx>(
             })?;
         }
     }
+    let mut scalar_groups = Vec::new();
     for lane in scalar_color_candidates {
-        let mut groups = lane.into_iter();
+        let mut groups = lane.into_values();
+        while let Some(group) = ctx.next_charged(&mut groups, "STEP scalar color group traversal")? {
+            ctx.push_scoped_vec(
+                &mut scratch_storage,
+                &mut scalar_groups,
+                group,
+                "STEP scalar color ordered groups",
+            )?;
+        }
+    }
+    ctx.stable_sort_by(
+        &mut scalar_groups,
+        |group| &group.0,
+        Ord::cmp,
+        "STEP scalar color source order",
+    )?;
+    {
+        let mut groups = scalar_groups.into_iter();
         for _ in 0..groups.len() {
-            let (_, (target, candidates)) = ctx
+            let (_, target, candidates) = ctx
                 .next_charged(&mut groups, "STEP scalar color group traversal")?
                 .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
             let mut selected = None::<Color>;
@@ -1689,12 +1707,12 @@ struct PresentationIndices<'a> {
     bodies: &'a BTreeMap<String, usize>,
 }
 
-type ScalarCandidates = [BTreeMap<String, (AppearanceTarget, Vec<(u64, Color)>)>; 2];
+type ScalarCandidates = [BTreeMap<String, (usize, AppearanceTarget, Vec<(u64, Color)>)>; 2];
 
 fn push_scalar_candidate(
     candidates: &mut ScalarCandidates,
     target: &AppearanceTarget,
-    style_id: u64,
+    (style_id, source_offset): (u64, usize),
     color: Color,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
@@ -1704,9 +1722,10 @@ fn push_scalar_candidate(
         _ => return Ok(()),
     };
     let candidates = &mut candidates[lane];
-    if let Some((_, values)) =
+    if let Some((first_offset, _, values)) =
         ctx.get_mut_btree_map(candidates, identity, "STEP scalar color group lookup")?
     {
+        *first_offset = (*first_offset).min(source_offset);
         return ctx.push_vec(
             values,
             (style_id, color),
@@ -1725,9 +1744,9 @@ fn push_scalar_candidate(
     };
     let group = ctx
         .entry_btree_map(candidates, key, "step_presentation_scalar_color_groups")?
-        .or_insert((target, Vec::new()));
+        .or_insert((source_offset, target, Vec::new()));
     ctx.push_vec(
-        &mut group.1,
+        &mut group.2,
         (style_id, color),
         "step_presentation_scalar_color_members",
     )
