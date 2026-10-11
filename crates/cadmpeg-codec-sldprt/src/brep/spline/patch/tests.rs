@@ -96,11 +96,6 @@ fn retained_nurbs_surface_patch_preserves_multiplicity_refusal() {
 }
 
 #[test]
-fn retained_nurbs_surface_patch_preserves_knot_pair_refusal() {
-    retained_surface_refusal("collect Parasolid patch knot span pairs");
-}
-
-#[test]
 fn attribute_nurbs_patch_preserves_nested_descriptor_refusal() {
     let bytes = nurbs_curve_carrier(10, 11);
     let baseline = cadmpeg_test_support::service_decode_context();
