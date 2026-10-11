@@ -217,9 +217,21 @@ mod tests {
             assert_eq!((original.limit, original.used), (0, 0));
             assert!(original.additional > 0);
             assert_eq!(ctx.resource_refusal(), Some(original));
-            assert!(
-                matches!(super::nurbs_surface_parameter_near_point(&ctx, &surface, Point3::new(f64::NAN, 0.0, 0.0), None), Err(CodecError::ResourceLimit(limit)) if limit == original)
+            assert_eq!(
+                super::nurbs_surface_parameter_near_point(
+                    &ctx,
+                    &surface,
+                    Point3::new(f64::NAN, 0.0, 0.0),
+                    None
+                )
+                .unwrap(),
+                None
             );
+            // Rejecting a non-finite point needs no input-sized work. The
+            // session still returns the original scratch refusal.
+            assert_eq!(ctx.resource_refusal(), Some(original));
+            assert!(matches!(ctx.finish_session(),
+                Err(CodecError::ResourceLimit(limit)) if limit == original));
         }
     }
 }
