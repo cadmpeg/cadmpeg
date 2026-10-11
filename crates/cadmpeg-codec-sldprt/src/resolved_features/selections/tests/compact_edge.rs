@@ -1484,7 +1484,9 @@ fn variable_fillet_control_names_require_canonical_unsigned_indices() {
     assert_eq!(index(&feature, "D1"), None);
     assert_eq!(index(&feature, "D01"), Some(1));
     crate::test_support::work_refusal_at("parse SLDPRT variable fillet dimension index", |ctx| {
-        crate::resolved_features::selections::variable_fillet_dimension_index_for_feature(ctx, &feature, "D012")
+        crate::resolved_features::selections::variable_fillet_dimension_index_for_feature(
+            ctx, &feature, "D012",
+        )
     });
 }
 

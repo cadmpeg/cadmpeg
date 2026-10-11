@@ -747,9 +747,7 @@ pub(super) fn compact_surface_selections(
     for (index, &(name, feature, _)) in ctx.admit_iter(&objects, OPERATION)?.enumerate() {
         let classified = native_object_class(feature.input_class.as_deref().unwrap_or_default());
         let kind = match classified {
-            NativeClassKind::Unknown
-                if matches!(feature.xml_tag.as_str(), "Extrusion" | "Cut") =>
-            {
+            NativeClassKind::Unknown if matches!(feature.xml_tag.as_str(), "Extrusion" | "Cut") => {
                 NativeClassKind::Extrusion
             }
             NativeClassKind::Unknown => {

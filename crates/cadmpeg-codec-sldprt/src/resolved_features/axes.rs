@@ -2285,7 +2285,11 @@ impl<'ctx> ProfileAxisPoints<'ctx> {
                 let mut storage = ctx.reserve_scoped(0, "hold SLDPRT profile axis points")?;
                 let bounding = profile_bounding_points(ctx, &mut storage, owned, curve_endpoints)?;
                 let endpoints = curve_endpoint_points(ctx, &mut storage, roster, curve_endpoints)?;
-                Ok(slot.insert(Self { bounding, endpoints, _storage: storage }))
+                Ok(slot.insert(Self {
+                    bounding,
+                    endpoints,
+                    _storage: storage,
+                }))
             }
         }
     }
