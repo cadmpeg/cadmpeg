@@ -142,8 +142,10 @@ fn invalid_brep_validation_releases_resolved_topology_and_local_warnings() {
     }
     ctx.charge_retained(policy.limits.max_retained_bytes - 17, "test retained reuse")
         .expect("only surviving raw input remains charged");
-    let scratch = ctx.reserve_scoped(policy.limits.max_materialized_bytes, "test scratch reuse")
+    let scratch = ctx
+        .reserve_scoped(policy.limits.max_materialized_bytes, "test scratch reuse")
         .expect("validation scratch was released");
     drop(scratch);
-    ctx.finish_session().expect("recoverable validation leaves no refusal");
+    ctx.finish_session()
+        .expect("recoverable validation leaves no refusal");
 }

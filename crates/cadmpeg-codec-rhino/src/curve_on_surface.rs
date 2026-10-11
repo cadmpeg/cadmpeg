@@ -47,9 +47,10 @@ pub(crate) fn decode(
     archive: ArchiveVersion,
     depth: usize,
 ) -> Result<CurveOnSurface, GeometryError> {
-    let (candidate, storage) = ctx.with_scoped_storage("Rhino curve-on-surface construction", || {
-    decode_components(ctx, data, range, scale, archive, depth, None)
-    })?;
+    let (candidate, storage) = ctx
+        .with_scoped_storage("Rhino curve-on-surface construction", || {
+            decode_components(ctx, data, range, scale, archive, depth, None)
+        })?;
     Ok(storage.commit_value(candidate)?)
 }
 
@@ -62,37 +63,38 @@ pub(crate) fn decode_model_curve(
     archive: ArchiveVersion,
     depth: usize,
 ) -> Result<DecodedCurve, GeometryError> {
-    let (candidate, storage) = ctx.with_scoped_storage("Rhino curve-on-surface model output", || {
-    let mut discarded_storage =
-        ctx.reserve_scoped(0, "Rhino curve-on-surface discarded components")?;
-    let construction = decode_components(
-        ctx,
-        data,
-        range,
-        scale,
-        archive,
-        depth,
-        Some(&mut discarded_storage),
-    )?;
-    let CurveOnSurface {
-        source_range,
-        parameter_curve,
-        model_curve,
-        surface,
-        warnings,
-    } = construction;
-    drop(parameter_curve);
-    drop(surface);
-    drop(discarded_storage);
-    let Some(mut curve) = model_curve else {
-        return Err(GeometryError::unsupported(
-            source_range.start,
-            "curve-on-surface has no stored model-space carrier",
-        ));
-    };
-    curve.warnings_mut().prepend_admitted(ctx, warnings)?;
-    Ok(curve)
-    })?;
+    let (candidate, storage) =
+        ctx.with_scoped_storage("Rhino curve-on-surface model output", || {
+            let mut discarded_storage =
+                ctx.reserve_scoped(0, "Rhino curve-on-surface discarded components")?;
+            let construction = decode_components(
+                ctx,
+                data,
+                range,
+                scale,
+                archive,
+                depth,
+                Some(&mut discarded_storage),
+            )?;
+            let CurveOnSurface {
+                source_range,
+                parameter_curve,
+                model_curve,
+                surface,
+                warnings,
+            } = construction;
+            drop(parameter_curve);
+            drop(surface);
+            drop(discarded_storage);
+            let Some(mut curve) = model_curve else {
+                return Err(GeometryError::unsupported(
+                    source_range.start,
+                    "curve-on-surface has no stored model-space carrier",
+                ));
+            };
+            curve.warnings_mut().prepend_admitted(ctx, warnings)?;
+            Ok(curve)
+        })?;
     Ok(storage.commit_value(candidate)?)
 }
 
@@ -412,32 +414,56 @@ mod tests {
         c2[end - 4..].copy_from_slice(&2_i32.to_le_bytes());
         let mut bytes = class_wrapper(POLYLINE_CLASS, &c2);
         bytes.extend(1_i32.to_le_bytes());
-        bytes.extend(class_wrapper(POLYLINE_CLASS,
-            &polyline_payload(&[[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]], &[0.0, 1.0])));
-        bytes.extend(class_wrapper(crate::test_support::test_dump::POINT_CLASS,
-            &crate::test_support::test_dump::point_payload([0.0, 0.0, 0.0])));
+        bytes.extend(class_wrapper(
+            POLYLINE_CLASS,
+            &polyline_payload(&[[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]], &[0.0, 1.0]),
+        ));
+        bytes.extend(class_wrapper(
+            crate::test_support::test_dump::POINT_CLASS,
+            &crate::test_support::test_dump::point_payload([0.0, 0.0, 0.0]),
+        ));
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_retained_bytes = 64 * 1024;
         policy.limits.max_materialized_bytes = 64 * 1024;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         for _ in 0..8 {
             let error = if model_only {
-                super::decode_model_curve(&ctx, &bytes, 0..bytes.len(),
-                    crate::settings::MillimeterScale::IDENTITY, ArchiveVersion::V8, 0)
-                    .expect_err("point support is invalid")
+                super::decode_model_curve(
+                    &ctx,
+                    &bytes,
+                    0..bytes.len(),
+                    crate::settings::MillimeterScale::IDENTITY,
+                    ArchiveVersion::V8,
+                    0,
+                )
+                .expect_err("point support is invalid")
             } else {
-                super::decode(&ctx, &bytes, 0..bytes.len(),
-                    crate::settings::MillimeterScale::IDENTITY, ArchiveVersion::V8, 0)
-                    .expect_err("point support is invalid")
+                super::decode(
+                    &ctx,
+                    &bytes,
+                    0..bytes.len(),
+                    crate::settings::MillimeterScale::IDENTITY,
+                    ArchiveVersion::V8,
+                    0,
+                )
+                .expect_err("point support is invalid")
             };
             assert!(matches!(error,
                 crate::curves::GeometryError::Malformed(crate::chunks::FramingError::Structural { offset, message })
                 if offset == bytes.len() && message == "curve-on-surface support is not a surface"));
         }
-        ctx.charge_retained(policy.limits.max_retained_bytes, "test recovered carrier retained reuse")
-            .expect("all rejected carriers and diagnostics were released");
-        let scratch = ctx.reserve_scoped(policy.limits.max_materialized_bytes, "test recovered carrier scratch reuse")
+        ctx.charge_retained(
+            policy.limits.max_retained_bytes,
+            "test recovered carrier retained reuse",
+        )
+        .expect("all rejected carriers and diagnostics were released");
+        let scratch = ctx
+            .reserve_scoped(
+                policy.limits.max_materialized_bytes,
+                "test recovered carrier scratch reuse",
+            )
             .expect("all component scratch was released");
         drop(scratch);
         ctx.finish_session().expect("recoverable carrier failure");
@@ -452,5 +478,4 @@ mod tests {
     fn malformed_model_selection_releases_carriers() {
         assert_failed_components_released(true);
     }
-
 }

@@ -137,12 +137,24 @@ fn rejected_sum_surface_releases_its_first_child() {
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_materialized_bytes = 64 * 1024;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let error = super::super::decode(&ctx, &bytes, super::super::SUM_SURFACE, 0..bytes.len(),
-        crate::settings::MillimeterScale::IDENTITY, crate::chunks::ArchiveVersion::V5, 0)
-        .expect_err("second child is not a curve");
+    let error = super::super::decode(
+        &ctx,
+        &bytes,
+        super::super::SUM_SURFACE,
+        0..bytes.len(),
+        crate::settings::MillimeterScale::IDENTITY,
+        crate::chunks::ArchiveVersion::V5,
+        0,
+    )
+    .expect_err("second child is not a curve");
     assert!(matches!(error, crate::curves::GeometryError::Malformed(_)));
-    let reuse = ctx.reserve_scoped(policy.limits.max_materialized_bytes, "test failed sum scratch reuse")
+    let reuse = ctx
+        .reserve_scoped(
+            policy.limits.max_materialized_bytes,
+            "test failed sum scratch reuse",
+        )
         .expect("first child and wrapper diagnostics were released");
     drop(reuse);
-    ctx.finish_session().expect("failed surface retains no storage");
+    ctx.finish_session()
+        .expect("failed surface retains no storage");
 }

@@ -426,7 +426,7 @@ pub(crate) fn decode(
     archive: ArchiveVersion,
 ) -> Result<DecodedGeometry, GeometryError> {
     let (candidate, storage) = ctx.with_scoped_storage("Rhino decoded geometry", || {
-    decode_inner(ctx, data, class_uuid, range, scale, archive, 0)
+        decode_inner(ctx, data, class_uuid, range, scale, archive, 0)
     })?;
     Ok(storage.commit_value(candidate)?)
 }
@@ -440,7 +440,7 @@ pub(crate) fn decode_2d(
     archive: ArchiveVersion,
 ) -> Result<DecodedGeometry, GeometryError> {
     let (candidate, storage) = ctx.with_scoped_storage("Rhino decoded C2 geometry", || {
-    decode_inner_2d(ctx, data, class_uuid, range, archive, 0)
+        decode_inner_2d(ctx, data, class_uuid, range, archive, 0)
     })?;
     Ok(storage.commit_value(candidate)?)
 }
@@ -1243,7 +1243,7 @@ fn elevate_to_degree(
                     })?;
                 let first = multiplicity + step;
                 let mut blend_indices = (first..=degree).rev();
-                for _ in 0..degree - first + 1 {
+                for _ in 0..=degree - first {
                     let index = ctx
                         .next_charged(&mut blend_indices, "Rhino Bezier boundary blends")?
                         .ok_or_else(|| {
@@ -1389,208 +1389,224 @@ pub(crate) fn join_nurbs_curves(
     mut scratch_warnings: Option<&mut ScratchDiagnostics<'_>>,
 ) -> Result<NurbsCurve, GeometryError> {
     let source = (input, input_storage);
-    let (curve_buffer, mut storage) = ctx.with_scoped_storage("Rhino joined curve output", || {
-    let source = source;
-    let (segments_buffer, source_storage) = source;
-    let segments = segments_buffer;
-    let Some(_) = segments.first() else {
-        return Err(error(offset, "polycurve has no segments"));
-    };
-    let degree = ctx
-        .admit_iter(&segments[..], "Rhino joined maximum degree")
-        .map_err(CodecError::from)?
-        .map(NurbsCurve::degree)
-        .max()
-        .ok_or_else(|| error(offset, "polycurve has no segments"))?;
-    let target = usize::try_from(degree).map_err(|_| error(offset, "curve degree overflow"))?;
-    if target == 0 {
-        return Err(error(offset, "polycurve segment degree must be positive"));
-    }
-    if segments.len() == 1 {
-        let segment = &segments[0];
-        let result = elevate_to_degree(ctx, segment, target, offset);
-        drop(segments);
-        drop(source_storage);
-        return result;
-    }
-    let mut container_storage = ctx.reserve_scoped(0, "Rhino elevated segment container")?;
-    let mut elevated_segments = container_storage
-        .with_storage(|| ctx.collection_vec(segments.len(), "Rhino elevated polycurve segments"))?;
-    let segment_count = segments.len();
-    let mut segment_source = segments.iter();
-    for _ in 0..segment_count {
-        let segment = ctx
-            .next_charged(&mut segment_source, "Rhino join nurbs segments traversal")?
-            .ok_or_else(|| CodecError::malformed("Rhino join segment source ended early"))?;
-        let mut segment_storage = ctx.reserve_scoped(0, "Rhino elevated segment geometry")?;
-        let elevated = segment_storage.with_storage(|| elevate_to_degree(ctx, segment, target, offset))?;
-        elevated_segments.push((elevated, segment_storage));
-    }
-    drop(segments);
-    drop(source_storage);
-    let segments = elevated_segments;
-    let multiplicity = usize::try_from(degree)
-        .ok()
-        .and_then(|value| value.checked_add(1))
-        .ok_or_else(|| error(offset, "curve degree overflow"))?;
-    let segment_count = segments.len();
-    let mut segment_source = segments.iter();
-    for _ in 0..segment_count {
-        let (segment, _) = ctx
-            .next_charged(&mut segment_source, "Rhino join nurbs segments traversal")?
-            .ok_or_else(|| CodecError::malformed("Rhino join segment source ended early"))?;
-        let start = segment.knots().get(multiplicity - 1).copied();
-        let end = segment
-            .knots()
-            .len()
-            .checked_sub(multiplicity)
-            .and_then(|index| segment.knots().get(index))
-            .copied();
-        if start.is_none()
-            || end.is_none()
-            || ctx.any_by(
-                &(segment.knots()[..multiplicity])[..],
-                |value| Ok(Some(*value) != start),
-                "Rhino join nurbs segments traversal",
-            )?
-            || ctx.any_by(
-                &(segment.knots()[segment.knots().len() - multiplicity..])[..],
-                |value| Ok(Some(*value) != end),
-                "Rhino join nurbs segments traversal",
-            )?
-        {
-            return Err(error(offset, "polycurve segment is not endpoint-clamped"));
-        }
-    }
-    let rational = ctx.any_by(
-        &segments[..],
-        |(segment, _)| {
-            Ok(matches!(
-                segment.pole_rows(),
-                cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { .. }
-            ))
-        },
-        "Rhino join nurbs segments traversal",
-    )?;
-    let mut output_storage = ctx.reserve_scoped(0, "Rhino joined pole lanes")?;
-    let mut control_points: Vec<Point3> = Vec::new();
-    let mut knots: Vec<f64> = Vec::new();
-    let mut weights = rational.then(Vec::new);
-    let segment_count = segments.len();
-    let mut segments = segments.into_iter().enumerate();
-    for _ in 0..segment_count {
-        let (index, owned_segment) = ctx
-            .next_charged(&mut segments, "Rhino joined segment traversal")?
-            .ok_or_else(|| CodecError::malformed("Rhino joined segment source ended early"))?;
-        let segment = &owned_segment.0;
-        let midpoint = if index > 0 {
-            let Some(previous) = control_points.last().copied() else {
-                return Err(error(
-                    offset,
-                    "polycurve join has no previous segment endpoint",
-                ));
+    let (curve_buffer, mut storage) =
+        ctx.with_scoped_storage("Rhino joined curve output", || {
+            // Capture the whole tuple so input drops before its lease if admission fails.
+            let source = source;
+            let (segments_buffer, source_storage) = source;
+            let segments = segments_buffer;
+            let Some(_) = segments.first() else {
+                return Err(error(offset, "polycurve has no segments"));
             };
-            let next = segment
-                .pole_rows()
-                .point_at(0)
-                .ok_or_else(|| error(offset, "polycurve segment has no control point"))?
-                .get();
-            let midpoint = Point3::new(
-                previous.x.midpoint(next.x),
-                previous.y.midpoint(next.y),
-                previous.z.midpoint(next.z),
-            );
-            let gap = previous.distance(next);
-            if let Some(warnings) = scratch_warnings.as_deref_mut().filter(|_| gap > 0.0) {
-                warnings.push_coded_admitted(
-                    ctx,
-                    crate::loss::RhinoLossCode::PolycurveJoinGap,
-                    format_args!("polycurve join moved endpoints by half of gap {gap}"),
-                )?;
+            let degree = ctx
+                .admit_iter(&segments[..], "Rhino joined maximum degree")
+                .map_err(CodecError::from)?
+                .map(NurbsCurve::degree)
+                .max()
+                .ok_or_else(|| error(offset, "polycurve has no segments"))?;
+            let target =
+                usize::try_from(degree).map_err(|_| error(offset, "curve degree overflow"))?;
+            if target == 0 {
+                return Err(error(offset, "polycurve segment degree must be positive"));
             }
-            let Some(previous) = control_points.last_mut() else {
-                return Err(error(offset, "polycurve join has no previous endpoint"));
-            };
-            *previous = midpoint;
-            Some(midpoint)
-        } else {
-            None
-        };
-        // Unequal endpoint weights are different homogeneous poles. Keep both
-        // with a full-multiplicity knot so neither segment's rational shape changes.
-        let unit = NonZeroReal::from(PositiveReal::ONE);
-        let previous_weight = weights
-            .as_ref()
-            .and_then(|weights| weights.last())
-            .copied()
-            .unwrap_or(unit);
-        let next_weight = match segment.pole_rows() {
-            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { .. } => unit,
-            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
-                points.first().map_or(unit, |point| point.weight)
+            if segments.len() == 1 {
+                let segment = &segments[0];
+                let result = elevate_to_degree(ctx, segment, target, offset);
+                drop(segments);
+                drop(source_storage);
+                return result;
             }
-        };
-        let skip = usize::from(index > 0 && previous_weight.get() == next_weight.get());
-        let count = segment.pole_rows().count() - skip;
-        if let Some(target) = &mut weights {
-            output_storage.with_storage(|| {
-                ctx.reserve_vec(target, count, "Rhino joined polycurve weights")
+            let mut container_storage =
+                ctx.reserve_scoped(0, "Rhino elevated segment container")?;
+            let mut elevated_segments = container_storage.with_storage(|| {
+                ctx.collection_vec(segments.len(), "Rhino elevated polycurve segments")
             })?;
-        }
-        output_storage.with_storage(|| {
-            ctx.reserve_vec(&mut control_points, count, "Rhino joined polycurve points")
-        })?;
-        let point_count = segment.pole_rows().count() - skip;
-        let mut point_indices = skip..segment.pole_rows().count();
-        for _ in 0..point_count {
-            let point_index = ctx
-                .next_charged(&mut point_indices, "Rhino joined pole traversal")?
-                .ok_or_else(|| CodecError::malformed("Rhino joined pole source ended early"))?;
-            if let Some(target) = &mut weights {
-                let weight = match segment.pole_rows() {
+            let segment_count = segments.len();
+            let mut segment_source = segments.iter();
+            for _ in 0..segment_count {
+                let segment = ctx
+                    .next_charged(&mut segment_source, "Rhino join nurbs segments traversal")?
+                    .ok_or_else(|| {
+                        CodecError::malformed("Rhino join segment source ended early")
+                    })?;
+                let mut segment_storage =
+                    ctx.reserve_scoped(0, "Rhino elevated segment geometry")?;
+                let elevated = segment_storage
+                    .with_storage(|| elevate_to_degree(ctx, segment, target, offset))?;
+                elevated_segments.push((elevated, segment_storage));
+            }
+            drop(segments);
+            drop(source_storage);
+            let segments = elevated_segments;
+            let multiplicity = usize::try_from(degree)
+                .ok()
+                .and_then(|value| value.checked_add(1))
+                .ok_or_else(|| error(offset, "curve degree overflow"))?;
+            let segment_count = segments.len();
+            let mut segment_source = segments.iter();
+            for _ in 0..segment_count {
+                let (segment, _) = ctx
+                    .next_charged(&mut segment_source, "Rhino join nurbs segments traversal")?
+                    .ok_or_else(|| {
+                        CodecError::malformed("Rhino join segment source ended early")
+                    })?;
+                let start = segment.knots().get(multiplicity - 1).copied();
+                let end = segment
+                    .knots()
+                    .len()
+                    .checked_sub(multiplicity)
+                    .and_then(|index| segment.knots().get(index))
+                    .copied();
+                if start.is_none()
+                    || end.is_none()
+                    || ctx.any_by(
+                        &(segment.knots()[..multiplicity])[..],
+                        |value| Ok(Some(*value) != start),
+                        "Rhino join nurbs segments traversal",
+                    )?
+                    || ctx.any_by(
+                        &(segment.knots()[segment.knots().len() - multiplicity..])[..],
+                        |value| Ok(Some(*value) != end),
+                        "Rhino join nurbs segments traversal",
+                    )?
+                {
+                    return Err(error(offset, "polycurve segment is not endpoint-clamped"));
+                }
+            }
+            let rational = ctx.any_by(
+                &segments[..],
+                |(segment, _)| {
+                    Ok(matches!(
+                        segment.pole_rows(),
+                        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { .. }
+                    ))
+                },
+                "Rhino join nurbs segments traversal",
+            )?;
+            let mut output_storage = ctx.reserve_scoped(0, "Rhino joined pole lanes")?;
+            let mut control_points: Vec<Point3> = Vec::new();
+            let mut knots: Vec<f64> = Vec::new();
+            let mut weights = rational.then(Vec::new);
+            let segment_count = segments.len();
+            let mut segments = segments.into_iter().enumerate();
+            for _ in 0..segment_count {
+                let (index, owned_segment) = ctx
+                    .next_charged(&mut segments, "Rhino joined segment traversal")?
+                    .ok_or_else(|| {
+                        CodecError::malformed("Rhino joined segment source ended early")
+                    })?;
+                let segment = &owned_segment.0;
+                let midpoint = if index > 0 {
+                    let Some(previous) = control_points.last().copied() else {
+                        return Err(error(
+                            offset,
+                            "polycurve join has no previous segment endpoint",
+                        ));
+                    };
+                    let next = segment
+                        .pole_rows()
+                        .point_at(0)
+                        .ok_or_else(|| error(offset, "polycurve segment has no control point"))?
+                        .get();
+                    let midpoint = Point3::new(
+                        previous.x.midpoint(next.x),
+                        previous.y.midpoint(next.y),
+                        previous.z.midpoint(next.z),
+                    );
+                    let gap = previous.distance(next);
+                    if let Some(warnings) = scratch_warnings.as_deref_mut().filter(|_| gap > 0.0) {
+                        warnings.push_coded_admitted(
+                            ctx,
+                            crate::loss::RhinoLossCode::PolycurveJoinGap,
+                            format_args!("polycurve join moved endpoints by half of gap {gap}"),
+                        )?;
+                    }
+                    let Some(previous) = control_points.last_mut() else {
+                        return Err(error(offset, "polycurve join has no previous endpoint"));
+                    };
+                    *previous = midpoint;
+                    Some(midpoint)
+                } else {
+                    None
+                };
+                // Unequal endpoint weights are different homogeneous poles. Keep both
+                // with a full-multiplicity knot so neither segment's rational shape changes.
+                let unit = NonZeroReal::from(PositiveReal::ONE);
+                let previous_weight = weights
+                    .as_ref()
+                    .and_then(|weights| weights.last())
+                    .copied()
+                    .unwrap_or(unit);
+                let next_weight = match segment.pole_rows() {
                     cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { .. } => unit,
                     cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
-                        points[point_index].weight
+                        points.first().map_or(unit, |point| point.weight)
                     }
                 };
-                target.push(weight);
+                let skip = usize::from(index > 0 && previous_weight.get() == next_weight.get());
+                let count = segment.pole_rows().count() - skip;
+                if let Some(target) = &mut weights {
+                    output_storage.with_storage(|| {
+                        ctx.reserve_vec(target, count, "Rhino joined polycurve weights")
+                    })?;
+                }
+                output_storage.with_storage(|| {
+                    ctx.reserve_vec(&mut control_points, count, "Rhino joined polycurve points")
+                })?;
+                let point_count = segment.pole_rows().count() - skip;
+                let mut point_indices = skip..segment.pole_rows().count();
+                for _ in 0..point_count {
+                    let point_index = ctx
+                        .next_charged(&mut point_indices, "Rhino joined pole traversal")?
+                        .ok_or_else(|| {
+                            CodecError::malformed("Rhino joined pole source ended early")
+                        })?;
+                    if let Some(target) = &mut weights {
+                        let weight = match segment.pole_rows() {
+                            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { .. } => unit,
+                            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
+                                points[point_index].weight
+                            }
+                        };
+                        target.push(weight);
+                    }
+                    let point = segment
+                        .pole_rows()
+                        .point_at(point_index)
+                        .ok_or_else(|| error(offset, "polycurve segment has no control point"))?
+                        .get();
+                    control_points.push(if point_index == 0 {
+                        midpoint.unwrap_or(point)
+                    } else {
+                        point
+                    });
+                }
+                let segment_start = segment.knots()[multiplicity - 1];
+                let dk = if index == 0 {
+                    0.0
+                } else {
+                    knots.last().copied().unwrap_or(0.0) - segment_start
+                };
+                if skip > 0 {
+                    knots.pop();
+                }
+                let knot_skip = if index == 0 { 0 } else { multiplicity };
+                let knot_added = segment.knots().len() - knot_skip;
+                ctx.reserve_vec(&mut knots, knot_added, "Rhino joined polycurve knots")?;
+                knots.extend(
+                    ctx.admit_iter(&segment.knots()[knot_skip..], "Rhino joined knot traversal")
+                        .map_err(CodecError::from)?
+                        .copied()
+                        .map(|knot| knot + dk),
+                );
             }
-            let point = segment
-                .pole_rows()
-                .point_at(point_index)
-                .ok_or_else(|| error(offset, "polycurve segment has no control point"))?
-                .get();
-            control_points.push(if point_index == 0 {
-                midpoint.unwrap_or(point)
-            } else {
-                point
-            });
-        }
-        let segment_start = segment.knots()[multiplicity - 1];
-        let dk = if index == 0 {
-            0.0
-        } else {
-            knots.last().copied().unwrap_or(0.0) - segment_start
-        };
-        if skip > 0 {
-            knots.pop();
-        }
-        let knot_skip = if index == 0 { 0 } else { multiplicity };
-        let knot_added = segment.knots().len() - knot_skip;
-        ctx.reserve_vec(&mut knots, knot_added, "Rhino joined polycurve knots")?;
-        knots.extend(
-            ctx.admit_iter(&segment.knots()[knot_skip..], "Rhino joined knot traversal")
-                .map_err(CodecError::from)?
-                .copied()
-                .map(|knot| knot + dk),
-        );
-    }
-    drop(segments);
-    drop(container_storage);
-    let constructed = NurbsCurve::from_checked_lanes(ctx, degree, knots, control_points, weights, false)?;
-    drop(output_storage);
-    constructed.map_err(|error| GeometryError::malformed(offset, format!("{error}")))
-    })?;
+            drop(segments);
+            drop(container_storage);
+            let constructed =
+                NurbsCurve::from_checked_lanes(ctx, degree, knots, control_points, weights, false)?;
+            drop(output_storage);
+            constructed.map_err(|error| GeometryError::malformed(offset, format!("{error}")))
+        })?;
     let curve = curve_buffer;
     if let Some(result_storage) = result_storage {
         result_storage.absorb(&mut storage)?;
@@ -1598,7 +1614,6 @@ pub(crate) fn join_nurbs_curves(
     } else {
         Ok(storage.commit_value(curve)?)
     }
-
 }
 
 pub(crate) fn decode_inner_2d(
@@ -1872,82 +1887,83 @@ fn read_polyline(
     expected_dimension: Option<i32>,
 ) -> Result<NurbsCurve, GeometryError> {
     let (candidate, storage) = ctx.with_scoped_storage("Rhino polyline output", || {
-    let version = reader.u8()?;
-    require_major(version, reader.position() - 1)?;
-    let point_count = crate::wire::element_count(reader, 24)?;
-    if point_count < 2 {
-        return Err(error(
-            reader.position(),
-            "polyline needs at least two points",
-        ));
-    }
-    let mut points = ctx
-        .collection_vec(point_count, "Rhino polyline points")
-        .map_err(crate::curves::GeometryError::from)?;
-    for _ in 0..point_count {
-        ctx.charge_work(1, "Rhino curves read_polyline records")?;
-        let point = native_point(ctx, reader)?;
-        points.push(
-            crate::wire::scaled_point(point.0.get(), scale)
-                .ok_or_else(|| error(reader.position(), "scaled polyline coordinate is invalid"))?,
-        );
-    }
-    let parameter_count = crate::wire::element_count(reader, 8)?;
-    if parameter_count != point_count {
-        return Err(error(
-            reader.position(),
-            "polyline parameter count mismatch",
-        ));
-    }
-    let mut parameter_storage = ctx.reserve_scoped(0, "Rhino polyline parameter scratch")?;
-    let mut parameters = parameter_storage
-        .with_storage(|| ctx.collection_vec(parameter_count, "Rhino polyline parameters"))?;
-    for _ in 0..parameter_count {
-        ctx.charge_work(1, "Rhino curves read_polyline records")?;
-        let value = reader.f64()?;
-        let Some(value) = FiniteReal::new(value) else {
+        let version = reader.u8()?;
+        require_major(version, reader.position() - 1)?;
+        let point_count = crate::wire::element_count(reader, 24)?;
+        if point_count < 2 {
             return Err(error(
                 reader.position(),
-                "polyline parameters are not increasing",
-            ));
-        };
-        if parameters
-            .last()
-            .is_some_and(|previous: &FiniteReal| value.get() <= previous.get())
-        {
-            return Err(error(
-                reader.position(),
-                "polyline parameters are not increasing",
+                "polyline needs at least two points",
             ));
         }
-        parameters.push(value);
-    }
-    let dimension = reader.i32()?;
-    if expected_dimension.is_some_and(|expected| dimension != expected)
-        || dimension != 2 && dimension != 3
-    {
-        return Err(error(reader.position(), "polyline dimension is invalid"));
-    }
-    let knot_count = point_count
-        .checked_add(2)
-        .ok_or_else(|| error(reader.position(), "polyline knot count overflow"))?;
-    let mut knots = ctx
-        .collection_vec(knot_count, "Rhino polyline knots")
-        .map_err(crate::curves::GeometryError::from)?;
-    knots.push(parameters[0].get());
-    knots.push(parameters[0].get());
-    knots.extend(
-        ctx.admit_iter(
-            &parameters[1..point_count - 1],
-            "Rhino polyline interior knot copy",
-        )
-        .map_err(CodecError::from)?
-        .map(|value| value.get()),
-    );
-    knots.push(parameters[point_count - 1].get());
-    knots.push(parameters[point_count - 1].get());
-    NurbsCurve::from_checked_lanes(ctx, 1, knots, points, None, false)?
-        .map_err(|error| GeometryError::malformed(reader.position(), format!("{error}")))
+        let mut points = ctx
+            .collection_vec(point_count, "Rhino polyline points")
+            .map_err(crate::curves::GeometryError::from)?;
+        for _ in 0..point_count {
+            ctx.charge_work(1, "Rhino curves read_polyline records")?;
+            let point = native_point(ctx, reader)?;
+            points.push(
+                crate::wire::scaled_point(point.0.get(), scale).ok_or_else(|| {
+                    error(reader.position(), "scaled polyline coordinate is invalid")
+                })?,
+            );
+        }
+        let parameter_count = crate::wire::element_count(reader, 8)?;
+        if parameter_count != point_count {
+            return Err(error(
+                reader.position(),
+                "polyline parameter count mismatch",
+            ));
+        }
+        let mut parameter_storage = ctx.reserve_scoped(0, "Rhino polyline parameter scratch")?;
+        let mut parameters = parameter_storage
+            .with_storage(|| ctx.collection_vec(parameter_count, "Rhino polyline parameters"))?;
+        for _ in 0..parameter_count {
+            ctx.charge_work(1, "Rhino curves read_polyline records")?;
+            let value = reader.f64()?;
+            let Some(value) = FiniteReal::new(value) else {
+                return Err(error(
+                    reader.position(),
+                    "polyline parameters are not increasing",
+                ));
+            };
+            if parameters
+                .last()
+                .is_some_and(|previous: &FiniteReal| value.get() <= previous.get())
+            {
+                return Err(error(
+                    reader.position(),
+                    "polyline parameters are not increasing",
+                ));
+            }
+            parameters.push(value);
+        }
+        let dimension = reader.i32()?;
+        if expected_dimension.is_some_and(|expected| dimension != expected)
+            || dimension != 2 && dimension != 3
+        {
+            return Err(error(reader.position(), "polyline dimension is invalid"));
+        }
+        let knot_count = point_count
+            .checked_add(2)
+            .ok_or_else(|| error(reader.position(), "polyline knot count overflow"))?;
+        let mut knots = ctx
+            .collection_vec(knot_count, "Rhino polyline knots")
+            .map_err(crate::curves::GeometryError::from)?;
+        knots.push(parameters[0].get());
+        knots.push(parameters[0].get());
+        knots.extend(
+            ctx.admit_iter(
+                &parameters[1..point_count - 1],
+                "Rhino polyline interior knot copy",
+            )
+            .map_err(CodecError::from)?
+            .map(|value| value.get()),
+        );
+        knots.push(parameters[point_count - 1].get());
+        knots.push(parameters[point_count - 1].get());
+        NurbsCurve::from_checked_lanes(ctx, 1, knots, points, None, false)?
+            .map_err(|error| GeometryError::malformed(reader.position(), format!("{error}")))
     })?;
     Ok(storage.commit_value(candidate)?)
 }

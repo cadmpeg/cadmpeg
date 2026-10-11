@@ -285,21 +285,35 @@ fn polyedge_semantic_conversion_releases_source_vectors() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = 64 * 1024;
     policy.limits.max_materialized_bytes = 64 * 1024;
-    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
-    let (polyedge_buffer, storage) = super::decode(crate::mesh::MeshExpand::new(&ctx, root),
-        0..payload.len(), ArchiveVersion::V8).expect("scoped parser output");
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let (polyedge_buffer, storage) = super::decode(
+        crate::mesh::MeshExpand::new(&ctx, root),
+        0..payload.len(),
+        ArchiveVersion::V8,
+    )
+    .expect("scoped parser output");
     let polyedge = polyedge_buffer;
     let construction = super::semantic_json(&ctx, &polyedge).unwrap().unwrap();
     assert_eq!(polyedge.parameters.len(), 2);
     assert_eq!(polyedge.segments.len(), 1);
     drop(polyedge);
     drop(storage);
-    ctx.charge_retained(policy.limits.max_retained_bytes - cadmpeg_core::decode::u64_from_index(construction.capacity()),
-        "test converted polyedge retained reuse").expect("only construction text survives");
-    let scratch = ctx.reserve_scoped(policy.limits.max_materialized_bytes, "test polyedge scratch reuse")
+    ctx.charge_retained(
+        policy.limits.max_retained_bytes
+            - cadmpeg_core::decode::u64_from_index(construction.capacity()),
+        "test converted polyedge retained reuse",
+    )
+    .expect("only construction text survives");
+    let scratch = ctx
+        .reserve_scoped(
+            policy.limits.max_materialized_bytes,
+            "test polyedge scratch reuse",
+        )
         .expect("source vectors and wrapper descriptors were released");
     drop(scratch);
-    ctx.finish_session().expect("successful semantic conversion");
+    ctx.finish_session()
+        .expect("successful semantic conversion");
 }
 
 fn reject_polyedge(payload: &[u8], message: &str) {
@@ -307,16 +321,30 @@ fn reject_polyedge(payload: &[u8], message: &str) {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = 64 * 1024;
     policy.limits.max_materialized_bytes = 64 * 1024;
-    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(payload, &arena, &policy).unwrap();
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(payload, &arena, &policy).unwrap();
     for _ in 0..8 {
-        let error = super::decode(crate::mesh::MeshExpand::new(&ctx, root),
-            0..payload.len(), ArchiveVersion::V8).expect_err("malformed polyedge");
-        assert!(matches!(error, crate::chunks::FramingError::Structural { message: actual, .. }
-            if actual == message));
+        let error = super::decode(
+            crate::mesh::MeshExpand::new(&ctx, root),
+            0..payload.len(),
+            ArchiveVersion::V8,
+        )
+        .expect_err("malformed polyedge");
+        assert!(
+            matches!(error, crate::chunks::FramingError::Structural { message: actual, .. }
+            if actual == message)
+        );
     }
-    ctx.charge_retained(policy.limits.max_retained_bytes, "test rejected polyedge retained reuse")
-        .expect("rejected vectors retain no storage");
-    let scratch = ctx.reserve_scoped(policy.limits.max_materialized_bytes, "test rejected polyedge scratch reuse")
+    ctx.charge_retained(
+        policy.limits.max_retained_bytes,
+        "test rejected polyedge retained reuse",
+    )
+    .expect("rejected vectors retain no storage");
+    let scratch = ctx
+        .reserve_scoped(
+            policy.limits.max_materialized_bytes,
+            "test rejected polyedge scratch reuse",
+        )
         .expect("failed parser releases its candidate before recovery");
     drop(scratch);
     ctx.finish_session().expect("recoverable polyedge failure");
