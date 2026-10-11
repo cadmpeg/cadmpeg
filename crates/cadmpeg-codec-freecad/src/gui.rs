@@ -104,7 +104,7 @@ impl<'ctx> AppearancePlan<'ctx> {
 
     fn apply(mut self, ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
         if !self.body_updates.is_empty() {
-            let (_position_storage, positions) = ctx
+            let (position_storage, positions) = ctx
                 .with_scoped_storage("FCStd GUI body positions", || {
                     let mut positions = BTreeMap::new();
                     let mut bodies = ir.model.bodies.iter().enumerate().rev();
@@ -142,7 +142,7 @@ impl<'ctx> AppearancePlan<'ctx> {
                 }
             }
             drop(positions);
-            drop(_position_storage);
+            drop(position_storage);
         }
         drop(self.body_update_storage);
         if !self.remove_appearances.is_empty() {
@@ -413,17 +413,19 @@ impl<'source, 'ctx> ShapeIndex<'source, 'ctx> {
     }
 }
 
+struct AppearanceIndexes<'source, 'ir, 'ctx> {
+    ir: &'ir CadIr,
+    shape: Option<ShapeIndex<'source, 'ctx>>,
+    topology: Option<TopologyIndex<'ir, 'ctx>>,
+}
+
 struct TopologyIndex<'source, 'ctx> {
     ir: &'source CadIr,
     faces: BTreeMap<&'source str, &'source cadmpeg_ir::ids::FaceId>,
-    face_built: bool,
     edges: BTreeMap<&'source str, &'source cadmpeg_ir::ids::EdgeId>,
-    edge_built: bool,
     vertices: BTreeMap<&'source str, &'source cadmpeg_ir::ids::VertexId>,
-    vertex_built: bool,
     bodies: BTreeMap<&'source str, Vec<(usize, &'source cadmpeg_ir::ids::BodyId)>>,
     body_candidates: Vec<BodyCandidate<'source>>,
-    body_candidates_built: bool,
     existing_bindings: usize,
     face_storage: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
     edge_storage: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
@@ -444,14 +446,10 @@ impl<'source, 'ctx> TopologyIndex<'source, 'ctx> {
         Self {
             ir,
             faces: BTreeMap::new(),
-            face_built: false,
             edges: BTreeMap::new(),
-            edge_built: false,
             vertices: BTreeMap::new(),
-            vertex_built: false,
             bodies: BTreeMap::new(),
             body_candidates: Vec::new(),
-            body_candidates_built: false,
             existing_bindings: ir.model.appearance_bindings.len(),
             face_storage: None,
             edge_storage: None,
@@ -462,7 +460,7 @@ impl<'source, 'ctx> TopologyIndex<'source, 'ctx> {
     }
 
     fn ensure_faces(&mut self, ctx: &'ctx DecodeContext<'_>) -> Result<(), CodecError> {
-        if self.face_built {
+        if self.face_storage.is_some() {
             return Ok(());
         }
         let (faces, storage) = ctx.collect_scoped_btree_map(
@@ -476,12 +474,11 @@ impl<'source, 'ctx> TopologyIndex<'source, 'ctx> {
         )?;
         self.faces = faces;
         self.face_storage = Some(storage);
-        self.face_built = true;
         Ok(())
     }
 
     fn ensure_edges(&mut self, ctx: &'ctx DecodeContext<'_>) -> Result<(), CodecError> {
-        if self.edge_built {
+        if self.edge_storage.is_some() {
             return Ok(());
         }
         let (edges, storage) = ctx.collect_scoped_btree_map(
@@ -495,12 +492,11 @@ impl<'source, 'ctx> TopologyIndex<'source, 'ctx> {
         )?;
         self.edges = edges;
         self.edge_storage = Some(storage);
-        self.edge_built = true;
         Ok(())
     }
 
     fn ensure_vertices(&mut self, ctx: &'ctx DecodeContext<'_>) -> Result<(), CodecError> {
-        if self.vertex_built {
+        if self.vertex_storage.is_some() {
             return Ok(());
         }
         let (vertices, storage) = ctx.collect_scoped_btree_map(
@@ -514,7 +510,6 @@ impl<'source, 'ctx> TopologyIndex<'source, 'ctx> {
         )?;
         self.vertices = vertices;
         self.vertex_storage = Some(storage);
-        self.vertex_built = true;
         Ok(())
     }
 
@@ -633,7 +628,7 @@ impl<'source, 'ctx> TopologyIndex<'source, 'ctx> {
     }
 
     fn build_body_candidates(&mut self, ctx: &'ctx DecodeContext<'_>) -> Result<(), CodecError> {
-        if self.body_candidates_built {
+        if self.body_candidate_storage.is_some() {
             return Ok(());
         }
         let mut candidate_storage = ctx.reserve_scoped(0, "FCStd GUI body candidates")?;
@@ -677,7 +672,6 @@ impl<'source, 'ctx> TopologyIndex<'source, 'ctx> {
         )?;
         self.body_candidates = candidates;
         self.body_candidate_storage = Some(candidate_storage);
-        self.body_candidates_built = true;
         Ok(())
     }
 }
@@ -768,7 +762,7 @@ fn transfer_schema_one<'ctx>(
     let requires_alpha_conversion = sources.requires_alpha_conversion;
     let root = ctx.xml_root_element(xml, "FCStd GUI document root")?;
     let mut plan = AppearancePlan::new(ctx)?;
-    let (_child_storage, children) = ctx
+    let (child_storage, children) = ctx
         .with_scoped_storage("FCStd GUI document children", || {
             ctx.collect_vec(root.children(), "FCStd GUI document children")
         })
@@ -813,7 +807,7 @@ fn transfer_schema_one<'ctx>(
         }
     }
     drop(children);
-    drop(_child_storage);
+    drop(child_storage);
     let document = native_storage.with_storage(|| {
         Ok::<_, CodecError>(GuiDocumentRecord {
             id: "fcstd:gui:document#0".to_owned(),
@@ -902,8 +896,11 @@ fn transfer_schema_one<'ctx>(
     let mut objects_by_name: Option<HashMap<&str, &str>> = None;
     let mut payload_storage = None;
     let mut payloads_by_owner: Option<BTreeMap<&str, Vec<&str>>> = None;
-    let mut shape_index: Option<ShapeIndex<'_, 'ctx>> = None;
-    let mut topology_index: Option<TopologyIndex<'_, 'ctx>> = None;
+    let mut indexes = AppearanceIndexes {
+        ir,
+        shape: None,
+        topology: None,
+    };
     let mut edge_index: Option<PrimitiveIndex<'_, '_>> = None;
     let mut vertex_index: Option<PrimitiveIndex<'_, '_>> = None;
     let mut providers = providers.into_iter().enumerate();
@@ -1125,17 +1122,17 @@ fn transfer_schema_one<'ctx>(
                 "FCStd GUI presentation value lookup",
             )?
             .map(|(node, _)| node);
-        let (_body_storage, body_ids) = ctx
+        let (body_storage, body_ids) = ctx
             .with_scoped_storage("FCStd GUI displayed bodies", || {
-                if !owned_payloads.is_empty() {
-                    let topology_index = match &mut topology_index {
+                if owned_payloads.is_empty() {
+                    Ok(Vec::new())
+                } else {
+                    let topology_index = match &mut indexes.topology {
                         Some(index) => index,
                         slot @ None => slot.insert(TopologyIndex::new(ir)),
                     };
                     topology_index.ensure_bodies(ctx, owned_payloads.iter().copied())?;
                     select_shape_bodies(ctx, &topology_index.bodies, owned_payloads.iter().copied())
-                } else {
-                    Ok(Vec::new())
                 }
             })
             .map(|(body_ids, storage)| (storage, body_ids))?;
@@ -1169,9 +1166,7 @@ fn transfer_schema_one<'ctx>(
                     provenance: property_provenance("DiffuseColor")?,
                 },
                 sources,
-                ir,
-                &mut shape_index,
-                &mut topology_index,
+                &mut indexes,
                 &mut losses,
             )?;
         }
@@ -1234,9 +1229,7 @@ fn transfer_schema_one<'ctx>(
                     provenance: property_provenance("LineColorArray")?,
                 },
                 sources,
-                ir,
-                &mut shape_index,
-                &mut topology_index,
+                &mut indexes,
                 &mut losses,
             )?;
         }
@@ -1298,16 +1291,14 @@ fn transfer_schema_one<'ctx>(
                     provenance: property_provenance("PointColorArray")?,
                 },
                 sources,
-                ir,
-                &mut shape_index,
-                &mut topology_index,
+                &mut indexes,
                 &mut losses,
             )?;
         }
         drop(payload_prefixes);
         let Some(packed_color) = packed_color else {
             drop(body_ids);
-            drop(_body_storage);
+            drop(body_storage);
             continue;
         };
         let appearance_id = object_appearance_id(ctx, &provider_key)?;
@@ -1389,7 +1380,7 @@ fn transfer_schema_one<'ctx>(
         }
         drop(body_bindings);
         plan.appearances.push(appearance);
-        drop(_body_storage);
+        drop(body_storage);
     }
     drop(providers);
     drop(provider_storage);
@@ -1422,13 +1413,10 @@ fn transfer_schema_one<'ctx>(
         &graph,
         &material_lists,
         sources,
-        ir,
-        &mut shape_index,
-        &mut topology_index,
+        &mut indexes,
         &mut material_losses,
     )?;
-    drop(shape_index);
-    drop(topology_index);
+    drop(indexes);
     drop(material_lists);
     drop(material_storage);
     ctx.extend_vec(&mut graph.losses, material_losses, "FCStd GUI graph losses")?;
@@ -1607,7 +1595,7 @@ fn transfer_neutral_presentation(
             else {
                 break;
             };
-            let (attributes, refused, _refused_storage) = gui_named_entries(
+            let (attributes, refused, refused_storage) = gui_named_entries(
                 ctx,
                 || {
                     ctx.join_retained(
@@ -1623,7 +1611,7 @@ fn transfer_neutral_presentation(
             )?;
             let refused_result = charge_refused_gui_keys(ctx, &mut state_losses, &refused);
             drop(refused);
-            drop(_refused_storage);
+            drop(refused_storage);
             refused_result?;
             let kind = if state.kind == "Camera" {
                 PresentationStateKind::Camera(camera_state_value(ctx, state, &mut state_losses)?)
@@ -1672,7 +1660,7 @@ fn transfer_neutral_presentation(
         return Ok(());
     }
 
-    let (_property_storage, properties) = ctx
+    let (property_storage, properties) = ctx
         .collect_scoped_btree_groups(
             graph
                 .properties
@@ -1794,7 +1782,7 @@ fn transfer_neutral_presentation(
                 })
             })
             .transpose()?;
-        let (provider_properties, refused, _refused_storage) = gui_named_entries(
+        let (provider_properties, refused, refused_storage) = gui_named_entries(
             ctx,
             || ctx.copy_retained_text(&provider.id, "FCStd GUI provider record name"),
             property_entries.iter().map(|(property, value)| {
@@ -1808,7 +1796,7 @@ fn transfer_neutral_presentation(
         drop(entry_storage);
         let refused_result = charge_refused_gui_keys(ctx, losses, &refused);
         drop(refused);
-        drop(_refused_storage);
+        drop(refused_storage);
         refused_result?;
         plan.view_presentation_storage.with_storage(|| {
             ctx.reserve_vec(&mut plan.view_presentations, 1, "FCStd view presentations")
@@ -1851,7 +1839,7 @@ fn transfer_neutral_presentation(
         });
     }
     drop(properties);
-    drop(_property_storage);
+    drop(property_storage);
     Ok(())
 }
 
@@ -1956,7 +1944,7 @@ fn camera_state_value(
             })
         })
         .transpose()?;
-    let (properties, refused, _refused_storage) = gui_named_entries(
+    let (properties, refused, refused_storage) = gui_named_entries(
         ctx,
         || {
             ctx.join_retained(
@@ -1972,7 +1960,7 @@ fn camera_state_value(
     )?;
     let refused_result = charge_refused_gui_keys(ctx, losses, &refused);
     drop(refused);
-    drop(_refused_storage);
+    drop(refused_storage);
     refused_result?;
     Ok(CameraState {
         position,
@@ -2157,7 +2145,7 @@ impl<'source, 'ctx> PrimitiveIndex<'source, 'ctx> {
             PrimitiveStyle::Point(_) => ir.model.vertices.len(),
         };
         let mut ordinals = 0..len;
-        while ordinals.len() != 0 {
+        while !ordinals.is_empty() {
             let Some(ordinal) =
                 ctx.next_charged(&mut ordinals, "FCStd GUI primitive candidates")?
             else {
@@ -2243,7 +2231,7 @@ impl<'source, 'ctx> PrimitiveIndex<'source, 'ctx> {
                     Ok(cadmpeg_ir::ids::comparison::compare(
                         ctx,
                         candidate.key,
-                        *prefix,
+                        prefix,
                         "FCStd GUI primitive prefix lower bound",
                     )? == std::cmp::Ordering::Less)
                 },
@@ -2687,7 +2675,7 @@ fn append_native_provider(
             format_args!("ViewProvider {name} has no Properties"),
         ));
     };
-    let (_node_storage, property_nodes) = ctx
+    let (node_storage, property_nodes) = ctx
         .with_scoped_storage("FCStd GUI provider property nodes", || {
             let mut nodes = Vec::new();
             let mut children = container.children();
@@ -2843,7 +2831,7 @@ fn append_native_provider(
         });
     }
     drop(property_nodes);
-    drop(_node_storage);
+    drop(node_storage);
     drop(names);
     drop(name_storage);
     providers.push(record);
@@ -5696,7 +5684,7 @@ fn parse_color_list(
     let count = read_color_list_count(ctx, &mut view, entry_name)?;
     let mut colors = ctx.collection_vec(count, "FCStd GUI color-list entries")?;
     let mut indices = 0..count;
-    while indices.len() != 0 {
+    while !indices.is_empty() {
         let Some(_) = ctx.next_charged(&mut indices, "FCStd GUI color-list read")? else {
             break;
         };
@@ -5748,7 +5736,7 @@ fn read_color_list_count(
 ) -> Result<usize, CodecError> {
     let count = view.req_u32_le()?;
     view.counted(count.into(), 4)
-        .map(|count| count.get())
+        .map(cadmpeg_core::decode::BoundedCount::get)
         .ok_or_else(|| {
             gui_malformed(
                 ctx,
@@ -5769,7 +5757,7 @@ fn read_gui_counted<'a>(
         return Ok(None);
     };
     let mut indices = 0..count.get();
-    while indices.len() != 0 {
+    while !indices.is_empty() {
         let Some(_) = ctx.next_charged(&mut indices, operation)? else {
             break;
         };
@@ -6009,7 +5997,7 @@ fn parse_material_list<'data>(
     })?;
     let mut materials = ctx.collection_vec(count.get(), "FCStd GUI material entries")?;
     let mut indices = 0..count.get();
-    while indices.len() != 0 {
+    while !indices.is_empty() {
         let Some(_) = ctx.next_charged(&mut indices, "FCStd GUI material records")? else {
             break;
         };
@@ -6094,17 +6082,18 @@ fn read_material_string<'data>(
     Ok(text)
 }
 
-fn transfer_shape_appearances<'source, 'ir, 'ctx>(
+fn transfer_shape_appearances<'source, 'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     plan: &mut AppearancePlan<'_>,
     graph: &Graph<'_>,
     material_lists: &HashMap<&str, Vec<GuiMaterial<'_>>>,
     sources: &GuiSources<'source, '_>,
-    ir: &'ir CadIr,
-    shape_index: &mut Option<ShapeIndex<'source, 'ctx>>,
-    topology_index: &mut Option<TopologyIndex<'ir, 'ctx>>,
+    indexes: &mut AppearanceIndexes<'source, '_, 'ctx>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
+    let ir = indexes.ir;
+    let shape_index = &mut indexes.shape;
+    let topology_index = &mut indexes.topology;
     if material_lists.is_empty() {
         return Ok(());
     }
@@ -6720,16 +6709,17 @@ struct TopologyColorRequest<'a> {
     provenance: SourceProvenance,
 }
 
-fn transfer_topology_colors<'source, 'ir, 'ctx>(
+fn transfer_topology_colors<'source, 'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     plan: &mut AppearancePlan<'_>,
     request: TopologyColorRequest<'_>,
     sources: &GuiSources<'source, '_>,
-    ir: &'ir CadIr,
-    shape_index: &mut Option<ShapeIndex<'source, 'ctx>>,
-    topology_index: &mut Option<TopologyIndex<'ir, 'ctx>>,
+    indexes: &mut AppearanceIndexes<'source, '_, 'ctx>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
+    let ir = indexes.ir;
+    let shape_index = &mut indexes.shape;
+    let topology_index = &mut indexes.topology;
     let TopologyColorRequest {
         provider_name,
         provider_key,
@@ -7295,9 +7285,11 @@ mod shape_association_tests {
                 &graph,
                 &materials,
                 &sources,
-                &ir,
-                &mut None,
-                &mut None,
+                &mut super::AppearanceIndexes {
+                    ir: &ir,
+                    shape: None,
+                    topology: None,
+                },
                 &mut Vec::new(),
             )
             .expect_err("ambiguous single-material shape");
@@ -7375,26 +7367,41 @@ mod shape_association_tests {
                         channels: std::collections::BTreeMap::new(),
                     });
             }
-            let mut shape = None;
-            let mut topology = None;
+            let mut indexes = super::AppearanceIndexes {
+                ir: &ir,
+                shape: None,
+                topology: None,
+            };
             super::transfer_shape_appearances(
                 ctx,
                 &mut plan,
                 &graph,
                 &materials,
                 &sources,
-                &ir,
-                &mut shape,
-                &mut topology,
+                &mut indexes,
                 &mut Vec::new(),
             )
             .expect("single-material transfer");
             assert_eq!(plan.removed_binding_count, 2);
-            assert!(!topology.as_ref().expect("body demand").face_built);
-            assert!(!topology.as_ref().expect("body demand").edge_built);
-            assert!(!topology.as_ref().expect("body demand").vertex_built);
-            drop(shape);
-            drop(topology);
+            assert!(indexes
+                .topology
+                .as_ref()
+                .expect("body demand")
+                .face_storage
+                .is_none());
+            assert!(indexes
+                .topology
+                .as_ref()
+                .expect("body demand")
+                .edge_storage
+                .is_none());
+            assert!(indexes
+                .topology
+                .as_ref()
+                .expect("body demand")
+                .vertex_storage
+                .is_none());
+            drop(indexes);
             plan.apply(ctx, &mut ir).expect("material replacement");
             assert_eq!(ir.model.appearances.len(), 1);
             assert_eq!(
@@ -7426,15 +7433,15 @@ mod shape_association_tests {
                 tolerance: None,
             });
             let mut topology = TopologyIndex::new(&ir);
-            assert!(!topology.face_built);
-            assert!(!topology.edge_built);
-            assert!(!topology.vertex_built);
-            assert!(!topology.body_candidates_built);
+            assert!(topology.face_storage.is_none());
+            assert!(topology.edge_storage.is_none());
+            assert!(topology.vertex_storage.is_none());
+            assert!(topology.body_candidate_storage.is_none());
             topology.ensure_edges(ctx).expect("edge index");
-            assert!(!topology.face_built);
-            assert!(topology.edge_built);
-            assert!(!topology.vertex_built);
-            assert!(!topology.body_candidates_built);
+            assert!(topology.face_storage.is_none());
+            assert!(topology.edge_storage.is_some());
+            assert!(topology.vertex_storage.is_none());
+            assert!(topology.body_candidate_storage.is_none());
             assert_eq!(
                 ctx.get_btree_map(
                     &topology.edges,
@@ -7484,8 +7491,11 @@ mod shape_association_tests {
                 requires_alpha_conversion: false,
             };
             let ir = cadmpeg_ir::CadIr::empty();
-            let mut shape_index: Option<super::ShapeIndex<'_, '_>> = None;
-            let mut topology_index: Option<super::TopologyIndex<'_, '_>> = None;
+            let mut indexes = super::AppearanceIndexes {
+                ir: &ir,
+                shape: None,
+                topology: None,
+            };
             let mut plan = super::AppearancePlan::new(ctx).expect("plan storage");
             super::transfer_topology_colors(
                 ctx,
@@ -7503,14 +7513,12 @@ mod shape_association_tests {
                     ),
                 },
                 &sources,
-                &ir,
-                &mut shape_index,
-                &mut topology_index,
+                &mut indexes,
                 &mut Vec::new(),
             )
             .expect("empty color list without a displayed shape");
-            assert!(shape_index.is_some());
-            assert!(topology_index.is_none());
+            assert!(indexes.shape.is_some());
+            assert!(indexes.topology.is_none());
         });
     }
 

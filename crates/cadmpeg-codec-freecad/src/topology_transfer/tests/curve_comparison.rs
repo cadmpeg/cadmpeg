@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Admission of exact curve records with independently owned lanes.
 
+use std::fmt::Write as _;
+
 use super::{archive_entries, assert_codec_work_refusal, select_exact_curve_representation};
 use crate::brep::{NestedCurve, Tables, TextCurve, TextEdgeRepresentation, TextTShapes};
 use crate::FcstdCodec;
@@ -133,15 +135,15 @@ fn repeated_nurbs_archive() -> Vec<u8> {
     let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects><ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
     let mut curve = format!("7 0 0 1 {POLES} {POLES}");
     for point in 0..POLES {
-        curve.push_str(&format!(" {point} 0 0"));
+        write!(curve, " {point} 0 0").expect("write fixture text");
     }
     for knot in 0..POLES {
         let multiplicity = if knot == 0 || knot + 1 == POLES { 2 } else { 1 };
-        curve.push_str(&format!(" {knot} {multiplicity}"));
+        write!(curve, " {knot} {multiplicity}").expect("write fixture text");
     }
     let mut brep = format!("CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 2\n{curve}\n{curve}\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 3\nVe 0.001 0 0 0 0 0 1001000 *\nVe 0.001 127 0 0 0 0 1001000 *\nEd 0.001 1 1 0");
     for curve in [1, 2, 1, 2, 1, 2, 1, 2] {
-        brep.push_str(&format!(" 1 {curve} 0 0 127"));
+        write!(brep, " 1 {curve} 0 0 127").expect("write fixture text");
     }
     brep.push_str(" 0 1001000 +3 0 -2 0 *\n+1 0 *");
     archive_entries(&[("Document.xml", document), ("Shape.brp", brep.as_bytes())])

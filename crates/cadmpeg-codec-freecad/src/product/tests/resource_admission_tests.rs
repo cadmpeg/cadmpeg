@@ -152,7 +152,10 @@ fn product_owner_index_and_acyclic_graph_keep_scratch_out_of_retained_budget() {
         .expect("scoped owners");
     let storage = index.1;
     let owners = index.0;
-    assert!(std::ptr::eq(owners[item.owner.as_str()][0], &item));
+    assert!(std::ptr::eq(
+        owners[item.owner.as_str()][0],
+        &raw const item
+    ));
     drop((owners, storage));
     assert!(product_cycle_nodes(&ctx, &records)
         .expect("scoped graph")

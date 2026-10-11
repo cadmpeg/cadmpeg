@@ -260,8 +260,7 @@ fn sketch_placement_forwards_charged_reads_and_projects_one_validated_frame() {
 #[test]
 fn constraint_integer_groups_have_linear_work_and_keep_malformed_groups_invalid() {
     const ITEMS: usize = 256;
-    let values = std::iter::repeat("0")
-        .take(ITEMS)
+    let values = std::iter::repeat_n("0", ITEMS)
         .collect::<Vec<_>>()
         .join(",");
     let used = work_used_before_marker(|ctx| {
@@ -287,6 +286,7 @@ fn constraint_integer_groups_have_linear_work_and_keep_malformed_groups_invalid(
 
 #[test]
 fn operation_parameters_reuse_owner_and_clone_only_emitted_values() {
+    const MEASUREMENT_MARKER_BYTES: u64 = 1 << 20;
     let object = object(
         "fcstd:native:object#Feature",
         "Part::Feature",
@@ -382,7 +382,6 @@ fn operation_parameters_reuse_owner_and_clone_only_emitted_values() {
         CodecError::ResourceLimit(limit)
             if limit.operation == "fcstd operation parameter owner"));
 
-    const MEASUREMENT_MARKER_BYTES: u64 = 1 << 20;
     let marker = "test operation owner scope release marker";
     let error = crate::test_support::materialized_refusal_at(marker, |ctx| {
         let mut parameters = Vec::new();
@@ -510,8 +509,14 @@ fn reference_horizontal_axis_is_neutral_and_native_unresolved_operands_keep_orde
         "fcstd native operand position kind",
     ] {
         with_unlimited_probe(ResourceDimension::RetainedBytes, operation, |ctx| {
-            super::parse_constraints(ctx, &object, &[&property], &sketch, &[reference.clone()])
-                .map(drop)
+            super::parse_constraints(
+                ctx,
+                &object,
+                &[&property],
+                &sketch,
+                std::slice::from_ref(&reference),
+            )
+            .map(drop)
         })
         .unwrap_or_else(|error| {
             panic!("neutral horizontal constraint reached {operation}: {error:?}")
@@ -553,7 +558,7 @@ fn reference_horizontal_axis_is_neutral_and_native_unresolved_operands_keep_orde
                     &object,
                     &[&native_property],
                     &sketch,
-                    &[line.clone()],
+                    std::slice::from_ref(&line),
                 )
                 .map(drop)
             },
@@ -1003,8 +1008,7 @@ fn cyclic_extrusion_preserves_profile_placement_before_taper_error() {
             &[],
             None,
         )
-        .err()
-        .expect("placement must be validated");
+        .expect_err("placement must be validated");
         assert!(
             matches!(error, CodecError::Malformed(ref message) if message == "sketch Placement placement carrier has incomplete or invalid components")
         );

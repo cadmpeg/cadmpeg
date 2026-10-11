@@ -820,7 +820,8 @@ mod tests {
     #[test]
     fn owned_archive_roles_preserve_labels_and_entry_allocations() {
         use cadmpeg_container::ZipSpanRole;
-        let constructors: [(fn(String) -> ZipSpanRole, &str); 12] = [
+        type RoleConstructor = fn(String) -> ZipSpanRole;
+        let constructors: [(RoleConstructor, &str); 12] = [
             (ZipSpanRole::LocalSignature, "local-signature"),
             (ZipSpanRole::LocalFields, "local-fields"),
             (ZipSpanRole::LocalName, "local-name"),
@@ -1141,7 +1142,7 @@ mod tests {
         for index in [0, 10, usize::MAX] {
             let table = super::StringTableRecord::try_new(index, None, false, 0, None, Vec::new())
                 .expect("valid string table");
-            let expected = native_id("string-table", &index.to_string());
+            let expected = native_id("string-table", index.to_string());
             assert_eq!(table.id(), expected);
             crate::test_support::with_service_context(&[], |ctx| {
                 assert_eq!(table.id_with_admission(ctx).unwrap(), expected);

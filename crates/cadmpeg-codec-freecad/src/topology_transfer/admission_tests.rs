@@ -1029,7 +1029,7 @@ fn test_source_object<'c>(
     Ok(super::ScopedData {
         data: cadmpeg_core::text::NonBlankString::try_from("Object".to_owned())
             .map_err(CodecError::malformed)?,
-        _storage: ctx.reserve_scoped(0, "test topology source object")?,
+        storage: ctx.reserve_scoped(0, "test topology source object")?,
     })
 }
 

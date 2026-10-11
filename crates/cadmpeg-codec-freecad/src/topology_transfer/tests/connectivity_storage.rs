@@ -23,10 +23,7 @@ fn component_output_bytes() -> u64 {
             connected_components(&ctx, &[std::collections::BTreeSet::new()])
         })
         .unwrap();
-    let output = ScopedData {
-        data,
-        _storage: storage,
-    };
+    let output = ScopedData { data, storage };
     assert_eq!(output.data, vec![vec![0]]);
     let error = ctx
         .reserve_scoped(MATERIALIZED_CAP, "test component output usage")
@@ -91,7 +88,7 @@ fn builder<'a, 'c, 'r, 'occ>(
         tables,
         ScopedData {
             data: cadmpeg_core::text::NonBlankString::try_from("Object").unwrap(),
-            _storage: ctx.reserve_scoped(0, "test source object").unwrap(),
+            storage: ctx.reserve_scoped(0, "test source object").unwrap(),
         },
         GeometryIndexes::new(ctx).unwrap(),
         None,
@@ -126,7 +123,7 @@ fn face_connectivity_storage_releases_keys_before_components() {
         .unwrap();
     let result = ScopedData {
         data: values,
-        _storage: storage,
+        storage,
     };
     assert_eq!(result.data, vec![vec![0]]);
     let component_bytes = component_output_bytes();
@@ -163,7 +160,7 @@ fn face_connectivity_storage_refusal_preserves_surviving_bytes_and_fuse() {
         .unwrap();
     let result = ScopedData {
         data: values,
-        _storage: storage,
+        storage,
     };
     assert_eq!(result.data, vec![vec![0]]);
     let component_bytes = component_output_bytes();

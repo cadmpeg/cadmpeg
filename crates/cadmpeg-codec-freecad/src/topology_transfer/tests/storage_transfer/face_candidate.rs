@@ -64,7 +64,7 @@ fn with_face<T>(
         tables,
         ScopedData {
             data: cadmpeg_core::text::NonBlankString::try_from("Object").unwrap(),
-            _storage: ctx.reserve_scoped(0, "test source object").unwrap(),
+            storage: ctx.reserve_scoped(0, "test source object").unwrap(),
         },
         GeometryIndexes::new(&ctx).unwrap(),
         None,

@@ -73,7 +73,7 @@ fn builder<'a, 'c, 'r, 'occ>(
         super::ScopedData {
             data: cadmpeg_core::text::NonBlankString::try_from("Object".to_owned())
                 .expect("source name"),
-            _storage: ctx.reserve_scoped(0, "test topology source object")?,
+            storage: ctx.reserve_scoped(0, "test topology source object")?,
         },
         GeometryIndexes::new(ctx)?,
         None,
@@ -173,7 +173,7 @@ fn occurrence_lookup_storage_releases_before_occurrence_copies() {
     with_limits(u64::MAX, u64::MAX, |ctx| {
         let mut occurrences = super::TopologyOccurrences {
             records: Vec::new(),
-            _storage: ctx.reserve_scoped(0, "test occurrences").unwrap(),
+            storage: ctx.reserve_scoped(0, "test occurrences").unwrap(),
         };
         let mut tables = tables(&shapes);
         tables.roots = &roots;
@@ -183,7 +183,7 @@ fn occurrence_lookup_storage_releases_before_occurrence_copies() {
             tables,
             super::ScopedData {
                 data: cadmpeg_core::text::NonBlankString::try_from("Object").unwrap(),
-                _storage: ctx.reserve_scoped(0, "test source object").unwrap(),
+                storage: ctx.reserve_scoped(0, "test source object").unwrap(),
             },
             GeometryIndexes::new(ctx).unwrap(),
             Some(&mut occurrences),
@@ -323,6 +323,7 @@ fn successful_located_surface_hits_skip_base_identity_work() {
 
 #[test]
 fn parameterized_polygon_releases_input_storage_before_position_indexing() {
+    const OBSERVATION_CAP: u64 = 65_536;
     const NODES: usize = 128;
     let polygon = TextPolygon3d {
         deflection: NonNegativeReal::ZERO,
@@ -341,7 +342,6 @@ fn parameterized_polygon_releases_input_storage_before_position_indexing() {
     let edge = EdgeId::mint(format!("fcstd:model:edge#Repair:{}", "x".repeat(8192)))
         .expect("edge identity");
     let expected_id = CurveId::mint(format!("{}:polygon:1", edge.as_str())).unwrap();
-    const OBSERVATION_CAP: u64 = 65_536;
     let index_bytes = with_limits(u64::MAX, OBSERVATION_CAP, |ctx| {
         let mut geometry = GeometryIndexes::new(ctx).unwrap();
         geometry.curves = Some(std::collections::BTreeMap::new());

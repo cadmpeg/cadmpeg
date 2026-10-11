@@ -890,8 +890,7 @@ fn application_releases_consumed_owner_buffer_before_later_entry_index() {
             .expect("entry tree");
         let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx
             .reserve_scoped(u64::MAX, "measure live application trees")
-            .err()
-            .expect("materialized overflow")
+            .expect_err("materialized overflow")
         else {
             panic!("materialized refusal")
         };

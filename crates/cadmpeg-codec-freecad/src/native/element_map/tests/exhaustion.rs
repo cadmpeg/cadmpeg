@@ -26,9 +26,8 @@ fn nodes() -> ElementMapNodes {
 fn empty_binding_upper_bound_needs_no_work_and_does_not_advance_adapter() {
     with_work(0, |ctx| {
         let visits = Cell::new(0);
-        let bindings = std::iter::empty::<(&str, usize, &str)>().map(|binding| {
+        let bindings = std::iter::empty::<(&str, usize, &str)>().inspect(|_| {
             visits.set(visits.get() + 1);
-            binding
         });
         nodes().bind_root_topology(ctx, bindings).unwrap();
         assert_eq!(visits.get(), 0);
@@ -43,9 +42,8 @@ fn chained_binding_exhaustion_costs_only_actual_visits() {
         let bindings = [("Edge", 1, "first")]
             .into_iter()
             .chain([("Face", 2, "second")])
-            .map(|binding| {
+            .inspect(|_| {
                 visits.set(visits.get() + 1);
-                binding
             });
         let mut input = nodes();
         // Two binding visits. An empty group tree has zero comparisons.
@@ -77,9 +75,8 @@ fn binding_refusal_precedes_unvisited_adapter_suffix() {
         let visits = Cell::new(0);
         let bindings = [("Edge", 1, "first"), ("Face", 2, "second")]
             .into_iter()
-            .map(|binding| {
+            .inspect(|_| {
                 visits.set(visits.get() + 1);
-                binding
             });
         let mut input = nodes();
         let error = input.bind_root_topology(ctx, bindings).unwrap_err();

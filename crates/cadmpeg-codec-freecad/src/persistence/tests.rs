@@ -604,12 +604,14 @@ fn extension_duplicate_name_visit_stops_before_long_suffix() {
         .checked_add(2)
         .expect("extension count fits usize");
     assert!(cadmpeg_core::decode::u64_from_index(declared_extensions) > after_visit_allowance);
-    let suffix = (0..suffix_extensions)
-        .map(|index| format!("<Extension name=\"Suffix{index}\" type=\"T\"/>"))
-        .collect::<String>();
+    let mut suffix = String::new();
+    for index in 0..suffix_extensions {
+        use std::fmt::Write as _;
+        write!(suffix, "<Extension name=\"Suffix{index}\" type=\"T\"/>")
+            .expect("write extension fixture");
+    }
     let long = format!(
-        "<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Extensions Count=\"{}\"><Extension name=\"E\" type=\"T\"/><Extension name=\"E\" type=\"U\"/>{suffix}</Extensions><Properties Count=\"0\"/></Object></ObjectData></Document>",
-        declared_extensions
+        "<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Extensions Count=\"{declared_extensions}\"><Extension name=\"E\" type=\"T\"/><Extension name=\"E\" type=\"U\"/>{suffix}</Extensions><Properties Count=\"0\"/></Object></ObjectData></Document>"
     );
     let long_start = work_before_operation(long.as_bytes(), OPERATION, |ctx| {
         super::parse_with_context(long.as_bytes(), "4", ctx).map(|_| ())
@@ -1554,8 +1556,7 @@ fn link_target_visits_stop_at_first_nested_value_before_long_suffix() {
     assert!(cadmpeg_core::decode::u64_from_index(declared_links) > after_visit_allowance);
     let suffix = "<Link value=\"Target\"/>".repeat(suffix_links);
     let long = format!(
-        "<Property><LinkList count=\"{}\"><Link><Nested/></Link>{suffix}</LinkList></Property>",
-        declared_links
+        "<Property><LinkList count=\"{declared_links}\"><Link><Nested/></Link>{suffix}</LinkList></Property>"
     );
     let long_xml = roxmltree::Document::parse(&long).expect("valid long link list");
     let long_start = work_before_operation(long.as_bytes(), OPERATION, |ctx| {
@@ -1571,8 +1572,7 @@ fn link_target_visits_stop_at_first_nested_value_before_long_suffix() {
         cadmpeg_core::decode::DecodeContext::from_root_bytes(long.as_bytes(), &arena, &policy)
             .expect("long link list is within root limits");
     let error = super::parse_link_targets(long_xml.root_element(), "App::PropertyLinkList", &ctx)
-        .err()
-        .expect("first nested link value is malformed");
+        .expect_err("first nested link value is malformed");
     assert!(matches!(
         &error,
         cadmpeg_core::CodecError::Malformed(message)

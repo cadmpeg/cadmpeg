@@ -42,7 +42,11 @@ fn gui_native_graph_copies_are_scoped_and_fields_survive_transfer() {
             graph.properties[0].values[0].attributes["value"],
             "native value"
         );
-        assert!(graph._native_storage.is_some());
+        let super::super::Graph {
+            _native_storage: native_storage,
+            ..
+        } = &graph;
+        assert!(native_storage.is_some());
         assert_eq!(plan.presentation_documents.len(), 1);
         assert_eq!(plan.view_presentations.len(), 1);
         drop(graph);

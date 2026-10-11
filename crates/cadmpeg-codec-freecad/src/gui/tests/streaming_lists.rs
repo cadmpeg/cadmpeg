@@ -177,15 +177,14 @@ fn material_list_preserves_bounds_and_scalar_error_order() {
             bytes.push(0);
         }
         crate::test_support::with_service_context(&[], |ctx| {
-            let error = match super::super::parse_material_list(
+            let Err(error) = super::super::parse_material_list(
                 ctx,
                 View::over_retained(&bytes),
                 2,
                 "material",
                 false,
-            ) {
-                Ok(_) => panic!("invalid material list must be refused"),
-                Err(error) => error,
+            ) else {
+                panic!("invalid material list must be refused");
             };
             assert!(matches!(error, CodecError::Malformed(message)
                 if message == format!("GUI material list material {expected}")));

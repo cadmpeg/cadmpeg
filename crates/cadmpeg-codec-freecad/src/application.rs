@@ -138,10 +138,10 @@ fn wire_records<'a>(
     properties: &'a [PropertyRecord],
     entries: &'a [EntryRecord],
 ) -> Result<Vec<ApplicationRecordWire<'a>>, CodecError> {
+    const OWNER_PROPERTIES: &str = "FreeCAD application owner properties";
     if objects.is_empty() {
         return Ok(Vec::new());
     }
-    const OWNER_PROPERTIES: &str = "FreeCAD application owner properties";
     let mut owner_storage = ctx.reserve_scoped(0, OWNER_PROPERTIES)?;
     let mut by_owner: BTreeMap<&str, Option<OwnerProperties<'_, '_>>> = BTreeMap::new();
     let mut source_properties = properties.iter();
