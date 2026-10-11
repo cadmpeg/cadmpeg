@@ -40,7 +40,7 @@ use controls::{B5EdgeTerminalControl, B5FramingControl, B5VertexIncidenceControl
 use super::vecmath::{add, components, coordinates, cross, scale};
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
 use crate::checked::ExactUnitVector3;
-use crate::layout::b5_loop_numeric_terminal;
+use crate::layout::{b5_cone_payload, b5_loop_numeric_terminal};
 use crate::wire;
 use crate::wire::bytes::{f64_le, f64_point, read_f64_array};
 
@@ -304,16 +304,16 @@ pub(in crate::families) enum B5Surface {
     },
     /// `b5 03 29`: a circular cone in its native arc-length/slant chart.
     Cone {
-        /// Cone apex.
-        apex: FinitePoint3,
+        /// Axis origin of the reference-radius cross section.
+        origin: FinitePoint3,
         /// The stored cone-axis unit direction and the stored first transverse
         /// unit direction, the zero-angle ray.
         frame: OrthonormalFrame3,
         /// The stored second transverse unit direction.
         direction_y: UnitVector3,
-        /// Cone half-angle in radians, strictly between zero and a quarter
+        /// Generator angle from the radial plane, strictly between zero and a quarter
         /// turn.
-        half_angle: PositiveAngle,
+        radial_angle: PositiveAngle,
         /// Reference radius of the conical surface, independent of the active chart ranges.
         reference_radius: FiniteReal,
         /// Active azimuth interval.
@@ -3680,36 +3680,41 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
             })
         }
         0x29 => {
-            (record.payload.len() == 185 && record.payload.first() == Some(&0x80)).then_some(())?;
-            let apex = f64_point(&record.payload, 1)?;
-            let direction_x = read_f64_array::<3>(&record.payload, 25)?.map(FiniteReal::get);
-            let direction_y = read_f64_array::<3>(&record.payload, 49)?.map(FiniteReal::get);
-            let axis = read_f64_array::<3>(&record.payload, 73)?.map(FiniteReal::get);
-            let half_angle = f64_le(&record.payload, 97)?;
-            let reference_radius = f64_le(&record.payload, 105)?;
+            (record.payload.len() == b5_cone_payload::LEN
+                && record.payload.get(b5_cone_payload::LEAD) == Some(&0x80))
+            .then_some(())?;
+            let chart_origin = f64_point(&record.payload, b5_cone_payload::ORIGIN)?;
+            let direction_x = read_f64_array::<3>(&record.payload, b5_cone_payload::DIRECTION_X)?
+                .map(FiniteReal::get);
+            let direction_y = read_f64_array::<3>(&record.payload, b5_cone_payload::DIRECTION_Y)?
+                .map(FiniteReal::get);
+            let axis =
+                read_f64_array::<3>(&record.payload, b5_cone_payload::AXIS)?.map(FiniteReal::get);
+            let radial_angle = f64_le(&record.payload, b5_cone_payload::RADIAL_ANGLE)?;
+            let reference_radius = f64_le(&record.payload, b5_cone_payload::REFERENCE_RADIUS)?;
             let angular_range = [
-                f64_le(&record.payload, 113)?.get(),
-                f64_le(&record.payload, 121)?.get(),
+                f64_le(&record.payload, b5_cone_payload::ANGULAR_RANGE)?.get(),
+                f64_le(&record.payload, b5_cone_payload::ANGULAR_RANGE + 8)?.get(),
             ];
             let mut slant_range = [
-                f64_le(&record.payload, 129)?.get(),
-                f64_le(&record.payload, 137)?.get(),
+                f64_le(&record.payload, b5_cone_payload::SLANT_RANGE)?.get(),
+                f64_le(&record.payload, b5_cone_payload::SLANT_RANGE + 8)?.get(),
             ];
             if slant_range[0].abs() <= EPS_B5_GRAPH_EXACT_GEOMETRY {
                 slant_range[0] = 0.0;
             }
-            let angular_scale = PositiveReal::new(f64_le(&record.payload, 145)?.get())?;
+            let angular_scale =
+                PositiveReal::new(f64_le(&record.payload, b5_cone_payload::ANGULAR_SCALE)?.get())?;
             let angular_domain = [
-                f64_le(&record.payload, 169)?.get(),
-                f64_le(&record.payload, 177)?.get(),
+                f64_le(&record.payload, b5_cone_payload::ANGULAR_DOMAIN)?.get(),
+                f64_le(&record.payload, b5_cone_payload::ANGULAR_DOMAIN + 8)?.get(),
             ];
             let (frame, direction_y) = cone_frame(axis, direction_x, direction_y)?;
-            let slant_start = NonNegativeLength::new(slant_range[0])?;
-            let positive_half_angle = PositiveAngle::new(half_angle.get())?;
-            (half_angle.get() < std::f64::consts::FRAC_PI_2
+            let positive_radial_angle = PositiveAngle::new(radial_angle.get())?;
+            (radial_angle.get() < std::f64::consts::FRAC_PI_2
                 && periodic_angular_range_is_valid(angular_range, angular_domain)
-                && f64_le(&record.payload, 153)?.get() == 1.0
-                && f64_le(&record.payload, 161)?.get() == 0.0)
+                && f64_le(&record.payload, b5_cone_payload::PARAMETER_SCALE)?.get() == 1.0
+                && f64_le(&record.payload, b5_cone_payload::PARAMETER_SHIFT)?.get() == 0.0)
                 .then_some(())?;
             // The angular check admits a strictly increasing range inside a
             // strictly increasing full-turn domain.
@@ -3717,29 +3722,30 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
             let angular_domain = IncreasingParameterInterval::new(angular_domain)?;
             let slant_range = IncreasingParameterInterval::new(slant_range)?;
             let origin = add(
-                coordinates(apex),
-                scale(axis, slant_range.lower() * half_angle.get().cos()),
+                coordinates(chart_origin),
+                scale(axis, slant_range.lower() * radial_angle.get().sin()),
             );
-            let half_angle_radians = Angle::from_assigned_real(half_angle);
+            let radius = NonNegativeLength::new(
+                reference_radius.get() + slant_range.lower() * radial_angle.get().cos(),
+            );
+            let half_angle = Angle::from_assigned_real(FiniteReal::new(
+                std::f64::consts::FRAC_PI_2 - radial_angle.get(),
+            )?);
             Some(B5Surface::Cone {
-                apex,
+                origin: chart_origin,
                 frame,
                 direction_y,
-                half_angle: positive_half_angle,
+                radial_angle: positive_radial_angle,
                 reference_radius,
                 angular_range,
                 slant_range,
                 angular_scale,
                 angular_domain,
-                surface: FinitePoint3::new(Point3::from(origin)).map(|origin| {
-                    ConeSurface::new(
-                        origin,
-                        frame,
-                        slant_start.scaled_by_sine(half_angle_radians),
-                        PositiveReal::ONE,
-                        half_angle_radians,
-                    )
-                }),
+                surface: FinitePoint3::new(Point3::from(origin)).zip(radius).map(
+                    |(origin, radius)| {
+                        ConeSurface::new(origin, frame, radius, PositiveReal::ONE, half_angle)
+                    },
+                ),
             })
         }
         0x2a => {
@@ -4901,8 +4907,8 @@ fn supported_surface_parameters_match_carrier(
         (B5SupportedSurfaceParameters::ScalarPair { .. }, B5Surface::Plane { .. }) => true,
         (
             B5SupportedSurfaceParameters::ScalarPair { scalars, .. },
-            B5Surface::Cone { half_angle, .. },
-        ) => relative_close(scalars[1].get(), half_angle.get()),
+            B5Surface::Cone { radial_angle, .. },
+        ) => relative_close(scalars[1].get(), radial_angle.get()),
         _ => false,
     }
 }
@@ -5013,11 +5019,12 @@ fn lift_pcurve_endpoints(
                 }))
             }
             B5Surface::Cone {
-                apex,
+                origin,
                 frame,
                 direction_y,
-                half_angle,
+                radial_angle,
                 angular_scale,
+                reference_radius,
                 ..
             } => Some(endpoints.map(|[u, v]| {
                 let angle = u / angular_scale.get();
@@ -5026,13 +5033,16 @@ fn lift_pcurve_endpoints(
                     scale(components(direction_y), angle.sin()),
                 );
                 add(
-                    coordinates(*apex),
-                    scale(
-                        add(
-                            scale(components(frame.axis()), half_angle.get().cos()),
-                            scale(radial, half_angle.get().sin()),
+                    coordinates(*origin),
+                    add(
+                        scale(radial, reference_radius.get()),
+                        scale(
+                            add(
+                                scale(components(frame.axis()), radial_angle.get().sin()),
+                                scale(radial, radial_angle.get().cos()),
+                            ),
+                            v,
                         ),
-                        v,
                     ),
                 )
             })),

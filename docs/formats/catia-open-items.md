@@ -458,13 +458,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the operation and fields to construct the result surface directly.
 
-### OS-14. Class-`0x30` carrier kind `0x11`
+### OS-16. Cone chart tail scalars
 
-**Question.** What construction does carrier kind `0x11` select in a `b5 03 30` record?
+**Question.** How do the class-`29` tail scalars at payload offsets `+153` and `+161` map external UV parameters to the cone's local chart?
 
-**Known.** Its result reference can carry cone geometry. The referenced cones do not satisfy the analytic parallel-offset distance equation.
+**Known.** The pair `(1,0)` gives the identity chart in `catia.md` §6.7 "For the identity parameter map". A canonical class-`30` cone result can retain a nonzero second scalar equal to its generator-chart translation from the source.
 
-**Need.** We must know the construction to transfer the result without using an incorrect cone offset.
+**Need.** Native pcurve and vertex-incidence joins must determine whether the second scalar changes pcurve evaluation or records the construction's chart placement.
 
 
 ## 5. Zero-entity `a9 03`

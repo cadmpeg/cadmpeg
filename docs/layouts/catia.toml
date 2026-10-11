@@ -2005,3 +2005,104 @@ offset = 135
 type = "bytes[6]"
 source = "spec"
 anchor = "01 00 01 00 07 07"
+
+
+[[record]]
+name = "b5_cone_payload"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/b5/graph.rs"
+kind = "byte"
+section = "6.7"
+anchor = "For `b5 03 29`, the 185-byte payload"
+size = 185
+endianness = "little"
+
+[[record.field]]
+name = "lead"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "| `+0` | `u8` | lead `80` |"
+
+[[record.field]]
+name = "origin"
+offset = 1
+type = "f64[3]"
+source = "spec"
+anchor = "| `+1` | `3f64le` | reference cross-section origin |"
+
+[[record.field]]
+name = "direction_x"
+offset = 25
+type = "f64[3]"
+source = "spec"
+anchor = "| `+25` | `3f64le` | first radial direction |"
+
+[[record.field]]
+name = "direction_y"
+offset = 49
+type = "f64[3]"
+source = "spec"
+anchor = "| `+49` | `3f64le` | second radial direction |"
+
+[[record.field]]
+name = "axis"
+offset = 73
+type = "f64[3]"
+source = "spec"
+anchor = "| `+73` | `3f64le` | axis direction |"
+
+[[record.field]]
+name = "radial_angle"
+offset = 97
+type = "f64"
+source = "spec"
+anchor = "| `+97` | `f64le` | radial-plane generator angle |"
+
+[[record.field]]
+name = "reference_radius"
+offset = 105
+type = "f64"
+source = "spec"
+anchor = "| `+105` | `f64le` | reference radius |"
+
+[[record.field]]
+name = "angular_range"
+offset = 113
+type = "f64[2]"
+source = "spec"
+anchor = "| `+113` | `2f64le` | active angular interval |"
+
+[[record.field]]
+name = "slant_range"
+offset = 129
+type = "f64[2]"
+source = "spec"
+anchor = "| `+129` | `2f64le` | active slant interval |"
+
+[[record.field]]
+name = "angular_scale"
+offset = 145
+type = "f64"
+source = "spec"
+anchor = "| `+145` | `f64le` | angular divisor |"
+
+[[record.field]]
+name = "parameter_scale"
+offset = 153
+type = "f64"
+source = "spec"
+anchor = "| `+153` | `f64le` | parameter-map coefficient |"
+
+[[record.field]]
+name = "parameter_shift"
+offset = 161
+type = "f64"
+source = "spec"
+anchor = "| `+161` | `f64le` | parameter-map shift |"
+
+[[record.field]]
+name = "angular_domain"
+offset = 169
+type = "f64[2]"
+source = "spec"
+anchor = "| `+169` | `2f64le` | full-turn angular domain |"

@@ -449,3 +449,37 @@ pub(crate) mod surface_terminal_span_tail {
     /// Offset of `suffix` (`bytes[6]`). Spec §6.6.
     pub(crate) const SUFFIX: usize = 135;
 }
+
+/// Byte offsets for the `b5_cone_payload` record.
+///
+/// Spec §6.7. Record length 185 B.
+pub(crate) mod b5_cone_payload {
+    /// Record length in bytes. Spec §6.7.
+    pub(crate) const LEN: usize = 185;
+    /// Offset of `lead` (`u8`). Spec §6.7.
+    pub(crate) const LEAD: usize = 0;
+    /// Offset of `origin` (`f64[3]`, little-endian). Spec §6.7.
+    pub(crate) const ORIGIN: usize = 1;
+    /// Offset of `direction_x` (`f64[3]`, little-endian). Spec §6.7.
+    pub(crate) const DIRECTION_X: usize = 25;
+    /// Offset of `direction_y` (`f64[3]`, little-endian). Spec §6.7.
+    pub(crate) const DIRECTION_Y: usize = 49;
+    /// Offset of `axis` (`f64[3]`, little-endian). Spec §6.7.
+    pub(crate) const AXIS: usize = 73;
+    /// Offset of `radial_angle` (`f64`, little-endian). Spec §6.7.
+    pub(crate) const RADIAL_ANGLE: usize = 97;
+    /// Offset of `reference_radius` (`f64`, little-endian). Spec §6.7.
+    pub(crate) const REFERENCE_RADIUS: usize = 105;
+    /// Offset of `angular_range` (`f64[2]`, little-endian). Spec §6.7.
+    pub(crate) const ANGULAR_RANGE: usize = 113;
+    /// Offset of `slant_range` (`f64[2]`, little-endian). Spec §6.7.
+    pub(crate) const SLANT_RANGE: usize = 129;
+    /// Offset of `angular_scale` (`f64`, little-endian). Spec §6.7.
+    pub(crate) const ANGULAR_SCALE: usize = 145;
+    /// Offset of `parameter_scale` (`f64`, little-endian). Spec §6.7.
+    pub(crate) const PARAMETER_SCALE: usize = 153;
+    /// Offset of `parameter_shift` (`f64`, little-endian). Spec §6.7.
+    pub(crate) const PARAMETER_SHIFT: usize = 161;
+    /// Offset of `angular_domain` (`f64[2]`, little-endian). Spec §6.7.
+    pub(crate) const ANGULAR_DOMAIN: usize = 169;
+}

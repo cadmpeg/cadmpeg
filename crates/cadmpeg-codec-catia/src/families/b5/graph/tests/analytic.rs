@@ -418,10 +418,10 @@ fn cone_surface_reads_the_native_slant_chart() {
     assert_eq!(
         parse_surface(&record),
         Some(B5Surface::Cone {
-            apex: crate::test_support::test_b5::point([1.0, 2.0, 3.0]),
+            origin: crate::test_support::test_b5::point([1.0, 2.0, 3.0]),
             frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
             direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
-            half_angle: crate::test_support::test_b5::positive_angle(0.25),
+            radial_angle: crate::test_support::test_b5::positive_angle(0.25),
             reference_radius: crate::test_support::test_b5::finite(4.0),
             angular_range: crate::test_support::test_b5::increasing([
                 0.5,
@@ -438,11 +438,11 @@ fn cone_surface_reads_the_native_slant_chart() {
                     cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
                     cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
                     cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                    0.0,
+                    4.0,
                     1.0,
-                    0.25,
+                    std::f64::consts::FRAC_PI_2 - 0.25,
                 )
-                .expect("the apex-chart cone carrier"),
+                .expect("the origin-chart cone carrier"),
             ),
         })
     );
@@ -1409,7 +1409,7 @@ fn cone_frames_admit_the_native_distance_band_on_either_side_of_the_axis() {
             *surface.frame().reference().as_raw(),
             cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
         );
-        assert_eq!(surface.radius().get(), 2.0 * 0.25_f64.sin());
+        assert_eq!(surface.radius().get(), 4.0 + 2.0 * 0.25_f64.cos());
     }
     // Two components 1.5e-12 from the cross product: about 2.1e-12 away.
     assert_eq!(cone([1.5e-12, 1.5e-12, 1.0]), None);
@@ -1434,10 +1434,10 @@ fn cone_frames_admit_the_native_distance_band_on_either_side_of_the_axis() {
 #[test]
 fn offset_surface_does_not_infer_cone_construction_from_result_class() {
     let carrier = B5Surface::Cone {
-        apex: crate::test_support::test_b5::point([0.0; 3]),
+        origin: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
-        half_angle: crate::test_support::test_b5::positive_angle(0.25),
+        radial_angle: crate::test_support::test_b5::positive_angle(0.25),
         reference_radius: crate::test_support::test_b5::finite(0.0),
         angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
         slant_range: crate::test_support::test_b5::increasing([-2.0, 4.0]),
@@ -1795,4 +1795,89 @@ fn point_cell_refuses_negative_spatial_overflow() {
 #[test]
 fn point_cell_refuses_nonfinite_coordinate() {
     assert_eq!(super::super::point_cell([f64::NAN, 0.0, 0.0]), None);
+}
+
+#[test]
+fn cone_native_and_neutral_charts_preserve_reference_radius_and_signed_slant() {
+    const EPS_CONE_CHART: f64 = 1.0e-12;
+    let angle = 0.25_f64;
+    let u = 0.8_f64;
+    let v = -1.2_f64;
+    for handedness in [-1.0_f64, 1.0] {
+        let values = [
+            1.0,
+            2.0,
+            3.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            handedness,
+            angle,
+            4.0,
+            0.0,
+            std::f64::consts::FRAC_PI_2,
+            -2.0,
+            8.0,
+            3.0,
+            1.0,
+            0.0,
+            -3.0 * std::f64::consts::FRAC_PI_4,
+            5.0 * std::f64::consts::FRAC_PI_4,
+        ];
+        let mut payload = vec![0x80];
+        for value in values {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        let surface = parse_surface(&B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x29,
+            object_id: 7,
+            payload,
+        })
+        .expect("a finite cone with a negative slant start");
+        let B5Surface::Cone {
+            surface: Some(neutral),
+            ..
+        } = &surface
+        else {
+            panic!("the active interval has positive radii");
+        };
+        let radius = 4.0 + v * angle.cos();
+        let expected = [
+            1.0 + radius * (u / 3.0).cos(),
+            2.0 + radius * (u / 3.0).sin(),
+            3.0 + handedness * v * angle.sin(),
+        ];
+        crate::test_support::with_service_context(|ctx| {
+            let native = crate::families::b5::graph::lift_pcurve_endpoints(
+                ctx,
+                &surface,
+                &BTreeMap::new(),
+                [[u, v]; 2],
+            )
+            .expect("bounded lift")
+            .expect("finite endpoints")[0];
+            let uv = cadmpeg_ir::math::Point2::new(handedness * u / 3.0, (v + 2.0) * angle.sin());
+            let neutral = cadmpeg_ir::eval::decode::surface_point_solved(
+                ctx,
+                &cadmpeg_ir::geometry::SolvedSurfaceGeometry::Cone(*neutral),
+                uv.u,
+                uv.v,
+            )
+            .expect("finite neutral cone evaluation");
+            for point in [native, neutral] {
+                let actual: [f64; 3] = point.get().into();
+                assert!(actual
+                    .into_iter()
+                    .zip(expected)
+                    .all(|(a, b)| (a - b).abs() < EPS_CONE_CHART));
+            }
+        });
+    }
 }

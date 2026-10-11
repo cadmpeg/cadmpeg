@@ -1621,10 +1621,10 @@ fn supported_surface_preserves_ordered_support_pcurves() {
         ],
     };
     let cone = B5Surface::Cone {
-        apex: crate::test_support::test_b5::point([0.0; 3]),
+        origin: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
-        half_angle: crate::test_support::test_b5::positive_angle(std::f64::consts::FRAC_PI_4),
+        radial_angle: crate::test_support::test_b5::positive_angle(std::f64::consts::FRAC_PI_4),
         reference_radius: crate::test_support::test_b5::finite(0.0),
         angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
         slant_range: crate::test_support::test_b5::increasing([0.0, 1.0]),
@@ -1637,10 +1637,10 @@ fn supported_surface_preserves_ordered_support_pcurves() {
         &cone
     ));
     let wrong_cone = B5Surface::Cone {
-        apex: crate::test_support::test_b5::point([0.0; 3]),
+        origin: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
-        half_angle: crate::test_support::test_b5::positive_angle(std::f64::consts::FRAC_PI_6),
+        radial_angle: crate::test_support::test_b5::positive_angle(std::f64::consts::FRAC_PI_6),
         reference_radius: crate::test_support::test_b5::finite(0.0),
         angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
         slant_range: crate::test_support::test_b5::increasing([0.0, 1.0]),
@@ -1759,11 +1759,11 @@ fn supported_surface_parameter_matching_is_scale_independent() {
             crate::test_support::test_b5::positive(half_angle),
         ],
     };
-    let cone = |carrier_half_angle| B5Surface::Cone {
-        apex: crate::test_support::test_b5::point([0.0; 3]),
+    let cone = |carrier_radial_angle| B5Surface::Cone {
+        origin: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
-        half_angle: carrier_half_angle,
+        radial_angle: carrier_radial_angle,
         reference_radius: crate::test_support::test_b5::finite(0.0),
         angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
         slant_range: crate::test_support::test_b5::increasing([0.0, 1.0]),

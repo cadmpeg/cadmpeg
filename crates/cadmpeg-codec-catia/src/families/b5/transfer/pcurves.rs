@@ -406,7 +406,7 @@ pub(super) fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Poin
         B5Surface::Cone {
             frame,
             direction_y,
-            half_angle,
+            radial_angle,
             slant_range,
             angular_scale,
             ..
@@ -418,7 +418,7 @@ pub(super) fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Poin
             .signum()
                 * point[0]
                 / angular_scale.get(),
-            (point[1] - slant_range.lower()) * half_angle.get().cos(),
+            (point[1] - slant_range.lower()) * radial_angle.get().sin(),
         ),
         B5Surface::Torus {
             major_scale,
@@ -517,11 +517,12 @@ pub(super) fn lifted_curve_geometry(
                 )))
             }
             B5Surface::Cone {
-                apex,
+                origin,
                 frame,
                 direction_y,
-                half_angle,
+                radial_angle,
                 angular_scale,
+                reference_radius,
                 ..
             } if constant_coordinate(&pcurve.control_points, 0).is_some() => {
                 let [u, _] = pcurve.control_points.first()?.get();
@@ -532,10 +533,13 @@ pub(super) fn lifted_curve_geometry(
                 );
                 Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                     cadmpeg_ir::geometry::analytic::LineCurve::new(
-                        *apex,
+                        FinitePoint3::new(point3(add(
+                            coordinates(*origin),
+                            scale(radial, reference_radius.get()),
+                        )))?,
                         UnitVector3::new(vector(add(
-                            scale(components(frame.axis()), half_angle.get().cos()),
-                            scale(radial, half_angle.get().sin()),
+                            scale(components(frame.axis()), radial_angle.get().sin()),
+                            scale(radial, radial_angle.get().cos()),
                         )))?,
                     ),
                 )))
@@ -588,18 +592,19 @@ pub(super) fn lifted_curve_geometry(
                 )))
             }
             B5Surface::Cone {
-                apex,
+                origin,
                 frame,
-                half_angle,
+                radial_angle,
+                reference_radius,
                 ..
             } => {
                 let slant = constant_coordinate(&pcurve.control_points, 1)?;
-                let radius = slant * half_angle.get().sin();
+                let radius = reference_radius.get() + slant * radial_angle.get().cos();
                 Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                     cadmpeg_ir::geometry::analytic::CircleCurve::new(
                         FinitePoint3::new(point3(add(
-                            coordinates(*apex),
-                            scale(components(frame.axis()), slant * half_angle.get().cos()),
+                            coordinates(*origin),
+                            scale(components(frame.axis()), slant * radial_angle.get().sin()),
                         )))?,
                         signed_reference_frame(*frame, radius),
                         PositiveLength::new(radius.abs())?,

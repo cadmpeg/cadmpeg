@@ -721,6 +721,29 @@ Parsed by:
 | 71 | 64 | `continuation` | `bytes[64]` | little | spec | eight zero `f64le` values |
 | 135 | 6 | `suffix` | `bytes[6]` | little | spec | 01 00 01 00 07 07 |
 
+## `b5_cone_payload`
+
+Spec §6.7 · layout: byte offsets · size: 185 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/b5/graph.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `lead` | `u8` | little | spec | \| `+0` \| `u8` \| lead `80` \| |
+| 1 | 24 | `origin` | `f64[3]` | little | spec | \| `+1` \| `3f64le` \| reference cross-section origin \| |
+| 25 | 24 | `direction_x` | `f64[3]` | little | spec | \| `+25` \| `3f64le` \| first radial direction \| |
+| 49 | 24 | `direction_y` | `f64[3]` | little | spec | \| `+49` \| `3f64le` \| second radial direction \| |
+| 73 | 24 | `axis` | `f64[3]` | little | spec | \| `+73` \| `3f64le` \| axis direction \| |
+| 97 | 8 | `radial_angle` | `f64` | little | spec | \| `+97` \| `f64le` \| radial-plane generator angle \| |
+| 105 | 8 | `reference_radius` | `f64` | little | spec | \| `+105` \| `f64le` \| reference radius \| |
+| 113 | 16 | `angular_range` | `f64[2]` | little | spec | \| `+113` \| `2f64le` \| active angular interval \| |
+| 129 | 16 | `slant_range` | `f64[2]` | little | spec | \| `+129` \| `2f64le` \| active slant interval \| |
+| 145 | 8 | `angular_scale` | `f64` | little | spec | \| `+145` \| `f64le` \| angular divisor \| |
+| 153 | 8 | `parameter_scale` | `f64` | little | spec | \| `+153` \| `f64le` \| parameter-map coefficient \| |
+| 161 | 8 | `parameter_shift` | `f64` | little | spec | \| `+161` \| `f64le` \| parameter-map shift \| |
+| 169 | 16 | `angular_domain` | `f64[2]` | little | spec | \| `+169` \| `2f64le` \| full-turn angular domain \| |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
