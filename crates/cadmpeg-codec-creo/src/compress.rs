@@ -15,9 +15,6 @@ pub(crate) fn decode(
     data: &[u8],
     expected_length: usize,
 ) -> Result<Option<Vec<u8>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if data.get(unix_compress::MAGIC..unix_compress::FLAGS) != Some(&[0x1f, 0x9d]) {
         return Ok(None);
     }
@@ -231,9 +228,6 @@ impl<'a> CodeReader<'a> {
         free_entry: usize,
         clear: bool,
     ) -> Result<Option<u16>, CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         if !self.has_code(free_entry, clear) {
             // The terminal transition still establishes the final block and
             // padding state. Its width/cardinality checks have fixed size.
@@ -469,8 +463,6 @@ mod tests {
             .expect_err("all three present code visits were admitted");
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
         assert_eq!((original.used, original.additional), (3, 1));
-        assert!(matches!(reader.next_in_lane(&ctx, 256, false),
-            Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) if refusal == original));
     }
 
     #[test]
@@ -592,41 +584,6 @@ mod tests {
                 assert_eq!(reader.padding_is_zero(), data != [0x80]);
                 assert!(ctx.resource_refusal().is_none());
             }
-        }
-    }
-
-    #[test]
-    fn invalid_fixed_lzw_headers_are_free_and_preserve_original_refusal() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-        use cadmpeg_core::CodecError;
-
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let headers = [
-            &[][..],
-            &[0x1f][..],
-            &[0x1f, 0x9d][..],
-            &[0xff, 0x9d, 0x10][..],
-            &[0x1f, 0x9d, 0x08][..],
-            &[0x1f, 0x9d, 0x30][..],
-        ];
-        for header in headers {
-            assert_eq!(
-                super::decode(&ctx, header, 0).expect("fixed header rejection"),
-                None
-            );
-        }
-        let original = ctx
-            .charge_work_limit(1, "seed LZW header refusal")
-            .expect_err("zero work limit");
-        for header in headers {
-            assert!(matches!(super::decode(&ctx, header, 0),
-                Err(CodecError::ResourceLimit(refusal)) if refusal == original));
         }
     }
 

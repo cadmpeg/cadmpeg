@@ -1,93 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::{
-    saved_profile_chains, saved_section_arc_record, saved_section_circle_values,
-    saved_section_segment_point_coordinates, section_arc_geometry, section_line_geometry,
-    section_point_geometry, section_reference_line_geometry,
-};
-use crate::feature::definitions::{
-    FeatureCircleSegment, FeatureReferenceLineSegment, FeatureSegmentKind,
-};
+use super::super::saved_profile_chains;
+
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometry, SketchGeometryDefinition, SketchId};
-use std::collections::BTreeMap;
+
 use std::mem::size_of;
 
 const EMPTY_ROOT_MATERIALIZED_BYTES: u64 = 16 * 1024 * 1024;
-
-fn assert_free_recovery<T>(run: impl Fn(&DecodeContext<'_>) -> Result<Option<T>, CodecError>) {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    policy.limits.max_retained_bytes = 0;
-    policy.limits.max_materialized_bytes = 0;
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert!(run(&ctx).expect("no source work").is_none());
-    let original = ctx
-        .charge_work_limit(1, "before absent section geometry")
-        .expect_err("zero work");
-    assert!(matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original));
-}
-
-#[test]
-fn absent_section_line_kind_is_free_and_keeps_original_refusal() {
-    let (_, mut segment) = super::saved_arc_carrier_definition([None; 3], None);
-    segment.kind = FeatureSegmentKind::Point(7);
-    assert_free_recovery(|ctx| section_line_geometry(ctx, &BTreeMap::new(), &segment));
-}
-
-#[test]
-fn absent_section_point_kind_is_free_and_keeps_original_refusal() {
-    let (_, segment) = super::saved_arc_carrier_definition([None; 3], None);
-    assert_free_recovery(|ctx| section_point_geometry(ctx, &BTreeMap::new(), &segment));
-}
-
-#[test]
-fn absent_section_arc_orientation_is_free_and_keeps_original_refusal() {
-    let (_, mut segment) = super::saved_arc_carrier_definition([None; 3], None);
-    segment.arc_orientation = None;
-    assert_free_recovery(|ctx| section_arc_geometry(ctx, &BTreeMap::new(), &segment));
-}
-
-#[test]
-fn absent_section_reference_endpoints_are_free_and_keep_original_refusal() {
-    let segment = FeatureReferenceLineSegment {
-        directions: [None; 3],
-        point_ids: [None; 2],
-        vertical_horizontal: None,
-        external_id: 7,
-        offset: 0,
-    };
-    assert_free_recovery(|ctx| section_reference_line_geometry(ctx, &BTreeMap::new(), &segment));
-}
-
-#[test]
-fn absent_saved_arc_order_is_free_and_keeps_original_refusal() {
-    let (mut definition, segment) = super::saved_arc_carrier_definition([None; 3], None);
-    definition.order_table = None;
-    assert_free_recovery(|ctx| saved_section_arc_record(ctx, &definition, &segment));
-}
-
-#[test]
-fn saved_point_coordinate_recovery_is_free_and_keeps_original_refusal() {
-    let (definition, mut segment) = super::saved_arc_carrier_definition([None; 3], None);
-    segment.kind = FeatureSegmentKind::Point(7);
-    assert_free_recovery(|ctx| saved_section_segment_point_coordinates(ctx, &definition, &segment));
-}
-
-#[test]
-fn absent_saved_circle_segments_are_free_and_keep_original_refusal() {
-    let (definition, _) = super::saved_arc_carrier_definition([None; 3], None);
-    let segment = FeatureCircleSegment {
-        center_id: 1,
-        radius_ref: 2,
-        external_id: 3,
-        offset: 0,
-    };
-    assert_free_recovery(|ctx| saved_section_circle_values(ctx, &definition, &segment));
-}
 
 #[test]
 fn saved_profile_endpoint_candidates_admit_only_present_rows() {

@@ -1386,9 +1386,6 @@ fn synchronize_solve_blocks(
     assignments: &[CurveExpressionAssignment],
     solutions: &BTreeMap<usize, Vec<CurveExpressionValue>>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if blocks.is_empty() {
         return Ok(());
     }
@@ -1695,9 +1692,6 @@ fn extend_expression_dependencies(
     storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     expression: &str,
 ) -> Result<Option<()>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let bytes = expression.as_bytes();
     let mut cursor = 0;
     while cursor < bytes.len() {
@@ -1813,9 +1807,6 @@ fn split_expression_assignment<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     source: &'a str,
 ) -> Result<Option<(&'a str, &'a str)>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let bytes = source.as_bytes();
     let mut nesting = 0usize;
     let mut delimiter = None;
@@ -2368,9 +2359,6 @@ fn valid_expression_identifier(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     name: &str,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     Ok(!name.is_empty()
         && ctx.all_by(
             name.bytes().enumerate(),
@@ -2524,9 +2512,6 @@ fn expression_identifier_end(
     source: &[u8],
     start: usize,
 ) -> Result<Option<usize>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if !source
         .get(start)
         .is_some_and(|byte| *byte == b'_' || byte.is_ascii_alphabetic())
@@ -2576,9 +2561,6 @@ impl ConditionalStack {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         frame: ConditionalFrame,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         match self {
             Self::Empty => {
                 *self = Self::Open {
@@ -7710,9 +7692,6 @@ fn format_relation_real_admitted(
     decimals: Option<usize>,
     scientific: bool,
 ) -> Result<Option<String>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if !value.is_finite() {
         return Ok(None);
     }
@@ -7784,9 +7763,6 @@ fn apply_declared_relation_unit(
     value: CurveExpressionValue,
     declared_unit: Option<&str>,
 ) -> Result<Option<CurveExpressionValue>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(declared_unit) = declared_unit else {
         return Ok(Some(value));
     };
@@ -7812,9 +7788,6 @@ pub(crate) fn expression_helix(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: &CurveExpressionRecord,
 ) -> Result<Option<CurveExpressionHelix>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if !record.prohibited_constructs.is_empty()
         || !record.solve_blocks.is_empty()
         || record.unresolved_solve_control
@@ -8028,9 +8001,6 @@ fn parse_depdb_curve_segment(
     absolute_offset: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<DepdbCurveRow>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut suffix_candidate = None;
     for suffix_length in 4..=11 {
         let Some(start) = segment.len().checked_sub(suffix_length) else {
@@ -8151,9 +8121,6 @@ fn row_terminator(
     start: usize,
     end: usize,
 ) -> Result<Option<(usize, usize)>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(bytes) = payload.get(start..end) else {
         return Ok(None);
     };
@@ -8313,9 +8280,6 @@ fn framed_segment_with_face_ids(
     materialized_face_ids: Option<&BTreeSet<u32>>,
     known_face_ids: Option<&BTreeSet<u32>>,
 ) -> Result<Option<FramedRow>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let (start, end) = bounds;
 
     let Some(segment) = payload.get(start..end) else {
@@ -8406,9 +8370,6 @@ fn complete_curve_row_linkage(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let bytes = bytes
         .strip_suffix(&[0xe1, 0xf5, 0x05, 0xf6, 0xe0, 0x00])
         .or_else(|| bytes.strip_suffix(&[0xe1, 0xe0, 0x00]))
@@ -8473,9 +8434,6 @@ fn curve_scalar_lane(
     enum SelectedToken {
         Reference(u32, usize),
         Scalar(f64, usize),
-    }
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
     }
     let mut scalars = Vec::new();
     let mut references = Vec::new();
@@ -8762,9 +8720,6 @@ fn complete_two_chart_samples(
     sample_operation: &'static str,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<Vec<[[f64; 2]; 2]>>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(remaining) = body.len().checked_sub(start) else {
         return Ok(None);
     };
@@ -9775,9 +9730,6 @@ fn topology_suffix_with_face_ids(
     materialized_face_ids: Option<&BTreeSet<u32>>,
     known_face_ids: Option<&BTreeSet<u32>>,
 ) -> Result<Option<TopologySuffixCandidate>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(candidates) = topology_suffix_candidates(row) else {
         return Ok(None);
     };
@@ -9818,9 +9770,6 @@ fn unique_topology_suffix_in_segment(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     segment: &[u8],
 ) -> Result<Option<TopologySuffixCandidate>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut closes = segment.windows(3).enumerate().rev();
     while closes.len() != 0 {
         let Some((close, bytes)) =

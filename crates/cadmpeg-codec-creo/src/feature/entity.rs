@@ -363,9 +363,6 @@ pub(crate) fn entity_graph(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<(Vec<FeatureEntity>, Vec<FeatureEntityReference>), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if !payload.starts_with(b"\xe0\0Sld_Features\0") {
         return Ok((Vec::new(), Vec::new()));
     }
@@ -433,9 +430,6 @@ pub(super) fn read_entries(
     body_start: usize,
     count: u32,
 ) -> Result<Option<Vec<FeatureEntityTableEntry>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(count) = usize::try_from(count).ok() else {
         return Ok(None);
     };
@@ -1146,52 +1140,6 @@ mod tests {
                 },
             );
         }
-    }
-
-    #[test]
-    fn entity_fixed_recovery_routes_preserve_original_refusal() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        policy.limits.max_recursion_depth = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let check = |refused| {
-            let results = [
-                entity_graph(&ctx, &[])
-                    .map(|(entities, references)| entities.is_empty() && references.is_empty()),
-                read_entries(&ctx, &[], 0, 0)
-                    .map(|entries| entries.is_some_and(|entries| entries.is_empty())),
-                read_entries(&ctx, &[], 1, 0).map(|entries| entries.is_none()),
-                read_entries(&ctx, &[], 0, 1).map(|entries| entries.is_none()),
-                entity_tables(
-                    &ctx,
-                    &[],
-                    &std::collections::BTreeSet::default(),
-                    &std::collections::BTreeSet::default(),
-                )
-                .map(|tables| tables.is_empty()),
-            ];
-            for result in results {
-                if refused {
-                    let original = ctx.resource_refusal().expect("seeded original refusal");
-                    assert!(
-                        matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
-                    );
-                } else {
-                    assert!(result.expect("free fixed recovery"));
-                }
-            }
-        };
-        check(false);
-        assert_eq!(ctx.resource_refusal(), None);
-        let original = ctx
-            .charge_work_limit(1, "after fixed entity recovery")
-            .expect_err("zero cap");
-        check(true);
-        assert_eq!(ctx.resource_refusal(), Some(original));
     }
 
     #[test]

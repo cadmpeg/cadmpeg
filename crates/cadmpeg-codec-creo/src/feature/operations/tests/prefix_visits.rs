@@ -30,16 +30,10 @@ fn check_result(
                     .charge_work_limit(1, "measure bounded prefix work")
                     .expect_err("measurement");
                 assert_eq!((original.used, original.additional), (total, 1));
-                assert!(
-                    matches!(parse(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original)
-                );
                 Ok(())
             }
             Err(CodecError::ResourceLimit(original)) => {
                 assert_eq!(ctx.resource_refusal(), Some(original));
-                assert!(
-                    matches!(parse(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original)
-                );
                 Err(CodecError::ResourceLimit(original))
             }
             Err(error) => Err(error),

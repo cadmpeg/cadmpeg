@@ -397,9 +397,6 @@ pub(in super::super) fn visit_semantic_saved_section_entities<'definition, B>(
         &'definition crate::feature::definitions::FeatureSavedEntity,
     ) -> Result<ControlFlow<B>, cadmpeg_core::CodecError>,
 ) -> Result<ControlFlow<B>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(saved) = definition
         .saved_section
         .as_ref()
@@ -578,7 +575,6 @@ pub(super) fn opaque_section_segment_identity_suffix_admitted(
 
 #[cfg(test)]
 mod tests {
-    mod admission_recovery;
     mod record_lookup;
     mod spline_storage;
     use super::{

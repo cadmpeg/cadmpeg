@@ -75,9 +75,6 @@ fn assert_record_visits(
             }
             Err(error) => panic!("unexpected lookup error: {error:?}"),
         };
-        for _ in 0..2 {
-            assert!(matches!(run(), Err(CodecError::ResourceLimit(actual)) if actual == original));
-        }
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
         );

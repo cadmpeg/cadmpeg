@@ -38,9 +38,6 @@ pub(super) fn solve_nonlinear_expression_block(
     initial_values: &[Option<CurveExpressionValue>],
     context: RelationEvaluationContext<'_>,
 ) -> Result<Option<Vec<CurveExpressionValue>>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let variable_count = block.unknowns.len();
     if variable_count == 0
         || variable_count > MAX_NONLINEAR_SOLVE_VARIABLES
@@ -107,9 +104,6 @@ pub(super) fn nonlinear_equations_are_smooth(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     block: &CurveExpressionSolveBlock,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut equations = block.equations.iter();
     while !equations.as_slice().is_empty() {
         let Some(equation) =
@@ -130,9 +124,6 @@ pub(super) fn nonlinear_expression_is_smooth(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     expression: &str,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let bytes = expression.as_bytes();
     let mut cursor = 0;
     while cursor < bytes.len() {
@@ -206,9 +197,6 @@ pub(super) fn nonlinear_initial_guesses(
     initial_values: &[Option<CurveExpressionValue>],
     variable_dimensions: &[RelationDimension],
 ) -> Result<Option<Vec<Vec<f64>>>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let variable_count = variable_dimensions.len();
     if variable_count == 0 || variable_count > MAX_NONLINEAR_SOLVE_VARIABLES {
         return Ok(None);
@@ -275,9 +263,6 @@ pub(super) fn refine_nonlinear_solution(
     seed: &[f64],
     context: RelationEvaluationContext<'_>,
 ) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let variable_count = variable_dimensions.len();
     if variable_count == 0 || variable_count > MAX_NONLINEAR_SOLVE_VARIABLES {
         return Ok(None);
@@ -462,9 +447,6 @@ pub(super) fn nonlinear_jacobian_rows(
     residuals: &[SolveResidual],
     context: RelationEvaluationContext<'_>,
 ) -> Result<Option<Vec<AffineEquationRow>>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let variable_count = variable_dimensions.len();
     if variable_count == 0 || variable_count > MAX_NONLINEAR_SOLVE_VARIABLES {
         return Ok(None);
@@ -544,9 +526,6 @@ pub(super) fn evaluate_nonlinear_residuals(
     point: &[f64],
     context: RelationEvaluationContext<'_>,
 ) -> Result<Option<Vec<SolveResidual>>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let variable_count = variable_dimensions.len();
     if variable_count == 0 || variable_count > MAX_NONLINEAR_SOLVE_VARIABLES {
         return Ok(None);
@@ -659,9 +638,6 @@ pub(super) fn nonlinear_residuals_converged(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     residuals: &[SolveResidual],
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut residuals = residuals.iter();
     while !residuals.as_slice().is_empty() {
         let Some(residual) =
@@ -697,9 +673,6 @@ pub(super) fn eliminate_pivot_column(
     column: usize,
     coefficient_tolerance: f64,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let (before, pivot_and_after) = rows.split_at_mut(pivot_row);
     let Some((pivot, after)) = pivot_and_after.split_first_mut() else {
         return Ok(());
@@ -742,9 +715,6 @@ pub(super) fn solve_unique_affine_system(
     rows: &mut [AffineEquationRow],
     variable_count: usize,
 ) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if variable_count == 0 || rows.len() < variable_count {
         return Ok(None);
     }
@@ -949,9 +919,6 @@ pub(super) fn infer_solve_variable_dimensions(
     known_dimensions: &[Option<RelationDimension>],
     context: RelationEvaluationContext<'_>,
 ) -> Result<Option<Vec<RelationDimension>>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if known_dimensions.len() != block.unknowns.len() {
         return Ok(None);
     }
@@ -1396,9 +1363,6 @@ pub(super) fn solve_affine_expression_block(
     variable_dimensions: &[RelationDimension],
     context: RelationEvaluationContext<'_>,
 ) -> Result<Option<Vec<CurveExpressionValue>>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if variable_dimensions.len() != block.unknowns.len() {
         return Ok(None);
     }

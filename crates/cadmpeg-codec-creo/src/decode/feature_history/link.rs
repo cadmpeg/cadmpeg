@@ -85,9 +85,6 @@ fn unique_model_feature_index(
     ir: &CadIr,
     feature_id: &IrFeatureId,
 ) -> Result<Option<usize>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut matching_index = None;
     let mut items = ir.model.features.iter().enumerate();
     while items.len() != 0 {
@@ -112,12 +109,9 @@ fn unique_model_feature_index(
 }
 
 pub(in super::super) fn surface_kind_for_geometry(
-    ctx: &DecodeContext<'_>,
+    _ctx: &DecodeContext<'_>,
     geometry: &SurfaceGeometry,
 ) -> Result<Option<crate::surface::SurfaceKind>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(mut basis) = geometry.solved() else {
         return Ok(None);
     };
@@ -145,9 +139,6 @@ pub(in super::super) fn generated_surface_id_for_feature(
     feature_id: u32,
     source_entity_id: u32,
 ) -> Result<Option<u32>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut surface_id = None;
     let mut table_iter = tables.iter();
     while table_iter.len() != 0 {
@@ -188,9 +179,6 @@ pub(in super::super) fn generated_profile_entry_is_admissible(
     expected_kinds: &[crate::surface::SurfaceKind],
     rows: &crate::surface::SurfaceRows,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if entry.source_entity_id().is_none() {
         return Ok(false);
     }
@@ -231,9 +219,6 @@ pub(in super::super) fn section_entity_is_generated_profile(
     tables: &[crate::feature::entity::FeatureEntityTable],
     rows: &crate::surface::SurfaceRows,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if !segment_table_complete {
         return Ok(false);
     }
@@ -334,9 +319,6 @@ fn generated_profile_table_shape(
     ctx: &DecodeContext<'_>,
     table: &crate::feature::entity::FeatureEntityTable,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let [first, second, rest @ ..] = table.entries.as_slice() else {
         return Ok(false);
     };
@@ -405,9 +387,6 @@ pub(in super::super) fn ordered_analytic_surface_id_for_feature(
     external_id: u32,
     geometry: &SurfaceGeometry,
 ) -> Result<Option<u32>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if order.internal_id(external_id).is_none() {
         return Ok(None);
     }
@@ -450,9 +429,6 @@ pub(super) fn insert_ordered_family_surface_binding(
     bindings: &mut BTreeMap<u32, u32>,
     bound_surfaces: &mut BTreeSet<u32>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let SurfaceBindingSource {
         surface_rows,
         feature_id,

@@ -60,9 +60,6 @@ pub(super) fn section_point_locus(
     sketch: &SketchId,
     point_id: u32,
 ) -> Result<Option<SketchLocus>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(segments) = definition.segments.as_ref() else {
         return Ok(None);
     };
@@ -1038,9 +1035,6 @@ pub(in super::super) fn section_saved_entity<'definition>(
     Option<&'definition crate::feature::definitions::FeatureSavedEntity>,
     cadmpeg_core::CodecError,
 > {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(table) = definition.order_table.as_ref() else {
         return Ok(None);
     };
@@ -1352,9 +1346,6 @@ pub(in super::super) fn visit_section_skamps<B>(
         &crate::feature::definitions::FeatureSkamp,
     ) -> Result<ControlFlow<B>, cadmpeg_core::CodecError>,
 ) -> Result<ControlFlow<B>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(relation) = definition.relations.as_ref() else {
         return Ok(ControlFlow::Continue(()));
     };
@@ -1383,9 +1374,6 @@ pub(in super::super) fn visit_all_section_skamps<B>(
         &crate::feature::definitions::FeatureSkamp,
     ) -> Result<ControlFlow<B>, cadmpeg_core::CodecError>,
 ) -> Result<ControlFlow<B>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(relation) = definition.relations.as_ref() else {
         return Ok(ControlFlow::Continue(()));
     };
@@ -1422,7 +1410,6 @@ pub(in super::super) fn with_test_locus<T>(
 #[cfg(test)]
 mod tests {
     mod admission_visits;
-    mod saved_entity;
 
     use super::{
         oriented_arc_midpoint, section_point_locus, section_skamp_arc_midpoint_source,
