@@ -75,13 +75,6 @@ pub(crate) fn native_parameters_match_source(
         .is_some_and(|(current, baseline)| &current == baseline))
 }
 
-/// Reverse owner suffixes with the first matching dependency's replacement.
-#[derive(Default)]
-struct OwnerSuffixNode<'text> {
-    bytes: HashMap<u8, usize>,
-    change: Option<(usize, &'text str)>,
-}
-
 pub(crate) fn apply_feature_name_changes(
     parameters: &mut [DesignParameter],
     changes: &HashMap<FeatureId, (String, String)>,
@@ -137,77 +130,43 @@ pub(crate) fn apply_feature_name_changes(
                 }
             }
         }
-        let mut storage = ctx.reserve_scoped(0, OPERATION)?;
-        let mut suffixes = Vec::new();
-        for (position, dependency) in ctx
-            .admit_iter(parameter.dependencies.as_slice(), OPERATION)?
-            .enumerate()
-        {
-            let Some(Some((old_owner, new_owner))) =
-                ctx.get_hash_map(&owners, dependency, OPERATION)?
-            else {
-                continue;
-            };
-            if suffixes.is_empty() {
-                storage.with_storage(|| {
-                    ctx.push_vec(&mut suffixes, OwnerSuffixNode::default(), OPERATION)
-                })?;
-            }
-            let mut node = 0;
-            for byte in ctx.admit_iter(old_owner.as_bytes(), OPERATION)?.rev() {
-                let next = ctx
-                    .get_hash_map(&suffixes[node].bytes, byte, OPERATION)?
-                    .copied();
-                node = if let Some(next) = next {
-                    next
-                } else {
-                    let next = suffixes.len();
-                    storage.with_storage(|| {
-                        ctx.push_vec(&mut suffixes, OwnerSuffixNode::default(), OPERATION)?;
-                        ctx.insert_hash_map(&mut suffixes[node].bytes, *byte, next, OPERATION)
-                    })?;
-                    next
-                };
-            }
-            if suffixes[node].change.is_none() {
-                suffixes[node].change = Some((position, new_owner.as_str()));
-            }
-        }
-        if suffixes.is_empty() {
+        if parameter.dependencies.is_empty() {
             continue;
         }
         let (tokens, token_storage) = expression_identifier_tokens(&ctx, &parameter.expression)?;
-        let Some(tokens) = tokens else {
+        let Some(tokens) = tokens.filter(|tokens| !tokens.is_empty()) else {
             continue;
         };
+        let mut storage = ctx.reserve_scoped(0, OPERATION)?;
         let mut aliases = HashMap::new();
         for token in ctx.admit_iter(tokens, OPERATION)? {
-            if ctx.contains_key_hash_map(&aliases, token.value(), OPERATION)? {
+            if token.is_syntax(&ctx)?
+                || ctx.contains_key_hash_map(&aliases, token.value(), OPERATION)?
+            {
                 continue;
             }
-            let mut replacement = None;
-            let mut node = 0;
-            let mut bytes = token.value().bytes().enumerate().rev();
-            while let Some((at, byte)) = ctx.next_charged(&mut bytes, OPERATION)? {
-                if byte == b'@' {
-                    if let Some((position, new_owner)) = suffixes[node].change {
-                        if replacement.is_none_or(|(first, _, _)| position < first) {
-                            replacement = Some((position, at, new_owner));
-                        }
-                    }
-                }
-                let Some(&next) = ctx.get_hash_map(&suffixes[node].bytes, &byte, OPERATION)? else {
-                    break;
-                };
-                node = next;
-            }
-            if let Some((_, at, new_owner)) = replacement {
+            let replacement = ctx.find_map(
+                parameter.dependencies.as_slice(),
+                |dependency| {
+                    let Some(Some((old_owner, new_owner))) =
+                        ctx.get_hash_map(&owners, dependency, OPERATION)?
+                    else {
+                        return Ok(None);
+                    };
+                    let Some(prefix) =
+                        ctx.strip_suffix(token.value(), old_owner.as_str(), OPERATION)?
+                    else {
+                        return Ok(None);
+                    };
+                    Ok(prefix.strip_suffix('@').map(|base| (base, new_owner)))
+                },
+                OPERATION,
+            )?;
+            if let Some((base, new_owner)) = replacement {
                 storage.with_storage(|| {
                     let alias = ctx.copy_retained_text(token.value(), OPERATION)?;
-                    let value = ctx.format_retained(
-                        format_args!("{}@{new_owner}", &token.value()[..at]),
-                        OPERATION,
-                    )?;
+                    let value =
+                        ctx.format_retained(format_args!("{base}@{new_owner}"), OPERATION)?;
                     ctx.insert_hash_map(&mut aliases, alias, value, OPERATION)
                 })?;
             }
