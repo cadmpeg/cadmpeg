@@ -199,8 +199,10 @@ fn pmi_geometric_usage_identity_refuses_retained_limit() {
 
 #[test]
 fn pmi_presentation_semantics_refuse_collection_limit() {
-    pmi_refuses("#1=DATUM('D');#2=ANNOTATION_TEXT_OCCURRENCE('note',(#1));", "step_pmi_presentation_semantics");
-
+    pmi_refuses(
+        "#1=DATUM('D');#2=ANNOTATION_TEXT_OCCURRENCE('note',(#1));",
+        "step_pmi_presentation_semantics",
+    );
 }
 
 #[test]
@@ -320,7 +322,9 @@ fn pmi_datum_modifier_text_refuses_materialized_limit() {
                 length_scale: 1.0,
                 angle_scale: 1.0,
                 graph_limit: 64,
-                cache: &std::cell::RefCell::new(super::super::MeasureWalk::new(&ctx).expect("measure cache")),
+                cache: &std::cell::RefCell::new(
+                    super::super::MeasureWalk::new(&ctx).expect("measure cache"),
+                ),
                 losses: (&mut losses, &reports),
             };
             let value = crate::parse::Value::Enumeration("ABC".into());
@@ -377,7 +381,9 @@ fn datum_reference_refuses(records: &str, operation: &str) {
                 length_scale: 1.0,
                 angle_scale: 1.0,
                 graph_limit: 64,
-                cache: &std::cell::RefCell::new(super::super::MeasureWalk::new(&ctx).expect("measure cache")),
+                cache: &std::cell::RefCell::new(
+                    super::super::MeasureWalk::new(&ctx).expect("measure cache"),
+                ),
                 losses: (
                     &mut losses,
                     &std::cell::RefCell::new(
@@ -454,8 +460,13 @@ fn placement_refuses(operation: &str) {
             policy.limits.max_collection_items = limit;
             let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
                 .expect("empty root fits collection policy");
-            let mut index = super::super::discovery::AnnotationDiscoveryIndex::new(&ctx).expect("discovery");
-            let result = index.placement(exchange.records().get(&6).expect("annotation"),&exchange,&geometry.value);
+            let mut index =
+                super::super::discovery::AnnotationDiscoveryIndex::new(&ctx).expect("discovery");
+            let result = index.placement(
+                exchange.records().get(&6).expect("annotation"),
+                &exchange,
+                &geometry.value,
+            );
             if let Err(CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
             }
@@ -509,7 +520,6 @@ fn target_slot_refusal(operation: &'static str) -> CodecError {
     .expect_err("target slot exceeds collection limit")
 }
 
-
 #[test]
 fn pmi_datum_basis_targets_refuse_collection_limit() {
     assert!(matches!(
@@ -543,39 +553,65 @@ fn pmi_geometric_usage_targets_refuse_collection_limit() {
 #[test]
 fn pmi_usage_annotation_indices_refuse_collection_limit() {
     pmi_refuses("#1=SHAPE_ASPECT('','',#99,.T.);#2=DIMENSIONAL_SIZE(#1,'');#3=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#1,$,#99);#99=ITEM();", "step_pmi_usage_annotation_indices");
-
 }
 
-fn measure_id_refusal(limit: u64, depth_limit: Option<u64>) -> Result<(),CodecError> {
+fn measure_id_refusal(limit: u64, depth_limit: Option<u64>) -> Result<(), CodecError> {
     let source = format!("{HEADER}#1=MEASURE_REPRESENTATION_ITEM();{TAIL}");
-    let (exchange,_) = crate::test_support::with_service_context(source.as_bytes(),crate::parse::parse_inner).expect("exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("exchange");
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
-    if let Some(limit) = depth_limit { policy.limits.max_recursion_depth = limit; }
-    crate::test_support::with_policy_context(b"",&policy,|_,ctx| {
+    if let Some(limit) = depth_limit {
+        policy.limits.max_recursion_depth = limit;
+    }
+    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
         let mut losses = Vec::new();
-        let reports = std::cell::RefCell::new(ctx.reserve_scoped(0,"test reports")?);
+        let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "test reports")?);
         let cache = std::cell::RefCell::new(super::super::MeasureWalk::new(ctx)?);
-        let measurements = super::super::MeasureContext { length_scale: 1.0,angle_scale: 1.0,graph_limit: 64,cache: &cache,losses: (&mut losses,&reports) };
+        let measurements = super::super::MeasureContext {
+            length_scale: 1.0,
+            angle_scale: 1.0,
+            graph_limit: 64,
+            cache: &cache,
+            losses: (&mut losses, &reports),
+        };
         let mut index = super::super::measure_carriers::CharacteristicIndex::new(ctx)?;
-        index.value_summary(&crate::parse::Value::Reference(1),0,&exchange,&measurements).map(|_|())
+        index
+            .value_summary(
+                &crate::parse::Value::Reference(1),
+                0,
+                &exchange,
+                &measurements,
+            )
+            .map(|_| ())
     })
 }
 
 #[test]
 fn pmi_measure_visited_ids_refuse_collection_limit() {
-    assert!(matches!(measure_id_refusal(0,None),Err(CodecError::ResourceLimit(refusal)) if refusal.dimension == ResourceDimension::CollectionItems && refusal.operation == "STEP carrier graph nodes"));
+    assert!(
+        matches!(measure_id_refusal(0,None),Err(CodecError::ResourceLimit(refusal)) if refusal.dimension == ResourceDimension::CollectionItems && refusal.operation == "STEP carrier graph nodes")
+    );
 }
 
 #[test]
 fn pmi_measure_ids_refuse_collection_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems,"step_pmi_measure_values",|limit|measure_id_refusal(limit,None));
-    assert!(matches!(error,CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::CollectionItems && refusal.operation == "step_pmi_measure_values"));
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "step_pmi_measure_values",
+        |limit| measure_id_refusal(limit, None),
+    );
+    assert!(
+        matches!(error,CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::CollectionItems && refusal.operation == "step_pmi_measure_values")
+    );
 }
 
 #[test]
 fn pmi_measure_id_walk_refuses_depth_limit() {
-    assert!(matches!(measure_id_refusal(8,Some(0)),Err(CodecError::ResourceLimit(refusal)) if refusal.dimension == ResourceDimension::RecursionDepth && refusal.operation == "step_pmi_measure_id_walk"));
+    assert!(
+        matches!(measure_id_refusal(8,Some(0)),Err(CodecError::ResourceLimit(refusal)) if refusal.dimension == ResourceDimension::RecursionDepth && refusal.operation == "step_pmi_measure_id_walk")
+    );
 }
 
 fn measure_eval_refusal(limit: u64, depth_limit: Option<u64>, record: &str) -> CodecError {
@@ -596,7 +632,9 @@ fn measure_eval_refusal(limit: u64, depth_limit: Option<u64>, record: &str) -> C
         length_scale: 1.0,
         angle_scale: 1.0,
         graph_limit: 64,
-        cache: &std::cell::RefCell::new(super::super::MeasureWalk::new(&ctx).expect("measure cache")),
+        cache: &std::cell::RefCell::new(
+            super::super::MeasureWalk::new(&ctx).expect("measure cache"),
+        ),
         losses: (
             &mut losses,
             &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope")),
@@ -705,7 +743,9 @@ fn typed_measure_length_containment_preserves_refusal() {
                 length_scale: 1.0,
                 angle_scale: 1.0,
                 graph_limit: 64,
-                cache: &std::cell::RefCell::new(super::super::MeasureWalk::new(&ctx).expect("measure cache")),
+                cache: &std::cell::RefCell::new(
+                    super::super::MeasureWalk::new(&ctx).expect("measure cache"),
+                ),
                 losses: (
                     &mut losses,
                     &std::cell::RefCell::new(
@@ -743,7 +783,9 @@ fn typed_measure_angle_containment_preserves_refusal() {
                 length_scale: 1.0,
                 angle_scale: 1.0,
                 graph_limit: 64,
-                cache: &std::cell::RefCell::new(super::super::MeasureWalk::new(&ctx).expect("measure cache")),
+                cache: &std::cell::RefCell::new(
+                    super::super::MeasureWalk::new(&ctx).expect("measure cache"),
+                ),
                 losses: (
                     &mut losses,
                     &std::cell::RefCell::new(
@@ -847,7 +889,9 @@ fn record_measure_length_containment_preserves_refusal() {
                 length_scale: 1.0,
                 angle_scale: 1.0,
                 graph_limit: 64,
-                cache: &std::cell::RefCell::new(super::super::MeasureWalk::new(&ctx).expect("measure cache")),
+                cache: &std::cell::RefCell::new(
+                    super::super::MeasureWalk::new(&ctx).expect("measure cache"),
+                ),
                 losses: (
                     &mut losses,
                     &std::cell::RefCell::new(
@@ -882,7 +926,9 @@ fn record_measure_angle_containment_preserves_refusal() {
                 length_scale: 1.0,
                 angle_scale: 1.0,
                 graph_limit: 64,
-                cache: &std::cell::RefCell::new(super::super::MeasureWalk::new(&ctx).expect("measure cache")),
+                cache: &std::cell::RefCell::new(
+                    super::super::MeasureWalk::new(&ctx).expect("measure cache"),
+                ),
                 losses: (
                     &mut losses,
                     &std::cell::RefCell::new(
@@ -945,7 +991,9 @@ fn typed_measure_length_prefix_does_not_scan_name_suffix() {
             length_scale: 1.0,
             angle_scale: 1.0,
             graph_limit: 64,
-            cache: &std::cell::RefCell::new(super::super::MeasureWalk::new(&ctx).expect("measure cache")),
+            cache: &std::cell::RefCell::new(
+                super::super::MeasureWalk::new(ctx).expect("measure cache"),
+            ),
             losses: (&mut losses, &reports),
         };
         let result = super::super::measure(&value, &exchange, &mut measurements, ctx)
@@ -983,7 +1031,9 @@ fn record_measure_length_prefix_does_not_scan_name_suffix() {
             length_scale: 1.0,
             angle_scale: 1.0,
             graph_limit: 64,
-            cache: &std::cell::RefCell::new(super::super::MeasureWalk::new(&ctx).expect("measure cache")),
+            cache: &std::cell::RefCell::new(
+                super::super::MeasureWalk::new(ctx).expect("measure cache"),
+            ),
             losses: (&mut losses, &reports),
         };
         let result = super::super::measure(&value, &exchange, &mut measurements, ctx)

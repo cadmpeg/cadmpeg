@@ -30,7 +30,9 @@ fn typed_datum_modifier_descent_refuses_work_limit() {
                     length_scale: 1.0,
                     angle_scale: 1.0,
                     graph_limit: 64,
-                    cache: &std::cell::RefCell::new(super::super::MeasureWalk::new(&ctx).expect("measure cache")),
+                    cache: &std::cell::RefCell::new(
+                        super::super::MeasureWalk::new(ctx).expect("measure cache"),
+                    ),
                     losses: (&mut losses, &reports),
                 };
                 let mut claims = ctx.reserve_scoped(0, "claim fixture")?;
@@ -61,12 +63,19 @@ fn typed_measure_id_descent_refuses_work_limit() {
             policy.limits.max_work_units = limit;
             crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
                 let mut losses = Vec::new();
-                let reports = std::cell::RefCell::new(ctx.reserve_scoped(0,"test reports")?);
+                let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "test reports")?);
                 let cache = std::cell::RefCell::new(super::super::MeasureWalk::new(ctx)?);
-                let measurements = super::super::MeasureContext { length_scale: 1.0,angle_scale: 1.0,graph_limit: 64,cache: &cache,losses: (&mut losses,&reports) };
+                let measurements = super::super::MeasureContext {
+                    length_scale: 1.0,
+                    angle_scale: 1.0,
+                    graph_limit: 64,
+                    cache: &cache,
+                    losses: (&mut losses, &reports),
+                };
                 let mut index = super::super::measure_carriers::CharacteristicIndex::new(ctx)?;
-                index.value_summary(&value,0,&exchange,&measurements).map(|_|())
-
+                index
+                    .value_summary(&value, 0, &exchange, &measurements)
+                    .map(|_| ())
             })
         },
     );

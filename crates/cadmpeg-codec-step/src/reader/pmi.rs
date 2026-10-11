@@ -28,8 +28,8 @@ use super::StageOutcome;
 use super::{decode_output_text, decode_text_scoped};
 
 mod annotations;
-mod discovery;
 mod carriers;
+mod discovery;
 mod measure_carriers;
 
 use discovery::{AnnotationDiscoveryIndex, PlacementSelection};
@@ -142,7 +142,10 @@ pub(super) fn decode<'ctx>(
             })
             .transpose()?
             .flatten()
-            .map_or_else(|| ctx.format_retained(format_args!("#{id}"), "STEP datum fallback identification"), Ok)?;
+            .map_or_else(
+                || ctx.format_retained(format_args!("#{id}"), "STEP datum fallback identification"),
+                Ok,
+            )?;
         annotations.push(
             ir,
             id,
@@ -206,7 +209,15 @@ pub(super) fn decode<'ctx>(
             })
             .transpose()?
             .flatten()
-            .map_or_else(|| ctx.format_retained(format_args!("#{id}"), "STEP datum target fallback identification"), Ok)?;
+            .map_or_else(
+                || {
+                    ctx.format_retained(
+                        format_args!("#{id}"),
+                        "STEP datum target fallback identification",
+                    )
+                },
+                Ok,
+            )?;
         annotations.push(
             ir,
             id,
@@ -249,8 +260,14 @@ pub(super) fn decode<'ctx>(
             .unwrap_or_default();
         let mut datum_record_storage = ctx.reserve_scoped(0, "STEP datum claim candidates")?;
         let mut datum_records = BTreeSet::new();
-        let mut measurements =
-            measure_context(geometry, id, (&mut losses, &slot_storage), graph_limit, &mut measure_cache, ctx)?;
+        let mut measurements = measure_context(
+            geometry,
+            id,
+            (&mut losses, &slot_storage),
+            graph_limit,
+            &mut measure_cache,
+            ctx,
+        )?;
         let mut reference_storage =
             ctx.reserve_scoped(0, "STEP datum reference candidate scratch")?;
         let mut datum_references = Vec::new();
@@ -275,6 +292,7 @@ pub(super) fn decode<'ctx>(
         let datum_references = match datum_references.try_into() {
             Ok(references) => references,
             Err(error) => {
+                drop(reference_storage);
                 ctx.push_scoped_vec(
                     &mut slot_storage.borrow_mut(),
                     &mut losses,
@@ -595,8 +613,14 @@ pub(super) fn decode<'ctx>(
         if let (Some(index), Some(limits)) = (dimension, limits) {
             drop(fit);
             drop(fit_storage);
-            let mut measurements =
-                measure_context(geometry, id, (&mut losses, &slot_storage), graph_limit, &mut measure_cache, ctx)?;
+            let mut measurements = measure_context(
+                geometry,
+                id,
+                (&mut losses, &slot_storage),
+                graph_limit,
+                &mut measure_cache,
+                ctx,
+            )?;
             let lower = limits
                 .parameters()
                 .first()
@@ -643,7 +667,7 @@ pub(super) fn decode<'ctx>(
                     "step_pmi_losses",
                 )?;
             }
-        } else if let Some((index, (fit_id, fit))) = dimension.and_then(|index| fit.map(|fit| (index, fit))) {
+        } else if let Some((index, (fit_id, fit))) = dimension.zip(fit) {
             if set_dimension_tolerance(
                 &mut ir.model.pmi[index.get()].definition,
                 DimensionTolerance::Fit { fit },
@@ -722,8 +746,14 @@ pub(super) fn decode<'ctx>(
                 )
             })?;
         let refs = refs_buffer;
-        let mut measurements =
-            measure_context(geometry, id, (&mut losses, &slot_storage), graph_limit, &mut measure_cache, ctx)?;
+        let mut measurements = measure_context(
+            geometry,
+            id,
+            (&mut losses, &slot_storage),
+            graph_limit,
+            &mut measure_cache,
+            ctx,
+        )?;
         let magnitude = first_measure(
             record
                 .partial(ctx, "GEOMETRIC_TOLERANCE")?
@@ -2296,7 +2326,7 @@ fn visit_typed_placement_candidates(
     record: &RawRecord,
     geometry: &GeometryData,
     ctx: &DecodeContext<'_>,
-    mut visitor: impl FnMut(u64,Transform) -> Result<(),CodecError>,
+    mut visitor: impl FnMut(u64, Transform) -> Result<(), CodecError>,
 ) -> Result<(), CodecError> {
     let has_annotation_text = ctx.any_by(
         &(record.partials)[..],
@@ -2348,7 +2378,7 @@ fn visit_typed_placement_candidates(
                     if let Some(transform) =
                         super::geometry::placement_transform((origin, z_axis, x_axis))
                     {
-                        visitor(reference,transform)?;
+                        visitor(reference, transform)?;
                     }
                 }
             }
@@ -2473,7 +2503,6 @@ fn collect_annotation_text(
     }
     Ok(())
 }
-
 
 fn targets(
     ids: impl IntoIterator<Item = Result<u64, CodecError>>,
@@ -2880,7 +2909,7 @@ enum NominalSelection {
     UnnamedAmbiguous(usize),
 }
 
-fn characteristic_values<'ctx, 'arena>(
+fn characteristic_values<'ctx>(
     exchange: &Exchange,
     geometry: &GeometryData,
     (losses, slot_storage): (
@@ -2889,7 +2918,7 @@ fn characteristic_values<'ctx, 'arena>(
     ),
     graph_limit: usize,
     storage: &mut ScopedReservation<'_>,
-    ctx: &'ctx DecodeContext<'arena>,
+    ctx: &'ctx DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, PmiValue>, CodecError> {
     let mut result = BTreeMap::<u64, PmiValue>::new();
     let mut analysis_storage = ctx.reserve_scoped(0, "STEP characteristic analysis scratch")?;
@@ -2897,7 +2926,14 @@ fn characteristic_values<'ctx, 'arena>(
     let mut measure_cache = MeasureCache::new(ctx)?;
     for indexed_entity in exchange.entities(ctx, "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION")? {
         let (id, record) = indexed_entity?;
-        let measurements = measure_context(geometry, id, (losses, slot_storage), graph_limit, &mut measure_cache, ctx)?;
+        let measurements = measure_context(
+            geometry,
+            id,
+            (losses, slot_storage),
+            graph_limit,
+            &mut measure_cache,
+            ctx,
+        )?;
         let Some(characteristic) = find_record_value(record, ctx, |value| {
             first_matching([value], ctx, |id| {
                 Ok({
@@ -2947,17 +2983,43 @@ fn characteristic_values<'ctx, 'arena>(
         };
         let parameters = representation_items
             .map_or(MeasureParameters::Record(record), MeasureParameters::Items);
-        let key = (representation_items.and(representation).unwrap_or(id),representation_items.is_some());
-        let context = (measurements.length_scale.to_bits(), measurements.angle_scale.to_bits(), graph_limit);
-        if !ctx.contains_key_hash_map(&indices,&context,"STEP characteristic context index lookup")? {
+        let key = (
+            representation_items.and(representation).unwrap_or(id),
+            representation_items.is_some(),
+        );
+        let context = (
+            measurements.length_scale.to_bits(),
+            measurements.angle_scale.to_bits(),
+            graph_limit,
+        );
+        if !ctx.contains_key_hash_map(
+            &indices,
+            &context,
+            "STEP characteristic context index lookup",
+        )? {
             let index = measure_carriers::CharacteristicIndex::new(ctx)?;
-            analysis_storage.with_storage(||ctx.insert_hash_map(&mut indices,context,index,"STEP characteristic context indices"))?;
+            analysis_storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut indices,
+                    context,
+                    index,
+                    "STEP characteristic context indices",
+                )
+            })?;
         }
-        let index = ctx.get_mut_hash_map(&mut indices,&context,"STEP characteristic context index lookup")?.expect("context index");
-        let analysis = index.analysis(key,&parameters,exchange,&measurements)?;
-        let mut loss_source = (&analysis.losses).iter();
-            for _ in 0..loss_source.len() {
-                let loss = ctx.next_charged(&mut loss_source, "STEP characteristic diagnostic replay")?.ok_or_else(|| CodecError::malformed("STEP loss source ended early"))?;
+        let index = ctx
+            .get_mut_hash_map(
+                &mut indices,
+                &context,
+                "STEP characteristic context index lookup",
+            )?
+            .expect("context index");
+        let analysis = index.analysis(key, &parameters, exchange, &measurements)?;
+        let mut loss_source = analysis.losses.iter();
+        for _ in 0..loss_source.len() {
+            let loss = ctx
+                .next_charged(&mut loss_source, "STEP characteristic diagnostic replay")?
+                .ok_or_else(|| CodecError::malformed("STEP loss source ended early"))?;
             let loss = loss.try_clone_for_decode(ctx, "STEP characteristic cached loss copy")?;
             ctx.push_scoped_vec(
                 &mut slot_storage.borrow_mut(),
@@ -3043,8 +3105,6 @@ impl MeasureParameters<'_> {
     }
 }
 
-
-
 fn measure_item_name(
     id: u64,
     record: &RawRecord,
@@ -3085,13 +3145,16 @@ fn measure_item_name(
 }
 
 struct MeasureCache<'ctx> {
-    walks: HashMap<(u64,u64,usize),std::cell::RefCell<MeasureWalk<'ctx>>>,
+    walks: HashMap<(u64, u64, usize), std::cell::RefCell<MeasureWalk<'ctx>>>,
     storage: ScopedReservation<'ctx>,
 }
 
 impl<'ctx> MeasureCache<'ctx> {
-    fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self,CodecError> {
-        Ok(Self { walks: HashMap::new(), storage: ctx.reserve_scoped(0,"STEP measure contexts scratch")? })
+    fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
+        Ok(Self {
+            walks: HashMap::new(),
+            storage: ctx.reserve_scoped(0, "STEP measure contexts scratch")?,
+        })
     }
 }
 
@@ -3106,14 +3169,18 @@ fn measure_context<'a, 'ctx>(
     cache: &'a mut MeasureCache<'ctx>,
     ctx: &'ctx DecodeContext<'_>,
 ) -> Result<MeasureContext<'a, 'ctx>, CodecError> {
-    let length_scale = geometry.units.length([id],ctx)?.get();
-    let angle_scale = geometry.units.angle([id],ctx)?.get();
-    let key = (length_scale.to_bits(),angle_scale.to_bits(),graph_limit);
-    if !ctx.contains_key_hash_map(&cache.walks,&key,"STEP measure context lookup")? {
+    let length_scale = geometry.units.length([id], ctx)?.get();
+    let angle_scale = geometry.units.angle([id], ctx)?.get();
+    let key = (length_scale.to_bits(), angle_scale.to_bits(), graph_limit);
+    if !ctx.contains_key_hash_map(&cache.walks, &key, "STEP measure context lookup")? {
         let walk = std::cell::RefCell::new(MeasureWalk::new(ctx)?);
-        cache.storage.with_storage(||ctx.insert_hash_map(&mut cache.walks,key,walk,"STEP measure contexts"))?;
+        cache.storage.with_storage(|| {
+            ctx.insert_hash_map(&mut cache.walks, key, walk, "STEP measure contexts")
+        })?;
     }
-    let walk = ctx.get_hash_map(&cache.walks,&key,"STEP measure context lookup")?.expect("measure context");
+    let walk = ctx
+        .get_hash_map(&cache.walks, &key, "STEP measure context lookup")?
+        .expect("measure context");
     Ok(MeasureContext {
         length_scale,
         angle_scale,
@@ -3146,41 +3213,77 @@ fn measure(
     let mut walk = cache.borrow_mut();
     let root = value.reference();
     if let Some(id) = root {
-        let cached = if let Some((_, cached)) = walk.first_root.as_ref().filter(|(key, _)| *key == id) { Some(cached) } else { ctx.get_hash_map(&walk.roots,&id,"STEP measure root lookup")? };
+        let cached =
+            if let Some((_, cached)) = walk.first_root.as_ref().filter(|(key, _)| *key == id) {
+                Some(cached)
+            } else {
+                ctx.get_hash_map(&walk.roots, &id, "STEP measure root lookup")?
+            };
         if let Some(cached) = cached {
-            let mut loss_source = (&cached.losses).iter();
+            let mut loss_source = cached.losses.iter();
             for _ in 0..loss_source.len() {
-                let loss = ctx.next_charged(&mut loss_source, "STEP measure root loss replay")?.ok_or_else(|| CodecError::malformed("STEP loss source ended early"))?;
-                let loss = loss.try_clone_for_decode(ctx,"STEP measure root loss copy")?;
-                ctx.push_scoped_vec(&mut measurements.losses.1.borrow_mut(),measurements.losses.0,loss,"step_pmi_losses")?;
+                let loss = ctx
+                    .next_charged(&mut loss_source, "STEP measure root loss replay")?
+                    .ok_or_else(|| CodecError::malformed("STEP loss source ended early"))?;
+                let loss = loss.try_clone_for_decode(ctx, "STEP measure root loss copy")?;
+                ctx.push_scoped_vec(
+                    &mut measurements.losses.1.borrow_mut(),
+                    measurements.losses.0,
+                    loss,
+                    "step_pmi_losses",
+                )?;
             }
             return Ok(cached.value);
         }
     }
     let loss_start = measurements.losses.0.len();
-    let result = measure_inner(value,exchange,&mut walk,0,measurements,ctx)?;
-    if result.is_none() && measurements.losses.0.len() == loss_start { walk.complete_component(ctx)?; }
+    let result = measure_inner(value, exchange, &mut walk, 0, measurements, ctx)?;
+    if result.is_none() && measurements.losses.0.len() == loss_start {
+        walk.complete_component(ctx)?;
+    }
     if let Some(id) = root {
         if result.is_some() || measurements.losses.0.len() != loss_start {
-            let (losses,mut storage) = ctx.with_scoped_storage("STEP measure root diagnostics scratch", || {
-                let mut losses = Vec::new();
-                let mut loss_source = (&measurements.losses.0[loss_start..]).iter();
-            for _ in 0..loss_source.len() {
-                let loss = ctx.next_charged(&mut loss_source, "STEP measure root diagnostics capture")?.ok_or_else(|| CodecError::malformed("STEP loss source ended early"))?;
-                    ctx.push_vec(&mut losses,loss.try_clone_for_decode(ctx,"STEP measure root loss cache copy")?,"STEP measure root cached losses")?;
-                }
-                Ok::<_,CodecError>(losses)
-            })?;
+            let (losses, mut storage) =
+                ctx.with_scoped_storage("STEP measure root diagnostics scratch", || {
+                    let mut losses = Vec::new();
+                    let mut loss_source = measurements.losses.0[loss_start..].iter();
+                    for _ in 0..loss_source.len() {
+                        let loss = ctx
+                            .next_charged(
+                                &mut loss_source,
+                                "STEP measure root diagnostics capture",
+                            )?
+                            .ok_or_else(|| CodecError::malformed("STEP loss source ended early"))?;
+                        ctx.push_vec(
+                            &mut losses,
+                            loss.try_clone_for_decode(ctx, "STEP measure root loss cache copy")?,
+                            "STEP measure root cached losses",
+                        )?;
+                    }
+                    Ok::<_, CodecError>(losses)
+                })?;
             walk.storage.absorb(&mut storage)?;
-            let MeasureWalk { roots,first_root,storage,.. } = &mut *walk;
-            let entry = MeasureResult { value: result, losses };
+            let MeasureWalk {
+                roots,
+                first_root,
+                storage,
+                ..
+            } = &mut *walk;
+            let entry = MeasureResult {
+                value: result,
+                losses,
+            };
             if first_root.is_none() && roots.is_empty() {
-                *first_root = Some((id,entry));
+                *first_root = Some((id, entry));
             } else {
-                if let Some((previous,entry)) = first_root.take() {
-                    storage.with_storage(||ctx.insert_hash_map(roots,previous,entry,"STEP measure root results"))?;
+                if let Some((previous, entry)) = first_root.take() {
+                    storage.with_storage(|| {
+                        ctx.insert_hash_map(roots, previous, entry, "STEP measure root results")
+                    })?;
                 }
-                storage.with_storage(||ctx.insert_hash_map(roots,id,entry,"STEP measure root results"))?;
+                storage.with_storage(|| {
+                    ctx.insert_hash_map(roots, id, entry, "STEP measure root results")
+                })?;
             }
         }
     }
@@ -3201,19 +3304,31 @@ struct MeasureFailure {
     losses: usize,
 }
 
-struct MeasureResult { value: Option<PmiValue>, losses: Vec<LossNote> }
+struct MeasureResult {
+    value: Option<PmiValue>,
+    losses: Vec<LossNote>,
+}
 
 struct SharedMeasureValue {
     value: PmiValue,
     path: Vec<u64>,
 }
 
-fn replace_measure_path(mut head: Option<u64>, active: &HashMap<u64, (usize,usize,Option<u64>)>, selected: &mut Vec<u64>, storage: &mut ScopedReservation<'_>, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+fn replace_measure_path(
+    mut head: Option<u64>,
+    active: &HashMap<u64, (usize, usize, Option<u64>)>,
+    selected: &mut Vec<u64>,
+    storage: &mut ScopedReservation<'_>,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
     selected.clear();
     while let Some(id) = head {
-        ctx.charge_work(1,"STEP measure selected path traversal")?;
-        head = ctx.get_hash_map(active,&id,"STEP measure active path lookup")?.expect("active path record").2;
-        ctx.push_scoped_vec(storage,selected,id,"STEP measure selected path")?;
+        ctx.charge_work(1, "STEP measure selected path traversal")?;
+        head = ctx
+            .get_hash_map(active, &id, "STEP measure active path lookup")?
+            .expect("active path record")
+            .2;
+        ctx.push_scoped_vec(storage, selected, id, "STEP measure selected path")?;
     }
     Ok(())
 }
@@ -3224,8 +3339,8 @@ struct MeasureWalk<'ctx> {
     complete: HashMap<u64, MeasureFailure>,
     root: u64,
     pending: Option<u64>,
-    roots: HashMap<u64,MeasureResult>,
-    first_root: Option<(u64,MeasureResult)>,
+    roots: HashMap<u64, MeasureResult>,
+    first_root: Option<(u64, MeasureResult)>,
     blocked: [u64; MEASURE_DEPTH_WORDS],
     opaque: bool,
     values: HashMap<(u64, usize), SharedMeasureValue>,
@@ -3256,18 +3371,19 @@ impl<'ctx> MeasureWalk<'ctx> {
             *target |= source;
         }
     }
-    fn complete_component(&mut self,ctx: &DecodeContext<'_>) -> Result<(),CodecError> {
+    fn complete_component(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
         while let Some(key) = self.pending.take() {
-            ctx.charge_work(1,"STEP failed measure component completion")?;
-            let failed = ctx.get_mut_hash_map(&mut self.complete,&key,"STEP measure completion update")?.expect("pending failure");
+            ctx.charge_work(1, "STEP failed measure component completion")?;
+            let failed = ctx
+                .get_mut_hash_map(&mut self.complete, &key, "STEP measure completion update")?
+                .expect("pending failure");
             self.pending = failed.previous.take();
             failed.root = None;
-            failed.blocked = [0;MEASURE_DEPTH_WORDS];
+            failed.blocked = [0; MEASURE_DEPTH_WORDS];
             failed.opaque = false;
         }
         Ok(())
     }
-
 }
 
 fn measure_inner(
@@ -3327,31 +3443,60 @@ fn measure_inner(
                 walk.blocked[active_depth / 64] |= 1 << (active_depth % 64);
                 return Ok(None);
             }
-            if let Some(cached) = ctx.get_hash_map(&walk.values, &(*id, depth), "STEP measure shared value lookup")? {
-                let disjoint = ctx.all_by(&cached.path, |id| Ok(!ctx.contains_key_hash_map(&walk.active, id, "STEP measure shared path active lookup")?), "STEP measure shared path traversal")?;
+            if let Some(cached) = ctx.get_hash_map(
+                &walk.values,
+                &(*id, depth),
+                "STEP measure shared value lookup",
+            )? {
+                let disjoint = ctx.all_by(
+                    &cached.path,
+                    |id| {
+                        Ok(!ctx.contains_key_hash_map(
+                            &walk.active,
+                            id,
+                            "STEP measure shared path active lookup",
+                        )?)
+                    },
+                    "STEP measure shared path traversal",
+                )?;
                 if disjoint {
-                    replace_measure_path(walk.active_head, &walk.active, &mut walk.selected, &mut walk.storage, ctx)?;
+                    replace_measure_path(
+                        walk.active_head,
+                        &walk.active,
+                        &mut walk.selected,
+                        &mut walk.storage,
+                        ctx,
+                    )?;
                     let mut path = cached.path.iter();
                     for _ in 0..path.len() {
-                        let &id = ctx.next_charged(&mut path, "STEP measure shared path selection")?.ok_or_else(|| CodecError::malformed("STEP measure shared path source ended early"))?;
-                        ctx.push_scoped_vec(&mut walk.storage, &mut walk.selected, id, "STEP measure selected path")?;
+                        let &id = ctx
+                            .next_charged(&mut path, "STEP measure shared path selection")?
+                            .ok_or_else(|| {
+                                CodecError::malformed("STEP measure shared path source ended early")
+                            })?;
+                        ctx.push_scoped_vec(
+                            &mut walk.storage,
+                            &mut walk.selected,
+                            id,
+                            "STEP measure selected path",
+                        )?;
                     }
                     return Ok(Some(cached.value));
                 }
             }
-            if let Some(result) = ctx.get_hash_map(
-                &walk.complete,
-                id,
-                "STEP measure completion lookup",
-            )? {
-                if depth >= result.depth && result
-                    .root
-                    .is_none_or(|root| root == walk.root && result.losses == measurements.losses.0.len())
+            if let Some(result) =
+                ctx.get_hash_map(&walk.complete, id, "STEP measure completion lookup")?
+            {
+                if depth >= result.depth
+                    && result.root.is_none_or(|root| {
+                        root == walk.root && result.losses == measurements.losses.0.len()
+                    })
                 {
                     let result = *result;
                     // A reused cut can refer to a completed caller frame.
                     // Keep it root-dependent until the whole root closes.
-                    walk.opaque |= result.opaque || result.root.is_some() && result.blocked.iter().any(|bits| *bits != 0);
+                    walk.opaque |= result.opaque
+                        || result.root.is_some() && result.blocked.iter().any(|bits| *bits != 0);
                     walk.merge_blocked(result.blocked);
                     return Ok(None);
                 }
@@ -3360,7 +3505,14 @@ fn measure_inner(
             let prior_blocked = std::mem::take(&mut walk.blocked);
             let prior_opaque = std::mem::take(&mut walk.opaque);
             let prior_active = walk.active_head;
-            walk.storage.with_storage(||ctx.insert_hash_map(&mut walk.active,*id,(depth,loss_start,prior_active),"step_pmi_measure_eval_active"))?;
+            walk.storage.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut walk.active,
+                    *id,
+                    (depth, loss_start, prior_active),
+                    "step_pmi_measure_eval_active",
+                )
+            })?;
             walk.active_head = Some(*id);
             let Some(record) = ctx.get_btree_map(exchange.records(), id, "STEP pmi record get")?
             else {
@@ -3496,7 +3648,13 @@ fn measure_inner(
                     .number()
                     .and_then(|number| PmiValue::new(number * scale, quantity))
                 {
-                    replace_measure_path(walk.active_head, &walk.active, &mut walk.selected, &mut walk.storage, ctx)?;
+                    replace_measure_path(
+                        walk.active_head,
+                        &walk.active,
+                        &mut walk.selected,
+                        &mut walk.storage,
+                        ctx,
+                    )?;
                     Ok(Some(value))
                 } else {
                     measure_inner(parameter, exchange, walk, depth + 1, measurements, ctx)
@@ -3508,45 +3666,101 @@ fn measure_inner(
             // part of the result's caller dependency.
             walk.blocked[depth / 64] &= !(1 << (depth % 64));
             if let Some(value) = result {
-                if depth != 0 && measurements.losses.0.len() == loss_start
-                    && !walk.opaque && walk.blocked.iter().all(|bits| *bits == 0)
-                    && !ctx.contains_key_hash_map(&walk.values, &(*id, depth), "STEP measure shared value lookup")? {
-                    let mut path_storage = ctx.reserve_scoped(0, "STEP measure shared path scratch")?;
+                if depth != 0
+                    && measurements.losses.0.len() == loss_start
+                    && !walk.opaque
+                    && walk.blocked.iter().all(|bits| *bits == 0)
+                    && !ctx.contains_key_hash_map(
+                        &walk.values,
+                        &(*id, depth),
+                        "STEP measure shared value lookup",
+                    )?
+                {
+                    let mut path_storage =
+                        ctx.reserve_scoped(0, "STEP measure shared path scratch")?;
                     let mut path = Vec::new();
                     let mut selected = walk.selected.iter();
                     for _ in 0..selected.len() {
-                        let &candidate = ctx.next_charged(&mut selected, "STEP measure shared path capture")?.ok_or_else(|| CodecError::malformed("STEP measure selected path source ended early"))?;
-                        if !ctx.contains_key_hash_map(&walk.active, &candidate, "STEP measure shared path ancestor lookup")? {
-                            ctx.push_scoped_vec(&mut path_storage, &mut path, candidate, "STEP measure shared value path")?;
+                        let &candidate = ctx
+                            .next_charged(&mut selected, "STEP measure shared path capture")?
+                            .ok_or_else(|| {
+                                CodecError::malformed(
+                                    "STEP measure selected path source ended early",
+                                )
+                            })?;
+                        if !ctx.contains_key_hash_map(
+                            &walk.active,
+                            &candidate,
+                            "STEP measure shared path ancestor lookup",
+                        )? {
+                            ctx.push_scoped_vec(
+                                &mut path_storage,
+                                &mut path,
+                                candidate,
+                                "STEP measure shared value path",
+                            )?;
                         }
                     }
                     walk.storage.absorb(&mut path_storage)?;
-                    walk.storage.with_storage(|| ctx.insert_hash_map(&mut walk.values, (*id, depth), SharedMeasureValue { value, path }, "STEP measure shared values"))?;
+                    walk.storage.with_storage(|| {
+                        ctx.insert_hash_map(
+                            &mut walk.values,
+                            (*id, depth),
+                            SharedMeasureValue { value, path },
+                            "STEP measure shared values",
+                        )
+                    })?;
                 }
             }
             let mut warning_dependency = false;
             let mut active = walk.active_head;
             if !measurements.losses.0.is_empty() {
                 while let Some(id) = active {
-                    ctx.charge_work(1,"STEP measure warning dependency traversal")?;
-                    let &(active_depth,loss_start,previous) = ctx.get_hash_map(&walk.active,&id,"STEP measure active path lookup")?.expect("active path record");
-                    if walk.blocked[active_depth / 64] & (1 << (active_depth % 64)) != 0 && measurements.losses.0.len() > loss_start {
+                    ctx.charge_work(1, "STEP measure warning dependency traversal")?;
+                    let &(active_depth, loss_start, previous) = ctx
+                        .get_hash_map(&walk.active, &id, "STEP measure active path lookup")?
+                        .expect("active path record");
+                    if walk.blocked[active_depth / 64] & (1 << (active_depth % 64)) != 0
+                        && measurements.losses.0.len() > loss_start
+                    {
                         warning_dependency = true;
                         break;
                     }
                     active = previous;
                 }
             }
-            if measurements.losses.0.len() == loss_start && result.is_none() && !warning_dependency {
-                let existing = ctx.get_hash_map(&walk.complete,id,"STEP measure completion lookup")?;
-                let queued = existing.is_some_and(|failed|failed.root == Some(walk.root));
-                let previous = if queued { existing.expect("queued failure").previous } else { walk.pending };
+            if measurements.losses.0.len() == loss_start && result.is_none() && !warning_dependency
+            {
+                let existing =
+                    ctx.get_hash_map(&walk.complete, id, "STEP measure completion lookup")?;
+                let queued = existing.is_some_and(|failed| failed.root == Some(walk.root));
+                let previous = if queued {
+                    existing.expect("queued failure").previous
+                } else {
+                    walk.pending
+                };
                 let root = Some(walk.root);
-                walk.storage.with_storage(||ctx.insert_hash_map(&mut walk.complete,*id,MeasureFailure {
-                    depth,opaque: walk.opaque,blocked: walk.blocked,root,previous,losses: measurements.losses.0.len(),
-                },"step_measure_complete"))?;
-                if !queued { walk.pending = Some(*id); }
-                if depth == 0 { walk.complete_component(ctx)?; }
+                walk.storage.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut walk.complete,
+                        *id,
+                        MeasureFailure {
+                            depth,
+                            opaque: walk.opaque,
+                            blocked: walk.blocked,
+                            root,
+                            previous,
+                            losses: measurements.losses.0.len(),
+                        },
+                        "step_measure_complete",
+                    )
+                })?;
+                if !queued {
+                    walk.pending = Some(*id);
+                }
+                if depth == 0 {
+                    walk.complete_component(ctx)?;
+                }
             }
             walk.merge_blocked(prior_blocked);
             walk.opaque |= prior_opaque;
@@ -3560,7 +3774,13 @@ fn measure_inner(
         _ => None,
     };
     if result.is_some() && !matches!(value, Value::Reference(_) | Value::List(_)) {
-        replace_measure_path(walk.active_head, &walk.active, &mut walk.selected, &mut walk.storage, ctx)?;
+        replace_measure_path(
+            walk.active_head,
+            &walk.active,
+            &mut walk.selected,
+            &mut walk.storage,
+            ctx,
+        )?;
     }
     Ok(result)
 }
