@@ -108,14 +108,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must identify the document design-configuration production before we can transfer configuration identities or active state.
 
-### DI-14. Schema-configuration row semantics
-
-**Question.** What does each entity in an open `configrow`-to-successor interval represent?
-
-**Known.** Complete successor chains fix row order. The decoder retains each intervening entity in source order.
-
-**Need.** We must know these schema-local roles. They do not assign document configuration names, parameter overrides, body membership, or feature replay order.
-
 ### DI-15. Sketch instance binding
 
 **Question.** How do numeric tuples and the `2DPoint` and `PRTSketch` schema fields bind to the geometry of one sketch instance?
