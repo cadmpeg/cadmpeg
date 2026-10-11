@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{fc05_cap_pair_model_frame, native_surface_namespace, transfer_part_product, Fc05CapPairFrame};
+use super::{
+    fc05_cap_pair_model_frame, native_surface_namespace, transfer_part_product, Fc05CapPairFrame,
+};
 use crate::curve::{Fc05CapEdge, Fc05CylinderCapPair, ParameterSense};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -149,11 +151,9 @@ fn surface_fixed_returns_are_free() {
     for count in [0, 1] {
         let pair = pair(count);
         results.push(
-            Fc05CapPairFrame::from_outlines(&ctx, &pair, &outlines)
-                .map(|frame| frame.is_none()),
+            Fc05CapPairFrame::from_outlines(&ctx, &pair, &outlines).map(|frame| frame.is_none()),
         );
-        results
-            .push(fc05_cap_pair_model_frame(&ctx, &scan, &pair).map(|frame| frame.is_none()));
+        results.push(fc05_cap_pair_model_frame(&ctx, &scan, &pair).map(|frame| frame.is_none()));
     }
     for nonvisible in [false, true] {
         let mut selected = crate::test_support::empty_container_scan();
@@ -185,7 +185,11 @@ fn surface_fixed_returns_are_free() {
             native_surface_namespace(&ctx, &selected, 7)
                 .map(|actual| actual == (namespace, prefix)),
         );
-        results.push(Ok(crate::identity::matches_numbered_identity(candidate.as_str(), prefix, 7)));
+        results.push(Ok(crate::identity::matches_numbered_identity(
+            candidate.as_str(),
+            prefix,
+            7,
+        )));
     }
     results.push(native_surface_namespace(&ctx, &scan, 7).map(|actual| {
         actual
@@ -195,7 +199,6 @@ fn surface_fixed_returns_are_free() {
             )
     }));
     for result in results {
-            assert!(result.expect("fixed route"));
+        assert!(result.expect("fixed route"));
     }
-
 }

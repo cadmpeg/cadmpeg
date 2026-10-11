@@ -52,7 +52,9 @@ fn tabulated_geometry_transfer_admits_only_surviving_directrix_and_surface_backi
             &mut carriers,
         )
         .expect_err("geometry or next identity exceeds exact cap");
-        let CodecError::ResourceLimit(original) = error else { panic!("expected retained refusal"); };
+        let CodecError::ResourceLimit(original) = error else {
+            panic!("expected retained refusal");
+        };
         assert_eq!(original.dimension, ResourceDimension::RetainedBytes);
         if cap < bytes {
             assert_eq!(
@@ -73,6 +75,5 @@ fn tabulated_geometry_transfer_admits_only_surviving_directrix_and_surface_backi
         assert!(ir.model.surfaces.is_empty());
         assert!(ir.model.procedural_surfaces.is_empty());
         assert!(losses.is_empty());
-
     }
 }

@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::{first_instance_surface_row, frame_bound, prototype_parameter_array, prototype_tabulated_chart_origin, prototype_vector_array, surface_prototype_frame_bounds, unique_surface_prototype_associations, PrototypeFrames, PrototypeRows};
+use super::super::{
+    first_instance_surface_row, frame_bound, prototype_parameter_array,
+    prototype_tabulated_chart_origin, prototype_vector_array, surface_prototype_frame_bounds,
+    unique_surface_prototype_associations, PrototypeFrames, PrototypeRows,
+};
 use crate::surface::{
     SurfaceNamedParameter, SurfaceNamedValue, SurfacePrototypeFamily, SurfacePrototypeRecord,
 };
@@ -178,20 +182,21 @@ fn prototype_fixed_returns_are_free() {
             .map(|associations| associations.is_empty()),
     ];
     for result in results {
-            assert!(result.expect("fixed return"));
+        assert!(result.expect("fixed return"));
     }
-
 }
 
 #[test]
 fn prototype_scalar_uses_indexed_unique_fields_among_unrelated_parameters() {
-    let unrelated: Vec<_> = (0..128).map(|_| SurfaceNamedParameter {
-        name: "degree".to_owned(),
-        value: SurfaceNamedValue::Empty,
-        body: Vec::new(),
-        offset: 0,
-        value_offset: 0,
-    }).collect();
+    let unrelated: Vec<_> = (0..128)
+        .map(|_| SurfaceNamedParameter {
+            name: "degree".to_owned(),
+            value: SurfaceNamedValue::Empty,
+            body: Vec::new(),
+            offset: 0,
+            value_offset: 0,
+        })
+        .collect();
     let radius = SurfaceNamedParameter {
         name: "radius2".to_owned(),
         value: SurfaceNamedValue::ScalarSequence(vec![2.0]),
@@ -202,7 +207,14 @@ fn prototype_scalar_uses_indexed_unique_fields_among_unrelated_parameters() {
     for (count, expected) in [(0, None), (1, Some(2.0)), (2, None)] {
         let mut parameters = unrelated.clone();
         parameters.extend(std::iter::repeat_n(radius.clone(), count));
-        let prototype = SurfacePrototypeRecord::new_for_test(SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus), parameters, 0);
-        assert_eq!(super::super::prototype_scalar(&prototype, "radius2"), expected);
+        let prototype = SurfacePrototypeRecord::new_for_test(
+            SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
+            parameters,
+            0,
+        );
+        assert_eq!(
+            super::super::prototype_scalar(&prototype, "radius2"),
+            expected
+        );
     }
 }

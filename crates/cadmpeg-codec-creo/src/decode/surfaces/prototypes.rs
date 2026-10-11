@@ -233,7 +233,10 @@ fn prototype_local_frame(
     let [first, middle, third, origin] = local_system_lanes(slots);
     let first_norm = dot(first, first).sqrt();
     let reference = normalize(first)?;
-    let torus = matches!(record.family, crate::surface::SurfacePrototypeFamily::Torus(_));
+    let torus = matches!(
+        record.family,
+        crate::surface::SurfacePrototypeFamily::Torus(_)
+    );
     let mut second_candidates =
         [(middle, torus), (third, true)]
             .into_iter()
