@@ -392,9 +392,6 @@ pub(crate) fn reference_names(
 ) -> Result<Vec<FeatureReferenceName>, CodecError> {
     const NAME_WINDOW: usize = 256;
 
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut names = Vec::new();
     let Some(last) = payload.len().checked_sub(2) else {
         return Ok(names);
@@ -523,9 +520,6 @@ fn inline_recipe_resolution(
     ctx: &DecodeContext<'_>,
     record: &[u8],
 ) -> Result<RecipeState, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut found = None;
     for (name, recipe) in FEATURE_RECIPES {
         let mut windows = record.windows(name.len());
@@ -603,9 +597,6 @@ impl<R: RecipeForm> ParsedOperation<'_, R> {
     }
 
     fn materialize(self, ctx: &DecodeContext<'_>) -> Result<FeatureOperation<R>, CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let kind = match self.kind {
             ParsedKind::Stored(text) => {
                 OperationKind::Stored(ctx.copy_retained_text(text, "creo operation family name")?)

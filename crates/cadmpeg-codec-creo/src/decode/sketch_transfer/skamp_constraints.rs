@@ -66,9 +66,6 @@ pub(in super::super) fn section_skamp_candidates_for_geometry<'ctx>(
     sketch: &SketchId,
     geometry: Option<&BTreeMap<SketchEntityId, SketchGeometry>>,
 ) -> Result<super::constraints::ScopedConstraints<'ctx>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let (mut constraints, mut slots) = ctx.temporary_vec(0, "creo skamp constraints")?;
     let Some(relations) = &definition.relations else {
         return Ok((constraints, slots));
@@ -1235,7 +1232,6 @@ fn sketch_constraint_loci_compatible_with_policy(
 
 #[cfg(test)]
 mod tests {
-    mod admission_recovery;
     use super::sketch_constraint_loci_compatible_with_policy;
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::sketches::{

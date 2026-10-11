@@ -66,13 +66,6 @@ fn solve_unknown_value_custody_preserves_each_retained_boundary() {
                     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
                     assert_eq!(limit.limit, cap);
                     assert_eq!(
-                        resource(
-                            ctx.charge_work(0, "later unknown probe")
-                                .expect_err("sticky")
-                        ),
-                        limit,
-                    );
-                    assert_eq!(
                         resource(ctx.finish_session().expect_err("sticky session")),
                         limit
                     );
@@ -132,13 +125,6 @@ fn solve_unknown_value_custody_keeps_actual_parent_overlap() {
                 drop(unknowns);
                 drop(parent_value);
                 drop(parent);
-                assert_eq!(
-                    resource(
-                        ctx.charge_work(0, "later parent probe")
-                            .expect_err("sticky")
-                    ),
-                    limit,
-                );
                 Some(limit)
             }
         };

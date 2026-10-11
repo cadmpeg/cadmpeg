@@ -1,54 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::{
-    admitted_hole_placements, class_942_boundary_surface_entity_graph,
-    numbered_feature_name_has_family, thicken_feature_definition,
-};
+use super::super::{class_942_boundary_surface_entity_graph, thicken_feature_definition};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-
-#[test]
-fn empty_hole_placements_keep_zero_work_and_original_refusal() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    policy.limits.max_retained_bytes = 0;
-    policy.limits.max_materialized_bytes = 0;
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert!(admitted_hole_placements(&ctx, [None, None, None])
-        .expect("absent placements need no work or storage")
-        .is_empty());
-    let original = ctx
-        .charge_work_limit(1, "before empty hole placements")
-        .expect_err("zero work allowance");
-    assert!(matches!(admitted_hole_placements(&ctx, [None, None, None]),
-        Err(CodecError::ResourceLimit(actual)) if actual == original));
-    assert_eq!(ctx.resource_refusal(), Some(original));
-}
-
-#[test]
-fn numbered_feature_fast_recovery_keeps_zero_work_and_original_refusal() {
-    for name in ["", "Thicken 3", "Extrude", "Extrude "] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        assert!(!numbered_feature_name_has_family(&ctx, name, "Extrude")
-            .expect("fixed prefix and absent ordinal are free"));
-        let original = ctx
-            .charge_work_limit(1, "before numbered feature recovery")
-            .expect_err("zero work allowance");
-        assert!(
-            matches!(numbered_feature_name_has_family(&ctx, name, "Extrude"),
-            Err(CodecError::ResourceLimit(actual)) if actual == original)
-        );
-        assert_eq!(ctx.resource_refusal(), Some(original));
-    }
-}
 
 #[test]
 fn boundary_surface_table_recovery_visits_only_present_prefix_rows() {

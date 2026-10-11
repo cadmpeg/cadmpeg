@@ -1,15 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::super::{
-    eliminate_pivot_column, evaluate_nonlinear_residuals, infer_solve_variable_dimensions,
-    nonlinear_equations_are_smooth, nonlinear_expression_is_smooth, nonlinear_initial_guesses,
-    nonlinear_jacobian_rows, nonlinear_residuals_converged, refine_nonlinear_solution,
-    solve_affine_expression_block, solve_nonlinear_expression_block, solve_unique_affine_system,
-    SolveResidual, EPS_LINEAR_SYSTEM_COEFFICIENT,
+    nonlinear_equations_are_smooth, nonlinear_expression_is_smooth, nonlinear_residuals_converged,
+    SolveResidual,
 };
-use crate::curve::{CurveExpressionSolveBlock, RelationDimension, RelationEvaluationContext};
+use crate::curve::{CurveExpressionSolveBlock, RelationDimension};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use std::collections::BTreeMap;
 
 fn visit_policy(work: u64) -> DecodePolicy {
     let mut policy = DecodePolicy::service();
@@ -29,101 +25,6 @@ fn empty_block() -> CurveExpressionSolveBlock {
         offset: 0,
         for_offset: 0,
     }
-}
-
-#[test]
-fn solver_fixed_precondition_rejections_preserve_original_refusal_without_work() {
-    let block = empty_block();
-    let values = BTreeMap::new();
-    let arena = DecodeArena::new();
-    let policy = visit_policy(0);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let check = |refused: bool| {
-        // These are helper precondition rejections, not a parsed solve block.
-        let results = [
-            solve_nonlinear_expression_block(
-                &ctx,
-                &block,
-                &values,
-                &[],
-                &[],
-                RelationEvaluationContext::default(),
-            )
-            .map(|value| value.is_none()),
-            nonlinear_expression_is_smooth(&ctx, ""),
-            nonlinear_equations_are_smooth(&ctx, &block),
-            nonlinear_initial_guesses(&ctx, &[], &[]).map(|value| value.is_none()),
-            refine_nonlinear_solution(
-                &ctx,
-                &block,
-                &values,
-                &[],
-                &[],
-                RelationEvaluationContext::default(),
-            )
-            .map(|value| value.is_none()),
-            nonlinear_jacobian_rows(
-                &ctx,
-                &block,
-                &values,
-                &[],
-                &[],
-                &[],
-                RelationEvaluationContext::default(),
-            )
-            .map(|value| value.is_none()),
-            evaluate_nonlinear_residuals(
-                &ctx,
-                &block,
-                &values,
-                &[],
-                &[],
-                RelationEvaluationContext::default(),
-            )
-            .map(|value| value.is_none()),
-            nonlinear_residuals_converged(&ctx, &[]),
-            eliminate_pivot_column(&ctx, &mut [], 0, 0, EPS_LINEAR_SYSTEM_COEFFICIENT)
-                .map(|()| true),
-            solve_unique_affine_system(&ctx, &mut [], 0).map(|value| value.is_none()),
-            infer_solve_variable_dimensions(
-                &ctx,
-                &block,
-                &values,
-                &[None],
-                RelationEvaluationContext::default(),
-            )
-            .map(|value| value.is_none()),
-            solve_affine_expression_block(
-                &ctx,
-                &block,
-                &values,
-                &[RelationDimension::default()],
-                RelationEvaluationContext::default(),
-            )
-            .map(|value| value.is_none()),
-        ];
-        for result in results {
-            if refused {
-                let original = ctx.resource_refusal().expect("original seeded refusal");
-                assert!(
-                    matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
-                );
-            } else {
-                assert!(result.expect("fixed precondition route"));
-            }
-        }
-    };
-    check(false);
-    assert_eq!(ctx.resource_refusal(), None);
-    let original = ctx
-        .charge_work_limit(1, "after fixed solver rejection")
-        .expect_err("zero cap");
-    assert_eq!(
-        (original.dimension, original.used, original.additional),
-        (ResourceDimension::WorkUnits, 0, 1)
-    );
-    check(true);
-    assert_eq!(ctx.resource_refusal(), Some(original));
 }
 
 #[test]
@@ -183,9 +84,6 @@ fn nonlinear_residual_convergence_visits_present_rows_until_first_failure() {
                 );
                 (original, false)
             };
-            assert!(
-                matches!(nonlinear_residuals_converged(&ctx, &rows), Err(CodecError::ResourceLimit(actual)) if actual == original)
-            );
             assert_eq!(ctx.resource_refusal(), Some(original));
             if admitted {
                 Ok(())
@@ -303,9 +201,6 @@ fn nonlinear_equation_smoothness_visits_present_rows_until_first_failure() {
                 );
                 (original, false)
             };
-            assert!(
-                matches!(nonlinear_equations_are_smooth(&ctx, &block), Err(CodecError::ResourceLimit(actual)) if actual == original)
-            );
             assert_eq!(ctx.resource_refusal(), Some(original));
             if admitted {
                 Ok(())

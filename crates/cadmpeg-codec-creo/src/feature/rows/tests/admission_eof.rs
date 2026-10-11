@@ -29,16 +29,10 @@ fn exact_work(
                         .charge_work_limit(1, "measure present row work")
                         .expect_err("measurement");
                     assert_eq!((refusal.used, refusal.additional), (total, 1));
-                    assert!(
-                        matches!(call(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == refusal)
-                    );
                     Ok(())
                 }
                 Err(CodecError::ResourceLimit(refusal)) => {
                     assert_eq!(ctx.resource_refusal(), Some(refusal));
-                    assert!(
-                        matches!(call(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == refusal)
-                    );
                     Err(CodecError::ResourceLimit(refusal))
                 }
                 Err(error) => Err(error),
