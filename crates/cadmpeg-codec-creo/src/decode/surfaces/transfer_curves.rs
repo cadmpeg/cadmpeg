@@ -920,19 +920,21 @@ mod tests {
             },
         ];
         scan.topology.vertices = vec![
-            crate::topology::TopologicalVertex::new_for_test(1,
-                    vec![HalfEdgeId {
-                        curve_id: 10,
-                        side: crate::topology::Side::Zero,
-                    }],
-                )
+            crate::topology::TopologicalVertex::new_for_test(
+                1,
+                vec![HalfEdgeId {
+                    curve_id: 10,
+                    side: crate::topology::Side::Zero,
+                }],
+            )
             .expect("valid vertex fixture"),
-            crate::topology::TopologicalVertex::new_for_test(2,
-                    vec![HalfEdgeId {
-                        curve_id: 10,
-                        side: crate::topology::Side::One,
-                    }],
-                )
+            crate::topology::TopologicalVertex::new_for_test(
+                2,
+                vec![HalfEdgeId {
+                    curve_id: 10,
+                    side: crate::topology::Side::One,
+                }],
+            )
             .expect("valid vertex fixture"),
         ];
         scan.topology.half_edge_vertex_incidence = vec![
@@ -1078,19 +1080,21 @@ mod tests {
             },
         ];
         scan.topology.vertices = vec![
-            crate::topology::TopologicalVertex::new_for_test(1,
-                    vec![HalfEdgeId {
-                        curve_id: 10,
-                        side: crate::topology::Side::Zero,
-                    }],
-                )
+            crate::topology::TopologicalVertex::new_for_test(
+                1,
+                vec![HalfEdgeId {
+                    curve_id: 10,
+                    side: crate::topology::Side::Zero,
+                }],
+            )
             .expect("valid vertex fixture"),
-            crate::topology::TopologicalVertex::new_for_test(2,
-                    vec![HalfEdgeId {
-                        curve_id: 10,
-                        side: crate::topology::Side::One,
-                    }],
-                )
+            crate::topology::TopologicalVertex::new_for_test(
+                2,
+                vec![HalfEdgeId {
+                    curve_id: 10,
+                    side: crate::topology::Side::One,
+                }],
+            )
             .expect("valid vertex fixture"),
         ];
         scan.topology.half_edge_vertex_incidence = vec![

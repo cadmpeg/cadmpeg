@@ -9,7 +9,10 @@ pub(super) fn strip_input(offset: usize, spans: &[u32], vertices: usize, shaded:
 }
 
 pub(super) fn strip_geometry_input(
-    offset: usize, spans: &[u32], positions: &[[f64; 3]], normals: Option<&[[f64; 3]]>,
+    offset: usize,
+    spans: &[u32],
+    positions: &[[f64; 3]],
+    normals: Option<&[[f64; 3]]>,
 ) -> Vec<u8> {
     let mut bytes = vec![0xff; offset];
     bytes.extend_from_slice(b"value(prim_tristripsetwithatt)\0\xe0\x01p_accum_set_size\0\xf8");
@@ -34,8 +37,16 @@ pub(super) fn strip_geometry_input(
             }
         }
     }
-    let field = if normals.is_some() { "mv_p_NxNyNzxyz" } else { "mv_p_xyz" };
-    bytes.extend(super::named(field, &values, u8::try_from(scalar_count).expect("small scalar count")));
+    let field = if normals.is_some() {
+        "mv_p_NxNyNzxyz"
+    } else {
+        "mv_p_xyz"
+    };
+    bytes.extend(super::named(
+        field,
+        &values,
+        u8::try_from(scalar_count).expect("small scalar count"),
+    ));
     bytes
 }
 
@@ -57,12 +68,20 @@ fn empty_strip_validation_is_free() {
 
 #[test]
 fn strip_validation_admits_present_spans_and_stops_at_the_first_invalid_span() {
-    for (spans, vertices, valid) in [([2, 3], 3, false), ([3, 2], 6, false), ([2, 3], 5, false), ([3, 2], 5, false), ([3, 3], 6, true)] {
+    for (spans, vertices, valid) in [
+        ([2, 3], 3, false),
+        ([3, 2], 6, false),
+        ([2, 3], 5, false),
+        ([3, 2], 5, false),
+        ([3, 3], 6, true),
+    ] {
         let bytes = strip_input(17, &spans, vertices, false);
         let result = super::work_output(|ctx| triangle_strips(ctx, &bytes));
         assert_eq!(result.conflicting_representation_count, 0);
         if valid {
-            let [strip] = result.strips.as_slice() else { panic!("complete source strip"); };
+            let [strip] = result.strips.as_slice() else {
+                panic!("complete source strip");
+            };
             assert_eq!(strip.offset, 17);
             assert_eq!(strip.strip_lengths(), &spans);
             assert_eq!(strip.positions().len(), vertices);
@@ -83,8 +102,16 @@ fn primitive_parser_rejects_short_span_with_nonzero_positions() {
     assert_eq!(rejected.conflicting_representation_count, 0);
     let valid = strip_geometry_input(0, &[3], &positions, None);
     let admitted = super::work_output(|ctx| triangle_strips(ctx, &valid));
-    let [strip] = admitted.strips.as_slice() else { panic!("complete three-vertex strip"); };
-    assert_eq!(strip.positions().map(|point| point.get()).collect::<Vec<_>>(), positions);
+    let [strip] = admitted.strips.as_slice() else {
+        panic!("complete three-vertex strip");
+    };
+    assert_eq!(
+        strip
+            .positions()
+            .map(|point| point.get())
+            .collect::<Vec<_>>(),
+        positions
+    );
 }
 
 #[test]
@@ -99,18 +126,20 @@ fn short_strip_spans_stop_before_geometry_parsing_at_exact_work() {
             + tail - BOUNDARY.len() + 2 // Boundary windows and end probe.
             + RECORD.len() + 1 // Cumulative label.
             + spans.len() + length_visits; // Declared counts and prefix before invalid span.
-        let work = crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_collection_items = 4;
-            policy.limits.max_materialized_bytes = u64::try_from(4 * std::mem::size_of::<u32>()).expect("table backing");
-            policy.limits.max_entities = 0;
-            policy.limits.max_recursion_depth = 0;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            triangle_strips(&ctx, &bytes)
-        });
+        let work =
+            crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                policy.limits.max_retained_bytes = 0;
+                policy.limits.max_collection_items = 4;
+                policy.limits.max_materialized_bytes =
+                    u64::try_from(4 * std::mem::size_of::<u32>()).expect("table backing");
+                policy.limits.max_entities = 0;
+                policy.limits.max_recursion_depth = 0;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                triangle_strips(&ctx, &bytes)
+            });
         assert_eq!(work, u64::try_from(expected).expect("fixture work"));
     }
 }

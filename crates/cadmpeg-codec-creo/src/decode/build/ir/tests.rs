@@ -395,17 +395,17 @@ fn placed_plane_identity_and_overflow_text_refuse_below_retained_limits() {
 fn inch_strip(positions: Vec<[f64; 3]>) -> ContainerScan<'static> {
     let mut scan = scan_bytes_ok(crate::test_support::build_prt("strip", &[]));
     scan.framing.principal_unit = Some(PrincipalUnitSystem::InchPoundMassSecond);
-    scan.primitives.triangle_strips.push(
-        PrimitiveTriangleStrip::new_for_test(
-                0,
-                positions
-                    .into_iter()
-                    .map(|position| FiniteVector::new(position).expect("finite strip position"))
-                    .collect(),
-                None,
-                vec![3],
-            ),
-    );
+    scan.primitives
+        .triangle_strips
+        .push(PrimitiveTriangleStrip::new_for_test(
+            0,
+            positions
+                .into_iter()
+                .map(|position| FiniteVector::new(position).expect("finite strip position"))
+                .collect(),
+            None,
+            vec![3],
+        ));
     scan
 }
 
@@ -486,18 +486,18 @@ fn display_strip_allocations_refuse_at_each_collection_boundary() {
     );
     let mut shaded = inch_strip(vec![[1.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 4.0]]);
     shaded.primitives.triangle_strips[0] = PrimitiveTriangleStrip::new_for_test(
-            0,
-            shaded.primitives.triangle_strips[0]
-                .positions()
-                .copied()
-                .collect(),
-            Some(vec![
-                FiniteVector::new([0.0, 0.0, 1.0])
-                    .expect("finite normal");
-                3
-            ]),
-            vec![3],
-        );
+        0,
+        shaded.primitives.triangle_strips[0]
+            .positions()
+            .copied()
+            .collect(),
+        Some(vec![
+            FiniteVector::new([0.0, 0.0, 1.0])
+                .expect("finite normal");
+            3
+        ]),
+        vec![3],
+    );
     collection_boundary_sweep(
         &[
             "creo display tessellation positions",
@@ -1039,18 +1039,18 @@ fn display_strip_position_and_normal_sources_refuse_work_before_projection() {
         Point3::new(25.4, 0.0, 0.0)
     );
     scan.primitives.triangle_strips[0] = PrimitiveTriangleStrip::new_for_test(
-            0,
-            scan.primitives.triangle_strips[0]
-                .positions()
-                .copied()
-                .collect(),
-            Some(vec![
-                FiniteVector::new([0.0, 0.0, 1.0])
-                    .expect("finite normal");
-                3
-            ]),
-            vec![3],
-        );
+        0,
+        scan.primitives.triangle_strips[0]
+            .positions()
+            .copied()
+            .collect(),
+        Some(vec![
+            FiniteVector::new([0.0, 0.0, 1.0])
+                .expect("finite normal");
+            3
+        ]),
+        vec![3],
+    );
     let shaded = crate::test_support::assert_work_boundaries(
         &[
             "creo display tessellation shaded position rows",

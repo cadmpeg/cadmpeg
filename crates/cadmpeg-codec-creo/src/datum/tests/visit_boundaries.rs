@@ -129,9 +129,14 @@ fn active_datum_admits_present_preceding_frames_and_slots_without_terminal_fee()
                     panic!("next actual frame or slot must refuse");
                 };
                 assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(refusal.operation, if allowed == 0 {
-                    "creo active datum cylinder scalar frames"
-                } else { "creo active datum cylinder scalar slots" });
+                assert_eq!(
+                    refusal.operation,
+                    if allowed == 0 {
+                        "creo active datum cylinder scalar frames"
+                    } else {
+                        "creo active datum cylinder scalar slots"
+                    }
+                );
                 assert_eq!((refusal.used, refusal.additional), (allowed, 1));
                 refusal
             } else {
@@ -144,7 +149,8 @@ fn active_datum_admits_present_preceding_frames_and_slots_without_terminal_fee()
                     assert_eq!(frame.radius().get(), 1.0);
                     assert_eq!(frame.length().map(PositiveLength::get), Some(8.0));
                 }
-                let refusal = ctx.charge_work_limit(1, "after completed datum frame visit")
+                let refusal = ctx
+                    .charge_work_limit(1, "after completed datum frame visit")
                     .expect_err("exact cap exhausted");
                 assert_eq!((refusal.used, refusal.additional), (need, 1));
                 refusal
@@ -166,10 +172,13 @@ fn named_datum_identity_searches_admit_prefixes_and_stop_at_first_missing_identi
         let mut data = prefix.to_vec();
         data.extend_from_slice(marker);
         let discovery = u64::try_from(prefix.len() + 1).expect("fixture extent");
-        let geometry_work = u64::try_from(prefix.len() - id_marker.len() + 1).expect("prefix extent");
+        let geometry_work =
+            u64::try_from(prefix.len() - id_marker.len() + 1).expect("prefix extent");
         let feature_work = if geometry_present {
             u64::try_from(prefix.len() - feature_marker.len() + 1).expect("prefix extent")
-        } else { 0 };
+        } else {
+            0
+        };
         let need = discovery + geometry_work + feature_work;
         for allowed in [need - 1, need] {
             let arena = DecodeArena::new();
@@ -185,14 +194,20 @@ fn named_datum_identity_searches_admit_prefixes_and_stop_at_first_missing_identi
                     panic!("identity prefix search must be admitted");
                 };
                 assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
-                assert_eq!(refusal.operation, if geometry_present {
-                    "creo named datum feature identity"
-                } else { "creo named datum geometry identity" });
+                assert_eq!(
+                    refusal.operation,
+                    if geometry_present {
+                        "creo named datum feature identity"
+                    } else {
+                        "creo named datum geometry identity"
+                    }
+                );
                 assert_eq!((refusal.used, refusal.additional), (allowed, 1));
                 refusal
             } else {
                 assert_eq!(result.expect("exact actual reverse windows"), None);
-                let refusal = ctx.charge_work_limit(1, "after completed datum identity search")
+                let refusal = ctx
+                    .charge_work_limit(1, "after completed datum identity search")
                     .expect_err("exact cap exhausted");
                 assert_eq!((refusal.used, refusal.additional), (need, 1));
                 refusal

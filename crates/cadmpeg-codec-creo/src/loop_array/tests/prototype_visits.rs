@@ -41,8 +41,8 @@ fn fixed_short_loop_prototype_and_frame_routes_are_free() {
 #[test]
 fn missing_loop_prototype_field_stops_before_unexecuted_field_searches() {
     let data = b"padding\xf1\xf7\x2a\xe3";
-    let need = u64::try_from((data.len() - 4 + 1)
-        + (data.len() - (b"lo_id".len() + 3) + 1)).expect("fixed fixture work");
+    let need = u64::try_from((data.len() - 4 + 1) + (data.len() - (b"lo_id".len() + 3) + 1))
+        .expect("fixed fixture work");
     for allowed in 0..=need {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -62,7 +62,8 @@ fn missing_loop_prototype_field_stops_before_unexecuted_field_searches() {
             refusal
         } else {
             assert_eq!(result.expect("exact miss visit cap"), None);
-            let refusal = ctx.charge_work_limit(1, "after completed prototype miss")
+            let refusal = ctx
+                .charge_work_limit(1, "after completed prototype miss")
                 .expect_err("exact cap is exhausted");
             assert_eq!((refusal.used, refusal.additional), (need, 1));
             refusal
@@ -101,7 +102,8 @@ fn complete_loop_prototype_admits_present_windows_and_leaves_following_bytes_fre
                 refusal
             } else {
                 assert_eq!(result.expect("exact complete prototype cap"), Some(end));
-                let refusal = ctx.charge_work_limit(1, "after completed loop prototype")
+                let refusal = ctx
+                    .charge_work_limit(1, "after completed loop prototype")
                     .expect_err("exact cap is exhausted");
                 assert_eq!((refusal.used, refusal.additional), (need, 1));
                 refusal

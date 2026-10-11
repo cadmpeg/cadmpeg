@@ -18,16 +18,21 @@ fn built_ir_diagnostic_storage_survives_build_and_releases_with_result() {
         next_surface: 0,
         offset: 0,
     });
-    scan.planes.positional_frames.push(crate::surface::OutlinePlane {
-        surface_id: 5,
-        origin: [0.0, 0.0, 0.0],
-        normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
-        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
-        offset: 0,
-    });
-    scan.topology.face_components.push(
-        crate::topology::FaceComponent::new_for_test(vec![5], Vec::new()),
-    );
+    scan.planes
+        .positional_frames
+        .push(crate::surface::OutlinePlane {
+            surface_id: 5,
+            origin: [0.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
+            offset: 0,
+        });
+    scan.topology
+        .face_components
+        .push(crate::topology::FaceComponent::new_for_test(
+            vec![5],
+            Vec::new(),
+        ));
 
     let run = |cap: u64, release: bool, probe: Option<u64>| {
         let arena = DecodeArena::new();

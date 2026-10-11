@@ -75,12 +75,18 @@ impl PrimitiveTriangleStrip {
         let vertices = match normals {
             None => PrimitiveVertices::Unshaded(positions),
             Some(normals) => PrimitiveVertices::Shaded(
-                positions.into_iter().zip(normals)
+                positions
+                    .into_iter()
+                    .zip(normals)
                     .map(|(position, normal)| PrimitiveShadedVertex { position, normal })
                     .collect(),
             ),
         };
-        Self { offset, vertices, strip_lengths }
+        Self {
+            offset,
+            vertices,
+            strip_lengths,
+        }
     }
     #[cfg(test)]
     pub(crate) fn positions(&self) -> impl ExactSizeIterator<Item = &FiniteVector<3>> {
@@ -1074,12 +1080,19 @@ mod tests {
         }
         let bytes = strip_visits::strip_input(0, &[3], 2, true);
         assert!(with_context(&bytes, |ctx| triangle_strips(ctx, &bytes))
-            .expect("service").strips.is_empty());
+            .expect("service")
+            .strips
+            .is_empty());
         let bytes = strip_visits::strip_input(0, &[3], 3, true);
         let scan = with_context(&bytes, |ctx| triangle_strips(ctx, &bytes)).expect("service");
-        let [shaded] = scan.strips.as_slice() else { panic!("paired strip"); };
+        let [shaded] = scan.strips.as_slice() else {
+            panic!("paired strip");
+        };
         assert_eq!(shaded.positions().len(), 3);
         assert_eq!(shaded.normals().expect("shaded").len(), 3);
-        assert!(shaded.normals().expect("shaded").all(|normal| normal.get() == [0.0, 1.0, 0.0]));
+        assert!(shaded
+            .normals()
+            .expect("shaded")
+            .all(|normal| normal.get() == [0.0, 1.0, 0.0]));
     }
 }

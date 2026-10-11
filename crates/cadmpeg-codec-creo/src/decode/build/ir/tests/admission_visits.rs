@@ -181,18 +181,18 @@ fn check_display_staging_peak(shaded: bool) {
     let mut scan = super::inch_strip(vec![[1.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 4.0]]);
     if shaded {
         scan.primitives.triangle_strips[0] = crate::primdata::PrimitiveTriangleStrip::new_for_test(
-                0,
-                scan.primitives.triangle_strips[0]
-                    .positions()
-                    .copied()
-                    .collect(),
-                Some(vec![
-                    cadmpeg_ir::units::FiniteVector::new([0.0, 0.0, 1.0])
-                        .expect("normal");
-                    3
-                ]),
-                vec![3],
-            );
+            0,
+            scan.primitives.triangle_strips[0]
+                .positions()
+                .copied()
+                .collect(),
+            Some(vec![
+                cadmpeg_ir::units::FiniteVector::new([0.0, 0.0, 1.0])
+                    .expect("normal");
+                3
+            ]),
+            vec![3],
+        );
     }
     let initial_ir = || {
         let mut ir = CadIr::empty();

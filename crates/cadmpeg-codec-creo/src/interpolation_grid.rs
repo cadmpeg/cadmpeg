@@ -513,5 +513,4 @@ mod tests {
         );
         assert!(grid.is_some());
     }
-
 }
