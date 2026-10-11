@@ -177,37 +177,53 @@ fn projected_curve_payload_refuses_work_limit() {
 }
 
 fn projected_curve_route_refusal(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    dimension: cadmpeg_core::decode::ResourceDimension,
 ) -> cadmpeg_core::CodecError {
     let file = projected_curve_file();
     let container =
         crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
             .expect("synthetic container");
-    let records = crate::test_support::with_decode_context(|ctx| {
-        feature_projected_curve_references(
-            ctx,
-            &crate::native::features::FeatureHistory::new(ctx, &container)?,
-        )
-    })
-    .expect("admitted projected curve references");
-    assert_eq!(records.len(), 3);
-
     crate::test_support::with_decode_context_over(
-        &[],
+        container.data.as_ref(),
         |policy| {
-            configure(policy);
+            policy.limits.max_work_units = u64::MAX;
+            policy.limits.max_collection_items = u64::MAX;
+            policy.limits.max_retained_bytes = u64::MAX;
+            policy.limits.max_materialized_bytes = u64::MAX;
         },
-        |ctx| {
-            crate::native::features::FeatureHistory::new(ctx, &container)
-                .and_then(|history| feature_projected_curve_references(ctx, &history))
-                .expect_err("projected curve reference resource limit")
+        |history_ctx| {
+            let history = crate::native::features::FeatureHistory::new(history_ctx, &container)?;
+
+            let records = crate::test_support::with_decode_context(|ctx| {
+                feature_projected_curve_references(ctx, &history)
+            })
+            .expect("admitted projected curve references");
+            assert_eq!(records.len(), 3);
+
+            let operation = match dimension {
+                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                    "build NX projected-curve references"
+                }
+                cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                    "NX resolved feature payload references"
+                }
+                _ => "NX projected curve references",
+            };
+            Ok::<_, cadmpeg_core::CodecError>(crate::test_support::resource_refusal_at(
+                container.data.as_ref(),
+                dimension,
+                operation,
+                |ctx| feature_projected_curve_references(ctx, &history),
+            ))
         },
     )
+    .expect("prepared feature history")
 }
 
 #[test]
 fn projected_curve_reference_route_refuses_collection_limit() {
-    let error = projected_curve_route_refusal(|policy| policy.limits.max_collection_items = 0);
+    let error =
+        projected_curve_route_refusal(cadmpeg_core::decode::ResourceDimension::CollectionItems);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
@@ -216,7 +232,8 @@ fn projected_curve_reference_route_refuses_collection_limit() {
 
 #[test]
 fn projected_curve_reference_route_refuses_retained_limit() {
-    let error = projected_curve_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    let error =
+        projected_curve_route_refusal(cadmpeg_core::decode::ResourceDimension::RetainedBytes);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
@@ -225,7 +242,8 @@ fn projected_curve_reference_route_refuses_retained_limit() {
 
 #[test]
 fn projected_curve_reference_route_refuses_scoped_limit() {
-    let error = projected_curve_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    let error =
+        projected_curve_route_refusal(cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
@@ -234,7 +252,7 @@ fn projected_curve_reference_route_refuses_scoped_limit() {
 
 #[test]
 fn projected_curve_reference_route_refuses_work_limit() {
-    let error = projected_curve_route_refusal(|policy| policy.limits.max_work_units = 0);
+    let error = projected_curve_route_refusal(cadmpeg_core::decode::ResourceDimension::WorkUnits);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)

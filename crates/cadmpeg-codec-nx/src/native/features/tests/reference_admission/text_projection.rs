@@ -5,7 +5,7 @@ fn draft_text_projection_copies_the_checked_value() {
     let (file, payload) = super::draft_graph_fixture_with_content(b"\x66\x32\x03\x03A\0");
     let container =
         crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
-            .expect("synthetic container");
+            .expect("synthetic draft text container");
     let rows = crate::test_support::with_decode_context(|ctx| {
         super::feature_draft_construction_graph_strings(
             ctx,
