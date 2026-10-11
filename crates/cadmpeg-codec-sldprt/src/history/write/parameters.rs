@@ -456,11 +456,17 @@ pub(in crate::history) fn rewrite_parameter_expression(
         ctx.append_retained(&mut rewritten, preceding, OUTPUT)?;
         if token.is_quoted() || !unquoted_expression_identifier(ctx, replacement)? {
             ctx.push_retained_char(&mut rewritten, '"', OUTPUT)?;
-            let (escaped, _escaped_storage) = ctx.with_scoped_storage(
-                "escape SLDPRT expression replacement",
-                || ctx.replace_text(replacement, "\"", "\"\"", "escape SLDPRT expression replacement"),
-            )?;
+            let (escaped, escaped_storage) =
+                ctx.with_scoped_storage("escape SLDPRT expression replacement", || {
+                    ctx.replace_text(
+                        replacement,
+                        "\"",
+                        "\"\"",
+                        "escape SLDPRT expression replacement",
+                    )
+                })?;
             ctx.append_retained(&mut rewritten, &escaped, OUTPUT)?;
+            drop((escaped, escaped_storage));
             ctx.push_retained_char(&mut rewritten, '"', OUTPUT)?;
         } else {
             ctx.append_retained(&mut rewritten, replacement, OUTPUT)?;

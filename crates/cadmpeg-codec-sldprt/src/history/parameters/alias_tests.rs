@@ -1147,35 +1147,39 @@ fn expression_rewrite_preserves_unicode_quotes_and_repeated_token_offsets() {
     );
 }
 
+fn expression_rewrite_refusal(dimension: cadmpeg_core::decode::ResourceDimension) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        dimension,
+        "retain SLDPRT rewritten expression",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                _ => unreachable!(),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            rewrite_parameter_expression(
+                &ctx,
+                "A + A",
+                &HashMap::from([("A".into(), "B".into())]),
+            )?;
+            ctx.finish_session()
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension && limit.operation == "retain SLDPRT rewritten expression")
+    );
+}
+
 #[test]
 fn expression_rewrite_refuses_admitted_output_storage() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    for dimension in [
-        ResourceDimension::RetainedBytes,
-        ResourceDimension::WorkUnits,
-    ] {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            dimension,
-            "retain SLDPRT rewritten expression",
-            |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                match dimension {
-                    ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
-                    ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
-                    _ => unreachable!(),
-                }
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-                rewrite_parameter_expression(
-                    &ctx,
-                    "A + A",
-                    &HashMap::from([("A".into(), "B".into())]),
-                )?;
-                ctx.finish_session()
-            },
-        );
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension && limit.operation == "retain SLDPRT rewritten expression")
-        );
-    }
+    expression_rewrite_refusal(cadmpeg_core::decode::ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn expression_rewrite_refuses_admitted_output_copy_work() {
+    expression_rewrite_refusal(cadmpeg_core::decode::ResourceDimension::WorkUnits);
 }

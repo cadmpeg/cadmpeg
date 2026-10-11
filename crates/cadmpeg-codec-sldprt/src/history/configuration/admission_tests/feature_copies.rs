@@ -290,8 +290,7 @@ fn configuration_design_skips_base_features_without_inheritance_consumers() {
             "retain SLDPRT configuration features",
             None,
         );
-        run_design_with_feature(&policy)
-            .expect("custom local feature has no inheritance consumer");
+        run_design_with_feature(&policy).expect("custom local feature has no inheritance consumer");
     }
 }
 
@@ -387,7 +386,12 @@ fn configuration_parameter_metadata_uses_scoped_storage() {
 
 #[test]
 fn configuration_feature_metadata_is_scoped_in_each_projection() {
-    for project in [run_topology, run_sketch, run_supplemental, run_supplemental_with_edges] {
+    for project in [
+        run_topology,
+        run_sketch,
+        run_supplemental,
+        run_supplemental_with_edges,
+    ] {
         for operation in [
             "retain SLDPRT evaluated configuration features",
             "retain SLDPRT configuration features",
@@ -399,8 +403,7 @@ fn configuration_feature_metadata_is_scoped_in_each_projection() {
                 operation,
                 None,
             );
-            project(&policy)
-                .expect("temporary feature metadata must not be retained");
+            project(&policy).expect("temporary feature metadata must not be retained");
         }
     }
 }
@@ -585,22 +588,27 @@ fn run_supplemental_with_edges(policy: &DecodePolicy) -> Result<(), CodecError> 
         }),
         flip_direction: false,
     });
-    ir.model.configurations[0].feature_states.get_mut(&id).unwrap().definition = definition;
+    ir.model.configurations[0]
+        .feature_states
+        .get_mut(&id)
+        .unwrap()
+        .definition = definition;
     let expected = ir.clone();
     let mut lane = feature_input_lane("sldprt:feature-input:config-objects#0", Some("0"));
-    lane.edge_selections.push(crate::records::FeatureInputEdgeSelection {
-        id: "selection".into(),
-        parent: lane.id.clone(),
-        ordinal: 0,
-        offset: 100,
-        object_name_ref: "name".into(),
-        feature_ref: ir.model.features[0].native_ref.clone().unwrap(),
-        local_edge_ids: vec![7],
-        components: Vec::new(),
-        references: Vec::new(),
-        producer_feature_refs: Vec::new(),
-        terminal_feature_ref: None,
-    });
+    lane.edge_selections
+        .push(crate::records::FeatureInputEdgeSelection {
+            id: "selection".into(),
+            parent: lane.id.clone(),
+            ordinal: 0,
+            offset: 100,
+            object_name_ref: "name".into(),
+            feature_ref: ir.model.features[0].native_ref.clone().unwrap(),
+            local_edge_ids: vec![7],
+            components: Vec::new(),
+            references: Vec::new(),
+            producer_feature_refs: Vec::new(),
+            terminal_feature_ref: None,
+        });
     super::super::project_configuration_supplemental_edge_selections(&ctx, &mut ir, &[lane])?;
     assert_eq!(ir.model.features, expected.model.features);
     let state = &ir.model.configurations[0].feature_states[&id];
@@ -623,7 +631,9 @@ fn empty_supplemental_lanes_do_not_copy_or_publish_states() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = u64::MAX;
         let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-            ResourceDimension::WorkUnits, operation, None,
+            ResourceDimension::WorkUnits,
+            operation,
+            None,
         );
         run_supplemental(&policy).expect("empty edge lane leaves every state unchanged");
     }
@@ -635,7 +645,8 @@ fn empty_supplemental_lanes_do_not_copy_or_publish_states() {
     let mut ir = model();
     let expected = ir.clone();
     let lanes = vec![feature_input_lane("sldprt:feature-input:config-objects#0", Some("0")); 64];
-    super::super::project_configuration_supplemental_edge_selections(&ctx, &mut ir, &lanes).unwrap();
+    super::super::project_configuration_supplemental_edge_selections(&ctx, &mut ir, &lanes)
+        .unwrap();
     assert_eq!(ir, expected);
     ctx.finish_session().unwrap();
 }
@@ -647,29 +658,40 @@ fn supplemental_edges_do_not_republish_unchanged_fields() {
     let mut ir = model();
     let expected = ir.clone();
     let mut lane = feature_input_lane("sldprt:feature-input:config-objects#0", Some("0"));
-    lane.edge_selections.push(crate::records::FeatureInputEdgeSelection {
-        id: "selection".into(),
-        parent: lane.id.clone(),
-        ordinal: 0,
-        offset: 100,
-        object_name_ref: "name".into(),
-        feature_ref: ir.model.features[0].native_ref.clone().unwrap(),
-        local_edge_ids: vec![7],
-        components: Vec::new(),
-        references: Vec::new(),
-        producer_feature_refs: Vec::new(),
-        terminal_feature_ref: None,
-    });
-    for operation in ["retain SLDPRT supplemental configuration state", "validate distinct decoded members"] {
+    lane.edge_selections
+        .push(crate::records::FeatureInputEdgeSelection {
+            id: "selection".into(),
+            parent: lane.id.clone(),
+            ordinal: 0,
+            offset: 100,
+            object_name_ref: "name".into(),
+            feature_ref: ir.model.features[0].native_ref.clone().unwrap(),
+            local_edge_ids: vec![7],
+            components: Vec::new(),
+            references: Vec::new(),
+            producer_feature_refs: Vec::new(),
+            terminal_feature_ref: None,
+        });
+    for operation in [
+        "retain SLDPRT supplemental configuration state",
+        "validate distinct decoded members",
+    ] {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = u64::MAX;
         policy.limits.max_retained_bytes = 0;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-            ResourceDimension::WorkUnits, operation, None,
+            ResourceDimension::WorkUnits,
+            operation,
+            None,
         );
-        super::super::project_configuration_supplemental_edge_selections(&ctx, &mut ir, std::slice::from_ref(&lane)).unwrap();
+        super::super::project_configuration_supplemental_edge_selections(
+            &ctx,
+            &mut ir,
+            std::slice::from_ref(&lane),
+        )
+        .unwrap();
         assert_eq!(ir, expected);
         ctx.finish_session().unwrap();
     }

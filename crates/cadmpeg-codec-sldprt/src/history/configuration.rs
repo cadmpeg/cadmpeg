@@ -728,6 +728,7 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
     ir: &mut cadmpeg_ir::CadIr,
     lanes: &[crate::records::FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
+    const COMPARE: &str = "compare SLDPRT supplemental configuration state";
     let mut slots = None;
     for lane in ctx
         .admit_iter(lanes, "scan SLDPRT supplemental configuration lanes")?
@@ -769,30 +770,29 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
             else {
                 continue;
             };
-            const COMPARE: &str = "compare SLDPRT supplemental configuration state";
             if !ctx.equal(&feature.dependencies, &state.dependencies, COMPARE)? {
-            let mut dependencies = Vec::new();
-            for dependency in ctx.admit_iter(
-                feature.dependencies.as_slice(),
-                "retain SLDPRT supplemental configuration state",
-            )? {
-                ctx.push_vec(
-                    &mut dependencies,
-                    dependency.try_clone_for_decode(
-                        ctx,
-                        "retain SLDPRT supplemental configuration state",
-                    )?,
+                let mut dependencies = Vec::new();
+                for dependency in ctx.admit_iter(
+                    feature.dependencies.as_slice(),
                     "retain SLDPRT supplemental configuration state",
-                )?;
-            }
-            state.dependencies =
-                cadmpeg_ir::features::DistinctMembers::try_from(dependencies, ctx)?;
+                )? {
+                    ctx.push_vec(
+                        &mut dependencies,
+                        dependency.try_clone_for_decode(
+                            ctx,
+                            "retain SLDPRT supplemental configuration state",
+                        )?,
+                        "retain SLDPRT supplemental configuration state",
+                    )?;
+                }
+                state.dependencies =
+                    cadmpeg_ir::features::DistinctMembers::try_from(dependencies, ctx)?;
             }
             if !ctx.equal(feature.evaluation.definition(), &state.definition, COMPARE)? {
-            state.definition = feature
-                .evaluation
-                .definition()
-                .try_clone_for_decode(ctx, "retain SLDPRT supplemental configuration state")?;
+                state.definition = feature
+                    .evaluation
+                    .definition()
+                    .try_clone_for_decode(ctx, "retain SLDPRT supplemental configuration state")?;
             }
         }
         drop((features, feature_storage));
@@ -1679,7 +1679,11 @@ fn inherit_configuration_reference_plane_definition(
     };
     if let ConfigurationPlaneInheritance::Resolved(frame) = state_frame {
         if !configuration_plane_frame_matches(
-            (frame.origin().get(), frame.normal().get(), frame.u_axis().get()),
+            (
+                frame.origin().get(),
+                frame.normal().get(),
+                frame.u_axis().get(),
+            ),
             base_frame,
         ) {
             return Ok(());
@@ -1714,7 +1718,9 @@ fn configuration_plane_inheritance_frame(
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::ResolvedPlane { frame }),
             ..
-        }) if valid_plane_frame(frame.normal().get(), frame.u_axis().get()) => Some(ConfigurationPlaneInheritance::Resolved(*frame)),
+        }) if valid_plane_frame(frame.normal().get(), frame.u_axis().get()) => {
+            Some(ConfigurationPlaneInheritance::Resolved(*frame))
+        }
         _ => None,
     }
 }
@@ -1728,9 +1734,7 @@ fn inherit_configuration_reference_plane_semantics(
     if !ctx.any_by(
         &*features,
         |feature| {
-            Ok(configuration_plane_inheritance_frame(
-                feature.evaluation.definition(),
-            ).is_some())
+            Ok(configuration_plane_inheritance_frame(feature.evaluation.definition()).is_some())
         },
         "find SLDPRT configuration datum consumers",
     )? {
