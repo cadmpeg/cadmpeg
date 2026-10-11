@@ -10,7 +10,7 @@ use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 fn retained_nurbs_curve_patch_preserves_descriptor_refusal() {
     let bytes = nurbs_curve_carrier(10, 11);
     let baseline = cadmpeg_test_support::service_decode_context();
-    let carrier = super::scan_curve_carriers(&baseline, &bytes, &mut Vec::new())
+    let carrier = super::super::scan_curve_carriers(&baseline, &bytes, &mut Vec::new())
         .unwrap()
         .remove(&10)
         .unwrap();
@@ -39,7 +39,7 @@ fn retained_nurbs_curve_patch_preserves_descriptor_refusal() {
 fn retained_surface_refusal(operation: &'static str) {
     let bytes = compact_counted_nurbs_surface_carrier(10, 11, 20);
     let baseline = cadmpeg_test_support::service_decode_context();
-    let carrier = super::scan_surface_carriers(&baseline, &bytes, &mut Vec::new())
+    let carrier = super::super::scan_surface_carriers(&baseline, &bytes, &mut Vec::new())
         .unwrap()
         .remove(&10)
         .unwrap();
@@ -104,7 +104,7 @@ fn retained_nurbs_surface_patch_preserves_knot_pair_refusal() {
 fn attribute_nurbs_patch_preserves_nested_descriptor_refusal() {
     let bytes = nurbs_curve_carrier(10, 11);
     let baseline = cadmpeg_test_support::service_decode_context();
-    let carrier = super::scan_curve_carriers(&baseline, &bytes, &mut Vec::new())
+    let carrier = super::super::scan_curve_carriers(&baseline, &bytes, &mut Vec::new())
         .unwrap()
         .remove(&10)
         .unwrap();
@@ -120,7 +120,7 @@ fn attribute_nurbs_patch_preserves_nested_descriptor_refusal() {
             policy.limits.max_collection_items = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
             let mut patched = bytes.clone();
-            let result = crate::brep::patch_nurbs_by_attr(&ctx, &mut patched, 10, old);
+            let result = crate::brep::patch::patch_nurbs_by_attr(&ctx, &mut patched, 10, old);
             if let Err(CodecError::ResourceLimit(limit)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
             }
@@ -130,40 +130,7 @@ fn attribute_nurbs_patch_preserves_nested_descriptor_refusal() {
     assert!(matches!(error, CodecError::ResourceLimit(_)));
 }
 
-fn assert_empty_scan_work_refusal(operation: &str) {
-    let body = [0xff; 4096];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
-    let (result, allocations) =
-        crate::test_support::allocation::count_allocations(|| match operation {
-            "scan Parasolid spline arrays" => super::scan_arrays(&ctx, &body, None).map(|_| ()),
-            "scan Parasolid curve descriptors" => {
-                super::scan_curve_descriptors(&ctx, &body).map(|_| ())
-            }
-            _ => super::scan_surface_descriptors(&ctx, &body).map(|_| ()),
-        });
-    let Err(CodecError::ResourceLimit(limit)) = result else {
-        panic!("scan work refusal");
-    };
-    assert_eq!(limit.operation, operation);
-    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert_eq!(allocations, 0);
-}
+mod homogeneous;
+mod shape;
 
-#[test]
-fn spline_array_scan_admits_work_before_empty_pass() {
-    assert_empty_scan_work_refusal("scan Parasolid spline arrays");
-}
-
-#[test]
-fn curve_descriptor_scan_admits_work_before_empty_pass() {
-    assert_empty_scan_work_refusal("scan Parasolid curve descriptors");
-}
-
-#[test]
-fn surface_descriptor_scan_admits_work_before_empty_pass() {
-    assert_empty_scan_work_refusal("scan Parasolid surface descriptors");
-}
+mod admission;

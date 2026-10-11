@@ -182,23 +182,107 @@ fn decoded_brep_site_collection_refuses_limit() {
 }
 
 #[test]
-fn decoded_brep_header_copy_refuses_retained_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
+fn decoded_brep_site_index_refuses_materialized_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let source = sldprt_with_body(&triangle_body());
+    let scan = crate::test_support::container::scan(&source);
+    let setup_ctx = cadmpeg_test_support::service_decode_context();
+    let streams = super::super::active_body_streams(&setup_ctx, &scan).unwrap();
+    for operation in [
+        "format SLDPRT Parasolid site key",
+        "collect SLDPRT B-rep sites",
+    ] {
+        let arena = DecodeArena::new();
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::MaterializedBytes,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_materialized_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)?;
+                super::super::try_decode_brep(&ctx, &scan, &streams).map(drop)
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && limit.operation == operation && limit.additional > 0)
+        );
+    }
+}
+
+#[test]
+fn decoded_brep_site_list_refuses_collection_limit() {
+    let source = sldprt_with_body(&triangle_body());
+    let limit = collection_refusal_at(&source, "collect decoded SLDPRT sites");
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn decoded_brep_site_containers_do_not_consume_retained_bytes() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
 
     let source = sldprt_with_body(&triangle_body());
     let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes = 1;
-    let error = retained_refusal_at(
-        &source,
-        &mut options,
+    options.policy.limits.max_retained_bytes = u64::MAX;
+    for operation in [
+        "format SLDPRT Parasolid site key",
+        "collect SLDPRT B-rep sites",
+        "collect decoded SLDPRT sites",
+    ] {
+        let _probe = RefusalProbe::arm(ResourceDimension::RetainedBytes, operation, None);
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(&source), &options)
+            .expect("site map and vector shells are scratch; B-rep output still decodes");
+        assert!(!decoded.ir().model.faces.is_empty());
+    }
+}
+
+#[test]
+fn geometry_without_swift_root_skips_topology_and_nominal_work() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+
+    let source = sldprt_with_body_and_history(&triangle_body());
+    for operation in [
+        "index SWIFT body identities",
+        "swift pattern hole candidates",
+    ] {
+        let mut options = DecodeOptions::default();
+        options.policy.limits.max_work_units = u64::MAX;
+        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(&source), &options)
+            .expect("geometry with no SWIFT root does not build annotation indexes");
+        assert!(!decoded.ir().model.faces.is_empty());
+        assert!(!decoded.ir().model.bodies.is_empty());
+        assert!(!decoded.ir().model.features.is_empty());
+    }
+}
+
+#[test]
+fn decoded_brep_header_copy_refuses_work_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let source = sldprt_with_body(&triangle_body());
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
         "retain SLDPRT B-rep header description",
+        |cap| {
+            let mut options = DecodeOptions::default();
+            options.policy.limits.max_work_units = cap;
+            SldprtCodec
+                .decode(&mut Cursor::new(&source), &options)
+                .map_err(|error| match error {
+                    cadmpeg_ir::DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode refusal: {other:?}"),
+                })
+        },
     );
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain SLDPRT B-rep header description"
-    ));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "retain SLDPRT B-rep header description")
+    );
 }
 
 #[test]
@@ -339,12 +423,13 @@ fn metadata_history_xml_refuses_scoped_limit() {
     let mut admitted_entities = 0;
     let error =
         super::super::build_metadata_ir(&ctx, &scan, &classification, None, &mut admitted_entities)
-            .expect_err("history XML text exceeds the scoped materialization limit");
+            .expect_err("the history XML tree exceeds the scoped materialization limit");
     let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
         panic!("expected a resource refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
-    assert_eq!(limit.operation, "materialize SLDPRT history XML");
+    // UTF-8 history text is borrowed; its parsed tree is the scoped storage.
+    assert_eq!(limit.operation, "decode XML tree");
 }
 
 #[test]
@@ -529,6 +614,9 @@ fn geometry_history_xml_refuses_scoped_limit() {
     policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(payload.len() - 1);
     let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
     let decoded = super::super::DecodedBrep {
+        _workspace: ctx
+            .reserve_scoped(0, "geometry history test workspace")
+            .unwrap(),
         metadata_header: None,
         brep: crate::brep::graph::Brep::default(),
         configuration_bodies: Vec::new(),
@@ -542,32 +630,13 @@ fn geometry_history_xml_refuses_scoped_limit() {
         None,
         &mut admitted_entities,
     )
-    .expect_err("history XML text exceeds the scoped materialization limit");
+    .expect_err("the history XML tree exceeds the scoped materialization limit");
     let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
         panic!("expected a resource refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
-    assert_eq!(limit.operation, "materialize SLDPRT history XML");
-}
-
-#[test]
-fn native_loss_validation_propagates_typed_load_retained_refusal() {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let source = sldprt_with_body_and_history(&triangle_body());
-    let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes = 1;
-    let error = retained_refusal_at(&source, &mut options, "load typed native record");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "load typed native record"
-    ));
-    options.policy = cadmpeg_core::decode::DecodePolicy::service();
-    SldprtCodec
-        .decode(&mut Cursor::new(source), &options)
-        .expect("service profile admits typed native loss validation");
+    // UTF-8 history text is borrowed; its parsed tree is the scoped storage.
+    assert_eq!(limit.operation, "decode XML tree");
 }
 
 #[test]
@@ -957,3 +1026,106 @@ fn decoded_curve_carrier_copy_refuses_collection_limit() {
 mod baseline_hashes;
 
 mod surface_solver;
+
+#[test]
+fn reference_membership_refusals_do_not_become_incoherent_results() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
+    use std::collections::HashSet;
+    let reference = 1_u32;
+    let known = HashSet::from([&reference]);
+    for budget in [1, 5] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // One scan unit and four key bytes per hash lookup.
+        policy.limits.max_work_units = budget;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = crate::decode::has_incoherent_refs(
+            &ctx,
+            &[reference],
+            &known,
+            "check SLDPRT reference set",
+        )
+        .unwrap_err();
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("expected work refusal");
+        };
+        assert_eq!(limit.operation, "check SLDPRT reference set");
+        assert_eq!(limit.additional, 4);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+    }
+}
+
+#[test]
+fn repeated_key_count_preserves_mutable_lookup_refusal() {
+    const OPERATION: &str = "count repeated SLDPRT keys";
+    let key = "k".repeat(4096);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let with_work_limit = |cap| {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        let result = crate::decode::count_keys(&ctx, [key.clone(), key.clone()], OPERATION);
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+        }
+        result
+    };
+    // The repeated key's lookup is the last charge, so one unit below the
+    // complete need refuses exactly that lookup.
+    let mut admitted = 1 << 20;
+    assert!(with_work_limit(admitted).is_ok());
+    let mut refused = 0;
+    while admitted - refused > 1 {
+        let middle = refused + (admitted - refused) / 2;
+        if with_work_limit(middle).is_ok() {
+            admitted = middle;
+        } else {
+            refused = middle;
+        }
+    }
+    let cadmpeg_core::CodecError::ResourceLimit(repeat) =
+        with_work_limit(admitted - 1).unwrap_err()
+    else {
+        panic!("resource refusal");
+    };
+    assert_eq!(repeat.operation, OPERATION);
+    assert!(repeat.additional >= cadmpeg_core::decode::u64_from_index(key.len()));
+    assert_eq!(repeat.used + repeat.additional, admitted);
+}
+
+#[test]
+fn populated_site_does_not_look_up_empty_model_streams() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+    let source = sldprt_with_body(&triangle_body());
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_work_units = u64::MAX;
+    let _probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "look up SLDPRT site streams",
+        None,
+    );
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &options)
+        .unwrap();
+    assert!(!decoded.ir().model.faces.is_empty());
+}
+
+#[test]
+fn opaque_geometry_link_staging_uses_scoped_storage() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+    let source = sldprt_with_body(&crate::test_support::parasolid::untyped_triangle(0.0));
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = u64::MAX;
+    for operation in [
+        "index SLDPRT opaque geometry record",
+        "index SLDPRT opaque geometry link",
+    ] {
+        let _probe = RefusalProbe::arm(ResourceDimension::RetainedBytes, operation, None);
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(&source), &options)
+            .unwrap();
+        let unknowns = decoded.ir().native_unknowns("sldprt").unwrap();
+        assert!(unknowns.iter().any(|unknown| unknown.links.len() >= 2));
+    }
+}

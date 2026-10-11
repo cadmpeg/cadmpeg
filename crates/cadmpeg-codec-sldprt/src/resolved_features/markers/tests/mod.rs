@@ -1,11 +1,49 @@
 //! Tests for the `markers` module.
 
 use super::compact_linked_profile_vertex;
-use super::linked_profile_vertex;
 use super::sketch_input_entities;
 use super::sketch_marker_at;
 use super::terminal_wide_geometry_locus_profile_vertex;
 use cadmpeg_ir::units::FiniteVector;
+
+fn marker_coordinates(payload: &[u8], offset: usize) -> Option<FiniteVector<2>> {
+    super::marker_coordinates(payload, offset)
+}
+
+fn marker_spatial_coordinates(payload: &[u8], offset: usize) -> Option<cadmpeg_ir::math::Point3> {
+    super::marker_spatial_coordinates(payload, offset)
+}
+
+fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) -> Option<usize> {
+    super::marker_spatial_coordinate_offset(payload, offset)
+}
+
+fn spatial_relation_marker_coordinates(
+    payload: &[u8],
+    offset: usize,
+) -> Option<cadmpeg_ir::math::Point3> {
+    super::spatial_relation_marker_coordinates(payload, offset)
+}
+
+fn marker_local_id(payload: &[u8], offset: usize) -> Option<u32> {
+    super::marker_local_id(payload, offset)
+}
+
+fn compact_legacy_profile_vertex(payload: &[u8], offset: usize) -> bool {
+    super::compact_legacy_profile_vertex(payload, offset)
+}
+
+fn linked_profile_vertex(payload: &[u8], offset: usize) -> bool {
+    super::linked_profile_vertex(payload, offset)
+}
+
+fn geometry_locus_profile_vertex(payload: &[u8], offset: usize) -> bool {
+    super::geometry_locus_profile_vertex(payload, offset)
+}
+
+fn extended_geometry_locus_single_link_point(payload: &[u8], offset: usize) -> bool {
+    super::extended_geometry_locus_single_link_point(payload, offset)
+}
 
 #[test]
 fn coordinate_pair_reader_admits_finite_values_and_rejects_nonfinite_values() {
@@ -35,6 +73,7 @@ fn raw_link<T>(value: Option<(FiniteVector<2>, T)>) -> Option<([f64; 2], T)> {
     value.map(|(coordinates, links)| (coordinates.get(), links))
 }
 
+mod active_ranges;
 mod alternate_profile_points;
 mod dimension_carriers;
 mod four_link_profile_points;
@@ -43,3 +82,4 @@ mod profile_curves;
 mod profile_points;
 mod spatial;
 mod spatial_boundaries;
+mod spatial_workspace;

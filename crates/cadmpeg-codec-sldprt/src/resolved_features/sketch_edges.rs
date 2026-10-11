@@ -9,43 +9,6 @@ use cadmpeg_ir::sketches::{
 };
 use cadmpeg_ir::Exactness;
 use std::collections::{BTreeMap, HashMap};
-use std::fmt;
-
-struct FormattedByteCount(usize);
-
-impl fmt::Write for FormattedByteCount {
-    fn write_str(&mut self, text: &str) -> fmt::Result {
-        self.0 = self.0.checked_add(text.len()).ok_or(fmt::Error)?;
-        Ok(())
-    }
-}
-
-fn retained_curve_debug(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    curve: &CurveGeometry,
-) -> Result<String, cadmpeg_core::CodecError> {
-    let mut count = FormattedByteCount(0);
-    fmt::write(&mut count, format_args!("{curve:?}")).map_err(|_| {
-        ctx.refuse_codec_limit("retain SLDPRT opaque sketch curve", u64::MAX - 1, u64::MAX)
-    })?;
-    let mut text = String::new();
-    ctx.try_reserve_retained_text(&mut text, count.0, "retain SLDPRT opaque sketch curve")?;
-    fmt::write(&mut text, format_args!("{curve:?}")).map_err(|_| {
-        cadmpeg_core::CodecError::malformed("cannot format SLDPRT opaque sketch curve")
-    })?;
-    Ok(text)
-}
-
-fn retained_id_text(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    value: &str,
-    operation: &'static str,
-) -> Result<String, cadmpeg_core::CodecError> {
-    let mut text = String::new();
-    ctx.try_reserve_retained_text(&mut text, value.len(), operation)?;
-    text.push_str(value);
-    Ok(text)
-}
 
 const EPS_SKETCH_EDGES_PROJECT_EDGE_E9: f64 = 1.0e-9;
 const EPS_SKETCH_EDGES_CIRCLE_CONTAINS_POINT_E9: f64 = 1.0e-9;
@@ -102,93 +65,77 @@ pub(super) fn project_endpoint_constraints(
         face_ordinal,
         stream,
     } = source;
+    let mut endpoint_storage = ctx.reserve_scoped(0, "SLDPRT endpoint index storage")?;
     let mut loci_by_endpoint =
         BTreeMap::<&str, Vec<(bool, &cadmpeg_ir::sketches::SketchEntityId)>>::new();
-    for entity in entities {
+    for entity in ctx.admit_iter(entities, "project SLDPRT shared endpoint entities")? {
         if entity.endpoint_refs.len() != 2 {
             continue;
         }
-        for (index, endpoint) in entity.endpoint_refs.iter().enumerate() {
-            ctx.admit_btree_entry(
-                &loci_by_endpoint,
-                &endpoint.as_str(),
-                "index SLDPRT shared sketch endpoints",
-            )?;
-            let loci = loci_by_endpoint.entry(endpoint).or_default();
-            ctx.reserve_vec(loci, 1, "collect SLDPRT shared sketch endpoint loci")?;
-            loci.push((index == 0, entity.id()));
+        for (index, endpoint) in ctx
+            .admit_iter(
+                &entity.endpoint_refs,
+                "index SLDPRT shared endpoint references",
+            )?
+            .enumerate()
+        {
+            endpoint_storage.with_storage(|| {
+                ctx.push_btree_group(
+                    &mut loci_by_endpoint,
+                    endpoint.as_str(),
+                    (index == 0, entity.id()),
+                    "index SLDPRT shared sketch endpoints",
+                    "collect SLDPRT shared sketch endpoint loci",
+                )
+            })?;
         }
     }
-    for (_endpoint, sources) in loci_by_endpoint {
+    for (_endpoint, sources) in
+        ctx.admit_iter(&loci_by_endpoint, "project SLDPRT shared endpoint groups")?
+    {
         let Some((_, first)) = sources.first() else {
             continue;
         };
-        ctx.charge_work(
-            u64::try_from(sources.len()).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "compare SLDPRT shared sketch endpoints",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?,
+        if !ctx.any_by(
+            sources,
+            |(_, entity)| {
+                Ok(!ctx.equal(
+                    entity,
+                    first,
+                    "compare SLDPRT shared sketch endpoint identities",
+                )?)
+            },
             "compare SLDPRT shared sketch endpoints",
-        )?;
-        if !sources.iter().any(|(_, entity)| entity != first) {
+        )? {
             continue;
         }
-        let digits = |value: usize| {
-            if value == 0 {
-                1
-            } else {
-                cadmpeg_core::decode::index_from_u32(value.ilog10()) + 1
-            }
-        };
-        let id_length = "sldprt:model:sketch-constraint#:::".len()
-            + digits(block_offset)
-            + digits(stream_ordinal)
-            + digits(face_ordinal)
-            + digits(constraints.len());
-        let mut id_text = String::new();
-        ctx.try_reserve_retained_text(
-            &mut id_text,
-            id_length,
-            "retain SLDPRT shared endpoint constraint ID",
-        )?;
-        std::fmt::Write::write_fmt(
-            &mut id_text,
+        let Some(id) = super::profiles::mint_formatted::<SketchConstraintId>(
+            ctx,
             format_args!(
                 "sldprt:model:sketch-constraint#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
                 constraints.len()
             ),
-        )
-        .map_err(|_| {
-            cadmpeg_core::CodecError::malformed(
-                "cannot format SLDPRT shared endpoint constraint ID",
-            )
-        })?;
-        let Ok(id) = SketchConstraintId::mint(id_text) else {
+            "retain SLDPRT shared endpoint constraint ID",
+        )?
+        else {
             continue;
         };
         let mut loci = Vec::new();
-        ctx.reserve_vec(
-            &mut loci,
-            sources.len(),
-            "collect SLDPRT shared endpoint constraint loci",
-        )?;
-        for (start, source) in sources {
-            let source = cadmpeg_ir::sketches::SketchEntityId::mint(retained_id_text(
-                ctx,
-                source.as_str(),
-                "retain SLDPRT shared endpoint entity ID",
-            )?)
-            .map_err(|_| {
-                cadmpeg_core::CodecError::malformed("invalid admitted SLDPRT sketch entity ID")
-            })?;
-            loci.push(if start {
-                SketchLocus::Start(source)
-            } else {
-                SketchLocus::End(source)
-            });
+        for (start, source) in ctx
+            .admit_iter(sources, "project SLDPRT shared endpoint loci")?
+            .copied()
+        {
+            let source =
+                source.try_clone_for_decode(ctx, "retain SLDPRT shared endpoint entity ID")?;
+            ctx.push_vec(
+                &mut loci,
+                if start {
+                    SketchLocus::Start(source)
+                } else {
+                    SketchLocus::End(source)
+                },
+                "collect SLDPRT shared endpoint constraint loci",
+            )?;
         }
         let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
             SketchConstraintDefinitionInput::CoincidentLoci { loci },
@@ -198,38 +145,32 @@ pub(super) fn project_endpoint_constraints(
         crate::annotations::note(
             ctx,
             annotations,
-            retained_id_text(
-                ctx,
-                id.as_str(),
-                "retain SLDPRT shared endpoint annotation ID",
-            )?,
+            ctx.copy_retained_text(id.as_str(), "retain SLDPRT shared endpoint annotation ID")?,
             stream,
             0,
             "feature_input_shared_endpoint",
             Exactness::Derived,
         )?;
-        let sketch = SketchId::mint(retained_id_text(
-            ctx,
-            sketch.as_str(),
-            "retain SLDPRT constraint sketch ID",
-        )?)
-        .map_err(|_| cadmpeg_core::CodecError::malformed("invalid admitted SLDPRT sketch ID"))?;
-        ctx.reserve_vec(constraints, 1, "collect SLDPRT shared endpoint constraints")?;
-        constraints.push(SketchConstraint {
-            id,
-            sketch,
-            definition,
-            name: None,
-            driving: None,
-            active: None,
-            virtual_space: None,
-            visible: None,
-            orientation: None,
-            label_distance: None,
-            label_position: None,
-            metadata: None,
-            native_ref: None,
-        });
+        let sketch = sketch.try_clone_for_decode(ctx, "retain SLDPRT constraint sketch ID")?;
+        ctx.push_vec(
+            constraints,
+            SketchConstraint {
+                id,
+                sketch,
+                definition,
+                name: None,
+                driving: None,
+                active: None,
+                virtual_space: None,
+                visible: None,
+                orientation: None,
+                label_distance: None,
+                label_position: None,
+                metadata: None,
+                native_ref: None,
+            },
+            "collect SLDPRT shared endpoint constraints",
+        )?;
     }
     Ok(())
 }
@@ -248,31 +189,37 @@ pub(super) struct SketchPlaneFrame {
     pub(super) v_axis: Vector3,
 }
 
-pub(super) fn project_edge(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn project_edge<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     edge: &cadmpeg_ir::topology::Edge,
     vertices: &HashMap<&cadmpeg_ir::ids::VertexId, &cadmpeg_ir::ids::PointId>,
     points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
     curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
     frame: SketchPlaneFrame,
-    refusal: &mut crate::lane_refusal::LaneRefusals,
+    refusal: &mut crate::lane_refusal::scoped::RefusalSink<'_, 'ctx>,
 ) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
     let SketchPlaneFrame {
         origin,
         u_axis,
         v_axis,
     } = frame;
-    let Some(start_id) = vertices.get(&edge.start) else {
+    let Some(start_id) =
+        ctx.get_hash_map(vertices, &edge.start, "resolve SLDPRT sketch_edges keys")?
+    else {
         return Ok(None);
     };
-    let Some(start_point) = points.get(start_id) else {
+    let Some(start_point) =
+        ctx.get_hash_map(points, start_id, "resolve SLDPRT sketch_edges keys")?
+    else {
         return Ok(None);
     };
     let start = project_point(*start_point, origin, u_axis, v_axis);
-    let Some(end_id) = vertices.get(&edge.end) else {
+    let Some(end_id) = ctx.get_hash_map(vertices, &edge.end, "resolve SLDPRT sketch_edges keys")?
+    else {
         return Ok(None);
     };
-    let Some(end_point) = points.get(end_id) else {
+    let Some(end_point) = ctx.get_hash_map(points, end_id, "resolve SLDPRT sketch_edges keys")?
+    else {
         return Ok(None);
     };
     let end = project_point(*end_point, origin, u_axis, v_axis);
@@ -281,48 +228,62 @@ pub(super) fn project_edge(
         return Ok(None);
     };
     let tolerance = tolerance.get();
-    if let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))) =
-        edge.curve().and_then(|id| curves.get(id).copied())
-    {
-        let count = nurbs.pole_count();
+    let curve = match edge.curve() {
+        Some(id) => ctx
+            .get_hash_map(curves, id, "find SLDPRT projected edge curve")?
+            .copied(),
+        None => None,
+    };
+    if let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))) = curve {
         let operation = "project SLDPRT sketch NURBS edge";
-        let knots = nurbs.knots().try_clone_for_decode(ctx, operation)?;
-        let mut projected = Vec::new();
-        ctx.reserve_vec(&mut projected, count, operation)?;
-        match nurbs.pole_rows() {
-            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
-                projected.extend(
-                    points
-                        .iter()
-                        .map(|point| project_point(point.get(), origin, u_axis, v_axis)),
-                );
+        let geometry_storage;
+        let projected;
+        (projected, geometry_storage) = ctx.with_scoped_storage(operation, || {
+            let knots = nurbs.knots().try_clone_for_decode(ctx, operation)?;
+            let _lanes_storage;
+            let (projected, weights);
+            ((projected, weights), _lanes_storage) = ctx.with_scoped_storage(operation, || {
+                let projected = match nurbs.pole_rows() {
+                    cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => ctx
+                        .collect_indexed_vec(points.len(), operation, |index| {
+                            Ok(project_point(points[index].get(), origin, u_axis, v_axis))
+                        })?,
+                    cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => ctx
+                        .collect_indexed_vec(points.len(), operation, |index| {
+                            Ok(project_point(
+                                points[index].point.get(),
+                                origin,
+                                u_axis,
+                                v_axis,
+                            ))
+                        })?,
+                };
+                let weights = match nurbs.pole_rows() {
+                    cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { .. } => None,
+                    cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
+                        Some(ctx.collect_indexed_vec(
+                            points.len(),
+                            "project SLDPRT sketch NURBS weights",
+                            |index| Ok(points[index].weight),
+                        )?)
+                    }
+                };
+                Ok::<_, cadmpeg_core::CodecError>((projected, weights))
+            })?;
+            cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
+                ctx,
+                nurbs.degree(),
+                knots,
+                projected,
+                weights,
+                nurbs.periodic(),
+            )
+        })?;
+        return match projected {
+            Ok(nurbs) => {
+                let geometry = SketchGeometry::nurbs(nurbs);
+                Ok(Some(geometry_storage.commit_value(geometry)?))
             }
-            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
-                projected.extend(
-                    points
-                        .iter()
-                        .map(|point| project_point(point.point.get(), origin, u_axis, v_axis)),
-                );
-            }
-        }
-        let weights = match nurbs.pole_rows() {
-            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { .. } => None,
-            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
-                let mut weights = Vec::new();
-                ctx.reserve_vec(&mut weights, count, operation)?;
-                weights.extend(points.iter().map(|point| point.weight));
-                Some(weights)
-            }
-        };
-        return match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
-            ctx,
-            nurbs.degree(),
-            knots,
-            projected,
-            weights,
-            nurbs.periodic(),
-        )? {
-            Ok(nurbs) => Ok(Some(SketchGeometry::nurbs(nurbs))),
             Err(error) => {
                 refusal.note(
                     ctx,
@@ -333,7 +294,6 @@ pub(super) fn project_edge(
             }
         };
     }
-    let curve = edge.curve().and_then(|id| curves.get(id).copied());
     let native = match curve {
         Some(CurveGeometry::Solved(
             SolvedCurveGeometry::Circle(_)
@@ -344,10 +304,22 @@ pub(super) fn project_edge(
         | None => None,
         Some(other) => cadmpeg_core::text::NonBlankString::for_decode(
             ctx,
-            retained_curve_debug(ctx, other)?,
+            ctx.format_retained(
+                format_args!("{other:?}"),
+                "retain SLDPRT opaque sketch curve",
+            )?,
             "validate nonblank text",
         )?
         .map(SketchGeometry::native),
+    };
+    let same_endpoint = if curve.is_none() {
+        ctx.equal(
+            &edge.start,
+            &edge.end,
+            "compare SLDPRT sketch point edge endpoints",
+        )?
+    } else {
+        false
     };
     let projected = (|| match curve {
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) => {
@@ -456,7 +428,7 @@ pub(super) fn project_edge(
             )
         }
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))) => None,
-        None if edge.start == edge.end => Some(
+        None if same_endpoint => Some(
             SketchGeometry::try_from(SketchGeometryDefinition::Point { position: start }).ok()?,
         ),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_))) | None => line(),
@@ -524,3 +496,6 @@ pub(super) fn project_point(
 
 #[cfg(test)]
 mod sketch_edges_tests;
+
+#[cfg(test)]
+mod storage_tests;

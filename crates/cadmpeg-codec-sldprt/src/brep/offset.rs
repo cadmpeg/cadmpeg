@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Compact Parasolid offset-surface carriers.
 
-use std::collections::HashMap;
+#[cfg(test)]
+use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::{u64_from_index, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::scalar::FiniteReal;
 
 use super::LEN_TO_MM;
@@ -84,30 +85,40 @@ fn parse_at(body: &[u8], offset: usize) -> Option<(u16, OffsetCarrier)> {
 }
 
 /// Scan all structurally valid type-60 offset-surface records.
+#[cfg(test)]
 pub(super) fn scan(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     body: &[u8],
-) -> Result<HashMap<u16, OffsetCarrier>, cadmpeg_core::CodecError> {
-    ctx.charge_work(u64_from_index(body.len()), "scan SLDPRT offset carriers")?;
-    let mut out = HashMap::new();
-    let Some(last_offset) = body.len().checked_sub(1) else {
-        return Ok(out);
-    };
-    for offset in 0..last_offset {
+) -> Result<BTreeMap<u16, OffsetCarrier>, cadmpeg_core::CodecError> {
+    let mut values = BTreeMap::new();
+    scan_into(
+        ctx,
+        body,
+        &mut super::index::publication::FixedSink::Retained(&mut values),
+    )?;
+    Ok(values)
+}
+
+pub(in crate::brep) fn scan_into(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    body: &[u8],
+    out: &mut super::index::publication::FixedSink<'_, '_, OffsetCarrier>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let starts = 0..body.len().checked_sub(1).map_or(0, |end| end);
+    for offset in ctx.admit_iter(starts, "scan SLDPRT offset carriers")? {
         if let Some((attr, carrier)) = parse_at(body, offset) {
-            ctx.admit_hash_map_entry(&mut out, &attr, "index SLDPRT offset carriers")?;
-            out.insert(attr, carrier);
+            out.replace(ctx, attr, carrier, "index SLDPRT offset carriers")?;
         }
     }
-    Ok(out)
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::{OffsetCarrier, TAG};
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
-    fn scan_with_service_context(bytes: &[u8]) -> HashMap<u16, OffsetCarrier> {
+    fn scan_with_service_context(bytes: &[u8]) -> BTreeMap<u16, OffsetCarrier> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
             bytes,
