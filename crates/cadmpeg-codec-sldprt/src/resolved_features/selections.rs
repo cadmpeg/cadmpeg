@@ -3769,7 +3769,7 @@ pub(crate) fn variable_fillet_dimension_index_for_feature(
         || !ctx.all_by(
             suffix.bytes(),
             |byte| Ok(byte.is_ascii_digit()),
-            "parse SLDPRT variable fillet dimension index",
+            "scan SLDPRT variable fillet dimension digits",
         )?
     {
         return Ok(None);
