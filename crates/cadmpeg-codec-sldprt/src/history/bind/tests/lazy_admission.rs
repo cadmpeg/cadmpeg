@@ -311,3 +311,36 @@ fn unnamed_sketch_index_admits_every_filtered_source_visit() {
             && limit.additional >= 64)
     );
 }
+
+#[test]
+fn output_identity_constructor_preserves_copy_and_grammar_refusals() {
+    const OPERATION: &str = "retain SLDPRT feature output body";
+    for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::WorkUnits] {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, OPERATION, |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                _ => unreachable!(),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            super::super::output_body_id(&ctx, "synthetic:test:body#output")?;
+            ctx.finish_session()
+        });
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == dimension && limit.operation == OPERATION));
+    }
+}
+
+#[test]
+fn rejected_output_identity_releases_candidate_storage() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 4096;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(super::super::output_body_id(&ctx, "invalid").unwrap(), None);
+    ctx.reserve_scoped(4096, "released output candidate").unwrap();
+    ctx.finish_session().unwrap();
+}
