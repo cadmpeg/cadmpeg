@@ -86,8 +86,7 @@ pub(crate) fn bind_unique_sketch_feature(
     let _sketch_index;
     let sketches_by_name;
     (sketches_by_name, _sketch_index) = ctx.unique_index(
-        sketches
-            .iter()
+        ctx.admit_iter(sketches, "scan SLDPRT sketch names")?
             .filter_map(|sketch| sketch.name.as_deref().map(|name| (name, sketch))),
         BIND_OPERATION,
     )?;
