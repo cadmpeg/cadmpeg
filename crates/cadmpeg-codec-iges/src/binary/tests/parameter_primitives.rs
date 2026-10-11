@@ -156,6 +156,33 @@ fn binary_stream_and_empty_record_readers_need_no_work_or_storage() {
 }
 
 #[test]
+fn binary_stream_repeated_integer_preserves_pending_values_and_cursor() {
+    let mut writer = BitWriter::default();
+    writer.control_repeat(false, 3, 1);
+    writer.integer(7, lengths().single_integer);
+    let bytes = writer.bytes();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("valid test input and admitted budget");
+    let mut stream = ValueStream::new(&bytes, lengths(), &ctx);
+    assert_eq!(stream.next().expect("valid repeated integer"), Some(BinaryValue::Integer(7)));
+    assert_eq!(stream.pending.len(), 2);
+    assert!(stream.bits.is_empty());
+    let cursor = (stream.bits.byte, stream.bits.bit);
+    for remaining in [1, 0] {
+        assert_eq!(stream.next().expect("valid pending integer"), Some(BinaryValue::Integer(7)));
+        assert_eq!(stream.pending.len(), remaining);
+        assert_eq!((stream.bits.byte, stream.bits.bit), cursor);
+    }
+    assert_eq!(stream.next().expect("exhausted stream"), None);
+    assert_eq!((stream.bits.byte, stream.bits.bit), cursor);
+    stream.finish().expect("valid repeated integer stream");
+    ctx.finish_session().expect("stream uses no source work");
+}
+
+#[test]
 fn binary_directory_records_refuse_before_reading_the_first_count() {
     let mut writer = BitWriter::default();
     writer.control_repeat(false, 3, 1);
