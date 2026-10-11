@@ -936,7 +936,7 @@ pub(super) fn decode_graph(
     let mut hidden_storage = ctx.reserve_scoped(0, "hold emitted Parasolid support membership")?;
     let mut hidden_supports = BTreeSet::new();
     let mut emitted_bridges = BTreeSet::new();
-    for f in ctx.admit_iter(&faces, "emit Parasolid faces")? {
+    for (face_index, f) in ctx.admit_iter(&faces, "emit Parasolid faces")?.enumerate() {
         let mut loops = Vec::new();
         for (loop_attr, _) in ctx.admit_iter(&f.loops, "select Parasolid face loops")? {
             if ctx.contains_btree_set(&loop_set, loop_attr, "test Parasolid loop_set")? {
@@ -1010,99 +1010,77 @@ pub(super) fn decode_graph(
                 } else {
                     None
                 };
-                let (blend_attrs, blend_storage) = ctx.with_scoped_storage(
-                    "hold Parasolid blend face edges",
-                    || -> Result<_, cadmpeg_core::CodecError> {
-                        let Some(blend) = carriers.blend(ctx, f.surface_attr)? else {
-                            return Ok(None);
-                        };
-                        let mut face_edges = None;
-                        let mut resolve_support =
-                            |support| -> Result<Option<u16>, cadmpeg_core::CodecError> {
-                                match support {
-                                    BlendSupportRef::Surface(attr) => Ok(Some(attr)),
-                                    BlendSupportRef::Pair(attr) => {
-                                        let Some(pair) = carriers.blend_support_pair(ctx, attr)?
-                                        else {
-                                            return Ok(None);
-                                        };
-                                        if carriers.curve(ctx, pair.intersection)?.is_none() {
-                                            return Ok(None);
-                                        }
-                                        let face_edges =
-                                            match face_edges {
-                                                Some(ref edges) => edges,
-                                                None => {
-                                                    face_edges.insert({
-                                                        let mut face_edges = BTreeSet::new();
-                                                        for (_, ring) in
-                        ctx.admit_iter(&f.loops, "select Parasolid blend face loop edges")?
+                let blend_attrs = (|| -> Result<_, cadmpeg_core::CodecError> {
+                    let Some(blend) = carriers.blend(ctx, f.surface_attr)? else {
+                        return Ok(None);
+                    };
+                    if resolved_offset.is_some()
+                        && !procedural_supports.blend_needs_support_emission(
+                            ctx,
+                            blend,
+                            carriers,
+                            &hidden_supports,
+                        )?
                     {
-                        for coedge in ctx.admit_iter(ring, "select Parasolid blend face edges")? {
-                            if let Some(edge) = ctx
-                                .get_btree_map(t.coedges(), coedge, "lookup Parasolid coedges")?
-                                .map(|coedge| coedge.refs[6])
-                            {
-                                if edge != 0 {
-                                    ctx.insert_btree_set(
-                                        &mut face_edges,
-                                        edge,
-                                        "collect Parasolid blend face edges",
-                                    )?;
-                                }
-                            }
-                        }
+                        return Ok(None);
                     }
-                                                        face_edges
-                                                    })
-                                                }
-                                            };
-                                        let mut selected = None;
-                                        for candidate in &pair.supports {
-                                            let Some(edges) = ctx.get_btree_map(
-                                                procedural_supports.face_edges(ctx)?,
-                                                candidate,
-                                                "lookup Parasolid face_edges_by_surface_carrier",
-                                            )?
-                                            else {
-                                                continue;
-                                            };
-                                            if ctx.any_by(
-                                                edges,
-                                                |edges| {
-                                                    Ok(!ctx.is_disjoint_btree_set(
+                    let mut resolve_support =
+                        |support| -> Result<Option<u16>, cadmpeg_core::CodecError> {
+                            match support {
+                                BlendSupportRef::Surface(attr) => Ok(Some(attr)),
+                                BlendSupportRef::Pair(attr) => {
+                                    let Some(pair) = carriers.blend_support_pair(ctx, attr)? else {
+                                        return Ok(None);
+                                    };
+                                    if carriers.curve(ctx, pair.intersection)?.is_none() {
+                                        return Ok(None);
+                                    }
+                                    let indexed = procedural_supports.face_edges(ctx)?;
+                                    let face_edges = &indexed.faces[face_index];
+                                    let mut selected = None;
+                                    for candidate in &pair.supports {
+                                        let Some(edges) = ctx.get_btree_map(
+                                            &indexed.by_carrier,
+                                            candidate,
+                                            "lookup Parasolid face_edges_by_surface_carrier",
+                                        )?
+                                        else {
+                                            continue;
+                                        };
+                                        if ctx.any_by(
+                                            edges,
+                                            |&index| {
+                                                Ok(!ctx.is_disjoint_btree_set(
                                                     face_edges,
-                                                    edges,
+                                                    &indexed.faces[index],
                                                     "compare Parasolid blend support face edges",
                                                 )?)
-                                                },
-                                                "scan Parasolid blend support face edges",
-                                            )? {
-                                                if selected.is_some() {
-                                                    return Ok(None);
-                                                }
-                                                selected = Some(*candidate);
+                                            },
+                                            "scan Parasolid blend support face edges",
+                                        )? {
+                                            if selected.is_some() {
+                                                return Ok(None);
                                             }
+                                            selected = Some(*candidate);
                                         }
-                                        Ok(selected)
                                     }
+                                    Ok(selected)
                                 }
-                            };
-                        let [Some(first_attr), Some(second_attr)] = [
-                            resolve_support(blend.supports[0])?,
-                            resolve_support(blend.supports[1])?,
-                        ] else {
-                            return Ok(None);
-                        };
-                        for attr in [first_attr, second_attr] {
-                            if !support_is_acyclic(ctx, attr, carriers)? {
-                                return Ok(None);
                             }
+                        };
+                    let [Some(first_attr), Some(second_attr)] = [
+                        resolve_support(blend.supports[0])?,
+                        resolve_support(blend.supports[1])?,
+                    ] else {
+                        return Ok(None);
+                    };
+                    for attr in [first_attr, second_attr] {
+                        if !support_is_acyclic(ctx, attr, carriers)? {
+                            return Ok(None);
                         }
-                        Ok(Some((blend, first_attr, second_attr)))
-                    },
-                )?;
-                drop(blend_storage);
+                    }
+                    Ok(Some((blend, first_attr, second_attr)))
+                })()?;
                 let resolved_blend = if let Some((blend, first_attr, second_attr)) = blend_attrs {
                     if let Some(first) = ensure_surface_support(
                         &mut BrepSink {

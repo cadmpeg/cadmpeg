@@ -119,3 +119,214 @@ fn analytic_graph_skips_procedural_and_appearance_index_work() {
         assert_eq!(decoded.ir().model.bodies.len(), 1);
     }
 }
+
+fn rolling_ball_record(attr: u16, selector: u8, references: [u16; 3], values: [f64; 4]) -> Vec<u8> {
+    use crate::test_support::parasolid::{be16, be32, bef64};
+    let mut bytes = vec![0, 0x38];
+    be16(&mut bytes, attr);
+    be32(&mut bytes, 0);
+    bytes.extend([0; 10]);
+    bytes.extend([0x2b, selector]);
+    for reference in references {
+        be16(&mut bytes, reference);
+    }
+    for value in values {
+        bef64(&mut bytes, value);
+    }
+    bytes
+}
+
+fn offset_blend_graph(
+    visible_supports: bool,
+    winning_offset: bool,
+) -> (
+    crate::brep::index::CarrierIndex,
+    crate::brep::topology::Tables,
+) {
+    use crate::test_support::parasolid::{
+        bridge, coedge, edge_use, line_carrier, loop_head, offset_surface_carrier, plane_carrier,
+        triangle_body,
+    };
+    let mut body = triangle_body();
+    // This graph fixture supplies no body ownership; the face bridges own it.
+    let ownership = body
+        .windows(3)
+        .position(|bytes| bytes == [0, 0x0c, 0xff])
+        .unwrap();
+    body.truncate(ownership);
+    body.extend(plane_carrier(181, [0.; 3], [0., 0., 1.], [1., 0., 0.]));
+    if winning_offset {
+        body.extend(offset_surface_carrier(180, 181, 0.001));
+    }
+    if visible_supports {
+        body.extend(rolling_ball_record(
+            180,
+            b'E',
+            [190, 181, 184],
+            [0.002, 0.002, 1., 1.],
+        ));
+        body.extend(rolling_ball_record(
+            190,
+            b'R',
+            [181, 182, 183],
+            [0., 0., 1., 1.],
+        ));
+        body.extend(line_carrier(183, [0.; 3], [1., 0., 0.]));
+        body.extend(plane_carrier(182, [0.; 3], [0., 0., 1.], [1., 0., 0.]));
+        for (face, lp, head, edges, reversed, surface) in [
+            (8, 21, 110, [40, 41, 42], true, 181),
+            (9, 22, 120, [70, 71, 72], false, 182),
+        ] {
+            body.extend(bridge(face, lp, surface));
+            body.extend(loop_head(lp, head, face));
+            for (index, edge) in edges.into_iter().enumerate() {
+                let index = u16::try_from(index).unwrap();
+                body.extend(coedge(
+                    head + index,
+                    lp,
+                    head + (index + 1) % 3,
+                    50 + index,
+                    0,
+                    edge,
+                    reversed,
+                ));
+                if !reversed {
+                    body.extend(edge_use(edge, 0));
+                }
+            }
+        }
+    } else {
+        body.extend(rolling_ball_record(
+            180,
+            b'R',
+            [181, 182, 184],
+            [0.002, 0.002, 1., 1.],
+        ));
+    }
+    let setup = cadmpeg_test_support::service_decode_context();
+    let carriers = crate::brep::index::scan_carriers(&setup, &body).unwrap();
+    let view = crate::brep::index::view::CarrierView::Retained(&carriers);
+    assert!(view.blend(&setup, 180).unwrap().is_some());
+    assert_eq!(view.offset(&setup, 180).unwrap().is_some(), winning_offset);
+    if visible_supports {
+        assert!(view.blend_support_pair(&setup, 190).unwrap().is_some());
+        assert!(view.curve(&setup, 183).unwrap().is_some());
+    }
+    let mut tables = crate::brep::topology::scan(&setup, &body).unwrap();
+    let mut current = tables.bridges().get(&10).unwrap().clone();
+    current.refs[4] = 180;
+    tables.insert_bridge(&setup, current).unwrap();
+    (carriers, tables)
+}
+
+#[test]
+fn winning_offset_skips_discarded_blend_edge_index() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let (carriers, tables) = offset_blend_graph(true, true);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "index Parasolid surface face edges",
+        None,
+    );
+    let decoded = super::decode_graph(
+        &ctx,
+        crate::brep::index::view::CarrierView::Retained(&carriers),
+        &tables,
+        crate::brep::entity::FactsSource::empty(&ctx).unwrap(),
+        &crate::brep::typed::Facts::default(),
+        &cadmpeg_ir::stream_name!("offset-blend"),
+    )
+    .unwrap();
+    drop(probe);
+    assert_eq!(decoded.faces.len(), 3);
+    assert_eq!(decoded.surfaces.len(), 3);
+    assert_eq!(decoded.procedural_surfaces.len(), 1);
+    assert!(matches!(
+        decoded.procedural_surfaces[0].definition(),
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(_)
+    ));
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn winning_offset_preserves_losing_blend_hidden_supports() {
+    let (carriers, tables) = offset_blend_graph(false, true);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let decoded = super::decode_graph(
+        &ctx,
+        crate::brep::index::view::CarrierView::Retained(&carriers),
+        &tables,
+        crate::brep::entity::FactsSource::empty(&ctx).unwrap(),
+        &crate::brep::typed::Facts::default(),
+        &cadmpeg_ir::stream_name!("offset-blend"),
+    )
+    .unwrap();
+    assert_eq!(decoded.faces.len(), 1);
+    assert_eq!(decoded.surfaces.len(), 3);
+    assert_eq!(decoded.procedural_surfaces.len(), 1);
+    assert_eq!(decoded.stats.unknown_procedural_supports, 1);
+    let hidden = decoded
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str().ends_with("#182"))
+        .unwrap();
+    assert_eq!(
+        decoded
+            .annotations
+            .exactness()
+            .get(hidden.id.as_str())
+            .unwrap()
+            .entity(),
+        cadmpeg_ir::Exactness::Unknown
+    );
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn chosen_blend_reuses_current_face_edge_set() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let (carriers, tables) = offset_blend_graph(true, false);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "select Parasolid blend face edges",
+        None,
+    );
+    let decoded = super::decode_graph(
+        &ctx,
+        crate::brep::index::view::CarrierView::Retained(&carriers),
+        &tables,
+        crate::brep::entity::FactsSource::empty(&ctx).unwrap(),
+        &crate::brep::typed::Facts::default(),
+        &cadmpeg_ir::stream_name!("offset-blend"),
+    )
+    .unwrap();
+    drop(probe);
+    assert_eq!(decoded.faces.len(), 3);
+    assert_eq!(decoded.procedural_surfaces.len(), 1);
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend(blend) =
+        decoded.procedural_surfaces[0].definition()
+    else {
+        panic!("selected Pair support emits a blend");
+    };
+    for support in blend.supports() {
+        assert_eq!(
+            support.as_ref().unwrap().surface,
+            crate::brep::graph::id_surf(8)
+        );
+    }
+    ctx.finish_session().unwrap();
+}
