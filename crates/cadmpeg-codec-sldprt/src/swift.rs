@@ -1866,7 +1866,7 @@ fn project_with_topology<'model, 'ctx>(
             ctx,
             DimensionSource {
                 counterbores: &counterbores,
-                reference,
+                id,
                 entity,
             },
             || features(entity),
@@ -2044,10 +2044,9 @@ fn project_lower_profile_tier(
     }))
 }
 
-#[derive(Clone, Copy)]
 struct DimensionSource<'source, 'root, 'ctx> {
     counterbores: &'source Counterbores<'root, 'ctx>,
-    reference: &'root Reference,
+    id: PmiId,
     entity: &'root Entity,
 }
 
@@ -2060,7 +2059,7 @@ fn project_dimension<'index, 'feature: 'index>(
 ) -> Result<Option<PmiAnnotation>, CodecError> {
     let DimensionSource {
         counterbores,
-        reference,
+        id,
         entity,
     } = source;
     let Some(dimension) = dimension_kind(short_class(ctx, &entity.class)?) else {
@@ -2105,9 +2104,6 @@ fn project_dimension<'index, 'feature: 'index>(
             upper: PmiValue::from_parts(upper, quantity),
         }),
         _ => None,
-    };
-    let Some(id) = pmi_id_charged(ctx, &reference.id)? else {
-        return Ok(None);
     };
     let Some(targets) = targets(ctx, entity, feature_index()?, geometry)? else {
         return Ok(None);
