@@ -392,6 +392,9 @@ pub(crate) fn triangle_strips(
             cumulative.push(value);
             cursor = next;
         }
+        if cumulative.len() != index_from_u32(count) {
+            continue;
+        }
         let Some(vertex_count) = cumulative.last().copied() else {
             continue;
         };
@@ -688,6 +691,26 @@ mod tests {
             b"value(prim_tristripsetwithatt)\0\xe0\x01p_accum_set_size\0\xf8\x01\x03".to_vec();
         bytes.extend(named("mv_p_xyz", &[0; 9], 9));
         bytes
+    }
+
+    #[test]
+    fn triangle_strip_rejects_truncated_cumulative_table_after_complete_geometry() {
+        let mut bytes = b"value(prim_tristripsetwithatt)\0".to_vec();
+        bytes.extend(named("mv_p_xyz", &[0; 9], 9));
+        bytes.extend_from_slice(b"\xe0\x01p_accum_set_size\0\xf8\x02\x80\x03");
+        let scan = with_context(&bytes, |ctx| triangle_strips(ctx, &bytes))
+            .expect("bounded truncated table");
+        assert!(scan.strips.is_empty());
+        assert_eq!(scan.conflicting_representation_count, 0);
+
+        // One complete two-byte entry accounts for all three positions.
+        let count_offset = bytes.len() - 3;
+        bytes[count_offset] = 1;
+        let scan = with_context(&bytes, |ctx| triangle_strips(ctx, &bytes))
+            .expect("complete cumulative table");
+        assert_eq!(scan.strips.len(), 1);
+        assert_eq!(scan.strips[0].strip_lengths(), &[3]);
+        assert_eq!(scan.strips[0].positions().len(), 3);
     }
 
     #[test]
