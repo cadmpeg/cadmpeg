@@ -250,3 +250,54 @@ fn existing_sketch_alias_dependency_does_not_copy_the_base_identity() {
     assert_eq!(features[1].dependencies.as_slice(), &[base]);
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn unnamed_sketch_index_admits_every_filtered_source_visit() {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SketchFeatureBinding};
+    let mut feature = ordering_feature();
+    feature.name = None;
+    feature.native_ref = None;
+    feature.evaluation.set_definition(FeatureDefinition::Operation(
+        FeatureOperation::Sketch {
+            sketch: SketchFeatureBinding::Planar(None),
+        },
+    ));
+    let sketches = vec![
+        cadmpeg_ir::sketches::Sketch {
+            id: cadmpeg_ir::sketches::SketchId::mint("synthetic:test:sketch#unnamed").unwrap(),
+            name: None,
+            configuration: None,
+            visible: None,
+            placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved {},
+            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
+            native_ref: None,
+        };
+        64
+    ];
+    let mut features = [feature];
+    let expected = features.clone();
+    bind_unique_sketch_feature(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut features,
+        &sketches,
+        &[],
+    )
+    .unwrap();
+    assert_eq!(features, expected);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "scan SLDPRT sketch names",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            bind_unique_sketch_feature(&ctx, &mut expected.clone(), &sketches, &[])?;
+            ctx.finish_session()
+        },
+    );
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "scan SLDPRT sketch names"
+            && limit.additional >= 64));
+}
