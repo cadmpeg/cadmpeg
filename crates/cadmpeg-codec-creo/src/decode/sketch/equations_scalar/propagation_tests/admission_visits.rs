@@ -53,27 +53,25 @@ fn empty_scalar_component_samples_charge_only_the_component_roster() {
             let result =
                 super::super::scalar_equality_values_for_components(&ctx, &[], &components);
             match result {
-Err(CodecError::ResourceLimit(original)) => {
-                assert_eq!(
-                    (
-                        original.dimension,
-                        original.used,
-                        original.additional,
-                        original.limit
-                    ),
-                    (ResourceDimension::WorkUnits, 0, need, cap)
-                );
-                assert_eq!(original.operation, "creo scalar equality value components");
-                Err(original.into())
-
-}
-Err(error) => panic!("unexpected route refusal: {error:?}"),
-Ok(value) => {
-                assert!(value.is_empty());
-                Ok(())
-
-}
-}
+                Err(CodecError::ResourceLimit(original)) => {
+                    assert_eq!(
+                        (
+                            original.dimension,
+                            original.used,
+                            original.additional,
+                            original.limit
+                        ),
+                        (ResourceDimension::WorkUnits, 0, need, cap)
+                    );
+                    assert_eq!(original.operation, "creo scalar equality value components");
+                    Err(original.into())
+                }
+                Err(error) => panic!("unexpected route refusal: {error:?}"),
+                Ok(value) => {
+                    assert!(value.is_empty());
+                    Ok(())
+                }
+            }
         });
     }
 }

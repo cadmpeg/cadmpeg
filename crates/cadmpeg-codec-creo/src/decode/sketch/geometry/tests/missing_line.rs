@@ -187,7 +187,8 @@ fn missing_line_without_ordered_rows_is_free() {
         policy.limits.max_recursion_depth = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         assert!(saved_section_missing_line_geometry(&ctx, &definition)
-            .expect("no ordered endpoints").is_none());
+            .expect("no ordered endpoints")
+            .is_none());
     }
 }
 
