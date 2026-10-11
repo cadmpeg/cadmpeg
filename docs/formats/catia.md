@@ -1126,7 +1126,51 @@ For a two-member plane-cap digon, the face-local relation is `q_loop = F_face ×
 
 **E5 surface carriers** use these byte layouts: plane `0xc8` is `90+8n` B, cylinder/circle `0xc9` is 137 B, cone `0xca` is 185 B, and torus `0xcc` is 201 B. A plane stores its origin at `+14`, a finite transform-scalar lane beginning at `+39`, and its four natural UV bounds in the final 32 bytes. **Edge curve descriptors** evaluate pcurves on their carriers: cylinder isoparametric curves yield circles or lines, torus isoparametric curves yield circles, and cone isoparametric curves yield circles. A non-intersection `0xc0` support with one analytic line pcurve lifts to that exact 3D line or circle; a plane `0x97` pcurve lifts to the corresponding plane-frame circle. A non-isoparametric pcurve on a nonplanar carrier remains the exact parametric surface-curve construction `C(t)=S(p(t))`; no endpoint chord or fitted cache replaces it. Lifted edges use the endpoint-ordered distance or canonical increasing angular interval. Torus and cone boundary UV pcurves are co-parameterized to the 3D edge angle parameter. The `0xa0` UV jet encodes a degree-5 C2 curve; a square Hermite solve recovers its exact control net. On a plane carrier, the affine plane frame maps that UV control net and unchanged knots, weights, and parameter interval to the exact 3D edge curve.
 
-E5 `0x96` p-curves store `<surface_ref>, origin_u, origin_v, dir_u, dir_v, param_lo, param_hi` as f64 values. E5 `0x97` p-curves store `<surface_ref>, center_u, center_v, <code0:u32>, <code1:u32>, radius, param_lo, param_hi, tail0, tail1>`. Their native UV circle is converted to a rational quadratic arc before the owning carrier's independent U/V chart scales transform every control point; unequal scales therefore produce an exact neutral-chart ellipse, not a circle with a rescaled scalar radius. Cylinder U is arc length (`u=U_native/radius`); torus U and V are arc lengths (`u=U_native/major_radius`, `v=V_native/minor_radius`). A cone carrier stores `u_scale:f64` at record `+158` and `v_scale:f64` at `+166`; its neutral chart is `u=U_native/u_scale`, `v=V_native*cos(half_angle)/v_scale`. `0xc0` is a one-pcurve boundary support and `0xc1` is a two-pcurve intersection support. Edge type follows `0xff -> 0xc0/0xc1 -> pcurve -> carrier`. When both `0xc1` support-side pcurves lift to the same analytic 3D locus and equal endpoint-ordered sweep, the edge retains that exact cache together with the ordered two-surface intersection construction. A support-side reference may instead name a wrapper; the two radial loop occurrences then supply the construction's ordered `(surface,pcurve)` sides after both endpoint lifts agree with the edge identities. The finite `0xc1` support interval is the solved interval for this occurrence-side construction; each occurrence retains its native pcurve interval as an affine mapping to that solved interval, so the two local intervals need not have equal numeric endpoints. If both occurrence lifts are equivalent carriers with equal endpoint-ordered sweep, that carrier is the exact cache. If exactly one lift is an exact analytic line or circle and the other is an exact NURBS alternative, the analytic carrier is the exact cache. When only one radial side resolves, that side retains the exact parametric construction `C(t)=S(p(t))` without asserting the unresolved second support or a solved cache. When multiple radial sides do not form that exact context, no side is selected. Endpoint agreement alone does not select a solved cache.
+E5 `0x96` p-curves store `<surface_ref>, origin_u, origin_v, dir_u, dir_v, param_lo, param_hi` as f64 values. E5 `0x97` p-curves store `<surface_ref>, center_u, center_v, <code0:u32>, <code1:u32>, radius, param_lo, param_hi, tail0, tail1>`. Their native UV circle is converted to a rational quadratic arc before the owning carrier's independent U/V chart scales transform every control point; unequal scales therefore produce an exact neutral-chart ellipse, not a circle with a rescaled scalar radius. Cylinder U is arc length (`u=U_native/radius`); torus U and V are arc lengths (`u=U_native/major_radius`, `v=V_native/minor_radius`). A cone carrier stores `u_scale:f64` at record `+158` and `v_scale:f64` at `+166`; its neutral chart is `u=U_native/u_scale`, `v=V_native*cos(half_angle)/v_scale`. `0xc0` is a one-pcurve boundary support and `0xc1` is a two-pcurve intersection support. Edge type follows `0xff -> 0xc0/0xc1 -> pcurve -> carrier`. The first support reference is the reference facet; the second is the co-facet. A reference can name another support record. Following its first reference preserves the reference facet's parameterization. The useful reference interval does not replace a pcurve's full current domain.
+
+Curve supports use `counted_refs 81 mode:u8 00 reference_lo:f64le reference_hi:f64le tail`. Class `0xc0` has exactly one reference and mode `0`; class `0xc1` has exactly two references and mode `3` or `5`. Limits are finite and strictly ordered. The record ends at the tail's terminal word.
+
+Mode `0` has a 12-byte suffix. It has no co-facet or parameter map.
+
+| Mode-0 tail offset | Type | Field |
+| --- | --- | --- |
+| `+0` | `f64le` | zero boundary tolerance |
+| `+8` | `u32le` | zero boundary terminal |
+
+Mode `3` has this 68-byte tail, measured after the fixed reference limits:
+
+| Tail offset | Type | Field |
+| --- | --- | --- |
+| `+0` | `f64le` | map accuracy in millimetres |
+| `+8` | `2×f64le` | useful co-facet limits |
+| `+24` | `f64le` | co-to-reference scale |
+| `+32` | `f64le` | co-to-reference offset |
+| `+40` | `2×f64le` | active reference limits |
+| `+56` | `f64le` | fit tolerance in millimetres |
+| `+64` | `u32le` | zero terminal |
+
+Its equation is `q_reference = scale*q_co + offset`. Scale is finite and nonzero; negative scale reverses parameter direction. The equation maps the co-facet limits to the direction-ordered reference limits. Binary64 endpoint arithmetic permits 32 ULPs of the largest multiplication term, offset or reference endpoint.
+
+Mode `5` has the variable tail `accuracy:f64le co_lo:f64le co_hi:f64le (80+n):u8 reference_sample:f64le{n} co_sample:f64le{n} active_reference_lo:f64le active_reference_hi:f64le fit_tolerance:f64le 0:u32le`, of length `53+16*n`. Count `n` is in `2..=127`. The two arrays are separate contiguous lanes. Equal array indices identify corresponding parameters. Each lane is finite and strictly monotone, independently increasing or decreasing. Every site lies within its facet limits, allowing 32 ULPs of the largest site or limit. The direction-ordered outer co-facet sites are bit-exact copies of the useful co-facet limits. Reference sites need not be bit-exact interval endpoints.
+
+The mode-5 prefix ends at the sample count; its fixed size is 25 bytes.
+
+| Mode-5 prefix offset | Type | Field |
+| --- | --- | --- |
+| `+0` | `f64le` | sampled map accuracy |
+| `+8` | `2×f64le` | sampled co-facet limits |
+| `+24` | `u8` | sample count encoded as `80+n` |
+
+The mode-5 suffix begins immediately after both sample lanes; its fixed size is 28 bytes.
+
+| Mode-5 suffix offset | Type | Field |
+| --- | --- | --- |
+| `+0` | `2×f64le` | sampled active reference limits |
+| `+16` | `f64le` | sampled fit tolerance |
+| `+24` | `u32le` | zero sampled terminal |
+
+In modes `3` and `5`, accuracy and fit tolerance are finite and nonnegative. The active reference limits are bit-exact copies of the fixed header limits; fit tolerance is a bit-exact copy of map accuracy. These are separate stored fields. Other curve families do not inherit their equality.
+
 E5 `0xaa` p-curves use `81 <surface_ref> 0:u16le <degree:u32le> 0:u32le 0:u32le <knot_count:u32le> 0:u32le <knot:f64le>{knot_count} <multiplicity:u32le>{knot_count} <uv_control:f64le,f64le>{control_count} <tail:37 bytes>`. The knot values are finite and strictly increasing; multiplicities are positive; the expanded knot count is `Σ multiplicity`, and `control_count = Σ multiplicity − degree − 1`. The p-curve is nonperiodic, has no weight lane, and the expanded knots define its complete underlying domain. Its 37-byte current-limit program defines the active native range.
 
 A class-`0xc8` plane stores its origin and natural UV bounds but no orientation vectors. Parallel axes from adjacent cylinder, cone, or torus carriers are the plane-normal constraint for rank-one boundary charts; the relevant shared `0xc1` support contains a circumferential `0x96` pcurve. Classify an `0x96` line as constant-V when `|dir_v|/max(|dir_u|,|dir_v|) ≤ 1e-8` and the normalized U component is nonzero, or as constant-U under the swapped condition. This scale-normalized test admits finite serialization noise in the nominally constant component; endpoint and surface-midpoint agreement still gates the lifted circle or line.

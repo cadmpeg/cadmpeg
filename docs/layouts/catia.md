@@ -633,6 +633,61 @@ Parsed by:
 | 78 | 64 | `extrapolation_continuation` | `f64[8]` | little | spec | \| `+78` \| `8×f64le` \| extrapolation continuation scalars \| |
 | 142 | 6 | `extrapolation_suffix` | `u8[6]` | little | spec | \| `+142` \| `6×u8` \| extrapolation suffix controls \| |
 
+## `e5_affine_support_tail`
+
+Spec §9 · layout: byte offsets · size: 68 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/e5/support.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `map_accuracy` | `f64` | little | spec | \| `+0` \| `f64le` \| map accuracy in millimetres \| |
+| 8 | 16 | `co_limits` | `f64[2]` | little | spec | \| `+8` \| `2×f64le` \| useful co-facet limits \| |
+| 24 | 8 | `scale` | `f64` | little | spec | \| `+24` \| `f64le` \| co-to-reference scale \| |
+| 32 | 8 | `offset` | `f64` | little | spec | \| `+32` \| `f64le` \| co-to-reference offset \| |
+| 40 | 16 | `active_reference_limits` | `f64[2]` | little | spec | \| `+40` \| `2×f64le` \| active reference limits \| |
+| 56 | 8 | `fit_tolerance` | `f64` | little | spec | \| `+56` \| `f64le` \| fit tolerance in millimetres \| |
+| 64 | 4 | `terminal` | `u32` | little | spec | \| `+64` \| `u32le` \| zero terminal \| |
+
+## `e5_boundary_support_tail`
+
+Spec §9 · layout: byte offsets · size: 12 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/e5/support.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `zero_tolerance` | `f64` | little | spec | \| `+0` \| `f64le` \| zero boundary tolerance \| |
+| 8 | 4 | `terminal` | `u32` | little | spec | \| `+8` \| `u32le` \| zero boundary terminal \| |
+
+## `e5_sampled_support_prefix`
+
+Spec §9 · layout: byte offsets · size: 25 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/e5/support.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `map_accuracy` | `f64` | little | spec | \| `+0` \| `f64le` \| sampled map accuracy \| |
+| 8 | 16 | `co_limits` | `f64[2]` | little | spec | \| `+8` \| `2×f64le` \| sampled co-facet limits \| |
+| 24 | 1 | `count` | `u8` | little | spec | \| `+24` \| `u8` \| sample count encoded as `80+n` \| |
+
+## `e5_sampled_support_suffix`
+
+Spec §9 · layout: byte offsets · size: 28 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/e5/support.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 16 | `active_reference_limits` | `f64[2]` | little | spec | \| `+0` \| `2×f64le` \| sampled active reference limits \| |
+| 16 | 8 | `fit_tolerance` | `f64` | little | spec | \| `+16` \| `f64le` \| sampled fit tolerance \| |
+| 24 | 4 | `terminal` | `u32` | little | spec | \| `+24` \| `u32le` \| zero sampled terminal \| |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

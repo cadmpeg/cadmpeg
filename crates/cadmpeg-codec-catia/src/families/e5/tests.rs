@@ -222,9 +222,13 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
     jet.extend_from_slice(&le_f64(0.0));
     jet.extend_from_slice(&le_f64(1.0));
     append_e5_record(&mut bytes, 0xa0, 403, &jet);
-    let mut support_payload = vec![0x82, 0x18, 144, 1, 0x18, 154, 1, 0x81, 0, 0];
+    let mut support_payload = vec![0x82, 0x18, 144, 1, 0x18, 154, 1, 0x81, 3, 0];
     support_payload.extend_from_slice(&le_f64(-10.0));
     support_payload.extend_from_slice(&le_f64(10.0));
+    for value in [0.0_f64, -10.0, 10.0, 1.0, 0.0, -10.0, 10.0, 0.0] {
+        support_payload.extend_from_slice(&le_f64(value));
+    }
+    support_payload.extend_from_slice(&0_u32.to_le_bytes());
     append_e5_record(&mut bytes, 0xc1, 200, &support_payload);
     for (bound, pcurves) in [
         (210u32, [400u16, 410]),

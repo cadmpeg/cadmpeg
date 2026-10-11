@@ -1782,3 +1782,144 @@ offset = 142
 type = "u8[6]"
 source = "spec"
 anchor = "| `+142` | `6×u8` | extrapolation suffix controls |"
+
+[[record]]
+name = "e5_affine_support_tail"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/e5/support.rs"
+kind = "byte"
+section = "9"
+endianness = "little"
+size = 68
+anchor = "Mode `3` has this 68-byte tail"
+
+[[record.field]]
+name = "map_accuracy"
+offset = 0
+type = "f64"
+source = "spec"
+anchor = "| `+0` | `f64le` | map accuracy in millimetres |"
+
+[[record.field]]
+name = "co_limits"
+offset = 8
+type = "f64[2]"
+source = "spec"
+anchor = "| `+8` | `2×f64le` | useful co-facet limits |"
+
+[[record.field]]
+name = "scale"
+offset = 24
+type = "f64"
+source = "spec"
+anchor = "| `+24` | `f64le` | co-to-reference scale |"
+
+[[record.field]]
+name = "offset"
+offset = 32
+type = "f64"
+source = "spec"
+anchor = "| `+32` | `f64le` | co-to-reference offset |"
+
+[[record.field]]
+name = "active_reference_limits"
+offset = 40
+type = "f64[2]"
+source = "spec"
+anchor = "| `+40` | `2×f64le` | active reference limits |"
+
+[[record.field]]
+name = "fit_tolerance"
+offset = 56
+type = "f64"
+source = "spec"
+anchor = "| `+56` | `f64le` | fit tolerance in millimetres |"
+
+[[record.field]]
+name = "terminal"
+offset = 64
+type = "u32"
+source = "spec"
+anchor = "| `+64` | `u32le` | zero terminal |"
+
+[[record]]
+name = "e5_boundary_support_tail"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/e5/support.rs"
+kind = "byte"
+section = "9"
+endianness = "little"
+size = 12
+anchor = "Mode `0` has a 12-byte suffix."
+
+[[record.field]]
+name = "zero_tolerance"
+offset = 0
+type = "f64"
+source = "spec"
+anchor = "| `+0` | `f64le` | zero boundary tolerance |"
+
+[[record.field]]
+name = "terminal"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "| `+8` | `u32le` | zero boundary terminal |"
+
+[[record]]
+name = "e5_sampled_support_prefix"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/e5/support.rs"
+kind = "byte"
+section = "9"
+endianness = "little"
+size = 25
+anchor = "The mode-5 prefix ends at the sample count"
+
+[[record.field]]
+name = "map_accuracy"
+offset = 0
+type = "f64"
+source = "spec"
+anchor = "| `+0` | `f64le` | sampled map accuracy |"
+
+[[record.field]]
+name = "co_limits"
+offset = 8
+type = "f64[2]"
+source = "spec"
+anchor = "| `+8` | `2×f64le` | sampled co-facet limits |"
+
+[[record.field]]
+name = "count"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "| `+24` | `u8` | sample count encoded as `80+n` |"
+
+[[record]]
+name = "e5_sampled_support_suffix"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/e5/support.rs"
+kind = "byte"
+section = "9"
+endianness = "little"
+size = 28
+anchor = "The mode-5 suffix begins immediately after both sample lanes"
+
+[[record.field]]
+name = "active_reference_limits"
+offset = 0
+type = "f64[2]"
+source = "spec"
+anchor = "| `+0` | `2×f64le` | sampled active reference limits |"
+
+[[record.field]]
+name = "fit_tolerance"
+offset = 16
+type = "f64"
+source = "spec"
+anchor = "| `+16` | `f64le` | sampled fit tolerance |"
+
+[[record.field]]
+name = "terminal"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "| `+24` | `u32le` | zero sampled terminal |"

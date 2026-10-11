@@ -10,6 +10,7 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 
+use super::support::E5CurveSupport;
 use crate::wire;
 
 const EPS_PARAMETER_ENDPOINT: f64 = 1.0e-9;
@@ -71,61 +72,6 @@ impl E5Topology {
             representation,
         ))
         .map(|(start, end)| [start, end]))
-    }
-}
-
-/// A class-`0xc0`/`0xc1` curve-support record: the pcurve(s) an edge curve
-/// evaluates against and the surface parameter range they span ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
-#[derive(Debug, Clone, PartialEq)]
-pub(super) enum E5CurveSupportKind {
-    /// Class-`0xc0` one-pcurve boundary support.
-    Boundary(u32),
-    /// Class-`0xc1` two-pcurve intersection support.
-    Intersection([u32; 2]),
-}
-
-impl E5CurveSupportKind {
-    fn from_parts(intersection: bool, pcurves: &[u32]) -> Option<Self> {
-        match (intersection, pcurves) {
-            (false, &[pcurve]) => Some(Self::Boundary(pcurve)),
-            (true, &[left, right]) => Some(Self::Intersection([left, right])),
-            _ => None,
-        }
-    }
-
-    fn pcurves(&self) -> &[u32] {
-        match self {
-            Self::Boundary(pcurve) => std::slice::from_ref(pcurve),
-            Self::Intersection(pcurves) => pcurves,
-        }
-    }
-
-    fn is_intersection(&self) -> bool {
-        matches!(self, Self::Intersection(_))
-    }
-}
-
-/// A class-`0xc0`/`0xc1` curve-support record ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
-#[derive(Debug, Clone, PartialEq)]
-pub(super) struct E5CurveSupport {
-    /// Boundary or intersection pcurve layout.
-    pub(super) kind: E5CurveSupportKind,
-    /// Raw mode byte following the pcurve reference lane; meaning not
-    /// decoded further.
-    pub(super) mode: u8,
-    /// `[lo, hi]` parameter range on the support, stored as LE f64.
-    pub(super) range: [FiniteReal; 2],
-    /// Unparsed bytes after the fixed header; not interpreted.
-    pub(super) tail: Vec<u8>,
-}
-
-impl E5CurveSupport {
-    pub(super) fn pcurves(&self) -> &[u32] {
-        self.kind.pcurves()
-    }
-
-    pub(super) fn is_intersection(&self) -> bool {
-        self.kind.is_intersection()
     }
 }
 
@@ -525,7 +471,7 @@ pub(crate) fn parse_topology(
                     }
                 }
                 0xc0 | 0xc1 => {
-                    let value = match parse_curve_support(ctx, record) {
+                    let value = match super::support::parse(ctx, record.class, record.payload) {
                         Ok(Some(value)) => value,
                         Ok(None) => return None,
                         Err(error) => return Some(Err(error)),
@@ -933,56 +879,6 @@ fn bound_representation_parameter(
         }
     };
     super::parameters::arc_local_parameter(start, end, entry.parameter.get())
-}
-
-fn parse_curve_support(
-    ctx: &DecodeContext<'_>,
-    record: &Record<'_>,
-) -> Result<Option<E5CurveSupport>, CodecError> {
-    let expected = if record.class == 0xc0 { 1 } else { 2 };
-    if record.payload.first() != Some(&(0x80 + expected)) {
-        return Ok(None);
-    }
-    let mut position = 1;
-    let mut pcurves = [0u32; 2];
-    for pcurve in pcurves.iter_mut().take(usize::from(expected)) {
-        let Some(reference) = wire::tokens::object_ref(record.payload, &mut position, false) else {
-            return Ok(None);
-        };
-        *pcurve = reference;
-    }
-    if record.payload.get(position) != Some(&0x81) {
-        return Ok(None);
-    }
-    position += 1;
-    let Some(&mode) = record.payload.get(position) else {
-        return Ok(None);
-    };
-    position += 1;
-    if record.payload.get(position) != Some(&0x00) {
-        return Ok(None);
-    }
-    position += 1;
-    let mut view = View::over_retained(record.payload);
-    if view.seek(position).is_none() {
-        return Ok(None);
-    }
-    let Some(range) = (|| Some([finite_f64_le(&mut view)?, finite_f64_le(&mut view)?]))() else {
-        return Ok(None);
-    };
-    position = view.position();
-    let Some(kind) =
-        E5CurveSupportKind::from_parts(record.class == 0xc1, &pcurves[..usize::from(expected)])
-    else {
-        return Ok(None);
-    };
-    let tail = ctx.copy_slice(&record.payload[position..], "catia_e5_curve_support_tail")?;
-    Ok(Some(E5CurveSupport {
-        kind,
-        mode,
-        range,
-        tail,
-    }))
 }
 
 fn parse_bounds(
@@ -1911,12 +1807,12 @@ mod tests {
     use super::{
         curve_support_reference_closes, parse_body_root, parse_jet_pcurve, parse_nurbs_pcurve,
         parse_pcurve, parse_topology, records, resolve_absolute_orientation, solve_loop_chain,
-        E5BoundEntry, E5Bounds, E5CurveSupport, E5CurveSupportKind, E5Edge, E5Face, E5Loop,
-        E5LoopMember, E5Pcurve, E5PcurveJetSite, E5Topology, Record, Sign,
+        E5BoundEntry, E5Bounds, E5Edge, E5Face, E5Loop, E5LoopMember, E5Pcurve, E5PcurveJetSite,
+        E5Topology, Record, Sign,
     };
     use crate::families::e5::tests::e5_loop_members;
     use crate::test_support::test_b5::{finite, finite_lane, finite_pair};
-    use crate::test_support::test_e5::append_e5_record;
+    use crate::test_support::test_e5::{affine_support, append_e5_record};
     use std::collections::BTreeMap;
 
     macro_rules! e5_test_context {
@@ -1954,10 +1850,20 @@ mod tests {
         let mut wrapper_payload = vec![0x82, 0x08, 100, 0x08, 102, 0x81, 0, 0];
         wrapper_payload.extend_from_slice(&0.0_f64.to_le_bytes());
         wrapper_payload.extend_from_slice(&1.0_f64.to_le_bytes());
+        wrapper_payload[6] = 3;
+        for value in [0.0_f64, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0] {
+            wrapper_payload.extend_from_slice(&value.to_le_bytes());
+        }
+        wrapper_payload.extend_from_slice(&0_u32.to_le_bytes());
         append_e5_record(&mut bytes, 0xc1, 201, &wrapper_payload);
         let mut support_payload = vec![0x82, 0x08, 201, 0x08, 101, 0x81, 0, 0];
         support_payload.extend_from_slice(&0.0_f64.to_le_bytes());
         support_payload.extend_from_slice(&1.0_f64.to_le_bytes());
+        support_payload[6] = 3;
+        for value in [0.0_f64, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0] {
+            support_payload.extend_from_slice(&value.to_le_bytes());
+        }
+        support_payload.extend_from_slice(&0_u32.to_le_bytes());
         append_e5_record(&mut bytes, 0xc1, 200, &support_payload);
 
         let mut bound_payload = vec![0x83];
@@ -2059,12 +1965,7 @@ mod tests {
                 range: finite_pair([0.0, 1.0]),
             },
         )]);
-        let support = |pcurves: [u32; 2]| E5CurveSupport {
-            kind: E5CurveSupportKind::Intersection(pcurves),
-            mode: 0,
-            range: finite_pair([0.0, 1.0]),
-            tail: Vec::new(),
-        };
+        let support = |pcurves: [u32; 2]| affine_support(pcurves, finite_pair([0.0, 1.0]));
         let supports = BTreeMap::from([(1, support([2, 3])), (2, support([1, 3]))]);
         assert!(
             !crate::test_support::with_service_context(|ctx| curve_support_reference_closes(
@@ -2085,15 +1986,7 @@ mod tests {
                 range: finite_pair([0.0, 1.0]),
             },
         )]);
-        let supports = BTreeMap::from([(
-            1,
-            E5CurveSupport {
-                kind: E5CurveSupportKind::Intersection([3, 3]),
-                mode: 0,
-                range: finite_pair([0.0, 1.0]),
-                tail: Vec::new(),
-            },
-        )]);
+        let supports = BTreeMap::from([(1, affine_support([3, 3], finite_pair([0.0, 1.0])))]);
         assert!(
             crate::test_support::with_service_context(|ctx| curve_support_reference_closes(
                 ctx, 1, &pcurves, &supports
@@ -2841,33 +2734,6 @@ mod tests {
         assert!(matches!(
             super::parse_loop_signs(&trailing, 2),
             Err(super::LoopSignError::Sign)
-        ));
-    }
-
-    #[test]
-    fn e5_curve_support_tail_refuses_before_copy() {
-        let mut payload = vec![0x81, 0x81, 0x81, 0, 0];
-        payload.extend_from_slice(&0.0_f64.to_le_bytes());
-        payload.extend_from_slice(&1.0_f64.to_le_bytes());
-        payload.push(0xaa);
-        let record = Record {
-            class: 0xc0,
-            id: 1,
-            payload: &payload,
-        };
-        assert_eq!(
-            crate::test_support::with_service_context(|ctx| super::parse_curve_support(
-                ctx, &record
-            ))
-            .expect("service resource budget")
-            .expect("valid curve support")
-            .tail,
-            [0xaa]
-        );
-        assert!(matches!(
-            crate::test_support::with_collection_limit(0, |ctx| super::parse_curve_support(ctx, &record)),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "catia_e5_curve_support_tail"
         ));
     }
 

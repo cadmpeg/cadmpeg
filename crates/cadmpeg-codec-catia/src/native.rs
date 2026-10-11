@@ -37,6 +37,9 @@ use edge_node::{
     CatiaConsolidatedEdgeNode, CatiaConsolidatedEdgeNodeWire,
 };
 
+mod e5_curve_support;
+use e5_curve_support::CatiaE5CurveSupportRecord;
+
 pub(crate) mod entity_record;
 use entity_record::{
     CatiaEntityObjectProduction, CatiaEntityRecord, CatiaEntityRecordBody, CatiaEntityRecordWire,
@@ -7987,6 +7990,10 @@ define_catia_arenas! {
         /// Design objects grouped by their serialized owner entity identity.
         pub(crate) stored;
     },
+    e5_curve_supports: CatiaE5CurveSupportRecord {
+        /// Complete E5 reference/co-facet correspondence programs.
+        pub(crate) stored;
+    },
     entity_records: CatiaEntityRecord {
         /// Exact `7C05` entity-table records paired with object records.
         pub(crate) stored;
@@ -10083,6 +10090,7 @@ impl CatiaNative {
         )?;
         let consolidated_vertex_identities =
             consolidated_vertex_identities(ctx, &consolidated_edge_nodes)?;
+        let e5_curve_supports = e5_curve_support::derive(ctx, bytes)?;
         Ok(Self {
             alias_rows,
             inline_fields,
@@ -10109,6 +10117,7 @@ impl CatiaNative {
             consolidated_tori,
             consolidated_vertex_identities,
             design_objects,
+            e5_curve_supports,
             entity_records,
             external_references,
             finjpl_segments,

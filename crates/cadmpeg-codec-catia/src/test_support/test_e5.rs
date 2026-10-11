@@ -271,6 +271,7 @@ pub(crate) fn e5_torus_topology_stream() -> Vec<u8> {
         ];
         support.extend_from_slice(&le_f64(0.0));
         support.extend_from_slice(&le_f64(1.0));
+        support.extend_from_slice(&[0; 12]);
         append_e5_record(
             &mut bytes,
             0xc0,
@@ -340,4 +341,31 @@ pub(crate) fn e5_torus_topology_stream() -> Vec<u8> {
         }
     }
     bytes
+}
+
+/// A complete identity affine map for topology fixtures.
+pub(crate) fn affine_support(
+    curves: [u32; 2],
+    range: [cadmpeg_ir::scalar::FiniteReal; 2],
+) -> crate::families::e5::support::E5CurveSupport {
+    use crate::families::e5::support::{
+        E5CurveSupport, E5CurveSupportKind, E5EquivalentParameters, E5ParameterProgram,
+    };
+    use cadmpeg_ir::scalar::{FiniteReal, NonNegativeLength, NonZeroReal};
+    E5CurveSupport {
+        kind: E5CurveSupportKind::Intersection {
+            curves,
+            correspondence: E5EquivalentParameters {
+                map_accuracy: NonNegativeLength::new(0.0).unwrap(),
+                co_domain: range,
+                program: E5ParameterProgram::Affine {
+                    scale: NonZeroReal::new(1.0).unwrap(),
+                    offset: FiniteReal::new(0.0).unwrap(),
+                },
+                active_reference_limits: range,
+                fit_tolerance: NonNegativeLength::new(0.0).unwrap(),
+            },
+        },
+        range,
+    }
 }

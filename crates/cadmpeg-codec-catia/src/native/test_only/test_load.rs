@@ -705,6 +705,7 @@ impl CatiaNative {
         )?;
         validate_alias_surface_tags(&alias_rows)?;
         validate_owner_chart_support_aliases(&consolidated_owner_packets, &alias_rows)?;
+        let e5_curve_supports = namespace.arena_as("e5_curve_supports")?;
         Ok(Self {
             alias_rows,
             inline_fields,
@@ -731,6 +732,7 @@ impl CatiaNative {
             consolidated_tori,
             consolidated_vertex_identities,
             design_objects,
+            e5_curve_supports,
             entity_records,
             external_references,
             finjpl_segments,

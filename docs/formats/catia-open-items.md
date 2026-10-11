@@ -510,21 +510,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must identify the higher-topology relation and its other endpoint-sign productions.
 
-### E5-06. Curve-support mode
+### E5-07. Sampled correspondence interpolation
 
-**Question.** What does the mode byte after the pcurve reference lane in an E5 curve-support record select?
+**Question.** What interpolation and derivative rules apply between mode-5 correspondence sites?
 
-**Known.** The decoder retains the mode and the complete pcurve reference lane.
+**Known.** The complete mode-5 layout, facet order, sample pairing, independent parameter directions, accuracy and fit fields are specified in `catia.md` §9. The samples define corresponding sites. Two sites alone do not prove an affine map between different curve parameterizations.
 
-**Need.** We must know the mode to interpret the support relation.
-
-### E5-07. Curve-support trailing bytes
-
-**Question.** What fields occur after the fixed header of an E5 curve-support record?
-
-**Known.** The decoder retains these bytes inside the bounded record.
-
-**Need.** We must know the fields to read and write the complete support record.
+**Need.** Determine the interpolation rule from the producer's equivalent-parameter implementation or an independent interior-parameter witness.
 
 ### E5-11. Active extrapolation continuation
 

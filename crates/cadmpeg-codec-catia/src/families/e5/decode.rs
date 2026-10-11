@@ -1213,6 +1213,7 @@ struct E5IntersectionSidePlan {
 
 #[derive(Clone)]
 struct E5OccurrenceIntersectionSide {
+    pcurve_record: u32,
     surface: SurfaceId,
     pcurve: PcurveGeometry,
     pcurve_range: [f64; 2],
@@ -1641,6 +1642,7 @@ fn plan_e5_boundary<'a>(
                 };
                 if support.is_intersection() {
                     let side = E5OccurrenceIntersectionSide {
+                        pcurve_record: pcurve_ref,
                         surface: surface_for_ref[&face.surface]
                             .0
                             .try_clone_for_decode(ctx, "catia_e5_occurrence_surface_id")?,
@@ -1667,7 +1669,8 @@ fn plan_e5_boundary<'a>(
                     )?;
                     let sides = occurrence_intersection_sides.entry(edge_ref).or_default();
                     if !sides.iter().any(|existing| {
-                        existing.surface == side.surface
+                        existing.pcurve_record == side.pcurve_record
+                            && existing.surface == side.surface
                             && existing.pcurve == side.pcurve
                             && existing.pcurve_range == side.pcurve_range
                     }) {
@@ -1842,6 +1845,13 @@ fn plan_e5_boundary<'a>(
         let (Some(left), Some(right)) = (sides.get(left_ref), sides.get(right_ref)) else {
             continue;
         };
+        // Rational UV arcs and spline facets do not have an affine angle
+        // parameterization, even when their lifted locus is a circle.
+        if !matches!(left.pcurve, PcurveGeometry::Line(_))
+            || !matches!(right.pcurve, PcurveGeometry::Line(_))
+        {
+            continue;
+        }
         let same_parameterization =
             parameter_range_agreement_tolerance(left.curve_range, right.curve_range).is_some();
         let same_carrier = equivalent_e5_curve_carriers(&left.curve, &right.curve);
@@ -1903,53 +1913,75 @@ fn plan_e5_boundary<'a>(
         let Some(support) = topology.curve_supports.get(&edge.support) else {
             return Ok(None);
         };
-        let cache = e5_occurrence_intersection_cache(ctx, sides)?;
-        let support_range = support.range.map(FiniteReal::get);
-        let solved_range = cache.as_ref().map_or(support_range, |(_, range)| *range);
-        let Some(context) =
-            e5_support_occurrence_intersection_context(ctx, support_range, solved_range, sides)?
-        else {
-            if let [side] = sides.as_slice() {
-                if !surface_curves.contains_key(&edge_ref) {
-                    let surface_id = side
-                        .surface
-                        .try_clone_for_decode(ctx, "catia_e5_surface_curve_surface_id")?;
-                    let pcurve = side
-                        .pcurve
-                        .try_clone_for_decode(ctx, "catia_e5_surface_curve_pcurve")?;
+        // A common analytic locus is a cache proof, independently of the
+        // correspondence interpolation. It does not create a second map.
+        if let [left, right] = sides.as_slice() {
+            if let (Some((left_curve, left_range)), Some((right_curve, right_range))) =
+                (&left.curve, &right.curve)
+            {
+                if (equivalent_e5_curve_carriers(left_curve, right_curve)
+                    && parameter_range_agreement_tolerance(*left_range, *right_range).is_some())
+                    || e5_circle_carriers_have_same_ordered_sweep(
+                        ctx,
+                        left_curve,
+                        *left_range,
+                        right_curve,
+                        *right_range,
+                    )?
+                {
                     ctx.insert_btree_map(
-                        &mut surface_curves,
+                        &mut edge_curves,
                         edge_ref,
-                        (surface_id, pcurve, side.pcurve_range),
-                        "catia_e5_surface_curve_plan",
+                        (
+                            left_curve.try_clone_for_decode(ctx, "catia_e5_boundary_curve_copy")?,
+                            *left_range,
+                        ),
+                        "catia_e5_edge_curve_plan",
                     )?;
                 }
             }
+        }
+        // The first facet defines the curve's reference parameterization.
+        // Sample sites alone do not define an interpolation between facets.
+        let mut reference = support.pcurves()[0];
+        for _ in 0..=topology.curve_supports.len() {
+            ctx.charge_work(1, "catia_e5_reference_facet_walk")?;
+            let Some(wrapper) = topology.curve_supports.get(&reference) else {
+                break;
+            };
+            reference = wrapper.pcurves()[0];
+        }
+        let mut selected = sides.iter().filter(|side| side.pcurve_record == reference);
+        let Some(side) = selected.next() else {
             continue;
         };
-        ctx.insert_btree_map(
-            &mut edge_curves,
-            edge_ref,
-            cache
-                .map(|(curve, range)| {
-                    Ok::<_, cadmpeg_core::CodecError>((
-                        (curve).try_clone_for_decode(ctx, "catia_e5_boundary_curve_copy")?,
-                        range,
-                    ))
-                })
-                .transpose()?
-                .unwrap_or((
-                    CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-                    solved_range,
-                )),
-            "catia_e5_edge_curve_plan",
-        )?;
-        ctx.insert_btree_map(
-            &mut intersections,
-            edge_ref,
-            context,
-            "catia_e5_intersection_plan",
-        )?;
+        if selected.next().is_some() {
+            continue;
+        }
+        if let Some((curve, range)) = &side.curve {
+            ctx.insert_btree_map(
+                &mut edge_curves,
+                edge_ref,
+                (
+                    curve.try_clone_for_decode(ctx, "catia_e5_boundary_curve_copy")?,
+                    *range,
+                ),
+                "catia_e5_edge_curve_plan",
+            )?;
+        } else {
+            ctx.insert_btree_map(
+                &mut surface_curves,
+                edge_ref,
+                (
+                    side.surface
+                        .try_clone_for_decode(ctx, "catia_e5_surface_curve_surface_id")?,
+                    side.pcurve
+                        .try_clone_for_decode(ctx, "catia_e5_surface_curve_pcurve")?,
+                    side.pcurve_range,
+                ),
+                "catia_e5_surface_curve_plan",
+            )?;
+        }
     }
 
     for (&edge_ref, (_, _, range)) in &surface_curves {
@@ -3510,97 +3542,6 @@ fn e5_occurrence_intersection_context(
     .ok()
 }
 
-fn e5_support_occurrence_intersection_context(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    support_range: [f64; 2],
-    solved_range: [f64; 2],
-    sides: &[E5OccurrenceIntersectionSide],
-) -> Result<Option<IntcurveSupportContext>, cadmpeg_core::CodecError> {
-    let [left, right] = sides else {
-        return Ok(None);
-    };
-    if left.surface == right.surface {
-        return Ok(None);
-    }
-    if !e5_parameter_range_is_valid(support_range)
-        || !e5_parameter_range_is_valid(solved_range)
-        || !e5_parameter_range_is_valid(left.pcurve_range)
-        || !e5_parameter_range_is_valid(right.pcurve_range)
-    {
-        return Ok(None);
-    }
-    let [left_side, right_side] = [left, right].map(|side| {
-        Ok::<_, cadmpeg_core::CodecError>(IntcurveSupportSide {
-            surface: Some(
-                side.surface
-                    .try_clone_for_decode(ctx, "catia_e5_occurrence_context_surface_id")?,
-            ),
-            pcurve: Some(SupportPcurve::new(
-                side.pcurve
-                    .try_clone_for_decode(ctx, "catia_e5_occurrence_context_pcurve")?,
-                DirectedParameterRange::new(side.pcurve_range).ok(),
-            )),
-        })
-    });
-    Ok(IntcurveSupportContext::try_new(
-        [left_side?, right_side?],
-        solved_range,
-        std::array::from_fn(|_| Vec::new()),
-    )
-    .ok())
-}
-
-fn e5_occurrence_intersection_cache<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    sides: &'a [E5OccurrenceIntersectionSide],
-) -> Result<Option<(&'a CurveGeometry, [f64; 2])>, cadmpeg_core::decode::ResourceLimit> {
-    let [left, right] = sides else {
-        return Ok(None);
-    };
-    let (Some((left_curve, left_range)), Some((right_curve, right_range))) =
-        (&left.curve, &right.curve)
-    else {
-        return Ok(None);
-    };
-    if equivalent_e5_curve_carriers(left_curve, right_curve)
-        && parameter_span_agreement(*left_range, *right_range).is_some()
-    {
-        return Ok(Some((left_curve, *left_range)));
-    }
-    if e5_circle_carriers_have_same_ordered_sweep(
-        ctx,
-        left_curve,
-        *left_range,
-        right_curve,
-        *right_range,
-    )? {
-        return Ok(Some((left_curve, *left_range)));
-    }
-    Ok(
-        match (
-            is_exact_e5_analytic_curve(left_curve),
-            is_exact_e5_analytic_curve(right_curve),
-            is_e5_nurbs_curve(right_curve),
-            is_e5_nurbs_curve(left_curve),
-        ) {
-            (true, false, true, _) => Some((left_curve, *left_range)),
-            (false, true, _, true) => Some((right_curve, *right_range)),
-            _ => None,
-        },
-    )
-}
-
-fn is_exact_e5_analytic_curve(curve: &CurveGeometry) -> bool {
-    matches!(
-        curve,
-        CurveGeometry::Solved(SolvedCurveGeometry::Line(_) | SolvedCurveGeometry::Circle(_))
-    )
-}
-
-fn is_e5_nurbs_curve(curve: &CurveGeometry) -> bool {
-    matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_)))
-}
-
 fn e5_parameter_range_is_valid(range: [f64; 2]) -> bool {
     range.into_iter().all(f64::is_finite) && range[0] != range[1]
 }
@@ -4009,10 +3950,12 @@ mod route_tests {
     use crate::families::e5::tests::e5_loop_members;
 
     use crate::families::e5::graph::{
-        E5BoundEntry, E5Bounds, E5CurveSupport, E5CurveSupportKind, E5Edge, E5Face, E5Loop,
-        E5OrientedMember, E5Pcurve, E5PcurveJetSite, E5Topology,
+        E5BoundEntry, E5Bounds, E5Edge, E5Face, E5Loop, E5OrientedMember, E5Pcurve,
+        E5PcurveJetSite, E5Topology,
     };
     use crate::families::e5::records::E5Surface;
+    use crate::families::e5::support::{E5CurveSupport, E5CurveSupportKind};
+    use crate::test_support::test_e5::affine_support;
 
     use cadmpeg_ir::document::CadIr;
 
@@ -4730,10 +4673,10 @@ mod route_tests {
             curve_supports: BTreeMap::from([(
                 300,
                 E5CurveSupport {
-                    kind: E5CurveSupportKind::Boundary(20),
-                    mode: 0,
+                    kind: E5CurveSupportKind::Boundary {
+                        reference_curve: 20,
+                    },
                     range: finite_pair([0.0, 1.0]),
-                    tail: Vec::new(),
                 },
             )]),
             vertex_refs: vec![400, 401],
@@ -4802,12 +4745,7 @@ mod route_tests {
             bounds: BTreeMap::new(),
             curve_supports: BTreeMap::from([(
                 300,
-                E5CurveSupport {
-                    kind: E5CurveSupportKind::Intersection([20, 21]),
-                    mode: 0,
-                    range: finite_pair([0.0, 1.0]),
-                    tail: Vec::new(),
-                },
+                affine_support([20, 21], finite_pair([0.0, 1.0])),
             )]),
             vertex_refs: vec![400, 401],
         };
@@ -4840,7 +4778,7 @@ mod route_tests {
     }
 
     #[test]
-    fn intersection_side_planning_does_not_select_a_conflicting_side() {
+    fn intersection_side_planning_retains_reference_facet_without_conflicting_intersection() {
         let surface = E5Surface {
             pos: 0,
             record_id: 100,
@@ -4925,12 +4863,7 @@ mod route_tests {
             bounds: BTreeMap::new(),
             curve_supports: BTreeMap::from([(
                 300,
-                E5CurveSupport {
-                    kind: E5CurveSupportKind::Intersection([20, 21]),
-                    mode: 0,
-                    range: finite_pair([0.0, 1.0]),
-                    tail: Vec::new(),
-                },
+                affine_support([20, 21], finite_pair([0.0, 1.0])),
             )]),
             vertex_refs: vec![400, 401],
         };
@@ -4960,7 +4893,46 @@ mod route_tests {
         .expect("boundary plan");
         assert!(plan.intersections.is_empty());
         assert!(!plan.surface_curves.contains_key(&200));
-        assert!(!plan.edge_curves.contains_key(&200));
+        let (reference, range) = plan.edge_curves.get(&200).expect("source reference facet");
+        assert_eq!(*range, [0.0, 1.0]);
+        assert!(matches!(
+            reference,
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+        ));
+
+        // Equal circular loci do not make their rational UV parameters
+        // affine in the exact analytic circle's angle parameter.
+        let mut circular = topology;
+        let circle = E5Pcurve::Circle {
+            surface: 100,
+            center: finite_pair([0.0, 0.0]),
+            codes: [0, 0],
+            radius: positive(1.0),
+            range: finite_pair([0.0, std::f64::consts::FRAC_PI_2]),
+            tail: finite_pair([0.0, 0.0]),
+        };
+        circular.pcurves.insert(20, circle.clone());
+        circular.pcurves.insert(21, circle);
+        let points = HashMap::from([
+            (400, Point3::new(1.0, 0.0, 0.0)),
+            (401, Point3::new(0.0, 1.0, 0.0)),
+        ]);
+        let plan = crate::test_support::with_service_context(|ctx| {
+            plan_e5_boundary(
+                ctx,
+                &circular,
+                &surfaces,
+                &points,
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+        })
+        .expect("service budget")
+        .expect("circular boundary plan");
+        assert!(plan.intersections.is_empty());
+        assert!(matches!(
+            plan.edge_curves.get(&200),
+            Some((CurveGeometry::Solved(SolvedCurveGeometry::Circle(_)), _))
+        ));
     }
 
     #[test]
@@ -5006,10 +4978,10 @@ mod route_tests {
             curve_supports: BTreeMap::from([(
                 40,
                 E5CurveSupport {
-                    kind: E5CurveSupportKind::Boundary(30),
-                    mode: 0,
+                    kind: E5CurveSupportKind::Boundary {
+                        reference_curve: 30,
+                    },
                     range: finite_pair([0.0, 1.0]),
-                    tail: Vec::new(),
                 },
             )]),
             vertex_refs: vec![10, 11],
@@ -5040,10 +5012,10 @@ mod route_tests {
             topology.curve_supports.insert(
                 pcurve + 10,
                 E5CurveSupport {
-                    kind: E5CurveSupportKind::Boundary(pcurve),
-                    mode: 0,
+                    kind: E5CurveSupportKind::Boundary {
+                        reference_curve: pcurve,
+                    },
                     range: finite_pair([0.0, 1.0]),
-                    tail: Vec::new(),
                 },
             );
         }
