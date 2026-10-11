@@ -62,9 +62,9 @@ impl TrimPacket {
             .checked_mul(3)
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         let mut triangle_count = independent_count;
-        for length in ctx
-            .admit_iter(&strip_lengths, "catia_trim_packet_partition")?
-            .chain(ctx.admit_iter(&fan_lengths, "catia_trim_packet_partition")?)
+        let mut length_visits = strip_lengths.iter().chain(&fan_lengths);
+        while let Some(length) =
+            ctx.next_charged(&mut length_visits, "catia_trim_packet_partition")?
         {
             expected = expected
                 .checked_add(*length)
@@ -149,7 +149,9 @@ impl TrimPacket {
                 independent[offset + 2],
             ]);
         }
-        for &length in ctx.admit_iter(&self.strip_lengths, operation)? {
+
+        let mut charged_visits = (self.strip_lengths).iter();
+        while let Some(&length) = ctx.next_charged(&mut charged_visits, operation)? {
             let (strip, tail) = remaining.split_at(length);
             remaining = tail;
             for index in ctx.admit_iter(0..length.saturating_sub(2), operation)? {
@@ -161,7 +163,9 @@ impl TrimPacket {
                 });
             }
         }
-        for &length in ctx.admit_iter(&self.fan_lengths, operation)? {
+
+        let mut charged_visits = (self.fan_lengths).iter();
+        while let Some(&length) = ctx.next_charged(&mut charged_visits, operation)? {
             let (fan, tail) = remaining.split_at(length);
             remaining = tail;
             let Some((&center, rim)) = fan.split_first() else {
@@ -171,6 +175,7 @@ impl TrimPacket {
                 triangles.push([center, rim[index], rim[index + 1]]);
             }
         }
+
         Ok(triangles)
     }
 }
@@ -307,10 +312,10 @@ mod tests {
     #[test]
     fn trim_expansion_reuses_validated_count_without_rescanning_lengths() {
         let packet = packet((0, vec![4], vec![], vec![10, 11, 12, 13]));
-        // One strip length and two triangle windows require three visits.
-        crate::test_support::with_work_limit(3, |ctx| {
+        // One strip visit, two triangle windows, and two end probes use five units.
+        crate::test_support::with_work_limit(5, |ctx| {
             assert_eq!(
-                packet.triangles(ctx).expect("three input visits"),
+                packet.triangles(ctx).expect("five input visits"),
                 [[10, 11, 12], [12, 11, 13]]
             );
         });
@@ -325,14 +330,17 @@ mod tests {
                     if fan { vec![length] } else { vec![] },
                     (0..u32::try_from(length).expect("fixed strip length")).collect(),
                 ));
-                crate::test_support::with_work_limit(1, |ctx| {
-                    assert!(packet.triangles(ctx).expect("one length visit").is_empty());
+                crate::test_support::with_work_limit(3, |ctx| {
+                    assert!(packet
+                        .triangles(ctx)
+                        .expect("one length visit and two end probes")
+                        .is_empty());
                     let CodecError::ResourceLimit(limit) =
                         ctx.charge_work(1, "probe").expect_err("exact work")
                     else {
                         panic!("resource refusal required")
                     };
-                    assert_eq!(limit.used, 1);
+                    assert_eq!(limit.used, 3);
                 });
             }
         }

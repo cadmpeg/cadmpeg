@@ -400,6 +400,7 @@ impl TetrahedronAttachFixture {
         let outcome = crate::families::standard::decode::attach_standard_topology(
             ctx,
             AttachStandardTopologyInputs {
+                storage: None,
                 ir: &mut ir,
                 annotations: &mut annotations,
                 bindings: &self.bindings,

@@ -495,13 +495,12 @@ fn zero_entity_face_roster_logical_end(
         let values = record.checked_add(13)?;
         let trailer = values.checked_add(count.checked_mul(5)?)?;
         let value_bytes = data.get(values..trailer)?;
-        let admitted = match ctx.admit_iter(value_bytes, "catia_zero_roster_reference_bytes") {
-            Ok(source) => source,
-            Err(error) => return Some(Err(error.into())),
-        };
-        for (index, chunk) in admitted
-            .chunks(NonZeroUsize::MIN.checked_add(4)?)
-            .enumerate()
+        let mut reference_visits = value_bytes.chunks(5).enumerate();
+        while let Some((index, chunk)) =
+            match ctx.next_charged(&mut reference_visits, "catia_zero_roster_reference_visits") {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            }
         {
             let value = tagged_u32(chunk, 0)?;
             if value != u32::try_from(count.checked_sub(index)?).ok()? {
@@ -852,13 +851,15 @@ pub(crate) fn zero_entity_ownership_roots_in_range(
             zero_entity_records_in_range(ctx, data, range)
         })?;
     let mut roots = Vec::new();
-    for window in ctx
-        .admit_iter(&records, "catia_zero_three_record_window_visits")?
-        .windows(
-            NonZeroUsize::MIN
-                .checked_add(2)
-                .ok_or_else(|| CodecError::malformed("CATIA record window width is zero"))?,
-        )
+
+    let mut charged_visits = records.windows(
+        (NonZeroUsize::MIN
+            .checked_add(2)
+            .ok_or_else(|| CodecError::malformed("CATIA record window width is zero"))?)
+        .get(),
+    );
+    while let Some(window) =
+        ctx.next_charged(&mut charged_visits, "catia_zero_three_record_window_visits")?
     {
         let candidate = (|| {
             let [face_roster, shell, body] = window else {
@@ -912,13 +913,9 @@ pub(crate) fn zero_entity_ownership_roots_in_range(
         let Some(slot_bytes) = data.get(start..end) else {
             continue;
         };
-        for chunk in ctx
-            .admit_iter(slot_bytes, "catia_zero_owner_face_slot_bytes")?
-            .chunks(
-                NonZeroUsize::MIN
-                    .checked_add(4)
-                    .ok_or_else(|| CodecError::malformed("CATIA slot width is zero"))?,
-            )
+        let mut slot_visits = slot_bytes.chunks(5);
+        while let Some(chunk) =
+            ctx.next_charged(&mut slot_visits, "catia_zero_owner_face_slot_visits")?
         {
             let Some(value) = tagged_u32(chunk, 0) else {
                 valid = false;
@@ -941,6 +938,7 @@ pub(crate) fn zero_entity_ownership_roots_in_range(
             "catia_zero_ownership_roots",
         )?;
     }
+
     Ok(roots)
 }
 
@@ -980,9 +978,10 @@ pub(super) fn zero_entity_surfaces_in_range<'ctx>(
         })?;
     let mut storage = ctx.reserve_scoped(0, "catia_zero_surface_roster_workspace")?;
     let mut surfaces = Vec::new();
-    for record in ctx
-        .admit_iter(&records, "catia_zero_framed_record_visits")?
-        .copied()
+
+    let mut charged_visits = (records).iter().copied();
+    while let Some(record) =
+        ctx.next_charged(&mut charged_visits, "catia_zero_framed_record_visits")?
     {
         if let Some(geometry) = zero_entity_surface_at(ctx, data, record.pos, refusal)? {
             ctx.push_scoped_vec(
@@ -996,6 +995,7 @@ pub(super) fn zero_entity_surfaces_in_range<'ctx>(
             )?;
         }
     }
+
     Ok((surfaces, storage))
 }
 
@@ -1189,7 +1189,11 @@ pub(crate) fn zero_entity_support_runs_in_range(
     loop_roster_is_valid &= loop_index == loops.len();
     if loop_roster_is_valid {
         let mut remaining_loops = loops.into_iter();
-        for face in ctx.admit_iter(&mut faces, "catia_zero_face_loop_binding_rows")? {
+
+        let mut charged_visits = (faces).iter_mut();
+        while let Some(face) =
+            ctx.next_charged(&mut charged_visits, "catia_zero_face_loop_binding_rows")?
+        {
             let face_loops = face_storage.with_storage(|| {
                 ctx.collect_vec(
                     remaining_loops.by_ref().take(face.allocations.len() - 1),
@@ -1220,9 +1224,9 @@ pub(crate) fn zero_entity_support_runs_in_range(
         if loop_roster_is_valid {
             loop_storage.commit()?;
         }
-        for (mut face, run) in ctx
-            .admit_iter(faces, "catia_zero_face_run_bindings")?
-            .zip(runs.iter_mut())
+        let mut face_run_visits = faces.into_iter().zip(runs.iter_mut());
+        while let Some((mut face, run)) =
+            ctx.next_charged(&mut face_run_visits, "catia_zero_face_run_bindings")?
         {
             bind_face_support_occurrences(ctx, &mut face, &run.supports)?;
             run.face = Some(face);
@@ -1243,7 +1247,11 @@ fn bind_face_support_occurrences(
     // The slot and ordinal indexes and the bound-ordinal set are scratch.
     let mut scratch = ctx.reserve_scoped(0, "catia_zero_supports_by_slot")?;
     let mut supports_by_slot = HashMap::<u32, Option<u32>>::new();
-    for support in ctx.admit_iter(supports, "catia_zero_binding_support_visits")? {
+
+    let mut charged_visits = (supports).iter();
+    while let Some(support) =
+        ctx.next_charged(&mut charged_visits, "catia_zero_binding_support_visits")?
+    {
         if let Some(record) = ctx.get_mut_hash_map(
             &mut supports_by_slot,
             &support.face_local_slot,
@@ -1262,6 +1270,7 @@ fn bind_face_support_occurrences(
             })?;
         }
     }
+
     let (mut bindings, binding_storage) =
         ctx.scoped_vector_storage(face_loops.len(), "catia_zero_binding_rows")?;
     let mut row_storage = ctx.reserve_scoped(0, "catia_zero_binding_values")?;
@@ -1299,13 +1308,19 @@ fn bind_face_support_occurrences(
         return Ok(());
     }
     let mut bound = HashSet::new();
-    for row in ctx.admit_iter(&bindings, "catia_zero_binding_row_visits")? {
-        for &ordinal in ctx.admit_iter(row, "catia_zero_binding_ordinal_visits")? {
+
+    let mut charged_visits = (bindings).iter();
+    while let Some(row) = ctx.next_charged(&mut charged_visits, "catia_zero_binding_row_visits")? {
+        let mut charged_visits = (row).iter();
+        while let Some(&ordinal) =
+            ctx.next_charged(&mut charged_visits, "catia_zero_binding_ordinal_visits")?
+        {
             scratch.with_storage(|| {
                 ctx.insert_hash_set(&mut bound, ordinal, "catia_zero_bound_supports")
             })?;
         }
     }
+
     if bound.len() != supports.len() {
         return Ok(());
     }
@@ -1318,7 +1333,11 @@ fn bind_face_support_occurrences(
     }
     drop(binding_storage);
     let mut supports_by_ordinal = HashMap::new();
-    for support in ctx.admit_iter(supports, "catia_zero_binding_support_visits")? {
+
+    let mut charged_visits = (supports).iter();
+    while let Some(support) =
+        ctx.next_charged(&mut charged_visits, "catia_zero_binding_support_visits")?
+    {
         scratch.with_storage(|| {
             ctx.insert_hash_map(
                 &mut supports_by_ordinal,
@@ -1328,7 +1347,11 @@ fn bind_face_support_occurrences(
             )
         })?;
     }
-    for loop_record in ctx.admit_iter(face_loops, "catia_zero_endpoint_loop_visits")? {
+
+    let mut charged_visits = (face_loops).iter_mut();
+    while let Some(loop_record) =
+        ctx.next_charged(&mut charged_visits, "catia_zero_endpoint_loop_visits")?
+    {
         let (mut endpoints, _endpoint_storage) =
             ctx.with_scoped_storage("catia_zero_support_endpoint_workspace", || {
                 ctx.collection_vec(
@@ -1336,10 +1359,11 @@ fn bind_face_support_occurrences(
                     "catia_zero_support_endpoints",
                 )
             })?;
-        for ordinal in ctx.admit_iter(
-            &loop_record.support_record_ordinals,
-            "catia_zero_endpoint_ordinal_visits",
-        )? {
+
+        let mut charged_visits = (loop_record.support_record_ordinals).iter();
+        while let Some(ordinal) =
+            ctx.next_charged(&mut charged_visits, "catia_zero_endpoint_ordinal_visits")?
+        {
             endpoints.push(
                 ctx.get_hash_map(
                     &supports_by_ordinal,
@@ -1349,12 +1373,14 @@ fn bind_face_support_occurrences(
                 .and_then(|support| support.model_endpoints),
             );
         }
+
         if let Some(oriented) =
             oriented_closed_model_endpoints(ctx, &endpoints, &loop_record.forward_senses)?
         {
             loop_record.oriented_model_endpoints = oriented;
         }
     }
+
     Ok(())
 }
 
@@ -1440,7 +1466,11 @@ fn zero_entity_faces_from_records<'ctx>(
     CodecError,
 > {
     let (mut faces, mut backing_storage) = ctx.scoped_vector_storage(0, "catia_zero_faces")?;
-    for record in ctx.admit_iter(records, "catia_zero_framed_record_visits")? {
+
+    let mut charged_visits = (records).iter();
+    while let Some(record) =
+        ctx.next_charged(&mut charged_visits, "catia_zero_framed_record_visits")?
+    {
         let (face, storage) = ctx.with_scoped_storage(
             "catia_zero_face_workspace",
             || -> Result<Option<ZeroEntityFace>, CodecError> {
@@ -1519,6 +1549,7 @@ fn zero_entity_faces_from_records<'ctx>(
             ctx.push_scoped_vec(&mut backing_storage, &mut faces, face, "catia_zero_faces")?;
         }
     }
+
     Ok((faces, backing_storage))
 }
 
@@ -1534,7 +1565,11 @@ fn zero_entity_loops_from_records<'ctx>(
     CodecError,
 > {
     let (mut loops, mut backing_storage) = ctx.scoped_vector_storage(0, "catia_zero_loops")?;
-    for record in ctx.admit_iter(records, "catia_zero_framed_record_visits")? {
+
+    let mut charged_visits = (records).iter();
+    while let Some(record) =
+        ctx.next_charged(&mut charged_visits, "catia_zero_framed_record_visits")?
+    {
         let (loop_record, storage) = ctx.with_scoped_storage(
             "catia_zero_loop_workspace",
             || -> Result<Option<ZeroEntityLoop>, CodecError> {
@@ -1676,6 +1711,7 @@ fn zero_entity_loops_from_records<'ctx>(
             )?;
         }
     }
+
     Ok((loops, backing_storage))
 }
 
@@ -2583,9 +2619,10 @@ pub(crate) fn zero_entity_edge_strides_in_range(
             zero_entity_records_in_range(ctx, data, range)
         })?;
     let mut output = Vec::new();
-    for record in ctx
-        .admit_iter(&records, "catia_zero_framed_record_visits")?
-        .copied()
+
+    let mut charged_visits = (records).iter().copied();
+    while let Some(record) =
+        ctx.next_charged(&mut charged_visits, "catia_zero_framed_record_visits")?
     {
         let parsed = (|| {
             if record.tag != [0x5e, 0x1a]
@@ -2619,6 +2656,7 @@ pub(crate) fn zero_entity_edge_strides_in_range(
             ctx.push_vec(&mut output, record, "catia_zero_edge_strides")?;
         }
     }
+
     Ok(output)
 }
 
@@ -2643,13 +2681,15 @@ pub(crate) fn zero_entity_oriented_use_pairs_in_range(
             zero_entity_records_in_range(ctx, data, range)
         })?;
     let mut output = Vec::new();
-    for records in ctx
-        .admit_iter(&records, "catia_zero_three_record_window_visits")?
-        .windows(
-            NonZeroUsize::MIN
-                .checked_add(2)
-                .ok_or_else(|| CodecError::malformed("CATIA record window width is zero"))?,
-        )
+
+    let mut charged_visits = records.windows(
+        (NonZeroUsize::MIN
+            .checked_add(2)
+            .ok_or_else(|| CodecError::malformed("CATIA record window width is zero"))?)
+        .get(),
+    );
+    while let Some(records) =
+        ctx.next_charged(&mut charged_visits, "catia_zero_three_record_window_visits")?
     {
         let parsed = (|| {
             let [header, side_one, side_two] = records else {
@@ -2701,6 +2741,7 @@ pub(crate) fn zero_entity_oriented_use_pairs_in_range(
             ctx.push_vec(&mut output, pair, "catia_zero_oriented_use_pairs")?;
         }
     }
+
     Ok(output)
 }
 
@@ -2725,13 +2766,15 @@ pub(crate) fn zero_entity_vertex_incidences_in_range(
             zero_entity_records_in_range(ctx, data, range)
         })?;
     let mut output = Vec::new();
-    for records in ctx
-        .admit_iter(&records, "catia_zero_two_record_window_visits")?
-        .windows(
-            NonZeroUsize::MIN
-                .checked_add(1)
-                .ok_or_else(|| CodecError::malformed("CATIA record window width is zero"))?,
-        )
+
+    let mut charged_visits = records.windows(
+        (NonZeroUsize::MIN
+            .checked_add(1)
+            .ok_or_else(|| CodecError::malformed("CATIA record window width is zero"))?)
+        .get(),
+    );
+    while let Some(records) =
+        ctx.next_charged(&mut charged_visits, "catia_zero_two_record_window_visits")?
     {
         let parsed = (|| {
             let [record, owner] = records else {
@@ -2772,6 +2815,7 @@ pub(crate) fn zero_entity_vertex_incidences_in_range(
             ctx.push_vec(&mut output, incidence, "catia_zero_vertex_incidences")?;
         }
     }
+
     Ok(output)
 }
 
@@ -3347,8 +3391,8 @@ mod tests {
     fn zero_entity_fixed_roster_lanes_propagate_caller_work_refusals() {
         let ownership = zero_entity_ownership_stream(3);
         for operation in [
-            "catia_zero_roster_reference_bytes",
-            "catia_zero_owner_face_slot_bytes",
+            "catia_zero_roster_reference_visits",
+            "catia_zero_owner_face_slot_visits",
         ] {
             let result = crate::test_support::with_work_refusal(operation, |ctx| {
                 let result = super::zero_entity_ownership_roots_in_range(
