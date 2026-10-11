@@ -49,7 +49,18 @@ fn revolve_scope_index_refuses_actual_operations_and_releases_storage() {
     ];
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         let mut features = [feature.clone()];
-        super::super::bind_revolve_face_axes(ctx, &mut features, &scopes, &[], &[], &[], &[], &[])?;
+        super::super::bind_revolve_face_axes(
+            ctx,
+            &mut features,
+            super::super::RevolveFaceAxesInputs {
+                scopes: &scopes,
+                construction_groups: &[],
+                entity_selection_operands: &[],
+                face_operands: &[],
+                faces: &[],
+                surfaces: &[],
+            },
+        )?;
         assert_eq!(features[0], feature);
         Ok::<_, CodecError>(())
     };

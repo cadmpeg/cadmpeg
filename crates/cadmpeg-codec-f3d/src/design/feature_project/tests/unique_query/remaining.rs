@@ -129,9 +129,18 @@ fn unique_query_remaining_empty_bind_preserves_preexisting_refusal() {
         else {
             panic!("original charge must refuse");
         };
-        assert!(
-            matches!(super::super::super::bind_revolve_face_axes(ctx, &mut [], &[], &[], &[], &[], &[], &[]), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
+        assert!(matches!(super::super::super::bind_revolve_face_axes(
+        ctx,
+        &mut [],
+        crate::design::feature_project::RevolveFaceAxesInputs {
+            scopes: &[],
+            construction_groups: &[],
+            entity_selection_operands: &[],
+            face_operands: &[],
+            faces: &[],
+            surfaces: &[],
+        },
+    ), Err(CodecError::ResourceLimit(later)) if later == original));
         assert_eq!(ctx.resource_refusal(), Some(original));
     });
 }
@@ -183,12 +192,14 @@ fn unique_query_remaining_bind_feature_visit_refuses_before_mutation() {
         let Err(CodecError::ResourceLimit(original)) = super::super::super::bind_revolve_face_axes(
             ctx,
             std::slice::from_mut(&mut feature),
-            &[scope],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
+            crate::design::feature_project::RevolveFaceAxesInputs {
+                scopes: &[scope],
+                construction_groups: &[],
+                entity_selection_operands: &[],
+                face_operands: &[],
+                faces: &[],
+                surfaces: &[],
+            },
         ) else {
             panic!("actual feature visit must refuse");
         };
@@ -196,9 +207,18 @@ fn unique_query_remaining_bind_feature_visit_refuses_before_mutation() {
         assert_eq!((original.used, original.additional), (0, 1));
         assert_eq!(ctx.resource_refusal(), Some(original));
         assert_eq!(feature.evaluation.definition(), &original_definition);
-        assert!(
-            matches!(super::super::super::bind_revolve_face_axes(ctx, &mut [], &[], &[], &[], &[], &[], &[]), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
+        assert!(matches!(super::super::super::bind_revolve_face_axes(
+        ctx,
+        &mut [],
+        crate::design::feature_project::RevolveFaceAxesInputs {
+            scopes: &[],
+            construction_groups: &[],
+            entity_selection_operands: &[],
+            face_operands: &[],
+            faces: &[],
+            surfaces: &[],
+        },
+    ), Err(CodecError::ResourceLimit(later)) if later == original));
     });
 }
 
@@ -233,12 +253,14 @@ fn unique_query_remaining_bind_temporary_face_identity_refunds_actual_backing() 
             super::super::super::bind_revolve_face_axes(
                 ctx,
                 std::slice::from_mut(&mut feature),
-                std::slice::from_ref(&scope),
-                std::slice::from_ref(&group),
-                std::slice::from_ref(&selection),
-                &[],
-                &[],
-                &[],
+                crate::design::feature_project::RevolveFaceAxesInputs {
+                    scopes: std::slice::from_ref(&scope),
+                    construction_groups: std::slice::from_ref(&group),
+                    entity_selection_operands: std::slice::from_ref(&selection),
+                    face_operands: &[],
+                    faces: &[],
+                    surfaces: &[],
+                },
             )
             .unwrap();
             assert!(

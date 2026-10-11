@@ -7256,18 +7256,34 @@ fn revolve_face_axis_operand<'a>(
     Ok(found.then_some(operand))
 }
 
+/// Native selection records and analytic geometry for Revolve axis binding.
+#[derive(Clone, Copy)]
+pub(crate) struct RevolveFaceAxesInputs<'a> {
+    pub(crate) scopes: &'a [DesignParameterScope],
+    pub(crate) construction_groups: &'a [DesignConstructionOperandGroup],
+    pub(crate) entity_selection_operands:
+        &'a [crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+    pub(crate) face_operands: &'a [DesignFaceOperand],
+    pub(crate) faces: &'a [cadmpeg_ir::topology::Face],
+    pub(crate) surfaces: &'a [cadmpeg_ir::geometry::Surface],
+}
+
 /// Resolve Revolve axes selected through history-qualified analytic faces.
 pub(crate) fn bind_revolve_face_axes(
     ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
-    scopes: &[DesignParameterScope],
-    construction_groups: &[DesignConstructionOperandGroup],
-    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
-    face_operands: &[crate::records::topology::face::DesignFaceOperand],
-    faces: &[cadmpeg_ir::topology::Face],
-    surfaces: &[cadmpeg_ir::geometry::Surface],
+    inputs: RevolveFaceAxesInputs<'_>,
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+
+    let RevolveFaceAxesInputs {
+        scopes,
+        construction_groups,
+        entity_selection_operands,
+        face_operands,
+        faces,
+        surfaces,
+    } = inputs;
 
     let mut scope_storage = ctx.reserve_scoped(0, "F3D Revolve scope index")?;
     let mut scopes_by_id = HashMap::new();

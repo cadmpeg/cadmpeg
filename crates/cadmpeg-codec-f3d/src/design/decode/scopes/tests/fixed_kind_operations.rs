@@ -1206,32 +1206,37 @@ fn fixed_kind_edge_and_revolve_operations(
     crate::design::feature_project::bind_revolve_face_axes(
         &ctx,
         std::slice::from_mut(&mut feature),
-        std::slice::from_ref(&indexed_revolve_scope),
-        &[indexed_profile.clone(), indexed_axis.clone()],
-        std::slice::from_ref(&axis_selection),
-        &[],
-        &[cadmpeg_ir::topology::Face {
-            id: cadmpeg_ir::ids::FaceId::mint("f3d:brep:entity#40").expect("identity grammar"),
-            shell: cadmpeg_ir::ids::ShellId::mint("test:model:shell#1").expect("identity grammar"),
-            surface: surface_id.clone(),
-            sense: cadmpeg_ir::topology::Sense::Forward,
-            loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
-            name: None,
-            color: None,
-            tolerance: None,
-        }],
-        &[cadmpeg_ir::geometry::Surface {
-            id: surface_id,
-            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    Point3::new(4.0, 5.0, 6.0),
-                    Vector3::new(0.0, 0.0, -2.0).unit().unwrap(),
-                    Vector3::new(1.0, 0.0, 0.0),
-                )
-                .unwrap(),
-            )),
-            source_object: None,
-        }],
+        crate::design::feature_project::RevolveFaceAxesInputs {
+            scopes: std::slice::from_ref(&indexed_revolve_scope),
+            construction_groups: &[indexed_profile.clone(), indexed_axis.clone()],
+            entity_selection_operands: std::slice::from_ref(&axis_selection),
+            face_operands: &[],
+            faces: &[cadmpeg_ir::topology::Face {
+                id: cadmpeg_ir::ids::FaceId::mint("f3d:brep:entity#40").expect("identity grammar"),
+                shell: cadmpeg_ir::ids::ShellId::mint("test:model:shell#1")
+                    .expect("identity grammar"),
+                surface: surface_id.clone(),
+                sense: cadmpeg_ir::topology::Sense::Forward,
+                loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+                name: None,
+                color: None,
+                tolerance: None,
+            }],
+            surfaces: &[cadmpeg_ir::geometry::Surface {
+                id: surface_id,
+                geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+                    SolvedSurfaceGeometry::Plane(
+                        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                            Point3::new(4.0, 5.0, 6.0),
+                            Vector3::new(0.0, 0.0, -2.0).unit().unwrap(),
+                            Vector3::new(1.0, 0.0, 0.0),
+                        )
+                        .unwrap(),
+                    ),
+                ),
+                source_object: None,
+            }],
+        },
     )
     .unwrap();
     assert!(matches!(
@@ -1379,12 +1384,14 @@ fn fixed_kind_edge_and_revolve_operations(
     crate::design::feature_project::bind_revolve_face_axes(
         &ctx,
         std::slice::from_mut(&mut face_axis_feature),
-        std::slice::from_ref(&indexed_revolve_scope),
-        &[indexed_profile.clone(), indexed_axis.clone()],
-        &[],
-        std::slice::from_ref(&face_axis_operand),
-        &axis_faces,
-        &axis_surfaces,
+        crate::design::feature_project::RevolveFaceAxesInputs {
+            scopes: std::slice::from_ref(&indexed_revolve_scope),
+            construction_groups: &[indexed_profile.clone(), indexed_axis.clone()],
+            entity_selection_operands: &[],
+            face_operands: std::slice::from_ref(&face_axis_operand),
+            faces: &axis_faces,
+            surfaces: &axis_surfaces,
+        },
     )
     .unwrap();
     assert!(matches!(
@@ -1420,12 +1427,14 @@ fn fixed_kind_edge_and_revolve_operations(
     crate::design::feature_project::bind_revolve_face_axes(
         &ctx,
         std::slice::from_mut(&mut conflicting_face_axis_feature),
-        std::slice::from_ref(&indexed_revolve_scope),
-        &[indexed_profile, indexed_axis],
-        &[],
-        std::slice::from_ref(&face_axis_operand),
-        &axis_faces,
-        &axis_surfaces,
+        crate::design::feature_project::RevolveFaceAxesInputs {
+            scopes: std::slice::from_ref(&indexed_revolve_scope),
+            construction_groups: &[indexed_profile, indexed_axis],
+            entity_selection_operands: &[],
+            face_operands: std::slice::from_ref(&face_axis_operand),
+            faces: &axis_faces,
+            surfaces: &axis_surfaces,
+        },
     )
     .unwrap();
     assert!(matches!(
