@@ -2105,9 +2105,9 @@ fn type_record(
 
 #[cfg(test)]
 mod tests {
-    mod typing_entry;
     mod frame_order;
     mod manual_scans;
+    mod typing_entry;
     fn with_work_limit<T>(
         bytes: &[u8],
         max_work: u64,
@@ -2156,10 +2156,7 @@ mod tests {
             &source,
             ResourceDimension::WorkUnits,
             "scan SAT header line",
-            |ctx| {
-                super::parse_container(ctx, &source)
-                    .map_err(|error| error.into_malformed(ctx))
-            },
+            |ctx| super::parse_container(ctx, &source).map_err(|error| error.into_malformed(ctx)),
         );
         assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
         assert_eq!(refusal.operation, "scan SAT header line");
@@ -2787,8 +2784,8 @@ mod tests {
             ResourceDimension::RetainedBytes,
             "retain SAT kernel header string",
             |ctx| {
-                let stream = super::parse(ctx, &source)
-                    .map_err(|error| error.into_malformed(ctx))?;
+                let stream =
+                    super::parse(ctx, &source).map_err(|error| error.into_malformed(ctx))?;
                 stream.header.as_kernel_header(ctx)
             },
         );

@@ -759,7 +759,7 @@ mod marker_ownership_tests {
         assert_eq!(limit.operation, "scan ASM owned marker token");
     }
 
-#[test]
+    #[test]
     fn owned_byte_markers_are_free_for_64_empty_walks() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -773,8 +773,8 @@ mod marker_ownership_tests {
             assert!(markers.is_empty());
             assert!(balanced);
         }
-    ctx.finish_session().unwrap();
-}
+        ctx.finish_session().unwrap();
+    }
 }
 
 #[cfg(test)]

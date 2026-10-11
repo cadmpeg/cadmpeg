@@ -118,9 +118,8 @@ fn asm_line_reversal_negates_direction_without_allocation() {
     crate::test_support::with_zero_context(|ctx| {
         let mut geometry = line.clone();
         let result = super::super::reverse_curve_geometry(ctx, &mut geometry);
-        
-                result.expect("fixed line reversal is free");
-                assert_eq!(geometry, reversed);
-            
+
+        result.expect("fixed line reversal is free");
+        assert_eq!(geometry, reversed);
     });
 }

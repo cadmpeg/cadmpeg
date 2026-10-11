@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::{parse, Cur, Prim, FieldReader};
+use super::super::{parse, Cur, FieldReader, Prim};
 use crate::stream_error::StreamFailure;
 use cadmpeg_core::decode::{
     refusal_probe::RefusalProbe, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
@@ -109,13 +109,12 @@ fn sat_empty_field_reads_are_free_over_64_reads() {
 fn sat_missing_header_integer_keeps_diagnostic_and_offset() {
     crate::test_support::with_zero_context(|ctx| {
         let result = super::super::header_int::<i64>(ctx, None, 7, "version");
-        
-            let Err(StreamFailure::Parse(error)) = result else {
-                panic!("missing field");
-            };
-            assert_eq!(error.offset, 7);
-            assert_eq!(error.reason, "header line has no version field");
-        
+
+        let Err(StreamFailure::Parse(error)) = result else {
+            panic!("missing field");
+        };
+        assert_eq!(error.offset, 7);
+        assert_eq!(error.reason, "header line has no version field");
     });
 }
 
@@ -123,13 +122,12 @@ fn sat_missing_header_integer_keeps_diagnostic_and_offset() {
 fn sat_missing_header_float_keeps_diagnostic_and_offset() {
     crate::test_support::with_zero_context(|ctx| {
         let result = super::super::header_float(ctx, None, 9, "tolerance");
-        
-            let Err(StreamFailure::Malformed(error)) = result else {
-                panic!("missing value");
-            };
-            assert_eq!(error.offset, 9);
-            assert_eq!(error.reason, "header line has no valid tolerance value");
-        
+
+        let Err(StreamFailure::Malformed(error)) = result else {
+            panic!("missing value");
+        };
+        assert_eq!(error.offset, 9);
+        assert_eq!(error.reason, "header line has no valid tolerance value");
     });
 }
 
@@ -138,14 +136,13 @@ fn sat_truncated_string_keeps_diagnostic_and_cursor() {
     crate::test_support::with_zero_context(|ctx| {
         let mut reader = FieldReader { bytes: &[], pos: 0 };
         let result = reader.read_str_payload(ctx, 3, 11);
-        
-            let Err(StreamFailure::Parse(error)) = result else {
-                panic!("truncated string");
-            };
-            assert_eq!(error.offset, 11);
-            assert_eq!(error.reason, "truncated @3 string");
-            assert_eq!(reader.pos, 1);
-        
+
+        let Err(StreamFailure::Parse(error)) = result else {
+            panic!("truncated string");
+        };
+        assert_eq!(error.offset, 11);
+        assert_eq!(error.reason, "truncated @3 string");
+        assert_eq!(reader.pos, 1);
     });
 }
 
@@ -155,12 +152,12 @@ fn sat_fixed_braces_keep_open_close_classification() {
         for field in ["{", "}"] {
             let mut reader = FieldReader { bytes: &[], pos: 0 };
             let result = super::super::lex_prim(ctx, &mut reader, 0, field, false);
-            
-                assert!(matches!(
-                    (field, result.unwrap()),
-                    ("{", Prim::Open) | ("}", Prim::Close)
-                ));
-            
+
+            assert!(matches!(
+                (field, result.unwrap()),
+                ("{", Prim::Open) | ("}", Prim::Close)
+            ));
+
             assert_eq!(reader.pos, 0);
         }
     });

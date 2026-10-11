@@ -77,7 +77,11 @@ fn decode_asm_binary(
         };
         let records = framed.map_err(|failure| {
             failure.into_codec_error(ctx, |error| {
-                ctx.format_retained(format_args!("SAB framing failed: {error}"), "SAT SAB framing error text").map(CodecError::Malformed)
+                ctx.format_retained(
+                    format_args!("SAB framing failed: {error}"),
+                    "SAT SAB framing error text",
+                )
+                .map(CodecError::Malformed)
             })
         })?;
         let brep = decode_with_header(
@@ -151,7 +155,11 @@ fn decode_acis_binary(
         };
         let records = framed.map_err(|failure| {
             failure.into_codec_error(ctx, |error| {
-                ctx.format_retained(format_args!("ACIS SAB framing failed: {error}"), "SAT SAB framing error text").map(CodecError::Malformed)
+                ctx.format_retained(
+                    format_args!("ACIS SAB framing failed: {error}"),
+                    "SAT SAB framing error text",
+                )
+                .map(CodecError::Malformed)
             })
         })?;
         let brep = decode_with_header(

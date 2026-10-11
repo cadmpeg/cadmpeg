@@ -499,7 +499,7 @@ mod ownership_tests {
         assert_eq!(limit.operation, "scan ASM subtype scope token");
     }
 
-#[test]
+    #[test]
     fn owned_byte_subtypes_empty_and_invalid_routes_are_free() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -523,6 +523,6 @@ mod ownership_tests {
                     .is_none());
             }
         }
-    ctx.finish_session().unwrap();
-}
+        ctx.finish_session().unwrap();
+    }
 }
