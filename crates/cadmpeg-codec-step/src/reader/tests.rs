@@ -1241,3 +1241,5 @@ fn typed_omitted_descent_refuses_work_limit() {
 }
 
 mod prefix_admission;
+
+mod shared_graph_limits;
