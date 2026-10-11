@@ -4332,18 +4332,20 @@ pub(in crate::families) fn offset_support_carriers(
                 continue;
             }
             let mut counts = ctx.with_scoped_storage("catia_b2_offset_active_slots", || {
-                ctx.alloc_filled(
-                    carriers.len(),
-                    (0usize, 0usize),
-                    "catia_b2_offset_active_counts",
-                )
+                ctx.alloc_filled(carriers.len(), 0usize, "catia_b2_offset_active_counts")
             })?;
             let mut active_count = 0;
+            // Fenwick prefix counts keep carrier-index order in reusable slots.
+            // Slot zero is unused; membership changes allocate no storage.
             let mut active = if evaluate {
-                Some((
-                    Vec::new(),
-                    ctx.reserve_scoped(0, "catia_b2_offset_active_carriers")?,
-                ))
+                Some(
+                    ctx.with_scoped_storage("catia_b2_offset_active_carriers", || {
+                        let slots = carriers.len().checked_add(1).ok_or_else(|| {
+                            CodecError::malformed("CATIA offset active slot count overflow")
+                        })?;
+                        ctx.alloc_filled(slots, 0usize, "catia_b2_offset_active_carriers")
+                    })?,
+                )
             } else {
                 None
             };
@@ -4351,31 +4353,39 @@ pub(in crate::families) fn offset_support_carriers(
                 for &event in ctx.admit_iter(group, "catia_b2_offset_event_scan")? {
                     match event {
                         OffsetEventKind::Start(index) => {
-                            if counts.0[index].0 == 0 {
+                            if counts.0[index] == 0 {
                                 active_count += 1;
-                                if let Some((values, storage)) = &mut active {
-                                    counts.0[index].1 = values.len();
-                                    ctx.push_scoped_vec(
-                                        storage,
-                                        values,
-                                        index,
-                                        "catia_b2_offset_active_carriers",
-                                    )?;
+                                if let Some((values, _storage)) = &mut active {
+                                    let slots = values.len();
+                                    let mut path =
+                                        std::iter::successors(Some(index + 1), |&slot| {
+                                            slot.checked_add(1usize << slot.trailing_zeros())
+                                                .filter(|&next| next < slots)
+                                        });
+                                    while let Some(slot) = ctx
+                                        .next_charged(&mut path, "catia_b2_offset_active_update")?
+                                    {
+                                        values[slot] += 1;
+                                    }
                                 }
                             }
-                            counts.0[index].0 += 1;
+                            counts.0[index] += 1;
                         }
                         OffsetEventKind::End(index) => {
-                            counts.0[index].0 -= 1;
-                            if counts.0[index].0 == 0 {
+                            counts.0[index] -= 1;
+                            if counts.0[index] == 0 {
                                 active_count -= 1;
                                 if let Some((values, _storage)) = &mut active {
-                                    // The event visit pays for these fixed slot updates.
-                                    // Capacity stays reusable across entry/removal cycles.
-                                    let position = counts.0[index].1;
-                                    values.swap_remove(position);
-                                    if let Some(&moved) = values.get(position) {
-                                        counts.0[moved].1 = position;
+                                    let slots = values.len();
+                                    let mut path =
+                                        std::iter::successors(Some(index + 1), |&slot| {
+                                            slot.checked_add(1usize << slot.trailing_zeros())
+                                                .filter(|&next| next < slots)
+                                        });
+                                    while let Some(slot) = ctx
+                                        .next_charged(&mut path, "catia_b2_offset_active_update")?
+                                    {
+                                        values[slot] -= 1;
                                     }
                                 }
                             }
@@ -4391,10 +4401,24 @@ pub(in crate::families) fn offset_support_carriers(
                                     continue;
                                 };
                                 let mut selected = None;
-                                let mut candidates = values.iter();
-                                while let Some(&index) = ctx
+                                let mut candidates = 0..active_count;
+                                while let Some(rank) = ctx
                                     .next_charged(&mut candidates, "catia_b2_offset_carrier_scan")?
                                 {
+                                    // Select the rank-th active carrier by its prefix count.
+                                    let mut index = 0usize;
+                                    let mut remaining = rank;
+                                    let mut levels = (0..=carriers.len().ilog2()).rev();
+                                    while let Some(level) = ctx.next_charged(
+                                        &mut levels,
+                                        "catia_b2_offset_active_search",
+                                    )? {
+                                        let next = index + (1usize << level);
+                                        if next < values.len() && values[next] <= remaining {
+                                            index = next;
+                                            remaining -= values[next];
+                                        }
+                                    }
                                     if offset_matches_carrier(
                                         ctx,
                                         &offsets[offset],
