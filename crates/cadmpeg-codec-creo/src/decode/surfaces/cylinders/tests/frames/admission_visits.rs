@@ -201,20 +201,17 @@ fn round_edge_fixed_preconditions_need_no_work() {
     nonfinite.vertices[0][0] = f64::NAN;
     let results = [
         round_edge_cylinder_frame(&ctx, edge_envelope(), 0.0, &[]).map(|frame| frame.is_none()),
-        round_edge_cylinder_frame(&ctx, edge_envelope(), -1.0, &[])
-            .map(|frame| frame.is_none()),
+        round_edge_cylinder_frame(&ctx, edge_envelope(), -1.0, &[]).map(|frame| frame.is_none()),
         round_edge_cylinder_frame(&ctx, edge_envelope(), f64::NAN, &[])
             .map(|frame| frame.is_none()),
         round_edge_cylinder_frame(&ctx, edge_envelope(), f64::INFINITY, &[])
             .map(|frame| frame.is_none()),
         round_edge_cylinder_frame(&ctx, nonfinite, 0.2, &[]).map(|frame| frame.is_none()),
         round_edge_cylinder_frame(&ctx, edge_envelope(), 0.2, &[]).map(|frame| frame.is_none()),
-        perpendicular_round_edge_cylinder_frame(&ctx, edge_envelope(), &[]).map(|frame| {
-            frame == Err(PerpendicularRoundEdgeFailure::NoPerpendicularSupportPair)
-        }),
+        perpendicular_round_edge_cylinder_frame(&ctx, edge_envelope(), &[])
+            .map(|frame| frame == Err(PerpendicularRoundEdgeFailure::NoPerpendicularSupportPair)),
     ];
     for result in results {
-            assert!(result.expect("fixed precondition needs no input visit"));
+        assert!(result.expect("fixed precondition needs no input visit"));
     }
-
 }

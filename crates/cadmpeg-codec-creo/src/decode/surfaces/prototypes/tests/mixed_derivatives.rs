@@ -30,7 +30,6 @@ fn array(dimensions: u32, count: u32, values: Vec<Option<f64>>) -> SurfaceNamedV
 
 fn assert_projection(record: &SurfacePrototypeRecord, expected: Option<[[f64; 3]; 4]>) {
     assert_eq!(prototype_mixed_derivatives(record), expected);
-
 }
 
 #[test]

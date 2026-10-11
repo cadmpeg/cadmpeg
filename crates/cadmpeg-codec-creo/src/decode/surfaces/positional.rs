@@ -451,13 +451,12 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         )?;
         let curve_id_storage = curve_id_parts.1;
         let curve_id = curve_id_parts.0;
-        let procedural_id_parts =
-            crate::identity::compose_scoped::<ProceduralSurfaceId>(
-                ctx,
-                &crate::identity::VISIBGEOM_SURFACE_EXTRUSION,
-                record.surface_id,
-                "creo positional extrusion identity",
-            )?;
+        let procedural_id_parts = crate::identity::compose_scoped::<ProceduralSurfaceId>(
+            ctx,
+            &crate::identity::VISIBGEOM_SURFACE_EXTRUSION,
+            record.surface_id,
+            "creo positional extrusion identity",
+        )?;
         let procedural_id_storage = procedural_id_parts.1;
         let procedural_id = procedural_id_parts.0;
         let Ok(line_curve) = cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -768,13 +767,12 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
         if identity_present {
             continue;
         }
-        let procedural_id_parts =
-            crate::identity::compose_scoped::<ProceduralSurfaceId>(
-                ctx,
-                &crate::identity::VISIBGEOM_TABULATED_EXTRUSION,
-                replay.surface_id,
-                "creo tabulated extrusion identity",
-            )?;
+        let procedural_id_parts = crate::identity::compose_scoped::<ProceduralSurfaceId>(
+            ctx,
+            &crate::identity::VISIBGEOM_TABULATED_EXTRUSION,
+            replay.surface_id,
+            "creo tabulated extrusion identity",
+        )?;
         let procedural_id_storage = procedural_id_parts.1;
         let procedural_id = procedural_id_parts.0;
         let (directrix, sweep, surface) =

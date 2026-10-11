@@ -1,8 +1,8 @@
 use cadmpeg_test_support::wire;
 
+mod admission_visits;
 mod association;
 mod local_frame;
-mod admission_visits;
 mod mixed_derivatives;
 
 use std::io::Cursor;
@@ -522,10 +522,7 @@ fn prototype_local_frame_rejects_nonfinite_origin() {
         0,
     );
 
-    assert_eq!(
-        super::prototype_local_frame(&record),
-        None
-    );
+    assert_eq!(super::prototype_local_frame(&record), None);
 }
 
 #[test]
@@ -568,10 +565,7 @@ fn prototype_local_frame_rejects_nonfinite_unused_support_values() {
         0,
     );
 
-    assert_eq!(
-        super::prototype_local_frame(&record),
-        None
-    );
+    assert_eq!(super::prototype_local_frame(&record), None);
 }
 
 #[test]

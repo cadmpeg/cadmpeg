@@ -239,7 +239,10 @@ fn accepted_parameter_ordering_transfers_only_the_original_reference_vector() {
                     (ResourceDimension::RetainedBytes, bytes, 1)
                 );
             } else {
-                let CodecError::ResourceLimit(original) = result.expect_err("smaller retained cap") else { panic!("expected retained refusal"); };
+                let CodecError::ResourceLimit(original) = result.expect_err("smaller retained cap")
+                else {
+                    panic!("expected retained refusal");
+                };
                 assert_eq!(
                     (
                         original.dimension,

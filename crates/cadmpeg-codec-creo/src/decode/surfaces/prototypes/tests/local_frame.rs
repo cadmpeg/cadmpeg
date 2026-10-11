@@ -40,17 +40,12 @@ fn selects_the_unique_orthogonal_equal_scale_support_candidate() {
 fn rejects_ambiguous_support_candidates() {
     let record = record([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0]);
 
-    assert_eq!(
-        prototype_local_frame(&record),
-        None
-    );
+    assert_eq!(prototype_local_frame(&record), None);
 }
 
 fn tabulated_cylinder_record(values: Vec<Option<f64>>) -> SurfacePrototypeRecord {
     SurfacePrototypeRecord::new_for_test(
-        SurfacePrototypeFamily::Extrusion(
-            crate::surface::ExtrusionLabel::TabulatedCylinder,
-        ),
+        SurfacePrototypeFamily::Extrusion(crate::surface::ExtrusionLabel::TabulatedCylinder),
         vec![SurfaceNamedParameter {
             name: "local_sys".to_string(),
             value: SurfaceNamedValue::ScalarArray({

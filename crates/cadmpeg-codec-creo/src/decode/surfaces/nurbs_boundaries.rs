@@ -1369,7 +1369,6 @@ mod tests {
                             _ => vec![0, 1, 2],
                         }
                     );
-
                 } else {
                     result.expect("only executed rows and poles are admitted");
                     assert_eq!(

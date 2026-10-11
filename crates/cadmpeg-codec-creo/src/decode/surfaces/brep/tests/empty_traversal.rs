@@ -44,9 +44,14 @@ fn brep_circle_loop_early_shapes_are_free() {
     };
     let short = crate::test_support::closed_loop(std::num::NonZeroU32::new(5), vec![edge]);
     let repeated = crate::test_support::closed_loop(
-        std::num::NonZeroU32::new(5), vec![edge, crate::topology::HalfEdgeId {
-            curve_id: edge.curve_id, side: crate::topology::Side::One,
-        }],
+        std::num::NonZeroU32::new(5),
+        vec![
+            edge,
+            crate::topology::HalfEdgeId {
+                curve_id: edge.curve_id,
+                side: crate::topology::Side::One,
+            },
+        ],
     );
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -59,17 +64,21 @@ fn brep_circle_loop_early_shapes_are_free() {
         .expect("empty identity index");
     let source = crate::decode::source_carriers::SourceUnitCarriers::default();
     for lp in [&short, &repeated] {
-        assert!(super::super::native_circle_loop_geometry(
-            &ctx, &mut index, lp, &[], &source,
-        ).expect("fixed shape rejection").is_none());
+        assert!(
+            super::super::native_circle_loop_geometry(&ctx, &mut index, lp, &[], &source,)
+                .expect("fixed shape rejection")
+                .is_none()
+        );
     }
 }
 
 #[test]
 fn brep_circle_order_early_gates_are_free() {
     let lp = crate::test_support::closed_loop(
-        std::num::NonZeroU32::new(5), vec![crate::topology::HalfEdgeId {
-            curve_id: 10, side: crate::topology::Side::Zero,
+        std::num::NonZeroU32::new(5),
+        vec![crate::topology::HalfEdgeId {
+            curve_id: 10,
+            side: crate::topology::Side::Zero,
         }],
     );
     let surface = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
@@ -95,8 +104,15 @@ fn brep_circle_order_early_gates_are_free() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     for (loops, polygons) in inputs {
         assert!(super::super::ordered_two_edge_circle_loops(
-            &ctx, loops, polygons, &surface, &[], &source,
-        ).expect("fixed ordering gate").is_none());
+            &ctx,
+            loops,
+            polygons,
+            &surface,
+            &[],
+            &source,
+        )
+        .expect("fixed ordering gate")
+        .is_none());
     }
 }
 
@@ -110,5 +126,6 @@ fn brep_missing_coedge_pcurve_is_free() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     assert!(super::super::one_coedge_pcurve_use(&ctx, None)
-        .expect("missing pcurve").is_empty());
+        .expect("missing pcurve")
+        .is_empty());
 }
