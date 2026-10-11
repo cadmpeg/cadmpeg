@@ -861,7 +861,10 @@ fn swift_disagreement_scans_do_not_admit_unused_reference_tails() {
                     &index,
                     "Leaf",
                     |feature| {
-                        assert!(std::ptr::eq(feature, &low) || std::ptr::eq(feature, &high));
+                        assert!(
+                            std::ptr::eq(feature, &raw const low)
+                                || std::ptr::eq(feature, &raw const high)
+                        );
                         Ok(feature
                             .doubles
                             .get("value")
