@@ -82,7 +82,10 @@ fn decode_refuses(operation: &'static str) {
                 ) {
                     assert!(ir.model.appearances.is_empty());
                 }
-                if matches!(refusal.operation, "step_presentation_appearance_bindings" | "step_presentation_expanded_targets") {
+                if matches!(
+                    refusal.operation,
+                    "step_presentation_appearance_bindings" | "step_presentation_expanded_targets"
+                ) {
                     assert!(ir.model.appearance_bindings.is_empty());
                 }
                 if refusal.operation == "step_presentation_layer_records" {
@@ -683,9 +686,8 @@ fn presentation_invisible_body_ids_refuse_collection_limit() {
         policy.limits.max_collection_items = 1;
         crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
             let mut index = super::super::InvisibleIndex::new(ctx).expect("index");
-            let error = match index.resolve(1, &exchange, &topology.value, &indices) {
-                Err(error) => error,
-                Ok(_) => panic!("the first body entry must refuse"),
+            let Err(error) = index.resolve(1, &exchange, &topology.value, &indices) else {
+                panic!("the first body entry must refuse")
             };
             assert!(matches!(error, CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
@@ -703,6 +705,7 @@ fn presentation_appearance_targets_refuse_collection_limit() {
 
 #[test]
 fn presentation_appearance_target_copies_visit_prefix_before_large_suffix() {
+    const TARGETS: usize = 1_025;
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
@@ -717,10 +720,9 @@ fn presentation_appearance_target_copies_visit_prefix_before_large_suffix() {
     let mut topology = crate::reader::topology::decode(&exchange, &mut ir, &carriers, &setup_ctx)
         .expect("setup topology");
     let body = cadmpeg_ir::ids::BodyId::mint("step:model:body#1").expect("body ID");
-    const TARGETS: usize = 1_025;
     topology
         .body_by_root
-        .insert(1, std::iter::repeat(body.clone()).take(TARGETS).collect());
+        .insert(1, std::iter::repeat_n(body.clone(), TARGETS).collect());
 
     let products = std::collections::BTreeMap::new();
     let entity_ids = super::super::EntityIds {
@@ -745,7 +747,8 @@ fn presentation_appearance_target_copies_visit_prefix_before_large_suffix() {
     // The source collection has 1,025 targets, above this work cap by itself.
     // The first two identity copies reach the retained cap first.
     policy.limits.max_work_units = 1_024;
-    policy.limits.max_retained_bytes = body.as_str().len() as u64;
+    policy.limits.max_retained_bytes =
+        u64::try_from(body.as_str().len()).expect("body text length");
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
         .expect("empty root fits target policy");
     let mut storage = ctx.reserve_scoped(0, "target fixture").expect("scope");
@@ -772,6 +775,7 @@ fn presentation_appearance_target_copies_visit_prefix_before_large_suffix() {
 
 #[test]
 fn presentation_layer_item_copies_visit_prefix_before_large_suffix() {
+    const ITEMS: usize = 1_025;
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
@@ -786,10 +790,9 @@ fn presentation_layer_item_copies_visit_prefix_before_large_suffix() {
     let mut topology = crate::reader::topology::decode(&exchange, &mut ir, &carriers, &setup_ctx)
         .expect("setup topology");
     let body = cadmpeg_ir::ids::BodyId::mint("step:model:body#1").expect("body ID");
-    const ITEMS: usize = 1_025;
     topology
         .body_by_root
-        .insert(1, std::iter::repeat(body.clone()).take(ITEMS).collect());
+        .insert(1, std::iter::repeat_n(body.clone(), ITEMS).collect());
     let products = std::collections::BTreeMap::new();
     let entity_ids = super::super::EntityIds {
         edges: BTreeSet::new(),
@@ -821,7 +824,8 @@ fn presentation_layer_item_copies_visit_prefix_before_large_suffix() {
         _ => 1,
     };
     let initial_backing = initial_capacity * item_size;
-    policy.limits.max_retained_bytes = (initial_backing + body.as_str().len()) as u64;
+    policy.limits.max_retained_bytes =
+        u64::try_from(initial_backing + body.as_str().len()).expect("initial item storage");
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
         .expect("empty root fits layer-item policy");
     let mut items = Vec::new();
@@ -950,10 +954,7 @@ fn presentation_scalar_conflict_text_refuses_retained_limit() {
     .contains("#2, #3"));
 }
 
-fn color_search_refuses(
-    operation: &str,
-    depth_limit: u64,
-) {
+fn color_search_refuses(operation: &str, depth_limit: u64) {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=COLOUR_RGB('red',1.,0.,0.);ENDSEC;END-ISO-10303-21;";
     let (exchange, _) =
         crate::test_support::with_service_context(source, crate::parse::parse_inner)
