@@ -1438,7 +1438,9 @@ fn omitted_origin_and_principal_axes_use_unique_maximum_incidence_support_lines(
             &ctx,
             owned,
             &super::LaneMarkerIndex::new(&ctx, markers.iter().copied()).unwrap(),
-            &curve_endpoints, &mut points)
+            &curve_endpoints,
+            &mut points
+        )
         .expect("origin axis scan fits service policy"),
         Some([[0.0, 0.0], [0.0, 0.01]])
     );
@@ -1447,7 +1449,9 @@ fn omitted_origin_and_principal_axes_use_unique_maximum_incidence_support_lines(
             &ctx,
             owned,
             &super::LaneMarkerIndex::new(&ctx, markers.iter().copied()).unwrap(),
-            &curve_endpoints, &mut points)
+            &curve_endpoints,
+            &mut points
+        )
         .expect("principal axis scan fits service policy"),
         Some([[0.0, 0.0], [0.0, 1.0]])
     );
@@ -1461,7 +1465,9 @@ fn omitted_origin_and_principal_axes_use_unique_maximum_incidence_support_lines(
             ctx,
             owned,
             &super::LaneMarkerIndex::new(ctx, markers.iter().copied())?,
-            &ids, &mut None)
+            &ids,
+            &mut None,
+        )
     });
     assert!(super::profile_roster_implicit_axis_endpoints(
         &ctx,

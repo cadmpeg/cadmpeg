@@ -968,7 +968,6 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         features: vec![feature.clone()],
     };
 
-
     bind_detached_legacy_sketch_objects(
         &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&history),

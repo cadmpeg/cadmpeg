@@ -150,7 +150,13 @@ pub(crate) fn bind_pattern_inputs(
                 for feature in ctx.admit_iter(&history_features, INDEX)? {
                     if feature.input_class.as_deref() == Some("moCosmeticThread_c") {
                         cosmetic_threads_storage.with_storage(|| {
-                            ctx.push_btree_group(&mut threads, feature.parent.as_str(), *feature, INDEX, INDEX)
+                            ctx.push_btree_group(
+                                &mut threads,
+                                feature.parent.as_str(),
+                                *feature,
+                                INDEX,
+                                INDEX,
+                            )
                         })?;
                     }
                 }
@@ -160,11 +166,21 @@ pub(crate) fn bind_pattern_inputs(
                 slot.insert(threads)
             }
         };
-        let Some(threads) = ctx.get_btree_map(cosmetic_threads, feature.parent.as_str(), PATTERN_INPUTS)? else {
+        let Some(threads) =
+            ctx.get_btree_map(cosmetic_threads, feature.parent.as_str(), PATTERN_INPUTS)?
+        else {
             return Ok::<_, cadmpeg_core::CodecError>(None);
         };
-        let before = ctx.partition_point(threads, |thread| Ok(thread.ordinal < feature.ordinal), PATTERN_INPUTS)?;
-        Ok(before.checked_sub(1).and_then(|index| threads.get(index)).copied().map(|thread| thread.id.as_str()))
+        let before = ctx.partition_point(
+            threads,
+            |thread| Ok(thread.ordinal < feature.ordinal),
+            PATTERN_INPUTS,
+        )?;
+        Ok(before
+            .checked_sub(1)
+            .and_then(|index| threads.get(index))
+            .copied()
+            .map(|thread| thread.id.as_str()))
     };
     let mut model_by_native = HashMap::new();
     for (index, feature) in ctx
@@ -268,7 +284,9 @@ pub(crate) fn bind_pattern_inputs(
                 candidate.input_class.as_deref() == Some("moDerivedCosmeticThread_c")
             });
             let next = start_index + 1 + usize::from(derived_thread);
-            let end = starts.get(next).map_or(lane.native_payload.len(), |(offset, _)| *offset);
+            let end = starts
+                .get(next)
+                .map_or(lane.native_payload.len(), |(offset, _)| *offset);
             (end, derived_thread)
         };
         for (start_index, &(start, feature)) in ctx
@@ -276,7 +294,13 @@ pub(crate) fn bind_pattern_inputs(
             .enumerate()
         {
             let class = native_object_class(feature.input_class.as_deref().unwrap_or_default());
-            if !matches!(class, NativeClassKind::MirrorPattern | NativeClassKind::CircularPattern | NativeClassKind::LinearPattern | NativeClassKind::CurvePattern) {
+            if !matches!(
+                class,
+                NativeClassKind::MirrorPattern
+                    | NativeClassKind::CircularPattern
+                    | NativeClassKind::LinearPattern
+                    | NativeClassKind::CurvePattern
+            ) {
                 continue;
             }
             let Some(model_index) = model_of(feature.id.as_str())? else {
@@ -340,7 +364,10 @@ pub(crate) fn bind_pattern_inputs(
                     };
                     let by_source = match &mut by_source {
                         Some(index) => index,
-                        slot @ None => slot.insert(FeaturesBySource::new(ctx, history_features.iter().copied())?),
+                        slot @ None => slot.insert(FeaturesBySource::new(
+                            ctx,
+                            history_features.iter().copied(),
+                        )?),
                     };
                     let Some(native) = by_source.terminal_feature(ctx, &components)? else {
                         continue;
@@ -460,7 +487,10 @@ pub(crate) fn bind_pattern_inputs(
                             }
                             let by_source = match &mut by_source {
                                 Some(index) => index,
-                                slot @ None => slot.insert(FeaturesBySource::new(ctx, history_features.iter().copied())?),
+                                slot @ None => slot.insert(FeaturesBySource::new(
+                                    ctx,
+                                    history_features.iter().copied(),
+                                )?),
                             };
                             let Some(seed) = by_source.source(
                                 ctx,
@@ -532,7 +562,8 @@ pub(crate) fn bind_pattern_inputs(
                 if !matches!(model_features[model_index].evaluation.definition(),
                     FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern })
                         if matches!(pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::patterns::PatternForm::Linear) })
-                            || matches!(pattern.definition(), PatternTransform::Linear { direction, .. } if seeds.is_empty() || direction.is_none())) {
+                            || matches!(pattern.definition(), PatternTransform::Linear { direction, .. } if seeds.is_empty() || direction.is_none()))
+                {
                     continue;
                 }
                 let (end, has_derived_cosmetic_thread_output) = object_interval(start_index);
@@ -2180,8 +2211,9 @@ pub(super) fn bind_detached_legacy_sketch_objects(
     let mut owners = Vec::new();
     for history in ctx.admit_iter(histories, "collect SLDPRT detached sketch owners")? {
         for feature in ctx.admit_iter(&history.features, "collect SLDPRT detached sketch owners")? {
-            if feature.xml_tag != "Sketch" || native_object_class(feature.input_class.as_deref().unwrap_or_default())
-                == NativeClassKind::OriginProfileFeature
+            if feature.xml_tag != "Sketch"
+                || native_object_class(feature.input_class.as_deref().unwrap_or_default())
+                    == NativeClassKind::OriginProfileFeature
                 || ctx.contains_hash_set(represented, feature.id.as_str(), SCALAR_BINDING_INDEX)?
                 || ctx.any_by(
                     &relation_bindings,
