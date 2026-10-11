@@ -1030,7 +1030,13 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             };
             let support_is_required = continuity
                 .resolved()
-                .is_some_and(|continuity| continuity.conditions.iter().copied().any(needs_support));
+                .is_some_and(|continuity| {
+                    continuity
+                        .conditions
+                        .iter()
+                        .map(|condition| condition.continuity())
+                        .any(needs_support)
+                });
 
             !boundary_is_resolved
                 || !continuity_is_resolved

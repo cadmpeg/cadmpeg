@@ -473,7 +473,7 @@ pub(crate) struct DesignSurfacePatchBoundary {
     pub(crate) continuity: DesignPatchContinuity,
     /// Source `PatchFlip` ordinal. Retained without a neutral meaning.
     pub(crate) flip: u32,
-    /// Source `PatchScale` value.
+    /// Raw continuity weight; `-1.0` selects effective `0.5` for G1/G2 and G0 ignores it.
     pub(crate) scale: FiniteReal,
     /// Indexed record the `rPatchModelRef` reference names: this boundary
     /// component's model reference.

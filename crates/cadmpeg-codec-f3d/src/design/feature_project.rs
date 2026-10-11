@@ -7641,37 +7641,45 @@ fn project_fixed_pipe(
     )))
 }
 
-fn surface_patch_boundary_continuity(
-    continuity: crate::records::feature::surface_ops::DesignPatchContinuity,
-) -> Option<cadmpeg_ir::features::SurfaceContinuity> {
-    use cadmpeg_ir::features::SurfaceContinuity;
-
-    match continuity {
-        crate::records::feature::surface_ops::DesignPatchContinuity::Connected => {
-            Some(SurfaceContinuity::Contact)
-        }
-        crate::records::feature::surface_ops::DesignPatchContinuity::Tangent => {
-            Some(SurfaceContinuity::Tangent)
-        }
-        crate::records::feature::surface_ops::DesignPatchContinuity::Curvature => {
-            Some(SurfaceContinuity::Curvature)
-        }
-        crate::records::feature::surface_ops::DesignPatchContinuity::Unknown(_) => None,
-    }
-}
-
-/// Map every known boundary-settings continuity in source order.
+/// Project each boundary condition and its resolved continuity weight.
 ///
-/// A missing or unknown component condition makes the complete per-boundary
-/// vector unavailable. The caller can still retain the native scope.
-fn surface_patch_boundary_continuities(
+/// An unknown continuity or unsupported active weight leaves the complete
+/// condition vector unresolved; native settings retain their source values.
+fn surface_patch_boundary_conditions(
     ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
-) -> Result<Vec<cadmpeg_ir::features::SurfaceContinuity>, CodecError> {
+) -> Result<Vec<cadmpeg_ir::features::FilledSurfaceBoundaryCondition>, CodecError> {
+    use crate::records::feature::surface_ops::DesignPatchContinuity;
+    use cadmpeg_ir::features::FilledSurfaceBoundaryCondition;
+
+    const DEFAULT_WEIGHT: f64 = 0.5;
+    const DEFAULT_WEIGHT_SENTINEL: f64 = -1.0;
+
     let mut conditions = Vec::new();
     for boundary in scope.surface_patch_boundaries() {
-        let Some(condition) = surface_patch_boundary_continuity(boundary.continuity) else {
-            return Ok(Vec::new());
+        let condition = match boundary.continuity {
+            DesignPatchContinuity::Connected => FilledSurfaceBoundaryCondition::Contact {},
+            DesignPatchContinuity::Tangent | DesignPatchContinuity::Curvature => {
+                let raw = boundary.scale.get();
+                let effective = if raw == DEFAULT_WEIGHT_SENTINEL {
+                    DEFAULT_WEIGHT
+                } else {
+                    raw
+                };
+                let Some(weight) = cadmpeg_ir::scalar::PositiveReal::new(effective) else {
+                    return Ok(Vec::new());
+                };
+                if boundary.continuity == DesignPatchContinuity::Tangent {
+                    FilledSurfaceBoundaryCondition::Tangent {
+                        weight: Some(weight),
+                    }
+                } else {
+                    FilledSurfaceBoundaryCondition::Curvature {
+                        weight: Some(weight),
+                    }
+                }
+            }
+            DesignPatchContinuity::Unknown(_) => return Ok(Vec::new()),
         };
         ctx.push_vec(&mut conditions, condition, "f3d surface-patch continuity")?;
     }
@@ -7900,7 +7908,7 @@ fn project_surface_patch(
             boundary: SurfaceBoundary::Path(boundary),
             support_faces: FaceSelection::Faces(Vec::new()),
             continuity: cadmpeg_ir::features::NonEmptyMembers::try_from(
-                surface_patch_boundary_continuities(ctx, scope)?,
+                surface_patch_boundary_conditions(ctx, scope)?,
             )
             .map_or_else(
                 |_| cadmpeg_ir::features::FilledSurfaceContinuityState::unresolved(),

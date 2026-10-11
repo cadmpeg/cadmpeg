@@ -906,7 +906,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             ref continuity,
             merge_result: Some(false),
         })) if continuity.resolved().map(|resolved| resolved.conditions.as_slice())
-            == Some(&[cadmpeg_ir::features::SurfaceContinuity::Contact][..])
+            == Some(&[cadmpeg_ir::features::FilledSurfaceBoundaryCondition::Contact {}][..])
             && native == &patch_group.id
             && faces.is_empty()
     ));

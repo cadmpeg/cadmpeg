@@ -38,13 +38,13 @@ The u32 at `85 + S`, u32 at `115 + S`, byte at `119 + S`, and u32 at `121 + S` a
 
 **Need.** We must know which references a given `refType` requires to write a placement that Fusion re-solves rather than accepts as stored.
 
-### DR-14. `SurfacePatch` boundary-side and scale values
+### DR-14. `SurfacePatch` boundary-side ordinal mapping
 
-**Question.** Which field holds the boundary side of a `SurfacePatch` component? What does `PatchScale` hold?
+**Question.** Which `PatchFlip` ordinal selects each continuity-direction Boolean and incident face?
 
-**Known.** `f3d.md` §3.1 defines the boundary-settings member order, offsets, and types. `PatchContinuity` values `0`, `1`, and `2` select positional, tangent, and curvature continuity per boundary component.
+**Known.** `f3d.md` §3.1 assigns `PatchFlip` to the per-boundary u32 at `R + 26` and defines `PatchScale` as the continuity weight. Raw side ordinals `0` and `2` remain distinct. The version-7 scope's whole-surface normal Flip is independent of this ordinal.
 
-**Need.** We must assign the boundary-side selector and the physical quantity represented by `PatchScale`. The mapping must distinguish opposite boundary sides and unequal continuity weights without deriving either value from the generated surface.
+**Need.** One supported edge with two distinct incident faces must be authored with each continuity-direction Boolean while continuity, edge order, and weight remain fixed. The saved ordinals and the API's first co-edge face must identify the side mapping.
 
 ### DR-19. Construction-group fields
 

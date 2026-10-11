@@ -5571,6 +5571,68 @@ pub enum SurfaceContinuity {
     Curvature,
 }
 
+cadmpeg_core::named_optional_field!(deserialize_filled_surface_weight, PositiveReal, "weight");
+
+/// One filled-surface boundary condition and its continuity weight.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum FilledSurfaceBoundaryCondition {
+    /// Positional continuity, which has no weight.
+    Contact {},
+    /// First-derivative continuity with an optional resolved weight.
+    Tangent {
+        /// Positive dimensionless weight; absent when the source weight is unresolved.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_filled_surface_weight"
+        )]
+        weight: Option<PositiveReal>,
+    },
+    /// Second-derivative continuity with an optional resolved weight.
+    Curvature {
+        /// Positive dimensionless weight; absent when the source weight is unresolved.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_filled_surface_weight"
+        )]
+        weight: Option<PositiveReal>,
+    },
+}
+
+impl FilledSurfaceBoundaryCondition {
+    /// The continuity order of this condition.
+    #[must_use]
+    pub const fn continuity(self) -> SurfaceContinuity {
+        match self {
+            Self::Contact {} => SurfaceContinuity::Contact,
+            Self::Tangent { .. } => SurfaceContinuity::Tangent,
+            Self::Curvature { .. } => SurfaceContinuity::Curvature,
+        }
+    }
+
+    /// The resolved weight, absent for positional continuity.
+    #[must_use]
+    pub const fn weight(self) -> Option<PositiveReal> {
+        match self {
+            Self::Contact {} => None,
+            Self::Tangent { weight } | Self::Curvature { weight } => weight,
+        }
+    }
+}
+
+impl From<SurfaceContinuity> for FilledSurfaceBoundaryCondition {
+    fn from(continuity: SurfaceContinuity) -> Self {
+        match continuity {
+            SurfaceContinuity::Contact => Self::Contact {},
+            SurfaceContinuity::Tangent => Self::Tangent { weight: None },
+            SurfaceContinuity::Curvature => Self::Curvature { weight: None },
+        }
+    }
+}
+
 /// Resolved continuity conditions for a filled-surface boundary.
 ///
 /// One condition per boundary component, in source order. A boundary whose
@@ -5581,13 +5643,13 @@ pub enum SurfaceContinuity {
 #[serde(transparent)]
 pub struct FilledSurfaceContinuity {
     /// Conditions of the boundary components, in source order.
-    pub conditions: NonEmptyMembers<SurfaceContinuity>,
+    pub conditions: NonEmptyMembers<FilledSurfaceBoundaryCondition>,
 }
 
 impl FilledSurfaceContinuity {
     /// Returns the aggregate condition when every component uses one value.
     #[must_use]
-    pub fn uniform(&self) -> Option<SurfaceContinuity> {
+    pub fn uniform(&self) -> Option<FilledSurfaceBoundaryCondition> {
         let mut components = self.conditions.iter();
         let first = *components.next()?;
         components
@@ -5619,13 +5681,13 @@ impl FilledSurfaceContinuityState {
     #[must_use]
     pub fn uniform(continuity: SurfaceContinuity) -> Self {
         Self(Some(FilledSurfaceContinuity {
-            conditions: NonEmptyMembers::one(continuity),
+            conditions: NonEmptyMembers::one(continuity.into()),
         }))
     }
 
     /// Creates component-specific conditions.
     #[must_use]
-    pub const fn per_boundary(conditions: NonEmptyMembers<SurfaceContinuity>) -> Self {
+    pub const fn per_boundary(conditions: NonEmptyMembers<FilledSurfaceBoundaryCondition>) -> Self {
         Self(Some(FilledSurfaceContinuity { conditions }))
     }
 
@@ -5635,10 +5697,14 @@ impl FilledSurfaceContinuityState {
         self.0.as_ref()
     }
 
-    /// Returns the aggregate condition when every component uses one value.
+    /// Returns the continuity order when every component has the same order.
     #[must_use]
     pub fn uniform_value(&self) -> Option<SurfaceContinuity> {
-        self.0.as_ref().and_then(FilledSurfaceContinuity::uniform)
+        let mut conditions = self.0.as_ref()?.conditions.iter();
+        let first = conditions.next()?.continuity();
+        conditions
+            .all(|condition| condition.continuity() == first)
+            .then_some(first)
     }
 
     /// Whether no continuity condition was resolved.

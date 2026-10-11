@@ -12,25 +12,25 @@ use super::{
     FaceMaker, FaceMotion, FaceSelection, FeatureCircularArc, FeatureCoordinateFrame,
     FeatureDefinition, FeatureEllipticArc, FeatureEquationCurve, FeatureImageBounds,
     FeatureLineSegment, FeatureOperation, FeaturePolyline, FeatureTreeNodeRole,
-    FeatureUnitPlaneFrame, FilledSurfaceContinuity, FilledSurfaceContinuityState, FlexMode,
-    FuzzyTolerance, GeneratedBodyRef, GeneratedCurveRef, GeneratedEdgeRef, GeneratedFaceRef,
-    GeneratedSweepSection, GeneratedVertexRef, GeometryImportFormat, GeometryImportPath,
-    HelicalSweepConstruction, HelicalSweepLaw, HelicalSweepTravel, HelixConstructionStyle,
-    HelixShape, InnerWireTaper, InsertedBodies, LinearTermination, LoftGuidance, LoftPointSection,
-    LoftSection, NativeFeatureKind, NativeSelections, NoGeneratedSection, NonEmptyMembers,
-    PartialRevolveConstruction, PathRef, PlanarProfileRef, PolygonSideCount, PrimitiveSolid,
-    PrimitiveSolidKind, PrincipalPlane, ProfileRef, ReplaceFaceOperands, RevolutionAxis,
-    RevolutionFuseOrder, RevolveConstruction, RevolveExtent, RibConstruction, RibDraft, RibSide,
-    RuledCurveOrientation, RuledSurfaceCorner, RuledSurfaceMode, ScaleCenter, ScaleFactors,
-    SectionOperands, SelectionMembers, SelectionReference, SewBodySelection,
-    SheetMetalBendPosition, SheetMetalFlangeEdgeWidths, SheetMetalFlangeHeight,
-    SheetMetalFlangeHeightTarget, SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth,
-    SheetMetalHeightDatum, SheetMetalHemDirection, SheetMetalHemForm, SheetMetalThicknessSide,
-    ShellJoin, ShellMode, SketchFeatureBinding, SketchPointSelection, SketchProfileBoundaryUse,
-    SketchProfileLoops, SketchProfileRegion, SketchProfileRegions, SolidSweepOperation,
-    SplitFacePlanes, SplitFaceTool, SurfaceBoundary, SurfaceContinuity, SurfaceExtension,
-    SurfaceProjectionMode, SweepCircularRegion, SweepGuideRail, SweepOrientation, SweepPathExtent,
-    SweepSection, SweepShape, SweepTransformation, SweepTransition, ThickenSide,
+    FeatureUnitPlaneFrame, FilledSurfaceBoundaryCondition, FilledSurfaceContinuity,
+    FilledSurfaceContinuityState, FlexMode, FuzzyTolerance, GeneratedBodyRef, GeneratedCurveRef,
+    GeneratedEdgeRef, GeneratedFaceRef, GeneratedSweepSection, GeneratedVertexRef,
+    GeometryImportFormat, GeometryImportPath, HelicalSweepConstruction, HelicalSweepLaw,
+    HelicalSweepTravel, HelixConstructionStyle, HelixShape, InnerWireTaper, InsertedBodies,
+    LinearTermination, LoftGuidance, LoftPointSection, LoftSection, NativeFeatureKind,
+    NativeSelections, NoGeneratedSection, NonEmptyMembers, PartialRevolveConstruction, PathRef,
+    PlanarProfileRef, PolygonSideCount, PrimitiveSolid, PrimitiveSolidKind, PrincipalPlane,
+    ProfileRef, ReplaceFaceOperands, RevolutionAxis, RevolutionFuseOrder, RevolveConstruction,
+    RevolveExtent, RibConstruction, RibDraft, RibSide, RuledCurveOrientation, RuledSurfaceCorner,
+    RuledSurfaceMode, ScaleCenter, ScaleFactors, SectionOperands, SelectionMembers,
+    SelectionReference, SewBodySelection, SheetMetalBendPosition, SheetMetalFlangeEdgeWidths,
+    SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget, SheetMetalFlangeTwoSidedWidth,
+    SheetMetalFlangeWidth, SheetMetalHeightDatum, SheetMetalHemDirection, SheetMetalHemForm,
+    SheetMetalThicknessSide, ShellJoin, ShellMode, SketchFeatureBinding, SketchPointSelection,
+    SketchProfileBoundaryUse, SketchProfileLoops, SketchProfileRegion, SketchProfileRegions,
+    SolidSweepOperation, SplitFacePlanes, SplitFaceTool, SurfaceBoundary, SurfaceContinuity,
+    SurfaceExtension, SurfaceProjectionMode, SweepCircularRegion, SweepGuideRail, SweepOrientation,
+    SweepPathExtent, SweepSection, SweepShape, SweepTransformation, SweepTransition, ThickenSide,
     ThreePointSelection, TreeChildren, TrimBodyOperands, TrimCellSelection, TrimRegion,
     UnresolvedFamily, VertexSelection, WrapMode,
 };
@@ -334,6 +334,12 @@ clone_copy_for_decode!(FeatureTreeNodeRole);
 clone_copy_for_decode!(FeatureUnitPlaneFrame);
 
 clone_record_for_decode!(FilledSurfaceContinuity; { conditions });
+
+clone_enum_for_decode!(FilledSurfaceBoundaryCondition; {
+    Contact {},
+    Tangent { weight },
+    Curvature { weight },
+});
 
 clone_record_for_decode!(FilledSurfaceContinuityState; (field0));
 

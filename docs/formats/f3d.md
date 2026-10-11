@@ -1070,6 +1070,14 @@ The single-group path form has implicit connected continuity because it has no b
 
 A surface-patch boundary-settings record has an empty display name and a class-version prologue of two zero bytes. Its class level is `u8 IsSeedSel`, `u32 PatchContinuity`, `u32 PatchFlip`, `f64 PatchScale`, and the `rPatchModelRef` reference, at payload offsets 2, 3, 7, 11, and 19; the base level's reference run closes the record. The three named settings apply to the one boundary component the record belongs to, not to the patch as a whole. `PatchContinuity` value `0` imposes positional continuity on that component, `1` imposes tangency, and `2` imposes curvature. `rPatchModelRef` names that component's model reference: it equals the construction-operand group record immediately preceding the settings record, so the settings record and the boundary group name the same component from both directions.
 
+The boundary-settings indexed header is `u32le 3`, three ASCII class-tag bytes, `u64le record_index`, and `u32le 0` for the empty display name. Its 19 bytes are followed by the two zero prologue bytes, `IsSeedSel` at `R + 21`, and `PatchContinuity` at `R + 22`.
+
+`PatchFlip` at indexed-record offset `R + 26` is the raw per-boundary side ordinal. Values `0` and `2` are distinct source encodings. A reader retains the ordinal without selecting an incident face from it.
+
+`PatchScale` at `R + 30` is the dimensionless continuity weight. Positional/G0 continuity ignores it. For tangent/G1 and curvature/G2 continuity, raw `-1.0` selects effective weight `0.5`; a finite positive raw value is the effective weight itself. Effective weights are strictly positive. The raw double remains distinct from the effective weight: explicit `0.5` and sentinel `-1.0` represent the same effective weight, and ignored G0 negative zero remains negative zero in source state.
+
+In a version-7 `SurfacePatch` type (`BF77AE1A-E8F6-43AB-A325-A2C984AF1C6B`), the byte at primary-scope offset `P + 31` reverses the whole created surface normal: `0` is forward and `1` is reversed. The following `u32le` at `P + 32` is `4`. This normal reversal is independent of the per-boundary side ordinal. Earlier type versions do not assign this Boolean meaning to `P + 31`.
+
 A `SurfacePatch` creates a new surface body. Its neutral `FilledSurface.merge_result` is therefore `false`; the scope has no independent merge-operation field.
 
 The tool-body reference of a fixed-path settings-bearing `SurfacePatch` scope is the unclaimed endpoint reference. Its record's payload contains the scope's own entity id. In the single-group path form, the tool body is the last ordered reference. The sketch-profile form has no separate tool-body reference.

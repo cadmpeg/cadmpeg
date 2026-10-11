@@ -16211,3 +16211,82 @@ offset = 25
 type = "bytes[5]"
 source = "spec"
 anchor = "The expanded prologue has nine zero bytes at scope offsets 11 through 19, a marked null u32 at offset 20, and a marked geometry-record reference at offset 25."
+
+[[record]]
+name = "surface_patch_boundary_settings_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The boundary-settings indexed header is"
+size = 38
+note = "Offsets are relative to the settings record's primary header R. The marked model reference begins at 38 and has a variable GUID carrier."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[19]"
+source = "spec"
+anchor = "The boundary-settings indexed header is"
+
+[[record.field]]
+name = "prologue"
+offset = 19
+type = "bytes[2]"
+source = "spec"
+anchor = "Its 19 bytes are followed by the two zero prologue bytes"
+
+[[record.field]]
+name = "is_seed_selection"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "`IsSeedSel` at `R + 21`"
+
+[[record.field]]
+name = "continuity"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "`PatchContinuity` at `R + 22`"
+
+[[record.field]]
+name = "side_ordinal"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "`PatchFlip` at indexed-record offset `R + 26`"
+
+[[record.field]]
+name = "raw_weight"
+offset = 30
+type = "f64"
+source = "spec"
+anchor = "`PatchScale` at `R + 30`"
+
+[[record]]
+name = "surface_patch_v7_normal_flip_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "In a version-7 `SurfacePatch` type"
+size = 36
+note = "Only type version 7 assigns normal reversal to primary-scope offset 31."
+
+[[record.field]]
+name = "scope_prefix"
+offset = 0
+type = "bytes[31]"
+source = "spec"
+anchor = "In a version-7 `SurfacePatch` type"
+
+[[record.field]]
+name = "normal_flip"
+offset = 31
+type = "u8"
+source = "spec"
+anchor = "the byte at primary-scope offset `P + 31` reverses the whole created surface normal"
+
+[[record.field]]
+name = "following_word"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "The following `u32le` at `P + 32` is `4`"

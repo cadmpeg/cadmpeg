@@ -969,15 +969,14 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
     let uniform_continuity = |scope: &DesignParameterScope| {
         cadmpeg_ir::features::NonEmptyMembers::try_from(
             crate::test_support::with_decode_context(|decode_ctx| {
-                crate::design::feature_project::surface_patch_boundary_continuities(
-                    decode_ctx, scope,
-                )
+                crate::design::feature_project::surface_patch_boundary_conditions(decode_ctx, scope)
             })
             .unwrap(),
         )
         .ok()
         .map(|conditions| cadmpeg_ir::features::FilledSurfaceContinuity { conditions })
         .and_then(|continuity| continuity.uniform())
+        .map(cadmpeg_ir::features::FilledSurfaceBoundaryCondition::continuity)
     };
 
     for (code, expected) in [
@@ -1000,10 +999,15 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
     ]);
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| {
-            crate::design::feature_project::surface_patch_boundary_continuities(decode_ctx, &mixed)
+            crate::design::feature_project::surface_patch_boundary_conditions(decode_ctx, &mixed)
         })
         .unwrap(),
-        vec![SurfaceContinuity::Tangent, SurfaceContinuity::Contact]
+        vec![
+            cadmpeg_ir::features::FilledSurfaceBoundaryCondition::Tangent {
+                weight: cadmpeg_ir::scalar::PositiveReal::new(0.5),
+            },
+            cadmpeg_ir::features::FilledSurfaceBoundaryCondition::Contact {},
+        ]
     );
     assert!(uniform_continuity(&mixed).is_none());
     assert!(uniform_continuity(&scope_with(Vec::new())).is_none());
@@ -1014,13 +1018,111 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
         .is_none()
     );
     assert!(crate::test_support::with_decode_context(|decode_ctx| {
-        crate::design::feature_project::surface_patch_boundary_continuities(
+        crate::design::feature_project::surface_patch_boundary_conditions(
             decode_ctx,
             &scope_with(vec![boundary(DesignPatchContinuity::Unknown(9))]),
         )
     })
     .unwrap()
     .is_empty());
+}
+
+#[test]
+fn surface_patch_weights_preserve_source_encoding_and_boundary_order() {
+    use crate::records::feature::{
+        scope::{DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut},
+        surface_ops::{DesignPatchContinuity, DesignSurfacePatchBoundary},
+    };
+    use cadmpeg_ir::features::FilledSurfaceBoundaryCondition;
+    use cadmpeg_ir::scalar::PositiveReal;
+
+    let mut scope =
+        DesignParameterScope::empty("f3d:test:scope#1", DesignFeatureKind::SurfacePatch, 1);
+    let raw = [
+        (DesignPatchContinuity::Connected, -0.0),
+        (DesignPatchContinuity::Tangent, -1.0),
+        (DesignPatchContinuity::Tangent, 0.15),
+        (DesignPatchContinuity::Curvature, 0.423_464_161_563_635_5),
+        (DesignPatchContinuity::Curvature, 0.5),
+    ];
+    if let DesignScopePayloadMut::SurfacePatch(boundaries) = scope.payload_mut() {
+        *boundaries = raw
+            .into_iter()
+            .map(|(continuity, scale)| DesignSurfacePatchBoundary {
+                scope_reference_ordinal: 0,
+                record_index: 0,
+                is_seed_selection: false,
+                continuity,
+                flip: 2,
+                scale: crate::test_support::real(scale),
+                model_reference: 0,
+            })
+            .collect();
+    }
+    let source = serde_json::to_value(&scope).unwrap();
+    let conditions = crate::test_support::with_decode_context(|ctx| {
+        crate::design::feature_project::surface_patch_boundary_conditions(ctx, &scope)
+    })
+    .unwrap();
+    assert_eq!(
+        conditions,
+        vec![
+            FilledSurfaceBoundaryCondition::Contact {},
+            FilledSurfaceBoundaryCondition::Tangent {
+                weight: PositiveReal::new(0.5)
+            },
+            FilledSurfaceBoundaryCondition::Tangent {
+                weight: PositiveReal::new(0.15)
+            },
+            FilledSurfaceBoundaryCondition::Curvature {
+                weight: PositiveReal::new(0.423_464_161_563_635_5)
+            },
+            FilledSurfaceBoundaryCondition::Curvature {
+                weight: PositiveReal::new(0.5)
+            },
+        ]
+    );
+    assert_eq!(serde_json::to_value(&scope).unwrap(), source);
+    for (boundary, (_, scale)) in scope.surface_patch_boundaries().iter().zip(raw) {
+        assert_eq!(boundary.scale.get().to_bits(), scale.to_bits());
+    }
+}
+
+#[test]
+fn surface_patch_abstains_on_unsupported_active_weights() {
+    use crate::records::feature::{
+        scope::{DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut},
+        surface_ops::{DesignPatchContinuity, DesignSurfacePatchBoundary},
+    };
+    for continuity in [
+        DesignPatchContinuity::Tangent,
+        DesignPatchContinuity::Curvature,
+    ] {
+        for scale in [0.0, -0.0, -0.5, -2.0] {
+            let mut scope =
+                DesignParameterScope::empty("f3d:test:scope#1", DesignFeatureKind::SurfacePatch, 1);
+            if let DesignScopePayloadMut::SurfacePatch(boundaries) = scope.payload_mut() {
+                *boundaries = vec![DesignSurfacePatchBoundary {
+                    scope_reference_ordinal: 0,
+                    record_index: 0,
+                    is_seed_selection: false,
+                    continuity,
+                    flip: 2,
+                    scale: crate::test_support::real(scale),
+                    model_reference: 0,
+                }];
+            }
+            assert!(crate::test_support::with_decode_context(|ctx| {
+                crate::design::feature_project::surface_patch_boundary_conditions(ctx, &scope)
+            })
+            .unwrap()
+            .is_empty());
+            assert_eq!(
+                scope.surface_patch_boundaries()[0].scale.get().to_bits(),
+                scale.to_bits()
+            );
+        }
+    }
 }
 
 #[test]
@@ -1143,9 +1245,9 @@ fn surface_patch_reference_occupancy_reports_limit_and_preserves_boundary_endpoi
         })) if continuity.resolved().map(|resolved| resolved.conditions.as_slice())
             == Some(
                 &[
-                    SurfaceContinuity::Contact,
-                    SurfaceContinuity::Contact,
-                    SurfaceContinuity::Contact,
+                    SurfaceContinuity::Contact.into(),
+                    SurfaceContinuity::Contact.into(),
+                    SurfaceContinuity::Contact.into(),
                 ][..],
             )
     ));
@@ -1194,9 +1296,9 @@ fn surface_patch_reference_occupancy_reports_limit_and_preserves_boundary_endpoi
         })) if continuity.resolved().map(|resolved| resolved.conditions.as_slice())
             == Some(
                 &[
-                    SurfaceContinuity::Contact,
-                    SurfaceContinuity::Contact,
-                    SurfaceContinuity::Contact,
+                    SurfaceContinuity::Contact.into(),
+                    SurfaceContinuity::Contact.into(),
+                    SurfaceContinuity::Contact.into(),
                 ][..],
             )
     ));
@@ -1484,7 +1586,7 @@ fn surface_patch_continuities_refuse_collection_limit() {
 
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
-        matches!(crate::design::feature_project::surface_patch_boundary_continuities(&ctx, &scope),
+        matches!(crate::design::feature_project::surface_patch_boundary_conditions(&ctx, &scope),
         Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::CollectionItems
             && failure.operation == "f3d surface-patch continuity")
     );

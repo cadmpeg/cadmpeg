@@ -1115,7 +1115,10 @@ fn semantic_writer_accepts_all_equal_per_boundary_continuity() {
     ] {
         filled_surface_round_trip(
             cadmpeg_ir::features::FilledSurfaceContinuityState::per_boundary(
-                cadmpeg_ir::features::NonEmptyMembers::try_from(conditions).unwrap(),
+                cadmpeg_ir::features::NonEmptyMembers::try_from(
+                    conditions.into_iter().map(Into::into).collect::<Vec<_>>(),
+                )
+                .unwrap(),
             ),
         );
     }
@@ -1205,6 +1208,55 @@ fn filled_surface_round_trip(
             ..
         }) if continuity.uniform_value() == Some(SurfaceContinuity::Curvature)
     ));
+}
+
+#[test]
+fn semantic_writer_refuses_filled_surface_weight_loss() {
+    use cadmpeg_ir::features::{
+        FeatureDefinition, FeatureOperation, FilledSurfaceBoundaryCondition,
+        FilledSurfaceContinuityState, NonEmptyMembers,
+    };
+    let mut source = sldprt_with_body(&triangle_body());
+    let base = SldprtCodec
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+        .unwrap();
+    let edge = base.ir().model.edges[0].id.as_str();
+    let face = base.ir().model.faces[0].id.as_str();
+    let xml = format!(
+        r#"<Keywords><FilledSurface Name="Fill" Type="FillSurface" id="36" Boundary="{edge}" SupportFaces="{face}" Continuity="Tangent" MergeResult="false"/></Keywords>"#
+    );
+    source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut decoded = EditableDecodeResult::from(decoded);
+    {
+        let mut ir_edit = decoded.ir_mut();
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::FilledSurface {
+                continuity, ..
+            }) = definition
+            else {
+                panic!("filled surface");
+            };
+            *continuity = FilledSurfaceContinuityState::per_boundary(NonEmptyMembers::one(
+                FilledSurfaceBoundaryCondition::Tangent {
+                    weight: cadmpeg_ir::scalar::PositiveReal::new(0.15),
+                },
+            ));
+        });
+    }
+    let mut encoded = Vec::new();
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(ref message) if message.contains("weighted filled-surface condition")),
+        "{error}"
+    );
 }
 
 #[test]

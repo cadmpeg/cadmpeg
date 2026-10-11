@@ -678,8 +678,8 @@ fn filled_surface_continuity_preserves_aggregate_and_component_wire_fields() {
         support_faces: FaceSelection::Faces(Vec::new()),
         continuity: crate::features::FilledSurfaceContinuityState::per_boundary(
             crate::features::NonEmptyMembers::try_from(vec![
-                SurfaceContinuity::Contact,
-                SurfaceContinuity::Contact,
+                SurfaceContinuity::Contact.into(),
+                SurfaceContinuity::Contact.into(),
             ])
             .unwrap(),
         ),
@@ -688,7 +688,7 @@ fn filled_surface_continuity_preserves_aggregate_and_component_wire_fields() {
     let wire = serde_json::to_value(&definition).unwrap();
     assert_eq!(
         wire["continuity"],
-        serde_json::json!(["contact", "contact"])
+        serde_json::json!([{ "kind": "contact" }, { "kind": "contact" }])
     );
     assert_eq!(
         serde_json::from_value::<FeatureDefinition>(wire.clone()).unwrap(),
@@ -703,7 +703,7 @@ fn filled_surface_continuity_preserves_aggregate_and_component_wire_fields() {
     assert_eq!(continuity.uniform_value(), Some(SurfaceContinuity::Contact));
 
     let mut mixed = wire;
-    mixed["continuity"] = serde_json::json!(["contact", "curvature"]);
+    mixed["continuity"] = serde_json::json!([{ "kind": "contact" }, { "kind": "curvature" }]);
     let FeatureDefinition::Operation(FeatureOperation::FilledSurface { continuity, .. }) =
         serde_json::from_value::<FeatureDefinition>(mixed).unwrap()
     else {
@@ -747,11 +747,54 @@ fn empty_filled_surface_continuity_list_is_refused() {
     assert!(unresolved.is_unresolved());
 
     let resolved: FilledSurfaceContinuityState =
-        serde_json::from_value(serde_json::json!(["tangent"])).unwrap();
+        serde_json::from_value(serde_json::json!([{ "kind": "tangent" }])).unwrap();
     assert_eq!(
         resolved.resolved().map(|value| value.conditions.as_slice()),
-        Some(&[SurfaceContinuity::Tangent][..])
+        Some(
+            &[crate::features::FilledSurfaceBoundaryCondition::from(
+                SurfaceContinuity::Tangent
+            )][..]
+        )
     );
+}
+
+#[test]
+fn filled_surface_weights_are_positive_and_belong_to_active_continuity() {
+    use crate::features::{
+        FilledSurfaceBoundaryCondition, FilledSurfaceContinuity, NonEmptyMembers,
+    };
+    use crate::scalar::PositiveReal;
+
+    for wire in [
+        serde_json::json!({"kind":"contact","weight":0.5}),
+        serde_json::json!({"kind":"tangent","weight":0.0}),
+        serde_json::json!({"kind":"curvature","weight":-1.0}),
+        serde_json::json!({"kind":"tangent","weight":null}),
+    ] {
+        assert!(
+            serde_json::from_value::<FilledSurfaceBoundaryCondition>(wire.clone()).is_err(),
+            "accepted {wire}"
+        );
+    }
+    let condition = FilledSurfaceBoundaryCondition::Tangent {
+        weight: PositiveReal::new(0.15),
+    };
+    let wire = serde_json::to_value(condition).unwrap();
+    assert_eq!(wire, serde_json::json!({"kind":"tangent","weight":0.15}));
+    assert_eq!(
+        serde_json::from_value::<FilledSurfaceBoundaryCondition>(wire).unwrap(),
+        condition
+    );
+    let unequal = FilledSurfaceContinuity {
+        conditions: NonEmptyMembers::try_from(vec![
+            condition,
+            FilledSurfaceBoundaryCondition::Tangent {
+                weight: PositiveReal::new(0.5),
+            },
+        ])
+        .unwrap(),
+    };
+    assert!(unequal.uniform().is_none());
 }
 
 #[test]
