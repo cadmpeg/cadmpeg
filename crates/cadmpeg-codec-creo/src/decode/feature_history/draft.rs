@@ -186,12 +186,17 @@ pub(super) fn thicken_feature_definition(
                 &result_surface_ids,
                 &available_features,
             )? {
-                FaceSelection::generated(
-                    faces,
-                    ctx.copy_retained_text(&native, "creo thicken generated native selection")?,
-                    ctx,
-                )?
-                .unwrap_or(FaceSelection::Native(native))
+                match faces.try_into() {
+                    Ok(faces) => {
+                        let native = native.try_into().map_err(|_| {
+                            cadmpeg_core::CodecError::Malformed(
+                                "constructed Creo thicken selection is blank".into(),
+                            )
+                        })?;
+                        FaceSelection::Generated { faces, native }
+                    }
+                    Err(_) => FaceSelection::Native(native),
+                }
             } else {
                 FaceSelection::Native(native)
             }
@@ -259,12 +264,13 @@ fn hole_face_selection(
         result_surface_ids,
         available_features,
     )? {
-        return Ok(FaceSelection::generated(
-            faces,
-            ctx.copy_retained_text(&native, "creo hole generated native selection")?,
-            ctx,
-        )?
-        .unwrap_or(FaceSelection::Native(native)));
+        let Ok(faces) = faces.try_into() else {
+            return Ok(FaceSelection::Native(native));
+        };
+        let native = native.try_into().map_err(|_| {
+            cadmpeg_core::CodecError::Malformed("constructed Creo hole selection is blank".into())
+        })?;
+        return Ok(FaceSelection::Generated { faces, native });
     }
     Ok(FaceSelection::Native(native))
 }

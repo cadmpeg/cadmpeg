@@ -120,59 +120,32 @@ fn hole_resolved_face_keeps_its_native_reference() {
 }
 
 #[test]
-fn hole_generated_native_copy_refuses_retained_limit() {
+fn hole_generated_face_retains_one_native_reference() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let scan = thicken_scan();
     let result_surface_ids = std::collections::BTreeMap::from([(3, vec![11])]);
-    let available_features =
-        std::collections::BTreeSet::from([cadmpeg_ir::features::FeatureId::mint(
-            "creo:model:feature#3",
-        )
-        .expect("identity grammar")]);
-
+    let available_features = std::collections::BTreeSet::from([
+        cadmpeg_ir::features::FeatureId::mint("creo:model:feature#3")
+            .expect("identity grammar"),
+    ]);
+    let native = "creo:visibgeom:surface#11";
+    // One generated member uses the core vector's four-slot initial capacity.
+    let retained_bytes = native.len() + "creo:model:feature#3".len() + "surface#11".len()
+        + 4 * std::mem::size_of::<cadmpeg_ir::features::GeneratedFaceRef>();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        Some("creo hole generated native selection"),
-        |cap| {
-            let trial_arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut trial_policy = policy;
-            trial_policy.limits.max_retained_bytes = cap;
-            let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                &[],
-                &trial_arena,
-                &trial_policy,
-            )
-            .expect("root");
-            hole_face_selection(
-                &trial_ctx,
-                &scan,
-                &CadIr::empty(),
-                9,
-                11,
-                &result_surface_ids,
-                &available_features,
-            )
-        },
-    );
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = hole_face_selection(
-        &ctx,
-        &scan,
-        &CadIr::empty(),
-        9,
-        11,
-        &result_surface_ids,
-        &available_features,
-    )
-    .expect_err("generated native copy exceeds the retained limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo hole generated native selection"),
-        "{error:?}"
-    );
+    policy.limits.max_retained_bytes = u64::try_from(retained_bytes).expect("fixture byte bound");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let selection = hole_face_selection(
+        &ctx, &scan, &CadIr::empty(), 9, 11, &result_surface_ids, &available_features,
+    ).expect("one retained native reference admits the generated hole face");
+    let cadmpeg_ir::features::FaceSelection::Generated { faces, native: reference } = selection else {
+        panic!("generated hole face");
+    };
+    assert_eq!(reference.as_str(), native);
+    assert_eq!(faces.len(), 1);
+    assert_eq!(faces[0].feature.as_str(), "creo:model:feature#3");
+    assert_eq!(faces[0].local_id.as_str(), "surface#11");
 }
 
 #[test]
@@ -323,11 +296,28 @@ fn thicken_native_selection_refuses_retained_limit() {
 }
 
 #[test]
-fn thicken_generated_native_copy_refuses_retained_limit() {
-    thicken_resource_error(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "creo thicken generated native selection",
-    );
+fn thicken_generated_face_retains_one_native_reference() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let scan = thicken_scan();
+    let native = "creo:allfeatur:thicken_source_surfaces#17:11";
+    // Only the native text and generated member survive the evidence scope.
+    let retained_bytes = native.len() + "creo:model:feature#3".len() + "surface#11".len()
+        + 4 * std::mem::size_of::<cadmpeg_ir::features::GeneratedFaceRef>();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(retained_bytes).expect("fixture byte bound");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let definition = thicken_feature_definition(&ctx, &scan, &CadIr::empty(), 17)
+        .expect("one retained native reference admits the generated thicken face");
+    let IrFeatureDefinition::Operation(IrFeatureOperation::Thicken {
+        faces: cadmpeg_ir::features::FaceSelection::Generated { faces, native: reference }, ..
+    }) = definition else {
+        panic!("generated thicken face");
+    };
+    assert_eq!(reference.as_str(), native);
+    assert_eq!(faces.len(), 1);
+    assert_eq!(faces[0].feature.as_str(), "creo:model:feature#3");
+    assert_eq!(faces[0].local_id.as_str(), "surface#11");
 }
 
 #[test]
