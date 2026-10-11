@@ -1306,8 +1306,15 @@ fn swift_suppressed_roster_skips_populated_feature_index() {
         "index SWIFT features",
         None,
     );
-    let projection =
-        crate::swift::project_with_topology(&ctx, &root, None, &crate::swift::RenderedDimensions::Borrowed(&[]), None, None).unwrap();
+    let projection = crate::swift::project_with_topology(
+        &ctx,
+        &root,
+        None,
+        &crate::swift::RenderedDimensions::Borrowed(&[]),
+        None,
+        None,
+    )
+    .unwrap();
     assert!(projection.annotations.is_empty());
     assert!(projection.unsupported.is_empty());
     drop(projection);
@@ -1405,7 +1412,14 @@ fn swift_rejected_annotation_gates_skip_populated_feature_index() {
             None,
         );
         {
-            let result = crate::swift::project_with_topology(&ctx, &root, None, &crate::swift::RenderedDimensions::Borrowed(&[]), None, None);
+            let result = crate::swift::project_with_topology(
+                &ctx,
+                &root,
+                None,
+                &crate::swift::RenderedDimensions::Borrowed(&[]),
+                None,
+                None,
+            );
             if class == "GdtDatum" {
                 let Err(CodecError::Malformed(message)) = result else {
                     panic!("missing datum identifier is malformed");
@@ -1558,7 +1572,11 @@ fn swift_dimension_reuses_its_admitted_pmi_identity() {
     let mut entity = super::entity("GdtDiameter");
     entity.doubles.insert("Nominal".into(), 4.0);
     let id = crate::swift::pmi_id_charged(&ctx, "A10").unwrap().unwrap();
-    let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "format SWIFT PMI identity", None);
+    let _probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "format SWIFT PMI identity",
+        None,
+    );
     let geometry = crate::swift::ProjectionGeometry::new(&ctx, None, None, None);
     let features = BTreeMap::new();
     let annotation = crate::swift::project_dimension(
@@ -1569,7 +1587,9 @@ fn swift_dimension_reuses_its_admitted_pmi_identity() {
         || Ok(&features),
         &geometry,
         &crate::swift::RenderedDimensions::Borrowed(&[]),
-    ).unwrap().unwrap();
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(annotation.id, crate::swift::pmi_id("A10").unwrap());
     assert_eq!(dimension_nominal(&[annotation], "A10"), length(4.0));
     drop((geometry, counterbores));
