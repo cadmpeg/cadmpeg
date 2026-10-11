@@ -3,7 +3,7 @@ use crate::compound::tests::{fixture_v4, sector_mut_with_size, initialize_empty_
 use crate::compound::{read_detection_prefix, CompoundPrefixProbe, END_OF_CHAIN, FAT_SECTOR, DIFAT_SECTOR, FREE_SECTOR, NO_STREAM};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_test_support::bytes::put_u32;
+use cadmpeg_test_support::bytes::{put_u16, put_u32};
 
 fn with_context<T>(bytes: &[u8], policy: &DecodePolicy, use_context: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
     let arena = DecodeArena::new();
@@ -206,6 +206,71 @@ fn resumable_detection_accounts_for_suspended_fat_during_input_growth() {
                     && limit.operation == "input prefix storage"
                     && limit.used == cadmpeg_core::decode::u64_from_index(suspended_fat_bytes)
                     && limit.additional == cadmpeg_core::decode::u64_from_index(old_peak)));
+        }
+    }
+}
+
+#[test]
+fn resumable_difat_role_waits_for_later_fat_coverage_once() {
+    const SECTOR_BYTES: usize = 512;
+    let mut file = fixture_v4();
+    file.truncate(SECTOR_BYTES);
+    file.resize(SECTOR_BYTES * 257, 0);
+    put_u16(&mut file, 26, 3);
+    put_u16(&mut file, 30, 9);
+    put_u32(&mut file, 40, 0);
+    put_u32(&mut file, 44, 2);
+    put_u32(&mut file, 48, 0);
+    put_u32(&mut file, 68, 254);
+    put_u32(&mut file, 72, 1);
+    put_u32(&mut file, 76, 11);
+    put_u32(&mut file, 80, 255);
+    let directory = sector_mut_with_size(&mut file, SECTOR_BYTES, 0);
+    initialize_empty_directory_entries(directory);
+    directory_entry(directory, 0, "Root Entry", 5, NO_STREAM, NO_STREAM, NO_STREAM, END_OF_CHAIN, 0);
+    let first_fat = sector_mut_with_size(&mut file, SECTOR_BYTES, 11);
+    first_fat.fill(0xff);
+    put_u32(first_fat, 0, END_OF_CHAIN);
+    put_u32(first_fat, 11 * 4, FAT_SECTOR);
+    let difat = sector_mut_with_size(&mut file, SECTOR_BYTES, 254);
+    difat.fill(0xff);
+    put_u32(difat, SECTOR_BYTES - 4, END_OF_CHAIN);
+    let second_fat = sector_mut_with_size(&mut file, SECTOR_BYTES, 255);
+    second_fat.fill(0xff);
+    put_u32(second_fat, 126 * 4, DIFAT_SECTOR);
+    put_u32(second_fat, 127 * 4, FAT_SECTOR);
+    let node_bytes = 11 * std::mem::size_of::<u32>()
+        + 16 * std::mem::size_of::<usize>()
+        + 2 * std::mem::align_of::<u32>().max(std::mem::align_of::<usize>());
+    // One DIFAT visit and 127 entries; two FAT visits and 256 words;
+    // relocation of the first 128 words; five role visits including ends;
+    // one directory visit; three node passes for each visited sector set.
+    let exact_work = 1 + 127 + 2 + 256 + 128 * 4 + 5 + 1 + 6 * node_bytes;
+    let arena = DecodeArena::new();
+    for resumed in [false, true] {
+        for limit in [exact_work, exact_work - 1] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(limit);
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+            let mut state = PrefixProbe::new();
+            if resumed {
+                assert!(matches!(state.advance(&ctx, View::over_retained(&file[..2 * PREFIX_STEP])).expect("role is not covered"),
+                    PrefixDirectoryAvailability::Incomplete));
+            }
+            let result = state.advance(&ctx, View::over_retained(&file));
+            if limit == exact_work {
+                let PrefixDirectoryAvailability::Ready { directory_chain, storage, .. } = result.expect("exact role continuation")
+                else { panic!("directory is ready"); };
+                assert_eq!(directory_chain, [0]);
+                drop((directory_chain, storage));
+                assert!(matches!(ctx.charge_work(1, "exact DIFAT role pass"), Err(CodecError::ResourceLimit(refusal))
+                    if refusal.used == cadmpeg_core::decode::u64_from_index(exact_work)));
+            } else {
+                assert!(matches!(result, Err(CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == ResourceDimension::WorkUnits
+                        && refusal.operation == "CFB probe directory visits"
+                        && refusal.used + refusal.additional == cadmpeg_core::decode::u64_from_index(exact_work)));
+            }
         }
     }
 }

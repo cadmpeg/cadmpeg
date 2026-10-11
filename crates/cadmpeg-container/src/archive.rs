@@ -520,10 +520,11 @@ impl<'a, 'ctx> ArchiveSnapshot<'a, 'ctx> {
     }
 
     /// Partitions every physical archive byte by ZIP structural role.
-    pub fn physical_ledger(
+    /// The returned reservation owns the spans and their role names until drop.
+    pub fn physical_ledger<'ledger>(
         &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Vec<PhysicalSpan>, CodecError> {
+        ctx: &'ledger DecodeContext<'_>,
+    ) -> Result<(Vec<PhysicalSpan>, ScopedReservation<'ledger>), CodecError> {
         physical_ledger(ctx, self.root.window(), &self.entries, self.central_start)
     }
 }
@@ -923,12 +924,12 @@ fn push_region(
     Ok(())
 }
 
-fn physical_ledger(
-    ctx: &DecodeContext<'_>,
+fn physical_ledger<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     bytes: &[u8],
     entries: &[EntryRecord],
     central_begin: u64,
-) -> Result<Vec<PhysicalSpan>, CodecError> {
+) -> Result<(Vec<PhysicalSpan>, ScopedReservation<'ctx>), CodecError> {
     let len = cadmpeg_core::decode::u64_from_index(bytes.len());
     let mut region_storage = ctx.reserve_scoped(0, "ZIP ledger source regions")?;
     let mut regions = Vec::new();
@@ -1325,11 +1326,11 @@ fn classify_end_records(
     Ok(())
 }
 
-fn partition(
-    ctx: &DecodeContext<'_>,
+fn partition<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     len: u64,
     regions: &[PhysicalSpan],
-) -> Result<Vec<PhysicalSpan>, CodecError> {
+) -> Result<(Vec<PhysicalSpan>, ScopedReservation<'ctx>), CodecError> {
     let mut index_storage = ctx.reserve_scoped(0, "ZIP ledger partition indices")?;
     let mut boundaries = BTreeSet::from([0_u64, len]);
     for region in ctx.admit_iter(regions, "visit ZIP ledger regions")? {
@@ -1364,6 +1365,7 @@ fn partition(
         "ZIP ledger ordered regions",
     )?;
     let mut region_index = 0_usize;
+    let mut span_storage = ctx.reserve_scoped(0, "ZIP ledger partition spans")?;
     let mut spans = Vec::new();
     for pair in ctx
         .admit_iter(&points, "visit ZIP ledger intervals")?
@@ -1389,14 +1391,14 @@ fn partition(
                     "physical ZIP ledger contains an unclassified byte range".into(),
                 )
             })?;
-        ctx.reserve_vec(&mut spans, 1, "ZIP ledger spans")?;
+        ctx.reserve_scoped_vec(&mut span_storage, &mut spans, 1, "ZIP ledger spans")?;
         spans.push(PhysicalSpan {
             start,
             end,
-            role: owner.role.copy_with_context(ctx)?,
+            role: span_storage.with_storage(|| owner.role.copy_with_context(ctx))?,
         });
     }
-    Ok(spans)
+    Ok((spans, span_storage))
 }
 
 /// Storage for one member, recording a malformed declaration as an attribute.
@@ -1442,6 +1444,7 @@ mod tests {
     use super::{ArchiveSnapshot, EntryRecord, PhysicalSpan, ZipCompression, ZipSpanRole};
 
     mod admission;
+    mod lifetime;
     mod probe;
 
     fn summary_refuses(dimension: ResourceDimension, limit: u64, operation: &str) {
@@ -1693,16 +1696,18 @@ mod tests {
             .expect("empty ZIP fits root policy");
         let snapshot = ArchiveSnapshot::new(&ctx, root).expect("empty ZIP is valid");
         assert!(snapshot.entries().is_empty());
+        let (spans, storage) = snapshot
+            .physical_ledger(&ctx)
+            .expect("empty ZIP has a complete physical ledger");
         assert_eq!(
-            snapshot
-                .physical_ledger(&ctx)
-                .expect("empty ZIP has a complete physical ledger"),
+            spans,
             vec![PhysicalSpan {
                 start: 0,
                 end: cadmpeg_core::decode::u64_from_index(bytes.len()),
                 role: ZipSpanRole::EndRecord,
             }]
         );
+        drop((spans, storage));
     }
 
     #[test]
@@ -1867,10 +1872,9 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
             .expect("empty root");
-        assert_eq!(
-            super::partition(&ctx, 8, &regions).expect("complete partition"),
-            vec![regions[1].clone(), regions[0].clone()]
-        );
+        let (spans, storage) = super::partition(&ctx, 8, &regions).expect("complete partition");
+        assert_eq!(spans, vec![regions[1].clone(), regions[0].clone()]);
+        drop((spans, storage));
     }
 
     #[test]
@@ -2026,41 +2030,67 @@ mod tests {
     }
 
     #[test]
-    fn physical_ledger_partition_role_refuses_at_retained_limit() {
+    fn physical_ledger_role_names_use_scoped_materialized_storage() {
+        let bytes = archive_bytes();
+        let arena = DecodeArena::new();
+        let (setup, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("archive root");
+        let snapshot = ArchiveSnapshot::new(&setup, root).expect("snapshot");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (limited, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited root");
+        let (spans, storage) = snapshot.physical_ledger(&limited).expect("ledger has no retained storage");
+        for entry in snapshot.entries() {
+            assert!(spans.iter().any(|span| matches!(&span.role,
+                ZipSpanRole::CompressedPayload(name) if name == &entry.name)));
+            assert!(spans.iter().any(|span| matches!(&span.role,
+                ZipSpanRole::CentralName(name) if name == &entry.name)));
+        }
+        drop((spans, storage));
+        limited.finish_session().expect("role names leave no retained charge");
+    }
+
+    #[test]
+    fn physical_ledger_partition_role_refuses_at_materialized_limit() {
         let bytes = archive_bytes();
         let arena = DecodeArena::new();
         let (setup, root) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
                 .expect("archive root");
         let snapshot = ArchiveSnapshot::new(&setup, root).expect("snapshot");
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = 0;
-        for _ in 0..256 {
-            let (limited, _) =
-                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited root");
-            let error = snapshot
-                .physical_ledger(&limited)
-                .expect_err("ledger must refuse");
-            let CodecError::ResourceLimit(limit) = error else {
-                panic!("expected retained refusal: {error:?}");
-            };
-            assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-            let threshold = limit
-                .used
-                .checked_add(limit.additional)
-                .expect("finite test budget");
-            if limit.operation == "ZIP partition role name" {
-                policy.limits.max_retained_bytes = threshold - 1;
-                let (limited, _) =
-                    DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited root");
-                assert!(matches!(snapshot.physical_ledger(&limited),
-                    Err(CodecError::ResourceLimit(ref refusal))
-                        if refusal.operation == "ZIP partition role name"));
-                return;
+        let name = &snapshot.entries()[0].name;
+        let regions = [PhysicalSpan {
+            start: 0,
+            end: 1,
+            role: ZipSpanRole::CompressedPayload(name.clone()),
+        }];
+        // Two boundary points, one borrowed region, four minimum output
+        // slots, and the copied role name are live together.
+        let backing = 2 * std::mem::size_of::<u64>()
+            + std::mem::size_of::<&PhysicalSpan>()
+            + 4 * std::mem::size_of::<PhysicalSpan>();
+        let exact = backing + name.len();
+        for limit in [exact - 1, exact] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(limit);
+            let (limited, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("limited root");
+            let result = super::partition(&limited, 1, &regions);
+            if limit == exact {
+                let (spans, storage) = result.expect("span and role name fit exactly");
+                assert_eq!(spans, regions);
+                drop((spans, storage));
+                limited.reserve_scoped(cadmpeg_core::decode::u64_from_index(exact), "released partition")
+                    .expect("partition storage is released");
+            } else {
+                assert!(matches!(result, Err(CodecError::ResourceLimit(ref refusal))
+                    if refusal.dimension == ResourceDimension::MaterializedBytes
+                        && refusal.operation == "ZIP partition role name"
+                        && refusal.used == cadmpeg_core::decode::u64_from_index(backing)
+                        && refusal.additional == cadmpeg_core::decode::u64_from_index(name.len())));
             }
-            policy.limits.max_retained_bytes = threshold;
         }
-        panic!("ZIP partition role name was not reached");
     }
 
     #[test]
