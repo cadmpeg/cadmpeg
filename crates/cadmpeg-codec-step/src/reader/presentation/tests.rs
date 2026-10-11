@@ -5,6 +5,7 @@ use super::{find_color, style_application_order, ColorResolution, StyleDomain};
 use std::collections::{BTreeMap, BTreeSet};
 
 mod collection_limits;
+mod name_storage;
 mod stage_caches;
 mod string_limits;
 mod style_indices;
@@ -1619,3 +1620,5 @@ mod set_lookups;
 mod color_bindings;
 
 mod shared_graphs;
+
+mod color_context;

@@ -70,9 +70,8 @@ fn invisible_query_preserves_collection_refusal() {
     policy.limits.max_collection_items = 4;
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
         let mut index = InvisibleIndex::new(ctx).expect("index");
-        let error = match index.resolve(1, &exchange, &topology, &indices) {
-            Err(error) => error,
-            Ok(_) => panic!("second child must require another collection slot"),
+        let Err(error) = index.resolve(1, &exchange, &topology, &indices) else {
+            panic!("second child must require another collection slot")
         };
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems

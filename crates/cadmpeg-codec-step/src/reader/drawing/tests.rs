@@ -15,6 +15,8 @@ use crate::StepCodec;
 mod collection_limits;
 mod original_context;
 mod prefix_admission;
+mod shared_joins;
+mod sheet_storage;
 mod string_limits;
 
 #[test]
