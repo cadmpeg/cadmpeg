@@ -914,7 +914,7 @@ fn render_cards(
         return Ok(());
     }
     let mut chunks = data.chunks(CARD_DATA_WIDTH);
-    while chunks.len() != 0 || ctx.resource_refusal().is_some() {
+    while chunks.len() != 0 {
         let Some(chunk) = ctx.next_charged(&mut chunks, "iges binary rendered cards")? else {
             break;
         };
@@ -961,8 +961,7 @@ fn normalize_start(
     let mut primitive_storage = ctx.reserve_scoped(0, "IGES binary start primitives")?;
     let mut stream = ValueStream::new(payload, lengths, ctx);
     let mut text = Vec::new();
-    while !stream.pending.is_empty() || !stream.bits.is_empty() || ctx.resource_refusal().is_some()
-    {
+    while !stream.pending.is_empty() || !stream.bits.is_empty() {
         ctx.charge_work(1, "iges binary start primitives")?;
         let Some(value) = primitive_storage.with_storage(|| stream.next())? else {
             break;
@@ -1096,10 +1095,7 @@ fn read_parameters(
             "Parameter Directory pointer",
         )?;
         let mut values = Vec::new();
-        while !stream.pending.is_empty()
-            || !stream.bits.is_empty()
-            || ctx.resource_refusal().is_some()
-        {
+        while !stream.pending.is_empty() || !stream.bits.is_empty() {
             ctx.charge_work(1, "iges binary parameter primitives")?;
             let Some(value) = stream.next()? else {
                 break;
@@ -1379,7 +1375,7 @@ fn render_parameter_lines(
             "iges binary macro parameter cards",
         )?;
         let mut chunks = data.chunks(PARAMETER_DATA_WIDTH);
-        while chunks.len() != 0 || ctx.resource_refusal().is_some() {
+        while chunks.len() != 0 {
             let Some(chunk) = ctx.next_charged(&mut chunks, "iges binary macro parameter cards")?
             else {
                 break;
