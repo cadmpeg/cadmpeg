@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::records::topology::extrude_selection::DesignOperandRole;
 
-use crate::design::feature_project::project_mirror;
+use crate::design::feature_project::patterns::project_mirror;
 use crate::records::{
     feature::{mirror::DesignMirrorConstruction, scope::DesignParameterScope},
     topology::{

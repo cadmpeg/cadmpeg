@@ -159,7 +159,7 @@ fn project(lane: Lane, slots: Vec<i64>, ctx: &DecodeContext<'_>) -> Result<Selec
             let Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(profile),
                 ..
-            })) = super::super::super::project_extrude(
+            })) = super::super::super::extrude::project_extrude(
                 ctx,
                 &scope,
                 &[(0, &parameter)],

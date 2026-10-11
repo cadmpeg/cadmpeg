@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::feature_project::{
-    project_circular_pattern, project_rectangular_pattern_scalars,
-};
+use crate::design::feature_project::patterns::project_circular_pattern;
+use crate::design::feature_project::patterns::project_rectangular_pattern_scalars;
 use crate::records::{
     feature::{patterns::DesignRectangularPatternConstruction, scope::DesignParameterScope},
     topology::{
