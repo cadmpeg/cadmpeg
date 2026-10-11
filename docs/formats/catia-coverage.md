@@ -393,6 +393,12 @@ current levels require those matrices and representative fixtures.
   nonzero component of the `u_axis` to be positive. A missing or ambiguous
   normal, non-finite endpoint, non-orthonormal fit, or residual above the
   tolerance leaves the plane carrier unresolved.
+- E5 degree-5 jet bounds resolve their one-based span code and local scalar
+  to the native knot parameter before selecting occurrence direction.
+  Missing spans, repeated representation entries, and out-of-span values
+  leave the binding unresolved. Paired analytic line/plane-jet supports use
+  the line's full affine UV map and owning carrier chart for the physical
+  circle branch; negative slopes and nonzero offsets remain intact.
 - E5 curve-support sides admit direct p-curves and finite acyclic chains of
   intersection-support wrappers. Missing sides and wrapper cycles reject the
   graph. When a wrapper side does not resolve directly, the two radial loop

@@ -56,8 +56,18 @@ impl E5Topology {
     ) -> Option<[FiniteReal; 2]> {
         let edge = self.edges.get(&edge_ref)?;
         Some([
-            bound_representation_parameter(&self.bounds, edge.parameter_start, representation)?,
-            bound_representation_parameter(&self.bounds, edge.parameter_end, representation)?,
+            bound_representation_parameter(
+                &self.bounds,
+                &self.pcurves,
+                edge.parameter_start,
+                representation,
+            )?,
+            bound_representation_parameter(
+                &self.bounds,
+                &self.pcurves,
+                edge.parameter_end,
+                representation,
+            )?,
         ])
     }
 }
@@ -133,8 +143,8 @@ pub(super) struct E5BoundEntry {
     pub(super) representation: u32,
     /// Finite LE-f64 bound parameter for this representation.
     pub(super) parameter: FiniteReal,
-    /// Raw trailing `u32` code following the parameter; meaning not decoded
-    /// further.
+    /// One-based knot-span index for a degree-5 jet; retained without
+    /// interpretation for other representations.
     pub(super) code: u32,
 }
 
@@ -619,8 +629,10 @@ pub(crate) fn parse_topology(
                         || [edge.parameter_start, edge.parameter_end]
                             .iter()
                             .any(|bound_ref| {
-                                bound_representation_parameter(&bounds, *bound_ref, *pcurve_id)
-                                    .is_none()
+                                bound_representation_parameter(
+                                    &bounds, &pcurves, *bound_ref, *pcurve_id,
+                                )
+                                .is_none()
                             })
                     {
                         return None;
@@ -856,6 +868,7 @@ fn curve_support_reference_closes(
 
 fn bound_representation_parameter(
     bounds: &BTreeMap<u32, E5Bounds>,
+    pcurves: &BTreeMap<u32, E5Pcurve>,
     bound_ref: u32,
     representation: u32,
 ) -> Option<FiniteReal> {
@@ -864,8 +877,22 @@ fn bound_representation_parameter(
         .entries
         .iter()
         .filter(|entry| entry.representation == representation);
-    let parameter = entries.next()?.parameter;
-    entries.next().is_none().then_some(parameter)
+    let entry = entries.next()?;
+    if entries.next().is_some() {
+        return None;
+    }
+    let Some(E5Pcurve::Jet { sites, .. }) = pcurves.get(&representation) else {
+        return Some(entry.parameter);
+    };
+    let span = usize::try_from(entry.code.checked_sub(1)?).ok()?;
+    let start = sites.get(span)?.knot.get();
+    let end = sites.get(span.checked_add(1)?)?.knot.get();
+    let parameter = start + entry.parameter.get();
+    let tolerance = EPS_PARAMETER_ENDPOINT * (1.0 + start.abs().max(end.abs()));
+    if end <= start || parameter < start - tolerance || parameter > end + tolerance {
+        return None;
+    }
+    FiniteReal::new(parameter)
 }
 
 fn parse_curve_support(
@@ -1565,8 +1592,9 @@ fn plane_digon_orientation_hint(
             })
     };
     let signed_parameter_direction = |edge: &E5Edge, pcurve_id: u32, native_range: [f64; 2]| {
-        let start = bound_representation_parameter(bounds, edge.parameter_start, pcurve_id)?;
-        let end = bound_representation_parameter(bounds, edge.parameter_end, pcurve_id)?;
+        let start =
+            bound_representation_parameter(bounds, pcurves, edge.parameter_start, pcurve_id)?;
+        let end = bound_representation_parameter(bounds, pcurves, edge.parameter_end, pcurve_id)?;
         let bound_span = end.get() - start.get();
         let native_span = native_range[1] - native_range[0];
         if bound_span.abs() <= EPS_PLANE_DIGON || native_span.abs() <= EPS_PLANE_DIGON {
@@ -2700,7 +2728,7 @@ mod tests {
                     entries: vec![E5BoundEntry {
                         representation: 10,
                         parameter: crate::test_support::test_b5::finite(0.0),
-                        code: 0,
+                        code: 1,
                     }],
                 },
             ),
@@ -2710,7 +2738,7 @@ mod tests {
                     entries: vec![E5BoundEntry {
                         representation: 10,
                         parameter: crate::test_support::test_b5::finite(1.0),
-                        code: 0,
+                        code: 1,
                     }],
                 },
             ),
@@ -2720,7 +2748,7 @@ mod tests {
                     entries: vec![E5BoundEntry {
                         representation: 11,
                         parameter: crate::test_support::test_b5::finite(0.0),
-                        code: 0,
+                        code: 1,
                     }],
                 },
             ),
@@ -2730,7 +2758,7 @@ mod tests {
                     entries: vec![E5BoundEntry {
                         representation: 11,
                         parameter: crate::test_support::test_b5::finite(1.0),
-                        code: 0,
+                        code: 1,
                     }],
                 },
             ),
@@ -2753,17 +2781,18 @@ mod tests {
 
         let mut wide_pcurves = pcurves.clone();
         for pcurve in wide_pcurves.values_mut() {
-            if let E5Pcurve::Jet { range, .. } = pcurve {
+            if let E5Pcurve::Jet { range, sites, .. } = pcurve {
                 *range = finite_pair([-f64::MAX, f64::MAX]);
+                for (site, knot) in sites.iter_mut().zip([-f64::MAX, 0.0, f64::MAX]) {
+                    site.knot = finite(knot);
+                }
             }
         }
         let mut wide_bounds = bounds.clone();
         for (id, bound) in &mut wide_bounds {
-            bound.entries[0].parameter = finite(if matches!(*id, 30 | 32) {
-                -f64::MAX
-            } else {
-                f64::MAX
-            });
+            let start = matches!(*id, 30 | 32);
+            bound.entries[0].parameter = finite(if start { 0.0 } else { f64::MAX });
+            bound.entries[0].code = if start { 1 } else { 2 };
         }
         assert_eq!(
             plane_digon_orientation_hint(
@@ -2857,6 +2886,54 @@ mod tests {
                 code: 8,
             });
         assert_eq!(topology.edge_representation_parameters(1, 20), None);
+    }
+
+    #[test]
+    fn jet_bound_codes_resolve_span_local_parameters() {
+        use super::bound_representation_parameter;
+        let sites = [0.0, 3.0, 7.0, 9.0, 13.0, 15.0, 19.0, 23.0]
+            .into_iter()
+            .map(|knot| E5PcurveJetSite {
+                knot: finite(knot),
+                multiplicity: 3,
+                point: finite_pair([0.0, 0.0]),
+                first_derivatives: finite_pair([0.0, 0.0]),
+                second_derivatives: finite_pair([0.0, 0.0]),
+            })
+            .collect();
+        let pcurves = BTreeMap::from([(
+            20,
+            E5Pcurve::Jet {
+                surface: 1,
+                sites,
+                range: finite_pair([0.0, 23.0]),
+            },
+        )]);
+        let resolve = |local, code| {
+            let bounds = BTreeMap::from([(
+                10,
+                E5Bounds {
+                    entries: vec![E5BoundEntry {
+                        representation: 20,
+                        parameter: finite(local),
+                        code,
+                    }],
+                },
+            )]);
+            bound_representation_parameter(&bounds, &pcurves, 10, 20)
+                .map(cadmpeg_ir::scalar::FiniteReal::get)
+        };
+        // Raw scalars decrease from 2 to 1; resolved native parameters
+        // increase from 2 to 4 across the knot boundary.
+        assert!(resolve(2.0, 1).expect("start span") < resolve(1.0, 2).expect("end span"));
+        assert_eq!(resolve(2.0, 1), Some(2.0));
+        assert_eq!(resolve(1.0, 2), Some(4.0));
+        assert_eq!(resolve(4.0, 2), Some(7.0));
+        assert_eq!(resolve(4.0, 7), Some(23.0));
+        assert_eq!(resolve(0.0, 0), None);
+        assert_eq!(resolve(0.0, 8), None);
+        assert_eq!(resolve(-1.0, 2), None);
+        assert_eq!(resolve(5.0, 2), None);
     }
 
     #[test]

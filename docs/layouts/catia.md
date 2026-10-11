@@ -378,7 +378,7 @@ Cross-checked against code:
 
 Spec §9 · layout: byte offsets · size: 13 B
 
-Declared size is the spec's stated stride base. The enumerated fields sum to 14 bytes, one more than the stated stride base; the mismatch is recorded below.
+The 13-byte header precedes the counted payload; an initial payload reference-count byte is separate from the header.
 
 Parsed by:
 - `crates/cadmpeg-codec-catia/src/families/e5/records.rs`
@@ -387,14 +387,10 @@ Parsed by:
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 3 | `marker` | `bytes[3]` | little | spec | Framing `E5 0D 03 <cls> <sub> · value `[229, 13, 3]` |
 | 3 | 1 | `class` | `u8` | little | spec | `E5 0D 03 <cls> <sub> <payload_size_u16le> |
-| 4 | 1 | `sub` | `u8` | little | spec | <cls> <sub> <payload_size_u16le> 00 00 00 |
-| 5 | 2 | `payload_size` | `u16` | little | spec | <payload_size_u16le> 00 00 00 <record_id_u32le> |
-| 7 | 3 | `zero_run` | `bytes[3]` | little | spec | <payload_size_u16le> 00 00 00 <record_id_u32le> <payload> |
-| 10 | 4 | `record_id` | `u32` | little | spec | <record_id_u32le> <payload>`, stride `payload_size + 13` |
-
-**Discrepancies:**
-
-- The enumerated header fields total 14 bytes but the same sentence states the record stride as `payload_size + 13`, which implies a 13-byte header. The parser follows both at once: it advances by `size + 13` yet decodes carrier fields from record `+14`, and checks the `0xff` edge-use lead byte at record `+13`. The spec does not say which of the two numbers is authoritative.
+| 4 | 1 | `sub` | `u8` | little | spec | <cls> <sub> <payload_size_u16le> 00 00 |
+| 5 | 2 | `payload_size` | `u16` | little | spec | <payload_size_u16le> 00 00 <record_id_u32le> |
+| 7 | 2 | `zero_run` | `bytes[2]` | little | spec | <payload_size_u16le> 00 00 <record_id_u32le> <payload> |
+| 9 | 4 | `record_id` | `u32` | little | spec | <record_id_u32le> <payload>`, stride `payload_size + 13` |
 
 ## `numeric_pair_prefix`
 

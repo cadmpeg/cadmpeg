@@ -502,22 +502,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 6. E5 `0D 03`
 
-### E5-01. `0xa0` circle branch
-
-**Question.** Which field selects the circle branch of an `0xa0` wrapper?
-
-**Known.** `catia.md` §9 "Framing `E5 0D 03 <cls> <sub> <payload_size_u16le> 00 00 00 <record_id_u32le> <payload>`, stride" and `catia.md` §9 "Classes: `0x01` body" defines the admitted `0xa0` wrapper and analytic circle primitive.
-
-**Need.** We must know the selector to choose the correct circle arc.
-
-### E5-02. `0xa0` co-parametric mapping
-
-**Question.** What is the general parameter mapping from an `0xa0` wrapper to its primitive?
-
-**Known.** For the cone subset, `q_circle = (R/ca_q_scale) * q_ca`.
-
-**Need.** We must know the other mappings to trim the primitive correctly.
-
 ### E5-03. Plane-cap digon orientation
 
 **Question.** Which fields orient a plane-cap digon?
@@ -554,9 +538,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does the trailing `u32` code after each E5 bound parameter control?
 
-**Known.** `catia.md` §9 "**Topology:**" defines the bound parameter value and its edge incidence.
+**Known.** `catia.md` §9 "**Topology:**" defines the bound parameter value and its edge incidence. For a degree-5 `0xa0` jet, the code selects a one-based knot span and the scalar is local to that span.
 
-**Need.** We must know the code to interpret and write the bound.
+**Need.** We must know the arc decomposition and local-to-global conversion for the other representations.
 
 ### E5-09. Edge-use trailing fields
 

@@ -912,10 +912,10 @@ name = "e5_record_frame"
 parsed_by = "crates/cadmpeg-codec-catia/src/families/e5/records.rs"
 kind = "byte"
 section = "9"
-anchor = "Framing `E5 0D 03 <cls> <sub> <payload_size_u16le> 00 00 00 <record_id_u32le> <payload>`, stride `payload_size + 13`"
+anchor = "Framing `E5 0D 03 <cls> <sub> <payload_size_u16le> 00 00 <record_id_u32le> <payload>`, stride `payload_size + 13`"
 size = 13
 endianness = "little"
-note = "Declared size is the spec's stated stride base. The enumerated fields sum to 14 bytes, one more than the stated stride base; the mismatch is recorded below."
+note = "The 13-byte header precedes the counted payload; an initial payload reference-count byte is separate from the header."
 
 [[record.field]]
 name = "marker"
@@ -937,35 +937,28 @@ name = "sub"
 offset = 4
 type = "u8"
 source = "spec"
-anchor = "<cls> <sub> <payload_size_u16le> 00 00 00"
+anchor = "<cls> <sub> <payload_size_u16le> 00 00"
 
 [[record.field]]
 name = "payload_size"
 offset = 5
 type = "u16"
 source = "spec"
-anchor = "<payload_size_u16le> 00 00 00 <record_id_u32le>"
+anchor = "<payload_size_u16le> 00 00 <record_id_u32le>"
 
 [[record.field]]
 name = "zero_run"
 offset = 7
-type = "bytes[3]"
+type = "bytes[2]"
 source = "spec"
-anchor = "<payload_size_u16le> 00 00 00 <record_id_u32le> <payload>"
+anchor = "<payload_size_u16le> 00 00 <record_id_u32le> <payload>"
 
 [[record.field]]
 name = "record_id"
-offset = 10
+offset = 9
 type = "u32"
 source = "spec"
 anchor = "<record_id_u32le> <payload>`, stride `payload_size + 13`"
-
-[[record.discrepancy]]
-kind = "size_mismatch"
-computed = 14
-declared = 13
-note = "The enumerated header fields total 14 bytes but the same sentence states the record stride as `payload_size + 13`, which implies a 13-byte header. The parser follows both at once: it advances by `size + 13` yet decodes carrier fields from record `+14`, and checks the `0xff` edge-use lead byte at record `+13`. The spec does not say which of the two numbers is authoritative."
-
 
 # --- §7 Outer schema records -------------------------------------------------
 

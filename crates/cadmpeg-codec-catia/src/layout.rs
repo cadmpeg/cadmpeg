@@ -4,10 +4,6 @@
 //! Do not edit by hand. Regenerate with:
 //! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
 
-// Records omitted because the table declares a contradiction.
-//
-// - `e5_record_frame` (size_mismatch): The enumerated header fields total 14 bytes but the same sentence states the record stride as `payload_size + 13`, which implies a 13-byte header. The parser follows both at once: it advances by `size + 13` yet decodes carrier fields from record `+14`, and checks the `0xff` edge-use lead byte at record `+13`. The spec does not say which of the two numbers is authoritative.
-
 /// Tag constants from the table inventory.
 pub(crate) mod token {
     /// `named stream block` (`FINJPL  `). Spec §4.
