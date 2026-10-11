@@ -398,6 +398,14 @@ fn scalar_conflict_losses_follow_first_physical_style_encounter() {
             "#100=STYLED_ITEM('',(#46),#29);\n#900=STYLED_ITEM('',(#46),#31);\n#901=STYLED_ITEM('',(#66),#31);\n#101=STYLED_ITEM('',(#66),#29);\n",
             ["face#29", "body#31"],
         ),
+        (
+            "#90=GEOMETRIC_SET('',(#31,#29));\n#100=STYLED_ITEM('',(#46),#90);\n#101=STYLED_ITEM('',(#66),#90);\n",
+            ["body#31", "face#29"],
+        ),
+        (
+            "#90=GEOMETRIC_SET('',(#29,#31));\n#100=STYLED_ITEM('',(#46),#90);\n#101=STYLED_ITEM('',(#66),#90);\n",
+            ["face#29", "body#31"],
+        ),
     ] {
         let source = base.replace("ENDSEC;\nEND-ISO-10303-21;", &format!("{styles}ENDSEC;\nEND-ISO-10303-21;"));
         let result = StepCodec::default()

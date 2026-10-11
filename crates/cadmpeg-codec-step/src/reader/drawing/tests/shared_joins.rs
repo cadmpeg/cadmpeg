@@ -49,7 +49,7 @@ fn shallow_wrapper_joins_do_not_materialize_each_parent_closure() {
         crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
             let cache = super::super::WrapperCache::new(ctx).expect("cache");
             let resolved = cache
-                .resolve(1, &identities, &exchange)
+                .resolve(1, &identities, &exchange, true)
                 .expect("linear join resolution")
                 .expect("nonempty targets");
             if leaves == 1 {
@@ -109,7 +109,7 @@ fn wrapper_joins_compare_shared_long_identity_classes_once() {
         crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
             let cache = super::super::WrapperCache::new(ctx).expect("cache");
             let Some(super::super::WrapperTargetResolution::Singleton(target)) = cache
-                .resolve(1, &identities, &exchange)
+                .resolve(1, &identities, &exchange, true)
                 .expect("shared identity class")
             else {
                 panic!("same identity is a singleton")
