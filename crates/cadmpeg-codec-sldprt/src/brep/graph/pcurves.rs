@@ -279,6 +279,15 @@ pub(super) fn derive_pcurves(
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    if out.coedges.is_empty()
+        || out.loops.is_empty()
+        || out.faces.is_empty()
+        || out.surfaces.is_empty()
+        || out.edges.is_empty()
+        || out.curves.is_empty()
+    {
+        return Ok(());
+    }
     let Brep {
         loops,
         faces,
@@ -1272,24 +1281,26 @@ fn derive_nurbs_isoparametric_pcurves(
             continue;
         };
         let curve = &curve.geometry;
-        let endpoints = match (
-            supports.vertex_positions.position(ctx, &edge.start)?,
-            supports.vertex_positions.position(ctx, &edge.end)?,
-        ) {
-            (Some(start), Some(end)) => Some([start, end]),
-            _ => None,
-        };
         let (geometry, parameter_range, fit_tolerance, cache) = match curve {
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => {
-                let Some(parameter_range) =
-                    nurbs_edge_parameter_range(ctx, edge, curve, endpoints)?
+                let Some(parameter_range) = nurbs_edge_parameter_range(ctx, edge, curve, || {
+                    Ok(
+                        match (
+                            supports.vertex_positions.position(ctx, &edge.start)?,
+                            supports.vertex_positions.position(ctx, &edge.end)?,
+                        ) {
+                            (Some(start), Some(end)) => Some([start, end]),
+                            _ => None,
+                        },
+                    )
+                })?
                 else {
                     continue;
                 };
                 let resolution =
                     match derive_nurbs_edge_pcurve(ctx, surface, curve, parameter_range) {
                         Ok(resolution) => resolution,
-                        Err(NurbsPcurveFailure::Carrier(error)) => {
+                        Err(NurbsPcurveFailure::Carrier(error, _diagnostic_storage)) => {
                             crate::lane_refusal::scoped::RefusalSink::Scoped(&mut lane_refusals)
                                 .note(
                                     ctx,
