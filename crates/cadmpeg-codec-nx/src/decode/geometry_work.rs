@@ -4,6 +4,7 @@
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbsPoles, PolarNurbsPoles};
+use cadmpeg_ir::geometry::{nurbs::NurbsPoleGrid, SolvedSurfaceGeometry, SurfaceGeometry};
 use std::cell::RefCell;
 use std::ops::Deref;
 use std::rc::Rc;
@@ -152,6 +153,120 @@ fn same_knots(
         && ctx.all_by(first.iter().zip(second), |(a, b)| Ok(a == b), operation)?)
 }
 
+/// Compare surface payloads without reading an unequal lane's unused suffix.
+pub(super) fn same_surface_geometry(
+    ctx: &DecodeContext<'_>,
+    first: &SurfaceGeometry,
+    second: &SurfaceGeometry,
+    operation: &'static str,
+) -> Result<bool, ResourceLimit> {
+    let (mut first, mut second) = match (first, second) {
+        (SurfaceGeometry::Solved(a), SurfaceGeometry::Solved(b)) => (a, b),
+        (
+            SurfaceGeometry::Procedural { construction: a, cache: a_cache },
+            SurfaceGeometry::Procedural { construction: b, cache: b_cache },
+        ) => {
+            if !same_text(ctx, a.as_str(), b.as_str(), operation)? {
+                return Ok(false);
+            }
+            match (a_cache, b_cache) {
+                (Some(a), Some(b)) => (a, b),
+                (None, None) => return Ok(true),
+                _ => return Ok(false),
+            }
+        }
+        _ => return Ok(false),
+    };
+    // PlacedSurface admission bounds the inline basis chain.
+    loop {
+        match (first, second) {
+            (SolvedSurfaceGeometry::Nurbs(a), SolvedSurfaceGeometry::Nurbs(b)) => {
+                if a.u_degree() != b.u_degree()
+                    || a.v_degree() != b.v_degree()
+                    || a.u_count() != b.u_count()
+                    || a.v_count() != b.v_count()
+                    || a.normal_reversed() != b.normal_reversed()
+                    || a.u_periodic() != b.u_periodic()
+                    || a.v_periodic() != b.v_periodic()
+                    || std::mem::discriminant(a.pole_grid()) != std::mem::discriminant(b.pole_grid())
+                {
+                    return Ok(false);
+                }
+                if !same_fixed_values(ctx, a.u_knots().as_slice(), b.u_knots().as_slice(), operation)?
+                    || !same_fixed_values(ctx, a.v_knots().as_slice(), b.v_knots().as_slice(), operation)?
+                {
+                    return Ok(false);
+                }
+                return match (a.pole_grid(), b.pole_grid()) {
+                    (NurbsPoleGrid::Polynomial { rows: a }, NurbsPoleGrid::Polynomial { rows: b }) => {
+                        same_fixed_rows(ctx, a, b, operation)
+                    }
+                    (NurbsPoleGrid::Rational { rows: a }, NurbsPoleGrid::Rational { rows: b }) => {
+                        same_fixed_rows(ctx, a, b, operation)
+                    }
+                    _ => Ok(false),
+                };
+            }
+            (SolvedSurfaceGeometry::Polygonal(a), SolvedSurfaceGeometry::Polygonal(b)) => {
+                return Ok(a.chordal_deflection() == b.chordal_deflection()
+                    && same_fixed_values(ctx, a.vertices(), b.vertices(), operation)?
+                    && same_fixed_values(ctx, a.triangles(), b.triangles(), operation)?);
+            }
+            (SolvedSurfaceGeometry::Transformed(a), SolvedSurfaceGeometry::Transformed(b)) => {
+                if a.transform() != b.transform() {
+                    return Ok(false);
+                }
+                first = a.basis();
+                second = b.basis();
+            }
+            (SolvedSurfaceGeometry::Unknown { record: a }, SolvedSurfaceGeometry::Unknown { record: b }) => {
+                return match (a, b) {
+                    (Some(a), Some(b)) => same_text(ctx, a.as_str(), b.as_str(), operation),
+                    (None, None) => Ok(true),
+                    _ => Ok(false),
+                };
+            }
+            (SolvedSurfaceGeometry::Plane(a), SolvedSurfaceGeometry::Plane(b)) => return Ok(a == b),
+            (SolvedSurfaceGeometry::Cylinder(a), SolvedSurfaceGeometry::Cylinder(b)) => return Ok(a == b),
+            (SolvedSurfaceGeometry::Cone(a), SolvedSurfaceGeometry::Cone(b)) => return Ok(a == b),
+            (SolvedSurfaceGeometry::Sphere(a), SolvedSurfaceGeometry::Sphere(b)) => return Ok(a == b),
+            (SolvedSurfaceGeometry::Torus(a), SolvedSurfaceGeometry::Torus(b)) => return Ok(a == b),
+            _ => return Ok(false),
+        }
+    }
+}
+
+/// Compare rows of fixed-size values, admitting each row and each read pair.
+fn same_fixed_rows<T: Copy + PartialEq>(
+    ctx: &DecodeContext<'_>,
+    first: &[Vec<T>],
+    second: &[Vec<T>],
+    operation: &'static str,
+) -> Result<bool, ResourceLimit> {
+    if first.len() != second.len() {
+        return Ok(false);
+    }
+    let mut second = second.iter();
+    ctx.all_by_limit(first, |row| {
+        let Some(other) = second.next() else { return Ok(false); };
+        same_fixed_values(ctx, row, other, operation)
+    }, operation)
+}
+
+/// Compare fixed-size lane values, admitting only the pairs read.
+fn same_fixed_values<T: Copy + PartialEq>(
+    ctx: &DecodeContext<'_>,
+    first: &[T],
+    second: &[T],
+    operation: &'static str,
+) -> Result<bool, ResourceLimit> {
+    if first.len() != second.len() {
+        return Ok(false);
+    }
+    let mut second = second.iter();
+    ctx.all_by_limit(first, |value| Ok(Some(value) == second.next()), operation)
+}
+
 /// Geometry work accounting plus the cache of successful blend-geometry
 /// certificates earned within the same accounting scope.
 pub(super) struct GeometryWorkBudget<'a> {
@@ -215,6 +330,7 @@ impl<'a> Deref for GeometryWorkBudget<'a> {
 
 #[cfg(test)]
 mod tests {
+    mod surface;
     fn nurbs(points: Vec<cadmpeg_ir::math::Point2>) -> super::PcurveGeometry {
         crate::test_support::with_decode_context(|ctx| {
             let count = points.len();
