@@ -1393,8 +1393,12 @@ fn read_user_string_records(
     let Some(payload_range) = payload_range else {
         return Ok(Vec::new());
     };
-    match parse_user_string_list(ctx, data, payload_range, archive, selection) {
-        Ok(parsed) => user_string_records(ctx, parsed.entries),
+    let mut attempt = ctx.reserve_scoped(0, "Rhino user-string projection attempt")?;
+    match attempt.with_storage(|| {
+        let parsed = parse_user_string_list(ctx, data, payload_range, archive, selection)?;
+        Ok::<_, FramingError>(user_string_records(ctx, parsed.entries)?)
+    }) {
+        Ok(records) => attempt.commit_value(records),
         Err(FramingError::Resource(limit)) => Err(CodecError::ResourceLimit(limit)),
         Err(error) => {
             push_scoped_presentation_loss(
@@ -1491,19 +1495,24 @@ fn object_attributes_presentation(
         offset: source_offset,
         uuid: source_uuid,
     } = source;
-    let rendering = match rendering_attributes(
-        ctx,
-        data,
-        attributes.rendering_range.clone(),
-        archive,
-        settings::RenderingAttributesKind::Object,
-    ) {
-        Ok(rendering) => rendering,
+    let mut rendering_storage = ctx.reserve_scoped(0, "Rhino object rendering projection attempt")?;
+    let rendering = match rendering_storage.with_storage(|| {
+        rendering_attributes(
+            ctx,
+            data,
+            attributes.rendering_range.clone(),
+            archive,
+            settings::RenderingAttributesKind::Object,
+        )
+    }) {
+        Ok(rendering) => rendering_storage.commit_value(rendering)?,
         Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
         Err(error) => {
             push_scoped_presentation_loss(ctx, losses, RhinoLossCode::PresentationRecordDropped, format_args!(
                 "object rendering attributes at offset {source_offset} could not be transferred: {error}"
             ))?;
+            drop(error);
+            drop(rendering_storage);
             RenderingAttributesPresentation::default()
         }
     };
@@ -1849,12 +1858,26 @@ fn parse_uuid_text(
     Ok((index == bytes.len() && nibble.is_none()).then_some(Uuid::from_canonical(bytes)))
 }
 
+#[cfg(test)]
 fn parse_legacy_rdk_material_instance_id(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     payload_range: Range<usize>,
 ) -> Result<Option<Uuid>, FramingError> {
-    match classify_rdk_material_payload(ctx, data, payload_range)? {
+    let offset = payload_range.start;
+    let classified = classify_rdk_material_payload(ctx, data, payload_range).or_else(|error| {
+        let FramingError::Core(CodecError::Malformed(message)) = error else {
+            return Err(error);
+        };
+        Err(FramingError::structural(
+            offset,
+            ctx.format_retained(
+                format_args!("legacy RDK XML is malformed: {message}"),
+                "Rhino classify_rdk_material_payload text",
+            )?,
+        ))
+    })?;
+    match classified {
         RdkMaterialPayload::Compatibility(instance_id) => Ok(instance_id),
         RdkMaterialPayload::CallbackOwned => Ok(None),
     }
@@ -1905,20 +1928,7 @@ fn classify_rdk_material_payload(
         .map_err(|_| {
             FramingError::structural(payload_range.start, "legacy RDK XML is not UTF-8")
         })?;
-    let admitted_document = ctx
-        .parse_xml(xml, "Rhino legacy RDK XML tree")
-        .or_else(|error| {
-            let CodecError::Malformed(error) = error else {
-                return Err(error.into());
-            };
-            Err(FramingError::structural(
-                payload_range.start,
-                ctx.format_retained(
-                    format_args!("legacy RDK XML is malformed: {error}"),
-                    "Rhino classify_rdk_material_payload text",
-                )?,
-            ))
-        })?;
+    let admitted_document = ctx.parse_xml(xml, "Rhino legacy RDK XML tree")?;
     let document = admitted_document.document();
     let root = ctx.xml_root_element(document, "Rhino RDK root search")?;
     if root.tag_name().name() != "xml" {
@@ -2029,10 +2039,13 @@ fn legacy_rdk_material_instance_id(
         {
             continue;
         }
-        match parse_legacy_rdk_material_instance_id(ctx, data, value.payload_range.clone()) {
-            Ok(Some(value)) => return Ok(Some(value)),
+        let mut attempt = ctx.reserve_scoped(0, "Rhino RDK classification attempt")?;
+        match attempt.with_storage(|| {
+            classify_rdk_material_payload(ctx, data, value.payload_range.clone())
+        }) {
+            Ok(RdkMaterialPayload::Compatibility(Some(value))) => return Ok(Some(value)),
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
-            Ok(None) | Err(_) => {}
+            Ok(_) | Err(_) => {}
         }
     }
     Ok(None)
@@ -2062,7 +2075,10 @@ fn rdk_material_userdata_requires_opaque(
         {
             continue;
         }
-        match classify_rdk_material_payload(ctx, data, value.payload_range.clone()) {
+        let mut attempt = ctx.reserve_scoped(0, "Rhino RDK classification attempt")?;
+        match attempt.with_storage(|| {
+            classify_rdk_material_payload(ctx, data, value.payload_range.clone())
+        }) {
             Ok(RdkMaterialPayload::Compatibility(_)) => {}
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Ok(RdkMaterialPayload::CallbackOwned) | Err(_) => return Ok(true),
@@ -2494,13 +2510,16 @@ fn parse_texture(
     ];
     let blend_order = reader.i32()?;
     let file_reference = if version.1 >= 1 {
+        let mut diagnostics_storage = ctx.reserve_scoped(0, "Rhino texture file-reference diagnostics")?;
         let mut diagnostics = Diagnostics::new();
         let value = match crate::instances::file_reference(
             ctx,
             data,
             &mut reader,
             archive,
-            &mut |code, message| diagnostics.push_coded_admitted(ctx, code, message),
+            &mut |code, message| {
+                diagnostics_storage.with_storage(|| diagnostics.push_coded_admitted(ctx, code, message))
+            },
         ) {
             Ok(value) => value,
             Err(error) => {
@@ -5308,7 +5327,9 @@ fn parse_text_style(
             "text-style version is unsupported",
         ));
     }
-    let component = component(ctx, data, &mut reader, archive)?;
+    let mut component_storage = ctx.reserve_scoped(0, "Rhino text style component attempt")?;
+    let component = component_storage.with_storage(|| component(ctx, data, &mut reader, archive))?;
+    let index = component.index;
     let font_description = if reader.bool_with_writer_version(writer_version)? {
         crate::settings::utf16_retained(ctx, &mut reader, "Rhino text style font description")?
     } else {
@@ -5320,15 +5341,15 @@ fn parse_text_style(
         FontRecord::default()
     };
     let (id, name) = if version.1 >= 1 {
-        (
-            uuid(&mut reader)?,
-            crate::settings::utf16_retained(ctx, &mut reader, "Rhino text style name")?,
-        )
+        let id = uuid(&mut reader)?;
+        let name = crate::settings::utf16_retained(ctx, &mut reader, "Rhino text style name")?;
+        drop(component);
+        drop(component_storage);
+        (id, name)
     } else {
-        (component.id, component.name)
+        (component.id, component_storage.commit_value(component.name)?)
     };
     reader.skip_remaining()?;
-    let index = component.index;
     Ok(TextStyleRecord {
         id: if id.is_nil() {
             index.map_or_else(

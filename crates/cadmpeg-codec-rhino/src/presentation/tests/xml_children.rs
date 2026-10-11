@@ -10,7 +10,8 @@ use crate::wire::Uuid;
 fn assert_missing_child(xml: &str, operation: &'static str, message: &str, empty: bool) {
     let bytes = super::legacy_rdk_payload(xml, false, &[]);
     let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     // An empty parent must never execute a positive child-search visit.
     let probe = empty.then(|| RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None));

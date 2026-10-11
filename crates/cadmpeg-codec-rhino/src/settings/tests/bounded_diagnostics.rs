@@ -132,6 +132,7 @@ fn assert_layer_wrapper_without_admission(payload: &[u8], label: &str, needed: u
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
+    policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
         cadmpeg_core::decode::ResourceDimension::WorkUnits,
@@ -154,7 +155,17 @@ fn assert_layer_wrapper_without_admission(payload: &[u8], label: &str, needed: u
     let FramingError::Structural { offset, message } = error else {
         panic!("bounded layer framing error");
     };
-    let source = FramingError::OutOfBounds { offset, end: offset + needed, bound: offset };
+    let expected_offset = crate::objects::parse_class_wrapper(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        record.body(),
+        archive,
+        &mut Diagnostics::new(),
+    ).unwrap().class_data_range.end;
+    assert_eq!(offset, expected_offset);
+    let source = FramingError::OutOfBounds {
+        offset: expected_offset, end: expected_offset + needed, bound: expected_offset,
+    };
     assert_eq!(message, format!("{label}: {source}"));
     assert!(warnings.is_empty());
     assert!(losses.is_empty());

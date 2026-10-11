@@ -1899,3 +1899,5 @@ mod hierarchy_wire;
 mod record_handoff;
 
 mod bounded_diagnostics;
+
+mod recovery_storage;
