@@ -748,8 +748,16 @@ pub(super) fn compact_surface_selections(
         let classified = native_object_class(feature.input_class.as_deref().unwrap_or_default());
         let kind = match classified {
             NativeClassKind::Unknown
-                if ctx.equal(feature.xml_tag.as_str(), "Extrusion", "compare SLDPRT surface extrusion XML tag")?
-                    || ctx.equal(feature.xml_tag.as_str(), "Cut", "compare SLDPRT surface cut XML tag")? => {
+                if ctx.equal(
+                    feature.xml_tag.as_str(),
+                    "Extrusion",
+                    "compare SLDPRT surface extrusion XML tag",
+                )? || ctx.equal(
+                    feature.xml_tag.as_str(),
+                    "Cut",
+                    "compare SLDPRT surface cut XML tag",
+                )? =>
+            {
                 NativeClassKind::Extrusion
             }
             NativeClassKind::Unknown => {
@@ -783,10 +791,12 @@ pub(super) fn compact_surface_selections(
             ctx.with_scoped_storage(OPERATION, || -> Result<_, CodecError> {
                 let candidates = match kind {
                     NativeClassKind::Thicken => {
-                        let Some(scan_end) = end.checked_sub(105).filter(|scan_end| start < *scan_end) else {
+                        const TOKEN_LOOKUP: &str = "find SLDPRT Thicken surface token";
+                        let Some(scan_end) =
+                            end.checked_sub(105).filter(|scan_end| start < *scan_end)
+                        else {
                             return Ok(Vec::new());
                         };
-                        const TOKEN_LOOKUP: &str = "find SLDPRT Thicken surface token";
                         let surface_token = match surface_token {
                             Some(token) => token,
                             None => {
@@ -968,7 +978,11 @@ pub(super) fn compact_surface_selections(
                         candidates
                     }
                     NativeClassKind::Fillet
-                        if ctx.equal(feature.input_class.as_deref().unwrap_or_default(), "Fillet_c", "compare SLDPRT surface fillet class")? =>
+                        if ctx.equal(
+                            feature.input_class.as_deref().unwrap_or_default(),
+                            "Fillet_c",
+                            "compare SLDPRT surface fillet class",
+                        )? =>
                     {
                         fillet_face_selection_candidates(
                             ctx,
