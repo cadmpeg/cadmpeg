@@ -1160,7 +1160,6 @@ fn parse_uuid(
     let mut bytes = [0_u8; 16];
     let mut count = 0;
     let mut source = raw[start..end].iter();
-    ctx.charge_work(0, "Rhino XML UUID digits")?;
     for _ in 0..source.len() {
         let byte = ctx
             .next_charged(&mut source, "Rhino XML UUID digits")?
@@ -1483,7 +1482,8 @@ mod tests {
                 };
                 assert_eq!(limit.dimension, dimension);
                 assert_eq!(limit.operation, "Rhino mesh modifier XML text");
-                assert!(ctx.charge_work(0, "fused context").is_err());
+                assert!(matches!(ctx.finish_session(),
+                    Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit));
             }
         }
     }

@@ -146,15 +146,15 @@ fn profile_uuid_crc_warning_refuses_before_message_storage() {
 }
 
 #[test]
-fn profile_uuid_crc_warning_copy_admits_retained_message_storage() {
+fn profile_uuid_crc_warning_copy_admits_materialized_message_storage() {
     let bytes = bad_profile_uuid_crc();
     cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes,
+        ResourceDimension::MaterializedBytes,
         "Rhino diagnostic copy text",
         |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
+            policy.limits.max_materialized_bytes = cap;
             let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
             let result = super::super::decode(
                 MeshExpand::new(&ctx, root),
