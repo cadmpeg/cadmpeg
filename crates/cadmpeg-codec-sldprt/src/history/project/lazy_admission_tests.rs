@@ -26,11 +26,15 @@ fn sketch_history_does_not_build_solid_or_construction_indexes() {
         "index SLDPRT native construction sources",
         "index SLDPRT native construction features",
     ] {
+        for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::WorkUnits] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = u64::MAX;
+        policy.limits.max_work_units = u64::MAX;
         let arena = DecodeArena::new();
         let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+            DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-            ResourceDimension::MaterializedBytes,
+            dimension,
             operation,
             None,
         );
@@ -43,5 +47,6 @@ fn sketch_history_does_not_build_solid_or_construction_indexes() {
             )
         )));
         ctx.finish_session().unwrap();
+        }
     }
 }

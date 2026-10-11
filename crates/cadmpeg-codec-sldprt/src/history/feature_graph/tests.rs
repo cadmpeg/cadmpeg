@@ -143,13 +143,18 @@ fn parentless_graph_does_not_allocate_ancestry_marks() {
         feature("test:feature#first", 1, None),
         feature("test:feature#second", 2, None),
     ];
+    for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::WorkUnits] {
+    let mut policy = policy();
+    policy.limits.max_materialized_bytes = u64::MAX;
+    policy.limits.max_work_units = u64::MAX;
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy()).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-        ResourceDimension::MaterializedBytes,
+        dimension,
         "walk SLDPRT feature graph",
         None,
     );
     validate_feature_graph(&ctx, &features).unwrap();
     ctx.finish_session().unwrap();
+    }
 }
