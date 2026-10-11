@@ -6258,8 +6258,7 @@ pub(crate) fn store<'ctx>(
                                 };
                                 if entry.form == 2 {
                                     let mut display_source = 0..value_count;
-                                    while !display_source.is_empty()
-                                    {
+                                    while !display_source.is_empty() {
                                         let Some(offset) = ctx.next_charged(
                                             &mut display_source,
                                             "iges native attribute display sequence scan",

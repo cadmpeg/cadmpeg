@@ -449,28 +449,27 @@ fn native_attribute_width_cache_refuses_work_nodes_and_scoped_storage() {
         (ResourceDimension::CollectionItems, 1),
         (ResourceDimension::MaterializedBytes, node_bytes),
     ] {
-        let error = cadmpeg_test_support::refusal::resource_limit_at(
-            dimension,
-            operation,
-            |cap| {
-                let mut policy = DecodePolicy::service();
-                match dimension {
-                    ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
-                    ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
-                    ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
-                    _ => panic!("attribute width cache dimension"),
-                }
-                IgesCodec
-                    .decode(&mut Cursor::new(&bytes), &DecodeOptions {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+                _ => panic!("attribute width cache dimension"),
+            }
+            IgesCodec
+                .decode(
+                    &mut Cursor::new(&bytes),
+                    &DecodeOptions {
                         policy,
                         ..DecodeOptions::default()
-                    })
-                    .map_err(|failure| match failure {
-                        DecodeFailure::Codec(error) => error,
-                        other => panic!("unexpected decode failure: {other:?}"),
-                    })
-            },
-        );
+                    },
+                )
+                .map_err(|failure| match failure {
+                    DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode failure: {other:?}"),
+                })
+        });
         let CodecError::ResourceLimit(limit) = error else {
             panic!("attribute width cache refusal");
         };

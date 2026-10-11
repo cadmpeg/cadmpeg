@@ -961,8 +961,7 @@ fn normalize_start(
     let mut primitive_storage = ctx.reserve_scoped(0, "IGES binary start primitives")?;
     let mut stream = ValueStream::new(payload, lengths, ctx);
     let mut text = Vec::new();
-    while !stream.pending.is_empty() || !stream.bits.is_empty()
-    {
+    while !stream.pending.is_empty() || !stream.bits.is_empty() {
         ctx.charge_work(1, "iges binary start primitives")?;
         let Some(value) = primitive_storage.with_storage(|| stream.next())? else {
             break;
@@ -1096,9 +1095,7 @@ fn read_parameters(
             "Parameter Directory pointer",
         )?;
         let mut values = Vec::new();
-        while !stream.pending.is_empty()
-            || !stream.bits.is_empty()
-        {
+        while !stream.pending.is_empty() || !stream.bits.is_empty() {
             ctx.charge_work(1, "iges binary parameter primitives")?;
             let Some(value) = stream.next()? else {
                 break;
