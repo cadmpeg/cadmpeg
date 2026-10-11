@@ -563,6 +563,27 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
         FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. })
             if seeds == &[PatternSeed::Feature(FeatureId::mint("synthetic:test:id#seed").expect("identity grammar"))]));
     crate::test_support::work_refusal_at("deduplicate SLDPRT pattern input seeds", deduplicate);
+    let mut comparison_lane = duplicate_lane.clone();
+    comparison_lane.names.push(FeatureInputName {
+        id: "seed-name".into(),
+        parent: "lane".into(),
+        ordinal: 1,
+        offset: 200,
+        object_id: ObjectId::from_value(224),
+        value: "HoleWizard1".into(),
+    });
+    crate::test_support::work_refusal_at(
+        "compare SLDPRT derived cosmetic thread output class",
+        |ctx| {
+            let mut candidates = features.clone();
+            bind_pattern_inputs(
+                ctx,
+                &mut candidates,
+                std::slice::from_ref(&history),
+                std::slice::from_ref(&comparison_lane),
+            )
+        },
+    );
 
     bind_pattern_inputs_test(
         &mut features,
@@ -968,6 +989,16 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         features: vec![feature.clone()],
     };
 
+    crate::test_support::work_refusal_at("compare SLDPRT detached sketch XML tag", |ctx| {
+        let mut candidate = lane.clone();
+        bind_detached_legacy_sketch_objects(
+            ctx,
+            std::slice::from_ref(&history),
+            &HashSet::default(),
+            &mut candidate,
+        )
+    });
+
     bind_detached_legacy_sketch_objects(
         &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&history),
@@ -1173,3 +1204,117 @@ fn scalar_binding_skips_dissected_offset_sort_without_feature_pair() {
 
 mod candidate_lifetime;
 mod spatial_ranges;
+
+#[test]
+fn pattern_following_object_without_a_class_skips_text_comparison() {
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    const OPERATION: &str = "compare SLDPRT derived cosmetic thread output class";
+    for following_class in [None, Some("moHoleWzd_c")] {
+        let feature = |source, name: &str, class: Option<&str>| NativeFeature {
+            id: name.into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: FeatureSource::from_value(source),
+            ordinal: source,
+            name: name.into(),
+            kind: "Custom".into(),
+            input_class: class.map(str::to_owned),
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        };
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![
+                feature(7, "pattern", Some("moCirPattern_c")),
+                feature(8, "following", following_class),
+            ],
+        };
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: vec![0; 128],
+            classes: Vec::new(),
+            names: vec![
+                FeatureInputName {
+                    id: "pattern-name".into(),
+                    parent: "lane".into(),
+                    ordinal: 0,
+                    offset: 0,
+                    value: "pattern".into(),
+                    object_id: ObjectId::from_value(7),
+                },
+                FeatureInputName {
+                    id: "following-name".into(),
+                    parent: "lane".into(),
+                    ordinal: 1,
+                    offset: 64,
+                    value: "following".into(),
+                    object_id: ObjectId::from_value(8),
+                },
+            ],
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+        let model_features = [Feature {
+            id: FeatureId::mint("synthetic:test:id#pattern").unwrap(),
+            ordinal: 0,
+            name: Some("pattern".into()),
+            suppressed: Some(false),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::Pattern {
+                    seeds: Vec::new(),
+                    pattern: PatternKind::UNRESOLVED_CIRCULAR,
+                }),
+            ),
+            native_ref: Some("pattern".into()),
+        }];
+        let solve = |ctx: &DecodeContext<'_>| {
+            let mut candidates = model_features.clone();
+            bind_pattern_inputs(
+                ctx,
+                &mut candidates,
+                std::slice::from_ref(&history),
+                std::slice::from_ref(&lane),
+            )
+            .map(|()| candidates)
+        };
+        if following_class.is_some() {
+            crate::test_support::work_refusal_at(OPERATION, solve);
+        } else {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = u64::MAX;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, OPERATION, None);
+            assert_eq!(solve(&ctx).unwrap(), model_features);
+            let cadmpeg_core::CodecError::ResourceLimit(limit) =
+                ctx.charge_work(1, OPERATION).unwrap_err()
+            else {
+                panic!("an absent class must leave the comparison probe armed");
+            };
+            assert_eq!(limit.operation, OPERATION);
+        }
+    }
+}

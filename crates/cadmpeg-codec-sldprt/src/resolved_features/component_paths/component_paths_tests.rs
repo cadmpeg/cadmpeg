@@ -1,8 +1,8 @@
 //! Tests for the `component_paths` module.
 
 use super::{
-    component_path_feature, component_path_features, component_path_input_features,
-    surface_selection_producer_features, ComponentPathEnd, FeaturesBySource,
+    component_path_feature, component_path_input_features, surface_selection_producer_features,
+    ComponentPathEnd, FeaturesBySource,
 };
 use crate::records::FeatureSource;
 use crate::records::{Feature, FeatureInputComponentPathEntry};
@@ -49,27 +49,26 @@ fn component_path_type_identities_name_ordered_features() {
         },
     ];
     assert_eq!(
-        component_path_features(&ctx, &components, &[feature("producer", "42")]).unwrap(),
+        FeaturesBySource::new(&ctx, &[feature("producer", "42")])
+            .unwrap()
+            .features(&ctx, &components)
+            .unwrap(),
         vec!["producer"]
     );
     assert_eq!(
-        component_path_features(
-            &ctx,
-            &components,
-            &[feature("first", "42"), feature("second", "42")]
-        )
-        .unwrap(),
+        FeaturesBySource::new(&ctx, &[feature("first", "42"), feature("second", "42")])
+            .unwrap()
+            .features(&ctx, &components)
+            .unwrap(),
         Vec::<String>::new()
     );
     let mut mixed = components;
     mixed[1].type_signature[4..8].copy_from_slice(&43u32.to_le_bytes());
     assert_eq!(
-        component_path_features(
-            &ctx,
-            &mixed,
-            &[feature("producer", "42"), feature("other", "43")]
-        )
-        .unwrap(),
+        FeaturesBySource::new(&ctx, &[feature("producer", "42"), feature("other", "43")])
+            .unwrap()
+            .features(&ctx, &mixed)
+            .unwrap(),
         vec!["producer", "other"]
     );
     assert_eq!(
@@ -84,11 +83,42 @@ fn component_path_type_identities_name_ordered_features() {
             &ctx,
             &mixed,
             Some("explicit"),
-            &[feature("producer", "42"), feature("other", "43")]
+            &FeaturesBySource::new(&ctx, &[feature("producer", "42"), feature("other", "43")])
+                .unwrap()
         )
         .unwrap(),
         ["producer", "other", "explicit"]
     );
+    {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        const OPERATION: &str = "index SLDPRT component path producers";
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let features = [feature("producer", "42"), feature("other", "43")];
+        let index = FeaturesBySource::new(&ctx, &features).unwrap();
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            OPERATION,
+            None,
+        );
+        for terminal in ["other", "explicit"] {
+            let producers =
+                surface_selection_producer_features(&ctx, &mixed, Some(terminal), &index).unwrap();
+            if terminal == "other" {
+                assert_eq!(producers, ["producer", "other"]);
+            } else {
+                assert_eq!(producers, ["producer", "other", "explicit"]);
+            }
+        }
+        let cadmpeg_core::CodecError::ResourceLimit(limit) =
+            ctx.charge_work(1, OPERATION).unwrap_err()
+        else {
+            panic!("producer publication must reuse the source index");
+        };
+        assert_eq!(limit.operation, OPERATION);
+    }
     mixed.push(FeatureInputComponentPathEntry {
         instance: Some(0x8040),
         type_signature: {
