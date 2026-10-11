@@ -55,7 +55,7 @@ fn staged_curve_tree_refusal(limit: u64, operation: &str) {
                     .expect("fixture scratch"),
             ),
             &mut staged,
-            one_child_compound(),
+            &one_child_compound(),
             "compound",
             "root",
             &test_association(),
@@ -76,7 +76,7 @@ fn committed_curve_tree_refusal(limit: u64, operation: &str) {
             ctx,
             &mut CadIr::empty(),
             &mut cadmpeg_ir::Annotations::default(),
-            one_child_compound(),
+            &one_child_compound(),
             CurveCommitSource {
                 key: "compound",
                 association: &test_association(),
@@ -519,11 +519,13 @@ fn curve_warning_tree_refuses_collection_limit() {
 fn typed_install_loss_transfer_refuses_collection_limit() {
     let source_ctx = cadmpeg_test_support::service_decode_context();
     let mut source = crate::loss::ScratchVec::new(&source_ctx, "fixture loss source").unwrap();
-    source.push_admitted(
-        &source_ctx,
-        RhinoLossCode::IntegrityFailure.note("invalid source record".into()),
-        "fixture loss source",
-    ).unwrap();
+    source
+        .push_admitted(
+            &source_ctx,
+            RhinoLossCode::IntegrityFailure.note("invalid source record".into()),
+            "fixture loss source",
+        )
+        .unwrap();
     let refusal = with_collection_limit(0, |ctx| {
         super::super::append_report_losses(ctx, &mut Vec::new(), source)
             .expect_err("typed loss transfer requires one report slot")
@@ -535,11 +537,13 @@ fn typed_install_loss_transfer_refuses_collection_limit() {
     ));
     let source_ctx = cadmpeg_test_support::service_decode_context();
     let mut source = crate::loss::ScratchVec::new(&source_ctx, "fixture loss source").unwrap();
-    source.push_admitted(
-        &source_ctx,
-        RhinoLossCode::IntegrityFailure.note("invalid source record".into()),
-        "fixture loss source",
-    ).unwrap();
+    source
+        .push_admitted(
+            &source_ctx,
+            RhinoLossCode::IntegrityFailure.note("invalid source record".into()),
+            "fixture loss source",
+        )
+        .unwrap();
     let mut report = Vec::new();
     super::super::append_report_losses(
         &cadmpeg_test_support::service_decode_context(),

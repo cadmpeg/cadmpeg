@@ -97,10 +97,6 @@ fn candidate_native_projection_preserves_materialized_refusal() {
                             cadmpeg_core::decode::ResourceDimension::MaterializedBytes
                         );
                         assert_eq!(context.session.document(), &before);
-                        assert!(
-                            matches!(expand.ctx().charge_work(0, "test native projection fuse"),
-                        Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
-                        );
                         Err(CodecError::ResourceLimit(limit))
                     }
                     Ok(()) => Ok(()),

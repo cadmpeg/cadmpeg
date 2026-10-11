@@ -64,7 +64,7 @@ fn commit_sorts_links_after_indexed_append_and_deduplication() {
             records[0]
                 .links
                 .iter()
-                .map(|identity| identity.as_str())
+                .map(cadmpeg_ir::ids::Identity::as_str)
                 .collect::<Vec<_>>(),
             [
                 "rhino:test:curve#a",
