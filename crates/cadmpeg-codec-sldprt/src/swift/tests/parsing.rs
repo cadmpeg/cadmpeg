@@ -1579,3 +1579,31 @@ fn swift_unbindable_cad_identifiers_skip_topology_indexes() {
         ctx.finish_session().unwrap();
     }
 }
+
+#[test]
+fn swift_dimension_reuses_its_admitted_pmi_identity() {
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let root = super::entity("GdtAnalysis");
+    let counterbores = crate::swift::Counterbores::new(&ctx, &root).unwrap();
+    let mut entity = super::entity("GdtDiameter");
+    entity.doubles.insert("Nominal".into(), 4.0);
+    let id = crate::swift::pmi_id_charged(&ctx, "A10").unwrap().unwrap();
+    let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "format SWIFT PMI identity", None);
+    let geometry = crate::swift::ProjectionGeometry::new(&ctx, None, None, None);
+    let features = BTreeMap::new();
+    let annotation = crate::swift::project_dimension(
+        &ctx,
+        crate::swift::DimensionSource { counterbores: &counterbores, id, entity: &entity },
+        || Ok(&features),
+        &geometry,
+        &[],
+    ).unwrap().unwrap();
+    assert_eq!(annotation.id, crate::swift::pmi_id("A10").unwrap());
+    assert_eq!(dimension_nominal(&[annotation], "A10"), length(4.0));
+    drop((geometry, counterbores));
+    ctx.finish_session().unwrap();
+}
