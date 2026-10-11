@@ -374,8 +374,14 @@ fn representation_body_output_releases_consumed_set_nodes() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut cache = BTreeMap::new();
     let output = representation_bodies(
-        20, &exchange, &topology, &mut cache, &mut BTreeSet::new(), &ctx,
-    ).expect("representation body output");
+        20,
+        &exchange,
+        &topology,
+        &mut cache,
+        &mut BTreeSet::new(),
+        &ctx,
+    )
+    .expect("representation body output");
     assert_eq!(&output[..], &[body_id()]);
     drop(cache);
     // Only the copied identity and the result vector still own storage.
@@ -384,8 +390,13 @@ fn representation_body_output_releases_consumed_set_nodes() {
     let CodecError::ResourceLimit(limit) = ctx
         .reserve_scoped(u64::MAX, "representation live storage probe")
         .expect_err("probe live materialized bytes")
-    else { panic!("materialized refusal"); };
+    else {
+        panic!("materialized refusal");
+    };
     assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
-    assert_eq!(limit.used, u64::try_from(expected).expect("output bytes fit"));
+    assert_eq!(
+        limit.used,
+        u64::try_from(expected).expect("output bytes fit")
+    );
     drop(output);
 }
