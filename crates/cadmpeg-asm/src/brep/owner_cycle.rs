@@ -22,21 +22,24 @@ impl OwnerCycle {
     }
 
     /// Advance after appending the current owner to the admitted path.
-    pub(super) fn advance(&mut self, next: Option<i64>) -> bool {
+    pub(super) fn advance(&mut self, next: Option<i64>) -> Result<bool, CodecError> {
         let Some(next) = next else {
-            return false;
+            return Ok(false);
         };
         self.steps += 1;
         if next == self.checkpoint {
             self.cycle_len = Some(self.steps);
-            return true;
+            return Ok(true);
         }
         if self.steps == self.span {
+            let span = self.span.checked_mul(2).ok_or_else(|| {
+                CodecError::Malformed("ASM owner cycle checkpoint span overflows".into())
+            })?;
             self.checkpoint = next;
-            self.span = self.span.saturating_mul(2);
+            self.span = span;
             self.steps = 0;
         }
-        false
+        Ok(false)
     }
 
     /// Keep the prefix and one cycle before reserving memo slots.
@@ -80,11 +83,28 @@ mod tests {
             } else {
                 prefix
             };
-            if cycle.advance(Some(i64::try_from(owner).unwrap())) {
+            if cycle.advance(Some(i64::try_from(owner).unwrap())).unwrap() {
                 return (cycle, path);
             }
         }
         panic!("finite owner cycle must be detected");
+    }
+
+    #[test]
+    fn owner_cycle_rejects_checkpoint_span_overflow() {
+        let span = usize::MAX / 2 + 1;
+        let mut cycle = OwnerCycle {
+            checkpoint: 0,
+            span,
+            steps: span - 1,
+            cycle_len: None,
+        };
+        assert!(matches!(cycle.advance(Some(1)),
+            Err(CodecError::Malformed(message))
+                if message == "ASM owner cycle checkpoint span overflows"));
+        assert_eq!(cycle.checkpoint, 0);
+        assert_eq!(cycle.span, span);
+        assert!(cycle.cycle_len.is_none());
     }
 
     #[test]
