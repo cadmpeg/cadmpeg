@@ -4,7 +4,7 @@
 use crate::ids::kind;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, DepthGuard, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
@@ -301,6 +301,7 @@ pub(super) fn decode<'ctx>(
         };
         associator.visit(item, None)?;
     }
+    drop(memo);
     let mut source_items = unresolved_placements.into_iter();
     for _ in 0..source_items.len() {
         let Some(id) =
@@ -1056,7 +1057,12 @@ impl<'ctx> AssociationMemo<'ctx> {
         query: AssociationQuery,
         ctx: &DecodeContext<'_>,
     ) -> Result<Option<usize>, CodecError> {
-        let key = (id, query as u8);
+        let tag = match query {
+            AssociationQuery::Placement => 0_u8,
+            AssociationQuery::Mesh => 1,
+            AssociationQuery::Container => 2,
+        };
+        let key = (id, tag);
         // A single partial has fixed work. Cache input-sized complex searches,
         // including absent kinds, independently of body and placement context.
         let complex = record.partials.len() > 1;
@@ -1085,27 +1091,54 @@ impl<'ctx> AssociationMemo<'ctx> {
         Ok(index)
     }
 
-    fn context(&mut self, bodies: &[&BodyId], ctx: &DecodeContext<'_>) -> Result<usize, CodecError> {
-        let mut reference_storage = ctx.reserve_scoped(0, "STEP tessellation context references")?;
+    fn context(
+        &mut self,
+        bodies: &[&BodyId],
+        ctx: &DecodeContext<'_>,
+    ) -> Result<usize, CodecError> {
+        let mut reference_storage =
+            ctx.reserve_scoped(0, "STEP tessellation context references")?;
         let mut references = reference_storage.with_storage(|| {
-            ctx.collect_vec(bodies.iter().copied(), "step_tessellation_context_references")
+            ctx.collect_vec(
+                bodies.iter().copied(),
+                "step_tessellation_context_references",
+            )
         })?;
-        ctx.sort_unstable_by(&mut references, |body| body, Ord::cmp, "step_tessellation_context_order")?;
+        ctx.sort_unstable_by(
+            &mut references,
+            |body| body,
+            Ord::cmp,
+            "step_tessellation_context_order",
+        )?;
         ctx.dedup_vec(&mut references, "step_tessellation_context_order")?;
         let mut candidate_storage = ctx.reserve_scoped(0, "STEP tessellation context candidate")?;
         let key = candidate_storage.with_storage(|| {
-            ctx.fold(&references, Vec::new(), |mut keys, body| {
-                ctx.reserve_vec(&mut keys, 1, "step_tessellation_context_bodies")?;
-                keys.push(body.try_clone_for_decode(ctx, "step_tessellation_context_identity")?);
-                Ok(keys)
-            }, "step_tessellation_context_bodies")
+            ctx.fold(
+                &references,
+                Vec::new(),
+                |mut keys, body| {
+                    ctx.reserve_vec(&mut keys, 1, "step_tessellation_context_bodies")?;
+                    keys.push(
+                        body.try_clone_for_decode(ctx, "step_tessellation_context_identity")?,
+                    );
+                    Ok(keys)
+                },
+                "step_tessellation_context_bodies",
+            )
         })?;
-        if let Some(&context) = ctx.get_btree_map(&self.contexts, &key, "step_tessellation_contexts")? {
+        if let Some(&context) =
+            ctx.get_btree_map(&self.contexts, &key, "step_tessellation_contexts")?
+        {
             return Ok(context);
         }
         let context = self.contexts.len();
         self.storage.with_storage(|| {
-            ctx.insert_btree_map(&mut self.contexts, key, context, "step_tessellation_contexts")
+            ctx.insert_btree_map(
+                &mut self.contexts,
+                key,
+                context,
+                "step_tessellation_contexts",
+            )
         })?;
         self.storage.absorb(&mut candidate_storage)?;
         Ok(context)
@@ -1134,11 +1167,70 @@ struct TessellationItemAssociator<'a, 'ctx, 'arena> {
     active_storage: ScopedReservation<'ctx>,
 }
 
-impl TessellationItemAssociator<'_, '_, '_> {
+struct AssociationFrame<'ctx> {
+    items: Vec<u64>,
+    _item_storage: ScopedReservation<'ctx>,
+    _depth_guard: DepthGuard<'ctx>,
+    key: AssociationKey,
+    cycle_count: u64,
+    placement: Option<Transform>,
+    next: usize,
+}
+
+impl<'ctx> TessellationItemAssociator<'_, 'ctx, '_> {
     fn visit(&mut self, id: u64, inherited_placement: Option<Transform>) -> Result<(), CodecError> {
+        let mut frame_storage = self
+            .ctx
+            .reserve_scoped(0, "step_tessellation_association_frames")?;
+        let mut frames = Vec::new();
+        if let Some(frame) = self.begin_visit(id, inherited_placement)? {
+            frame_storage.with_storage(|| {
+                self.ctx
+                    .push_vec(&mut frames, frame, "step_tessellation_association_frames")
+            })?;
+        }
+        while !frames.is_empty() {
+            self.ctx
+                .charge_work(1, "STEP tessellation association worklist")?;
+            let frame = frames
+                .last_mut()
+                .expect("the association stack is nonempty");
+            if frame.next < frame.items.len() {
+                self.ctx
+                    .charge_work(1, "STEP tessellation item traversal")?;
+                let item = frame.items[frame.next];
+                frame.next += 1;
+                let placement = frame.placement;
+                if let Some(child) = self.begin_visit(item, placement)? {
+                    frame_storage.with_storage(|| {
+                        self.ctx.push_vec(
+                            &mut frames,
+                            child,
+                            "step_tessellation_association_frames",
+                        )
+                    })?;
+                }
+            } else {
+                let frame = frames.pop().expect("the association stack is nonempty");
+                self.finish_visit(frame.key, true, frame.cycle_count)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn begin_visit(
+        &mut self,
+        id: u64,
+        inherited_placement: Option<Transform>,
+    ) -> Result<Option<AssociationFrame<'ctx>>, CodecError> {
+        let mode = match self.mode {
+            AssociationMode::BodyItems => 0_u8,
+            AssociationMode::Placements => 1,
+            AssociationMode::DetachedAnnotation => 2,
+        };
         let key = (
             self.context,
-            self.mode as u8,
+            mode,
             id,
             inherited_placement.map(|placement| {
                 placement
@@ -1150,9 +1242,9 @@ impl TessellationItemAssociator<'_, '_, '_> {
             .ctx
             .contains_hash_set(&self.memo.completed, &key, "step_tessellation_lookup")?
         {
-            return Ok(());
+            return Ok(None);
         }
-        let _depth_guard = self.ctx.enter_nested("step_tessellation_association")?;
+        let depth_guard = self.ctx.enter_nested("step_tessellation_association")?;
         let cycle_count = self.cycle_count;
         let mut associated = false;
         if self
@@ -1160,7 +1252,7 @@ impl TessellationItemAssociator<'_, '_, '_> {
             .contains_hash_set(&self.active, &id, "step_tessellation_lookup")?
         {
             self.cycle_count += 1;
-            return Ok(());
+            return Ok(None);
         }
         self.active_storage.with_storage(|| {
             self.ctx
@@ -1172,10 +1264,11 @@ impl TessellationItemAssociator<'_, '_, '_> {
         else {
             self.ctx
                 .remove_hash_set(&mut self.active, &id, "step_tessellation_lookup")?;
-            return Ok(());
+            return Ok(None);
         };
         let local_placement = if let Some(index) =
-            self.memo.partial_index(id, record, AssociationQuery::Placement, self.ctx)?
+            self.memo
+                .partial_index(id, record, AssociationQuery::Placement, self.ctx)?
         {
             let placement = repositioned_placement(self.ctx, record, index, self.geometry)?;
             if placement.is_none() {
@@ -1199,8 +1292,10 @@ impl TessellationItemAssociator<'_, '_, '_> {
             (parent, None) => parent,
             (None, local) => local,
         };
-        if self.memo.partial_index(id, record, AssociationQuery::Mesh, self.ctx)?
-        .is_some()
+        if self
+            .memo
+            .partial_index(id, record, AssociationQuery::Mesh, self.ctx)?
+            .is_some()
         {
             associated = true;
             if self.mode != AssociationMode::DetachedAnnotation {
@@ -1236,7 +1331,8 @@ impl TessellationItemAssociator<'_, '_, '_> {
                 })?;
             }
         } else if let Some(index) =
-            self.memo.partial_index(id, record, AssociationQuery::Container, self.ctx)?
+            self.memo
+                .partial_index(id, record, AssociationQuery::Container, self.ctx)?
         {
             let partial = &record.partials[index];
             let kind = partial.name.as_str();
@@ -1247,13 +1343,6 @@ impl TessellationItemAssociator<'_, '_, '_> {
                     self.declared_items,
                     id,
                     "step_tessellation_declared_items",
-                )?;
-                associate_bodies(
-                    self.item_bodies,
-                    id,
-                    self.bodies,
-                    self.ctx,
-                    &mut self.reservations.item_bodies,
                 )?;
             }
             if self.mode != AssociationMode::DetachedAnnotation {
@@ -1272,23 +1361,29 @@ impl TessellationItemAssociator<'_, '_, '_> {
                     "step_tessellation_lookup",
                 )?;
             }
-            let (item_ids_buffer, _container_item_bytes) =
-                match partial.parameters.get(usize::from(record.partials.len() == 1))
-                    .and_then(ValueExt::list) {
-                    Some(items) => container_item_ids(items, kind, id, self.ctx)?,
-                    None => (
-                        Vec::new(),
-                        self.ctx
-                            .reserve_scoped(0, "step_tessellation_container_items")?,
-                    ),
-                };
-            let item_ids = item_ids_buffer;
-            self.ctx.fold(
-                &item_ids,
-                (),
-                |(), &item| self.visit(item, placement),
-                "STEP tessellation item traversal",
-            )?;
+            let (items, item_storage) = match partial
+                .parameters
+                .get(usize::from(record.partials.len() == 1))
+                .and_then(ValueExt::list)
+            {
+                Some(items) => container_item_ids(items, kind, id, self.ctx)?,
+                None => (
+                    Vec::new(),
+                    self.ctx
+                        .reserve_scoped(0, "step_tessellation_container_items")?,
+                ),
+            };
+            if !items.is_empty() {
+                return Ok(Some(AssociationFrame {
+                    items,
+                    _item_storage: item_storage,
+                    _depth_guard: depth_guard,
+                    key,
+                    cycle_count,
+                    placement,
+                    next: 0,
+                }));
+            }
         } else if self.mode == AssociationMode::BodyItems {
             associated = true;
             self.ctx.insert_scoped_btree_value(
@@ -1297,16 +1392,19 @@ impl TessellationItemAssociator<'_, '_, '_> {
                 id,
                 "step_tessellation_declared_items",
             )?;
-            associate_bodies(
-                self.item_bodies,
-                id,
-                self.bodies,
-                self.ctx,
-                &mut self.reservations.item_bodies,
-            )?;
         }
+        self.finish_visit(key, associated, cycle_count)?;
+        Ok(None)
+    }
+
+    fn finish_visit(
+        &mut self,
+        key: AssociationKey,
+        associated: bool,
+        cycle_count: u64,
+    ) -> Result<(), CodecError> {
         self.ctx
-            .remove_hash_set(&mut self.active, &id, "step_tessellation_lookup")?;
+            .remove_hash_set(&mut self.active, &key.2, "step_tessellation_lookup")?;
         // Cycle-cut visits depend on the active path and cannot be memoized.
         if associated && self.cycle_count == cycle_count {
             self.memo.storage.with_storage(|| {
@@ -1369,7 +1467,8 @@ fn repositioned_placement(
     partial_index: usize,
     geometry: &GeometryData,
 ) -> Result<Option<Transform>, CodecError> {
-    let Some(placement_id) = record.partials[partial_index].parameters
+    let Some(placement_id) = record.partials[partial_index]
+        .parameters
         .get(usize::from(record.partials.len() == 1))
         .and_then(ValueExt::reference)
     else {

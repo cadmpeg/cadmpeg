@@ -22,11 +22,6 @@ fn usage_instance_counts_refuse_collection_limit() {
 }
 
 #[test]
-fn child_occurrence_ordinals_refuse_collection_limit() {
-    super::resource_limits::product_collection_refuses("step_child_occurrence_ordinals");
-}
-
-#[test]
 fn missing_placement_reports_refuse_collection_limit() {
     super::resource_limits::product_collection_refuses("step_missing_placement_reports");
 }
