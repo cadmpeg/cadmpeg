@@ -2537,11 +2537,14 @@ fn is_decodable_string(
     let Value::String(bytes) = value else {
         return Ok(false);
     };
-    match crate::strings::decoded_char_count(budget, bytes, implementation_level) {
-        Ok(_) => Ok(true),
-        Err(crate::strings::StringDecodeFailure::Invalid(_)) => Ok(false),
-        Err(crate::strings::StringDecodeFailure::Resource(error)) => Err(error),
-    }
+    let mut storage = budget.reserve_scoped(0, "STEP header string validation storage")?;
+    storage.with_storage(|| {
+        match crate::strings::decoded_char_count(budget, bytes, implementation_level) {
+            Ok(_) => Ok(true),
+            Err(crate::strings::StringDecodeFailure::Invalid(_)) => Ok(false),
+            Err(crate::strings::StringDecodeFailure::Resource(error)) => Err(error),
+        }
+    })
 }
 
 fn is_decodable_string_list(
@@ -2582,11 +2585,14 @@ fn string_within_limit(
     let Value::String(bytes) = value else {
         return Ok(false);
     };
-    match crate::strings::decoded_char_count(budget, bytes, implementation_level) {
-        Ok(count) => Ok(count <= limit),
-        Err(crate::strings::StringDecodeFailure::Invalid(_)) => Ok(false),
-        Err(crate::strings::StringDecodeFailure::Resource(error)) => Err(error),
-    }
+    let mut storage = budget.reserve_scoped(0, "STEP header string validation storage")?;
+    storage.with_storage(|| {
+        match crate::strings::decoded_char_count(budget, bytes, implementation_level) {
+            Ok(count) => Ok(count <= limit),
+            Err(crate::strings::StringDecodeFailure::Invalid(_)) => Ok(false),
+            Err(crate::strings::StringDecodeFailure::Resource(error)) => Err(error),
+        }
+    })
 }
 
 fn string_list_within_limit(

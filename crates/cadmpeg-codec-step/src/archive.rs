@@ -76,18 +76,21 @@ pub(crate) fn open_root<'a, 'ctx>(
         validate_entry_name(ctx, &entry.name)?;
         if entry.uses_utf8_name_encoding() {
             return Err(CodecError::Malformed(
-                "STEP ZIP uses prohibited Unicode filename support".into(),
+                ctx.copy_retained_text("STEP ZIP uses prohibited Unicode filename support", "STEP ZIP root error")?,
             ));
         }
         if entry.compression == ZipCompression::Zstd {
             return Err(CodecError::NotImplemented(
-                "STEP ZIP requires PKZIP 2.04g stored or Deflate entries".into(),
+                ctx.copy_retained_text("STEP ZIP requires PKZIP 2.04g stored or Deflate entries", "STEP ZIP root error")?,
             ));
         }
     }
-    let root_entry = archive.entry(ctx, ROOT_NAME)?.ok_or_else(|| {
-        CodecError::WrongFormat(format!("STEP ZIP has no required root {ROOT_NAME}"))
-    })?;
+    let Some(root_entry) = archive.entry(ctx, ROOT_NAME)? else {
+        return Err(CodecError::WrongFormat(ctx.format_retained(
+            format_args!("STEP ZIP has no required root {ROOT_NAME}"),
+            "STEP ZIP root error",
+        )?));
+    };
     let data_start = root_entry.data_start;
     let root_view = archive.open(ctx, &root_entry.name)?;
     Ok(OpenedRoot {

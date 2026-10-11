@@ -1363,3 +1363,5 @@ mod admission;
 mod prefix_admission;
 
 mod unsupported_directory_error;
+
+mod root_error;
