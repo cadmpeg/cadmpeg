@@ -1112,11 +1112,11 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
             u64_from_index(line.len()),
             "iges compressed trailing record copy",
         )?;
-        ctx.reserve_capacity(
-            &mut output,
-            line.len().saturating_add(1),
-            "iges_compressed_normalized_output",
-        )?;
+        let record_len = line
+            .len()
+            .checked_add(1)
+            .ok_or_else(|| malformed("compressed trailing record length overflows"))?;
+        ctx.reserve_capacity(&mut output, record_len, "iges_compressed_normalized_output")?;
         output.extend_from_slice(line);
         output.push(b'\n');
     }
