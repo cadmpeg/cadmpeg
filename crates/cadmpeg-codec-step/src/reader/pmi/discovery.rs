@@ -612,7 +612,9 @@ impl<'ctx, 'arena> AnnotationDiscoveryIndex<'ctx, 'arena> {
         // selection and diagnostic order for this query.
         let mut selected = SetId::default();
         let Some(height) = self.graph.height(key.0)?.checked_add(key.1) else {
-            return Err(self.ctx.refuse_codec_limit("STEP annotation query height overflow", 0, 1));
+            return Err(self
+                .ctx
+                .refuse_codec_limit("STEP annotation query height overflow", 0, 1));
         };
         if height >= 256 {
             self.collect_cutoff_summary(
