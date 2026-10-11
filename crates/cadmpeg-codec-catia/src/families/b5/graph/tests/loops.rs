@@ -4,10 +4,10 @@ use crate::families::b5::graph::tests::test_pcurve;
 use crate::families::b5::graph::vertex_refs::B5VertexRef;
 use crate::families::b5::graph::{
     canonical_point, canonical_surface_id, counted_references, distance_squared,
-    edge_support_pcurve_references, face_surface_references, incidence_vertex_coordinates,
-    loop_chain_closes, loop_metadata as parse_loop_metadata, loop_references,
-    loop_references_and_metadata, parameter_incidence, parse_face_record, parse_loop,
-    parse_loop_record, pcurve_parameter_domain, sphere_great_circle_point,
+    edge_pcurve_parameter_values, edge_support_pcurve_references, face_surface_references,
+    incidence_vertex_coordinates, loop_chain_closes, loop_metadata as parse_loop_metadata,
+    loop_references, loop_references_and_metadata, parameter_incidence, parse_face_record,
+    parse_loop, parse_loop_record, pcurve_parameter_domain, sphere_great_circle_point,
     typed_face_records_from_records, typed_loop_records_from_records, B5FaceRecord,
     B5IncidenceLane, B5LogicalVertex, B5Loop, B5LoopMetadata, B5LoopMetadataExtension,
     B5OpaquePcurve, B5ParameterIncidence, B5Pcurve, B5PcurveContext, B5PcurveParameterization,
@@ -17,6 +17,52 @@ use crate::families::b5::tests::test_loop_members;
 use crate::families::b5::tests::test_loop_metadata;
 use cadmpeg_ir::geometry::{nurbs::NurbsSurface, ProceduralSurfaceDefinition};
 use std::collections::{BTreeMap, HashMap, HashSet};
+
+#[test]
+fn endpoint_parameter_duplicates_require_the_same_arc_and_local_parameter() {
+    let start = crate::test_support::test_b5::finite(0.25);
+    let end = crate::test_support::test_b5::finite(0.75);
+    let lane = B5IncidenceLane {
+        curve: 2,
+        parameter: start,
+        control: 6,
+    };
+    let edge_incidences = BTreeMap::from([(3, [20, 21])]);
+    let mut incidences = BTreeMap::from([
+        (
+            20,
+            B5ParameterIncidence {
+                object_id: 20,
+                lanes: vec![lane, lane],
+            },
+        ),
+        (
+            21,
+            B5ParameterIncidence {
+                object_id: 21,
+                lanes: vec![B5IncidenceLane {
+                    parameter: end,
+                    ..lane
+                }],
+            },
+        ),
+    ]);
+    assert_eq!(
+        edge_pcurve_parameter_values(&edge_incidences, &incidences, 3, 2),
+        Some([start, end])
+    );
+    incidences.get_mut(&20).expect("start incidence").lanes[1].control = 7;
+    assert_eq!(
+        edge_pcurve_parameter_values(&edge_incidences, &incidences, 3, 2),
+        None
+    );
+    incidences.get_mut(&20).expect("start incidence").lanes[1] = lane;
+    incidences.get_mut(&20).expect("start incidence").lanes[1].parameter = end;
+    assert_eq!(
+        edge_pcurve_parameter_values(&edge_incidences, &incidences, 3, 2),
+        None
+    );
+}
 
 fn parse_face(
     record: &B5FaceRecord,

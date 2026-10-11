@@ -536,14 +536,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know its role to classify and write the loop.
 
-### FV-06. Second signed edge control
-
-**Question.** What does the second signed control for each float-packed edge control?
-
-**Known.** The first direction relation and the ordered edge incidence are retained independently.
-
-**Need.** We must know the second control to preserve edge-use semantics.
-
 ### FV-07. Optional loop metadata
 
 **Question.** What does each of the ten optional numeric metadata fields in a float-packed loop represent?

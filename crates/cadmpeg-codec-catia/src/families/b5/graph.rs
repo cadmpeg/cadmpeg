@@ -183,11 +183,11 @@ fn edge_pcurve_parameter_values(
         let mut parameters = incidence
             .lanes
             .iter()
-            .filter_map(|lane| (lane.curve == pcurve).then_some(lane.parameter));
+            .filter_map(|lane| (lane.curve == pcurve).then_some((lane.parameter, lane.control)));
         let parameter = parameters.next()?;
         parameters
             .all(|other| other == parameter)
-            .then_some(parameter)
+            .then_some(parameter.0)
     });
     Some([endpoints[0]?, endpoints[1]?])
 }
@@ -594,18 +594,18 @@ pub(super) enum B5SupportedSurfaceParameters {
 pub(in crate::families) struct B5ParameterIncidence {
     /// This record's stream object id.
     pub(super) object_id: u32,
-    /// Curve, parameter, and control triples in serialized order.
+    /// Curve, local parameter, and arc number in serialized order.
     pub(in crate::families) lanes: Vec<B5IncidenceLane>,
 }
 
-/// One curve/parameter/control triple of a class-`06` incidence record.
+/// One curve station of a class-`06` incidence record.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(in crate::families) struct B5IncidenceLane {
     /// Referenced curve or pcurve object id.
     pub(super) curve: u32,
     /// Finite native parameter on that curve.
     pub(super) parameter: FiniteReal,
-    /// Compact native control for this lane.
+    /// Compact arc number; together with the local parameter, a `CATCrvParam`.
     pub(super) control: u32,
 }
 
@@ -814,7 +814,9 @@ pub(super) struct B5LoopMember {
     pub(super) pcurve: u32,
     /// `object_id` of the member `b5 03 5e` edge.
     pub(super) edge: u32,
-    /// Three signed controls for this occurrence.
+    /// Edge occurrence, pcurve-to-edge parameter orientation, and pcurve
+    /// occurrence signs, in source order. The middle sign compares composite
+    /// stations by arc first, then local parameter within the same arc.
     pub(super) controls: [i16; 3],
 }
 
