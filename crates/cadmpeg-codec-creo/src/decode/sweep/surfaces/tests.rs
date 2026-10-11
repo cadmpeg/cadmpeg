@@ -686,7 +686,7 @@ fn absent_placed_curve_references_are_free_at_zero_budget() {
 
 
 #[test]
-fn short_revolution_axis_is_free_and_preserves_original_refusal() {
+fn short_revolution_axis_is_free_at_zero_budget() {
     use cadmpeg_ir::features::{FeatureDirection3, FinitePoint3, RevolutionAxis};
     use cadmpeg_ir::geometry::nurbs::NurbsCurve;
     use cadmpeg_ir::math::{Point3, Vector3};
