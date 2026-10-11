@@ -205,12 +205,11 @@ pub(crate) fn transfer_neutral(
             ctx.insert_btree_map(
                 &mut neutral_ids,
                 record.object.as_str(),
-                DrawingId::mint_for_decode(ctx, crate::native::model_id_charged(
+                DrawingId::mint_for_decode(
                     ctx,
-                    "drawing",
-                    &record.object,
-                    "entity",
-                )?, "FreeCAD model identity grammar")?
+                    crate::native::model_id_charged(ctx, "drawing", &record.object, "entity")?,
+                    "FreeCAD model identity grammar",
+                )?
                 .map_err(CodecError::malformed)?,
                 "fcstd drawing neutral identities",
             )

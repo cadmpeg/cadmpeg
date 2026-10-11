@@ -117,7 +117,9 @@ fn gui_attribute_lookup_refuses_before_provider_record_copy() {
                 None,
                 &mut providers,
                 &mut Vec::new(),
-                &mut ctx.reserve_scoped(0, "test GUI diagnostics").expect("owner"),
+                &mut ctx
+                    .reserve_scoped(0, "test GUI diagnostics")
+                    .expect("owner"),
             );
             if let Err(CodecError::ResourceLimit(limit)) = &result {
                 if limit.operation == "FCStd GUI provider attribute" {
@@ -664,7 +666,9 @@ fn gui_property_names_are_local_to_each_provider() {
                 None,
                 &mut providers,
                 &mut properties,
-                &mut ctx.reserve_scoped(0, "test GUI diagnostics").expect("owner"),
+                &mut ctx
+                    .reserve_scoped(0, "test GUI diagnostics")
+                    .expect("owner"),
             )
             .expect("separate provider names");
         }
@@ -688,7 +692,9 @@ fn gui_duplicate_property_name_precedes_later_invalid_properties() {
             None,
             &mut Vec::new(),
             &mut Vec::new(),
-            &mut ctx.reserve_scoped(0, "test GUI diagnostics").expect("owner"),
+            &mut ctx
+                .reserve_scoped(0, "test GUI diagnostics")
+                .expect("owner"),
         )
         .expect_err("duplicate name");
         assert!(

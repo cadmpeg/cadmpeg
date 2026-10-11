@@ -390,9 +390,12 @@ fn product_scale_list_rejects_first_invalid_tuple_without_prepaying_suffix() {
 fn product_definition_identity_grammar_preserves_resource_refusal() {
     let reference = serde_json::from_value::<crate::native::LinkTarget>(serde_json::json!({
         "document": null, "object": "fcstd:native:object#Part", "subelements": []
-    })).expect("local reference");
+    }))
+    .expect("local reference");
     let error = crate::test_support::refusal_at(
-        ResourceDimension::WorkUnits, &[], "FreeCAD model identity grammar",
+        ResourceDimension::WorkUnits,
+        &[],
+        "FreeCAD model identity grammar",
         |ctx| super::super::neutral_link_target(ctx, &reference),
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)

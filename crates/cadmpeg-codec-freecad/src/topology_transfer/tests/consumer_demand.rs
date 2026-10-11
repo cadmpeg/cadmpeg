@@ -12,16 +12,30 @@ fn populated_a_and_empty_b_maps_build_only_a_topology_occurrences() {
     let a = format!("{brep}+1 0 *");
     let b = format!("{brep}{}*", "+1 0 ".repeat(129));
     let input = crate::test_support::test_archive::archive_entries(&[
-        ("Document.xml", document), ("A.brp", a.as_bytes()), ("B.brp", b.as_bytes()),
-        ("A.map", b"1 Edge1 mapped 0"), ("B.map", b"0"),
+        ("Document.xml", document),
+        ("A.brp", a.as_bytes()),
+        ("B.brp", b.as_bytes()),
+        ("A.map", b"1 Edge1 mapped 0"),
+        ("B.map", b"0"),
     ]);
-    let decoded = crate::FcstdCodec.decode(&mut std::io::Cursor::new(&input), &DecodeOptions::default())
+    let decoded = crate::FcstdCodec
+        .decode(&mut std::io::Cursor::new(&input), &DecodeOptions::default())
         .expect("mixed map archive");
     assert_eq!(decoded.ir().model.edges.len(), 130);
-    let native = decoded.ir().native.namespace("fcstd").expect("native namespace");
-    let payloads = native.arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads").expect("payloads");
-    let properties = native.arena_as::<crate::native::PropertyRecord>("properties").expect("properties");
-    let mut maps = native.arena_as::<crate::native::element_map::ElementMapRecord>("element_maps").expect("maps");
+    let native = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native namespace");
+    let payloads = native
+        .arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads")
+        .expect("payloads");
+    let properties = native
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("properties");
+    let mut maps = native
+        .arena_as::<crate::native::element_map::ElementMapRecord>("element_maps")
+        .expect("maps");
     assert_eq!(maps.len(), 2);
     let empty_map = maps[1].clone();
     assert!(empty_map.maps.root().groups.is_empty());
@@ -29,36 +43,65 @@ fn populated_a_and_empty_b_maps_build_only_a_topology_occurrences() {
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let mut ir = cadmpeg_ir::CadIr::empty();
-    let (curves, surfaces) = crate::brep::transfer_text_geometry(&ctx, &payloads, &properties).expect("geometry");
+    let (curves, surfaces) =
+        crate::brep::transfer_text_geometry(&ctx, &payloads, &properties).expect("geometry");
     ir.model.curves = curves.curves;
     ir.model.surfaces = surfaces.surfaces;
-    let occurrences = super::super::transfer(&ctx, &mut ir, &payloads, &properties, &mut Vec::new(), &maps)
-        .expect("property-local occurrences");
+    let occurrences = super::super::transfer(
+        &ctx,
+        &mut ir,
+        &payloads,
+        &properties,
+        &mut Vec::new(),
+        &maps,
+    )
+    .expect("property-local occurrences");
     assert!(!occurrences.records.is_empty());
-    assert!(occurrences.records.iter().all(|record| record.property == maps[0].property));
+    assert!(occurrences
+        .records
+        .iter()
+        .all(|record| record.property == maps[0].property));
     assert_eq!(ir.model.edges.len(), 130);
     crate::element_map::bind_topology(&ctx, &mut maps, &occurrences.records).expect("binding");
     assert_eq!(maps[1], empty_map);
-    assert!(!maps[0].maps.root().groups[0].names[1][0].topology_ids.is_empty());
+    assert!(!maps[0].maps.root().groups[0].names[1][0]
+        .topology_ids
+        .is_empty());
 
     // Keep A's populated map, but transfer only B's payload. Any source-index
     // or occurrence-index work here has no consumer and must be absent.
-    for operation in ["FreeCAD source topology roots", "FreeCAD element topology occurrence index"] {
+    for operation in [
+        "FreeCAD source topology roots",
+        "FreeCAD element topology occurrence index",
+    ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = u64::MAX;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let mut ir = cadmpeg_ir::CadIr::empty();
-        let only_b = payloads.iter().find(|payload| payload.property == empty_map.property).expect("B payload");
-        let (curves, surfaces) = crate::brep::transfer_text_geometry(&ctx, std::slice::from_ref(only_b), &properties).expect("B geometry");
+        let only_b = payloads
+            .iter()
+            .find(|payload| payload.property == empty_map.property)
+            .expect("B payload");
+        let (curves, surfaces) =
+            crate::brep::transfer_text_geometry(&ctx, std::slice::from_ref(only_b), &properties)
+                .expect("B geometry");
         ir.model.curves = curves.curves;
         ir.model.surfaces = surfaces.surfaces;
         let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-        let occurrences = super::super::transfer(&ctx, &mut ir, std::slice::from_ref(only_b), &properties, &mut Vec::new(), &maps)
-            .expect("B has no binding consumer");
+        let occurrences = super::super::transfer(
+            &ctx,
+            &mut ir,
+            std::slice::from_ref(only_b),
+            &properties,
+            &mut Vec::new(),
+            &maps,
+        )
+        .expect("B has no binding consumer");
         assert!(occurrences.records.is_empty());
         assert_eq!(ir.model.edges.len(), 129);
-        crate::element_map::bind_topology(&ctx, &mut maps, &occurrences.records).expect("no unused occurrence index");
+        crate::element_map::bind_topology(&ctx, &mut maps, &occurrences.records)
+            .expect("no unused occurrence index");
         assert_eq!(maps[1], empty_map);
         assert_eq!(ctx.resource_refusal(), None);
         drop(probe);

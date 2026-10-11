@@ -512,8 +512,10 @@ fn joint_external_then_local_occurrence_refusal_precedes_identity_allocation() {
     policy.limits.max_collection_items = 0;
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let CodecError::ResourceLimit(limit) = super::super::transfer_neutral(&ctx, &records, &occurrences)
-        .expect_err("occurrence index precedes external identity") else {
+    let CodecError::ResourceLimit(limit) =
+        super::super::transfer_neutral(&ctx, &records, &occurrences)
+            .expect_err("occurrence index precedes external identity")
+    else {
         panic!("resource refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
@@ -529,12 +531,17 @@ fn joint_empty_occurrences_skip_consumer_search_and_emit_root_operand() {
     policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-        ResourceDimension::WorkUnits, "fcstd joint occurrence demand", None,
+        ResourceDimension::WorkUnits,
+        "fcstd joint occurrence demand",
+        None,
     );
     let output = super::super::transfer_neutral(&ctx, &[record], &[]).expect("root joint");
     assert_eq!(output.len(), 1);
     let connector = output[0].connectors().next().expect("grounded connector");
-    assert!(matches!(connector.operand.container, cadmpeg_ir::products::OperandContainer::Root {}));
+    assert!(matches!(
+        connector.operand.container,
+        cadmpeg_ir::products::OperandContainer::Root {}
+    ));
     assert_eq!(connector.operand.object, "fcstd:native:object#Target");
     assert_eq!(connector.operand.subelements, ["Face1"]);
     assert_eq!(ctx.resource_refusal(), None);

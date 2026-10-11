@@ -710,8 +710,20 @@ fn parse_properties(
         else {
             break;
         };
-        let name = retained_attr(ctx, node, "name", "FCStd transient property name", &mut None)?;
-        let type_name = retained_attr(ctx, node, "type", "FCStd transient property type", &mut None)?;
+        let name = retained_attr(
+            ctx,
+            node,
+            "name",
+            "FCStd transient property name",
+            &mut None,
+        )?;
+        let type_name = retained_attr(
+            ctx,
+            node,
+            "type",
+            "FCStd transient property type",
+            &mut None,
+        )?;
         ctx.push_vec(
             output,
             PropertyRecord {
@@ -742,8 +754,20 @@ fn parse_properties(
         else {
             break;
         };
-        let name = retained_attr(ctx, node, "name", "FCStd persisted property name", &mut None)?;
-        let type_name = retained_attr(ctx, node, "type", "FCStd persisted property type", &mut None)?;
+        let name = retained_attr(
+            ctx,
+            node,
+            "name",
+            "FCStd persisted property name",
+            &mut None,
+        )?;
+        let type_name = retained_attr(
+            ctx,
+            node,
+            "type",
+            "FCStd persisted property type",
+            &mut None,
+        )?;
         let family = property_family(&type_name);
         let file_carrier_by_file = !is_xlink_type(&type_name);
         let file_carrier_by_name = family == PropertyFamily::File;
@@ -895,9 +919,10 @@ pub(crate) fn validate_link_property(
         type_name
     };
     if diagnostic_storage.is_some() {
-        let (targets, storage) = ctx.with_scoped_storage("FCStd GUI link validation targets", || {
-            parse_link_targets(property, grammar_type, ctx, &mut diagnostic_storage)
-        })?;
+        let (targets, storage) = ctx
+            .with_scoped_storage("FCStd GUI link validation targets", || {
+                parse_link_targets(property, grammar_type, ctx, &mut diagnostic_storage)
+            })?;
         drop(targets);
         drop(storage);
         Ok(())
@@ -916,7 +941,13 @@ fn parse_link_targets(
     let Some(grammar) = grammar else {
         return Ok(Vec::new());
     };
-    let root = single_value_element(property, grammar.root_tag(), type_name, ctx, diagnostic_storage)?;
+    let root = single_value_element(
+        property,
+        grammar.root_tag(),
+        type_name,
+        ctx,
+        diagnostic_storage,
+    )?;
     match grammar {
         LinkGrammar::Link => {
             reject_nested_link_value(root, ctx)?;
@@ -929,7 +960,8 @@ fn parse_link_targets(
             Ok(targets)
         }
         LinkGrammar::LinkList => {
-            let children_result = counted_children(root, "Link", type_name, ctx, diagnostic_storage)?;
+            let children_result =
+                counted_children(root, "Link", type_name, ctx, diagnostic_storage)?;
             let _children_storage = children_result.1;
             let children = children_result.0;
             let mut targets =
@@ -950,7 +982,8 @@ fn parse_link_targets(
             Ok(targets)
         }
         LinkGrammar::LinkSub => {
-            let children_result = counted_children(root, "Sub", type_name, ctx, diagnostic_storage)?;
+            let children_result =
+                counted_children(root, "Sub", type_name, ctx, diagnostic_storage)?;
             let _children_storage = children_result.1;
             let children = children_result.0;
             let mut subelements =
@@ -978,7 +1011,8 @@ fn parse_link_targets(
             Ok(targets)
         }
         LinkGrammar::LinkSubList => {
-            let children_result = counted_children(root, "Link", type_name, ctx, diagnostic_storage)?;
+            let children_result =
+                counted_children(root, "Link", type_name, ctx, diagnostic_storage)?;
             let _children_storage = children_result.1;
             let children = children_result.0;
             let mut targets =
@@ -1001,11 +1035,12 @@ fn parse_link_targets(
             }
             Ok(targets)
         }
-        LinkGrammar::XLink => {
-            ctx.collect_indexed_vec(1, "FCStd link target records", |_| xlink(root, ctx, diagnostic_storage))
-        }
+        LinkGrammar::XLink => ctx.collect_indexed_vec(1, "FCStd link target records", |_| {
+            xlink(root, ctx, diagnostic_storage)
+        }),
         LinkGrammar::XLinkSubList => {
-            let children_result = counted_children(root, "XLink", type_name, ctx, diagnostic_storage)?;
+            let children_result =
+                counted_children(root, "XLink", type_name, ctx, diagnostic_storage)?;
             let _children_storage = children_result.1;
             let children = children_result.0;
             ctx.collect_indexed_vec(
@@ -1108,32 +1143,40 @@ fn single_value_element<'a, 'input>(
             continue;
         }
         if value.is_some() || !ctx.xml_has_tag_name(element, tag, ELEMENT_NAME)? {
-            return Err({ let make_error = || crate::resource::malformed_charged(
-                ctx,
-                format_args!("{type_name} requires exactly one {tag} value"),
-                "FCStd persistence diagnostic",
-            );
+            return Err({
+                let make_error = || {
+                    crate::resource::malformed_charged(
+                        ctx,
+                        format_args!("{type_name} requires exactly one {tag} value"),
+                        "FCStd persistence diagnostic",
+                    )
+                };
                 if let Some(storage) = diagnostic_storage.as_deref_mut() {
-                    storage.with_storage(|| Ok::<_, CodecError>(make_error()))
-                        .unwrap_or_else(std::convert::identity)
-                } else {
-                    make_error()
-                } });
-        }
-        value = Some(element);
-    }
-    value.ok_or_else(|| {
-        let make_error = || crate::resource::malformed_charged(
-            ctx,
-            format_args!("{type_name} requires one {tag} value"),
-            "FCStd persistence diagnostic",
-        );
-                if let Some(storage) = diagnostic_storage.as_deref_mut() {
-                    storage.with_storage(|| Ok::<_, CodecError>(make_error()))
+                    storage
+                        .with_storage(|| Ok::<_, CodecError>(make_error()))
                         .unwrap_or_else(std::convert::identity)
                 } else {
                     make_error()
                 }
+            });
+        }
+        value = Some(element);
+    }
+    value.ok_or_else(|| {
+        let make_error = || {
+            crate::resource::malformed_charged(
+                ctx,
+                format_args!("{type_name} requires one {tag} value"),
+                "FCStd persistence diagnostic",
+            )
+        };
+        if let Some(storage) = diagnostic_storage.as_deref_mut() {
+            storage
+                .with_storage(|| Ok::<_, CodecError>(make_error()))
+                .unwrap_or_else(std::convert::identity)
+        } else {
+            make_error()
+        }
     })
 }
 
@@ -1155,35 +1198,41 @@ fn counted_children<'a, 'input, 'ctx>(
     let count_text = ctx
         .xml_attribute(parent, "count", ATTRIBUTE_SEARCH)?
         .ok_or_else(|| {
-            let make_error = || crate::resource::malformed_charged(
-                ctx,
-                format_args!(
-                    "{} element has no count attribute",
-                    parent.tag_name().name()
-                ),
-                "FCStd persistence diagnostic",
-            );
-                if let Some(storage) = diagnostic_storage.as_deref_mut() {
-                    storage.with_storage(|| Ok::<_, CodecError>(make_error()))
-                        .unwrap_or_else(std::convert::identity)
-                } else {
-                    make_error()
-                }
+            let make_error = || {
+                crate::resource::malformed_charged(
+                    ctx,
+                    format_args!(
+                        "{} element has no count attribute",
+                        parent.tag_name().name()
+                    ),
+                    "FCStd persistence diagnostic",
+                )
+            };
+            if let Some(storage) = diagnostic_storage.as_deref_mut() {
+                storage
+                    .with_storage(|| Ok::<_, CodecError>(make_error()))
+                    .unwrap_or_else(std::convert::identity)
+            } else {
+                make_error()
+            }
         })?;
     let count = ctx
         .parse_text::<usize>(count_text, "FCStd link count parse")?
         .map_err(|_| {
-            let make_error = || crate::resource::malformed_charged(
-                ctx,
-                format_args!("{type_name} count is invalid"),
-                "FCStd persistence diagnostic",
-            );
-                if let Some(storage) = diagnostic_storage.as_deref_mut() {
-                    storage.with_storage(|| Ok::<_, CodecError>(make_error()))
-                        .unwrap_or_else(std::convert::identity)
-                } else {
-                    make_error()
-                }
+            let make_error = || {
+                crate::resource::malformed_charged(
+                    ctx,
+                    format_args!("{type_name} count is invalid"),
+                    "FCStd persistence diagnostic",
+                )
+            };
+            if let Some(storage) = diagnostic_storage.as_deref_mut() {
+                storage
+                    .with_storage(|| Ok::<_, CodecError>(make_error()))
+                    .unwrap_or_else(std::convert::identity)
+            } else {
+                make_error()
+            }
         })?;
     let mut valid_tags = true;
     let mut storage = ctx.reserve_scoped(0, "FCStd link nodes")?;
@@ -1197,20 +1246,25 @@ fn counted_children<'a, 'input, 'ctx>(
         ctx.push_scoped_vec(&mut storage, &mut child_nodes, child, "FCStd link nodes")?;
     }
     if child_nodes.len() != count || !valid_tags {
-        return Err({ let make_error = || crate::resource::malformed_charged(
-            ctx,
-            format_args!(
-                "{type_name} count={count} but {} {tag} values were found",
-                child_nodes.len()
-            ),
-            "FCStd persistence diagnostic",
-        );
-                if let Some(storage) = diagnostic_storage.as_deref_mut() {
-                    storage.with_storage(|| Ok::<_, CodecError>(make_error()))
-                        .unwrap_or_else(std::convert::identity)
-                } else {
-                    make_error()
-                } });
+        return Err({
+            let make_error = || {
+                crate::resource::malformed_charged(
+                    ctx,
+                    format_args!(
+                        "{type_name} count={count} but {} {tag} values were found",
+                        child_nodes.len()
+                    ),
+                    "FCStd persistence diagnostic",
+                )
+            };
+            if let Some(storage) = diagnostic_storage.as_deref_mut() {
+                storage
+                    .with_storage(|| Ok::<_, CodecError>(make_error()))
+                    .unwrap_or_else(std::convert::identity)
+            } else {
+                make_error()
+            }
+        });
     }
     Ok((child_nodes, storage))
 }
@@ -1231,7 +1285,13 @@ fn local_link(
         document: None,
         document_attribute: None,
         object: Some(ctx.validate_nonblank_text(
-            retained_attr(ctx, node, object_attribute, "FCStd link object", diagnostic_storage)?,
+            retained_attr(
+                ctx,
+                node,
+                object_attribute,
+                "FCStd link object",
+                diagnostic_storage,
+            )?,
             "validate object",
         )?),
         subelements,
@@ -1275,7 +1335,8 @@ fn xlink(
                     "App::PropertyXLink uses count only for one or more Sub values".into(),
                 ));
             }
-            let children_result = counted_children(node, "Sub", "App::PropertyXLink", ctx, diagnostic_storage)?;
+            let children_result =
+                counted_children(node, "Sub", "App::PropertyXLink", ctx, diagnostic_storage)?;
             let _children_storage = children_result.1;
             let children = children_result.0;
             let mut subelements =
@@ -1360,20 +1421,25 @@ fn reject_link_aliases(
         };
         let name = attribute.name();
         if CARRIERS.contains(&name) && !allowed.contains(&name) {
-            return Err({ let make_error = || crate::resource::malformed_charged(
-                ctx,
-                format_args!(
-                    "{} has unsupported link carrier {name}",
-                    node.tag_name().name()
-                ),
-                "FCStd persistence diagnostic",
-            );
+            return Err({
+                let make_error = || {
+                    crate::resource::malformed_charged(
+                        ctx,
+                        format_args!(
+                            "{} has unsupported link carrier {name}",
+                            node.tag_name().name()
+                        ),
+                        "FCStd persistence diagnostic",
+                    )
+                };
                 if let Some(storage) = diagnostic_storage.as_deref_mut() {
-                    storage.with_storage(|| Ok::<_, CodecError>(make_error()))
+                    storage
+                        .with_storage(|| Ok::<_, CodecError>(make_error()))
                         .unwrap_or_else(std::convert::identity)
                 } else {
                     make_error()
-                } });
+                }
+            });
         }
     }
     Ok(())
@@ -1515,17 +1581,20 @@ fn required_attr<'a>(
 ) -> Result<&'a str, CodecError> {
     ctx.xml_attribute(node, name, ATTRIBUTE_SEARCH)?
         .ok_or_else(|| {
-            let make_error = || crate::resource::malformed_charged(
-                ctx,
-                format_args!("{} element has no {name} attribute", node.tag_name().name()),
-                "FCStd persistence diagnostic",
-            );
-                if let Some(storage) = diagnostic_storage.as_deref_mut() {
-                    storage.with_storage(|| Ok::<_, CodecError>(make_error()))
-                        .unwrap_or_else(std::convert::identity)
-                } else {
-                    make_error()
-                }
+            let make_error = || {
+                crate::resource::malformed_charged(
+                    ctx,
+                    format_args!("{} element has no {name} attribute", node.tag_name().name()),
+                    "FCStd persistence diagnostic",
+                )
+            };
+            if let Some(storage) = diagnostic_storage.as_deref_mut() {
+                storage
+                    .with_storage(|| Ok::<_, CodecError>(make_error()))
+                    .unwrap_or_else(std::convert::identity)
+            } else {
+                make_error()
+            }
         })
 }
 
@@ -1536,7 +1605,10 @@ fn retained_attr(
     operation: &'static str,
     diagnostic_storage: &mut Option<&mut cadmpeg_core::decode::ScopedReservation<'_>>,
 ) -> Result<String, CodecError> {
-    ctx.copy_retained_text(required_attr(ctx, node, name, diagnostic_storage)?, operation)
+    ctx.copy_retained_text(
+        required_attr(ctx, node, name, diagnostic_storage)?,
+        operation,
+    )
 }
 
 /// The attribute parsed as `T`; absent and unparsable values are both `None`.
