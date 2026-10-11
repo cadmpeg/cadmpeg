@@ -1028,24 +1028,69 @@ fn render_userdata_unknown_chunks_refuse_collection_limit() {
 }
 
 #[test]
-fn document_digest_refuses_before_hashing_source_bytes() {
+fn document_digest_keeps_hex_and_retained_admission() {
+    const EXPECTED: &str = "f302957da5220938a7e3e51a8718c79b9e00dc13ab2119e8cfc978f041720382";
     let bytes = [0x5a; 4096];
-    let refusal = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "document digest",
-        |cap| {
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)?;
-            super::retained_sha256(&ctx, &bytes, "document digest")
-        },
-    );
-    assert!(
-        matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.used == 0 && limit.additional == 4096)
-    );
+    for retained in [0, 64] {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 256;
+        policy.limits.max_retained_bytes = retained;
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let result = super::retained_sha256(&ctx, &bytes, "document digest");
+        if retained == 0 {
+            assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                    && limit.operation == "document digest"));
+        } else {
+            assert_eq!(result.unwrap(), EXPECTED);
+            ctx.finish_session().unwrap();
+        }
+    }
+}
+
+#[test]
+fn render_userdata_keeps_corrupt_header_without_discarded_diagnostics() {
+    const SCRATCH_BYTES: u64 = 64 * 1024;
+    let archive = ArchiveVersion::V8;
+    let mut header_body = vec![0; 16];
+    header_body.extend([1; 16]);
+    header_body.extend(7_i32.to_le_bytes());
+    header_body.extend([0; 16 * 8]);
+    let mut header = crc_chunk(archive, 0x0002_fff9, &header_body);
+    *header.last_mut().unwrap() ^= 1;
+    let mut item = vec![0x20];
+    item.extend(header);
+    item.extend(anonymous_chunk(archive, 0, &[0x55]));
+    let mut body = long_chunk(archive, CLASS_USERDATA, &item);
+    body.extend(short_chunk(archive, CLASS_END, 0));
+    let (data, record) = metadata_record(0x2000_8136, body);
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = SCRATCH_BYTES;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
+    let mut storage = ctx.reserve_scoped(0, "render userdata descriptor").unwrap();
+    let descriptor = storage.with_storage(|| render_userdata(&ctx, &data, &record, archive))
+        .expect("only the surviving userdata descriptor consumes a collection slot");
+    assert_eq!(descriptor.items.len(), 1);
+    assert!(descriptor.unknown_chunks.is_empty());
+    assert_eq!(descriptor.suffix, record.body().end..record.body().end);
+    let UserdataDescriptor::Known(item) = &descriptor.items[0] else {
+        panic!("known userdata header");
+    };
+    assert_eq!(item.version, (2, 0));
+    assert_eq!(item.class_uuid, Uuid::nil());
+    assert_eq!(item.item_uuid, Uuid::from_wire([1; 16]));
+    assert_eq!(item.copy_count, 7);
+    assert_eq!(item.application_uuid, None);
+    assert_eq!(item.save_context, None);
+    assert_eq!(&data[item.payload_range.clone()], &[1, 0, 0, 0, 0, 0, 0, 0, 0x55]);
+    drop(descriptor);
+    drop(storage);
+    drop(ctx.reserve_scoped(SCRATCH_BYTES, "released render userdata descriptor").unwrap());
+    ctx.finish_session().unwrap();
 }
 
 mod prefix_admission;

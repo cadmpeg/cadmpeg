@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rhino document properties, selectors, previews, and setting identities.
 
-use crate::loss::{Diagnostics, ScratchVec};
+use crate::loss::ScratchVec;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -518,10 +518,7 @@ fn render_userdata(
                 }
                 ctx.reserve_vec(&mut items, 1, "Rhino render userdata items")
                     .map_err(crate::chunks::FramingError::from)?;
-                let mut checksum_warnings = Diagnostics::new();
-                let item = parse_userdata(ctx, data, &chunk, archive, &mut |code, message| {
-                    checksum_warnings.push_coded_admitted(ctx, code, message)
-                })?;
+                let item = parse_userdata(ctx, data, &chunk, archive, &mut |_, _| Ok(()))?;
                 items.push(item);
                 offset = chunk.next_offset();
             }
@@ -584,7 +581,6 @@ fn retained_sha256(
     bytes: &[u8],
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), operation)?;
     let digest = cadmpeg_ir::hash::sha256(bytes);
     ctx.format_retained(
         format_args!("{}", cadmpeg_ir::hash::LowerHex(&digest)),
