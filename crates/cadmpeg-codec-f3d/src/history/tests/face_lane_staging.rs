@@ -372,7 +372,11 @@ fn split_face_grouped_resolution_keeps_priority_over_nested_support() {
         [crate::ids::brep_face_id(7)]
     );
     assert_eq!(
-        crate::design::face_resolve::resolve_face_operand_history_candidates(&operand),
+        crate::design::face_resolve::resolve_face_operand_history_candidates(
+            &cadmpeg_test_support::service_decode_context(),
+            &operand,
+        )
+        .unwrap(),
         Some(7)
     );
     assert!(operand.resolved_face_slots.is_empty());
