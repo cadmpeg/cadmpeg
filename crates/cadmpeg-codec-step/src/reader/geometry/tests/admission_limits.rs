@@ -338,11 +338,8 @@ fn deferred_wake_refusal(operation: &'static str) -> CodecError {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    let mut waiting = super::super::DeferredDependencies {
-        waiting_on: HashMap::from([(1, vec![2])]),
-        remaining: HashMap::from([(2, 1)]),
-    };
-    super::super::wake_deferred_dependents(1, &mut waiting, &mut VecDeque::new(), &ctx, operation)
+    let waiting = HashMap::from([(1, vec![2])]);
+    super::super::wake_deferred_dependents(1, &waiting, &mut VecDeque::new(), &ctx, operation)
         .expect_err("wake queue exceeds the limit")
 }
 
