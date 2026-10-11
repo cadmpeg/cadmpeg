@@ -125,7 +125,7 @@ impl CarrierView<'_, '_> {
             ),
         }
     }
-    /// Clone the final loss output at the graph's original publication point.
+    /// Copy carrier losses to retained graph output.
     /// All output slots and copied messages survive together; source messages
     /// retain their own live owners until the carrier index is destroyed.
     pub(in crate::brep) fn clone_lane_refusals(
