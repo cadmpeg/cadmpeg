@@ -46,6 +46,10 @@ later than the FOOTER offset. Other payloads remain exact opaque bytes. Entry
 framing is contiguous; invalid framing rejects the complete containing
 directory without bytewise recovery.
 
+A FOOTER offset of `ff ff ff ff ff ff` marks a file with no FOOTER directory
+and no fingerprint. The HEADER directory is then the only directory, and a file
+payload range ends no later than the end of the file.
+
 The four-byte FOOTER fingerprint is retained exactly. The `/Root/` sentinel
 node carries UUID `611ec9b3-fa60-d111-8ad9-0800362fb302` across files.
 
@@ -411,21 +415,22 @@ candidate has one of these exact anchors:
 ```text
 01 02 42 00 01 02 04
 01 metadata_count_plus_one:u8 04 07 "MODEL" 00
+01 metadata_count_plus_one:u8 04 06 "None" 00
 ```
 
 For the first anchor, the candidate starts at the second `01`; the final
-`04` is the first metadata tag. For the second anchor, the candidate starts at
-its first `01`, and `MODEL` is the first metadata value. The two anchors can
-identify the same candidate. Exactly one complete roster follows the anchors
-in the bounded entry. Its component roster has this grammar:
+`04` is the first metadata tag. For the second and third anchors, the candidate
+starts at its first `01`, and `MODEL` or `None` is the first metadata value. The
+anchors can identify the same candidate. Exactly one complete roster follows the
+anchors in the bounded entry. Its component roster has this grammar:
 
 ```text
 01 metadata_count_plus_one:u8
 metadata[metadata_count]
-01 03 occurrence_lane_form:u8 00
+01 occurrence_lane_form_len_plus_one:u8 occurrence_lane_form[occurrence_lane_form_len]
 01 occurrence_count_plus_one:u8
 occurrence_marker[occurrence_count]
-01 02 ff ff ff ff
+01 02 occurrence_trailer[4]
 01 prototype_count_plus_one:u8
 prototype[prototype_count]
 01 occurrence_count_plus_one:u8
@@ -440,10 +445,12 @@ Each `metadata` and `prototype` is `04 record_len:u8`, followed by
 `record_len - 2` non-control UTF-8 bytes and a zero terminator; `record_len`
 counts its own length byte, the string bytes, and the terminator. The first
 metadata value is nonempty. Its text does not identify a component. The
-`occurrence_lane_form` is `00` or `01`. Each
-`occurrence_marker` is `31` or `39`; the marker and its source offset are
-retained with the corresponding occurrence. The form and marker bytes delimit
-the occurrence lane but do not assign hierarchy, placement, or state. Each
+`occurrence_lane_form` has at least one byte and its last byte is `00`; its
+other bytes are retained exactly and carry no assigned role. Each
+`occurrence_marker` is one byte of any value; the marker and its source offset
+are retained with the corresponding occurrence. The `occurrence_trailer` is four
+bytes of any value, retained exactly. The form, marker, and trailer bytes
+delimit the occurrence lane but do not assign hierarchy, placement, or state. Each
 occurrence index is one-based and lies in `1..=prototype_count`. Occurrence
 order and repeated indices preserve distinct uses of the same named prototype.
 The roster does not assign hierarchy or a placement transform.
@@ -1539,7 +1546,7 @@ Contiguous offset-store column storage may also carry a self-framed index row `2
 
 The `RMFastLoad` record area carries creation-display relations selected by the section-local class registry entry named `UGS::RM_creation_display_data`. A relation uses one complete self-framed index, linked-index, or target-index row. The selecting class ordinal is the fourth post-flag index of an index row or the third post-marker index of a linked-index or target-index row. The relation retains the registered class definition, row form, ordered decoded indices, exact compact-index tokens, flags, modes, discriminators, and absolute token offsets. In linked-index and target-index rows, the target index is the zero-based ordinal of a member in the section's counted object-ID table; an in-range target retains that member identity. The leading index retains its serialized role only. This framing does not assign a topology kind, display value, color-table index, or inheritance rule.
 
-A `UGS::COLOR_table` offset store carries one counted name roster followed by the part palette. The name roster begins `02 80 d9 01` and contains 217 consecutive frames. Each frame is `byte_len:u8, printable_name[byte_len-2], 00`, where `byte_len >= 2`; entry zero names the background and entries 1 through 216 name the corresponding NX color indices. The palette preamble is `02 14 ff 06 00 f0 02 80 9d 80 c7 00 c0 13 0a c6 01 80 d9 80 c8`, followed by the three background component atoms. Each color record is `05, index_token, 01 80 c8, red, green, blue`. Indices 1 through 127 use the one-byte token equal to the index; indices 128 through 216 use `80, index-1`. A component atom is `00` for zero, `01` for one, a shifted binary32 scalar, or a shifted binary64 scalar. Binary scalar values are divided by four and must produce a finite normalized component in `[0,1]`. The complete table retains all names, normalized components, exact index tokens, exact component atoms, and absolute offsets. A missing name, index discontinuity, changed marker, malformed scalar, component outside `[0,1]`, or truncated record rejects the table atomically.
+A `UGS::COLOR_table` offset store carries one counted name roster followed by the part palette. The name roster begins `02 80 d9 01` and contains 217 consecutive frames. Each frame is `byte_len:u8, printable_name[byte_len-2], 00`, where `byte_len >= 2`; entry zero names the background and entries 1 through 216 name the corresponding NX color indices. The palette preamble is `02 14 ff 06 00 f0 02 80 9d 80 c7 00 c0 13 0a c6 01 80 d9 80 c8`, followed by the three background component atoms. Each color record is `05, index_token, 01 80 c8, red, green, blue`. Indices 1 through 127 use the one-byte token equal to the index; indices 128 through 216 use `80, index-1`. A component atom is `00` for zero, `01` for one, an eight-byte atom, or a four-byte atom. An eight-byte atom has a first byte in `20..3f` or `a0..bf`; adding `10` to that byte gives the first byte of a big-endian binary64 whose other seven bytes follow. A four-byte atom has a first byte in `40..5f` or `c0..df`; subtracting `10` from that byte and appending four zero bytes gives a big-endian binary64. A component is that binary64 divided by four and must be finite and in `[0,1]`. The complete table retains all names, normalized components, exact index tokens, exact component atoms, and absolute offsets. A missing name, index discontinuity, changed marker, malformed scalar, component outside `[0,1]`, or truncated record rejects the table atomically.
 
 An `RMFastLoad` linked-index or target-index row has an explicit display-color assignment when a canonical color-index token occurs immediately before its row opener and immediately after the preceding row's exact `01 c0 44 04 00` suffix. The linked opener is `02 0b`; the target-index opener is `02 01 01 01 16`. Indices 1 through 127 use the one-byte token equal to the index. Indices 128 through 216 use `80, index`. The assignment retains its complete row encoding, resolved part color definition, exact compact-index and color tokens, and absolute token and row offsets. The linked encoding retains the unresolved leading object identity, discriminator, target index, three post-marker indices, flag, and mode. The target encoding retains its target index, three post-marker indices, and mode. The target index is the zero-based ordinal of a member in the section's counted object-ID table; an in-range target retains that member identity. The other row indices retain serialized roles only. Index zero, an index greater than 216, a changed preceding suffix, a missing unique part color definition, or intervening bytes reject the assignment atomically.
 

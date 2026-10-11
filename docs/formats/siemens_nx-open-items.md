@@ -1097,4 +1097,20 @@ The closure test only exercises already-populated `ParasolidAttributeFieldUse` v
 
 **Note.** The closure removed the `1..=64` ceiling and scans until a unique vertex-header agreement in `crates/cadmpeg-codec-nx/src/native/display_jt.rs:817-911`, but a corpus JT representation has not yet verified that the packet stream has no count field or maximum. The regression fixture was constructed with sixty-five lanes to exercise the new scan. The lane-count rule remains unsupported, so this item is reopened.
 
+### AM-12. Roster flag and trailer bytes
+
+**Question.** What do the `occurrence_lane_form` bytes before its final `00`, each `occurrence_marker` byte, and the four `occurrence_trailer` bytes of a fast-load roster encode?
+
+**Known.** `siemens_nx.md` §2.3 "`occurrence_lane_form` has at least one byte and its last byte is `00`" defines the framing and retains each of these bytes exactly. It assigns them no role.
+
+**Need.** We must know whether any of these bytes encodes load state, display state, or component state before projecting one as neutral component state.
+
+### AM-13. Roster counts and indices of 128 or more
+
+**Question.** How does a fast-load roster encode an occurrence, prototype, or UUID count, or a prototype or UUID index, of 128 or more?
+
+**Known.** `siemens_nx.md` §2.3 "`/Root/FastLoad/Structure` begins with the twelve-byte envelope" defines each of these fields as one byte. `siemens_nx.md` §3.3 "Class and member declarations before the boundary array use" defines direct and compact tokens for class and member declarations.
+
+**Need.** We must know whether roster counts and indices use the registry token, the compact-index lane form, or another form to read an assembly with more than 127 components.
+
 ## 4. Test evidence
