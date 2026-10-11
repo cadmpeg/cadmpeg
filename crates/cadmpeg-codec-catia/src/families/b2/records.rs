@@ -7,7 +7,7 @@
 
 #[cfg(test)]
 use crate::wire::records::ConsolidatedPcurve;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::ConeSurface;
@@ -2509,14 +2509,16 @@ fn parse_b2_spatial_circle(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Sp
 fn b2_nurbs_curves(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Vec<B2NurbsCurve>, CodecError> {
     let records = consolidated_records(data);
     b2_nurbs_curves_from_records(ctx, data, &records, &mut crate::nurbs::LaneRefusals::new())
+        .and_then(|(curves, storage)| storage.commit_value(curves))
 }
 
-pub(in crate::families) fn b2_nurbs_curves_from_records(
-    ctx: &DecodeContext<'_>,
+pub(in crate::families) fn b2_nurbs_curves_from_records<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Result<Vec<B2NurbsCurve>, CodecError> {
+) -> Result<(Vec<B2NurbsCurve>, ScopedReservation<'ctx>), CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "catia_b2_nurbs_curves")?;
     let mut curves = Vec::new();
     for frame in family_frames_from_records(
         ctx,
@@ -2526,10 +2528,10 @@ pub(in crate::families) fn b2_nurbs_curves_from_records(
         "catia_b2_family_record_scan",
     )? {
         if let Some(curve) = parse_b2_nurbs_curve(ctx, data, frame, refusal)? {
-            ctx.push_vec(&mut curves, curve, "catia_b2_nurbs_curves")?;
+            ctx.push_scoped_vec(&mut storage, &mut curves, curve, "catia_b2_nurbs_curves")?;
         }
     }
-    Ok(curves)
+    Ok((curves, storage))
 }
 
 fn parse_b2_nurbs_curve(

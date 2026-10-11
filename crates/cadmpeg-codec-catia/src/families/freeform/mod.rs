@@ -58,12 +58,22 @@ pub(super) struct ConsolidatedRevolutionBinding {
 }
 
 /// Transfer resolved consolidated axis-and-profile revolution carriers.
-pub(super) fn append_consolidated_revolutions(
+pub(super) fn append_consolidated_revolutions<'ctx>(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
     resolved: &[crate::families::b2::records::B2ResolvedRevolution],
-    admission: &mut FamilyEntityAdmission<'_, '_>,
-) -> Result<Vec<ConsolidatedRevolutionBinding>, cadmpeg_core::CodecError> {
+    collect_bindings: bool,
+    admission: &mut FamilyEntityAdmission<'ctx, '_>,
+) -> Result<
+    (
+        Vec<ConsolidatedRevolutionBinding>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    cadmpeg_core::CodecError,
+> {
+    let mut storage = admission
+        .context()
+        .reserve_scoped(0, "catia_revolution_bindings")?;
     let mut bindings = Vec::new();
     for carrier in admission
         .context()
@@ -238,8 +248,9 @@ pub(super) fn append_consolidated_revolutions(
             )),
             None,
         ));
-        if let Some(geometry) = torus_geometry {
-            admission.context().push_vec(
+        if let Some(geometry) = torus_geometry.filter(|_| collect_bindings) {
+            admission.context().push_scoped_vec(
+                &mut storage,
                 &mut bindings,
                 ConsolidatedRevolutionBinding {
                     geometry,
@@ -252,7 +263,7 @@ pub(super) fn append_consolidated_revolutions(
             )?;
         }
     }
-    Ok(bindings)
+    Ok((bindings, storage))
 }
 
 fn typed_face_counts(
@@ -678,7 +689,7 @@ pub(super) fn try_decode_freeform_surfaces(
             Ok(curves) => curves,
             Err(error) => return Some(Err(error)),
         };
-        let b2_nurbs_curve_count = b2_nurbs_curves.len();
+        let b2_nurbs_curve_count = b2_nurbs_curves.0.len();
         let a5_nurbs_curves = match crate::families::a5a8::records::a5_nurbs_curves_from_records(
             ctx,
             &scan.data,
@@ -688,18 +699,16 @@ pub(super) fn try_decode_freeform_surfaces(
             Ok(curves) => curves,
             Err(error) => return Some(Err(error)),
         };
-        let a5_nurbs_curve_count = a5_nurbs_curves.len();
-        let b2_spatial_circles =
-            match crate::families::b2::records::b2_spatial_circles_from_records(
+        let a5_nurbs_curve_count = a5_nurbs_curves.0.len();
+        let b2_spatial_circles = admitted!(ctx.with_scoped_storage(
+            "catia_freeform_spatial_circle_workspace",
+            || crate::families::b2::records::b2_spatial_circles_from_records(
                 ctx,
                 &scan.data,
                 &consolidated_records,
             )
             .and_then(|circles| ctx.collect_vec(circles, "catia_freeform_spatial_circles"))
-            {
-                Ok(circles) => circles,
-                Err(error) => return Some(Err(error)),
-            };
+        ));
         let b2_line_profile_count =
             match crate::families::b2::records::b2_line_profiles_from_records(
                 ctx,
@@ -709,29 +718,29 @@ pub(super) fn try_decode_freeform_surfaces(
                 Ok(lines) => lines.count(),
                 Err(error) => return Some(Err(error)),
             };
-        let resolved_consolidated_revolutions =
-            match crate::families::b2::records::b2_resolved_revolutions_from_records(
+        let resolved_consolidated_revolutions = admitted!(ctx.with_scoped_storage(
+            "catia_freeform_resolved_revolution_workspace",
+            || crate::families::b2::records::b2_resolved_revolutions_from_records(
                 ctx,
                 &scan.data,
                 &consolidated_records,
-            ) {
-                Ok(revolutions) => revolutions,
-                Err(error) => return Some(Err(error)),
-            };
-        let resolved_consolidated_revolution_count = resolved_consolidated_revolutions.len();
-        let b2_spatial_circle_count = b2_spatial_circles.len();
-        let no_a8_jets = if fallback_surfaces.as_ref().is_some_and(Vec::is_empty) {
-            match crate::families::a5a8::records::a8_freeform_curves(ctx, &scan.data) {
-                Ok(jets) => jets.is_empty(),
-                Err(error) => return Some(Err(error)),
-            }
+            )
+        ));
+        let resolved_consolidated_revolution_count = resolved_consolidated_revolutions.0.len();
+        let b2_spatial_circle_count = b2_spatial_circles.0.len();
+        let a8_jet_pool = if fallback_surfaces.as_ref().is_some_and(Vec::is_empty) {
+            Some(admitted!(ctx.with_scoped_storage(
+                "catia_freeform_a8_jet_record_workspace",
+                || crate::families::a5a8::records::a8_freeform_curves(ctx, &scan.data)
+            )))
         } else {
-            false
+            None
         };
+        let no_a8_jets = a8_jet_pool.as_ref().is_some_and(|pool| pool.0.is_empty());
         if no_a8_jets
-            && b2_nurbs_curves.is_empty()
-            && a5_nurbs_curves.is_empty()
-            && b2_spatial_circles.is_empty()
+            && b2_nurbs_curves.0.is_empty()
+            && a5_nurbs_curves.0.is_empty()
+            && b2_spatial_circles.0.is_empty()
             && b2_line_profile_count == 0
             && resolved_consolidated_revolution_count == 0
         {
@@ -895,36 +904,45 @@ pub(super) fn try_decode_freeform_surfaces(
         }
         drop(fallback_surfaces);
         drop(fallback_surface_storage);
-        // The bindings this call returns are read by the standard-family route
-        // alone; here the call is made for the curves and surfaces it appends.
         if let Err(error) = append_consolidated_revolutions(
             &mut ir,
             &mut annotations,
-            &resolved_consolidated_revolutions,
+            &resolved_consolidated_revolutions.0,
+            false,
             &mut admission,
         ) {
             return Some(Err(error));
         }
-        if let Err(error) =
-            append_a8_rolling_ball_pools(&mut ir, &mut annotations, &scan.data, &mut admission)
-        {
+        drop(resolved_consolidated_revolutions);
+        let rolling_ball_result = match &a8_jet_pool {
+            Some(jets) => {
+                append_a8_rolling_ball_curves(&mut ir, &mut annotations, &jets.0, &mut admission)
+            }
+            None => {
+                append_a8_rolling_ball_pools(&mut ir, &mut annotations, &scan.data, &mut admission)
+            }
+        };
+        if let Err(error) = rolling_ball_result {
             return Some(Err(error));
         }
+        drop(a8_jet_pool);
         let line_profiles = admitted!(consolidated_line_profiles(
             ctx,
             &scan.data,
             &consolidated_records
         ));
+        let mut wire_storage = admitted!(ctx.reserve_scoped(0, "catia_freeform_standalone_wires"));
         let mut standalone_wires = Vec::new();
         for profile in admitted!(ctx
-            .admit_iter(&line_profiles, "catia_freeform_line_profiles")
+            .admit_iter(&line_profiles.0, "catia_freeform_line_profiles")
             .map_err(cadmpeg_core::CodecError::from))
         {
-            let id = admitted!(profile
+            let id = admitted!(wire_storage.with_storage(|| profile
                 .curve
                 .id
-                .try_clone_for_decode(ctx, "catia_freeform_standalone_wire_id"));
-            admitted!(ctx.push_vec(
+                .try_clone_for_decode(ctx, "catia_freeform_standalone_wire_id")));
+            admitted!(ctx.push_scoped_vec(
+                &mut wire_storage,
                 &mut standalone_wires,
                 (id, profile.range, profile.pos),
                 "catia_freeform_standalone_wires"
@@ -933,22 +951,25 @@ pub(super) fn try_decode_freeform_surfaces(
         if let Err(error) = append_consolidated_line_profiles(
             &mut ir,
             &mut annotations,
-            line_profiles,
+            line_profiles.0,
             &mut admission,
         ) {
             return Some(Err(error));
         }
+        drop(line_profiles.1);
         for curve in admitted!(ctx
-            .admit_iter(b2_nurbs_curves, "catia_freeform_b2_curve_visits")
+            .admit_iter(b2_nurbs_curves.0, "catia_freeform_b2_curve_visits")
             .map_err(cadmpeg_core::CodecError::from))
         {
-            let id = admitted!(crate::resource::compose_index_id(
-                ctx,
-                &cadmpeg_ir::identity_namespace!("catia", "b2", "nurbs-curve"),
-                ir.model.curves.len(),
-                CurveId::mint,
-                "catia_freeform_b2_curve_id"
-            ));
+            let id = admitted!(
+                wire_storage.with_storage(|| crate::resource::compose_index_id(
+                    ctx,
+                    &cadmpeg_ir::identity_namespace!("catia", "b2", "nurbs-curve"),
+                    ir.model.curves.len(),
+                    CurveId::mint,
+                    "catia_freeform_b2_curve_id"
+                ))
+            );
             let parameter_range = curve.geometry.full_knot_endpoints();
             admitted!(annotate(
                 ctx,
@@ -973,23 +994,27 @@ pub(super) fn try_decode_freeform_surfaces(
                     format_args!("{:010}", curve.pos),
                 ))),
             });
-            admitted!(ctx.push_vec(
+            admitted!(ctx.push_scoped_vec(
+                &mut wire_storage,
                 &mut standalone_wires,
                 (id, parameter_range.endpoints(), curve.pos),
                 "catia_freeform_standalone_wires"
             ));
         }
+        drop(b2_nurbs_curves.1);
         for curve in admitted!(ctx
-            .admit_iter(a5_nurbs_curves, "catia_freeform_a5_curve_visits")
+            .admit_iter(a5_nurbs_curves.0, "catia_freeform_a5_curve_visits")
             .map_err(cadmpeg_core::CodecError::from))
         {
-            let id = admitted!(crate::resource::compose_index_id(
-                ctx,
-                &cadmpeg_ir::identity_namespace!("catia", "a5", "nurbs-curve"),
-                ir.model.curves.len(),
-                CurveId::mint,
-                "catia_freeform_a5_curve_id"
-            ));
+            let id = admitted!(
+                wire_storage.with_storage(|| crate::resource::compose_index_id(
+                    ctx,
+                    &cadmpeg_ir::identity_namespace!("catia", "a5", "nurbs-curve"),
+                    ir.model.curves.len(),
+                    CurveId::mint,
+                    "catia_freeform_a5_curve_id"
+                ))
+            );
             let parameter_range = curve.geometry.full_knot_endpoints();
             admitted!(annotate(
                 ctx,
@@ -1014,23 +1039,27 @@ pub(super) fn try_decode_freeform_surfaces(
                     format_args!("{:010}", curve.pos),
                 ))),
             });
-            admitted!(ctx.push_vec(
+            admitted!(ctx.push_scoped_vec(
+                &mut wire_storage,
                 &mut standalone_wires,
                 (id, parameter_range.endpoints(), curve.pos),
                 "catia_freeform_standalone_wires"
             ));
         }
+        drop(a5_nurbs_curves.1);
         for circle in admitted!(ctx
-            .admit_iter(&b2_spatial_circles, "catia_freeform_spatial_circles")
+            .admit_iter(&b2_spatial_circles.0, "catia_freeform_spatial_circles")
             .map_err(cadmpeg_core::CodecError::from))
         {
-            let id = admitted!(crate::resource::compose_index_id(
-                ctx,
-                &cadmpeg_ir::identity_namespace!("catia", "b2", "circle"),
-                ir.model.curves.len(),
-                CurveId::mint,
-                "catia_freeform_b2_circle_id"
-            ));
+            let id = admitted!(
+                wire_storage.with_storage(|| crate::resource::compose_index_id(
+                    ctx,
+                    &cadmpeg_ir::identity_namespace!("catia", "b2", "circle"),
+                    ir.model.curves.len(),
+                    CurveId::mint,
+                    "catia_freeform_b2_circle_id"
+                ))
+            );
             let parameter_range = [
                 circle.range.lower() / circle.radius.get(),
                 circle.range.upper() / circle.radius.get(),
@@ -1069,12 +1098,14 @@ pub(super) fn try_decode_freeform_surfaces(
                     format_args!("{:010}", circle.pos),
                 ))),
             });
-            admitted!(ctx.push_vec(
+            admitted!(ctx.push_scoped_vec(
+                &mut wire_storage,
                 &mut standalone_wires,
                 (id, parameter_range, circle.pos),
                 "catia_freeform_standalone_wires"
             ));
         }
+        drop(b2_spatial_circles);
         let wire_topology_transferred = if !topology_transferred
             && ir.model.surfaces.is_empty()
             && standalone_wires.len() == ir.model.curves.len()
@@ -1092,6 +1123,10 @@ pub(super) fn try_decode_freeform_surfaces(
         } else {
             false
         };
+        let attached_wire_edge_count =
+            usize::from(wire_topology_transferred) * standalone_wires.len();
+        drop(standalone_wires);
+        drop(wire_storage);
         let mut losses = Vec::new();
         if !wire_topology_transferred {
             if topology_transferred && b5_complete {
@@ -1218,7 +1253,7 @@ pub(super) fn try_decode_freeform_surfaces(
         if let Err(error) = coverage.record(
             ctx,
             crate::coverage::ATTACHED_STANDALONE_WIRE_EDGE_COUNT,
-            usize::from(wire_topology_transferred) * standalone_wires.len(),
+            attached_wire_edge_count,
         ) {
             return Some(Err(error));
         }
@@ -2004,11 +2039,18 @@ struct ConsolidatedLineProfile {
 
 /// Every exact consolidated line carrier the records state, independently of
 /// its parameter chart.
-fn consolidated_line_profiles(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn consolidated_line_profiles<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
-) -> Result<Vec<ConsolidatedLineProfile>, cadmpeg_core::CodecError> {
+) -> Result<
+    (
+        Vec<ConsolidatedLineProfile>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    cadmpeg_core::CodecError,
+> {
+    let mut storage = ctx.reserve_scoped(0, "catia_consolidated_line_profiles")?;
     let mut profiles = Vec::new();
     for (index, line) in
         crate::families::b2::records::b2_line_profiles_from_records(ctx, data, records)?.enumerate()
@@ -2022,7 +2064,8 @@ fn consolidated_line_profiles(
         )?;
         let payload =
             cadmpeg_ir::geometry::analytic::LineCurve::new(line.origin, line.direction.into());
-        ctx.push_vec(
+        ctx.push_scoped_vec(
+            &mut storage,
             &mut profiles,
             ConsolidatedLineProfile {
                 curve: Curve {
@@ -2040,7 +2083,7 @@ fn consolidated_line_profiles(
             "catia_consolidated_line_profiles",
         )?;
     }
-    Ok(profiles)
+    Ok((profiles, storage))
 }
 
 /// Transfer every exact consolidated line carrier.
@@ -2264,12 +2307,9 @@ pub(super) fn append_freeform_surface_pools(
     }
 
     drop(offsets);
-    append_consolidated_line_profiles(
-        ir,
-        annotations,
-        consolidated_line_profiles(admission.context(), data, records)?,
-        admission,
-    )?;
+    let profiles = consolidated_line_profiles(admission.context(), data, records)?;
+    append_consolidated_line_profiles(ir, annotations, profiles.0, admission)?;
+    drop(profiles.1);
 
     let guides =
         admission
@@ -4986,9 +5026,18 @@ fn append_a8_rolling_ball_pools(
         .with_scoped_storage("catia_freeform_a8_jet_record_workspace", || {
             crate::families::a5a8::records::a8_freeform_curves(admission.context(), data)
         })?;
+    append_a8_rolling_ball_curves(ir, annotations, &jets.0, admission)
+}
+
+fn append_a8_rolling_ball_curves(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
+    jets: &[crate::families::a5a8::records::A8FreeformCurve],
+    admission: &mut FamilyEntityAdmission<'_, '_>,
+) -> Result<(), cadmpeg_core::CodecError> {
     for jet in admission
         .context()
-        .admit_iter(&jets.0, "catia_freeform_a8_jets")?
+        .admit_iter(jets, "catia_freeform_a8_jets")?
     {
         let Some(definition) =
             crate::families::a5a8::records::rolling_ball_jet_definition(admission.context(), jet)?
@@ -5197,7 +5246,7 @@ mod tests {
     use super::{
         append_consolidated_line_profiles, append_freeform_surface_pools,
         append_resolved_consolidated_surface_curves, attach_standalone_wires,
-        consolidated_line_profiles, freeform_surface_carriers, pcurve_lift_reaches_endpoints,
+        freeform_surface_carriers, pcurve_lift_reaches_endpoints,
         rechart_equivalent_surface_pcurve, same_surface_locus, standard_carrier_surface_ids,
         typed_face_counts, unique_endpoint_pair_match, unique_paired_surface_lift_match,
         ConsolidatedCarrierChart, FreeformSurfacePool, RechartFailure,
@@ -5266,6 +5315,15 @@ mod tests {
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.operation == "catia consolidated pcurve points")
         );
+    }
+
+    fn consolidated_line_profiles(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        data: &[u8],
+        records: &[crate::wire::records::ConsolidatedRecord],
+    ) -> Result<Vec<super::ConsolidatedLineProfile>, cadmpeg_core::CodecError> {
+        super::consolidated_line_profiles(ctx, data, records)
+            .and_then(|(profiles, storage)| storage.commit_value(profiles))
     }
 
     fn with_admission<T>(run: impl FnOnce(&mut super::FamilyEntityAdmission<'_, '_>) -> T) -> T {
@@ -5359,6 +5417,7 @@ mod tests {
                 &mut ir,
                 &mut AnnotationBuilder::new(),
                 &resolved,
+                true,
                 &mut admission,
             ) else {
                 panic!("the directrix exceeds the zero-entity allowance");
@@ -5390,8 +5449,10 @@ mod tests {
                 &mut CadIr::empty(),
                 &mut AnnotationBuilder::new(),
                 &resolved,
+                true,
                 &mut admission,
             )
+            .and_then(|(bindings, storage)| storage.commit_value(bindings))
         });
         assert!(
             matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -6887,5 +6948,6 @@ mod tests {
 
     mod budget_records;
     mod rechart_cases;
+    mod source_ownership;
     mod wire_candidates;
 }

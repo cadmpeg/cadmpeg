@@ -311,6 +311,7 @@ fn indexed_a5_record_decoders_match_one_shot_wrappers() {
                 &records,
                 &mut crate::nurbs::LaneRefusals::new(),
             )
+            .and_then(|(curves, storage)| storage.commit_value(curves))
             .expect("service decode")
         })
     );
@@ -671,4 +672,60 @@ fn decode_inner_no_directory_transfers_a8_nurbs() {
             .map(|source| (source.format.as_str(), source.object_id.as_str())),
         Some(("catia", "cgm-surface:decafbad"))
     );
+}
+
+#[test]
+fn a5_nurbs_source_headers_are_scoped_while_geometry_survives() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+    let bytes = a5_nurbs_curve_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let _probe = RefusalProbe::arm(
+        ResourceDimension::RetainedBytes,
+        "catia_a5_nurbs_curves",
+        None,
+    );
+    crate::test_support::with_materialized_limit(16_384, |ctx| {
+        let (mut curves, storage) = crate::families::a5a8::records::a5_nurbs_curves_from_records(
+            ctx,
+            &bytes,
+            &records,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("only source headers are temporary");
+        assert_eq!(curves.len(), 1);
+        let geometry = curves.pop().expect("decoded curve").geometry;
+        drop(curves);
+        drop(storage);
+        let _all_scratch = ctx
+            .reserve_scoped(16_384, "curve source headers released")
+            .expect("source headers no longer own scratch");
+        assert_eq!(geometry.degree(), 5);
+    });
+    drop(_probe);
+    let file = crate::test_support::test_container::standard_catpart_from_streams(&bytes, &[]);
+    for operation in [
+        "catia_a5_nurbs_curves",
+        "catia_freeform_a5_curve_id",
+        "catia_freeform_standalone_wires",
+    ] {
+        let _probe = RefusalProbe::arm(ResourceDimension::RetainedBytes, operation, None);
+        let output = crate::test_support::with_service_context(|ctx| {
+            let scan = crate::container::scan_bytes(ctx, file.as_slice())?;
+            crate::families::freeform::try_decode_freeform_surfaces(
+                ctx,
+                &scan,
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+        })
+        .expect("source slots and wire inputs are temporary")
+        .expect("freeform curve family");
+        assert_eq!(output.ir.model.curves.len(), 1);
+        assert_eq!(output.ir.model.edges.len(), 1);
+        assert!(matches!(
+            output.ir.model.curves[0].geometry,
+            cadmpeg_ir::geometry::CurveGeometry::Solved(
+                cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(_)
+            )
+        ));
+    }
 }
