@@ -192,3 +192,13 @@ fn positional_section_header_and_multibyte_rows_stay_in_definition() {
     assert_eq!(section.sketch_plane_entity_id, Some(1));
     assert_eq!(section.reference_planes.entity_ids().collect::<Vec<_>>(), [6]);
 }
+
+#[test]
+fn named_section_reference_stops_before_saved_result() {
+    let payload = b"\xe0\0gsec3d_ptr\0\xe0\0ref_planes\0\xf8\x01\xf7\x80\
+        \xe0\0p_saved_result\0";
+    let section = crate::decode::with_test_decode_ctx(|ctx| {
+        crate::feature::definitions::section_3d(ctx, payload, 0, payload.len())
+    }).expect("placement admitted").expect("named placement");
+    assert_eq!(section.reference_planes, ReferencePlanes::Named(Vec::new()));
+}
