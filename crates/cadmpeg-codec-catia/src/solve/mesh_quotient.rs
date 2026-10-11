@@ -8,8 +8,6 @@ use cadmpeg_core::decode::{work_units, DecodeContext, ScopedReservation, WorkBud
 #[cfg(test)]
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 use cadmpeg_core::CodecError;
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 
 /// Words in a zeroed bitset over `bits` positions.
 ///
@@ -60,6 +58,8 @@ pub(in crate::solve) mod coordinate_assignment;
 use coordinate_assignment::{point_support_run, MeshCoordinateRootDomains, MeshEndpointCandidates};
 #[cfg(test)]
 use coordinate_assignment::{MeshImplicitEdgeCandidateSource, MeshImplicitEdgeCandidates};
+mod orientation;
+use orientation::admit_orientation_option;
 pub(in crate::solve) mod selection_search;
 use selection_search::{
     canonical_singleton_coordinate_cycles, reconstruct_singleton_coordinate_topology,
@@ -1081,16 +1081,12 @@ impl<'storage> MeshQuotient<'storage> {
                 &mut edges,
                 "catia_quotient_component_edges",
             )?;
-            if edges.len() <= 2 {
-                edges.sort_unstable();
-            } else {
-                ctx.sort_unstable_by(
-                    &mut edges,
-                    |edge| edge,
-                    Ord::cmp,
-                    "catia_quotient_component_edges_sort",
-                )?;
-            }
+            ctx.sort_unstable_by(
+                &mut edges,
+                |edge| edge,
+                Ord::cmp,
+                "catia_quotient_component_edges_sort",
+            )?;
             ctx.dedup_vec(&mut edges, "catia_quotient_component_edges_dedup")
         })?;
         self.propagate_edge_domains(ctx, &edges, edge_candidates, budget)
@@ -2557,16 +2553,12 @@ fn deferred_face_quotient_options_limited<'storage>(
             )?;
         }
     }
-    if base_nodes.len() <= 2 {
-        base_nodes.sort_unstable();
-    } else {
-        ctx.sort_unstable_by(
-            &mut base_nodes,
-            |value| value,
-            Ord::cmp,
-            "catia_deferred_base_nodes_sort",
-        )?;
-    }
+    ctx.sort_unstable_by(
+        &mut base_nodes,
+        |value| value,
+        Ord::cmp,
+        "catia_deferred_base_nodes_sort",
+    )?;
     ctx.dedup_vec(&mut base_nodes, "catia_deferred_base_nodes_dedup")?;
     // Base roots are ascending, so a root's local node is its position.
     let local_node = |node: usize| -> Result<usize, CodecError> {
@@ -2619,16 +2611,12 @@ fn deferred_face_quotient_options_limited<'storage>(
                     "catia_deferred_ranked_gaps",
                 )?;
             }
-            if ranked_gaps.len() <= 2 {
-                ranked_gaps.sort_unstable_by_key(|value| value.1);
-            } else {
-                ctx.sort_unstable_by(
-                    &mut ranked_gaps,
-                    |value| &value.1,
-                    Ord::cmp,
-                    "catia_deferred_ranked_gaps_sort",
-                )?;
-            }
+            ctx.sort_unstable_by(
+                &mut ranked_gaps,
+                |value| &value.1,
+                Ord::cmp,
+                "catia_deferred_ranked_gaps_sort",
+            )?;
             let mut gaps = Vec::new();
             for (gap, _) in ctx.admit_iter(ranked_gaps, "catia_deferred_sorted_gaps")? {
                 ctx.push_vec(&mut gaps, gap, "catia_deferred_sorted_gaps")?;
@@ -3117,9 +3105,7 @@ pub(super) fn propagate_common_ordered_face_quotients<'storage>(
                 MeshFaceBoundaryDomain::Ordered(assignments) => (1, assignments.len()),
                 MeshFaceBoundaryDomain::UnorderedFullCycle(_) => (2, 0),
             };
-            if face_order.len() <= 2 {
-                face_order.sort_unstable_by_key(order_key);
-            } else if let Err(error) = ctx.sort_unstable_by_key(
+            if let Err(error) = ctx.sort_unstable_by_key(
                 &mut face_order,
                 |value| order_key(value),
                 Ord::cmp,
@@ -3457,16 +3443,12 @@ fn mesh_boundary_domain_edges(
             }
         }
     }
-    if edges.len() <= 2 {
-        edges.sort_unstable();
-    } else {
-        ctx.sort_unstable_by(
-            &mut edges,
-            |value| value,
-            Ord::cmp,
-            "catia_boundary_domain_edges_sort",
-        )?;
-    }
+    ctx.sort_unstable_by(
+        &mut edges,
+        |value| value,
+        Ord::cmp,
+        "catia_boundary_domain_edges_sort",
+    )?;
     ctx.dedup_vec(&mut edges, "catia_boundary_domain_edges_dedup")?;
     Ok(edges)
 }
@@ -3574,16 +3556,12 @@ pub(super) fn bounded_unordered_cycle_assignments<'storage>(
         ctx.with_scoped_storage("catia_unordered_preparation", || {
             let edge_count = edges.len();
             let mut edges = ctx.copy_slice(edges, "catia_unordered_sorted_edges")?;
-            if edges.len() <= 2 {
-                edges.sort_unstable();
-            } else {
-                ctx.sort_unstable_by(
-                    &mut edges,
-                    |value| value,
-                    Ord::cmp,
-                    "catia_unordered_sorted_edges_sort",
-                )?;
-            }
+            ctx.sort_unstable_by(
+                &mut edges,
+                |value| value,
+                Ord::cmp,
+                "catia_unordered_sorted_edges_sort",
+            )?;
             ctx.dedup_vec(&mut edges, "catia_unordered_sorted_edges_dedup")?;
             if edges.len() != edge_count {
                 return Ok(None);
@@ -4217,165 +4195,6 @@ struct CachedFaceEquations<'storage> {
 type MeshFaceEquationCache<'storage> =
     RefCell<HashMap<(usize, MeshQuotientSignature), CachedFaceEquations<'storage>>>;
 
-fn canonical_direction_bit(row: &[bool], index: usize) -> bool {
-    row[index] ^ row.first().copied().unwrap_or(false)
-}
-
-/// The least node of each node's class, indexed by node. Ascending nodes
-/// meet each class first at its least node.
-fn quotient_class_firsts(
-    ctx: &DecodeContext<'_>,
-    quotient: &MeshQuotient<'_>,
-    operation: &'static str,
-) -> Result<Vec<usize>, CodecError> {
-    let node_count = quotient.union.len();
-    let (mut first_by_root, _root_storage) =
-        ctx.with_scoped_storage(operation, || ctx.alloc_filled(node_count, None, operation))?;
-    let mut firsts = ctx.collection_vec(node_count, operation)?;
-    for node in ctx.admit_iter(0..node_count, operation)? {
-        let root = quotient.union.find(ctx, node)?;
-        firsts.push(*first_by_root[root].get_or_insert(node));
-    }
-    Ok(firsts)
-}
-
-/// Hashes the canonical boundary directions: each row relative to its first
-/// direction.
-fn hash_canonical_directions(
-    ctx: &DecodeContext<'_>,
-    directions: &[Vec<bool>],
-    hasher: &mut DefaultHasher,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    directions.len().hash(hasher);
-    for row in ctx.admit_iter(directions, operation)? {
-        row.len().hash(hasher);
-        for index in ctx.admit_iter(0..row.len(), operation)? {
-            canonical_direction_bit(row, index).hash(hasher);
-        }
-    }
-    Ok(())
-}
-
-fn orientation_fingerprint(
-    ctx: &DecodeContext<'_>,
-    quotient: &MeshQuotient<'_>,
-    directions: &[Vec<bool>],
-) -> Result<u64, CodecError> {
-    const OPERATION: &str = "catia_orientation_fingerprint";
-    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
-    let firsts = storage.with_storage(|| quotient_class_firsts(ctx, quotient, OPERATION))?;
-    let mut hasher = DefaultHasher::new();
-    firsts.len().hash(&mut hasher);
-    for (node, &first) in ctx.admit_iter(&firsts, OPERATION)?.enumerate() {
-        first.hash(&mut hasher);
-        if first == node {
-            let root = quotient.union.find(ctx, node)?;
-            ctx.hash_value(&quotient.domains[root][..], OPERATION)?
-                .hash(&mut hasher);
-        }
-    }
-    hash_canonical_directions(ctx, directions, &mut hasher, OPERATION)?;
-    Ok(hasher.finish())
-}
-
-fn orientation_options_equivalent<'storage>(
-    ctx: &DecodeContext<'_>,
-    left_quotient: &MeshQuotient<'storage>,
-    left_directions: &[Vec<bool>],
-    right_quotient: &MeshQuotient<'storage>,
-    right_directions: &[Vec<bool>],
-) -> Result<bool, CodecError> {
-    const OPERATION: &str = "catia_orientation_equivalence";
-    if left_quotient.union.len() != right_quotient.union.len()
-        || left_directions.len() != right_directions.len()
-    {
-        return Ok(false);
-    }
-    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
-    let (left_firsts, right_firsts) = storage.with_storage(|| {
-        Ok::<_, CodecError>((
-            quotient_class_firsts(ctx, left_quotient, OPERATION)?,
-            quotient_class_firsts(ctx, right_quotient, OPERATION)?,
-        ))
-    })?;
-    if !ctx.equal(&left_firsts, &right_firsts, OPERATION)? {
-        return Ok(false);
-    }
-    // Equal class firsts give both quotients the same classes; each class
-    // domain is compared once, at its least node.
-    let mut admitted_visits = (left_firsts).iter().enumerate();
-    while let Some((node, &first)) = ctx.next_charged(&mut admitted_visits, OPERATION)? {
-        if first != node {
-            continue;
-        }
-        let left = &left_quotient.domains[left_quotient.union.find(ctx, node)?];
-        let right = &right_quotient.domains[right_quotient.union.find(ctx, node)?];
-        if left.len() != right.len() || !ctx.equal(&left[..], &right[..], OPERATION)? {
-            return Ok(false);
-        }
-    }
-    ctx.all_by(
-        left_directions.iter().zip(right_directions),
-        |(left, right)| {
-            Ok(left.len() == right.len()
-                && ctx.all_by(
-                    0..left.len(),
-                    |index| {
-                        Ok(canonical_direction_bit(left, index)
-                            == canonical_direction_bit(right, index))
-                    },
-                    OPERATION,
-                )?)
-        },
-        OPERATION,
-    )
-}
-
-/// Keeps an orientation option unless an equivalent one is already in
-/// `output`; options are bucketed by fingerprint.
-fn admit_orientation_option<'storage>(
-    ctx: &'storage DecodeContext<'_>,
-    seen: &mut HashMap<u64, Vec<usize>>,
-    seen_storage: &mut ScopedReservation<'_>,
-    output: &[MeshOrientationOption<'storage>],
-    directions: &[Vec<bool>],
-    quotient: &MeshQuotient<'storage>,
-) -> Result<bool, CodecError> {
-    let fingerprint = orientation_fingerprint(ctx, quotient, directions)?;
-    if let Some(indices) =
-        ctx.get_hash_map(seen, &fingerprint, "catia_orientation_fingerprint_keys")?
-    {
-        let equivalent = ctx.any_by(
-            indices,
-            |&index| {
-                let (prior_directions, prior_quotient) = &output[index];
-                orientation_options_equivalent(
-                    ctx,
-                    quotient,
-                    directions,
-                    prior_quotient,
-                    prior_directions,
-                )
-            },
-            "catia_orientation_dedup_compare",
-        )?;
-        if equivalent {
-            return Ok(false);
-        }
-    }
-    seen_storage.with_storage(|| {
-        ctx.push_vec(
-            ctx.entry_hash_map(seen, fingerprint, "catia_orientation_fingerprint_keys")?
-                .or_default(),
-            output.len(),
-            "catia_orientation_fingerprint_indices",
-        )?;
-        Ok::<_, CodecError>(())
-    })?;
-    Ok(true)
-}
-
 /// Search-order information for same-class rows with identical endpoint
 /// domains. The dependency order reduces branching overhead without assigning
 /// endpoint values to row positions.
@@ -4413,16 +4232,12 @@ fn edge_class_search_constraint(
                 {
                     *normalized_pair = [left.min(right), left.max(right)];
                 }
-                if row.len() <= 2 {
-                    row.sort_unstable();
-                } else {
-                    ctx.sort_unstable_by(
-                        row,
-                        |value| value,
-                        Ord::cmp,
-                        "catia_edge_class_normalized_pairs_sort",
-                    )?;
-                }
+                ctx.sort_unstable_by(
+                    row,
+                    |value| value,
+                    Ord::cmp,
+                    "catia_edge_class_normalized_pairs_sort",
+                )?;
                 ctx.dedup_vec(row, "catia_edge_class_normalized_pairs_dedup")?;
             }
             Ok::<_, CodecError>(normalized)
@@ -4473,16 +4288,12 @@ fn edge_class_search_constraint(
             previous = Some(edge);
         }
     }
-    if ordered.len() <= 2 {
-        ordered.sort_unstable();
-    } else {
-        ctx.sort_unstable_by(
-            &mut ordered,
-            |pair| pair,
-            Ord::cmp,
-            "catia_edge_class_ordered_pairs_sort",
-        )?;
-    }
+    ctx.sort_unstable_by(
+        &mut ordered,
+        |pair| pair,
+        Ord::cmp,
+        "catia_edge_class_ordered_pairs_sort",
+    )?;
     Ok(Some(EdgeClassSearchConstraint { active, ordered }))
 }
 
@@ -4656,16 +4467,12 @@ fn possible_face_equations(
                 }
             }
         }
-        if equations.len() <= 2 {
-            equations.sort_unstable();
-        } else {
-            ctx.sort_unstable_by(
-                &mut equations,
-                |value| value,
-                Ord::cmp,
-                "catia mesh possible face equations sort",
-            )?;
-        }
+        ctx.sort_unstable_by(
+            &mut equations,
+            |value| value,
+            Ord::cmp,
+            "catia mesh possible face equations sort",
+        )?;
         ctx.dedup_vec(&mut equations, "catia_possible_face_equation_keys")?;
         ctx.push_vec(
             &mut faces_equations,
@@ -4797,16 +4604,12 @@ fn possible_face_choices_with_limit(
                                 )?;
                             }
                         }
-                        if equations.len() <= 2 {
-                            equations.sort_unstable();
-                        } else {
-                            ctx.sort_unstable_by(
-                                &mut equations,
-                                |value| value,
-                                Ord::cmp,
-                                "catia_possible_face_choice_equations_sort",
-                            )?;
-                        }
+                        ctx.sort_unstable_by(
+                            &mut equations,
+                            |value| value,
+                            Ord::cmp,
+                            "catia_possible_face_choice_equations_sort",
+                        )?;
                         ctx.dedup_vec(
                             &mut equations,
                             "catia_possible_face_choice_equations_dedup",
@@ -5041,16 +4844,12 @@ pub(super) fn mesh_assignment_endpoint_cycles_viable_by<'a>(
                     )?;
                 }
             }
-            if adjacency.len() <= 2 {
-                adjacency.sort_unstable();
-            } else {
-                ctx.sort_unstable_by(
-                    &mut adjacency,
-                    |value| value,
-                    Ord::cmp,
-                    "catia_endpoint_viability_neighbors_sort",
-                )?;
-            }
+            ctx.sort_unstable_by(
+                &mut adjacency,
+                |value| value,
+                Ord::cmp,
+                "catia_endpoint_viability_neighbors_sort",
+            )?;
             ctx.dedup_vec(&mut adjacency, "catia_endpoint_viability_neighbors_dedup")?;
             Ok((!adjacency.is_empty()).then_some(adjacency))
         }
@@ -5408,16 +5207,12 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
                             )?;
                         }
                     }
-                    if retained.len() <= 2 {
-                        retained.sort_unstable();
-                    } else {
-                        ctx.sort_unstable_by(
-                            &mut retained,
-                            |value| value,
-                            Ord::cmp,
-                            "catia_endpoint_layer_retained_pairs_sort",
-                        )?;
-                    }
+                    ctx.sort_unstable_by(
+                        &mut retained,
+                        |value| value,
+                        Ord::cmp,
+                        "catia_endpoint_layer_retained_pairs_sort",
+                    )?;
                     ctx.dedup_vec(&mut retained, "catia_endpoint_layer_retained_pairs_dedup")?;
                     if retained.is_empty() {
                         return Ok(ControlFlow::Break(Some(unsupported())));
@@ -6089,16 +5884,12 @@ fn endpoint_configuration_for_assignment(
             )?;
         }
     }
-    if configuration.len() <= 2 {
-        configuration.sort_unstable();
-    } else {
-        ctx.sort_unstable_by(
-            &mut configuration,
-            |value| value,
-            Ord::cmp,
-            "catia_endpoint_assignment_configuration_sort",
-        )?;
-    }
+    ctx.sort_unstable_by(
+        &mut configuration,
+        |value| value,
+        Ord::cmp,
+        "catia_endpoint_assignment_configuration_sort",
+    )?;
     ctx.dedup_vec(
         &mut configuration,
         "catia_endpoint_assignment_configuration_dedup",
@@ -6387,16 +6178,12 @@ impl MeshEndpointRelationSelection {
             } => {
                 let mut assignments =
                     ctx.copy_slice(assignments, "catia_relation_normalized_assignments")?;
-                if assignments.len() <= 2 {
-                    assignments.sort_unstable();
-                } else {
-                    ctx.sort_unstable_by(
-                        &mut assignments,
-                        |value| value,
-                        Ord::cmp,
-                        "catia_relation_normalized_assignments_sort",
-                    )?;
-                }
+                ctx.sort_unstable_by(
+                    &mut assignments,
+                    |value| value,
+                    Ord::cmp,
+                    "catia_relation_normalized_assignments_sort",
+                )?;
                 ctx.dedup_vec(
                     &mut assignments,
                     "catia_relation_normalized_assignments_dedup",
@@ -6408,16 +6195,12 @@ impl MeshEndpointRelationSelection {
                 {
                     *pair = [pair[0].min(pair[1]), pair[0].max(pair[1])];
                 }
-                if edge_pairs.len() <= 2 {
-                    edge_pairs.sort_unstable();
-                } else {
-                    ctx.sort_unstable_by(
-                        &mut edge_pairs,
-                        |value| value,
-                        Ord::cmp,
-                        "catia_relation_normalized_pairs_sort",
-                    )?;
-                }
+                ctx.sort_unstable_by(
+                    &mut edge_pairs,
+                    |value| value,
+                    Ord::cmp,
+                    "catia_relation_normalized_pairs_sort",
+                )?;
                 Ok(Self::Enumerated {
                     assignments,
                     edge_pairs,
@@ -6557,16 +6340,12 @@ fn relation_coordinate_candidate_domains(
                 }
             }
             for row in ctx.admit_iter(&mut possible, "catia_relation_coordinate_possible_pairs")? {
-                if row.len() <= 2 {
-                    row.sort_unstable();
-                } else {
-                    ctx.sort_unstable_by(
-                        row,
-                        |pair| pair,
-                        Ord::cmp,
-                        "catia_relation_coordinate_possible_pairs_sort",
-                    )?;
-                }
+                ctx.sort_unstable_by(
+                    row,
+                    |pair| pair,
+                    Ord::cmp,
+                    "catia_relation_coordinate_possible_pairs_sort",
+                )?;
             }
             Ok::<_, CodecError>(true)
         })?
@@ -6727,16 +6506,12 @@ fn build_endpoint_relation_constraints(
                     }
                 }
             }
-            if edge_faces.len() <= 2 {
-                edge_faces.sort_unstable();
-            } else {
-                ctx.sort_unstable_by(
-                    &mut edge_faces,
-                    |entry| entry,
-                    Ord::cmp,
-                    "catia_endpoint_relation_sorted_faces_sort",
-                )?;
-            }
+            ctx.sort_unstable_by(
+                &mut edge_faces,
+                |entry| entry,
+                Ord::cmp,
+                "catia_endpoint_relation_sorted_faces_sort",
+            )?;
             ctx.dedup_vec(&mut edge_faces, "catia_endpoint_relation_sorted_faces")?;
             // ((face, neighbor), edge) for every edge two faces share, both ways.
             let mut shared_edges = Vec::new();
@@ -6769,16 +6544,12 @@ fn build_endpoint_relation_constraints(
                     }
                 }
             }
-            if shared_edges.len() <= 2 {
-                shared_edges.sort_unstable();
-            } else {
-                ctx.sort_unstable_by(
-                    &mut shared_edges,
-                    |entry| entry,
-                    Ord::cmp,
-                    "catia_endpoint_relation_shared_rows_sort",
-                )?;
-            }
+            ctx.sort_unstable_by(
+                &mut shared_edges,
+                |entry| entry,
+                Ord::cmp,
+                "catia_endpoint_relation_shared_rows_sort",
+            )?;
             let mut shared_rows = Vec::new();
             let mut start = 0;
             while start < shared_edges.len() {
@@ -7109,17 +6880,12 @@ fn propagate_endpoint_relation_domains(
                             ctx.push_vec(&mut pairs, entry, "catia_endpoint_relation_pair_values")?;
                         }
                     }
-                    if pairs.len() <= 2 {
-                        pairs.sort_unstable();
-                        Ok(())
-                    } else {
-                        ctx.sort_unstable_by(
-                            &mut pairs,
-                            |entry| entry,
-                            Ord::cmp,
-                            "catia_endpoint_relation_pair_keys",
-                        )
-                    }
+                    ctx.sort_unstable_by(
+                        &mut pairs,
+                        |entry| entry,
+                        Ord::cmp,
+                        "catia_endpoint_relation_pair_keys",
+                    )
                 })?;
                 let mut start = 0;
                 while start < pairs.len() {
@@ -7746,16 +7512,12 @@ where
                     .cmp(left_score)
                     .then_with(|| choices[*left].id.cmp(&choices[*right].id))
             };
-            if branch_order.len() <= 2 {
-                branch_order.sort_unstable_by(compare);
-            } else {
-                ctx.sort_unstable_by(
-                    &mut branch_order,
-                    |value| value,
-                    compare,
-                    "catia mesh endpoint relation branch order sort",
-                )?;
-            }
+            ctx.sort_unstable_by(
+                &mut branch_order,
+                |value| value,
+                compare,
+                "catia mesh endpoint relation branch order sort",
+            )?;
             Ok::<_, CodecError>(Some(branch_order))
         })?
     };
@@ -7853,16 +7615,12 @@ fn collect_endpoint_relation_face_choices(
                     )? {
                         *pair = [pair[0].min(pair[1]), pair[0].max(pair[1])];
                     }
-                    if relation_configuration.len() <= 2 {
-                        relation_configuration.sort_unstable();
-                    } else {
-                        ctx.sort_unstable_by(
-                            &mut relation_configuration,
-                            |value| value,
-                            Ord::cmp,
-                            "catia_endpoint_relation_config_pairs_sort",
-                        )?;
-                    }
+                    ctx.sort_unstable_by(
+                        &mut relation_configuration,
+                        |value| value,
+                        Ord::cmp,
+                        "catia_endpoint_relation_config_pairs_sort",
+                    )?;
                     ctx.push_vec(
                         &mut viable,
                         (relation_configuration, assignment),
@@ -9531,16 +9289,12 @@ pub(super) fn prune_mesh_endpoint_pair_support_with_limit(
                     }
                 }
             }
-            if incidences.len() <= 2 {
-                incidences.sort_unstable();
-            } else {
-                ctx.sort_unstable_by(
-                    &mut incidences,
-                    |entry| entry,
-                    Ord::cmp,
-                    "catia_prune_incident_faces_sort",
-                )?;
-            }
+            ctx.sort_unstable_by(
+                &mut incidences,
+                |entry| entry,
+                Ord::cmp,
+                "catia_prune_incident_faces_sort",
+            )?;
             ctx.dedup_vec(&mut incidences, "catia_prune_incident_faces")?;
             Ok::<_, CodecError>(incidences)
         })?;
@@ -13313,4 +13067,50 @@ fn boundary_component_exhausted_slice_refuses_instead_of_absence() {
         assert_eq!(limit.operation, "catia_boundary_component_work");
         assert_eq!(ctx.resource_refusal(), Some(limit));
     });
+}
+
+#[cfg(test)]
+#[test]
+fn relation_assignment_pair_sort_requires_work_admission() {
+    let selection = MeshEndpointRelationSelection::Enumerated {
+        assignments: vec![2, 0],
+        edge_pairs: vec![],
+    };
+    let expected = MeshEndpointRelationSelection::Enumerated {
+        assignments: vec![0, 2],
+        edge_pairs: vec![],
+    };
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| selection.normalized(ctx))
+            .expect("admitted assignment sort"),
+        expected,
+    );
+    assert!(matches!(
+        crate::test_support::with_work_refusal("catia_relation_normalized_assignments_sort", |ctx| selection.normalized(ctx)),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_relation_normalized_assignments_sort"
+    ));
+}
+
+#[cfg(test)]
+#[test]
+fn relation_endpoint_pair_sort_requires_work_admission() {
+    let selection = MeshEndpointRelationSelection::Enumerated {
+        assignments: vec![],
+        edge_pairs: vec![(1, [3, 2]), (0, [1, 0])],
+    };
+    let expected = MeshEndpointRelationSelection::Enumerated {
+        assignments: vec![],
+        edge_pairs: vec![(0, [0, 1]), (1, [2, 3])],
+    };
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| selection.normalized(ctx))
+            .expect("admitted endpoint sort"),
+        expected,
+    );
+    assert!(matches!(
+        crate::test_support::with_work_refusal("catia_relation_normalized_pairs_sort", |ctx| selection.normalized(ctx)),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_relation_normalized_pairs_sort"
+    ));
 }

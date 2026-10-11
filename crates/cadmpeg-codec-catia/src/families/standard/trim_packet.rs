@@ -154,7 +154,11 @@ impl TrimPacket {
         while let Some(&length) = ctx.next_charged(&mut charged_visits, operation)? {
             let (strip, tail) = remaining.split_at(length);
             remaining = tail;
-            for index in ctx.admit_iter(0..length.saturating_sub(2), operation)? {
+            let triangle_indices = match length.checked_sub(2) {
+                Some(count) => 0..count,
+                None => 0..0,
+            };
+            for index in ctx.admit_iter(triangle_indices, operation)? {
                 let triple = &strip[index..index + 3];
                 triangles.push(if index % 2 == 0 {
                     [triple[0], triple[1], triple[2]]
@@ -171,7 +175,11 @@ impl TrimPacket {
             let Some((&center, rim)) = fan.split_first() else {
                 continue;
             };
-            for index in ctx.admit_iter(0..length.saturating_sub(2), operation)? {
+            let triangle_indices = match length.checked_sub(2) {
+                Some(count) => 0..count,
+                None => 0..0,
+            };
+            for index in ctx.admit_iter(triangle_indices, operation)? {
                 triangles.push([center, rim[index], rim[index + 1]]);
             }
         }
