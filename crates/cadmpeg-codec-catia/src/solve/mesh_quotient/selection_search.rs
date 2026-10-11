@@ -284,32 +284,24 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                 }
             }
         }
-        if roots.len() <= 2 {
-            roots.sort_unstable();
-        } else {
-            self.ctx.sort_unstable_by(
-                &mut roots,
-                |value| value,
-                Ord::cmp,
-                "catia_face_projection_root_order_sort",
-            )?;
-        }
+        self.ctx.sort_unstable_by(
+            &mut roots,
+            |value| value,
+            Ord::cmp,
+            "catia_face_projection_root_order_sort",
+        )?;
         ctx.dedup_vec(&mut roots, "catia_face_projection_root_order")?;
         let mut signature =
             ctx.collection_vec(roots.len(), "catia_face_projection_signature_rows")?;
         for &root in ctx.admit_iter(&roots, "catia_face_projection_signature_rows")? {
             let mut members =
                 ctx.copy_slice(quotient.members(root), "catia_face_projection_member_nodes")?;
-            if members.len() <= 2 {
-                members.sort_unstable();
-            } else {
-                self.ctx.sort_unstable_by(
-                    &mut members,
-                    |node| node,
-                    Ord::cmp,
-                    "catia_face_projection_member_order",
-                )?;
-            }
+            self.ctx.sort_unstable_by(
+                &mut members,
+                |node| node,
+                Ord::cmp,
+                "catia_face_projection_member_order",
+            )?;
             signature.push((
                 members,
                 ctx.copy_slice(

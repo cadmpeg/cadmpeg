@@ -6302,17 +6302,13 @@ while let Some((edge, bindings)) = ctx.next_charged(&mut charged_visits, "catia_
                                 let [first, second] = binding.points;
                                 limit_pairs.push([first.min(second), first.max(second)]);
                             }
-                            if limit_pairs.len() <= 2 {
-                                limit_pairs.sort_unstable();
-                            } else {
-                                ctx.sort_unstable_by(
-                                    &mut limit_pairs,
-                                    |value| value,
-                                    Ord::cmp,
-                                    "catia_limit_endpoint_pairs_sort",
-                                )
-                                .map_err(StandardTopologyError::Resource)?;
-                            }
+                            ctx.sort_unstable_by(
+                                &mut limit_pairs,
+                                |value| value,
+                                Ord::cmp,
+                                "catia_limit_endpoint_pairs_sort",
+                            )
+                            .map_err(StandardTopologyError::Resource)?;
                             if limit_pairs.len() <= 2 {
                                 limit_pairs.dedup();
                             } else {
@@ -6976,17 +6972,13 @@ while let Some((edge, _)) = ctx.next_charged(&mut charged_visits, "catia_standar
                                 "catia_standard_endpoint_option_faces",
                             )
                             .map_err(StandardTopologyError::Resource)?;
-                            if pairs.len() <= 2 {
-                                pairs.sort_unstable();
-                            } else {
-                                ctx.sort_unstable_by(
-                                    pairs,
-                                    |value| value,
-                                    Ord::cmp,
-                                    "catia_standard_endpoint_pairs_sort",
-                                )
-                                .map_err(StandardTopologyError::Resource)?;
-                            }
+                            ctx.sort_unstable_by(
+                                pairs,
+                                |value| value,
+                                Ord::cmp,
+                                "catia_standard_endpoint_pairs_sort",
+                            )
+                            .map_err(StandardTopologyError::Resource)?;
                             if pairs.len() <= 2 {
                                 pairs.dedup();
                             } else {
@@ -8994,16 +8986,12 @@ fn resolve_standard_endpoint_pairs(
                     }
                 }
             }
-            if pairs.len() <= 2 {
-                pairs.sort_unstable();
-            } else {
-                ctx.sort_unstable_by(
-                    &mut pairs,
-                    |value| value,
-                    Ord::cmp,
-                    "catia standard line endpoint pairs sort",
-                )?;
-            }
+            ctx.sort_unstable_by(
+                &mut pairs,
+                |value| value,
+                Ord::cmp,
+                "catia standard line endpoint pairs sort",
+            )?;
             if pairs.len() <= 2 {
                 pairs.dedup();
             } else {
