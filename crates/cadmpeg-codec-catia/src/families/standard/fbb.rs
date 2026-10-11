@@ -476,7 +476,7 @@ pub(super) fn prune_edge_candidates_by_port_domains_with_deferred(
         return Ok(None);
     }
     let mut storage = ctx.reserve_scoped(0, "catia_port_working_state")?;
-    let Some(mut quotient) = storage.with_storage(|| -> Result<_, CodecError> {
+    let Some(quotient) = storage.with_storage(|| -> Result<_, CodecError> {
         let mut effective_deferred = if deferred_edges.is_empty() {
             ctx.alloc_filled(
                 edge_candidates.len(),
@@ -581,8 +581,8 @@ pub(super) fn prune_edge_candidates_by_port_domains_with_deferred(
             while let Some((edge, candidates)) =
                 ctx.next_charged(&mut visits, "catia_standard_iteration")?
             {
-                let left = quotient.find(ctx, edge * 2)?;
-                let right = quotient.find(ctx, edge * 2 + 1)?;
+                let left = quotient.root(ctx, edge * 2)?;
+                let right = quotient.root(ctx, edge * 2 + 1)?;
                 let mut filtered = Vec::new();
                 let contains = |root: usize, point: usize| {
                     domain_contains(

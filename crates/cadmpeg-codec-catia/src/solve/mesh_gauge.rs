@@ -1,7 +1,7 @@
 //! Evidence-preserving gauge quotient for standard mesh candidates.
 
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_core::decode::cost::DecodeCost;
 use cadmpeg_core::decode::DecodeContext;
@@ -2818,6 +2818,8 @@ fn relation_row_gauge_mapping(
             while let Some(&edge) =
                 ctx.next_charged(&mut charged_steps, "catia_relation_signature_rows")?
             {
+                // The output lane marks rows that still need a signature mapping.
+                row_mapping[edge] = usize::MAX;
                 let assigned = match state.0[edge] {
                     Some(pair) => {
                         let Some(pair) = mapped_endpoint_pair(pair, Some(permutation)) else {
@@ -2854,20 +2856,21 @@ fn relation_row_gauge_mapping(
                     while let Some(&(edge, pair)) =
                         ctx.next_charged(&mut charged_steps, "catia_relation_signature_pairs")?
                     {
-                        if edge >= edge_count {
+                        if edge >= edge_count || row_mapping[edge] != usize::MAX {
                             continue;
                         }
                         if signature_slots.is_none() {
-                            let mut slots = ctx.alloc_filled(
-                                edge_count,
-                                None::<usize>,
-                                "catia_relation_signature_slots",
-                            )?;
+                            let mut slots = HashMap::new();
                             for (slot, (_, row)) in ctx
                                 .admit_iter(&signatures, "catia_relation_signature_slots")?
                                 .enumerate()
                             {
-                                slots[*row] = Some(slot);
+                                ctx.insert_hash_map(
+                                    &mut slots,
+                                    *row,
+                                    slot,
+                                    "catia_relation_signature_slots",
+                                )?;
                             }
                             signature_slots = Some(slots);
                         }
@@ -2876,8 +2879,12 @@ fn relation_row_gauge_mapping(
                                 "relation pair has no signature index",
                             ));
                         };
-                        let Some(&Some(slot)) = slots.get(edge) else {
-                            continue;
+                        let Some(&slot) =
+                            ctx.get_hash_map(slots, &edge, "catia_relation_signature_slots")?
+                        else {
+                            return Err(CodecError::malformed(
+                                "relation signature row has no slot",
+                            ));
                         };
                         let Some(value) = signatures[slot].0.last_mut() else {
                             return Err(CodecError::malformed(
@@ -3289,3 +3296,6 @@ fn mesh_candidate_canonicalization_propagates_collection_refusals() {
 
 #[cfg(test)]
 mod work_tests;
+
+#[cfg(test)]
+mod sparse_slots_tests;
