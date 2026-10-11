@@ -70,20 +70,7 @@ fn project_single_scope_with_context(
     )
 }
 
-#[test]
-fn audit_regression_near_half_turn_retains_negative_axis() {
-    let theta = std::f64::consts::PI - 5.0e-9;
-    let (sine, cosine) = theta.sin_cos();
-    let matrix = [
-        [cosine, sine, 0., 0.],
-        [-sine, cosine, 0., 0.],
-        [0., 0., 1., 0.],
-        [0., 0., 0., 1.],
-    ];
-    let rotation = crate::design::feature_project::fixed_geometry::matrix_axis_angle(&matrix).unwrap();
-    assert!(rotation.direction.z < 0.0);
-    assert!((rotation.angle.get() - theta).abs() <= 4.0 * f64::EPSILON);
-}
+
 
 mod numeric_text_limits;
 

@@ -173,3 +173,6 @@ pub(super) fn matrix_axis_angle(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir:
     })
 }
 
+
+#[cfg(test)]
+mod tests;
