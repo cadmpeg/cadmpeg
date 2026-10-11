@@ -400,7 +400,11 @@ impl<'ctx, 'arena> CarrierGraph<'ctx, 'arena> {
                         }
                     }
                     let Some(next_span) = span.checked_add(step) else {
-                        return Err(ctx.refuse_codec_limit("STEP carrier component span overflow", 0, 1));
+                        return Err(ctx.refuse_codec_limit(
+                            "STEP carrier component span overflow",
+                            0,
+                            1,
+                        ));
                     };
                     span = next_span;
                     member = node.previous;

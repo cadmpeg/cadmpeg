@@ -113,24 +113,28 @@ fn carrier_height_overflow_preserves_session_refusal() {
     ] {
         with_session(&cadmpeg_core::decode::DecodePolicy::service(), |ctx| {
             let mut graph = CarrierGraph::new(ctx).expect("graph");
-            let error = graph.ensure(1, |id, _, storage| {
-                let mut children = Vec::new();
-                let edge = match id {
-                    1 => Some((2, usize::MAX)),
-                    2 => Some((if cyclic { 1 } else { 3 }, 1)),
-                    _ => None,
-                };
-                if let Some(edge) = edge {
-                    ctx.push_scoped_vec(storage, &mut children, edge, "test height edges")?;
-                }
-                Ok(RecordCarriers { local: [SetId::Empty; 3], children })
-            }).expect_err("height does not fit");
+            let error = graph
+                .ensure(1, |id, _, storage| {
+                    let mut children = Vec::new();
+                    let edge = match id {
+                        1 => Some((2, usize::MAX)),
+                        2 => Some((if cyclic { 1 } else { 3 }, 1)),
+                        _ => None,
+                    };
+                    if let Some(edge) = edge {
+                        ctx.push_scoped_vec(storage, &mut children, edge, "test height edges")?;
+                    }
+                    Ok(RecordCarriers {
+                        local: [SetId::Empty; 3],
+                        children,
+                    })
+                })
+                .expect_err("height does not fit");
             let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
                 panic!("height resource refusal");
             };
             assert_eq!(refusal.operation, operation);
             assert_eq!(ctx.resource_refusal(), Some(refusal));
-
         });
     }
 }
@@ -139,20 +143,34 @@ fn carrier_height_overflow_preserves_session_refusal() {
 fn bounded_carrier_edge_beyond_remaining_depth_is_empty() {
     with_session(&cadmpeg_core::decode::DecodePolicy::service(), |ctx| {
         let mut graph = CarrierGraph::new(ctx).expect("graph");
-        graph.ensure(1, |id, _, storage| {
-            let mut children = Vec::new();
-            if id == 1 {
-                ctx.push_scoped_vec(storage, &mut children, (2, 5), "test weighted edge")?;
-            }
-            Ok(RecordCarriers {
-                local: if id == 2 { [SetId::Leaf(2); 3] } else { [SetId::Empty; 3] },
-                children,
+        graph
+            .ensure(1, |id, _, storage| {
+                let mut children = Vec::new();
+                if id == 1 {
+                    ctx.push_scoped_vec(storage, &mut children, (2, 5), "test weighted edge")?;
+                }
+                Ok(RecordCarriers {
+                    local: if id == 2 {
+                        [SetId::Leaf(2); 3]
+                    } else {
+                        [SetId::Empty; 3]
+                    },
+                    children,
+                })
             })
-        }).expect("weighted graph");
-        assert_eq!(graph.summary(1, 4).expect("edge exceeds depth"), [SetId::Empty; 3]);
-        assert_eq!(graph.summary(1, 5).expect("edge reaches cutoff"), [SetId::Empty; 3]);
-        assert_eq!(graph.summary(1, 6).expect("edge fits depth"), [SetId::Leaf(2); 3]);
-
+            .expect("weighted graph");
+        assert_eq!(
+            graph.summary(1, 4).expect("edge exceeds depth"),
+            [SetId::Empty; 3]
+        );
+        assert_eq!(
+            graph.summary(1, 5).expect("edge reaches cutoff"),
+            [SetId::Empty; 3]
+        );
+        assert_eq!(
+            graph.summary(1, 6).expect("edge fits depth"),
+            [SetId::Leaf(2); 3]
+        );
     });
 }
 
@@ -160,31 +178,45 @@ fn with_session<T>(
     policy: &cadmpeg_core::decode::DecodePolicy,
     run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
 ) -> T {
-    use cadmpeg_core::{decode::{DecodeArena, DecodeContext}, CodecError};
+    use cadmpeg_core::{
+        decode::{DecodeArena, DecodeContext},
+        CodecError,
+    };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, policy).expect("root");
     let result = run(&ctx);
     if let Some(refusal) = ctx.resource_refusal() {
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == refusal));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == refusal)
+        );
     } else {
         ctx.finish_session().expect("completed session");
     }
     result
 }
 
-
 use cadmpeg_core::decode::DecodePolicy;
 
-fn diamond_graph(graph: &mut CarrierGraph<'_, '_>, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecError> {
+fn diamond_graph(
+    graph: &mut CarrierGraph<'_, '_>,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+) -> Result<(), cadmpeg_core::CodecError> {
     graph.ensure(1, |id, _, storage| {
         let mut children = Vec::new();
         if id < 25 {
-            let edges = if (id - 1) % 3 == 0 { [Some(id+1), Some(id+2)] } else { [Some(id + 3 - (id-1)%3), None] };
+            let edges = if (id - 1) % 3 == 0 {
+                [Some(id + 1), Some(id + 2)]
+            } else {
+                [Some(id + 3 - (id - 1) % 3), None]
+            };
             for child in edges.into_iter().flatten() {
                 ctx.push_scoped_vec(storage, &mut children, (child, 1), "test diamond edges")?;
             }
         }
-        Ok(RecordCarriers { local: [SetId::Leaf(id); 3], children })
+        Ok(RecordCarriers {
+            local: [SetId::Leaf(id); 3],
+            children,
+        })
     })
 }
 
@@ -200,12 +232,18 @@ fn carrier_diamond_summaries_share_nodes_and_preserve_exact_counts() {
         let bounded = graph.summary(1, 2).expect("bounded closure");
         assert_eq!(graph.sets.count(bounded[0]), 3);
         for id in 1..=25 {
-            graph.ensure(id, |_, _, _| panic!("shared node must not be inspected twice")).expect("cached discovery");
+            graph
+                .ensure(id, |_, _, _| {
+                    panic!("shared node must not be inspected twice")
+                })
+                .expect("cached discovery");
         }
     });
 }
 
-fn prepared_diamond<'ctx, 'arena>(ctx: &'ctx cadmpeg_core::decode::DecodeContext<'arena>) -> Result<CarrierGraph<'ctx, 'arena>, cadmpeg_core::CodecError> {
+fn prepared_diamond<'ctx, 'arena>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'arena>,
+) -> Result<CarrierGraph<'ctx, 'arena>, cadmpeg_core::CodecError> {
     let (nodes, set_nodes, unions) = with_session(&DecodePolicy::service(), |setup| {
         let mut graph = CarrierGraph::new(setup).expect("setup graph");
         diamond_graph(&mut graph, setup).expect("diamond setup");
@@ -219,31 +257,43 @@ fn prepared_diamond<'ctx, 'arena>(ctx: &'ctx cadmpeg_core::decode::DecodeContext
 }
 
 fn diamond_refusal(operation: &str) {
-    use cadmpeg_core::{decode::{DecodePolicy, ResourceDimension}, CodecError};
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, operation, |limit| {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = limit;
-        with_session(&policy, |ctx| {
-            let result = (|| {
-                let mut graph = if matches!(operation, "STEP bounded carrier edge traversal" | "STEP bounded carrier frame traversal" | "STEP carrier set traversal") {
-                    prepared_diamond(ctx)?
-                } else {
-                    let mut graph = CarrierGraph::new(ctx)?;
-                    diamond_graph(&mut graph, ctx)?;
-                    graph
-                };
-                graph.summary(1, 2)?;
-                let all = graph.summary(1, 256)?;
-                graph.sets.visit(all[0], &mut |_| Ok(()))
-            })();
-            if let Err(CodecError::ResourceLimit(ref refusal)) = result {
-                assert_eq!(refusal.operation, operation);
-                assert!(refusal.used < 50_000);
-                assert_eq!(ctx.resource_refusal(), Some(*refusal));
-            }
-            result
-        })
-    });
+    use cadmpeg_core::{
+        decode::{DecodePolicy, ResourceDimension},
+        CodecError,
+    };
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        |limit| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = limit;
+            with_session(&policy, |ctx| {
+                let result = (|| {
+                    let mut graph = if matches!(
+                        operation,
+                        "STEP bounded carrier edge traversal"
+                            | "STEP bounded carrier frame traversal"
+                            | "STEP carrier set traversal"
+                    ) {
+                        prepared_diamond(ctx)?
+                    } else {
+                        let mut graph = CarrierGraph::new(ctx)?;
+                        diamond_graph(&mut graph, ctx)?;
+                        graph
+                    };
+                    graph.summary(1, 2)?;
+                    let all = graph.summary(1, 256)?;
+                    graph.sets.visit(all[0], &mut |_| Ok(()))
+                })();
+                if let Err(CodecError::ResourceLimit(ref refusal)) = result {
+                    assert_eq!(refusal.operation, operation);
+                    assert!(refusal.used < 50_000);
+                    assert_eq!(ctx.resource_refusal(), Some(*refusal));
+                }
+                result
+            })
+        },
+    );
 }
 
 #[test]
