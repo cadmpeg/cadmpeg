@@ -31,8 +31,11 @@ fn projected() -> Feature {
 fn produced_body_membership_retires_before_output_validation() {
     // One-entry tables: owners131, seen99, produced163 plus one exact8-byte
     // group slot, and record sources131. Seen storage dies before record sources.
-    // Output validation needs99 while the remaining live tables hold433.
-    const MATERIALIZED: u64 = 131 + 163 + 8 + 131 + 99;
+    // Output validation indexes one member key of four words (member reference,
+    // admission reference, hashed length and finished hash), a 163-byte
+    // one-entry set like the produced table, while the remaining live tables
+    // hold 131 + 163 + 8 + 131 = 433.
+    const MATERIALIZED: u64 = 131 + 163 + 8 + 131 + 163;
     let fixture = face_owner_fixture();
     let model = &fixture.ir().model;
     let histories = [history()];
