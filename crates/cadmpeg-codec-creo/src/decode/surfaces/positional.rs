@@ -91,11 +91,11 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
         if !matches!(
             prototype.family,
             crate::surface::SurfacePrototypeFamily::Torus(_)
-        ) || prototype_scalar(ctx, prototype, "radius1")? != Some(0.0)
+        ) || prototype_scalar(prototype, "radius1") != Some(0.0)
         {
             continue;
         }
-        let Some(radius) = prototype_scalar(ctx, prototype, "radius2")?
+        let Some(radius) = prototype_scalar(prototype, "radius2")
             .filter(|radius| radius.is_finite() && *radius > 0.0)
         else {
             continue;
@@ -573,10 +573,6 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
     Ok(transferred)
 }
 
-fn section_contains_offset(section: &crate::container::Section, offset: usize) -> bool {
-    section.contains(offset)
-}
-
 /// Report every refused tabulated-cylinder lane against the row that stated it.
 fn note_tabulated_cylinder_refusals(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -608,7 +604,7 @@ fn unique_tabulated_cylinder_prototype<'a>(
     let Some(section) = crate::decode::uniqueness::exactly_one_by(
         ctx,
         &scan.framing.sections,
-        |section| Ok(section_contains_offset(section, replay.surface_row_offset)),
+        |section| Ok(section.contains(replay.surface_row_offset)),
         "creo tabulated replay section search",
     )?
     else {
@@ -618,7 +614,7 @@ fn unique_tabulated_cylinder_prototype<'a>(
         ctx,
         &scan.surfaces.prototype_records,
         |record| {
-            if !section_contains_offset(section, record.offset)
+            if !section.contains(record.offset)
                 || record.family
                     != crate::surface::SurfacePrototypeFamily::Extrusion(
                         crate::surface::ExtrusionLabel::TabulatedCylinder,
@@ -626,7 +622,7 @@ fn unique_tabulated_cylinder_prototype<'a>(
             {
                 return Ok(false);
             }
-            let Some(field) = super::prototypes::prototype_field(ctx, record, "c_pnts")? else {
+            let Some(field) = record.field("c_pnts") else {
                 return Ok(false);
             };
             let crate::surface::SurfaceNamedValue::ContiguousEntityReferences(ids) = &field.value
@@ -700,7 +696,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             continue;
         };
         let chart_origin = match unique_tabulated_cylinder_prototype(ctx, scan, replay)? {
-            Some(prototype) => super::prototypes::prototype_tabulated_chart_origin(ctx, prototype)?,
+            Some(prototype) => super::prototypes::prototype_tabulated_chart_origin(prototype),
             None => None,
         };
         let mut geometry_storage = ctx.reserve_scoped(0, "creo tabulated extrusion geometry")?;
