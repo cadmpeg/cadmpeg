@@ -849,4 +849,93 @@ fn model_feature_index_accepts_only_the_composed_numeric_identity() {
     }
 }
 
+
+#[test]
+fn row_feature_reference_name_scratch_is_scoped_and_output_is_retained() {
+    let mut scan = crate::test_support::empty_container_scan();
+    scan.features.rows.push(one_feature_row());
+    scan.features.reference_names.push(crate::feature::operations::FeatureReferenceName {
+        feature_id: 40,
+        name_bytes: b"A\xff".to_vec(),
+        own_reference_id: 1,
+        reference_type: 0,
+        offset: 0,
+    });
+    let ir = crate::test_support::assert_refusal_order(
+        ResourceDimension::RetainedBytes,
+        &["creo native row Feature kind", "creo row Feature name"],
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            policy.limits.max_materialized_bytes = 16 * 1024;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let mut ir = cadmpeg_ir::document::CadIr::empty();
+            let result = emit_model_features(
+                &ctx,
+                &scan,
+                &mut ir,
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            );
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                assert_ne!(limit.operation, "creo decoded feature reference name");
+            }
+            result?;
+            let released = ctx.reserve_scoped(
+                policy.limits.max_materialized_bytes,
+                "after row feature scratch",
+            )?;
+            drop(released);
+            Ok(ir)
+        },
+    );
+    assert_eq!(ir.model.features[0].name.as_deref(), Some("A\u{fffd}"));
+    assert!(matches!(ir.model.features[0].evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Native { kind, .. }
+        ) if kind.as_str() == "A\u{fffd}"));
+}
+
+#[test]
+fn row_feature_schema_class_scratch_is_scoped_and_properties_are_retained() {
+    let mut scan = crate::test_support::empty_container_scan();
+    for schema_class in [crate::feature::schema::SchemaClass::Hole, crate::feature::schema::SchemaClass::Chamfer] {
+        let mut row = one_feature_row();
+        row.root_schema_class = Some(schema_class);
+        scan.features.rows.push(row);
+    }
+    let ir = crate::test_support::assert_refusal_order(
+        ResourceDimension::RetainedBytes,
+        &["creo feature source property value", "creo row Feature name"],
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            policy.limits.max_materialized_bytes = 16 * 1024;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let mut ir = cadmpeg_ir::document::CadIr::empty();
+            let result = emit_model_features(
+                &ctx,
+                &scan,
+                &mut ir,
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            );
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                assert_ne!(limit.operation, "creo row schema class nodes");
+            }
+            result?;
+            let released = ctx.reserve_scoped(
+                policy.limits.max_materialized_bytes,
+                "after row feature scratch",
+            )?;
+            drop(released);
+            Ok(ir)
+        },
+    );
+    assert_eq!(ir.model.features[0].source_properties["featdefs_schema_state"], "ambiguous");
+    assert_eq!(ir.model.features[0].source_properties["featdefs_row_schema_classes"], "911,914");
+}
+
 mod id_storage;

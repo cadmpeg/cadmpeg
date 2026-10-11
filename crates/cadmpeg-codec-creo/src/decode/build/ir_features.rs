@@ -745,10 +745,14 @@ pub(super) fn emit_model_features(
             continue;
         };
         ctx.charge_entities(1, "admit Creo model features")?;
-        let reference_name = feature_reference_name(ctx, scan, feature_id)?
-            .map(|bytes| decoded_feature_reference_name(ctx, bytes))
-            .transpose()?;
-        let reference_name = reference_name.as_deref();
+        let mut reference_name_storage =
+            ctx.reserve_scoped(0, "creo row reference name scratch")?;
+        let decoded_reference_name = reference_name_storage.with_storage(|| {
+            feature_reference_name(ctx, scan, feature_id)?
+                .map(|bytes| decoded_feature_reference_name(ctx, bytes))
+                .transpose()
+        })?;
+        let reference_name = decoded_reference_name.as_deref();
         let kind = reference_name.unwrap_or_else(|| {
             schema_class
                 .and_then(schema_operation_kind)
@@ -816,7 +820,9 @@ pub(super) fn emit_model_features(
                 )
             },
         )?;
-        let row_schema_classes = row_feature_schema_classes(ctx, &scan.features.rows, feature_id)?;
+        let mut schema_class_storage = ctx.reserve_scoped(0, "creo row schema class scratch")?;
+        let row_schema_classes = schema_class_storage
+            .with_storage(|| row_feature_schema_classes(ctx, &scan.features.rows, feature_id))?;
         if schema_class.is_none() {
             insert_feature_source_property(
                 ctx,
@@ -839,6 +845,8 @@ pub(super) fn emit_model_features(
                 SchemaClassList(&row_schema_classes),
             )?;
         }
+        drop(row_schema_classes);
+        drop(schema_class_storage);
         retain_native_feature_parameters(
             ctx,
             &mut source_property_nodes,
@@ -889,6 +897,8 @@ pub(super) fn emit_model_features(
             ),
             native_ref: owning_feature_definition_ref(ctx, scan, feature_id)?,
         };
+        drop(decoded_reference_name);
+        drop(reference_name_storage);
         source_carriers.admit_feature(ctx, ir, feature)?;
         lookup_storage.with_storage(|| {
             ctx.insert_hash_map(
