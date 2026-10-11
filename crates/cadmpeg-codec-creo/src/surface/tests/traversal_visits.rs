@@ -35,6 +35,29 @@ fn check_steps<T: PartialEq + std::fmt::Debug>(
     }
 }
 
+fn source_work_limit<T>(
+    expected: Option<u64>,
+    items: u64,
+    retained: u64,
+    run: impl Fn(&DecodeContext<'_>) -> Result<T, CodecError>,
+) -> u64 {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    let work = crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_collection_items = items;
+        policy.limits.max_retained_bytes = retained;
+        if items == 0 { policy.limits.max_materialized_bytes = 0; }
+        policy.limits.max_entities = 0;
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        run(&ctx)
+    });
+    if let Some(expected) = expected { assert_eq!(work, expected, "source-derived traversal work"); }
+    work
+}
+
 #[test]
 fn contour_heads_skip_absent_headers_and_refuse_before_malformed_dispatch() {
     for body in [
@@ -48,6 +71,9 @@ fn contour_heads_skip_absent_headers_and_refuse_before_malformed_dispatch() {
         } else {
             &["creo surface contour chain traversal"]
         };
+        source_work_limit(Some(u64::from(body.len() >= 2)), 0, 0, |ctx| {
+            parse_surface_contour_chain(ctx, body, 0, body.len(), &row(SurfaceKind::Plane), &ScalarCache::default())
+        });
         check_steps(operations, &None, |ctx| {
             parse_surface_contour_chain(
                 ctx,
@@ -74,6 +100,7 @@ fn contour_heads_skip_absent_headers_and_refuse_before_malformed_dispatch() {
 #[test]
 fn contour_heads_own_only_executed_entries_and_preserve_record_identity() {
     for count in [1_usize, 4, 7, 17] {
+        let mut unpadded_work = None;
         for tail in [0, 257] {
             let mut body = Vec::new();
             let mut expected = Vec::new();
@@ -104,6 +131,14 @@ fn contour_heads_own_only_executed_entries_and_preserve_record_identity() {
                 });
             }
             body.extend(std::iter::repeat_n(0xff, tail));
+            let retained = u64::try_from(count.max(4) * std::mem::size_of::<SurfaceContourRecord>() + 8 * count).expect("output backing");
+            let work = source_work_limit(
+                (count <= 4).then(|| u64::try_from(10 * count).expect("head, projection and copy visits")),
+                u64::try_from(2 * count).expect("candidate and output slots"), retained,
+                |ctx| parse_surface_contour_chain(ctx, &body, 0, body.len(), &row(SurfaceKind::Plane), &ScalarCache::default()),
+            );
+            if let Some(prefix) = unpadded_work { assert_eq!(work, prefix, "unvisited contour tail"); }
+            else { unpadded_work = Some(work); }
             check_steps(
                 &[
                     "creo surface contour chain traversal",
@@ -129,6 +164,7 @@ fn contour_heads_own_only_executed_entries_and_preserve_record_identity() {
 #[test]
 fn contour_head_scan_does_not_visit_a_missing_terminal_entry() {
     let body = [0x82, 0x10, 1, 0x0f, 0xe4, 0x0f, 0xe4, 0xe3];
+    source_work_limit(Some(1), 1, 0, |ctx| parse_surface_contour_chain(ctx, &body, 0, body.len(), &row(SurfaceKind::Plane), &ScalarCache::default()));
     check_steps(&["creo surface contour chain traversal"], &None, |ctx| {
         parse_surface_contour_chain(
             ctx,
@@ -150,6 +186,7 @@ fn contour_terminal_close_cannot_escape_the_exclusive_row_end() {
         } else {
             &["creo surface contour chain traversal"]
         };
+        source_work_limit(Some(u64::from(end >= 2)), 0, 0, |ctx| parse_surface_contour_chain(ctx, &body, 0, end, &row(SurfaceKind::Plane), &ScalarCache::default()));
         check_steps(operations, &None, |ctx| {
             parse_surface_contour_chain(
                 ctx,
@@ -172,6 +209,7 @@ fn contour_intermediate_close_outside_the_row_cannot_allocate_an_entry() {
         } else {
             &["creo surface contour chain traversal"]
         };
+        source_work_limit(Some(u64::from(end >= 2)), 0, 0, |ctx| parse_surface_contour_chain(ctx, &body, 0, end, &row(SurfaceKind::Plane), &ScalarCache::default()));
         check_steps(operations, &None, |ctx| {
             parse_surface_contour_chain(
                 ctx,
@@ -191,6 +229,10 @@ fn plane_outline_scans_own_rows_and_present_windows_without_eof_work() {
         let body = vec![0xff; size];
         for kind in [SurfaceKind::Plane, SurfaceKind::Cylinder] {
             let rows = [row(kind)];
+            let windows = size.saturating_sub(b"srf_prim_ptr(".len() - 1)
+                + size.saturating_sub(b"outline\0\xf9\x02\x03".len() - 1) + 2;
+            let work = size + 2 + if kind == SurfaceKind::Plane { windows } else { 0 };
+            source_work_limit(Some(u64::try_from(work).expect("cache, rows, windows and end probes")), 0, 0, |ctx| plane_envelopes_for_rows(ctx, &body, &rows));
             check_steps(&["creo plane envelope row traversal"], &0, |ctx| {
                 plane_envelopes_for_rows(ctx, &body, &rows).map(|records| records.len())
             });
@@ -211,6 +253,9 @@ fn plane_outline_search_stops_before_a_named_prototype_and_its_tail() {
             }
             body.extend_from_slice(b"srf_prim_ptr(plane)\0outline\0\xf9\x02\x03");
             body.extend(std::iter::repeat_n(0xff, 257));
+            let work = body.len() + 2 + prefix + usize::from(header) * 2 + 1
+                + prefix.saturating_sub(b"outline\0\xf9\x02\x03".len() - 1) + 1;
+            source_work_limit(Some(u64::try_from(work).expect("cache and bounded searches")), 0, 0, |ctx| plane_envelopes_for_rows(ctx, &body, &[row(SurfaceKind::Plane)]));
             check_steps(&["creo plane envelope row traversal"], &0, |ctx| {
                 plane_envelopes_for_rows(ctx, &body, &[row(SurfaceKind::Plane)])
                     .map(|records| records.len())
