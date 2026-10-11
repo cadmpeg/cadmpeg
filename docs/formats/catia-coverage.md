@@ -393,6 +393,12 @@ current levels require those matrices and representative fixtures.
   nonzero component of the `u_axis` to be positive. A missing or ambiguous
   normal, non-finite endpoint, non-orthonormal fit, or residual above the
   tolerance leaves the plane carrier unresolved.
+- E5 edges require five object references followed by exactly one allocation
+  terminal. The admitted terminal values are `01`, `02`, `21`, `22`, `25`,
+  `29`, and `2a`; value and addressing form remain separate from endpoint
+  direction. The five object references also admit the shifted-u16 `30`
+  form. Unsupported terminals or incomplete references reject the topology
+  graph. Original bytes remain in native records.
 - E5 jet and NURBS bounds resolve their one-based distinct span code and
   local scalar to the native knot parameter before selecting occurrence
   direction. NURBS knot repetitions do not count as extra arcs; a nonzero

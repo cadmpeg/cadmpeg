@@ -6,15 +6,7 @@
       "appearances": [],
       "assembly_joints": [],
       "attributes": [],
-      "bodies": [
-        {
-          "id": "catia:e5:body#unbound-points",
-          "kind": "wire",
-          "regions": [
-            "catia:e5:region#unbound-points"
-          ]
-        }
-      ],
+      "bodies": [],
       "coedges": [],
       "configurations": [],
       "curves": [
@@ -50,55 +42,15 @@
       "parameters": [],
       "pcurves": [],
       "pmi": [],
-      "points": [
-        {
-          "id": "catia:e5:pt#0",
-          "position": {
-            "x": 12.5,
-            "y": 20.0,
-            "z": 30.0
-          }
-        },
-        {
-          "id": "catia:e5:pt#1",
-          "position": {
-            "x": 7.5,
-            "y": 20.0,
-            "z": 30.0
-          }
-        }
-      ],
+      "points": [],
       "presentation_documents": [],
       "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
       "product_definitions": [],
-      "regions": [
-        {
-          "body": "catia:e5:body#unbound-points",
-          "id": "catia:e5:region#unbound-points",
-          "shells": [
-            "catia:e5:shell#unbound-points"
-          ]
-        }
-      ],
+      "regions": [],
       "semantic_annotations": [],
-      "shells": [
-        {
-          "id": "catia:e5:shell#unbound-points",
-          "members": [
-            {
-              "id": "catia:e5:v#0",
-              "kind": "free_vertex"
-            },
-            {
-              "id": "catia:e5:v#1",
-              "kind": "free_vertex"
-            }
-          ],
-          "region": "catia:e5:region#unbound-points"
-        }
-      ],
+      "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
@@ -131,16 +83,7 @@
         }
       ],
       "tessellations": [],
-      "vertices": [
-        {
-          "id": "catia:e5:v#0",
-          "point": "catia:e5:pt#0"
-        },
-        {
-          "id": "catia:e5:v#1",
-          "point": "catia:e5:pt#1"
-        }
-      ],
+      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -600,30 +543,6 @@
   "source_fidelity": {
     "annotations": {
       "exactness": {
-        "catia:e5:body#unbound-points": {
-          "entity": "inferred",
-          "scope": "entity"
-        },
-        "catia:e5:region#unbound-points": {
-          "entity": "inferred",
-          "scope": "entity"
-        },
-        "catia:e5:shell#unbound-points": {
-          "entity": "inferred",
-          "scope": "entity"
-        },
-        "catia:e5:v#0": {
-          "fields": {
-            "point": "derived"
-          },
-          "scope": "fields"
-        },
-        "catia:e5:v#1": {
-          "fields": {
-            "point": "derived"
-          },
-          "scope": "fields"
-        },
         "catia:payload:unknown#e5": {
           "entity": "unknown",
           "fields": {
@@ -633,50 +552,15 @@
         }
       },
       "provenance": {
-        "catia:e5:body#unbound-points": {
-          "offset": 0,
-          "stream": "catia:e5_0d_03",
-          "tag": "unbound_point_owner"
-        },
         "catia:e5:curve#0": {
           "offset": 32,
           "stream": "catia:e5_0d_03",
           "tag": "circle_carrier"
         },
-        "catia:e5:pt#0": {
-          "offset": 0,
-          "stream": "catia:e5_0d_03",
-          "tag": "vertex_05_08_01"
-        },
-        "catia:e5:pt#1": {
-          "offset": 0,
-          "stream": "catia:e5_0d_03",
-          "tag": "vertex_05_08_01"
-        },
-        "catia:e5:region#unbound-points": {
-          "offset": 0,
-          "stream": "catia:e5_0d_03",
-          "tag": "unbound_point_owner"
-        },
-        "catia:e5:shell#unbound-points": {
-          "offset": 0,
-          "stream": "catia:e5_0d_03",
-          "tag": "unbound_point_owner"
-        },
         "catia:e5:surf#0": {
           "offset": 32,
           "stream": "catia:e5_0d_03",
           "tag": "analytic_surface"
-        },
-        "catia:e5:v#0": {
-          "offset": 0,
-          "stream": "catia:MainDataStream+SurfacicReps",
-          "tag": "vertex_05_08_01"
-        },
-        "catia:e5:v#1": {
-          "offset": 0,
-          "stream": "catia:MainDataStream+SurfacicReps",
-          "tag": "vertex_05_08_01"
         },
         "catia:payload:unknown#e5": {
           "offset": 0,

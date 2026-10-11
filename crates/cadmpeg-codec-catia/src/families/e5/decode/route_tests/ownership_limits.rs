@@ -34,7 +34,6 @@ fn e5_ownership_refuses_each_counted_collection_limit() {
                 end_vertex: 31,
                 parameter_start: 40,
                 parameter_end: 41,
-                tail: Vec::new(),
             },
         )]
         .into(),

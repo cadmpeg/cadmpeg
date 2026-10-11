@@ -24,11 +24,11 @@ pub(crate) fn e5_circle_stream() -> Vec<u8> {
     ] {
         write(&mut record, at, value);
     }
-    let mut edge = vec![0u8; 19];
+    let mut edge = vec![0u8; 20];
     edge[..3].copy_from_slice(&[0xe5, 0x0d, 0x03]);
     edge[3] = 0xff;
-    edge[5..7].copy_from_slice(&6u16.to_le_bytes());
-    edge[13..19].copy_from_slice(&[0x85, 0x80, 0x81, 0x82, 0x80, 0x80]);
+    edge[5..7].copy_from_slice(&7u16.to_le_bytes());
+    edge[13..20].copy_from_slice(&[0x85, 0x80, 0x81, 0x82, 0x80, 0x80, 0x21]);
     record.extend_from_slice(&edge);
     for xyz in [[12.5f32, 20.0, 30.0], [7.5, 20.0, 30.0]] {
         record.extend_from_slice(&[0x05, 0x08, 0x01]);
@@ -301,7 +301,7 @@ pub(crate) fn e5_torus_topology_stream() -> Vec<u8> {
                 0x80 + end,
                 0x80,
                 0x80,
-                0x80,
+                0x21,
             ],
         );
     }

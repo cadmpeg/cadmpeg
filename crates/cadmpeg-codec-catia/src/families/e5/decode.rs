@@ -117,7 +117,7 @@ pub(in crate::families) fn try_decode_e5(
             };
             let mut vertices = HashSet::new();
             for edge in edges {
-                for vertex in [edge.start_vertex_id, edge.end_vertex_id] {
+                for vertex in [edge.start_vertex, edge.end_vertex] {
                     if let Err(error) = ctx.insert_hash_set(&mut vertices, vertex, "catia_e5_edge_vertex_ids") {
                         return Some(Err(error));
                     }
@@ -4197,7 +4197,6 @@ mod route_tests {
                     end_vertex,
                     parameter_start: 0,
                     parameter_end: 0,
-                    tail: Vec::new(),
                 },
             );
             pcurves.insert(
@@ -4281,7 +4280,6 @@ mod route_tests {
                         end_vertex: 2,
                         parameter_start: 0,
                         parameter_end: 0,
-                        tail: Vec::new(),
                     },
                 ),
                 (
@@ -4292,7 +4290,6 @@ mod route_tests {
                         end_vertex: 3,
                         parameter_start: 0,
                         parameter_end: 0,
-                        tail: Vec::new(),
                     },
                 ),
             ]),
@@ -4450,7 +4447,6 @@ mod route_tests {
                     end_vertex: 0,
                     parameter_start: 10,
                     parameter_end: 11,
-                    tail: Vec::new(),
                 },
             )]),
             pcurves: BTreeMap::from([(
@@ -4542,7 +4538,6 @@ mod route_tests {
                     end_vertex: 401,
                     parameter_start: 500,
                     parameter_end: 501,
-                    tail: Vec::new(),
                 },
             )]),
             pcurves: BTreeMap::from([(
@@ -4645,7 +4640,6 @@ mod route_tests {
                     end_vertex: 401,
                     parameter_start: 500,
                     parameter_end: 501,
-                    tail: Vec::new(),
                 },
             )]),
             pcurves: BTreeMap::from([(20, line()), (21, line())]),
@@ -4748,7 +4742,6 @@ mod route_tests {
                     end_vertex: 401,
                     parameter_start: 500,
                     parameter_end: 501,
-                    tail: Vec::new(),
                 },
             )]),
             pcurves: BTreeMap::from([
@@ -4842,7 +4835,6 @@ mod route_tests {
                     end_vertex: 11,
                     parameter_start: 0,
                     parameter_end: 0,
-                    tail: Vec::new(),
                 },
             )]),
             pcurves: BTreeMap::from([(
@@ -4968,7 +4960,6 @@ mod route_tests {
             end_vertex: 31,
             parameter_start: 40,
             parameter_end: 41,
-            tail: Vec::new(),
         };
         let topology = |faces: Vec<E5Face>, edges: Vec<u32>| E5Topology {
             bodies: Vec::new(),

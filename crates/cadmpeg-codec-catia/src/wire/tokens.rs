@@ -12,7 +12,7 @@ use cadmpeg_core::CodecError;
 
 /// Reads a reference token at `*position`, advancing `*position` past it.
 ///
-/// `extended` selects the token dialect. `e5` payloads use the restricted
+/// `extended` selects the token dialect. Most `e5` payloads use the restricted
 /// dialect (`extended = false`): the lead bytes `0x38`, `0x18`, `0x10`,
 /// `0x08`, and any `0x80..=0xff`. `b5` payloads use the extended dialect
 /// (`extended = true`), which additionally recognises `0x30`, `0x28`, and

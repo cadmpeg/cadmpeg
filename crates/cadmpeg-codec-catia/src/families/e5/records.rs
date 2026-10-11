@@ -22,7 +22,7 @@ use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveAngle, PositiveLength}
 use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 
 use crate::families::e5::graph::Sign;
-use crate::wire::bytes::{f64_le, f64_point, f64_vector, read_f64_array, u32_le_24};
+use crate::wire::bytes::{f64_le, f64_point, f64_vector, read_f64_array};
 use crate::wire::records::scan_vertex_records;
 
 /// A directly decoded E5 circle carrier.
@@ -287,37 +287,15 @@ pub(super) fn e5_planes(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Vec<E5Pl
     Ok(out)
 }
 
-/// A directly framed E5 edge-use record.  The endpoint ids are E5 vertex
-/// records, not point-table indexes.
-#[derive(Debug, Clone)]
-pub(in crate::families::e5) struct E5Edge {
-    /// Referenced start-vertex (class `0xfe`) record id.
-    pub(super) start_vertex_id: u32,
-    /// Referenced end-vertex (class `0xfe`) record id.
-    pub(super) end_vertex_id: u32,
-}
-
-/// Decode E5 `0xff` five-reference edge records.
-pub(super) fn e5_edges(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Vec<E5Edge>, CodecError> {
+/// Decode complete E5 `0xff` edges, including their allocation terminal.
+pub(super) fn e5_edges(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+) -> Result<Vec<super::graph::E5Edge>, CodecError> {
     let mut out = Vec::new();
-    for record in e5_records(data) {
-        let pos = record.pos;
-        if record.class == 0xff && data.get(pos + 13) == Some(&0x85) {
-            let payload = &data[pos + 13..record.end()];
-            if let Some((_, next)) = e5_ref(payload, 1) {
-                if let Some((start_vertex_id, next)) = e5_ref(payload, next) {
-                    if let Some((end_vertex_id, _)) = e5_ref(payload, next) {
-                        ctx.push_vec(
-                            &mut out,
-                            E5Edge {
-                                start_vertex_id,
-                                end_vertex_id,
-                            },
-                            "catia_e5_edges",
-                        )?;
-                    }
-                }
-            }
+    for record in e5_records(data).filter(|record| record.class == 0xff) {
+        if let Some(edge) = super::graph::parse_edge(&data[record.pos + 13..record.end()]) {
+            ctx.push_vec(&mut out, edge, "catia_e5_edges")?;
         }
     }
     Ok(out)
@@ -992,17 +970,6 @@ fn e5_torus(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, PositiveLength,
     Some((geometry, major_radius, minor_radius))
 }
 
-fn e5_ref(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
-    match *bytes.get(at)? {
-        0x38 => Some((u32_le_24(bytes, at + 1)?, at + 4)),
-        0x18 => Some((u32::from(View::u16_le_at(bytes, at + 1)?), at + 3)),
-        0x10 => Some((u32::from(*bytes.get(at + 1)?) << 8, at + 2)),
-        0x08 => Some((u32::from(*bytes.get(at + 1)?), at + 2)),
-        byte if byte >= 0x80 => Some((u32::from(byte - 0x80), at + 1)),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -1010,9 +977,7 @@ mod tests {
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    use super::{
-        e5_cone, e5_ref, e5_rolling_ball_jets, e5_surface_wrappers, e5_surfaces, e5_torus,
-    };
+    use super::{e5_cone, e5_rolling_ball_jets, e5_surface_wrappers, e5_surfaces, e5_torus};
     use crate::test_support::test_e5::append_e5_record;
 
     const TEST_F64_TOLERANCE: f64 = 1e-12;
@@ -1219,7 +1184,12 @@ mod tests {
 
     #[test]
     fn e5_width_coded_reference_widens_before_shifting() {
-        assert_eq!(e5_ref(&[0x10, 0xff], 0), Some((0xff00, 2)));
+        let mut at = 0;
+        assert_eq!(
+            crate::wire::tokens::object_ref(&[0x10, 0xff], &mut at, false),
+            Some(0xff00)
+        );
+        assert_eq!(at, 2);
     }
 
     #[test]

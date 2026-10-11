@@ -534,14 +534,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the fields to read and write the complete support record.
 
-### E5-09. Edge-use trailing fields
-
-**Question.** What fields occur after the five counted references in an E5 edge-use record?
-
-**Known.** The five references and the containing record boundary are defined.
-
-**Need.** We must know the trailing fields to interpret and write the edge use.
-
 ### E5-10. Component orientation gauge
 
 **Question.** Which field gives the global sign of a connected parity component?

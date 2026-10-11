@@ -102,7 +102,6 @@ fn e5_plane_solver_uses_known_normal_and_canonical_sign_for_rank_one_uv() {
                 end_vertex,
                 parameter_start: 0,
                 parameter_end: 0,
-                tail: Vec::new(),
             },
         );
         pcurves.insert(
@@ -177,7 +176,6 @@ fn e5_plane_solver_rechecks_the_returned_unit_frame() {
                 end_vertex: u32::try_from(next).expect("fixture value fits u32"),
                 parameter_start: 0,
                 parameter_end: 0,
-                tail: Vec::new(),
             },
         );
         pcurves.insert(
@@ -334,7 +332,6 @@ fn e5_plane_frame_refuses_before_input_sized_collections() {
                     end_vertex: 2,
                     parameter_start: 0,
                     parameter_end: 0,
-                    tail: Vec::new(),
                 },
             ),
             (
@@ -345,7 +342,6 @@ fn e5_plane_frame_refuses_before_input_sized_collections() {
                     end_vertex: 3,
                     parameter_start: 0,
                     parameter_end: 0,
-                    tail: Vec::new(),
                 },
             ),
         ]),
@@ -442,7 +438,6 @@ fn e5_derived_vertices_refuse_before_candidate_collections() {
                 end_vertex: 2,
                 parameter_start: 30,
                 parameter_end: 31,
-                tail: Vec::new(),
             },
         )]),
         pcurves: BTreeMap::from([(

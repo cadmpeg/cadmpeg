@@ -38,8 +38,8 @@ impl<'a> Cursor<'a> {
 
     /// Reads the reference token at the cursor, advancing past it.
     ///
-    /// `extended` selects the token dialect. The restricted dialect (used by
-    /// `e5`) recognises the lead bytes `0x38`, `0x18`, `0x10`, `0x08` and any
+    /// `extended` selects the token dialect. The restricted dialect (used by most
+    /// `e5` records) recognises the lead bytes `0x38`, `0x18`, `0x10`, `0x08` and any
     /// `0x80..=0xff`. The extended dialect (used by `b5`) additionally
     /// recognises `0x30`, `0x28`, and `0x20`. See `wire::tokens::object_ref`.
     pub(super) fn object_ref(&mut self, extended: bool) -> Option<u32> {

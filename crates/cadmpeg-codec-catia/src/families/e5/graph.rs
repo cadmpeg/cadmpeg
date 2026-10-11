@@ -396,7 +396,8 @@ pub(super) struct E5OrientedMember {
 
 /// A resolved class-`0xff` trimmed edge-use record ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant), grammar `85
 /// <curve_support_ref> <start_vertex> <end_vertex> <param_start>
-/// <param_end>`).
+/// <param_end> <allocation_terminal:u8>`). The terminal is validated here;
+/// the original bytes remain in the native record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::families) struct E5Edge {
     /// `record_id` of the owning [`E5CurveSupport`].
@@ -410,8 +411,6 @@ pub(in crate::families) struct E5Edge {
     pub(super) parameter_start: u32,
     /// Reference to the end-parameter representation on the curve support.
     pub(super) parameter_end: u32,
-    /// Bytes following the five counted fields.
-    pub(super) tail: Vec<u8>,
 }
 
 #[derive(Debug)]
@@ -466,11 +465,7 @@ pub(crate) fn parse_topology(
         let mut pcurves = BTreeMap::new();
         for record in &records {
             if record.class == 0xff {
-                let edge = match parse_edge(ctx, record) {
-                    Ok(Some(edge)) => edge,
-                    Ok(None) => return None,
-                    Err(error) => return Some(Err(error)),
-                };
+                let edge = parse_edge(record.payload)?;
                 if let Err(error) =
                     ctx.insert_btree_map(&mut edges, record.id, edge, "catia_e5_topology_edges")
                 {
@@ -2129,36 +2124,43 @@ fn parse_loop_signs(trailing: &[u8], edge_count: usize) -> Result<Option<bool>, 
     Ok(Some(outer == 1))
 }
 
-fn parse_edge(ctx: &DecodeContext<'_>, record: &Record<'_>) -> Result<Option<E5Edge>, CodecError> {
-    if record.payload.first() != Some(&0x85) {
-        return Ok(None);
+pub(super) fn parse_edge(payload: &[u8]) -> Option<E5Edge> {
+    use wire::bytes::AllocationReferenceEncoding;
+
+    if payload.first() != Some(&0x85) {
+        return None;
     }
     let mut position = 1;
-    let Some(support) = wire::tokens::object_ref(record.payload, &mut position, false) else {
-        return Ok(None);
-    };
-    let Some(start_vertex) = wire::tokens::object_ref(record.payload, &mut position, false) else {
-        return Ok(None);
-    };
-    let Some(end_vertex) = wire::tokens::object_ref(record.payload, &mut position, false) else {
-        return Ok(None);
-    };
-    let Some(parameter_start) = wire::tokens::object_ref(record.payload, &mut position, false)
-    else {
-        return Ok(None);
-    };
-    let Some(parameter_end) = wire::tokens::object_ref(record.payload, &mut position, false) else {
-        return Ok(None);
-    };
-    let tail = ctx.copy_slice(&record.payload[position..], "catia_e5_edge_tail")?;
-    Ok(Some(E5Edge {
+    let mut references = [0; 5];
+    for reference in &mut references {
+        *reference = if payload.get(position) == Some(&0x30) {
+            let value = u32::from(View::u16_le_at(payload, position + 1)?) << 8;
+            position += 3;
+            value
+        } else {
+            wire::tokens::object_ref(payload, &mut position, false)?
+        };
+    }
+    let terminal = wire::bytes::allocation_reference(payload, &mut position)?;
+    if position != payload.len()
+        || !matches!(
+            (terminal.encoding, terminal.value),
+            (
+                AllocationReferenceEncoding::BackwardDistance,
+                0 | 8 | 9 | 10
+            ) | (AllocationReferenceEncoding::Selector2, 0 | 8 | 10)
+        )
+    {
+        return None;
+    }
+    let [support, start_vertex, end_vertex, parameter_start, parameter_end] = references;
+    Some(E5Edge {
         support,
         start_vertex,
         end_vertex,
         parameter_start,
         parameter_end,
-        tail,
-    }))
+    })
 }
 
 fn solve_loop_chain(
@@ -2258,7 +2260,7 @@ mod tests {
                 &mut bytes,
                 0xff,
                 edge,
-                &[0x85, 0x08, 200, 0x08, start, 0x08, end, 0x80, 0x80],
+                &[0x85, 0x08, 200, 0x08, start, 0x08, end, 0x80, 0x80, 0x21],
             );
         }
         for pcurve in [100, 101, 102] {
@@ -2650,7 +2652,6 @@ mod tests {
                     end_vertex: 20,
                     parameter_start: 0,
                     parameter_end: 0,
-                    tail: Vec::new(),
                 },
             ),
             (
@@ -2661,7 +2662,6 @@ mod tests {
                     end_vertex: 10,
                     parameter_start: 0,
                     parameter_end: 0,
-                    tail: Vec::new(),
                 },
             ),
         ]);
@@ -2719,7 +2719,6 @@ mod tests {
                     end_vertex: 21,
                     parameter_start: 30,
                     parameter_end: 31,
-                    tail: Vec::new(),
                 },
             ),
             (
@@ -2730,7 +2729,6 @@ mod tests {
                     end_vertex: 20,
                     parameter_start: 32,
                     parameter_end: 33,
-                    tail: Vec::new(),
                 },
             ),
         ]);
@@ -2886,7 +2884,6 @@ mod tests {
             end_vertex: 0,
             parameter_start: 10,
             parameter_end: 11,
-            tail: Vec::new(),
         };
         let bound = |parameter| E5Bounds {
             entries: vec![E5BoundEntry {
@@ -3180,24 +3177,77 @@ mod tests {
     }
 
     #[test]
-    fn e5_edge_tail_refuses_retained_limit_before_absent_topology() {
-        let mut bytes = Vec::new();
-        append_e5_record(
-            &mut bytes,
-            0xff,
-            110,
-            &[0x85, 0x08, 200, 0x08, 10, 0x08, 11, 0x80, 0x80, 0x7f],
+    fn e5_edge_allocation_terminal_is_separate_from_object_references() {
+        for terminal in [0x01, 0x02, 0x21, 0x22, 0x25, 0x29, 0x2a] {
+            let payload = [0x85, 0x8d, 0x8a, 0x90, 0x8e, 0x8f, terminal];
+            let record = Record {
+                class: 0xff,
+                id: 12,
+                payload: &payload,
+            };
+            let edge = super::parse_edge(record.payload).expect("admitted allocation terminal");
+            assert_eq!(
+                (
+                    edge.support,
+                    edge.start_vertex,
+                    edge.end_vertex,
+                    edge.parameter_start,
+                    edge.parameter_end
+                ),
+                (13, 10, 16, 14, 15)
+            );
+        }
+        for tail in [vec![], vec![0x26], vec![0x7f], vec![0x21, 0], vec![0x08, 8]] {
+            let mut payload = vec![0x85, 0x8d, 0x8a, 0x90, 0x8e, 0x8f];
+            payload.extend(tail);
+            let record = Record {
+                class: 0xff,
+                id: 12,
+                payload: &payload,
+            };
+            assert!(super::parse_edge(record.payload).is_none());
+        }
+    }
+
+    #[test]
+    fn e5_edge_accepts_shifted_u16_reference_without_b5_only_leads() {
+        let mut payload = vec![
+            0x85, 0x38, 0x9a, 0x10, 1, 0x30, 0x11, 1, 0x38, 0xfc, 0x10, 1, 0x38, 0x9b, 0x10, 1,
+            0x38, 0x9c, 0x10, 1, 0x21,
+        ];
+        let record = Record {
+            class: 0xff,
+            id: 69785,
+            payload: &payload,
+        };
+        let edge = super::parse_edge(record.payload).expect("shifted u16 reference");
+        assert_eq!(
+            (
+                edge.support,
+                edge.start_vertex,
+                edge.end_vertex,
+                edge.parameter_start,
+                edge.parameter_end
+            ),
+            (69786, 69888, 69884, 69787, 69788)
         );
-        let service = crate::test_support::with_service_context(|ctx| parse_topology(ctx, &bytes));
-        assert!(matches!(service, Ok(None)));
-        let limited =
-            crate::test_support::with_retained_refusal(&[], "catia_e5_edge_tail", |ctx| {
-                parse_topology(ctx, &bytes)
-            });
-        assert!(
-            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_e5_edge_tail")
-        );
+        for lead in [0x20, 0x28] {
+            payload[5] = lead;
+            let record = Record {
+                class: 0xff,
+                id: 69785,
+                payload: &payload,
+            };
+            assert!(super::parse_edge(record.payload).is_none());
+        }
+        payload.truncate(7);
+        payload[5] = 0x30;
+        let record = Record {
+            class: 0xff,
+            id: 69785,
+            payload: &payload,
+        };
+        assert!(super::parse_edge(record.payload).is_none());
     }
 
     #[test]

@@ -94,7 +94,7 @@ fn e5_edge_parser_reads_u24_reference_tokens() {
     record[..3].copy_from_slice(&[0xe5, 0x0d, 0x03]);
     record[3] = 0xff;
     let payload = [
-        0x85, 0x38, 1, 2, 3, 0x38, 4, 5, 6, 0x38, 7, 8, 9, 0x80, 0x80, 0x80,
+        0x85, 0x38, 1, 2, 3, 0x38, 4, 5, 6, 0x38, 7, 8, 9, 0x80, 0x80, 0x21,
     ];
     record[5..7].copy_from_slice(
         &(u16::try_from(payload.len()).expect("fixture value fits u16")).to_le_bytes(),
@@ -104,8 +104,8 @@ fn e5_edge_parser_reads_u24_reference_tokens() {
     let edges =
         crate::families::e5::records::e5_edges(&ctx, &record).expect("service resource budget");
     assert_eq!(edges.len(), 1);
-    assert_eq!(edges[0].start_vertex_id, 0x06_0504);
-    assert_eq!(edges[0].end_vertex_id, 0x09_0807);
+    assert_eq!(edges[0].start_vertex, 0x06_0504);
+    assert_eq!(edges[0].end_vertex, 0x09_0807);
 }
 
 #[test]
@@ -116,7 +116,7 @@ fn e5_circle_plane_and_edge_results_refuse_before_growth() {
     edge[..3].copy_from_slice(&[0xe5, 0x0d, 0x03]);
     edge[3] = 0xff;
     let payload = [
-        0x85, 0x38, 1, 2, 3, 0x38, 4, 5, 6, 0x38, 7, 8, 9, 0x80, 0x80, 0x80,
+        0x85, 0x38, 1, 2, 3, 0x38, 4, 5, 6, 0x38, 7, 8, 9, 0x80, 0x80, 0x21,
     ];
     edge[5..7].copy_from_slice(
         &(u16::try_from(payload.len()).expect("fixture value fits u16")).to_le_bytes(),
@@ -186,7 +186,7 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         (102, 30, 10, [212, 0]),
     ] {
         let mut payload = vec![0x85, 0x08, 200, 0x08, start, 0x08, end];
-        payload.extend_from_slice(&[0x18, bound[0], bound[1], 0x18, bound[0], bound[1]]);
+        payload.extend_from_slice(&[0x18, bound[0], bound[1], 0x18, bound[0], bound[1], 0x21]);
         append_e5_record(&mut bytes, 0xff, u32::from(id), &payload);
     }
     for (id, surface, offset) in [
