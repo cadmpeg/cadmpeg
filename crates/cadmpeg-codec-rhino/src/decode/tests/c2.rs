@@ -13,13 +13,8 @@ fn c2_curve_to_nurbs_join(
 ) -> Result<(NurbsCurve, Vec<String>), crate::curves::GeometryError> {
     let mut result_storage = ctx.reserve_scoped(0, "test C2 result")?;
     let mut scratch = crate::loss::ScratchDiagnostics::new(ctx, "test C2 diagnostics")?;
-    let joined = c2_curve_to_nurbs_join_scoped(
-        ctx,
-        curve,
-        offset,
-        &mut result_storage,
-        &mut scratch,
-    );
+    let joined =
+        c2_curve_to_nurbs_join_scoped(ctx, curve, offset, &mut result_storage, &mut scratch);
     let joined = match joined {
         Ok(joined) => joined,
         Err(error) => {
@@ -79,8 +74,7 @@ fn c2_joined_segments_refuse_collection_limit() {
         warnings: Diagnostics::new(),
     };
     let error = with_collection_limit(0, |ctx| c2_curve_to_nurbs_join(ctx, compound, 0))
-        .err()
-        .expect("one C2 segment exceeds zero collection items");
+        .expect_err("one C2 segment exceeds zero collection items");
     assert!(matches!(
         error,
         crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
@@ -109,10 +103,9 @@ fn recursive_c2_polycurve_preserves_nested_parent_parameterization() {
         end_parameter: finite_parameter(9.0),
         warnings: Diagnostics::new(),
     };
-    let (merged, _) = with_expand_bytes(&[], |expand| {
-        c2_curve_to_nurbs_join(expand.ctx(), outer, 0)
-    })
-    .expect("nested merge");
+    let (merged, _) =
+        with_expand_bytes(&[], |expand| c2_curve_to_nurbs_join(expand.ctx(), outer, 0))
+            .expect("nested merge");
     assert_eq!(merged.knots().as_slice(), vec![5.0, 5.0, 7.0, 9.0, 9.0]);
 }
 
@@ -181,9 +174,8 @@ fn c2_join_rejects_first_child_without_charging_unused_suffix() {
     // One visit reaches the first child; no later child or terminal step runs.
     policy.limits.max_work_units = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = c2_curve_to_nurbs_join(&ctx, compound, 17)
-        .err()
-        .expect("first child is unrepresentable");
+    let error =
+        c2_curve_to_nurbs_join(&ctx, compound, 17).expect_err("first child is unrepresentable");
     assert!(matches!(error, crate::curves::GeometryError::Malformed(_)));
     assert!(error
         .to_string()
@@ -214,8 +206,7 @@ fn c2_invalid_first_domain_returns_before_suffix_admission() {
     policy.limits.max_work_units = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = c2_curve_to_nurbs_join(&ctx, compound, 0)
-        .err()
-        .expect("the first domain is invalid before its child is decoded");
+        .expect_err("the first domain is invalid before its child is decoded");
     assert!(matches!(error, crate::curves::GeometryError::Malformed(_)));
     assert!(error
         .to_string()
