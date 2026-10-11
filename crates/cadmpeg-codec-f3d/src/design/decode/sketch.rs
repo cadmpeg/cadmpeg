@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse Design sketch placements, headers, relations, and geometry.
 
-use crate::bytes::lp_utf16_bounded_scoped;
+use crate::bytes::{lp_utf16_bounded_charged, lp_utf16_bounded_scoped};
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::records::sketch_placement::{
@@ -255,74 +255,51 @@ impl IndexedRecordOffsets {
 
 /// The records of one input slice that have a text key, such as a stream
 /// scope, grouped by key: ascending by key, and within a key in input order.
-pub(super) struct Grouped<'a, 'ctx, 'arena, T> {
-    ctx: &'ctx DecodeContext<'arena>,
+pub(super) struct Grouped<'a, T> {
     records: Vec<(&'a str, &'a T)>,
 }
 
-impl<'a, 'ctx, 'arena, T> Grouped<'a, 'ctx, 'arena, T> {
+impl<'a, T> Grouped<'a, T> {
     /// Group `records` by the key `key_of` reads from each record; a record
     /// without one is left out.
     pub(super) fn build(
-        ctx: &'ctx DecodeContext<'arena>,
+        ctx: &DecodeContext<'_>,
         records: &'a [T],
         key_of: impl Fn(&'a T) -> Result<Option<&'a str>, CodecError>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        ctx.charge_work(0, operation)?;
         let mut grouped = Vec::new();
         for record in ctx.admit_iter(records, operation)? {
-            let key = key_of(record);
-            ctx.charge_work(0, operation)?;
-            if let Some(key) = key? {
+            if let Some(key) = key_of(record)? {
                 ctx.push_vec(&mut grouped, (key, record), operation)?;
             }
         }
         // The stable sort keeps the records of each key in input order.
         ctx.stable_sort_by(&mut grouped[..], |(key, _)| *key, Ord::cmp, operation)?;
-        Ok(Self {
-            ctx,
-            records: grouped,
-        })
+        Ok(Self { records: grouped })
     }
 
     /// The records of `key` with their key, in input order. Two bisections
     /// locate them.
-    pub(super) fn run(&self, key: &str) -> Result<&[(&'a str, &'a T)], CodecError> {
-        self.ctx.charge_work(0, "find F3D grouped records")?;
-        let run = key_range(self.ctx, &self.records, |(record_key, _)| record_key, key)?;
+    pub(super) fn run(
+        &self,
+        ctx: &DecodeContext<'_>,
+        key: &str,
+    ) -> Result<&[(&'a str, &'a T)], CodecError> {
+        let run = key_range(ctx, &self.records, |(record_key, _)| record_key, key)?;
         Ok(self.records.get(run).unwrap_or(&[]))
     }
 
     /// The records of `key`, in input order, each admitted as visited work.
     pub(super) fn of(
         &self,
+        ctx: &DecodeContext<'_>,
         key: &str,
         operation: &'static str,
-    ) -> Result<impl Iterator<Item = Result<&'a T, CodecError>> + '_, CodecError> {
-        let mut values = Some(self.run(key)?.iter());
-        Ok(std::iter::from_fn(move || {
-            let source = values.as_mut()?;
-            if let Err(error) = self.ctx.charge_work(0, operation) {
-                values = None;
-                return Some(Err(error));
-            }
-            if source.as_slice().is_empty() {
-                values = None;
-                return None;
-            }
-            match self.ctx.next_charged(source, operation) {
-                Ok(Some((_, record))) => Some(Ok(*record)),
-                Ok(None) => {
-                    values = None;
-                    None
-                }
-                Err(error) => {
-                    values = None;
-                    Some(Err(error))
-                }
-            }
-        }))
+    ) -> Result<impl Iterator<Item = &'a T> + '_, CodecError> {
+        Ok(ctx
+            .admit_iter(self.run(ctx, key)?, operation)?
+            .map(|(_, record)| *record))
     }
 }
 
@@ -363,7 +340,7 @@ pub(in crate::design) fn native_scope_charged(
 pub(in crate::design) fn native_scope_scoped<'a>(
     ctx: &'a DecodeContext<'_>,
     name: &str,
-) -> Result<(String, cadmpeg_core::decode::ScopedReservation<'a>), CodecError> {
+) -> Result<(cadmpeg_core::decode::ScopedReservation<'a>, String), CodecError> {
     let encoded_len = native_scope_encoded_len(ctx, name)?;
 
     let mut reservation = ctx.reserve_scoped(0, "f3d scoped native stream key")?;
@@ -375,7 +352,7 @@ pub(in crate::design) fn native_scope_scoped<'a>(
         "f3d scoped native stream key",
     )?;
     append_native_scope(ctx, name, &mut out)?;
-    Ok((out, reservation))
+    Ok((reservation, out))
 }
 
 fn native_scope_encoded_len(ctx: &DecodeContext<'_>, name: &str) -> Result<usize, CodecError> {
@@ -463,28 +440,26 @@ fn clone_sketch_entity_id_charged(
 
 /// Stream indexes built on first use, keyed by borrowed stream identity and
 /// held under one scoped reservation until the cache is dropped.
-pub(crate) struct RecordOffsetCache<'s, 'ctx, 'arena> {
+pub(crate) struct RecordOffsetCache<'s, 'ctx> {
     indexes: HashMap<&'s str, IndexedRecordOffsets>,
     storage: ScopedReservation<'ctx>,
-    ctx: &'ctx DecodeContext<'arena>,
 }
 
-impl<'s, 'ctx, 'arena> RecordOffsetCache<'s, 'ctx, 'arena> {
-    pub(crate) fn new(ctx: &'ctx DecodeContext<'arena>) -> Result<Self, CodecError> {
+impl<'s, 'ctx> RecordOffsetCache<'s, 'ctx> {
+    pub(crate) fn new(ctx: &'ctx DecodeContext<'_>) -> Result<Self, CodecError> {
         Ok(Self {
             indexes: HashMap::new(),
             storage: ctx.reserve_scoped(0, "f3d indexed stream cache")?,
-            ctx,
         })
     }
 
-    /// The index of `stream`, built under the original context on first use.
+    /// The index of `stream`, built from `bytes` on first use.
     pub(in crate::design) fn get(
         &mut self,
+        ctx: &DecodeContext<'_>,
         stream: &'s str,
         bytes: &[u8],
     ) -> Result<&IndexedRecordOffsets, CodecError> {
-        let ctx = self.ctx;
         let indexes = &mut self.indexes;
         self.storage
             .with_storage(move || cached_borrowed_record_offsets(ctx, indexes, stream, bytes))
@@ -580,9 +555,7 @@ pub(crate) fn decode_sketch_placements(
             "f3d sketch placement stream index",
         )?;
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
-        let scope_storage;
-        let (scope, held_scope_storage) = native_scope_scoped(ctx, &entry.name)?;
-        scope_storage = held_scope_storage;
+        let (scope_storage, scope) = native_scope_scoped(ctx, &entry.name)?;
         let records = storage.with_storage(|| IndexedRecordOffsets::build(ctx, bytes))?;
         streams.push(SketchStream {
             name: &entry.name,
@@ -623,10 +596,9 @@ pub(crate) fn decode_sketch_placements(
         let Some(metadata) = metadata_for_bulk_stream(ctx, scan, stream.name)? else {
             continue;
         };
-        let _decoded_storage;
-        let (decoded, held_storage) =
-            decode_sketch_visibilities_in_stream(ctx, stream.bytes, &metadata)?;
-        _decoded_storage = held_storage;
+        let mut decoded_storage = ctx.reserve_scoped(0, "f3d sketch visibility records")?;
+        let decoded = decoded_storage
+            .with_storage(|| decode_sketch_visibilities_in_stream(ctx, stream.bytes, &metadata))?;
         for &(entity_suffix, visibility) in
             ctx.admit_iter(&decoded, "scan F3D decoded sketch visibilities")?
         {
@@ -836,9 +808,7 @@ fn scope_placement(
     else {
         return Ok(None);
     };
-    let _referenced_storage;
-    let (referenced, held_storage) = marked_record_indices(ctx, frame)?;
-    _referenced_storage = held_storage;
+    let (referenced, _referenced_storage) = marked_record_indices(ctx, frame)?;
     let mut only = None;
     let mut ambiguous = false;
     for &record_index in
@@ -903,21 +873,22 @@ const SKETCH_CONTAINER_MEMBER_VERSION: u32 = 4;
 /// Decode the direct display flag in every current sketch container's typed
 /// Geometry member. Other sketch-container versions do not expose this member
 /// layout and therefore leave neutral visibility unknown.
-fn decode_sketch_visibilities_in_stream<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
+fn decode_sketch_visibilities_in_stream(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     metadata: &crate::metastream::MetaStream,
-) -> Result<(Vec<(u64, DesignSketchVisibility)>, ScopedReservation<'ctx>), CodecError> {
-    let _frame_storage;
-    let (frames, held_storage) = super::meta::TypedFrameSource::new(bytes, metadata).frames(
-        ctx,
-        SKETCH_CONTAINER_TYPE_GUID,
-        "sketch-container",
-    )?;
-    _frame_storage = held_storage;
-    let mut output_storage = ctx.reserve_scoped(0, "f3d sketch visibility records")?;
+) -> Result<Vec<(u64, DesignSketchVisibility)>, CodecError> {
     let mut out = Vec::new();
-    for frame in ctx.admit_iter(&frames, "scan F3D sketch visibility frames")? {
+    for frame in ctx.admit_iter(
+        &super::meta::typed_primary_frames(
+            ctx,
+            bytes,
+            metadata,
+            SKETCH_CONTAINER_TYPE_GUID,
+            "sketch-container",
+        )?,
+        "scan F3D sketch visibility frames",
+    )? {
         if frame.design_type.version != CURRENT_SKETCH_CONTAINER_VERSION {
             continue;
         }
@@ -941,28 +912,15 @@ fn decode_sketch_visibilities_in_stream<'ctx>(
             ));
         }
         let frame_bytes = &bytes[..frame.end];
-        let _header_storage;
-        let (settled_header, settled_storage) = ctx
-            .with_scoped_storage("f3d sketch visibility entity header", || {
-                parse_settled_entity_header(ctx, frame_bytes, frame.start)
-            })?;
-        let (header, header_storage) = match settled_header {
-            Some(header) => (Some(header), settled_storage),
-            None => {
-                drop(settled_storage);
-                ctx.with_scoped_storage("f3d sketch visibility entity header", || {
-                    parse_genesis_entity_header(ctx, frame_bytes, frame.start)
-                })?
-            }
-        };
-        _header_storage = header_storage;
         let Some(NamedEntityHeader {
             entity_id,
             end: header_end,
             ..
-        }) = header
+        }) = (match parse_settled_entity_header(ctx, frame_bytes, frame.start)? {
+            Some(header) => Some(header),
+            None => parse_genesis_entity_header(ctx, frame_bytes, frame.start)?,
+        })
         else {
-            drop(_header_storage);
             return Err(crate::design::text::malformed_design(
                 ctx,
                 format_args!(
@@ -972,8 +930,6 @@ fn decode_sketch_visibilities_in_stream<'ctx>(
             ));
         };
         let entity_suffix = entity_id.suffix();
-        drop(entity_id);
-        drop(_header_storage);
         if entity_suffix != frame.entity_id {
             return Err(crate::design::text::malformed_design(
                 ctx,
@@ -1014,14 +970,13 @@ fn decode_sketch_visibilities_in_stream<'ctx>(
             ));
         };
 
-        ctx.push_scoped_vec(
-            &mut output_storage,
+        ctx.push_vec(
             &mut out,
             (entity_suffix, visibility),
             "f3d sketch visibility records",
         )?;
     }
-    Ok((out, output_storage))
+    Ok(out)
 }
 
 /// Whether a sketch container's Geometry member registers the typed
@@ -1462,25 +1417,22 @@ pub(super) fn parse_settled_entity_header(
         Some(1) if zeros_at::<4>(bytes, start + 21) => (true, start + 25),
         _ => return Ok(None),
     };
-    let text_storage;
-    let Some((entity_id, end, held_storage)) =
-        lp_utf16_bounded_scoped(ctx, bytes, string_offset, 1..=256, "f3d Design UTF-16 text")?
+    let Some((entity_id, end)) =
+        lp_utf16_bounded_charged(ctx, bytes, string_offset, 1..=256, "f3d Design UTF-16 text")?
     else {
         return Ok(None);
     };
-    text_storage = held_storage;
     let Ok(entity_id) = crate::records::identity::DesignEntityId::try_from(entity_id) else {
         return Ok(None);
     };
-    if entity_id.suffix() != entity_suffix {
-        return Ok(None);
-    }
-    text_storage.commit_value(Some(NamedEntityHeader {
-        entity_id,
-        entity_id_offset: string_offset + 4,
-        optional_slot_present,
-        end,
-    }))
+    Ok(
+        (entity_id.suffix() == entity_suffix).then_some(NamedEntityHeader {
+            entity_id,
+            entity_id_offset: string_offset + 4,
+            optional_slot_present,
+            end,
+        }),
+    )
 }
 
 /// An admitted entity identity and its source header locations.
@@ -1524,8 +1476,7 @@ pub(super) fn parse_genesis_entity_header(
     let Some(after_type) = lp_ascii_matches(bytes, after_key, b"IntrinsicMetaTypeuint64") else {
         return Ok(None);
     };
-    let text_storage;
-    let Some((entity_id, end, held_storage)) = lp_utf16_bounded_scoped(
+    let Some((entity_id, end)) = lp_utf16_bounded_charged(
         ctx,
         bytes,
         after_type + 8,
@@ -1535,19 +1486,17 @@ pub(super) fn parse_genesis_entity_header(
     else {
         return Ok(None);
     };
-    text_storage = held_storage;
     let Ok(entity_id) = crate::records::identity::DesignEntityId::try_from(entity_id) else {
         return Ok(None);
     };
-    if entity_id.suffix() != entity_suffix {
-        return Ok(None);
-    }
-    text_storage.commit_value(Some(NamedEntityHeader {
-        entity_id,
-        entity_id_offset: after_type + 12,
-        optional_slot_present: false,
-        end,
-    }))
+    Ok(
+        (entity_id.suffix() == entity_suffix).then_some(NamedEntityHeader {
+            entity_id,
+            entity_id_offset: after_type + 12,
+            optional_slot_present: false,
+            end,
+        }),
+    )
 }
 
 /// The offset after a u32-counted ASCII field at `at` that holds `expected`.
@@ -1571,8 +1520,7 @@ fn collect_member_run(
     first: Option<crate::records::identity::Located<u32>>,
     operation: &'static str,
 ) -> Result<Option<Vec<crate::records::identity::Located<u32>>>, CodecError> {
-    let storage;
-    let ((members, malformed), held_storage) = ctx.with_scoped_storage(operation, || {
+    let ((members, malformed), storage) = ctx.with_scoped_storage(operation, || {
         let mut members = Vec::new();
         ctx.reserve_capacity(
             &mut members,
@@ -1606,11 +1554,11 @@ fn collect_member_run(
         )?;
         Ok::<_, CodecError>((members, malformed))
     })?;
-    storage = held_storage;
     if malformed.is_some() {
         return Ok(None);
     }
-    storage.commit_value(Some(members))
+    storage.commit()?;
+    Ok(Some(members))
 }
 
 /// Parse the counted member-record run of the paired same-index container
@@ -1804,9 +1752,7 @@ pub(crate) fn decode_entity_headers(
         }
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
         // Modules come from the type table of this stream's own `MetaStream`.
-        let _scope_reservation;
-        let (scope, held_scope_storage) = native_scope_scoped(ctx, &entry.name)?;
-        _scope_reservation = held_scope_storage;
+        let (_scope_reservation, scope) = native_scope_scoped(ctx, &entry.name)?;
         let stream_modules = match scope.strip_suffix(BULK_STREAM_FILE) {
             Some(prefix) => ctx.get_hash_map(&entity_modules, prefix, "find F3D entity modules")?,
             None => None,
@@ -1927,9 +1873,7 @@ pub(crate) fn decode_entity_headers(
         };
         sorted_distinct(ctx, candidates, "order F3D legacy sketch candidates")?;
         sorted_distinct(ctx, &mut existing, "order F3D existing entity indices")?;
-        let _records_storage;
-        let (records, held_storage) = IndexedRecordOffsets::build_scoped(ctx, bytes)?;
-        _records_storage = held_storage;
+        let (records, _records_storage) = IndexedRecordOffsets::build_scoped(ctx, bytes)?;
         for (entity_suffix, offsets) in records.records(ctx)? {
             if ctx
                 .binary_search(
@@ -2125,9 +2069,7 @@ fn decode_headers_for_indices(
             continue;
         }
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
-        let _scope_reservation;
-        let (scope, held_scope_storage) = native_scope_scoped(ctx, &entry.name)?;
-        _scope_reservation = held_scope_storage;
+        let (_scope_reservation, scope) = native_scope_scoped(ctx, &entry.name)?;
         let Some(indices) =
             ctx.get_mut_hash_map(wanted, scope.as_str(), "find F3D wanted record indices")?
         else {
@@ -2238,11 +2180,9 @@ pub(crate) fn decode_sketch_relations(
         if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
             continue;
         }
-        let scope_storage;
-        let (scope, held_scope_storage) = native_scope_scoped(ctx, &entry.name)?;
-        scope_storage = held_scope_storage;
+        let (scope_storage, scope) = native_scope_scoped(ctx, &entry.name)?;
         let segment_types = match scope.strip_suffix(BULK_STREAM_FILE) {
-            Some(prefix) => types_by_segment.run(prefix)?,
+            Some(prefix) => types_by_segment.run(ctx, prefix)?,
             None => &[],
         };
         ctx.push_scoped_vec(
@@ -2320,12 +2260,10 @@ pub(crate) fn decode_sketch_relations(
             continue;
         };
         // The parse is temporary: the relation copies what it keeps.
-        let _parse_storage;
-        let (parsed, held_storage) = ctx
+        let (parsed, _parse_storage) = ctx
             .with_scoped_storage("f3d sketch relation parse", || {
                 parse_classed_sketch_relation(ctx, payload, class)
             })?;
-        _parse_storage = held_storage;
         let Some(parsed) = parsed else {
             continue;
         };
@@ -2603,17 +2541,15 @@ fn trailing_sketch_owner_reference(record: &[u8]) -> Option<u32> {
     View::u32_le_at(record, tail + 1)
 }
 
-fn decode_sketch_points_from_stream<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
+fn decode_sketch_points_from_stream(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     stream: &str,
-) -> Result<(Vec<SketchPoint>, ScopedReservation<'ctx>), CodecError> {
-    let _frames_storage;
-    let (frames, held_storage) = ctx.with_scoped_storage("f3d sketch point frames", || {
+) -> Result<Vec<SketchPoint>, CodecError> {
+    let (frames, _frames_storage) = ctx.with_scoped_storage("f3d sketch point frames", || {
         design_primary_frames(ctx, bytes, meta)
     })?;
-    _frames_storage = held_storage;
     // The last frame of each entity, for reference targets.
     let mut frames_storage = ctx.reserve_scoped(0, "f3d sketch point frame index")?;
     let mut frames_by_entity = HashMap::new();
@@ -2630,7 +2566,6 @@ fn decode_sketch_points_from_stream<'ctx>(
             )
         })?;
     }
-    let mut output_storage = ctx.reserve_scoped(0, "f3d sketch point output")?;
     let mut out = Vec::new();
     for frame in ctx.admit_iter(&frames, "scan F3D sketch point frames")? {
         let design_type = frame.design_type;
@@ -2705,7 +2640,7 @@ fn decode_sketch_points_from_stream<'ctx>(
             ));
         };
 
-        ctx.reserve_scoped_vec(&mut output_storage, &mut out, 1, "f3d sketch point output")?;
+        ctx.reserve_vec(&mut out, 1, "f3d sketch point output")?;
         out.push(SketchPoint::try_from_charged(
             ctx,
             crate::records::sketch_geometry::SketchPointDraft {
@@ -2730,7 +2665,7 @@ fn decode_sketch_points_from_stream<'ctx>(
             },
         )?);
     }
-    Ok((out, output_storage))
+    Ok(out)
 }
 
 /// Whether `design_type` registers the sketch-point companion class.
@@ -2771,22 +2706,16 @@ struct SketchProperty<'a> {
 /// Which keys a record carries varies by record, so a caller addresses a
 /// property by name. Reading the block by fixed offset misframes every record
 /// whose key set differs from the one the offsets were taken from.
-struct SketchProperties<'a, 'ctx, 'arena> {
+struct SketchProperties<'a, 'ctx> {
     entries: Vec<SketchProperty<'a>>,
     _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
-    ctx: &'ctx DecodeContext<'arena>,
 }
 
-impl SketchProperties<'_, '_, '_> {
+impl SketchProperties<'_, '_> {
     /// The value of the first property named `key`. Each visited name is
     /// compared with the fixed key.
-    fn find(&self, key: &'static str) -> Result<Option<u64>, CodecError> {
-        self.ctx.charge_work(0, "find F3D sketch property")?;
-        if self.entries.is_empty() {
-            return Ok(None);
-        }
-        Ok(self
-            .ctx
+    fn find(&self, ctx: &DecodeContext<'_>, key: &'static str) -> Result<Option<u64>, CodecError> {
+        Ok(ctx
             .find_by(
                 &self.entries,
                 |property| Ok(property.name.as_bytes() == key.as_bytes()),
@@ -2797,25 +2726,21 @@ impl SketchProperties<'_, '_, '_> {
 
     /// The first property and, in a two-property block, the second. Other
     /// block sizes have no such pair.
-    fn first_two(
-        &self,
-    ) -> Result<Option<(SketchProperty<'_>, Option<SketchProperty<'_>>)>, CodecError> {
-        self.ctx
-            .charge_work(0, "read F3D first sketch properties")?;
-        Ok(match self.entries.as_slice() {
+    fn first_two(&self) -> Option<(SketchProperty<'_>, Option<SketchProperty<'_>>)> {
+        match self.entries.as_slice() {
             [first] => Some((*first, None)),
             [first, second] => Some((*first, Some(*second))),
             _ => None,
-        })
+        }
     }
 }
 
 /// Read the property block at `cursor`, advancing it past the block.
-fn read_property_block<'a, 'ctx, 'arena>(
-    ctx: &'ctx DecodeContext<'arena>,
+fn read_property_block<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     payload: &'a [u8],
     cursor: &mut usize,
-) -> Result<Option<SketchProperties<'a, 'ctx, 'arena>>, CodecError> {
+) -> Result<Option<SketchProperties<'a, 'ctx>>, CodecError> {
     let mut storage = ctx.reserve_scoped(0, "f3d sketch property block")?;
     let mut entries = Vec::new();
     let mut at = *cursor;
@@ -2862,7 +2787,6 @@ fn read_property_block<'a, 'ctx, 'arena>(
     Ok(Some(SketchProperties {
         entries,
         _storage: storage,
-        ctx,
     }))
 }
 
@@ -2905,19 +2829,16 @@ fn sketch_utf16_text<'ctx>(
 
 /// Decode sketch-text records carrying persistent identities, font metrics,
 /// UTF-16 content, and an owning-sketch reference.
-fn decode_sketch_texts_from_stream<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
+fn decode_sketch_texts_from_stream(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     stream: &str,
-) -> Result<(Vec<SketchText>, ScopedReservation<'ctx>), CodecError> {
-    let mut output_storage = ctx.reserve_scoped(0, "f3d sketch text records")?;
+) -> Result<Vec<SketchText>, CodecError> {
     let mut out = Vec::new();
-    let _frames_storage;
-    let (frames, held_storage) = ctx.with_scoped_storage("f3d sketch text frames", || {
+    let (frames, _frames_storage) = ctx.with_scoped_storage("f3d sketch text frames", || {
         design_primary_frames(ctx, bytes, meta)
     })?;
-    _frames_storage = held_storage;
     for frame in ctx.admit_iter(&frames, "scan F3D sketch text frames")? {
         let type_guid = frame.design_type.type_guid.as_str();
         if !SKETCH_TEXT_TYPE_GUIDS
@@ -2931,8 +2852,7 @@ fn decode_sketch_texts_from_stream<'ctx>(
         let payload = &bytes[frame.start..frame.end];
         // A record that no layout closes is dropped, so its copies stay
         // scoped until it decodes.
-        let text_storage;
-        let (text, held_storage) = ctx.with_scoped_storage("f3d sketch text record", || {
+        let (text, text_storage) = ctx.with_scoped_storage("f3d sketch text record", || {
             let class_tag = frame
                 .class_tag
                 .try_clone_for_decode(ctx, "copy F3D sketch text class tag")?;
@@ -2946,14 +2866,12 @@ fn decode_sketch_texts_from_stream<'ctx>(
                 frame.start,
             )
         })?;
-        text_storage = held_storage;
         if let Some(text) = text {
-            ctx.reserve_scoped_vec(&mut output_storage, &mut out, 1, "f3d sketch text records")?;
-            let text = text_storage.commit_value(text)?;
-            out.push(text);
+            text_storage.commit()?;
+            ctx.push_vec(&mut out, text, "f3d sketch text records")?;
         }
     }
-    Ok((out, output_storage))
+    Ok(out)
 }
 
 /// Decode sketch-text records carrying persistent identities, font metrics,
@@ -3216,8 +3134,8 @@ fn decode_sketch_text_head<'ctx>(
     let Some(properties) = read_property_block(ctx, payload, &mut cursor)? else {
         return Ok(None);
     };
-    let textex_tag = properties.find("textex_tag")?;
-    let txt_tag = properties.find("txt_tag")?;
+    let textex_tag = properties.find(ctx, "textex_tag")?;
+    let txt_tag = properties.find(ctx, "txt_tag")?;
     let is_txt_tag = match (textex_tag, txt_tag) {
         (Some(_), _) => false,
         (None, Some(_)) => true,
@@ -3272,9 +3190,9 @@ fn decode_sketch_text_head<'ctx>(
     cursor += 8;
     Ok(Some((
         SketchTextHead {
-            entity_genesis: properties.find("EntityGenesis")?,
+            entity_genesis: properties.find(ctx, "EntityGenesis")?,
             persistent_id,
-            base_id: properties.find("txt_tag_base")?,
+            base_id: properties.find(ctx, "txt_tag_base")?,
             font_family,
             height,
             color,
@@ -3307,7 +3225,7 @@ fn decode_indexed_sketch_text_head<'ctx>(
     let Some(properties) = read_property_block(ctx, payload, &mut cursor)? else {
         return Ok(None);
     };
-    let Some(persistent_id) = properties.find("textex_tag")? else {
+    let Some(persistent_id) = properties.find(ctx, "textex_tag")? else {
         return Ok(None);
     };
     if payload.get(cursor) != Some(&0) {
@@ -3335,9 +3253,9 @@ fn decode_indexed_sketch_text_head<'ctx>(
     cursor += 8;
     Ok(Some((
         SketchTextHead {
-            entity_genesis: properties.find("EntityGenesis")?,
+            entity_genesis: properties.find(ctx, "EntityGenesis")?,
             persistent_id: Some(persistent_id),
-            base_id: properties.find("txt_tag_base")?,
+            base_id: properties.find(ctx, "txt_tag_base")?,
             font_family,
             height,
             color,
@@ -3880,7 +3798,7 @@ fn decode_sketch_point_record(
     let Some(properties) = read_property_block(ctx, payload, &mut cursor)? else {
         return Ok(None);
     };
-    let Some((first, second)) = properties.first_two()? else {
+    let Some((first, second)) = properties.first_two() else {
         return Ok(None);
     };
     // Property names are compared with fixed keys.
@@ -4141,15 +4059,12 @@ fn decode_sketch_point_companion<'t>(
     };
     cursor += 4;
 
-    let mut storage = ctx.reserve_scoped(0, "f3d sketch point incident curves")?;
     let mut incident_curves = Vec::new();
-    storage.with_storage(|| {
-        ctx.reserve_capacity(
-            &mut incident_curves,
-            count,
-            "f3d sketch point incident curves",
-        )
-    })?;
+    ctx.reserve_capacity(
+        &mut incident_curves,
+        count,
+        "f3d sketch point incident curves",
+    )?;
     for _ in 0..count {
         ctx.charge_work(1, "scan F3D sketch point incident curves")?;
         let Some((target, type_guid)) = take_local_sketch_reference(ctx, payload, &mut cursor)?
@@ -4168,8 +4083,7 @@ fn decode_sketch_point_companion<'t>(
         if !encoding_matches {
             return Ok(None);
         }
-        ctx.push_scoped_vec(
-            &mut storage,
+        ctx.push_vec(
             &mut incident_curves,
             target,
             "f3d sketch point incident curves",
@@ -4193,7 +4107,7 @@ fn decode_sketch_point_companion<'t>(
     if inverse != point_record_index || !inverse_encoding_matches || cursor != payload.len() {
         return Ok(None);
     }
-    storage.commit_value(Some((
+    Ok(Some((
         record_form,
         SketchPointCompanion { incident_curves },
     )))
@@ -4269,19 +4183,16 @@ impl SketchCurveClass {
 /// `crv_secondary_id`) from each design `BulkStream` entry in `scan`: the
 /// curve's persistent primary and secondary identities plus its NURBS, circular
 /// arc, line, or referenced analytic geometry.
-fn decode_sketch_curve_identities_from_stream<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
+fn decode_sketch_curve_identities_from_stream(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     stream: &str,
-) -> Result<(Vec<SketchCurveIdentity>, ScopedReservation<'ctx>), CodecError> {
-    let mut output_storage = ctx.reserve_scoped(0, "f3d sketch curve output")?;
+) -> Result<Vec<SketchCurveIdentity>, CodecError> {
     let mut out = Vec::new();
-    let _frames_storage;
-    let (frames, held_storage) = ctx.with_scoped_storage("f3d sketch curve frames", || {
+    let (frames, _frames_storage) = ctx.with_scoped_storage("f3d sketch curve frames", || {
         design_primary_frames(ctx, bytes, meta)
     })?;
-    _frames_storage = held_storage;
     for frame in ctx.admit_iter(&frames, "scan F3D sketch curve frames")? {
         let payload = &bytes[frame.start..frame.end];
         let Some((primary_id, secondary_id, geometry_shift, entity_genesis)) =
@@ -4302,8 +4213,7 @@ fn decode_sketch_curve_identities_from_stream<'ctx>(
         // Geometry that does not decode is dropped, so its storage stays
         // scoped until it is kept.
         let parsed_geometry = if let Some(curve_class) = curve_class {
-            let geometry_storage;
-            let (parsed, held_storage) =
+            let (parsed, geometry_storage) =
                 ctx.with_scoped_storage("f3d sketch curve geometry", || {
                     decode_sketch_curve_geometry(
                         ctx,
@@ -4314,12 +4224,10 @@ fn decode_sketch_curve_identities_from_stream<'ctx>(
                         frame.start,
                     )
                 })?;
-            geometry_storage = held_storage;
             if parsed.is_some() {
-                geometry_storage.commit_value(parsed)?
-            } else {
-                parsed
+                geometry_storage.commit()?;
             }
+            parsed
         } else {
             None
         };
@@ -4328,7 +4236,7 @@ fn decode_sketch_curve_identities_from_stream<'ctx>(
                 (Some(parsed.geometry), parsed.geometry_offset)
             });
 
-        ctx.reserve_scoped_vec(&mut output_storage, &mut out, 1, "f3d sketch curve output")?;
+        ctx.reserve_vec(&mut out, 1, "f3d sketch curve output")?;
         out.push(SketchCurveIdentity {
             id: design_record_id_charged(
                 ctx,
@@ -4356,7 +4264,7 @@ fn decode_sketch_curve_identities_from_stream<'ctx>(
             geometry,
         });
     }
-    Ok((out, output_storage))
+    Ok(out)
 }
 
 /// Decode every sketch-curve record ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata), `crv_primary_id`/
@@ -4486,8 +4394,7 @@ fn parse_sketch_surface(
     };
     // The source coordinates and scaled points are temporaries; the knots
     // and control-point rows are the surface's own storage.
-    let _coordinate_storage;
-    let (coordinates, held_storage) =
+    let (coordinates, _coordinate_storage) =
         ctx.with_scoped_storage("f3d sketch surface coordinates", || {
             charged_sketch_scalar_values(
                 ctx,
@@ -4497,7 +4404,6 @@ fn parse_sketch_surface(
                 "f3d sketch surface scalar values",
             )
         })?;
-    _coordinate_storage = held_storage;
     let Some(coordinates) = coordinates else {
         return Ok(None);
     };
@@ -4521,8 +4427,8 @@ fn parse_sketch_surface(
     else {
         return Ok(None);
     };
-    let mut points_storage = ctx.reserve_scoped(0, "f3d sketch surface scaled points")?;
     let mut points = Vec::new();
+    let mut points_storage = ctx.reserve_scoped(0, "f3d sketch surface scaled points")?;
     for (ordinal, values) in coordinates.chunks(3).enumerate() {
         ctx.charge_work(1, "scan F3D sketch surface coordinates")?;
         let Some(source) = FinitePoint3::new(Point3::new(values[0], values[1], values[2])) else {
@@ -4593,16 +4499,14 @@ pub(crate) fn decode_sketch_surfaces(
             let payload = &bytes[record_at..];
             // A record that does not form a surface drops what its parse
             // built, so that storage stays scoped until the surface is kept.
-            let surface_storage;
-            let (surface, held_storage) = ctx
+            let (surface, surface_storage) = ctx
                 .with_scoped_storage("f3d sketch surface parse", || {
                     parse_sketch_surface(ctx, payload, record_at)
                 })?;
-            surface_storage = held_storage;
             let Some(surface) = surface else {
                 continue;
             };
-            let surface = surface_storage.commit_value(surface)?;
+            surface_storage.commit()?;
 
             ctx.reserve_vec(&mut out, 1, "f3d sketch surface output")?;
             out.push(SketchSurface {
@@ -4634,16 +4538,14 @@ pub(crate) fn decode_sketch_surfaces(
 
 /// Stream scopes numbered in first-seen order, so the sketch-graph tables key
 /// on fixed-width numbers instead of borrowing record identifiers.
-struct ScopeNumbers<'ctx, 'arena> {
+struct ScopeNumbers<'ctx> {
     numbers: HashMap<String, u32>,
     storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
-    ctx: &'ctx DecodeContext<'arena>,
 }
 
-impl ScopeNumbers<'_, '_> {
+impl ScopeNumbers<'_> {
     /// The number of the stream scope of native record `id`.
-    fn of(&mut self, id: &str) -> Result<Option<u32>, CodecError> {
-        let ctx = self.ctx;
+    fn of(&mut self, ctx: &DecodeContext<'_>, id: &str) -> Result<Option<u32>, CodecError> {
         let Some(scope) = record_streams::record_stream(ctx, id)? else {
             return Ok(None);
         };
@@ -4682,7 +4584,6 @@ pub(crate) fn bind_sketch_graph(
     let mut scopes = ScopeNumbers {
         numbers: HashMap::new(),
         storage: ctx.reserve_scoped(0, "f3d sketch graph scope")?,
-        ctx,
     };
     let mut sketch_owners = HashMap::new();
     for entity in ctx.admit_iter(entities, "scan F3D sketch entities")? {
@@ -4692,7 +4593,7 @@ pub(crate) fn bind_sketch_graph(
         let Ok(suffix) = u32::try_from(entity.entity_id.suffix()) else {
             continue;
         };
-        let Some(scope) = scopes.of(&entity.id)? else {
+        let Some(scope) = scopes.of(ctx, &entity.id)? else {
             continue;
         };
         storage.with_storage(|| {
@@ -4712,7 +4613,7 @@ pub(crate) fn bind_sketch_graph(
         .iter_mut()
         .zip(ctx.admit_iter(&(0..relation_count), "scan F3D sketch relation owners")?)
     {
-        let Some(scope) = scopes.of(&relation.id)? else {
+        let Some(scope) = scopes.of(ctx, &relation.id)? else {
             return Err(crate::design::text::malformed_design(
                 ctx,
                 format_args!(
@@ -4767,7 +4668,7 @@ pub(crate) fn bind_sketch_graph(
     let mut operands = HashMap::new();
     let mut point_scopes = Vec::new();
     for point in ctx.admit_iter(&*points, "scan F3D sketch point operands")? {
-        let scope = scopes.of(&point.id)?;
+        let scope = scopes.of(ctx, &point.id)?;
         ctx.push_scoped_vec(
             &mut storage,
             &mut point_scopes,
@@ -4791,7 +4692,7 @@ pub(crate) fn bind_sketch_graph(
     }
     let mut curve_scopes = Vec::new();
     for curve in ctx.admit_iter(&*curves, "scan F3D sketch curves operands")? {
-        let scope = scopes.of(&curve.id)?;
+        let scope = scopes.of(ctx, &curve.id)?;
         ctx.push_scoped_vec(
             &mut storage,
             &mut curve_scopes,
@@ -4816,7 +4717,7 @@ pub(crate) fn bind_sketch_graph(
     }
     let mut surface_scopes = Vec::new();
     for surface in ctx.admit_iter(&*surfaces, "scan F3D sketch surfaces operands")? {
-        let scope = scopes.of(&surface.id)?;
+        let scope = scopes.of(ctx, &surface.id)?;
         ctx.push_scoped_vec(
             &mut storage,
             &mut surface_scopes,
@@ -4940,7 +4841,7 @@ pub(crate) fn bind_sketch_graph(
         ) else {
             continue;
         };
-        let Some(scope) = scopes.of(&entity.id)? else {
+        let Some(scope) = scopes.of(ctx, &entity.id)? else {
             continue;
         };
         for &record_index in reference_runs::admit_reference_values(
@@ -5320,8 +5221,7 @@ fn decode_nurbs_lanes(
     };
     // The source coordinates are a temporary; the control points are the
     // curve's own storage.
-    let _coordinate_storage;
-    let (coordinates, held_storage) =
+    let (coordinates, _coordinate_storage) =
         ctx.with_scoped_storage("f3d sketch NURBS coordinates", || {
             charged_sketch_scalar_values(
                 ctx,
@@ -5331,7 +5231,6 @@ fn decode_nurbs_lanes(
                 operation,
             )
         })?;
-    _coordinate_storage = held_storage;
     let Some(coordinates) = coordinates else {
         return Ok(None);
     };
@@ -6108,7 +6007,7 @@ fn parse_classed_sketch_relation(
     let Some(properties) = read_property_block(ctx, payload, &mut cursor)? else {
         return Ok(None);
     };
-    let entity_genesis = properties.find("EntityGenesis")?;
+    let entity_genesis = properties.find(ctx, "EntityGenesis")?;
     let mut auxiliary_references = Vec::new();
     let Some(class_members) =
         parse_relation_class_members(ctx, payload, &mut cursor, class, &mut auxiliary_references)?
@@ -6413,17 +6312,16 @@ fn decode_reference_list(
     }))
 }
 
-fn decode_sketch_streams<'ctx, T>(
-    ctx: &'ctx DecodeContext<'_>,
+fn decode_sketch_streams<T>(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     decode: impl Fn(
-        &'ctx DecodeContext<'_>,
+        &DecodeContext<'_>,
         &[u8],
         &crate::metastream::MetaStream,
         &str,
-    ) -> Result<(Vec<T>, ScopedReservation<'ctx>), CodecError>,
+    ) -> Result<Vec<T>, CodecError>,
 ) -> Result<Vec<T>, CodecError> {
-    let mut output_storage = ctx.reserve_scoped(0, "f3d sketch stream output")?;
     let mut out = Vec::new();
     for entry in ctx.admit_iter(&scan.entries, "scan F3D sketch design entries")? {
         if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
@@ -6433,16 +6331,13 @@ fn decode_sketch_streams<'ctx, T>(
         let Some(meta) = metadata_for_bulk_stream(ctx, scan, &entry.name)? else {
             continue;
         };
-        let child_storage;
-        let (mut child, held_storage) = decode(ctx, bytes, &meta, &entry.name)?;
-        child_storage = held_storage;
-        output_storage
-            .with_storage(|| ctx.append_vec(&mut out, &mut child, "f3d sketch stream output"))?;
-        // The drained allocation is destroyed before its reservation refunds.
-        drop(child);
-        drop(child_storage);
+        ctx.append_vec(
+            &mut out,
+            &mut { decode(ctx, bytes, &meta, &entry.name)? },
+            "f3d sketch stream output",
+        )?;
     }
-    output_storage.commit_value(out)
+    Ok(out)
 }
 
 #[cfg(test)]

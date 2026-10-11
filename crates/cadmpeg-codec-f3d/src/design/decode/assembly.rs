@@ -282,8 +282,7 @@ pub(super) fn exact_legacy_as_built_421_operands(
     recipes: &[ConstructionRecipe],
     solved_frame: &DesignAssemblySolvedFrame,
 ) -> Result<Option<DesignAssemblyLegacyOperands>, cadmpeg_core::CodecError> {
-    let storage;
-    let (operands, held_storage) =
+    let (operands, storage) =
         ctx.with_scoped_storage("f3d legacy AsBuilt operand candidates", || {
             legacy_as_built_421_operands(
                 ctx,
@@ -295,12 +294,10 @@ pub(super) fn exact_legacy_as_built_421_operands(
                 solved_frame,
             )
         })?;
-    storage = held_storage;
     if operands.is_some() {
-        storage.commit_value(operands)
-    } else {
-        Ok(operands)
+        storage.commit()?;
     }
+    Ok(operands)
 }
 
 fn legacy_as_built_421_operands(
@@ -506,9 +503,7 @@ fn exact_legacy_as_built_face_selection(
     let Some(first) = ctx.position_by(
         offsets,
         |byte_offset| {
-            let storage;
-            let (selection, held_storage) = selection_at(*byte_offset)?;
-            storage = held_storage;
+            let (selection, storage) = selection_at(*byte_offset)?;
             found = selection.map(|selection| (selection, storage));
             Ok(found.is_some())
         },
@@ -528,7 +523,8 @@ fn exact_legacy_as_built_face_selection(
     let Some((selection, storage)) = found else {
         return Ok(None);
     };
-    storage.commit_value(Some(selection))
+    storage.commit()?;
+    Ok(Some(selection))
 }
 
 /// The search for the legacy As-built face selection of one scope reference:
@@ -578,23 +574,19 @@ impl LegacySelectionSearch<'_> {
             class_tag,
             byte_offset: header_offset,
         };
-        let mut operand_storage =
-            ctx.reserve_scoped(0, "f3d legacy AsBuilt source face operand")?;
-        let Some(operand) = operand_storage.with_storage(|| {
-            parse_face_operand(
-                ctx,
-                self.bytes,
-                self.records,
-                crate::design::decode::operands::FaceOperandFrame {
-                    scope: self.scope,
-                    scope_reference_ordinal: self.scope_reference_ordinal,
-                    group_ownership: None,
-                    next_byte_offset: self.next_byte_offset,
-                    header: &header,
-                },
-                self.recipes,
-            )
-        })?
+        let Some(operand) = parse_face_operand(
+            ctx,
+            self.bytes,
+            self.records,
+            crate::design::decode::operands::FaceOperandFrame {
+                scope: self.scope,
+                scope_reference_ordinal: self.scope_reference_ordinal,
+                group_ownership: None,
+                next_byte_offset: self.next_byte_offset,
+                header: &header,
+            },
+            self.recipes,
+        )?
         else {
             return Ok(None);
         };
@@ -619,19 +611,9 @@ impl LegacySelectionSearch<'_> {
             context_id_offset: prefix.context_id_offset,
             recipe_record_index: operand.recipe_record_index(),
             recipe_record_byte_offset: operand.recipe_record_byte_offset(),
-            recipe_id: ctx.copy_retained_text(
-                &operand.recipe_id,
-                "copy F3D As-built selection recipe identity",
-            )?,
+            recipe_id: operand.recipe_id,
             recipe_kind: operand.recipe_kind,
-            recipe_references: ctx.try_collect_retained_with(
-                &operand.recipe_references,
-                "collect F3D As-built selection recipe references",
-                |reference| {
-                    reference
-                        .try_clone_for_decode(ctx, "copy F3D As-built selection recipe reference")
-                },
-            )?,
+            recipe_references: operand.recipe_references,
             next_byte_offset,
         }))
     }

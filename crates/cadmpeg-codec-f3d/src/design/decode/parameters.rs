@@ -51,44 +51,6 @@ fn parameter_text(
     lp_utf16_bounded_charged(ctx, payload, at, bounds, "f3d Design UTF-16 text")
 }
 
-/// The exact UTF-16LE source tag of a user parameter.
-const USER_PARAMETER_SOURCE_UTF16: &[u8; 28] = b"U\0s\0e\0r\0 \0P\0a\0r\0a\0m\0e\0t\0e\0r\0";
-
-/// A fixed user source or the dynamic source text retained by an owned parameter.
-enum ParsedParameterSourceKind {
-    User,
-    Owned(String),
-}
-
-impl ParsedParameterSourceKind {
-    fn as_str(&self) -> &str {
-        match self {
-            Self::User => "User Parameter",
-            Self::Owned(value) => value,
-        }
-    }
-}
-
-/// Recognize the fixed user tag without a temporary decoded String.
-fn parameter_source_kind_text(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-    at: usize,
-) -> Result<Option<(ParsedParameterSourceKind, usize)>, CodecError> {
-    ctx.charge_work(0, "f3d Design UTF-16 text")?;
-    if View::u32_le_at(payload, at) == Some(14) {
-        if let Some(start) = at.checked_add(4) {
-            if bytes_at::<28>(payload, start) == Some(USER_PARAMETER_SOURCE_UTF16) {
-                if let Some(end) = start.checked_add(USER_PARAMETER_SOURCE_UTF16.len()) {
-                    return Ok(Some((ParsedParameterSourceKind::User, end)));
-                }
-            }
-        }
-    }
-    Ok(parameter_text(ctx, payload, at, 1..=256)?
-        .map(|(text, end)| (ParsedParameterSourceKind::Owned(text), end)))
-}
-
 /// Decode every parametric construction-recipe record (`body_recipe_data`,
 /// `face_recipe_data`, `bounded_face_recipe_data`, `edge_recipe_data`,
 /// `vertex_recipe_data`) from each design `BulkStream` entry in `scan`.
@@ -162,12 +124,10 @@ fn decode_stream_parameters(
         let Some(frame) = bytes.get(at..end.unwrap_or(bytes.len())) else {
             break;
         };
-        let parsed_storage;
-        let (parsed, held_storage) = ctx
+        let (parsed, parsed_storage) = ctx
             .with_scoped_storage("f3d parameter frame candidates", || {
                 parse_design_parameter(ctx, frame)
             })?;
-        parsed_storage = held_storage;
         let Some(parsed) = parsed else {
             next = overlapping_header(bytes, at).or(end);
             continue;
@@ -184,7 +144,7 @@ fn decode_stream_parameters(
             ctx.reserve_set(&mut emitted_record_indices, 1, "f3d parameter record index")
         })?;
         emitted_record_indices.insert(parsed.record_index);
-        let parsed = parsed_storage.commit_value(parsed)?;
+        parsed_storage.commit()?;
         let parameter = locate_design_parameter(ctx, parsed, stream, at)?;
         ctx.push_vec(out, parameter, "f3d decoded parameter records")?;
     }
@@ -203,7 +163,7 @@ pub(in crate::design) struct ParsedDesignParameter {
     class_tag: crate::records::references::DesignClassTag,
     record_index: u32,
     source_ordinal: u32,
-    source_kind: ParsedParameterSourceKind,
+    source_kind: String,
     owner_record_index: Option<u32>,
     family_discriminator: Option<DesignParameterDiscriminator>,
     expression: String,
@@ -230,13 +190,8 @@ impl ParsedDesignParameter {
         stream: &str,
         frame_start: u64,
     ) -> Result<Option<DesignParameter>, CodecError> {
-        ctx.charge_work(0, "validate parameter source kind")?;
-        let source_kind = match self.source_kind {
-            ParsedParameterSourceKind::User => None,
-            ParsedParameterSourceKind::Owned(text) => {
-                Some(ctx.validate_nonblank_text(text, "validate parameter source kind")?)
-            }
-        };
+        let source_kind =
+            ctx.validate_nonblank_text(self.source_kind, "validate parameter source kind")?;
         let expression =
             ctx.validate_nonblank_text(self.expression, "validate parameter expression")?;
         let name = ctx.validate_nonblank_text(self.name, "validate parameter name")?;
@@ -262,27 +217,12 @@ impl ParsedDesignParameter {
             }
             None => None,
         };
-        let source = match source_kind {
-            None => {
-                let (None, Some(family_discriminator)) =
-                    (self.owner_record_index, family_discriminator)
-                else {
-                    return Ok(None);
-                };
-                crate::records::parameters::DesignParameterSource::User {
-                    family_discriminator,
-                }
-            }
-            Some(source_kind) => {
-                let Ok(source) = crate::records::parameters::DesignParameterSource::new(
-                    source_kind,
-                    self.owner_record_index,
-                    family_discriminator,
-                ) else {
-                    return Ok(None);
-                };
-                source
-            }
+        let Ok(source) = crate::records::parameters::DesignParameterSource::new(
+            source_kind,
+            self.owner_record_index,
+            family_discriminator,
+        ) else {
+            return Ok(None);
         };
         let (
             Some(expression_offset),
@@ -458,7 +398,7 @@ pub(in crate::design) fn parse_design_parameter(
     let prefixed_kind =
         if discriminated && owner_record_index.is_some() && zeros_at::<10>(payload, expression_end)
         {
-            parameter_source_kind_text(ctx, payload, prefixed_kind_at)?
+            parameter_text(ctx, payload, prefixed_kind_at, 1..=256)?
         } else {
             None
         };
@@ -466,7 +406,7 @@ pub(in crate::design) fn parse_design_parameter(
         Some(value) => (prefixed_kind_at, value),
         None => {
             let source_kind_at = expression_end + trailer_len;
-            let Some(value) = parameter_source_kind_text(ctx, payload, source_kind_at)? else {
+            let Some(value) = parameter_text(ctx, payload, source_kind_at, 1..=256)? else {
                 return Ok(None);
             };
             (source_kind_at, value)
@@ -508,8 +448,8 @@ pub(in crate::design) fn parse_design_parameter(
     if tail.len() != 12
         || bytes_at::<2>(tail, 0) != Some(&[0, 1])
         || !zeros_at::<9>(tail, 3)
-        || !valid_design_parameter_family(family_discriminator, source_kind.as_str(), tail[2])
-        || source_kind.as_str().is_empty()
+        || !valid_design_parameter_family(family_discriminator, &source_kind, tail[2])
+        || source_kind.is_empty()
     {
         return Ok(None);
     }
@@ -565,7 +505,7 @@ fn parse_legacy_287_design_parameter(
     }
     let source_kind_at = expression_end + CLASS_287_EXPRESSION_TRAILER_LEN;
     let Some((source_kind, source_kind_end)) =
-        parameter_source_kind_text(ctx, payload, source_kind_at)?
+        parameter_text(ctx, payload, source_kind_at, 1..=256)?
     else {
         return Ok(None);
     };
@@ -602,7 +542,7 @@ fn parse_legacy_287_design_parameter(
         || bytes_at::<2>(tail, 0) != Some(&legacy_287_tail::TAIL_PREFIX_VALUE)
         || tail[legacy_287_tail::FAMILY_MARKER] != legacy_287_tail::FAMILY_MARKER_VALUE
         || !zeros_at::<9>(tail, legacy_287_tail::ZERO_RUN_9)
-        || source_kind.as_str().is_empty()
+        || source_kind.is_empty()
     {
         return Ok(None);
     }
@@ -652,7 +592,7 @@ fn parse_legacy_design_parameter(
     }
     let source_kind_at = expression_end + 5;
     let Some((source_kind, source_kind_end)) =
-        parameter_source_kind_text(ctx, payload, source_kind_at)?
+        parameter_text(ctx, payload, source_kind_at, 1..=256)?
     else {
         return Ok(None);
     };
@@ -672,7 +612,7 @@ fn parse_legacy_design_parameter(
     };
     if tail.len() != LEGACY_PARAMETER_TAIL.len()
         || bytes_at::<12>(tail, 0) != Some(&LEGACY_PARAMETER_TAIL)
-        || source_kind.as_str().is_empty()
+        || source_kind.is_empty()
     {
         return Ok(None);
     }
@@ -1372,19 +1312,16 @@ pub(crate) fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
     companions: Vec<DesignParameterCompanion>,
     inputs: &ParameterCompanionInputs<'_, S>,
 ) -> Result<Vec<DesignParameterCompanion>, CodecError> {
-    ctx.charge_work(0, "f3d bound parameter companions")?;
     if companions.is_empty() {
         return Ok(companions);
     }
     let mut payload_storage = ctx.reserve_scoped(0, "f3d companion payloads")?;
     let mut payloads = Vec::new();
     {
-        let _storage;
-        let (records, held_storage) = ctx
+        let (records, _storage) = ctx
             .with_scoped_storage("f3d companion payload records", || {
                 CompanionPayloadRecords::build(ctx, inputs)
             })?;
-        _storage = held_storage;
         let mut intervals = CompanionIntervals::new(
             ctx,
             inputs.parameters,
@@ -1415,16 +1352,15 @@ pub(crate) fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
 }
 
 /// The records a companion payload is resolved against, grouped by stream.
-struct CompanionPayloadRecords<'a, 'ctx, 'arena> {
-    ctx: &'ctx DecodeContext<'arena>,
+struct CompanionPayloadRecords<'a> {
     /// The position in `streams` of each stream scope's records.
     slots: HashMap<&'a str, usize>,
-    streams: Vec<StreamPayloadRecords<'a, 'ctx, 'arena>>,
+    streams: Vec<StreamPayloadRecords<'a>>,
 }
 
 /// One stream's recipes, entity headers and sketch scopes.
-struct StreamPayloadRecords<'a, 'ctx, 'arena> {
-    ctx: &'ctx DecodeContext<'arena>,
+#[derive(Default)]
+struct StreamPayloadRecords<'a> {
     /// Construction recipes ascending by byte offset, in input order among
     /// equal offsets.
     recipes: Vec<&'a ConstructionRecipe>,
@@ -1435,16 +1371,14 @@ struct StreamPayloadRecords<'a, 'ctx, 'arena> {
     last_sketch_scope: HashMap<u64, u64>,
 }
 
-impl<'a, 'ctx, 'arena> CompanionPayloadRecords<'a, 'ctx, 'arena> {
+impl<'a> CompanionPayloadRecords<'a> {
     /// Group `inputs` by the stream scope of each record identity, then order
     /// each stream's recipes and entity headers by byte offset.
     fn build<S: std::hash::BuildHasher>(
-        ctx: &'ctx DecodeContext<'arena>,
+        ctx: &DecodeContext<'_>,
         inputs: &ParameterCompanionInputs<'a, S>,
     ) -> Result<Self, CodecError> {
-        ctx.charge_work(0, "f3d companion payload streams")?;
         let mut records = Self {
-            ctx,
             slots: HashMap::new(),
             streams: Vec::new(),
         };
@@ -1452,7 +1386,7 @@ impl<'a, 'ctx, 'arena> CompanionPayloadRecords<'a, 'ctx, 'arena> {
             let Some(stream) = record_stream(ctx, &recipe.id)? else {
                 continue;
             };
-            let stream = records.stream_mut(stream)?;
+            let stream = records.stream_mut(ctx, stream)?;
             ctx.push_vec(&mut stream.recipes, recipe, "f3d companion owned recipes")?;
         }
         for entity in ctx.admit_iter(inputs.entities, "scan F3D companion preamble entities")? {
@@ -1462,7 +1396,7 @@ impl<'a, 'ctx, 'arena> CompanionPayloadRecords<'a, 'ctx, 'arena> {
             let Some(stream) = record_stream(ctx, &entity.id)? else {
                 continue;
             };
-            let stream = records.stream_mut(stream)?;
+            let stream = records.stream_mut(ctx, stream)?;
             ctx.push_vec(
                 &mut stream.entities,
                 (offset, entity.entity_id.suffix()),
@@ -1476,7 +1410,7 @@ impl<'a, 'ctx, 'arena> CompanionPayloadRecords<'a, 'ctx, 'arena> {
             let Some(stream) = record_stream(ctx, &scope.id)? else {
                 continue;
             };
-            let stream = records.stream_mut(stream)?;
+            let stream = records.stream_mut(ctx, stream)?;
             match ctx.entry_hash_map(
                 &mut stream.last_sketch_scope,
                 binding.entity_id.suffix(),
@@ -1515,9 +1449,9 @@ impl<'a, 'ctx, 'arena> CompanionPayloadRecords<'a, 'ctx, 'arena> {
     /// The records of `stream`, created empty on first use.
     fn stream_mut(
         &mut self,
+        ctx: &DecodeContext<'_>,
         stream: &'a str,
-    ) -> Result<&mut StreamPayloadRecords<'a, 'ctx, 'arena>, CodecError> {
-        let ctx = self.ctx;
+    ) -> Result<&mut StreamPayloadRecords<'a>, CodecError> {
         let slot =
             match ctx.entry_hash_map(&mut self.slots, stream, "f3d companion payload streams")? {
                 Entry::Occupied(slot) => *slot.get(),
@@ -1525,7 +1459,7 @@ impl<'a, 'ctx, 'arena> CompanionPayloadRecords<'a, 'ctx, 'arena> {
                     let index = self.streams.len();
                     ctx.push_vec(
                         &mut self.streams,
-                        StreamPayloadRecords::new(ctx),
+                        StreamPayloadRecords::default(),
                         "f3d companion payload streams",
                     )?;
                     *slot.insert(index)
@@ -1537,24 +1471,16 @@ impl<'a, 'ctx, 'arena> CompanionPayloadRecords<'a, 'ctx, 'arena> {
     /// The records of `stream`, if it holds any.
     fn stream(
         &self,
+        ctx: &DecodeContext<'_>,
         stream: &str,
-    ) -> Result<Option<&StreamPayloadRecords<'a, 'ctx, 'arena>>, CodecError> {
-        Ok(self
-            .ctx
+    ) -> Result<Option<&StreamPayloadRecords<'a>>, CodecError> {
+        Ok(ctx
             .get_hash_map(&self.slots, stream, "find F3D companion payload stream")?
             .and_then(|slot| self.streams.get(*slot)))
     }
 }
 
-impl<'a, 'ctx, 'arena> StreamPayloadRecords<'a, 'ctx, 'arena> {
-    fn new(ctx: &'ctx DecodeContext<'arena>) -> Self {
-        Self {
-            ctx,
-            recipes: Vec::new(),
-            entities: Vec::new(),
-            last_sketch_scope: HashMap::new(),
-        }
-    }
+impl StreamPayloadRecords<'_> {
     /// The end of a companion's owned interval `start..end` after scope
     /// preambles are excluded.
     ///
@@ -1566,39 +1492,40 @@ impl<'a, 'ctx, 'arena> StreamPayloadRecords<'a, 'ctx, 'arena> {
     /// in it whose entity is the sketch entity of a scope record at or after
     /// `end`. A bisection finds the first header at or after `start`; the walk
     /// then stops at the first header that ends the interval.
-    fn preamble_start(&self, start: usize, end: usize) -> Result<usize, CodecError> {
-        let ctx = self.ctx;
-        ctx.charge_work(0, "find F3D companion preamble entity")?;
+    fn preamble_start(
+        &self,
+        ctx: &DecodeContext<'_>,
+        start: usize,
+        end: usize,
+    ) -> Result<usize, CodecError> {
         let first = ctx.partition_point(
             &self.entities,
             |(offset, _)| Ok(*offset < start),
             "find F3D companion preamble entity",
         )?;
         let limit = u64_from_index(end);
-        let mut entities = self.entities.get(first..).unwrap_or(&[]).iter();
-        while !entities.as_slice().is_empty() {
-            let Some((offset, suffix)) =
-                ctx.next_charged(&mut entities, "find F3D companion preamble entity")?
-            else {
-                break;
-            };
-            if *offset >= end
-                || self
-                    .last_sketch_scope
-                    .get(suffix)
-                    .is_some_and(|last| *last >= limit)
-            {
-                return Ok((*offset).min(end));
-            }
-        }
-        Ok(end)
+        let stop = ctx.find_by(
+            self.entities.get(first..).unwrap_or(&[]),
+            |(offset, suffix)| {
+                Ok(*offset >= end
+                    || self
+                        .last_sketch_scope
+                        .get(suffix)
+                        .is_some_and(|last| *last >= limit))
+            },
+            "find F3D companion preamble entity",
+        )?;
+        Ok(stop.map_or(end, |(offset, _)| (*offset).min(end)))
     }
 
     /// The identities of the recipes in `start..end`, in byte order, copied
     /// into retained storage. Two bisections locate the range.
-    fn owned_recipe_ids(&self, start: usize, end: usize) -> Result<Vec<String>, CodecError> {
-        let ctx = self.ctx;
-        ctx.charge_work(0, "find F3D companion owned recipes")?;
+    fn owned_recipe_ids(
+        &self,
+        ctx: &DecodeContext<'_>,
+        start: usize,
+        end: usize,
+    ) -> Result<Vec<String>, CodecError> {
         let (start, end) = (u64_from_index(start), u64_from_index(end));
         let first = ctx.partition_point(
             &self.recipes,
@@ -1627,8 +1554,8 @@ fn companion_payload<'a, S: std::hash::BuildHasher>(
     ctx: &DecodeContext<'_>,
     companion: &'a DesignParameterCompanion,
     inputs: &ParameterCompanionInputs<'_, S>,
-    records: &CompanionPayloadRecords<'_, '_, '_>,
-    intervals: &mut CompanionIntervals<'a, '_, '_>,
+    records: &CompanionPayloadRecords<'_>,
+    intervals: &mut CompanionIntervals<'a, '_>,
 ) -> Result<Option<crate::records::parameters::DesignCompanionPayload>, CodecError> {
     let Some(stream) = record_stream(ctx, companion.id())? else {
         return Ok(None);
@@ -1643,13 +1570,13 @@ fn companion_payload<'a, S: std::hash::BuildHasher>(
     else {
         return Ok(None);
     };
-    let Some((start, end)) = intervals.interval(stream, companion, stream_length)? else {
+    let Some((start, end)) = intervals.interval(ctx, stream, companion, stream_length)? else {
         return Ok(None);
     };
-    let (end, owned_ids) = match records.stream(stream)? {
+    let (end, owned_ids) = match records.stream(ctx, stream)? {
         Some(records) => {
-            let end = records.preamble_start(start, end)?;
-            (end, records.owned_recipe_ids(start, end)?)
+            let end = records.preamble_start(ctx, start, end)?;
+            (end, records.owned_recipe_ids(ctx, start, end)?)
         }
         None => (end, Vec::new()),
     };

@@ -81,12 +81,13 @@ fn scoped_record_offsets_retain_nothing() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let _storage;
-    let (records, held_storage) = IndexedRecordOffsets::build_scoped(&ctx, &bytes).unwrap();
-    _storage = held_storage;
+    let (records, _storage) = IndexedRecordOffsets::build_scoped(&ctx, &bytes).unwrap();
     assert_eq!(records.offsets(7), &[0, 11]);
     let mut cache = crate::design::decode::sketch::RecordOffsetCache::new(&ctx).unwrap();
-    assert_eq!(cache.get("stream", &bytes).unwrap().offsets(7), &[0, 11]);
+    assert_eq!(
+        cache.get(&ctx, "stream", &bytes).unwrap().offsets(7),
+        &[0, 11]
+    );
 
     policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
@@ -207,9 +208,7 @@ fn scoped_native_scope_key_refuses_materialized_limit() {
 
     policy.limits.max_materialized_bytes = u64_from_index(expected.len());
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let _reservation;
-    let (actual, held_scope_storage) = native_scope_scoped(&ctx, "a:b").unwrap();
-    _reservation = held_scope_storage;
+    let (_reservation, actual) = native_scope_scoped(&ctx, "a:b").unwrap();
     assert_eq!(actual, expected);
 }
 
@@ -411,17 +410,14 @@ fn native_scope_encoder_preserves_each_iteration_work_refusal() {
             ResourceDimension::WorkUnits,
             operation,
             skip,
-            |ctx| native_scope_scoped(ctx, name).map(|(text, _)| text),
+            |ctx| native_scope_scoped(ctx, name).map(|(_, text)| text),
         );
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits
                 && limit.operation == operation
                 && limit.additional == additional));
     }
-    let (text, _) =
+    let (_, text) =
         native_scope_scoped(&cadmpeg_test_support::service_decode_context(), name).unwrap();
     assert_eq!(text, "f3d:A%3AB");
 }
-
-mod scope_storage;
-mod session;

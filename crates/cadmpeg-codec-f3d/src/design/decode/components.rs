@@ -34,20 +34,16 @@ pub(crate) fn decode_component_occurrences(
             continue;
         }
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
-        let _scope_reservation;
-        let (scope, held_scope_storage) = native_scope_scoped(ctx, &entry.name)?;
-        _scope_reservation = held_scope_storage;
+        let (_scope_reservation, scope) = native_scope_scoped(ctx, &entry.name)?;
         let mut current = next_indexed_record_header(ctx, bytes, 0, |_| true)?;
         while let Some(header) = current {
             // A header offset indexes `bytes`, so the successor stays in range.
             let next = next_indexed_record_header(ctx, bytes, header.offset + 1, |_| true)?;
             if let Some(end) = next.map(|next| next.offset) {
-                let storage;
-                let (occurrence, held_storage) = ctx
+                let (occurrence, storage) = ctx
                     .with_scoped_storage("f3d decoded component occurrence", || {
                         exact_component_occurrence(ctx, bytes, &header, end, &scope)
                     })?;
-                storage = held_storage;
                 if let Some(occurrence) = occurrence {
                     ctx.push_scoped_vec(
                         &mut scratch,
@@ -68,9 +64,7 @@ pub(crate) fn decode_component_occurrences(
     )?;
     // The first occurrence of each identity becomes retained.
     let mut occurrences = Vec::new();
-    for parsed_occurrence in candidates {
-        let storage = parsed_occurrence.1;
-        let occurrence = parsed_occurrence.0;
+    for (occurrence, storage) in candidates {
         ctx.charge_work(1, "dedup f3d design components")?;
         if let Some(kept) = occurrences.last() {
             let kept: &DesignComponentOccurrence = kept;
@@ -82,7 +76,7 @@ pub(crate) fn decode_component_occurrences(
                 continue;
             }
         }
-        let occurrence = storage.commit_value(occurrence)?;
+        storage.commit()?;
         ctx.push_vec(
             &mut occurrences,
             occurrence,
