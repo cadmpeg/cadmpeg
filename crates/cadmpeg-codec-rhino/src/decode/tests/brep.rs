@@ -530,7 +530,7 @@ fn disconnected_incidence_produces_deterministic_shell_groups() {
 }
 
 #[test]
-fn face_components_refuse_collection_limit_before_parent_allocation() {
+fn face_components_refuse_collection_limit_before_adjacency_allocation() {
     let resolved = crate::brep::ResolvedBrep {
         faces: vec![crate::brep::ResolvedFace {
             surface: 0,
@@ -539,11 +539,11 @@ fn face_components_refuse_collection_limit_before_parent_allocation() {
         ..crate::brep::ResolvedBrep::default()
     };
     let error = with_collection_limit(0, |ctx| face_components(ctx, &resolved))
-        .expect_err("one face parent exceeds zero collection items");
+        .expect_err("one face adjacency row exceeds zero collection items");
     assert!(matches!(
         error,
         crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "Rhino Brep face parents"
+            if limit.operation == "Rhino Brep face adjacency"
     ));
     assert_eq!(
         with_expand_bytes(&[], |expand| face_components(expand.ctx(), &resolved))
@@ -581,32 +581,9 @@ fn connected_face_fixture() -> crate::brep::ResolvedBrep {
 }
 
 #[test]
-fn face_components_labels_refuse_collection_limit() {
-    let resolved = connected_face_fixture();
-    // One parent item precedes the label item; no edge-face or root array is built.
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "Rhino Brep face labels",
-        |limit| {
-            with_collection_limit(limit, |ctx| {
-                face_components(ctx, &resolved).map_err(|error| match error {
-                    crate::curves::GeometryError::Codec(error) => error,
-                    error => panic!("unexpected semantic error: {error}"),
-                })
-            })
-        },
-    );
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "Rhino Brep face labels"
-    ));
-}
-
-#[test]
 fn face_components_result_refuses_collection_limit() {
     let resolved = connected_face_fixture();
-    // One parent and one label item precede the component result item.
+    // One adjacency row precedes the component result item.
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::CollectionItems,
         "Rhino Brep face components",
@@ -1078,7 +1055,7 @@ fn brep_mesh_cache_retention_refusal_reaches_the_caller() {
     assert_eq!(staged.draft.model().tessellations.len(), 1);
     let refused = cadmpeg_test_support::refusal::resource_limit_at(
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "Rhino mesh numeric buffer scratch",
+        "Rhino Brep mesh cache fields",
         |limit| {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -1120,7 +1097,7 @@ fn brep_mesh_cache_retention_refusal_reaches_the_caller() {
     assert!(matches!(
         refused,
         cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "Rhino mesh numeric buffer scratch"
+            if limit.operation == "Rhino Brep mesh cache fields"
     ));
 }
 
