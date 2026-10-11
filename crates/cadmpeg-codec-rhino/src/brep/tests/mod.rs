@@ -769,6 +769,33 @@ fn legacy_vertex_index_preserves_the_first_signed_zero_match() {
 }
 
 #[test]
+fn legacy_nurbs_endpoints_select_first_and_last_poles() {
+    let curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        &cadmpeg_test_support::service_decode_context(),
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![
+            cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+            cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0),
+        ],
+        None,
+        false,
+    )
+    .expect("fixture admission")
+    .expect("linear curve");
+    let curve = crate::curves::DecodedCurve::leaf(
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+        Diagnostics::new(),
+    );
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert_eq!(
+        legacy_decoded_curve_endpoints(&ctx, &curve, 0).expect("admitted poles are nonempty"),
+        [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+    );
+    assert_eq!(ctx.resource_refusal(), None);
+}
+
+#[test]
 fn legacy_curve_endpoints_cover_analytic_and_degenerate_children() {
     let circle = crate::curves::DecodedCurve::leaf(
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(
