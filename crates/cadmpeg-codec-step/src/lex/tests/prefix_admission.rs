@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{
+    u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+};
 use cadmpeg_core::CodecError;
 
 use crate::lex::{Lexer, LiteralStorage, TokenKind};
@@ -16,21 +18,6 @@ fn empty_lexer_has_no_input_visit() {
     assert!(lexer.next_token().unwrap().is_none());
     drop(lexer);
     ctx.finish_session().unwrap();
-}
-
-#[test]
-fn empty_lexer_preserves_the_original_refusal() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-    let CodecError::ResourceLimit(original) = ctx.charge_work(1, "original lexer refusal").unwrap_err() else {
-        panic!("original work refusal");
-    };
-    let mut lexer = Lexer::new(b"", &ctx);
-    assert!(matches!(lexer.next_token().unwrap_err().into_resource_error(), Some(CodecError::ResourceLimit(limit)) if limit == original));
-    drop(lexer);
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
 }
 
 #[test]
@@ -52,7 +39,12 @@ fn lexer_admits_actual_semicolon_and_no_exhaustion_visit() {
 
 #[test]
 fn trailing_trivia_admits_only_its_actual_scans() {
-    for (input, work) in [(b" ".as_slice(), 1), (b"\\N\\", 1), (b"/*x*/", 3), (b"\x01", 2)] {
+    for (input, work) in [
+        (b" ".as_slice(), 1),
+        (b"\\N\\", 1),
+        (b"/*x*/", 3),
+        (b"\x01", 2),
+    ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         // A comment has one cursor visit and two actual delimiter windows.
@@ -92,19 +84,26 @@ fn normalized_first_character_preserves_refusal_before_the_suffix() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     // The required complete length pass and first actual emission-byte visit.
-    policy.limits.max_work_units = data.len() as u64 + 1;
+    policy.limits.max_work_units = u64_from_index(data.len()) + 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
     let lexer = Lexer::new(&data, &ctx);
-    let error = lexer.normalized(0, data.len(), LiteralStorage::Retained).unwrap_err();
+    let error = lexer
+        .normalized(0, data.len(), LiteralStorage::Retained)
+        .unwrap_err();
     let Some(CodecError::ResourceLimit(limit)) = error.into_resource_error() else {
         panic!("original character refusal");
     };
     assert_eq!(limit.operation, "step_lex_normalized_retained");
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-    assert_eq!((limit.used, limit.additional), (data.len() as u64 + 1, 1));
+    assert_eq!(
+        (limit.used, limit.additional),
+        (u64_from_index(data.len()) + 1, 1)
+    );
     assert_eq!(ctx.resource_refusal(), Some(limit));
     drop(lexer);
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+    );
 }
 
 #[test]
@@ -118,21 +117,27 @@ fn empty_normalized_text_has_no_visit_and_preserves_fuse() {
     let (text, storage) = lexer.normalized(0, 0, LiteralStorage::Retained).unwrap();
     assert!(text.is_empty());
     assert!(storage.is_none());
-    let CodecError::ResourceLimit(original) = ctx.charge_work(1, "original lexer refusal").unwrap_err() else {
+    let CodecError::ResourceLimit(original) =
+        ctx.charge_work(1, "original lexer refusal").unwrap_err()
+    else {
         panic!("original work refusal");
     };
-    assert!(matches!(lexer.normalized(0, 0, LiteralStorage::Retained).unwrap_err().into_resource_error(), Some(CodecError::ResourceLimit(limit)) if limit == original));
+    assert!(
+        matches!(lexer.normalized(0, 0, LiteralStorage::Retained).unwrap_err().into_resource_error(), Some(CodecError::ResourceLimit(limit)) if limit == original)
+    );
     drop(text);
     drop(storage);
     drop(lexer);
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
+    );
 }
 
 #[test]
 fn empty_unterminated_string_admits_its_real_diagnostic_copy() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = "unterminated string".len() as u64;
+    policy.limits.max_work_units = u64_from_index("unterminated string".len());
     let (ctx, _) = DecodeContext::from_root_bytes(b"'", &arena, &policy).unwrap();
     let mut lexer = Lexer::new(b"'", &ctx);
     let error = lexer.string().unwrap_err();

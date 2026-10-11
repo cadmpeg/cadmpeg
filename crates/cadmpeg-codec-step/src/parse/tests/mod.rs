@@ -20,3 +20,9 @@ mod borrowed_union;
 mod borrowed_queries;
 
 mod schema_matching;
+
+mod string_validation;
+
+mod reference_memo;
+
+mod signature_validation;

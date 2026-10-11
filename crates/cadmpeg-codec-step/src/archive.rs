@@ -69,25 +69,30 @@ pub(crate) fn open_root<'a, 'ctx>(
             error => Err(error),
         })?;
     let mut entries = archive.entries().iter();
-    ctx.charge_work(0, "STEP open root borrowed traversal")?;
     for _ in 0..entries.len() {
-        let entry = ctx.next_charged(&mut entries, "STEP open root borrowed traversal")?
+        let entry = ctx
+            .next_charged(&mut entries, "STEP open root borrowed traversal")?
             .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
         validate_entry_name(ctx, &entry.name)?;
         if entry.uses_utf8_name_encoding() {
-            return Err(CodecError::Malformed(
-                "STEP ZIP uses prohibited Unicode filename support".into(),
-            ));
+            return Err(CodecError::Malformed(ctx.copy_retained_text(
+                "STEP ZIP uses prohibited Unicode filename support",
+                "STEP ZIP root error",
+            )?));
         }
         if entry.compression == ZipCompression::Zstd {
-            return Err(CodecError::NotImplemented(
-                "STEP ZIP requires PKZIP 2.04g stored or Deflate entries".into(),
-            ));
+            return Err(CodecError::NotImplemented(ctx.copy_retained_text(
+                "STEP ZIP requires PKZIP 2.04g stored or Deflate entries",
+                "STEP ZIP root error",
+            )?));
         }
     }
-    let root_entry = archive.entry(ctx, ROOT_NAME)?.ok_or_else(|| {
-        CodecError::WrongFormat(format!("STEP ZIP has no required root {ROOT_NAME}"))
-    })?;
+    let Some(root_entry) = archive.entry(ctx, ROOT_NAME)? else {
+        return Err(CodecError::WrongFormat(ctx.format_retained(
+            format_args!("STEP ZIP has no required root {ROOT_NAME}"),
+            "STEP ZIP root error",
+        )?));
+    };
     let data_start = root_entry.data_start;
     let root_view = archive.open(ctx, &root_entry.name)?;
     Ok(OpenedRoot {
@@ -109,10 +114,22 @@ fn resolve_uri<'a>(
         return Ok(ReferenceTarget::External);
     }
     let (uri, fragment) = ctx
-        .position_by(uri.as_bytes(), |byte| Ok(*byte == b'#'), "STEP ZIP URI fragment split")?
-        .map_or((uri, None), |separator| (&uri[..separator], Some(&uri[separator + 1..])));
+        .position_by(
+            uri.as_bytes(),
+            |byte| Ok(*byte == b'#'),
+            "STEP ZIP URI fragment split",
+        )?
+        .map_or((uri, None), |separator| {
+            (&uri[..separator], Some(&uri[separator + 1..]))
+        });
     if fragment
-        .map(|fragment| ctx.any_by(fragment.as_bytes(), |byte| Ok(*byte == b'#'), "STEP ZIP fragment separator containment"))
+        .map(|fragment| {
+            ctx.any_by(
+                fragment.as_bytes(),
+                |byte| Ok(*byte == b'#'),
+                "STEP ZIP fragment separator containment",
+            )
+        })
         .transpose()?
         .unwrap_or(false)
     {
@@ -122,8 +139,14 @@ fn resolve_uri<'a>(
         )?));
     }
     let (path, query) = ctx
-        .position_by(uri.as_bytes(), |byte| Ok(*byte == b'?'), "STEP ZIP URI query split")?
-        .map_or((uri, None), |separator| (&uri[..separator], Some(&uri[separator + 1..])));
+        .position_by(
+            uri.as_bytes(),
+            |byte| Ok(*byte == b'?'),
+            "STEP ZIP URI query split",
+        )?
+        .map_or((uri, None), |separator| {
+            (&uri[..separator], Some(&uri[separator + 1..]))
+        });
     if path.starts_with('/') {
         return Err(CodecError::Malformed(ctx.format_retained(
             format_args!("STEP ZIP URI escapes the archive root: {uri:?}"),
@@ -132,17 +155,21 @@ fn resolve_uri<'a>(
     }
     let mut component_bytes = ctx.reserve_scoped(0, "step_zip_uri_components_temp")?;
     let mut components = Vec::new();
-    if let Some(separator) =
-        ctx.rposition_by(base_member.as_bytes(), |byte| Ok(*byte == b'/'), "STEP ZIP base member reverse split")?
-    {
+    if let Some(separator) = ctx.rposition_by(
+        base_member.as_bytes(),
+        |byte| Ok(*byte == b'/'),
+        "STEP ZIP base member reverse split",
+    )? {
         let directory = &base_member[..separator];
         let mut start = 0;
         while start <= directory.len() {
-            let end = ctx.position_by(
-                &directory.as_bytes()[start..],
-                |byte| Ok(*byte == b'/'),
-                "STEP ZIP base directory traversal",
-            )?.map_or(directory.len(), |relative| start + relative);
+            let end = ctx
+                .position_by(
+                    &directory.as_bytes()[start..],
+                    |byte| Ok(*byte == b'/'),
+                    "STEP ZIP base directory traversal",
+                )?
+                .map_or(directory.len(), |relative| start + relative);
             let component = &directory[start..end];
             start = end + 1;
             ctx.push_scoped_vec(
@@ -203,20 +230,26 @@ fn resolve_uri<'a>(
             "STEP ZIP error text",
         )?));
     }
-    let component_len = ctx.fold(&components, 0_usize, |total, component| {
-        total.checked_add(component.len()).ok_or_else(|| {
-            ctx.refuse_codec_limit("step_zip_uri_member", 0, 1)
-        })
-    }, "STEP resolve uri traversal")?;
-    let member_len = component_len.checked_add(components.len() - 1)
+    let component_len = ctx.fold(
+        &components,
+        0_usize,
+        |total, component| {
+            total
+                .checked_add(component.len())
+                .ok_or_else(|| ctx.refuse_codec_limit("step_zip_uri_member", 0, 1))
+        },
+        "STEP resolve uri traversal",
+    )?;
+    let member_len = component_len
+        .checked_add(components.len() - 1)
         .ok_or_else(|| ctx.refuse_codec_limit("step_zip_uri_member", 0, 1))?;
     let mut member = String::new();
 
     ctx.reserve_scoped_string(member_bytes, &mut member, member_len, "step_zip_uri_member")?;
     let mut visited_items = (components[..]).iter().enumerate();
-    ctx.charge_work(0, "STEP resolve uri traversal")?;
     for _ in 0..visited_items.len() {
-        let (index, component) = ctx.next_charged(&mut visited_items, "STEP resolve uri traversal")?
+        let (index, component) = ctx
+            .next_charged(&mut visited_items, "STEP resolve uri traversal")?
             .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
         if index != 0 {
             member_bytes.with_storage(|| {
@@ -246,17 +279,22 @@ pub(crate) fn root_reference_notes(
     let mut bindings = BTreeMap::new();
     let mut indexed = false;
     let mut references = exchange.references().iter();
-    ctx.charge_work(0, "STEP root reference notes borrowed traversal")?;
     for _ in 0..references.len() {
-        let reference = ctx.next_charged(&mut references, "STEP root reference notes borrowed traversal")?
+        let reference = ctx
+            .next_charged(
+                &mut references,
+                "STEP root reference notes borrowed traversal",
+            )?
             .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
         let name = reference.name;
         if !indexed && reference.uri.starts_with('#') && reference.uri.len() > 1 {
             let mut visited_items = (exchange.anchors()).iter();
-            ctx.charge_work(0, "STEP ZIP anchor index traversal")?;
             for _ in 0..visited_items.len() {
-                let anchor = ctx.next_charged(&mut visited_items, "STEP ZIP anchor index traversal")?
-                    .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
+                let anchor = ctx
+                    .next_charged(&mut visited_items, "STEP ZIP anchor index traversal")?
+                    .ok_or_else(|| {
+                        CodecError::malformed("STEP bounded traversal source ended early")
+                    })?;
                 if let crate::parse::Value::Resource(target) = &anchor.value {
                     binding_storage.with_storage(|| {
                         ctx.insert_btree_map(

@@ -48,7 +48,7 @@ fn anchor_local_depth_refuses_as_resource() {
             .expect("empty resolver scope fits")
             .resolve(
                 &Value::Integer(1),
-                &mut Vec::new(),
+                &mut std::collections::HashSet::new(),
                 &mut stack_storage,
                 10,
                 256,

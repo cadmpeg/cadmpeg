@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{
+    u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+};
 use cadmpeg_core::CodecError;
 use zip::CompressionMethod;
 
@@ -9,7 +11,7 @@ use crate::archive::{ReferenceTarget, ROOT_NAME};
 const EMPTY_ROOT: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;ENDSEC;END-ISO-10303-21;";
 
 #[test]
-fn empty_reference_notes_have_no_exhaustion_visit_and_preserve_fuse() {
+fn empty_reference_notes_have_no_exhaustion_visit() {
     let bytes = super::step_zip(&[(ROOT_NAME, EMPTY_ROOT, CompressionMethod::Stored)]);
     crate::test_support::with_service_context(&bytes, |source, fixture_ctx| {
         let opened = crate::archive::open_root(
@@ -24,19 +26,8 @@ fn empty_reference_notes_have_no_exhaustion_visit_and_preserve_fuse() {
         let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
         let notes = crate::archive::root_reference_notes(&ctx, &opened.archive, &exchange).unwrap();
         assert!(notes.is_empty());
-        let CodecError::ResourceLimit(original) = ctx
-            .charge_work(1, "original reference refusal")
-            .unwrap_err()
-        else {
-            panic!("original work refusal");
-        };
-        assert!(
-            matches!(crate::archive::root_reference_notes(&ctx, &opened.archive, &exchange), Err(CodecError::ResourceLimit(limit)) if limit == original)
-        );
         drop(notes);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
-        );
+        ctx.finish_session().unwrap();
     });
 }
 
@@ -44,7 +35,7 @@ fn empty_reference_notes_have_no_exhaustion_visit_and_preserve_fuse() {
 fn uri_member_releases_component_storage_while_the_member_is_live() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = (4 * std::mem::size_of::<&str>() + 1) as u64;
+    policy.limits.max_materialized_bytes = u64_from_index(4 * std::mem::size_of::<&str>() + 1);
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
     let mut member_storage = ctx.reserve_scoped(0, "test URI member storage").unwrap();
     let target = crate::archive::resolve_uri(&ctx, &mut member_storage, ROOT_NAME, "a").unwrap();

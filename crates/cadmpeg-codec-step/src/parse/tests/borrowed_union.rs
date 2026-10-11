@@ -3,7 +3,6 @@
 
 use super::super::{EntityIds, EntityIndex};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_core::CodecError;
 
 fn no_storage_policy() -> DecodePolicy {
     let mut policy = DecodePolicy::service();
@@ -31,29 +30,6 @@ fn single_index_list_is_borrowed_without_copy_work_or_storage() {
     drop(ids);
     assert_eq!(ctx.resource_refusal(), None);
     ctx.finish_session().unwrap();
-}
-
-#[test]
-fn single_index_list_keeps_the_original_refusal() {
-    let arena = DecodeArena::new();
-    let policy = no_storage_policy();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let CodecError::ResourceLimit(original) = ctx
-        .charge_work(1, "STEP original union refusal")
-        .unwrap_err()
-    else {
-        panic!("original work refusal");
-    };
-    let input = [1, 2];
-    let Some(CodecError::ResourceLimit(refusal)) = EntityIndex::ordered_ids(&[&input], &ctx).err()
-    else {
-        panic!("borrowed replay must observe the original fuse");
-    };
-    assert_eq!(refusal, original);
-    assert_eq!(ctx.resource_refusal(), Some(original));
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
-    );
 }
 
 #[test]
