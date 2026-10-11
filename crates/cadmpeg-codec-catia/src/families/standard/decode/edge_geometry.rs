@@ -1721,19 +1721,22 @@ pub(super) fn build_standard_edge_curve(
             );
         }
     }
+    let mut intersection_storage = ctx.reserve_scoped(0, "catia_standard_intersection_storage")?;
     let oriented_native_support_pcurves = if matches!(
         &support.geometry,
         crate::families::standard::records::StandardCurveGeometry::Bspline
     ) {
         match native_support {
             Some(native) => {
-                match standard_oriented_native_support_pcurves(
-                    ctx,
-                    native,
-                    &ir.model.points,
-                    points,
-                    refusal,
-                )? {
+                match intersection_storage.with_storage(|| {
+                    standard_oriented_native_support_pcurves(
+                        ctx,
+                        native,
+                        &ir.model.points,
+                        points,
+                        refusal,
+                    )
+                })? {
                     Some(pcurves) => Some(pcurves),
                     None => return Ok((None, None)),
                 }
@@ -1823,10 +1826,7 @@ pub(super) fn build_standard_edge_curve(
         &support.geometry,
         crate::families::standard::records::StandardCurveGeometry::Bspline
     ) {
-        let sides = if let Some(native) = native_support {
-            let Some([first_pcurve, second_pcurve]) = oriented_native_support_pcurves else {
-                return Ok((None, None));
-            };
+        let [first_surface, second_surface] = if let Some(native) = native_support {
             let first_surface = ensure_native_edge_support_surface(
                 ir,
                 annotations,
@@ -1846,24 +1846,12 @@ pub(super) fn build_standard_edge_curve(
                 support_storage,
             )?;
             [
-                IntcurveSupportSide {
-                    surface: Some(first_surface),
-                    pcurve: Some(SupportPcurve::new(
-                        first_pcurve,
-                        DirectedParameterRange::new(native.parameter_range).ok(),
-                    )),
-                },
-                IntcurveSupportSide {
-                    surface: Some(second_surface),
-                    pcurve: Some(SupportPcurve::new(
-                        second_pcurve,
-                        DirectedParameterRange::new(native.parameter_range).ok(),
-                    )),
-                },
+                &ir.model.surfaces[first_surface].id,
+                &ir.model.surfaces[second_surface].id,
             ]
         } else {
-            let side = |face| -> Result<IntcurveSupportSide, CodecError> {
-                let surface = match bindings.get(face) {
+            let side = |face| -> Result<Option<&SurfaceId>, CodecError> {
+                Ok(match bindings.get(face) {
                     Some((id, _, _))
                         if ctx.contains_key_hash_map(
                             surface_indices,
@@ -1871,81 +1859,96 @@ pub(super) fn build_standard_edge_curve(
                             "catia_standard_intersection_side_surface_lookup",
                         )? =>
                     {
-                        Some(id.try_clone_for_decode(
-                            ctx,
-                            "catia_standard_intersection_side_surface_id",
-                        )?)
+                        Some(id)
                     }
                     _ => None,
-                };
-                Ok(IntcurveSupportSide {
-                    surface,
-                    pcurve: None,
                 })
             };
-            [side(support.faces[0])?, side(support.faces[1])?]
-        };
-        let distinct_sides = match (&sides[0].surface, &sides[1].surface) {
-            (Some(first), Some(second)) => {
-                Some(!ctx.equal(first, second, "catia_standard_intersection_side_surfaces")?)
+            let [Some(first), Some(second)] = [side(support.faces[0])?, side(support.faces[1])?]
+            else {
+                return Ok((Some(id), param_range));
+            };
+            if ctx.equal(first, second, "catia_standard_intersection_side_surfaces")? {
+                return Ok((Some(id), param_range));
             }
-            _ => None,
+            [first, second]
         };
-        if distinct_sides.is_some_and(|distinct| native_support.is_some() || distinct) {
-            let curve_parameter_range = param_range.or_else(|| {
-                geometry_is_unknown
-                    .then(|| native_support.map_or([0.0, 1.0], |native| native.parameter_range))
-            });
-            if let Some(curve_parameter_range) = curve_parameter_range {
-                let procedural_id = standard_id(
-                    ctx,
-                    "intersection",
-                    format_args!("{}", support.pos),
-                    ProceduralCurveId::mint,
-                    "catia_standard_intersection_identity",
-                )?;
-                annotate(
-                    ctx,
-                    annotations,
-                    &procedural_id,
-                    "MainDataStream+SurfacicReps",
-                    u64_from_index(support.pos),
-                    "standard_surface_intersection",
-                    Exactness::Derived,
-                )?;
-                crate::resource::derived_annotation(ctx, annotations, &procedural_id, "curve")?;
-                crate::resource::derived_annotation(
-                    ctx,
-                    annotations,
-                    &procedural_id,
-                    "definition",
-                )?;
-                let Ok(context) = IntcurveSupportContext::try_new(
-                    sides,
-                    ordered_range(curve_parameter_range),
-                    std::array::from_fn(|_| Vec::new()),
-                ) else {
-                    return Ok((None, None));
+        let curve_parameter_range = param_range.or_else(|| {
+            geometry_is_unknown
+                .then(|| native_support.map_or([0.0, 1.0], |native| native.parameter_range))
+        });
+        if let Some(curve_parameter_range) = curve_parameter_range {
+            let [first_pcurve, second_pcurve] =
+                match (native_support, oriented_native_support_pcurves) {
+                    (Some(native), Some(pcurves)) => pcurves.map(|pcurve| {
+                        Some(SupportPcurve::new(
+                            pcurve,
+                            DirectedParameterRange::new(native.parameter_range).ok(),
+                        ))
+                    }),
+                    (None, None) => [None, None],
+                    _ => return Ok((None, None)),
                 };
-                admission.reserve_entity(
-                    &mut ir.model.procedural_curves,
-                    "catia_family_emit_procedural_curves",
-                )?;
-                let procedural = ProceduralCurve::new(
-                    procedural_id,
-                    ProceduralCurveDefinition::Intersection {
-                        context,
-                        discontinuity_flag: false,
-                        cache: None,
+            let sides = intersection_storage.with_storage(|| -> Result<_, CodecError> {
+                Ok([
+                    IntcurveSupportSide {
+                        surface: Some(first_surface.try_clone_for_decode(
+                            ctx,
+                            "catia_standard_intersection_side_surface_id",
+                        )?),
+                        pcurve: first_pcurve,
                     },
-                );
-                let _attached = ir.model.add_procedural_curve(
-                    ctx,
-                    &id.try_clone_for_decode(ctx, "catia_standard_edge_procedural_owner_id")?,
-                    procedural,
-                )?;
-                param_range = Some(curve_parameter_range);
+                    IntcurveSupportSide {
+                        surface: Some(second_surface.try_clone_for_decode(
+                            ctx,
+                            "catia_standard_intersection_side_surface_id",
+                        )?),
+                        pcurve: second_pcurve,
+                    },
+                ])
+            })?;
+            let procedural_id = standard_id(
+                ctx,
+                "intersection",
+                format_args!("{}", support.pos),
+                ProceduralCurveId::mint,
+                "catia_standard_intersection_identity",
+            )?;
+            annotate(
+                ctx,
+                annotations,
+                &procedural_id,
+                "MainDataStream+SurfacicReps",
+                u64_from_index(support.pos),
+                "standard_surface_intersection",
+                Exactness::Derived,
+            )?;
+            crate::resource::derived_annotation(ctx, annotations, &procedural_id, "curve")?;
+            crate::resource::derived_annotation(ctx, annotations, &procedural_id, "definition")?;
+            let Ok(context) = IntcurveSupportContext::try_new(
+                sides,
+                ordered_range(curve_parameter_range),
+                std::array::from_fn(|_| Vec::new()),
+            ) else {
+                return Ok((None, None));
+            };
+            admission.reserve_entity(
+                &mut ir.model.procedural_curves,
+                "catia_family_emit_procedural_curves",
+            )?;
+            let procedural = ProceduralCurve::new(
+                procedural_id,
+                ProceduralCurveDefinition::Intersection {
+                    context,
+                    discontinuity_flag: false,
+                    cache: None,
+                },
+            );
+            let attached = ir.model.add_procedural_curve(ctx, &id, procedural)?;
+            if attached.is_ok() {
+                intersection_storage.commit()?;
             }
+            param_range = Some(curve_parameter_range);
         }
     }
     Ok((Some(id), param_range))
@@ -1959,7 +1962,7 @@ pub(super) fn ensure_native_edge_support_surface(
     index: &mut NativeSurfaceIndex<'_>,
     admission: &mut FamilyEntityAdmission<'_, '_>,
     mut support_storage: Option<&mut cadmpeg_core::decode::ProvisionalReservation<'_>>,
-) -> Result<SurfaceId, cadmpeg_core::CodecError> {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let ctx = admission.context();
     index.synchronize(ctx, &ir.model.surfaces)?;
     let mut source_storage = ctx.reserve_scoped(0, "catia_native_edge_support_source")?;
@@ -1970,9 +1973,7 @@ pub(super) fn ensure_native_edge_support_surface(
         "catia_native_edge_support_source_scan",
     )?;
     if let Some(Some(surface)) = source_match {
-        return ir.model.surfaces[*surface]
-            .id
-            .try_clone_for_decode(ctx, "catia_native_edge_support_matched_surface_id");
+        return Ok(*surface);
     }
     if source_match.is_none() {
         if let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry) = carrier {
@@ -1996,22 +1997,25 @@ pub(super) fn ensure_native_edge_support_surface(
                     "catia_native_edge_support_geometry_scan",
                 )? {
                     if let Some(surface) = binding.unique {
-                        return ir.model.surfaces[surface].id.try_clone_for_decode(
-                            ctx,
-                            "catia_native_edge_support_matched_surface_id",
-                        );
+                        return Ok(surface);
                     }
                 }
             }
         }
     }
-    let id = crate::resource::compose_u32_id(
-        admission.context(),
-        &cadmpeg_ir::identity_namespace!("catia", "standard", "edge-support-surface"),
-        surface_object_id,
-        SurfaceId::mint,
-        "catia_native_edge_support_surface_id",
-    )?;
+    let build_id = || {
+        crate::resource::compose_u32_id(
+            admission.context(),
+            &cadmpeg_ir::identity_namespace!("catia", "standard", "edge-support-surface"),
+            surface_object_id,
+            SurfaceId::mint,
+            "catia_native_edge_support_surface_id",
+        )
+    };
+    let id = match support_storage.as_deref_mut() {
+        Some(storage) => storage.with_storage(build_id)?,
+        None => build_id()?,
+    };
     admission.reserve_entity(&mut ir.model.surfaces, "catia_family_emit_surfaces")?;
     let build_surface = || {
         let (geometry, procedural_id) = match carrier {
@@ -2058,10 +2062,7 @@ pub(super) fn ensure_native_edge_support_surface(
         source_storage.commit()?;
         Ok::<_, CodecError>((
             Surface {
-                id: id.try_clone_for_decode(
-                    admission.context(),
-                    "catia_native_edge_support_record_id",
-                )?,
+                id,
                 geometry,
                 source_object: Some(source),
             },
@@ -2072,6 +2073,7 @@ pub(super) fn ensure_native_edge_support_surface(
         Some(storage) => storage.with_storage(build_surface)?,
         None => build_surface()?,
     };
+    let surface_index = ir.model.surfaces.len();
     ir.model.surfaces.push(surface);
     index.synchronize(ctx, &ir.model.surfaces)?;
     if let (
@@ -2113,7 +2115,7 @@ pub(super) fn ensure_native_edge_support_surface(
         };
         ir.model.procedural_surfaces.push(definition);
     }
-    Ok(id)
+    Ok(surface_index)
 }
 
 fn circle_endpoint_range_choices(

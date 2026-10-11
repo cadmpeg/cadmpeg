@@ -12,7 +12,8 @@ use cadmpeg_ir::AnnotationBuilder;
 
 use super::super::{emit_standard_topology, EmitStandardTopologyInputs, StandardTopologyStorage};
 use crate::families::standard::decode::edge_geometry::{
-    ensure_native_edge_support_surface, NativeSurfaceIndex,
+    build_standard_edge_curve, ensure_native_edge_support_surface, BuildStandardEdgeCurveInputs,
+    NativeSurfaceIndex,
 };
 use crate::families::standard::records::{StandardCurveGeometry, StandardCurveSupport};
 use crate::families::standard::topology::{
@@ -233,5 +234,283 @@ fn rejected_standard_topology_releases_payloads_and_keeps_source_curve_storage()
     assert!(
         kept > released + 8192,
         "topology and both owned support IDs are released"
+    );
+}
+
+#[derive(Clone, Copy)]
+enum IntersectionCase {
+    PlanarIntersection,
+    SameSurface,
+    MissingSurface,
+    UnboundedCircle,
+    NativeUnboundedCircle,
+}
+
+fn retained_after_intersection_edges(case: IntersectionCase, suffix_len: usize) -> u64 {
+    use cadmpeg_ir::geometry::analytic::{CylinderSurface, PlaneSurface, SphereSurface};
+    use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
+    use cadmpeg_ir::geometry::SolvedCurveGeometry;
+    use cadmpeg_ir::math::Point2;
+
+    let first_id = SurfaceId::mint(format!(
+        "catia:test:surface#first{}",
+        "x".repeat(suffix_len)
+    ))
+    .expect("identity");
+    let second_id = SurfaceId::mint(format!(
+        "catia:test:surface#second{}",
+        "x".repeat(suffix_len)
+    ))
+    .expect("identity");
+    let circle = matches!(
+        case,
+        IntersectionCase::UnboundedCircle | IntersectionCase::NativeUnboundedCircle
+    );
+    let planar = matches!(case, IntersectionCase::PlanarIntersection);
+    let first_geometry = if circle {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+            SphereSurface::try_new(
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .expect("sphere"),
+        ))
+    } else if planar {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("first plane"),
+        ))
+    } else {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .expect("cylinder"),
+        ))
+    };
+    let mut ir = CadIr::empty();
+    ir.model.surfaces.push(Surface {
+        id: first_id.clone(),
+        geometry: first_geometry.clone(),
+        source_object: None,
+    });
+    let mut bindings = vec![(first_id.clone(), false, 0)];
+    let mut surface_indices = HashMap::from([(first_id, 0)]);
+    let native = if circle || planar {
+        let second_geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            PlaneSurface::try_new(
+                if circle {
+                    Point3::new(1.0, 3.0, 3.0)
+                } else {
+                    Point3::new(0.0, 0.0, 0.0)
+                },
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("section plane"),
+        ));
+        ir.model.surfaces.push(Surface {
+            id: second_id.clone(),
+            geometry: second_geometry.clone(),
+            source_object: None,
+        });
+        bindings.push((second_id.clone(), false, 1));
+        surface_indices.insert(second_id, 1);
+        if matches!(case, IntersectionCase::NativeUnboundedCircle) {
+            let pcurve = PcurveGeometry::Nurbs {
+                nurbs: PcurveNurbs::from_lanes(
+                    &cadmpeg_test_support::service_decode_context(),
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+                    None,
+                    false,
+                )
+                .expect("pcurve admission")
+                .expect("linear pcurve"),
+            };
+            Some(crate::families::standard::decode::StandardEdgeSupport {
+                surface_object_ids: [20, 21],
+                carriers: [
+                    crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(first_geometry),
+                    crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(second_geometry),
+                ],
+                pcurves: [pcurve.clone(), pcurve],
+                parameter_range: [0.0, 1.0],
+            })
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    let endpoints = if circle {
+        let radius = 3.0_f64.sqrt();
+        [
+            Point3::new(1.0 + radius, 3.0, 3.0),
+            Point3::new(1.0 - radius, 3.0, 3.0),
+        ]
+    } else if planar {
+        [Point3::new(1.0, 0.0, 0.0), Point3::new(4.0, 0.0, 0.0)]
+    } else {
+        [Point3::new(2.0, 0.0, -3.0), Point3::new(2.0, 0.0, 4.0)]
+    };
+    for (index, position) in endpoints.into_iter().enumerate() {
+        ir.model.points.push(Point::new(
+            PointId::mint(format!("catia:test:point#{index}")).expect("identity"),
+            cadmpeg_ir::features::FinitePoint3::new(position).expect("point"),
+            None,
+        ));
+    }
+    crate::test_support::with_service_context(|ctx| {
+        let mut surviving = ctx
+            .provisional_retained("surviving source curves")
+            .expect("owner");
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        let mut native_surfaces = NativeSurfaceIndex::new(ctx).expect("index");
+        let mut annotations = AnnotationBuilder::new();
+        for pos in 0..16 {
+            let support = StandardCurveSupport {
+                pos,
+                tag: 7,
+                faces: if matches!(case, IntersectionCase::SameSurface) {
+                    [0, 0]
+                } else {
+                    [0, 1]
+                },
+                geometry: StandardCurveGeometry::Bspline,
+            };
+            let (id, range) = surviving
+                .with_storage(|| {
+                    build_standard_edge_curve(
+                        ctx,
+                        BuildStandardEdgeCurveInputs {
+                            ir: &mut ir,
+                            annotations: &mut annotations,
+                            bindings: &bindings,
+                            surface_indices: &surface_indices,
+                            brep: &[],
+                            support: &support,
+                            points: [0, 1],
+                            native_support: if matches!(
+                                case,
+                                IntersectionCase::NativeUnboundedCircle
+                            ) {
+                                native.as_ref()
+                            } else {
+                                None
+                            },
+                            limit_curve: None,
+                            refusal: &mut crate::nurbs::LaneRefusals::new(),
+                            native_surfaces: &mut native_surfaces,
+                            admission: &mut admission,
+                            support_storage: None,
+                        },
+                    )
+                })
+                .expect("source curve");
+            assert_eq!(id.as_ref(), Some(&ir.model.curves[pos].id));
+            match case {
+                IntersectionCase::PlanarIntersection => {
+                    assert_eq!(range, Some([0.0, 3.0]));
+                    assert!(matches!(
+                        ir.model.curves[pos].geometry.solved_cache(),
+                        Some(SolvedCurveGeometry::Line(_))
+                    ));
+                    assert_eq!(ir.model.procedural_curves.len(), pos + 1);
+                }
+                IntersectionCase::SameSurface => {
+                    assert_eq!(range, Some([0.0, 7.0]));
+                    assert!(matches!(
+                        ir.model.curves[pos].geometry.solved(),
+                        Some(SolvedCurveGeometry::Line(_))
+                    ));
+                }
+                IntersectionCase::MissingSurface => {
+                    assert_eq!(range, None);
+                    assert!(matches!(
+                        ir.model.curves[pos].geometry.solved(),
+                        Some(SolvedCurveGeometry::Unknown { .. })
+                    ));
+                }
+                IntersectionCase::UnboundedCircle | IntersectionCase::NativeUnboundedCircle => {
+                    assert_eq!(range, None);
+                    assert!(matches!(
+                        ir.model.curves[pos].geometry.solved(),
+                        Some(SolvedCurveGeometry::Circle(_))
+                    ));
+                }
+            }
+            if !planar {
+                assert!(ir.model.procedural_curves.is_empty());
+            }
+        }
+        assert_eq!(ir.model.curves.len(), 16);
+        assert_eq!(
+            ir.model.surfaces.len(),
+            if circle || planar { 2 } else { 1 }
+        );
+        surviving.commit().expect("keep source curves");
+        drop(native_surfaces);
+        let CodecError::ResourceLimit(limit) = ctx
+            .charge_retained(u64::MAX, "retained measurement")
+            .expect_err("measurement")
+        else {
+            panic!("retained refusal");
+        };
+        limit.used
+    })
+}
+
+#[test]
+fn emitted_intersection_retains_both_side_ids() {
+    let short = retained_after_intersection_edges(IntersectionCase::PlanarIntersection, 0);
+    let long = retained_after_intersection_edges(IntersectionCase::PlanarIntersection, 4096);
+    assert_eq!(long.checked_sub(short), Some(16 * 2 * 4096));
+}
+
+#[test]
+fn same_surface_intersection_does_not_retain_side_ids() {
+    assert_eq!(
+        retained_after_intersection_edges(IntersectionCase::SameSurface, 0),
+        retained_after_intersection_edges(IntersectionCase::SameSurface, 4096)
+    );
+}
+
+#[test]
+fn missing_surface_intersection_does_not_retain_side_ids() {
+    assert_eq!(
+        retained_after_intersection_edges(IntersectionCase::MissingSurface, 0),
+        retained_after_intersection_edges(IntersectionCase::MissingSurface, 4096)
+    );
+}
+
+#[test]
+fn unbounded_intersection_does_not_retain_side_ids() {
+    assert_eq!(
+        retained_after_intersection_edges(IntersectionCase::UnboundedCircle, 0),
+        retained_after_intersection_edges(IntersectionCase::UnboundedCircle, 4096)
+    );
+}
+
+#[test]
+fn unbounded_native_intersection_does_not_retain_side_ids() {
+    assert_eq!(
+        retained_after_intersection_edges(IntersectionCase::NativeUnboundedCircle, 0),
+        retained_after_intersection_edges(IntersectionCase::UnboundedCircle, 0),
+        "discarded native pcurve backing is released",
+    );
+    assert_eq!(
+        retained_after_intersection_edges(IntersectionCase::NativeUnboundedCircle, 0),
+        retained_after_intersection_edges(IntersectionCase::NativeUnboundedCircle, 4096)
     );
 }
