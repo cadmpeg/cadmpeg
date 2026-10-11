@@ -673,6 +673,7 @@
         "entity_records": [],
         "external_references": [],
         "finjpl_segments": [],
+        "inline_fields": [],
         "legacy_entity_runs": [],
         "object_graph_records": [],
         "object_graphs": [],

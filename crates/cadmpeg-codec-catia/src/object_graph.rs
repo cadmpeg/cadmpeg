@@ -12,6 +12,8 @@ use crate::checked::extents_overlap;
 use crate::layout::outer_alias_row as alias_row;
 use crate::{catalog, entity_table, value_block};
 
+pub(crate) mod inline;
+
 /// One decoded outer object graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct ObjectGraph {
@@ -1065,7 +1067,7 @@ fn parse_candidate(
                     let payload = admitted!(decode_payload(ctx, &data[child + 6..record_end]))?;
                     (lead, ObjectRecordBody::Nested { head, payload })
                 }
-                None if is_inline_body(body) => {
+                None if inline::parse(body).is_some() => {
                     let lead = body[0];
                     (
                         lead,
@@ -1413,45 +1415,6 @@ fn extended_compact_role_count(head: &[HeadToken]) -> Option<usize> {
         ] if *owner != 0
     );
     extended_class_storage_owner.then_some(3)
-}
-
-pub(crate) fn is_inline_body(body: &[u8]) -> bool {
-    let Some(rest) = body.strip_prefix(&[0x10, 0xfe]) else {
-        return false;
-    };
-    let Some(rest) = strip_reference(rest) else {
-        return false;
-    };
-    let rest = if let Some(rest) = rest.strip_prefix(&[0x82, 0xf2, 0xf0, 0x82]) {
-        rest
-    } else if rest.len() >= 12
-        && rest[0] == 0x82
-        && rest[1] == 0x32
-        && rest[6] == 0x32
-        && rest[11] == 0x82
-    {
-        &rest[12..]
-    } else {
-        return false;
-    };
-    let Some(rest) = strip_reference(rest) else {
-        return false;
-    };
-    if rest == [0x81, 0x06] {
-        return true;
-    }
-    let Some(rest) = rest.strip_prefix(&[0x82]) else {
-        return false;
-    };
-    strip_reference(rest) == Some(&[0x06][..])
-}
-
-fn strip_reference(bytes: &[u8]) -> Option<&[u8]> {
-    match bytes {
-        [0x80..=0xd0, rest @ ..] => Some(rest),
-        [0xd1..=0xe4, _, rest @ ..] => Some(rest),
-        _ => None,
-    }
 }
 
 struct RepeatedReferenceSuffixView<'a> {

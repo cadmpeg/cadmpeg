@@ -46,29 +46,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the identifier-to-stream mapping across directory name forms and establish unique complete graph-extent containment before assigning the part's modeling scope.
 
-### DI-04. Inline `7C09` reference roles
+### DI-05. Compact inline schema selectors
 
-**Question.** What does each reference in an inline `7C09` body select?
+**Question.** Which schema entries do the compact inline tokens `F2`, `F0`, and `F1` select?
 
-**Known.** `catia.md` §7.3 "The fixed bytes in the inline production are structural" defines the complete inline production. An exact paired entity-table boundary and equal entity/object cardinality admit other nonempty childless bodies as opaque bytes without reference-role assignment.
+**Known.** `catia.md` §7.3 "The wide schema tuple is twelve bytes" defines the catalog-resolved wide path. Strict compact object bodies contain `82 F2 F0 82`; their paired inline entity bodies contain `F0 F1` before identity and `F2 F0` after the fixed bridge. These ordered byte equalities do not supply a token-to-name mapping. The associated catalog contains the three wide-path names at different ordinals.
 
-**Need.** We must know the reference roles to bind objects and fields.
-
-### DI-05. Inline `7C09` fixed-width words
-
-**Question.** What does each fixed-width word in an inline `7C09` body control?
-
-**Known.** The decoder retains the words inside the bounded inline body.
-
-**Need.** We must know their roles to interpret and write the body.
-
-### DI-06. Inline `7C09` control bytes
-
-**Question.** What does each control byte in an inline `7C09` body control?
-
-**Known.** The decoder retains the control bytes inside the bounded inline body.
-
-**Need.** We must know their roles to validate and write the body.
+**Need.** We must establish each compact token's selection through an independent schema codebook or a CATIA-authored differential specimen. Name presence and alignment with the wide production do not resolve the compact tokens.
 
 ### DI-07. Compound relation-program result binding
 

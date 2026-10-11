@@ -43,6 +43,9 @@ use entity_record::{
     CatiaEntityValueProduction,
 };
 
+pub(crate) mod inline_field;
+use inline_field::CatiaInlineField;
+
 pub(crate) mod project_range;
 pub(crate) mod schema_configuration_chain;
 use schema_configuration_chain::{
@@ -7929,6 +7932,10 @@ define_catia_arenas! {
         /// Exact outer alias-row cores in source order.
         pub(crate) stored;
     },
+    inline_fields: CatiaInlineField {
+        /// Strict inline field incidences and complete wide schema paths.
+        pub(crate) stored;
+    },
     storage_property_members: CatiaStoragePropertyMember {
         /// Complete bounded storage-property members in source order.
         pub(crate) stored;
@@ -10026,6 +10033,7 @@ impl CatiaNative {
                 &parameter_bindings,
             )?;
         }
+        let inline_fields = inline_field::derive(ctx, &object_graphs, &entity_records, &catalogs)?;
         let reference_signature_cohorts = derive_reference_signature_cohorts(ctx, &entity_records)?;
         let schema_configuration_row_chains = derive_schema_configuration_row_chains(
             ctx,
@@ -10218,6 +10226,7 @@ impl CatiaNative {
             consolidated_vertex_identities(ctx, &consolidated_edge_nodes)?;
         Ok(Self {
             alias_rows,
+            inline_fields,
             storage_property_members,
             catalogs,
             consolidated_circles,

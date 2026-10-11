@@ -749,3 +749,10 @@ Storage-property members in bounded type-`0x8e` FINJPL segments are retained in
 preserve direct or nullable state, complete four-byte allocation slots, framed
 numbered labels, raw tags, unassigned bytes, and containing segment identities.
 Their labels and slot low bytes do not assign history records or face ordinals.
+
+Strict childless inline records retain self, anchor-field, and optional
+value-field incidences in `inline_fields`. Each incidence carries its exact
+body offset and same-graph entity resolution. The complete wide schema chain
+joins the associated catalog entries for `Projected3DGeometrySet`,
+`CATEarlySpecBrpLocation`, and `data`. Compact schema tokens remain unnamed.
+Opaque childless bodies retain their complete bytes without these roles.

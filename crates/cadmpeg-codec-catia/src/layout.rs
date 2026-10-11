@@ -391,3 +391,23 @@ pub(crate) mod storage_member_number_prefix {
     /// Offset of `digit_count` (`u32`, little-endian). Spec §7.6.
     pub(crate) const DIGIT_COUNT: usize = 2;
 }
+
+/// Byte offsets for the `inline_schema_words` record.
+///
+/// Spec §7.3. Record length 12 B.
+pub(crate) mod inline_schema_words {
+    /// Record length in bytes. Spec §7.3.
+    pub(crate) const LEN: usize = 12;
+    /// Offset of `open_count` (`u8`). Spec §7.3.
+    pub(crate) const OPEN_COUNT: usize = 0;
+    /// Offset of `outer_marker` (`u8`). Spec §7.3.
+    pub(crate) const OUTER_MARKER: usize = 1;
+    /// Offset of `outer_selector` (`u32`, little-endian). Spec §7.3.
+    pub(crate) const OUTER_SELECTOR: usize = 2;
+    /// Offset of `field_marker` (`u8`). Spec §7.3.
+    pub(crate) const FIELD_MARKER: usize = 6;
+    /// Offset of `field_selector` (`u32`, little-endian). Spec §7.3.
+    pub(crate) const FIELD_SELECTOR: usize = 7;
+    /// Offset of `close_count` (`u8`). Spec §7.3.
+    pub(crate) const CLOSE_COUNT: usize = 11;
+}

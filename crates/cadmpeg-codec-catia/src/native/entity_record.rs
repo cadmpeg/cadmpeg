@@ -287,7 +287,6 @@ impl CatiaEntityRecord {
         }
     }
 
-    #[cfg(test)]
     pub(super) fn inline_body(&self) -> Option<&[u8]> {
         match &self.body {
             CatiaEntityRecordBody::Inline(bytes) => Some(bytes),

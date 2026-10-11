@@ -448,7 +448,7 @@ impl CatiaNative {
                             expected_storage.and_then(|target| target.design_object.as_deref()),
                         )
                     || record.inline_body.as_ref().is_some_and(|body| {
-                        (graph_entities.is_empty() && !object_graph::is_inline_body(body))
+                        (graph_entities.is_empty() && object_graph::inline::parse(body).is_none())
                             || body.first() != Some(&record.lead)
                             || !record.head.is_empty()
                             || record.owner.is_some()
@@ -556,6 +556,7 @@ impl CatiaNative {
             ));
         }
         let preview_images = expected_preview_images;
+        let inline_fields = namespace.arena_as("inline_fields")?;
         let storage_property_members = namespace.arena_as("storage_property_members")?;
         let alias_rows: Vec<CatiaAliasRow> = namespace.arena_as("alias_rows")?;
         let mut consolidated_circles: Vec<CatiaConsolidatedCircle> =
@@ -712,6 +713,7 @@ impl CatiaNative {
         validate_owner_chart_support_aliases(&consolidated_owner_packets, &alias_rows)?;
         Ok(Self {
             alias_rows,
+            inline_fields,
             storage_property_members,
             catalogs,
             consolidated_circles,

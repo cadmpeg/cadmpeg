@@ -568,6 +568,19 @@ Spec §7.6 · layout: byte offsets · size: 6 B
 | 0 | 2 | `inclusive_length` | `u16` | little | spec | the inclusive `u16le` length is at offset zero |
 | 2 | 4 | `digit_count` | `u32` | little | spec | the `u32le` digit count is at offset two |
 
+## `inline_schema_words`
+
+Spec §7.3 · layout: byte offsets · size: 12 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `open_count` | `u8` | little | spec | opening count at offset zero |
+| 1 | 1 | `outer_marker` | `u8` | little | spec | outer selector marker `32` at offset one |
+| 2 | 4 | `outer_selector` | `u32` | little | spec | outer selector `u32le` at offset two |
+| 6 | 1 | `field_marker` | `u8` | little | spec | field selector marker `32` at offset six |
+| 7 | 4 | `field_selector` | `u32` | little | spec | field selector `u32le` at offset seven |
+| 11 | 1 | `close_count` | `u8` | little | spec | closing count at offset eleven |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

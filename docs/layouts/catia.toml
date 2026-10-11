@@ -1542,3 +1542,52 @@ offset = 2
 type = "u32"
 source = "spec"
 anchor = "the `u32le` digit count is at offset two"
+
+[[record]]
+name = "inline_schema_words"
+kind = "byte"
+section = "7.3"
+anchor = "The wide schema tuple is twelve bytes"
+size = 12
+
+[[record.field]]
+name = "open_count"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "opening count at offset zero"
+
+[[record.field]]
+name = "outer_marker"
+offset = 1
+type = "u8"
+source = "spec"
+anchor = "outer selector marker `32` at offset one"
+
+[[record.field]]
+name = "outer_selector"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "outer selector `u32le` at offset two"
+
+[[record.field]]
+name = "field_marker"
+offset = 6
+type = "u8"
+source = "spec"
+anchor = "field selector marker `32` at offset six"
+
+[[record.field]]
+name = "field_selector"
+offset = 7
+type = "u32"
+source = "spec"
+anchor = "field selector `u32le` at offset seven"
+
+[[record.field]]
+name = "close_count"
+offset = 11
+type = "u8"
+source = "spec"
+anchor = "closing count at offset eleven"
