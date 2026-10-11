@@ -565,12 +565,10 @@ fn mixed_solver_retry_preserves_failed_fallback_resolution() {
 
 fn cached_second_fallback(expected: f64, missing_fallback: bool) {
     const OPERATION: &str = "reuse SLDPRT second solved-line point markers";
-    let CodecError::ResourceLimit(limit) =
-        crate::test_support::work_refusal_at(OPERATION, |ctx| {
-            mixed_solver_retry(ctx, expected, missing_fallback)?;
-            ctx.charge_work(1, OPERATION)
-        })
-    else {
+    let CodecError::ResourceLimit(limit) = crate::test_support::work_refusal_at(OPERATION, |ctx| {
+        mixed_solver_retry(ctx, expected, missing_fallback)?;
+        ctx.charge_work(1, OPERATION)
+    }) else {
         panic!("the second fallback must leave the retry probe armed");
     };
     // The only matching charge is this test's final probe, after the first

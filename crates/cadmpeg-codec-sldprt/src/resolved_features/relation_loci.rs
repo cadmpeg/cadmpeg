@@ -878,15 +878,18 @@ pub(super) fn relation_definition(
         }
     };
     // Resolver cells own scratch identities; returned identities have separate storage.
-    let cache_storage = std::cell::RefCell::new(
-        ctx.reserve_scoped(0, "SLDPRT relation resolver identities")?,
-    );
+    let cache_storage =
+        std::cell::RefCell::new(ctx.reserve_scoped(0, "SLDPRT relation resolver identities")?);
     let point_cache: [OnceCell<Option<SketchLocus>>; 2] = Default::default();
     let point = |operand: usize| -> Result<Option<SketchLocus>, CodecError> {
         match point_cache.get(operand) {
             Some(cell) => memoized(
                 cell,
-                || cache_storage.borrow_mut().with_storage(|| resolve_point(operand)),
+                || {
+                    cache_storage
+                        .borrow_mut()
+                        .with_storage(|| resolve_point(operand))
+                },
                 |locus| {
                     locus
                         .as_ref()
@@ -917,7 +920,11 @@ pub(super) fn relation_definition(
         match curve_cache.get(operand) {
             Some(cell) => memoized(
                 cell,
-                || cache_storage.borrow_mut().with_storage(|| resolve_curve(operand)),
+                || {
+                    cache_storage
+                        .borrow_mut()
+                        .with_storage(|| resolve_curve(operand))
+                },
                 |entity| {
                     entity
                         .as_ref()
@@ -932,7 +939,11 @@ pub(super) fn relation_definition(
         for operand in [0, 1] {
             let resolved = memoized(
                 &point_cache[operand],
-                || cache_storage.borrow_mut().with_storage(|| resolve_point(operand)),
+                || {
+                    cache_storage
+                        .borrow_mut()
+                        .with_storage(|| resolve_point(operand))
+                },
                 |point| Ok(point.is_some()),
             )?;
             if !resolved {
