@@ -268,11 +268,11 @@ fn parse_mesh(
         }
     }
     reader.finish(ctx, "mesh payload")?;
-    let id = cadmpeg_ir::tessellation::TessellationId::mint(ctx.retained_suffix(
+    let id = cadmpeg_ir::tessellation::TessellationId::mint_for_decode(ctx, ctx.retained_suffix(
         &property.id,
         ":mesh",
         "FreeCAD mesh identity",
-    )?)
+    )?, "FreeCAD model identity grammar")?
     .map_err(|error| {
         crate::resource::malformed_charged(ctx, format_args!("{error}"), "FreeCAD mesh diagnostic")
     })?;
@@ -329,12 +329,12 @@ fn parse_points(
         let ordinal = ordinal.0;
         let position = reader.point3(ByteOrder::Little, "point-cloud point")?;
         points.push(Point::new(
-            PointId::mint(crate::native::model_id_charged(
+            PointId::mint_for_decode(ctx, crate::native::model_id_charged(
                 ctx,
                 "point",
                 &property.id,
                 &ordinal,
-            )?)
+            )?, "FreeCAD model identity grammar")?
             .map_err(CodecError::malformed)?,
             transform_point(transform, position)?,
             Some(association(ctx, property)?),

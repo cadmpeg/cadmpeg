@@ -177,13 +177,13 @@ pub(super) fn append_spreadsheet(
                 format_args!("{} cell has invalid address", property.id),
             )
         })?;
-        let id = ParameterId::mint(design_identity_text(
+        let id = ParameterId::mint_for_decode(ctx, design_identity_text(
             ctx,
             "parameter",
             object,
             format_args!(":cell:{address}"),
             "fcstd spreadsheet cell identity",
-        )?)
+        )?, "FreeCAD model identity grammar")?
         .map_err(CodecError::malformed)?;
         ctx.push_vec(
             &mut cell_ids,
@@ -259,13 +259,13 @@ pub(super) fn append_spreadsheet(
         "height",
     )?;
     Spreadsheet::new(
-        SpreadsheetId::mint(design_identity_text(
+        SpreadsheetId::mint_for_decode(ctx, design_identity_text(
             ctx,
             "spreadsheet",
             object,
             format_args!(""),
             "fcstd spreadsheet identity",
-        )?)
+        )?, "FreeCAD model identity grammar")?
         .map_err(CodecError::malformed)?,
         feature_id(ctx, object)?,
         cell_ids,

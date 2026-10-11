@@ -243,10 +243,10 @@ fn object_appearance_id(
     ctx: &DecodeContext<'_>,
     provider: &IdentityKey,
 ) -> Result<AppearanceId, CodecError> {
-    AppearanceId::mint(ctx.format_retained(
+    AppearanceId::mint_for_decode(ctx, ctx.format_retained(
         format_args!("{OBJECT_APPEARANCE_ID_PREFIX}{provider}"),
         "FCStd GUI object appearance identity",
-    )?)
+    )?, "FreeCAD model identity grammar")?
     .map_err(CodecError::malformed)
 }
 
@@ -254,10 +254,10 @@ fn edge_appearance_id(
     ctx: &DecodeContext<'_>,
     provider: &IdentityKey,
 ) -> Result<AppearanceId, CodecError> {
-    AppearanceId::mint(ctx.format_retained(
+    AppearanceId::mint_for_decode(ctx, ctx.format_retained(
         format_args!("fcstd:appearance:edge#{provider}"),
         "FCStd GUI edge appearance identity",
-    )?)
+    )?, "FreeCAD model identity grammar")?
     .map_err(CodecError::malformed)
 }
 
@@ -265,10 +265,10 @@ fn vertex_appearance_id(
     ctx: &DecodeContext<'_>,
     provider: &IdentityKey,
 ) -> Result<AppearanceId, CodecError> {
-    AppearanceId::mint(ctx.format_retained(
+    AppearanceId::mint_for_decode(ctx, ctx.format_retained(
         format_args!("fcstd:appearance:vertex#{provider}"),
         "FCStd GUI vertex appearance identity",
-    )?)
+    )?, "FreeCAD model identity grammar")?
     .map_err(CodecError::malformed)
 }
 
@@ -277,10 +277,10 @@ fn shape_material_appearance_id(
     provider: &IdentityKey,
     index: usize,
 ) -> Result<AppearanceId, CodecError> {
-    AppearanceId::mint(ctx.format_retained(
+    AppearanceId::mint_for_decode(ctx, ctx.format_retained(
         format_args!("fcstd:appearance:shape-material#{provider}:{}", index + 1),
         "FCStd GUI shape material appearance identity",
-    )?)
+    )?, "FreeCAD model identity grammar")?
     .map_err(CodecError::malformed)
 }
 
@@ -291,10 +291,10 @@ fn topology_appearance_id(
     index: usize,
 ) -> Result<AppearanceId, CodecError> {
     let kind = topology_binding_kind(kind);
-    AppearanceId::mint(ctx.format_retained(
+    AppearanceId::mint_for_decode(ctx, ctx.format_retained(
         format_args!("fcstd:appearance:{kind}#{provider}:{}", index + 1),
         "FCStd GUI topology appearance identity",
-    )?)
+    )?, "FreeCAD model identity grammar")?
     .map_err(CodecError::malformed)
 }
 
@@ -310,7 +310,7 @@ fn binding_id(
     ctx: &DecodeContext<'_>,
     text: std::fmt::Arguments<'_>,
 ) -> Result<AppearanceBindingId, CodecError> {
-    AppearanceBindingId::mint(ctx.format_retained(text, "FCStd GUI appearance binding identity")?)
+    AppearanceBindingId::mint_for_decode(ctx, ctx.format_retained(text, "FCStd GUI appearance binding identity")?, "FreeCAD model identity grammar")?
         .map_err(CodecError::malformed)
 }
 
@@ -1813,13 +1813,13 @@ fn transfer_neutral_presentation(
             ctx.reserve_vec(&mut plan.view_presentations, 1, "FCStd view presentations")
         })?;
         plan.view_presentations.push(ViewPresentation {
-            id: PresentationId::mint(crate::native::model_id_charged_at(
+            id: PresentationId::mint_for_decode(ctx, crate::native::model_id_charged_at(
                 ctx,
                 "presentation-view",
                 &provider.id,
                 "state",
                 "FCStd view presentation identity",
-            )?)
+            )?, "FreeCAD model identity grammar")?
             .map_err(CodecError::malformed)?,
             object: provider
                 .object
