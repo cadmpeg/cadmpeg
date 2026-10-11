@@ -223,6 +223,7 @@ pub(crate) fn decode(
     archive: ArchiveVersion,
     depth: usize,
 ) -> Result<DecodedSurface, GeometryError> {
+    let (candidate, storage) = ctx.with_scoped_storage("Rhino decoded surface", || {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let result = if matches!(
         class,
@@ -252,6 +253,8 @@ pub(crate) fn decode(
     };
     reader.skip_remaining()?;
     Ok(result)
+    })?;
+    Ok(storage.commit_value(candidate)?)
 }
 
 fn read_clipping_plane_surface(
@@ -877,7 +880,6 @@ fn matching_pole_weights(
         (NurbsPoles3::Polynomial { .. }, NurbsPoles3::Polynomial { .. }) => true,
         (NurbsPoles3::Rational { points: start }, NurbsPoles3::Rational { points: end }) => {
             let operation = "Rhino extrusion start pole weights";
-            ctx.charge_work(0, operation)?;
             let mut pairs = start.iter().zip(end.iter());
             for _ in 0..pairs.len() {
                 let Some((first, second)) = ctx.next_charged(&mut pairs, operation)? else {

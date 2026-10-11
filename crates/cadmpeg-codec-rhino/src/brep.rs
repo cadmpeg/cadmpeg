@@ -3119,9 +3119,6 @@ fn validate_rings(
     raw: &RawBrep,
     resolved: &ResolvedBrep,
 ) -> Result<(), GeometryError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal).into());
-    }
     let mut loop_record_source = raw.loops.iter().enumerate();
     for _ in 0..loop_record_source.len() {
         let (loop_index, loop_record) = ctx
