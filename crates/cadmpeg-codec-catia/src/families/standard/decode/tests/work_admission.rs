@@ -373,7 +373,7 @@ fn native_surface_index_preserves_source_precedence_and_ambiguity() {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         let mut annotations = AnnotationBuilder::new();
         for row in 0..1024_u32 {
-            let id = ensure_native_edge_support_surface(
+            let surface_index = ensure_native_edge_support_surface(
                 &mut ir,
                 &mut annotations,
                 row,
@@ -383,7 +383,10 @@ fn native_surface_index_preserves_source_precedence_and_ambiguity() {
                 None,
             )
             .expect("indexed exact geometry reuse");
-            assert_eq!(id, surfaces[usize::try_from(row).expect("row")].id);
+            assert_eq!(
+                ir.model.surfaces[surface_index].id,
+                surfaces[usize::try_from(row).expect("row")].id
+            );
         }
         assert_eq!(ir.model.surfaces.len(), 1024);
         // The source identity wins even when the requested geometry differs.
@@ -402,7 +405,7 @@ fn native_surface_index_preserves_source_precedence_and_ambiguity() {
             None,
         )
         .expect("source wins");
-        assert_eq!(first, ir.model.surfaces[1024].id);
+        assert_eq!(ir.model.surfaces[first].id, ir.model.surfaces[1024].id);
         // A second distinct source identity leaves a tombstone. Geometry
         // fallback must not pick the otherwise unique plane zero.
         ir.model.surfaces.push(Surface {
@@ -421,7 +424,7 @@ fn native_surface_index_preserves_source_precedence_and_ambiguity() {
         )
         .expect("ambiguous source emits");
         assert_eq!(ir.model.surfaces.len(), 1027);
-        assert_eq!(emitted, ir.model.surfaces[1026].id);
+        assert_eq!(ir.model.surfaces[emitted].id, ir.model.surfaces[1026].id);
         // Plane zero now has two identities. An unrelated source also emits.
         ensure_native_edge_support_surface(
             &mut ir,
@@ -1018,19 +1021,17 @@ fn native_surface_source_hit_skips_geometry_fingerprints() {
             "catia_native_surface_fingerprint",
             None,
         );
-        assert_eq!(
-            ensure_native_edge_support_surface(
-                &mut ir,
-                &mut cadmpeg_ir::AnnotationBuilder::new(),
-                42,
-                &ResolvedPcurveSurface::Geometry(geometry),
-                &mut index,
-                &mut crate::families::FamilyEntityAdmission::new(ctx),
-                None,
-            )
-            .expect("source lookup visits no geometry lanes"),
-            id
-        );
+        let surface_index = ensure_native_edge_support_surface(
+            &mut ir,
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            42,
+            &ResolvedPcurveSurface::Geometry(geometry),
+            &mut index,
+            &mut crate::families::FamilyEntityAdmission::new(ctx),
+            None,
+        )
+        .expect("source lookup visits no geometry lanes");
+        assert_eq!(ir.model.surfaces[surface_index].id, id);
         assert_eq!(ir.model.surfaces.len(), 1);
     });
 }
