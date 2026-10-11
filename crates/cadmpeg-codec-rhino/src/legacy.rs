@@ -3835,7 +3835,6 @@ pub(crate) fn decode_v1_with_header(
             let mut workspace = ctx.reserve_scoped(0, "Rhino V1 curve workspace")?;
             match legacy_curve_segments(ctx, &mut workspace, data, chunk.body().clone(), scale) {
                 Ok(segments) => {
-                    let ir = session.document_mut()?;
                     let mut segments = segments.into_iter();
                     while !segments.as_slice().is_empty() {
                         let (segment, segment_storage) = ctx
@@ -3843,39 +3842,48 @@ pub(crate) fn decode_v1_with_header(
                             .ok_or_else(|| {
                                 CodecError::malformed("V1 curve segment source ended early")
                             })?;
+                        let mut model = Model::default();
+                        let mut model_storage = ctx.reserve_scoped(0, "Rhino V1 curve candidate backing")?;
                         ctx.charge_entities(9, "Rhino V1 curve topology")?;
-                        ctx.reserve_vec(
-                            &mut ir.model.curves,
+                        ctx.reserve_scoped_vec(
+                            &mut model_storage,
+                            &mut model.curves,
                             1,
                             "Rhino V1 curve topology collections",
                         )?;
-                        ctx.reserve_vec(
-                            &mut ir.model.points,
+                        ctx.reserve_scoped_vec(
+                            &mut model_storage,
+                            &mut model.points,
                             2,
                             "Rhino V1 curve topology collections",
                         )?;
-                        ctx.reserve_vec(
-                            &mut ir.model.vertices,
+                        ctx.reserve_scoped_vec(
+                            &mut model_storage,
+                            &mut model.vertices,
                             2,
                             "Rhino V1 curve topology collections",
                         )?;
-                        ctx.reserve_vec(
-                            &mut ir.model.edges,
+                        ctx.reserve_scoped_vec(
+                            &mut model_storage,
+                            &mut model.edges,
                             1,
                             "Rhino V1 curve topology collections",
                         )?;
-                        ctx.reserve_vec(
-                            &mut ir.model.shells,
+                        ctx.reserve_scoped_vec(
+                            &mut model_storage,
+                            &mut model.shells,
                             1,
                             "Rhino V1 curve topology collections",
                         )?;
-                        ctx.reserve_vec(
-                            &mut ir.model.regions,
+                        ctx.reserve_scoped_vec(
+                            &mut model_storage,
+                            &mut model.regions,
                             1,
                             "Rhino V1 curve topology collections",
                         )?;
-                        ctx.reserve_vec(
-                            &mut ir.model.bodies,
+                        ctx.reserve_scoped_vec(
+                            &mut model_storage,
+                            &mut model.bodies,
                             1,
                             "Rhino V1 curve topology collections",
                         )?;
@@ -3958,7 +3966,7 @@ pub(crate) fn decode_v1_with_header(
                         ];
                         let start = evaluate_nurbs(ctx, &segment, parameter_range[0])?;
                         let end = evaluate_nurbs(ctx, &segment, parameter_range[1])?;
-                        ir.model.curves.push(Curve {
+                        model.curves.push(Curve {
                             id: curve_id
                                 .try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -3972,7 +3980,7 @@ pub(crate) fn decode_v1_with_header(
                         let end = FinitePoint3::new(end)
                             .ok_or(Point::NON_FINITE_POSITION)
                             .map_err(cadmpeg_core::CodecError::malformed)?;
-                        ir.model.points.extend([
+                        model.points.extend([
                             Point::new(
                                 start_point
                                     .try_clone_for_decode(ctx, "Rhino V1 endpoint identity copy")?,
@@ -3986,7 +3994,7 @@ pub(crate) fn decode_v1_with_header(
                                 None,
                             ),
                         ]);
-                        ir.model.vertices.extend([
+                        model.vertices.extend([
                             Vertex {
                                 id: start_vertex
                                     .try_clone_for_decode(ctx, "Rhino V1 endpoint identity copy")?,
@@ -4000,7 +4008,7 @@ pub(crate) fn decode_v1_with_header(
                                 tolerance: None,
                             },
                         ]);
-                        ir.model.edges.push(Edge {
+                        model.edges.push(Edge {
                             id: edge_id
                                 .try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
@@ -4015,7 +4023,7 @@ pub(crate) fn decode_v1_with_header(
                         let mut wire_edges =
                             ctx.collection_vec(1, "Rhino V1 curve topology collections")?;
                         wire_edges.push(edge_id);
-                        ir.model.shells.push(
+                        model.shells.push(
                             Shell::new(
                                 shell_id
                                     .try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
@@ -4027,7 +4035,7 @@ pub(crate) fn decode_v1_with_header(
                             )
                             .map_err(CodecError::malformed)?,
                         );
-                        ir.model.regions.push(Region {
+                        model.regions.push(Region {
                             id: region_id
                                 .try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                             body: body_id
@@ -4039,7 +4047,7 @@ pub(crate) fn decode_v1_with_header(
                                 values
                             },
                         });
-                        ir.model.bodies.push(Body {
+                        model.bodies.push(Body {
                             id: body_id,
                             kind: BodyKind::General,
                             regions: {
@@ -4053,6 +4061,8 @@ pub(crate) fn decode_v1_with_header(
                             color: None,
                             visible: None,
                         });
+                        session.try_append(model, Native::default(), |_, _| Ok(Ok::<(), CodecError>(())))??;
+                        drop(model_storage);
                         decoded_curves += 1;
                     }
                     push_v1_record(
@@ -4151,12 +4161,14 @@ pub(crate) fn decode_v1_with_header(
                 )
             }) {
                 Ok(mesh) => {
-                    let ir = session.document_mut()?;
+                    let mut model = Model::default();
+                    let mut model_storage = ctx.reserve_scoped(0, "Rhino V1 mesh candidate backing")?;
                     ctx.charge_entities(1, "Rhino V1 mesh")?;
-                    ctx.reserve_vec(&mut ir.model.tessellations, 1, "Rhino V1 mesh storage")?;
-                    ir.model
-                        .tessellations
+                    ctx.reserve_scoped_vec(&mut model_storage, &mut model.tessellations, 1, "Rhino V1 mesh storage")?;
+                    model.tessellations
                         .push(mesh_storage.commit_value(mesh)?);
+                    session.try_append(model, Native::default(), |_, _| Ok(Ok::<(), CodecError>(())))??;
+                    drop(model_storage);
                     push_v1_record(
                         ctx,
                         &mut source_storage,
