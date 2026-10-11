@@ -344,24 +344,7 @@ fn bind_revolution_operations_with(
         ) {
             continue;
         }
-        let Some(history) = indexes.history(ctx, feature.native_ref.as_deref())? else {
-            continue;
-        };
-        let class = history.input_class.as_deref();
-        let Some(resolved) = agreed_lane_operation(
-            ctx,
-            lanes,
-            indexes,
-            history,
-            |lane, direct, name| {
-                Ok(
-                    operation_code(ctx, lane, direct, name, class, form_padding)?
-                        .and_then(|code| revolution_operation(class, code)),
-                )
-            },
-            "bind SLDPRT revolution operations",
-        )?
-        else {
+        let Some(resolved) = resolve_operation(ctx, OperationKind::Revolution, feature, indexes, lanes, form_padding)? else {
             continue;
         };
         feature.evaluation.edit(|definition, _| {
@@ -570,27 +553,7 @@ fn bind_extrusion_operations_with(
         ) {
             continue;
         }
-        let Some(history) = indexes.history(ctx, feature.native_ref.as_deref())? else {
-            continue;
-        };
-        let class = history.input_class.as_deref();
-        let Some(resolved) = agreed_lane_operation(
-            ctx,
-            lanes,
-            indexes,
-            history,
-            |lane, direct, name| {
-                if let Some(operation) = feature_inline_operation(ctx, lane, name)? {
-                    return Ok(Some(operation));
-                }
-                Ok(
-                    operation_code(ctx, lane, direct, name, class, form_padding)?
-                        .and_then(|code| extrusion_operation(class, code)),
-                )
-            },
-            "bind SLDPRT extrusion operations",
-        )?
-        else {
+        let Some(resolved) = resolve_operation(ctx, OperationKind::Extrusion, feature, indexes, lanes, form_padding)? else {
             continue;
         };
         feature.evaluation.edit(|definition, _| {
@@ -608,6 +571,36 @@ enum OperationKind {
     Revolution,
 }
 
+/// Resolve only the Boolean discriminator of a borrowed operation.
+fn resolve_operation(
+    ctx: &DecodeContext<'_>,
+    kind: OperationKind,
+    feature: &cadmpeg_ir::features::Feature,
+    indexes: &OperationIndexes<'_, '_, '_>,
+    lanes: &[FeatureInputLane],
+    form_padding: Option<usize>,
+) -> Result<Option<BooleanOp>, CodecError> {
+    let Some(history) = indexes.history(ctx, feature.native_ref.as_deref())? else {
+        return Ok(None);
+    };
+    let class = history.input_class.as_deref();
+    let operation = match kind {
+        OperationKind::Extrusion => "bind SLDPRT extrusion operations",
+        OperationKind::Revolution => "bind SLDPRT revolution operations",
+    };
+    agreed_lane_operation(ctx, lanes, indexes, history, |lane, direct, name| {
+        if matches!(kind, OperationKind::Extrusion) {
+            if let Some(operation) = feature_inline_operation(ctx, lane, name)? {
+                return Ok(Some(operation));
+            }
+        }
+        Ok(operation_code(ctx, lane, direct, name, class, form_padding)?.and_then(|code| match kind {
+            OperationKind::Extrusion => extrusion_operation(class, code),
+            OperationKind::Revolution => revolution_operation(class, code),
+        }))
+    }, operation)
+}
+
 /// Preserve a Boolean operation that is invariant across a configuration lane
 /// when that lane carries no independent operation carrier.
 pub(crate) fn inherit_configuration_operations(
@@ -615,38 +608,78 @@ pub(crate) fn inherit_configuration_operations(
     features: &mut [cadmpeg_ir::features::Feature],
     base_features: &[cadmpeg_ir::features::Feature],
     histories: &[FeatureHistory],
+    base_lanes: &[FeatureInputLane],
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "inherit SLDPRT configuration operations";
     let mut storage = ctx.reserve_scoped(0, "SLDPRT operation indexes")?;
-    let indexes = OperationIndexes::new(ctx, &mut storage, histories, lanes)?;
-    let mut base_operations = HashMap::new();
+    let mut consumer_storage = ctx.reserve_scoped(0, "SLDPRT configuration operation consumers")?;
+    let mut consumers = HashMap::<_, (bool, bool)>::new();
+    for feature in ctx.admit_iter(&*features, "index SLDPRT configuration operation consumers")? {
+        if feature.native_ref.is_none() { continue; }
+        let kinds = match feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::Extrude { op: BooleanOp::Unresolved, .. }) => (true, false),
+            FeatureDefinition::Operation(FeatureOperation::Revolve { op: BooleanOp::Unresolved, .. }) => (false, true),
+            _ => continue,
+        };
+        if let Some(previous) = ctx.get_mut_hash_map(&mut consumers, &feature.id, "index SLDPRT configuration operation consumers")? {
+            previous.0 |= kinds.0;
+            previous.1 |= kinds.1;
+        } else {
+            consumer_storage.with_storage(|| ctx.insert_hash_map(&mut consumers, &feature.id, kinds, "index SLDPRT configuration operation consumers"))?;
+        }
+    }
+    if consumers.is_empty() {
+        return Ok(());
+    }
+    let mut selected_storage = ctx.reserve_scoped(0, "SLDPRT selected operation bases")?;
+    let mut selected = HashMap::new();
     for feature in ctx.admit_iter(base_features, "index SLDPRT base definitions")? {
+        if ctx.contains_key_hash_map(&consumers, &feature.id, "look up SLDPRT configuration operation consumer")? {
+            selected_storage.with_storage(|| ctx.insert_hash_map(&mut selected, &feature.id, feature, "index SLDPRT base definitions"))?;
+        }
+    }
+    if selected.is_empty() { return Ok(()); }
+    let mut base_storage = ctx.reserve_scoped(0, "SLDPRT base operation indexes")?;
+    let mut base_indexes = None;
+    let mut base_operations = HashMap::new();
+    for feature in ctx.admit_iter(base_features, "resolve SLDPRT configuration operation bases")? {
+        if !ctx.get_hash_map(&selected, &feature.id, "index SLDPRT base definitions")?.is_some_and(|selected| std::ptr::eq(*selected, feature)) {
+            continue;
+        }
         let base = match feature.evaluation.definition() {
-            FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. })
-                if *op != BooleanOp::Unresolved =>
-            {
-                Some((OperationKind::Extrusion, *op))
-            }
-            FeatureDefinition::Operation(FeatureOperation::Revolve { op, .. })
-                if *op != BooleanOp::Unresolved =>
-            {
-                Some((OperationKind::Revolution, *op))
-            }
+            FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) => Some((OperationKind::Extrusion, *op)),
+            FeatureDefinition::Operation(FeatureOperation::Revolve { op, .. }) => Some((OperationKind::Revolution, *op)),
             _ => None,
         };
-        storage.with_storage(|| {
-            ctx.insert_hash_map(
-                &mut base_operations,
-                &feature.id,
-                base,
-                "index SLDPRT base definitions",
-            )
-        })?;
+        let Some(kinds) = ctx.get_hash_map(&consumers, &feature.id, "look up SLDPRT configuration operation consumer")? else { continue; };
+        if base.is_some_and(|(kind, _)| match kind { OperationKind::Extrusion => !kinds.0, OperationKind::Revolution => !kinds.1 }) { continue; }
+        let base = match base {
+            Some((kind, BooleanOp::Unresolved)) if feature.native_ref.is_some() => {
+                let indexes = match &mut base_indexes {
+                    Some(indexes) => indexes,
+                    slot @ None => slot.insert(OperationIndexes::new(ctx, &mut base_storage, histories, base_lanes)?),
+                };
+                resolve_operation(ctx, kind, feature, indexes, base_lanes, form_padding)?.map(|op| (kind, op))
+            }
+            Some((_, BooleanOp::Unresolved)) | None => None,
+            resolved => resolved,
+        };
+        if let Some(base) = base {
+            storage.with_storage(|| ctx.insert_hash_map(&mut base_operations, &feature.id, base, "index SLDPRT base definitions"))?;
+        }
     }
+    drop((consumers, consumer_storage));
+    drop((selected, selected_storage));
+    drop((base_indexes, base_storage));
+    if base_operations.is_empty() { return Ok(()); }
+    let mut local_indexes = None;
     for feature in ctx.admit_iter(features, OPERATION)? {
-        let Some(&Some((kind, base_op))) =
+        if feature.native_ref.is_none() || !matches!(feature.evaluation.definition(), FeatureDefinition::Operation(
+            FeatureOperation::Extrude { op: BooleanOp::Unresolved, .. } | FeatureOperation::Revolve { op: BooleanOp::Unresolved, .. }
+        )) { continue; }
+        let Some(&(kind, base_op)) =
             ctx.get_hash_map(&base_operations, &feature.id, OPERATION)?
         else {
             continue;
@@ -665,6 +698,10 @@ pub(crate) fn inherit_configuration_operations(
         if !unresolved {
             continue;
         }
+        let indexes = match &mut local_indexes {
+            Some(indexes) => indexes,
+            slot @ None => slot.insert(OperationIndexes::new(ctx, &mut storage, histories, lanes)?),
+        };
         let Some(history) = indexes.history(ctx, feature.native_ref.as_deref())? else {
             continue;
         };

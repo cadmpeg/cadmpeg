@@ -890,7 +890,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         ),
     ];
 
-    inherit_configuration_operations(&ctx, &mut configured, &base, &histories, &[], None)
+    inherit_configuration_operations(&ctx, &mut configured, &base, &histories, &[], &[], None)
         .expect("bind configuration operations");
 
     assert!(matches!(
@@ -911,7 +911,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
     configured[0]
         .evaluation
         .set_definition(extrude(BooleanOp::NewBody));
-    inherit_configuration_operations(&ctx, &mut configured, &base, &histories, &[], None)
+    inherit_configuration_operations(&ctx, &mut configured, &base, &histories, &[], &[], None)
         .expect("bind configuration operations");
     assert!(matches!(
         configured[0].evaluation.definition(),
@@ -961,6 +961,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         &mut inherited,
         &base,
         &histories,
+        &[],
         &[operation_lane.clone()],
         Some(4),
     )
@@ -984,6 +985,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         &mut unresolved,
         &base,
         &histories,
+        &[],
         &[operation_lane],
         Some(4),
     )
@@ -995,4 +997,50 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
             ..
         })
     ));
+}
+
+#[test]
+fn configuration_operation_base_resolves_borrowed_unresolved_evidence() {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    let mut native = configuration_extrusion_feature();
+    native.xml_tag = "Extrusion".into();
+    native.kind = "Extrusion".into();
+    native.parameters.insert(cadmpeg_core::nonblank_literal!("Depth"), "1mm".into());
+    let mut histories = [FeatureHistory {
+        id: "history".into(), part_name: None, properties: BTreeMap::new(), content: Vec::new(), configurations: Vec::new(), features: vec![native],
+    }];
+    let fixture_ctx = cadmpeg_test_support::service_decode_context();
+    let local = crate::history::project::project_features(&fixture_ctx, &histories).unwrap();
+    assert!(matches!(local[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Extrude { op: BooleanOp::Unresolved, .. })));
+    histories[0].features[0].input_class = Some("moExtrusion_c".into());
+    let mut base = local.clone();
+    let mut lanes = split_line_limit_input().1;
+    let lane = &mut lanes[0];
+    lane.native_payload = vec![0; 128];
+    lane.classes = vec![FeatureInputClass { id: "class".into(), parent: lane.id.clone(), ordinal: 0, offset: 33, name: "moExtrusion_c".into() }];
+    lane.names[0].offset = 52;
+    lane.names[0].value = histories[0].features[0].name.clone();
+    lane.native_payload[25..29].copy_from_slice(&3_u32.to_le_bytes());
+    let mut expected = local.clone();
+    expected[0].evaluation.edit(|definition, _| {
+        if let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) = definition { *op = BooleanOp::Join; }
+    });
+    let mut configured = local.clone();
+    inherit_configuration_operations(&fixture_ctx, &mut configured, &base, &histories, &lanes, &[], Some(4)).unwrap();
+    assert_eq!(configured, expected);
+    let mut last = base[0].clone();
+    last.evaluation.set_definition(FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}));
+    base.push(last);
+    let mut configured = local.clone();
+    inherit_configuration_operations(&fixture_ctx, &mut configured, &base, &histories, &lanes, &[], Some(4)).unwrap();
+    assert_eq!(configured, local);
+}
+
+fn configuration_extrusion_feature() -> Feature {
+    Feature {
+        id: "extrusion".into(), parent: "history".into(), xml_tag: "Feature".into(), tree_parent: None,
+        source_id: FeatureSource::from_value(1), ordinal: 0, name: "extrusion".into(), kind: "Custom".into(),
+        input_class: None, suppressed: false, parameters: BTreeMap::new(), dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(), text: None, content: Vec::new(),
+    }
 }
