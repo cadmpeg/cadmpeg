@@ -1518,8 +1518,8 @@ fn b2_revolution_profile_and_resolved_output_refuse_collection_limits() {
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
         if error.operation == "catia_b2_revolution_profiles")
     );
-    // One circle, then a new group and its first member in each profile index.
-    let limited = crate::test_support::with_collection_limit(5, |ctx| {
+    // One circle, one request, and one binding slot precede the resolved output.
+    let limited = crate::test_support::with_collection_limit(3, |ctx| {
         crate::families::b2::records::b2_resolved_revolutions_from_records(ctx, &bytes, &records)
     });
     assert!(
@@ -1988,3 +1988,5 @@ mod spatial_and_consolidated;
 mod offset_queries;
 
 mod rejected_storage;
+
+mod revolution_queries;

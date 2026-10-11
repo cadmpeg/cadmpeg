@@ -3397,10 +3397,11 @@ extrusion,
     let resolved_revolution_count = resolved_consolidated_revolutions.len();
     // The bindings this call returns are read below, through
     // `bind_consolidated_revolution_faces_and_seams`.
-    let consolidated_revolutions = match append_consolidated_revolutions(
+    let (consolidated_revolutions, _consolidated_revolution_storage) = match append_consolidated_revolutions(
         &mut ir,
         &mut annotations,
         &resolved_consolidated_revolutions,
+        true,
         &mut admission,
     ) {
         Ok(bindings) => bindings,
