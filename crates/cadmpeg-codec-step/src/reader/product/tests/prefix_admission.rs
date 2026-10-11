@@ -83,24 +83,6 @@ fn empty_reference_list_is_free() {
 }
 
 #[test]
-fn empty_reference_list_preserves_an_existing_refusal() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("context");
-    let original = ctx
-        .charge_work(1, "product original refusal")
-        .expect_err("original fuse");
-    let error = super::super::collect_references(&Value::List(Vec::new()), &mut Vec::new(), &ctx)
-        .expect_err("empty source observes original fuse");
-    assert_eq!(error.to_string(), original.to_string());
-    assert_eq!(
-        ctx.finish_session().expect_err("fused session").to_string(),
-        original.to_string()
-    );
-}
-
-#[test]
 fn joined_product_references_keep_source_order() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

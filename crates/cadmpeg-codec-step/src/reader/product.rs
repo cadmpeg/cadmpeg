@@ -8,7 +8,7 @@ use super::{RecordExt, ValueExt};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::ids::{BodyId, IdentityKey, IdentityKeyTail, OccurrenceId, ProductDefinitionId};
+use cadmpeg_ir::ids::{IdentityKey, IdentityKeyTail, OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
     Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
@@ -54,7 +54,6 @@ fn join_product_references(
     operation: &'static str,
 ) -> Result<String, CodecError> {
     let mut text = String::new();
-    ctx.charge_work(0, operation)?;
     for index in 0..ids.len() {
         let Some(id) = ctx.next_charged(&mut ids, operation)? else {
             break;
@@ -121,7 +120,6 @@ pub(super) fn decode<'ctx>(
         })?;
     }
     let mut definitions_by_product_in_source_order = BTreeMap::<u64, Vec<(u64, usize)>>::new();
-    ctx.charge_work(0, "STEP decode traversal")?;
     let mut definition_group_source = definitions.iter();
     for _ in 0..definition_group_source.len() {
         let Some((&definition, &product)) =
@@ -152,7 +150,6 @@ pub(super) fn decode<'ctx>(
             .start;
         grouped.push((definition, offset));
     }
-    ctx.charge_work(0, "STEP product definition group traversal")?;
     let mut sorted_group_source = definitions_by_product_in_source_order.iter_mut();
     for _ in 0..sorted_group_source.len() {
         let Some((_, definitions)) = ctx.next_charged(
@@ -311,7 +308,6 @@ pub(super) fn decode<'ctx>(
             .map(Vec::as_slice)
             .unwrap_or_default();
         let definition_count = product_definitions.len();
-        ctx.charge_work(0, "STEP decode chain traversal")?;
         let mut definition_source = product_definitions.iter();
         for _ in 0..definition_count.max(1) {
             let definition = if definition_count == 0 {
@@ -394,12 +390,10 @@ pub(super) fn decode<'ctx>(
             let mut missing = String::new();
             let mut selected_storage = ctx.reserve_scoped(0, "STEP product selected body index")?;
             let mut selected_bodies = BTreeSet::new();
-            ctx.charge_work(0, "STEP product shape batch traversal")?;
             ctx.fold(
                 &source_bodies[..],
                 (),
                 |(), batch| {
-                    ctx.charge_work(0, "STEP product shape body traversal")?;
                     ctx.fold(
                         &batch[..],
                         (),
@@ -444,7 +438,6 @@ pub(super) fn decode<'ctx>(
             )?;
             let mut bodies =
                 ctx.collection_vec(selected_bodies.len(), "STEP product committed body slots")?;
-            ctx.charge_work(0, "STEP product selected body traversal")?;
             let mut selected_body_source = selected_bodies.into_iter();
             for _ in 0..selected_body_source.len() {
                 let Some(body) = ctx.next_charged(
@@ -561,7 +554,6 @@ pub(super) fn decode<'ctx>(
             )
         })?;
     }
-    ctx.charge_work(0, "STEP decode map traversal")?;
     let mut formation_source = formations.keys();
     for _ in 0..formation_source.len() {
         let Some(id) = ctx.next_charged(&mut formation_source, "STEP decode map traversal")? else {
@@ -570,7 +562,6 @@ pub(super) fn decode<'ctx>(
         claim_storage
             .with_storage(|| ctx.insert_btree_set(&mut typed, *id, "step_product_typed_claims"))?;
     }
-    ctx.charge_work(0, "STEP decode chain traversal")?;
     let mut definition_claim_source = definitions.keys();
     for _ in 0..definition_claim_source.len() {
         let Some(id) =
@@ -585,6 +576,7 @@ pub(super) fn decode<'ctx>(
     let mut usages = BTreeMap::new();
     for indexed_entity in exchange.entities(ctx, "NEXT_ASSEMBLY_USAGE_OCCURRENCE")? {
         let (id, record) = indexed_entity?;
+        let mut name_storage = ctx.reserve_scoped(0, "STEP usage source name")?;
         let name = record
             .partial(ctx, "NEXT_ASSEMBLY_USAGE_OCCURRENCE")?
             .and_then(|partial| partial.parameters.get(1))
@@ -599,7 +591,7 @@ pub(super) fn decode<'ctx>(
                         StepLossCode::MetadataStringInvalid,
                     ),
                     ctx,
-                    &mut scratch_storage,
+                    &mut name_storage,
                 )
             })
             .transpose()?
@@ -630,9 +622,9 @@ pub(super) fn decode<'ctx>(
                 "step_product_usage_entries",
             )
         })?;
+        scratch_storage.absorb(&mut name_storage)?;
     }
     let mut child_definitions = BTreeSet::new();
-    ctx.charge_work(0, "STEP decode map traversal")?;
     let mut child_definition_source = usages.values();
     for _ in 0..child_definition_source.len() {
         let Some(usage) =
@@ -653,7 +645,6 @@ pub(super) fn decode<'ctx>(
     let mut occurrence_paths = BTreeMap::<OccurrenceId, BTreeSet<u64>>::new();
     let mut pending_occurrences = VecDeque::new();
     let mut root_ordinal = 0_u32;
-    ctx.charge_work(0, "STEP decode map traversal")?;
     let mut root_definition_source = definitions.keys();
     for _ in 0..root_definition_source.len() {
         let Some(&definition) =
@@ -758,7 +749,6 @@ pub(super) fn decode<'ctx>(
         &mut scratch_storage,
         ctx,
     )?;
-    ctx.charge_work(0, "STEP decode traversal")?;
     let mut ambiguous_source = ambiguous_placements.iter();
     for _ in 0..ambiguous_source.len() {
         let Some((&usage_id, source_ids)) =
@@ -804,7 +794,6 @@ pub(super) fn decode<'ctx>(
             .with_storage(|| ctx.reserve_vec(&mut losses, 1, "step_product_losses"))?;
         losses.push(StepLossCode::NauoPlacementAmbiguous.note(ctx.format_retained(format_args!("NAUO #{usage_id} has multiple resolved {placement_kind} placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque"), "step_ambiguous_placement_loss_text")?));
     }
-    ctx.charge_work(0, "STEP decode traversal")?;
     let mut competing_source = competing_placements.iter();
     for _ in 0..competing_source.len() {
         let Some((&usage_id, source_ids)) =
@@ -830,7 +819,6 @@ pub(super) fn decode<'ctx>(
     let mut missing_placement_reports = BTreeSet::new();
     let mut child_ordinals = BTreeMap::<OccurrenceId, u32>::new();
     let mut usages_by_parent = BTreeMap::<u64, Vec<u64>>::new();
-    ctx.charge_work(0, "STEP decode traversal")?;
     let mut usage_parent_source = usages.iter();
     for _ in 0..usage_parent_source.len() {
         let Some((&usage_id, usage)) =
@@ -865,20 +853,17 @@ pub(super) fn decode<'ctx>(
             )?
             .map(Vec::as_slice)
             .unwrap_or_default();
-        ctx.charge_work(0, "STEP child usage traversal")?;
-        let mut child_usage_source = child_usages.iter();
-        for _ in 0..child_usage_source.len() {
-            let Some(&usage_id) =
-                ctx.next_charged(&mut child_usage_source, "STEP child usage traversal")?
-            else {
-                break;
-            };
+
+        ctx.fold(
+            child_usages,
+            (),
+            |(), &usage_id| {
             if ctx.contains_key_btree_map(
                 &ambiguous_placements,
                 &usage_id,
                 "STEP product ambiguous_placements contains_key",
             )? {
-                continue;
+                return Ok(());
             }
             let usage = ctx
                 .get_btree_map(&usages, &usage_id, "STEP child usage lookup")?
@@ -896,7 +881,7 @@ pub(super) fn decode<'ctx>(
                     format_args!("NAUO #{usage_id} references an unresolved child definition"),
                     "step_product_loss_text",
                 )?));
-                continue;
+                return Ok(());
             };
             let parent_path = ctx.get_btree_map(
                 &occurrence_paths,
@@ -929,7 +914,7 @@ pub(super) fn decode<'ctx>(
                     format_args!("NAUO #{usage_id} closes an assembly definition cycle"),
                     "step_product_loss_text",
                 )?));
-                continue;
+                return Ok(());
             }
 
             let instance = scratch_storage
@@ -962,20 +947,23 @@ pub(super) fn decode<'ctx>(
                 ));
             }
 
-            let ordinal = scratch_storage
-                .with_storage(|| {
-                    ctx.entry_btree_map(
-                        &mut child_ordinals,
-                        occurrence_index_copy_storage.with_storage(|| {
-                            parent.try_clone_for_decode(
-                                ctx,
-                                "step_product_occurrence_index_identity_copy",
-                            )
-                        })?,
-                        "step_child_occurrence_ordinals",
-                    )
-                })?
-                .or_default();
+            if !ctx.contains_key_btree_map(
+                &child_ordinals,
+                &parent,
+                "step_child_occurrence_ordinals",
+            )? {
+                let key = occurrence_index_copy_storage.with_storage(|| {
+                    parent.try_clone_for_decode(ctx, "step_product_occurrence_index_identity_copy")
+                })?;
+                scratch_storage.with_storage(|| {
+                    ctx.insert_btree_map(&mut child_ordinals, key, 0_u32, "step_child_occurrence_ordinals")
+                })?;
+            }
+            let ordinal = ctx.get_mut_btree_map(
+                &mut child_ordinals,
+                &parent,
+                "step_child_occurrence_ordinals",
+            )?.ok_or_else(|| CodecError::malformed("STEP child ordinal was not indexed"))?;
             let transform = if let Some(transform) = ctx
                 .get_btree_map(&placements, &usage_id, "STEP product placements get")?
                 .copied()
@@ -1040,7 +1028,6 @@ pub(super) fn decode<'ctx>(
             })?;
             let mut path = BTreeSet::new();
             if let Some(parent_path) = parent_path {
-                ctx.charge_work(0, "STEP product parent_path traversal")?;
                 let mut parent_path_source = parent_path.iter();
                 for _ in 0..parent_path_source.len() {
                     let Some(&definition) = ctx.next_charged(
@@ -1087,7 +1074,10 @@ pub(super) fn decode<'ctx>(
             claim_storage.with_storage(|| {
                 ctx.insert_btree_set(&mut typed, usage_id, "step_product_typed_claims")
             })?;
-        }
+                Ok(())
+            },
+            "STEP child usage traversal",
+        )?;
     }
     if !had_roots && !usages.is_empty() {
         slot_storage
@@ -1150,7 +1140,6 @@ pub(super) fn decode<'ctx>(
             })?;
         }
     }
-    ctx.charge_work(0, "STEP decode traversal")?;
     let mut ambiguous_claim_source = ambiguous_placements.iter();
     for _ in 0..ambiguous_claim_source.len() {
         let Some((&usage_id, source_ids)) =
@@ -1159,7 +1148,6 @@ pub(super) fn decode<'ctx>(
             break;
         };
         ctx.remove_btree_set(&mut typed, &usage_id, "step_product_typed_claims")?;
-        ctx.charge_work(0, "step_product_typed_claims")?;
         ctx.fold(
             source_ids,
             (),
@@ -1231,7 +1219,6 @@ fn apply_body_placements(
         })?;
     let definition_representations = definition_representations_buffer;
     let mut assembly_representations = BTreeSet::new();
-    ctx.charge_work(0, "STEP assembly usage traversal")?;
     let mut assembly_usage_source = usages.iter();
     for _ in 0..assembly_usage_source.len() {
         let Some((_, usage)) =
@@ -1244,7 +1231,6 @@ fn apply_body_placements(
             &usage.child_definition,
             "STEP product definition_representations get",
         )? {
-            ctx.charge_work(0, "STEP assembly representation traversal")?;
             let mut assembly_representation_source = representations.iter();
             for _ in 0..assembly_representation_source.len() {
                 let Some(representation) = ctx.next_charged(
@@ -1266,7 +1252,6 @@ fn apply_body_placements(
     }
     let mut body_index_copy_storage = ctx.reserve_scoped(0, "step_body_placement_identity_copy")?;
     let mut body_indices = BTreeMap::new();
-    ctx.charge_work(0, "STEP apply body placements traversal")?;
     let mut body_index_source = ir.model.bodies.iter().enumerate();
     for _ in 0..body_index_source.len() {
         let Some((index, body)) = ctx.next_charged(
@@ -1289,7 +1274,7 @@ fn apply_body_placements(
         })?;
     }
     let mut representation_cache = BTreeMap::new();
-    let mut placements_by_body = BTreeMap::<&BodyId, Vec<(u64, Transform)>>::new();
+    let mut placements_by_body = BTreeMap::new();
     let (placement_sources_buffer, mut placement_source_storage) =
         ctx.temporary_vec(0, "STEP mapped body placement sources")?;
     let mut placement_sources = placement_sources_buffer;
@@ -1358,12 +1343,10 @@ fn apply_body_placements(
             "STEP mapped body placement sources",
         )?;
     }
-    ctx.charge_work(0, "STEP mapped body placement source traversal")?;
     ctx.fold(
         &placement_sources[..],
         (),
         |(), (id, (bodies, _body_storage), transform)| {
-            ctx.charge_work(0, "STEP product body_ids traversal")?;
             ctx.fold(
                 &bodies[..],
                 (),
@@ -1376,11 +1359,11 @@ fn apply_body_placements(
                                 "step_body_placement_groups",
                             )
                         })?
-                        .or_default();
-                    scratch_storage.with_storage(|| {
-                        ctx.reserve_vec(grouped, 1, "step_body_placement_group_members")
+                        .or_insert((Vec::new(), ctx.reserve_scoped(0, "STEP body placement group")?));
+                    grouped.1.with_storage(|| {
+                        ctx.reserve_vec(&mut grouped.0, 1, "step_body_placement_group_members")
                     })?;
-                    grouped.push((*id, *transform));
+                    grouped.0.push((*id, *transform));
 
                     Ok(())
                 },
@@ -1391,20 +1374,20 @@ fn apply_body_placements(
         },
         "STEP mapped body placement source traversal",
     )?;
-    ctx.charge_work(0, "STEP product placements_by_body traversal")?;
     let mut body_placement_group_source = placements_by_body.into_iter();
     for _ in 0..body_placement_group_source.len() {
-        let Some((body, placements)) = ctx.next_charged(
+        let Some((body, group)) = ctx.next_charged(
             &mut body_placement_group_source,
             "STEP product placements_by_body traversal",
         )?
         else {
             break;
         };
+        let (placement_storage, placements) = (group.1, group.0);
         let mut transform_storage = ctx.reserve_scoped(0, "STEP body transform index")?;
         let mut seen_transforms = BTreeSet::new();
+        let mut unique_storage = ctx.reserve_scoped(0, "STEP unique body placements")?;
         let mut unique = Vec::<(u64, Transform)>::new();
-        ctx.charge_work(0, "STEP product placements traversal")?;
         let mut body_placement_source = placements.into_iter();
         for _ in 0..body_placement_source.len() {
             let Some(placement) = ctx.next_charged(
@@ -1421,13 +1404,14 @@ fn apply_body_placements(
                     "STEP body transform index",
                 )
             })? {
-                scratch_storage.with_storage(|| {
+                unique_storage.with_storage(|| {
                     ctx.reserve_vec(&mut unique, 1, "step_unique_body_placements")
                 })?;
                 unique.push(placement);
             }
         }
         drop(body_placement_source);
+        drop(placement_storage);
         match unique.as_slice() {
             [(_, transform)] => {
                 if let Some(index) =
@@ -1463,7 +1447,6 @@ fn drawing_owned_items(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeSet<u64>, CodecError> {
     let mut pending = Vec::new();
-    ctx.charge_work(0, "STEP drawing owned items map traversal")?;
     let mut drawing_record_source = exchange.records().values();
     for _ in 0..drawing_record_source.len() {
         let Some(record) = ctx.next_charged(
@@ -1479,12 +1462,10 @@ fn drawing_owned_items(
             "STEP drawing owned items traversal",
         )?;
         if drawing_owner {
-            ctx.charge_work(0, "STEP drawing owned items traversal")?;
             ctx.fold(
                 &record.partials[..],
                 (),
                 |(), partial| {
-                    ctx.charge_work(0, "STEP record parameter traversal")?;
                     ctx.fold(
                         &partial.parameters[..],
                         (),
@@ -1536,7 +1517,6 @@ fn drawing_owned_items(
                 "STEP representation item traversal",
             )?;
         }
-        ctx.charge_work(0, "STEP drawing owned items traversal")?;
         ctx.fold(
             &record.partials[..],
             (),
@@ -1560,7 +1540,6 @@ fn drawing_owned_items(
                 else {
                     return Ok(());
                 };
-                ctx.charge_work(0, "STEP product values traversal")?;
                 ctx.fold(
                     values,
                     (),
@@ -1591,7 +1570,6 @@ fn collect_references(
             ctx.push_vec(references, *id, "step_drawing_owned_pending")?;
         }
         Value::List(values) => {
-            ctx.charge_work(0, "STEP collect references value traversal")?;
             ctx.fold(
                 values,
                 (),
@@ -1637,7 +1615,6 @@ fn shape_bindings<'ctx>(
     }
     let mut result = BTreeMap::new();
     let mut representation_cache = BTreeMap::new();
-    ctx.charge_work(0, "STEP shape bindings map traversal")?;
     let mut shape_record_source = exchange.records().iter();
     for _ in 0..shape_record_source.len() {
         let Some((_, record)) = ctx.next_charged(
@@ -1772,7 +1749,6 @@ fn occurrence_placements(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, Transform>, CodecError> {
     let mut pds = BTreeMap::new();
-    ctx.charge_work(0, "STEP occurrence placements traversal")?;
     let mut placement_record_source = exchange.records().iter();
     for _ in 0..placement_record_source.len() {
         let Some((&id, record)) = ctx.next_charged(
@@ -1798,7 +1774,6 @@ fn occurrence_placements(
         })?;
     let definition_representations = definition_representations_buffer;
     let mut definitions_by_representation = BTreeMap::<u64, BTreeSet<u64>>::new();
-    ctx.charge_work(0, "STEP occurrence placements traversal")?;
     let mut represented_definition_source = definition_representations.iter();
     for _ in 0..represented_definition_source.len() {
         let Some((&definition, representations)) = ctx.next_charged(
@@ -1808,7 +1783,6 @@ fn occurrence_placements(
         else {
             break;
         };
-        ctx.charge_work(0, "STEP product representations traversal")?;
         let mut represented_source = representations.iter();
         for _ in 0..represented_source.len() {
             let Some(&representation) = ctx.next_charged(
@@ -1889,7 +1863,6 @@ fn occurrence_placements(
             Err(error) => return Err(placement_error(error)),
         }
     }
-    ctx.charge_work(0, "STEP occurrence placements traversal")?;
     let mut context_candidate_source = context_candidates.iter();
     for _ in 0..context_candidate_source.len() {
         let Some((&usage, source_ids)) = ctx.next_charged(
@@ -1959,7 +1932,6 @@ fn occurrence_placements(
         })?;
         grouped.push((record_id, representation));
     }
-    ctx.charge_work(0, "STEP occurrence placements traversal")?;
     let mut occurrence_representation_source = occurrence_representations.iter();
     for _ in 0..occurrence_representation_source.len() {
         let Some((&usage_id, representations)) = ctx.next_charged(
@@ -1980,8 +1952,8 @@ fn occurrence_placements(
         else {
             continue;
         };
+        let mut candidate_storage = ctx.reserve_scoped(0, "STEP occurrence placement candidates")?;
         let mut candidates = Vec::new();
-        ctx.charge_work(0, "STEP product representations traversal")?;
         ctx.fold(
             representations,
             (),
@@ -2040,7 +2012,7 @@ fn occurrence_placements(
                             &mapped_representation,
                             "STEP product child_representations contains",
                         )? {
-                            scratch_storage.with_storage(|| {
+                            candidate_storage.with_storage(|| {
                                 ctx.reserve_vec(
                                     &mut candidates,
                                     1,
@@ -2085,7 +2057,6 @@ fn occurrence_placements(
                     "step_competing_mapped_sources",
                 )
             })?;
-            ctx.charge_work(0, "STEP mapped placement source traversal")?;
             ctx.fold(
                 &candidates[..],
                 (),
@@ -2145,7 +2116,6 @@ fn occurrence_placements(
                         "step_ambiguous_mapped_sources",
                     )
                 })?;
-                ctx.charge_work(0, "STEP mapped placement source traversal")?;
                 ctx.fold(
                     &candidates[..],
                     (),
@@ -2175,7 +2145,6 @@ fn occurrence_placements(
         }
     }
     let mut sibling_usage_counts = BTreeMap::<(u64, u64), usize>::new();
-    ctx.charge_work(0, "STEP occurrence placements map traversal")?;
     let mut sibling_usage_source = usages.values();
     for _ in 0..sibling_usage_source.len() {
         let Some(usage) = ctx.next_charged(
@@ -2194,7 +2163,6 @@ fn occurrence_placements(
             .or_default() += 1;
     }
     let mut fallback_mappings = BTreeMap::new();
-    ctx.charge_work(0, "STEP occurrence placements traversal")?;
     let mut fallback_usage_source = usages.iter();
     for _ in 0..fallback_usage_source.len() {
         let Some((&usage_id, usage)) = ctx.next_charged(
@@ -2257,7 +2225,6 @@ fn occurrence_placements(
             .ok_or_else(|| CodecError::malformed("STEP fallback parent was not indexed"))?;
         // Singular mappings produce warnings for every unresolved usage,
         // including unrelated children. Replay their source order here.
-        ctx.charge_work(0, "STEP fallback singular sources")?;
         ctx.fold(
             &mappings.singular[..],
             (),
@@ -2332,7 +2299,6 @@ fn fallback_parent_mappings(
         by_child: BTreeMap::new(),
         singular: Vec::new(),
     };
-    ctx.charge_work(0, "STEP product parent_representations traversal")?;
     let mut parent_representation_source = parent_representations.iter();
     for _ in 0..parent_representation_source.len() {
         let Some(&parent_representation) = ctx.next_charged(
