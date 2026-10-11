@@ -19,7 +19,9 @@ fn construct(owner: &str, native: &str, ctx: &DecodeContext<'_>) -> Result<Strin
     let mut placement = super::encoded_placement();
     placement.id = native.to_owned();
     match owner {
-        "feature" => super::super::neutral_feature_id(ctx, &scope).map(|id| id.into_string()),
+        "feature" => {
+            super::super::neutral_feature_id(ctx, &scope).map(cadmpeg_ir::FeatureId::into_string)
+        }
         "parameter" => {
             let mut parameter = crate::design::decode::parameters::parse_design_parameter_record(
                 &crate::design::test_support::parameter_record(
@@ -36,7 +38,9 @@ fn construct(owner: &str, native: &str, ctx: &DecodeContext<'_>) -> Result<Strin
             super::super::neutral_parameter_id(ctx, &parameter)
                 .map(|id| cadmpeg_ir::ids::Identity::from(id).into_string())
         }
-        "sketch" => super::super::neutral_sketch_id(ctx, &placement).map(|id| id.into_string()),
+        "sketch" => {
+            super::super::neutral_sketch_id(ctx, &placement).map(cadmpeg_ir::SketchId::into_string)
+        }
         "spatial" => super::super::neutral_spatial_sketch_id(ctx, &placement)
             .map(|id| cadmpeg_ir::ids::Identity::from(id).into_string()),
         "constraint" => super::super::neutral_sketch_constraint_id(ctx, native, u32::MAX)

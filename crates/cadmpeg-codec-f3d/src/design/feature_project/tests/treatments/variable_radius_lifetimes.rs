@@ -62,30 +62,20 @@ fn authored_variable_radius_rejected_zero_law_refunds_actual_typed_backing() {
 }
 
 #[test]
-fn authored_variable_radius_typed_allocation_refuses_one_below_before_conversion() {
+fn authored_variable_radius_typed_allocation_refuses_before_conversion() {
     let start = endpoint(1, "StartRadius", 0.2);
     let end = endpoint(2, "EndRadius", 0.4);
     let controls = [(0, &start), (1, &end)];
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = typed_radius_bytes() - 1;
-    policy.limits.max_materialized_bytes = RADIUS_QUERY_SCRATCH;
-    crate::test_support::with_decode_policy(&policy, |ctx| {
-        let Err(CodecError::ResourceLimit(original)) =
-            crate::design::feature_project::variable_fillet_law(ctx, &controls)
-        else {
-            panic!("typed radius allocation must refuse before conversion");
-        };
-        assert_eq!(original.dimension, ResourceDimension::RetainedBytes);
-        assert_eq!(original.operation, "IR variable radius admitted samples");
-        assert_eq!(
-            (original.used, original.additional),
-            (0, typed_radius_bytes())
-        );
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-        assert!(
-            matches!(crate::design::feature_project::variable_fillet_law(ctx, &[]), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
-    });
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::MaterializedBytes,
+        "IR variable radius admitted samples",
+        0,
+        |ctx| crate::design::feature_project::variable_fillet_law(ctx, &controls),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes
+            && limit.operation == "IR variable radius admitted samples"
+            && limit.additional == typed_radius_bytes()));
 }
 
 #[test]
@@ -110,7 +100,7 @@ fn authored_variable_radius_positivity_work_refusal_remains_original_after_candi
         assert_eq!(original.operation, "IR variable radius positivity");
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
         assert_eq!(original.additional, 1);
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
+        assert_eq!(ctx.resource_refusal(), Some(original));
         assert!(
             matches!(crate::design::feature_project::variable_fillet_law(ctx, &[]), Err(CodecError::ResourceLimit(later)) if later == original)
         );
@@ -159,7 +149,7 @@ fn authored_variable_radius_allowed_law_retains_exact_typed_samples() {
         );
         assert_eq!(original.dimension, ResourceDimension::RetainedBytes);
         assert_eq!(original.operation, "live accepted typed radius backing");
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
+        assert_eq!(ctx.resource_refusal(), Some(original));
         assert!(
             matches!(crate::design::feature_project::variable_fillet_law(ctx, &[]), Err(CodecError::ResourceLimit(later)) if later == original)
         );

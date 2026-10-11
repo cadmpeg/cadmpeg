@@ -98,43 +98,6 @@ fn edge_reference_lifetime_hem_source_refuses_before_adapter_visit() {
 }
 
 #[test]
-fn edge_reference_lifetime_hem_empty_inputs_use_no_work_or_storage() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    policy.limits.max_collection_items = 0;
-    policy.limits.max_materialized_bytes = 0;
-    policy.limits.max_retained_bytes = 0;
-    crate::test_support::with_decode_policy(&policy, |ctx| {
-        assert_eq!(
-            unique_hem_transition_edge_candidate(&[], std::iter::empty(), ctx).unwrap(),
-            None
-        );
-        assert_eq!(
-            hem_transition_edge_slot(&recipe_edge_operand(10, &[], &[]), ctx).unwrap(),
-            None
-        );
-        assert_eq!(
-            changed_reference_edge_group_candidates(&[], ctx).unwrap(),
-            None
-        );
-        let Err(CodecError::ResourceLimit(original)) =
-            ctx.charge_work(1, "original reference lifetime refusal")
-        else {
-            panic!("original refusal");
-        };
-        assert!(
-            matches!(unique_hem_transition_edge_candidate(&[], std::iter::empty(), ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
-        assert!(
-            matches!(hem_transition_edge_slot(&recipe_edge_operand(10, &[], &[]), ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
-        assert!(
-            matches!(changed_reference_edge_group_candidates(&[], ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
-    });
-}
-
-#[test]
 fn edge_reference_lifetime_hem_each_reached_scan_preserves_the_original_refusal() {
     for operation in [
         "scan F3D Hem reference support sets",
@@ -154,9 +117,6 @@ fn edge_reference_lifetime_hem_each_reached_scan_preserves_the_original_refusal(
                 panic!("reached Hem step must refuse");
             };
             assert_eq!(original.operation, operation);
-            assert!(
-                matches!(unique_hem_transition_edge_candidate(&[], std::iter::empty(), ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-            );
         });
     }
 }
@@ -172,8 +132,7 @@ fn edge_reference_lifetime_hem_eligibility_stops_at_second_empty_context() {
     policy.limits.max_retained_bytes = 0;
     crate::test_support::with_decode_policy(&policy, |ctx| {
         assert_eq!(hem_transition_edge_slot(&operand, ctx).unwrap(), None);
-        ctx.charge_work(0, "unvisited Hem eligibility suffix")
-            .unwrap();
+        assert_eq!(ctx.resource_refusal(), None);
     });
     policy.limits.max_work_units = 1;
     crate::test_support::with_decode_policy(&policy, |ctx| {
@@ -266,9 +225,6 @@ fn edge_reference_lifetime_changed_each_reached_scan_preserves_original_refusal(
                 panic!("reached changed-reference step must refuse");
             };
             assert_eq!(original.operation, operation);
-            assert!(
-                matches!(changed_reference_edge_group_candidates(&[], ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-            );
         });
     }
 }

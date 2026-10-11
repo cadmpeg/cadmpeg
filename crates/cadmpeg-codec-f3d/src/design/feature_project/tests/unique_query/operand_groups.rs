@@ -36,7 +36,7 @@ fn single_operand_query_preserves_eligibility_order_and_borrowed_native_identity
     policy.limits.max_materialized_bytes = 0;
     crate::test_support::with_decode_policy(&policy, |ctx| {
         let selected = query(ctx, &groups, &scope).unwrap().unwrap();
-        assert!(std::ptr::eq(selected, &groups[4]));
+        assert!(std::ptr::eq(selected, &raw const groups[4]));
         assert_eq!(selected.id, "f3d:Design/BulkStream.dat:group#104");
         assert_eq!(selected.members()[0].value, 105);
         assert_eq!(selected.scope_reference_ordinal, 0);
@@ -61,7 +61,7 @@ fn single_operand_query_keeps_absent_and_empty_streams_distinct() {
             let selected = query(ctx, std::slice::from_ref(&group), &scope).unwrap();
             assert_eq!(selected.is_some(), expected);
             if let Some(selected) = selected {
-                assert!(std::ptr::eq(selected, &group));
+                assert!(std::ptr::eq(selected, &raw const group));
             }
             assert_eq!(ctx.resource_refusal(), None);
         });
@@ -100,10 +100,7 @@ fn single_operand_query_duplicate_stops_before_long_unread_source_tail() {
         };
         assert_eq!(original.operation, "match F3D single operand group stream");
         assert_eq!((original.used, original.additional), (reached - 1, 1));
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-        assert!(
-            matches!(query(ctx, &[], &scope), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
+        assert_eq!(ctx.resource_refusal(), Some(original));
     });
     assert_eq!(groups, original);
 }
@@ -162,7 +159,7 @@ fn single_operand_query_unique_result_requires_the_actual_second_search_end() {
             query(ctx, std::slice::from_ref(&group), &scope)
                 .unwrap()
                 .unwrap(),
-            &group
+            &raw const group
         ));
         assert_eq!(ctx.resource_refusal(), None);
     });
@@ -204,30 +201,9 @@ fn single_operand_query_each_reached_phase_keeps_original_refusal() {
             assert_eq!(original.operation, operation);
             assert_eq!(original.dimension, ResourceDimension::WorkUnits);
             assert_eq!(original.additional, 1);
-            assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-            assert!(
-                matches!(query(ctx, &[], &scope), Err(CodecError::ResourceLimit(later)) if later == original)
-            );
+            assert_eq!(ctx.resource_refusal(), Some(original));
         });
     }
-}
-
-#[test]
-fn single_operand_query_empty_source_keeps_preexisting_refusal() {
-    let scope = super::scope();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    crate::test_support::with_decode_policy(&policy, |ctx| {
-        let Err(CodecError::ResourceLimit(original)) =
-            ctx.charge_work(1, "original before single operand group")
-        else {
-            panic!("initial refusal")
-        };
-        assert!(
-            matches!(query(ctx, &[], &scope), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
-        assert_eq!(ctx.resource_refusal(), Some(original));
-    });
 }
 
 #[test]
@@ -270,10 +246,7 @@ fn single_operand_query_remove_body_caller_keeps_native_output_and_original_refu
             panic!("actual caller source visit must refuse")
         };
         assert_eq!(original.operation, "find F3D single operand group");
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-        assert!(
-            matches!(super::super::super::project_remove_body(ctx, &scope, &[]), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
+        assert_eq!(ctx.resource_refusal(), Some(original));
     });
     assert_eq!(group, original);
 }

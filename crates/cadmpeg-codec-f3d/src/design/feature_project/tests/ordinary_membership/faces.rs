@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Full, partial, grouped and profile membership use their actual callers.
 
-use super::{assert_original_refusal, fixtures};
+use super::fixtures;
+use crate::design::feature_project::test_support::assert_original_refusal;
 use crate::records::feature::scope::DesignFeatureKind;
 use crate::records::feature::surface_ops::{
     DesignSurfaceOffsetOperation, DesignSurfaceOffsetSupport,
@@ -32,12 +33,12 @@ impl Lane {
     fn operations(self) -> [&'static str; 2] {
         match self {
             Self::Full => [
-                "visit F3D direct historical face membership",
-                "compare F3D direct historical face identity",
+                "f3d direct face selected slot source",
+                "f3d direct face distinct slot",
             ],
             Self::Partial => [
-                "visit F3D direct partial face membership",
-                "compare F3D direct partial face identity",
+                "f3d direct face selected slot source",
+                "f3d direct face distinct slot",
             ],
             Self::Thread => [
                 "visit F3D Thread selected face membership",
@@ -57,7 +58,7 @@ impl Lane {
 
 fn scope(lane: Lane) -> crate::records::feature::scope::DesignParameterScope {
     if matches!(lane, Lane::Extrude) {
-        let mut scope = super::super::extrude_limits::scope();
+        let mut scope = crate::design::feature_project::extrude::test_support::scope();
         scope
             .try_edit(|draft| {
                 draft.previous_history_state_id = Some(7);
@@ -137,8 +138,8 @@ fn project(lane: Lane, slots: Vec<i64>, ctx: &DecodeContext<'_>) -> Result<Selec
         }
         Lane::Extrude => {
             let groups = [
-                super::super::extrude_limits::profile_group(100, 0),
-                super::super::extrude_limits::profile_group(101, 1),
+                crate::design::feature_project::extrude::test_support::profile_group(100, 0),
+                crate::design::feature_project::extrude::test_support::profile_group(101, 1),
             ];
             operands[0].group = Some(crate::records::topology::body_recipe::DesignOperandGroup {
                 group_record_index: 100,
@@ -159,7 +160,7 @@ fn project(lane: Lane, slots: Vec<i64>, ctx: &DecodeContext<'_>) -> Result<Selec
             let Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(profile),
                 ..
-            })) = super::super::super::project_extrude(
+            })) = super::super::super::extrude::project_extrude(
                 ctx,
                 &scope,
                 &[(0, &parameter)],
@@ -225,7 +226,10 @@ fn assert_identity(lane: Lane) {
             }
             (Lane::Offset, Selection::Face(FaceSelection::Resolved { faces, native })) => {
                 assert_eq!(
-                    faces.iter().map(|face| face.as_str()).collect::<Vec<_>>(),
+                    faces
+                        .iter()
+                        .map(cadmpeg_ir::ids::FaceId::as_str)
+                        .collect::<Vec<_>>(),
                     [
                         "f3d:brep:entity#42",
                         "f3d:brep:entity#43",
@@ -247,8 +251,14 @@ fn assert_identity(lane: Lane) {
                 assert_eq!(
                     native.as_slice(),
                     &[
-                        super::super::extrude_limits::profile_group(100, 0).id,
-                        super::super::extrude_limits::profile_group(101, 1).id,
+                        crate::design::feature_project::extrude::test_support::profile_group(
+                            100, 0
+                        )
+                        .id,
+                        crate::design::feature_project::extrude::test_support::profile_group(
+                            101, 1
+                        )
+                        .id,
                     ]
                 );
             }
@@ -304,7 +314,18 @@ fn membership_single_face_skips_empty_query_in_all_direct_and_grouped_lanes() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = u64::MAX;
     for lane in [Lane::Full, Lane::Partial, Lane::Thread, Lane::Offset] {
-        for operation in lane.operations() {
+        let operations = match lane {
+            Lane::Full => [
+                "visit F3D direct historical face membership",
+                "compare F3D direct historical face identity",
+            ],
+            Lane::Partial => [
+                "visit F3D direct partial face membership",
+                "compare F3D direct partial face identity",
+            ],
+            _ => lane.operations(),
+        };
+        for operation in operations {
             crate::test_support::with_decode_policy(&policy, |ctx| {
                 let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
                 assert!(project(lane, vec![42], ctx).is_ok());

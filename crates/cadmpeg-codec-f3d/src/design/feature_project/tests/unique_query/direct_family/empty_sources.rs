@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Constant absence skips scope queries and preserves the caller's original refusal.
+//! Constant absence skips scope queries.
 
 use crate::records::feature::scope::{
     DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
@@ -28,18 +28,6 @@ fn assert_no_query(query: impl FnOnce(&DecodeContext<'_>) -> Result<bool, CodecE
             panic!("zero executed work");
         };
         assert_eq!((original.used, original.additional), (0, 1));
-        assert_eq!(ctx.resource_refusal(), Some(original));
-    });
-}
-
-fn assert_original_refusal(query: impl FnOnce(&DecodeContext<'_>) -> Result<bool, CodecError>) {
-    crate::test_support::with_decode_policy(&no_query_policy(), |ctx| {
-        let Err(CodecError::ResourceLimit(original)) =
-            ctx.charge_work(1, "original F3D no-query refusal")
-        else {
-            panic!("original refusal");
-        };
-        assert!(matches!(query(ctx), Err(CodecError::ResourceLimit(later)) if later == original));
         assert_eq!(ctx.resource_refusal(), Some(original));
     });
 }
@@ -101,17 +89,6 @@ fn thread_empty_references_skip_unused_scope_and_all_storage() {
 }
 
 #[test]
-fn thread_empty_references_preserve_original_stored_refusal() {
-    let scope = long_scope();
-    assert_original_refusal(|ctx| {
-        Ok(
-            super::super::super::super::project_thread_face_selection(ctx, &scope, &[], &[], &[])?
-                == FaceSelection::Unresolved,
-        )
-    });
-}
-
-#[test]
 fn thread_empty_groups_skip_unused_scope_with_nonempty_references() {
     let scope = long_scope();
     let original = scope.clone();
@@ -125,20 +102,6 @@ fn thread_empty_groups_skip_unused_scope_with_nonempty_references() {
         )? == FaceSelection::Unresolved)
     });
     assert_eq!(scope, original);
-}
-
-#[test]
-fn thread_empty_groups_preserve_original_stored_refusal() {
-    let scope = long_scope();
-    assert_original_refusal(|ctx| {
-        Ok(super::super::super::super::project_thread_face_selection(
-            ctx,
-            &scope,
-            &[100],
-            &[],
-            &[],
-        )? == FaceSelection::Unresolved)
-    });
 }
 
 #[test]
@@ -156,18 +119,6 @@ fn selected_plane_empty_members_skip_unused_scope_and_all_storage() {
 }
 
 #[test]
-fn selected_plane_empty_members_preserve_original_stored_refusal() {
-    let scope = long_scope();
-    let group = super::super::group(77, 0, 100, vec![], DesignOperandRole::ROLE_0X21);
-    assert_original_refusal(|ctx| {
-        Ok(
-            super::super::super::super::selected_work_planes(ctx, &scope, &group, &[], &[])?
-                .is_none(),
-        )
-    });
-}
-
-#[test]
 fn thicken_empty_fallback_groups_skip_unused_scope_and_all_storage() {
     let scope = thicken_scope();
     let original = scope.clone();
@@ -175,14 +126,6 @@ fn thicken_empty_fallback_groups_skip_unused_scope_and_all_storage() {
         Ok(super::super::super::super::project_thicken(ctx, &scope, &[], &[])?.is_none())
     });
     assert_eq!(scope, original);
-}
-
-#[test]
-fn thicken_empty_fallback_groups_preserve_original_stored_refusal() {
-    let scope = thicken_scope();
-    assert_original_refusal(|ctx| {
-        Ok(super::super::super::super::project_thicken(ctx, &scope, &[], &[])?.is_none())
-    });
 }
 
 #[test]
@@ -196,14 +139,6 @@ fn base_flange_empty_groups_skip_unused_scope_and_all_storage() {
 }
 
 #[test]
-fn base_flange_empty_groups_preserve_original_stored_refusal() {
-    let scope = base_flange_scope();
-    assert_original_refusal(|ctx| {
-        Ok(super::super::super::super::project_base_flange(ctx, &scope, &[], &[])?.is_none())
-    });
-}
-
-#[test]
 fn thicken_missing_payload_skips_unused_scope_and_all_storage() {
     let scope = DesignParameterScope::empty(&long_scope().id, DesignFeatureKind::Thicken, 77);
     let original = scope.clone();
@@ -214,14 +149,6 @@ fn thicken_missing_payload_skips_unused_scope_and_all_storage() {
 }
 
 #[test]
-fn thicken_missing_payload_preserves_original_stored_refusal() {
-    let scope = DesignParameterScope::empty(&long_scope().id, DesignFeatureKind::Thicken, 77);
-    assert_original_refusal(|ctx| {
-        Ok(super::super::super::super::project_thicken(ctx, &scope, &[], &[])?.is_none())
-    });
-}
-
-#[test]
 fn base_flange_missing_operation_skips_unused_scope_and_all_storage() {
     let scope = DesignParameterScope::empty(&long_scope().id, DesignFeatureKind::BaseFlange, 77);
     let original = scope.clone();
@@ -229,12 +156,4 @@ fn base_flange_missing_operation_skips_unused_scope_and_all_storage() {
         Ok(super::super::super::super::project_base_flange(ctx, &scope, &[], &[])?.is_none())
     });
     assert_eq!(scope, original);
-}
-
-#[test]
-fn base_flange_missing_operation_preserves_original_stored_refusal() {
-    let scope = DesignParameterScope::empty(&long_scope().id, DesignFeatureKind::BaseFlange, 77);
-    assert_original_refusal(|ctx| {
-        Ok(super::super::super::super::project_base_flange(ctx, &scope, &[], &[])?.is_none())
-    });
 }

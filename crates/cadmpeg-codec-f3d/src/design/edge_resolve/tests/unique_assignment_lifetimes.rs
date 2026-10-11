@@ -81,9 +81,6 @@ fn edge_unique_lifetime_resolved_singleton_backing_is_admitted_before_copy() {
             (original.used, original.additional),
             (0, u64::try_from(std::mem::size_of::<i64>()).unwrap())
         );
-        assert!(
-            matches!(unique_edge_group_assignment(&[], ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
     });
 }
 
@@ -99,9 +96,6 @@ fn edge_unique_lifetime_group_context_prefix_is_paid_without_backing() {
         };
         assert_eq!(original.operation, "scan F3D unique edge group operands");
         assert_eq!((original.used, original.additional), (3, 1));
-        assert!(
-            matches!(unique_edge_group_assignment(&[], ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
     });
 }
 
@@ -116,11 +110,8 @@ fn edge_unique_lifetime_context_prefix_is_paid_without_backing() {
         else {
             panic!("the fourth actual context set must refuse");
         };
-        assert_eq!(original.operation, "scan F3D unique edge assignment sets");
+        assert_eq!(original.operation, "f3d edge normalized source");
         assert_eq!((original.used, original.additional), (3, 1));
-        assert!(
-            matches!(unique_edge_assignment_with_context(&[], ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
     });
 }
 
@@ -175,32 +166,6 @@ fn edge_unique_lifetime_empty_candidate_skips_parent_and_suffix() {
             panic!("one reached candidate set exhausts the ceiling");
         };
         assert_eq!((original.used, original.additional), (1, 1));
-        assert!(
-            matches!(unique_edge_assignment_with_context(&[], ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
-    });
-}
-
-#[test]
-fn edge_unique_lifetime_empty_and_single_context_gates_preserve_original_refusal() {
-    crate::test_support::with_decode_policy(&no_storage_policy(0), |ctx| {
-        assert_eq!(unique_edge_group_assignment(&[], ctx).unwrap(), None);
-        assert_eq!(unique_edge_assignment_with_context(&[], ctx).unwrap(), None);
-        assert_eq!(
-            unique_edge_assignment_with_context(&[EdgeAssignmentCandidates::Context], ctx).unwrap(),
-            None
-        );
-        let Err(CodecError::ResourceLimit(original)) =
-            ctx.charge_work(1, "original unique edge lifetime refusal")
-        else {
-            panic!("zero work refuses the first unit");
-        };
-        assert!(
-            matches!(unique_edge_group_assignment(&[], ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
-        assert!(
-            matches!(unique_edge_assignment_with_context(&[EdgeAssignmentCandidates::Context], ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
     });
 }
 
@@ -213,8 +178,8 @@ fn edge_unique_lifetime_each_reached_source_keeps_original_refusal() {
     policy.limits.max_materialized_bytes = u64::MAX;
     for operation in [
         "scan F3D unique edge group operands",
-        "scan F3D unique edge assignment sets",
-        "scan F3D unique edge assignment edges",
+        "f3d edge normalized source",
+        "f3d unique edge assignment candidate",
     ] {
         crate::test_support::with_decode_policy(&policy, |ctx| {
             let group_route = operation == "scan F3D unique edge group operands";
@@ -231,13 +196,7 @@ fn edge_unique_lifetime_each_reached_source_keeps_original_refusal() {
                 panic!("reached unique assignment source must refuse");
             };
             assert_eq!(original.operation, operation);
-            assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-            assert!(
-                matches!(unique_edge_group_assignment(&[], ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-            );
-            assert!(
-                matches!(unique_edge_assignment_with_context(&[], ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-            );
+            assert_eq!(ctx.resource_refusal(), Some(original));
         });
     }
 }

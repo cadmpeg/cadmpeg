@@ -18,10 +18,8 @@ use super::resolved_edge_treatment_group;
 use super::resolved_edge_treatment_group_with_corners;
 use super::resolved_surface_patch_edge_group;
 use super::result_boundary_reference_edge_group_candidates;
-use super::surface_patch_grouped_recipe_edges;
 use super::transition_chain_is_supported_by_recipe;
 use super::unique_hem_transition_edge_candidate;
-use super::SurfacePatchRecipeEdges;
 use crate::records::dimensions::DesignRecipeReference;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
@@ -185,163 +183,6 @@ fn group(record_index: u32, member: u32) -> DesignConstructionOperandGroup {
         "paired_byte_offset": 0
     }))
     .expect("construction operand group")
-}
-
-#[test]
-fn sole_compact_identity_group_projects_fixed_fillet_transition_chain() {
-    let scope = fixed_scope();
-    let group = group(2, 10);
-    let identity = identity(10, &[(17, 3.0), (18, 5.0), (19, 3.0)]);
-    let definition = crate::test_support::with_decode_context(|decode_ctx| {
-        project_fixed_fillet(&scope, &[group], &[], &[identity], decode_ctx)
-    })
-    .unwrap()
-    .expect("fixed Fillet from sole compact identity group");
-    let cadmpeg_ir::features::FeatureDefinition::Operation(
-        cadmpeg_ir::features::FeatureOperation::Fillet { groups },
-    ) = definition
-    else {
-        panic!("expected Fillet");
-    };
-    assert!(matches!(
-        groups.as_slice(),
-        [cadmpeg_ir::features::edge_treatments::FilletGroup {
-            edges: cadmpeg_ir::features::EdgeSelection::Historical { edges, .. },
-            radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant {
-                radius: actual_radius
-            },
-            tangency_weight: Some(weight),
-        }] if weight.get() == 1.0 && (edges.len() == 2) && actual_radius.get() == 3.0
-    ));
-}
-
-#[test]
-fn full_layout_identity_does_not_assign_the_fixed_fillet_edge_role() {
-    let scope = fixed_scope();
-    let group = group(2, 10);
-    let mut identity = identity(10, &[(17, 3.0), (19, 3.0)]);
-    let mut draft = identity.into_draft();
-    draft.layout = crate::records::topology::edge_identity::DesignEdgeIdentityLayout::Full;
-    draft.asset_id_offset = draft.byte_offset + draft.layout.local_id_offset() + 18;
-    draft.context_id_offset = draft.asset_id_offset + 76;
-    identity =
-        crate::records::topology::edge_identity::DesignEdgeIdentityOperand::try_new(draft).unwrap();
-
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| project_fixed_fillet(
-            &scope,
-            &[group],
-            &[],
-            &[identity],
-            decode_ctx
-        ))
-        .unwrap()
-        .is_none()
-    );
-}
-
-#[test]
-fn only_edge_treatments_use_single_member_transition_chains() {
-    let group = group(2, 10);
-    let mut generic_identity = identity(10, &[(17, 3.0), (19, 3.0)]);
-    let mut draft = generic_identity.into_draft();
-    draft.layout = crate::records::topology::edge_identity::DesignEdgeIdentityLayout::Full;
-    draft.asset_id_offset = draft.byte_offset + draft.layout.local_id_offset() + 18;
-    draft.context_id_offset = draft.asset_id_offset + 76;
-    generic_identity =
-        crate::records::topology::edge_identity::DesignEdgeIdentityOperand::try_new(draft).unwrap();
-    generic_identity.treatment_radius_candidates.clear();
-    let generic_feature_id =
-        cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#ruled-surface")
-            .expect("identity grammar");
-
-    assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| resolved_edge_group(
-            &group,
-            std::slice::from_ref(&group),
-            &[],
-            &[generic_identity],
-            Some(7),
-            &generic_feature_id,
-            decode_ctx
-        ))
-        .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Native(_)
-    ));
-    let treatment_feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
-        .expect("identity grammar");
-    let mut identity = identity(10, &[(17, 3.0), (19, 3.0)]);
-    let mut draft = identity.into_draft();
-    draft.layout = crate::records::topology::edge_identity::DesignEdgeIdentityLayout::Full;
-    draft.asset_id_offset = draft.byte_offset + draft.layout.local_id_offset() + 18;
-    draft.context_id_offset = draft.asset_id_offset + 76;
-    identity =
-        crate::records::topology::edge_identity::DesignEdgeIdentityOperand::try_new(draft).unwrap();
-    identity.treatment_radius_candidates.clear();
-    assert!(matches!(
-        resolved_edge_treatment_group(
-            &group,
-            std::slice::from_ref(&group),
-            &[],
-            &[identity],
-            Some(7),
-            &treatment_feature_id,
-            None,
-        ).unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
-            if edges.as_slice() == [
-                cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#6:fillet:7:17").expect("identity grammar"),
-                cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#6:fillet:7:19").expect("identity grammar"),
-            ]
-    ));
-}
-
-#[test]
-fn multiple_full_layout_members_do_not_use_the_operation_transition_chain() {
-    let mut selection_group = group(2, 10);
-    selection_group
-        .try_set_members(vec![
-            crate::records::identity::Located {
-                value: 10,
-                offset: 0,
-            },
-            crate::records::identity::Located {
-                value: 11,
-                offset: 11,
-            },
-        ])
-        .unwrap();
-    let mut first = identity(10, &[(17, 1.0), (18, 1.0), (19, 1.0)]);
-    let mut draft = first.into_draft();
-    draft.layout = crate::records::topology::edge_identity::DesignEdgeIdentityLayout::Full;
-    draft.asset_id_offset = draft.byte_offset + draft.layout.local_id_offset() + 18;
-    draft.context_id_offset = draft.asset_id_offset + 76;
-    first =
-        crate::records::topology::edge_identity::DesignEdgeIdentityOperand::try_new(draft).unwrap();
-    let mut second = identity(11, &[(17, 1.0), (18, 1.0), (19, 1.0)]);
-    let mut draft = second.into_draft();
-    draft.layout = crate::records::topology::edge_identity::DesignEdgeIdentityLayout::Full;
-    draft.asset_id_offset = draft.byte_offset + draft.layout.local_id_offset() + 18;
-    draft.context_id_offset = draft.asset_id_offset + 76;
-    second =
-        crate::records::topology::edge_identity::DesignEdgeIdentityOperand::try_new(draft).unwrap();
-    second.group_member_ordinal = 1;
-    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
-        .expect("identity grammar");
-
-    assert!(matches!(
-        resolved_edge_treatment_group(
-            &selection_group,
-            std::slice::from_ref(&selection_group),
-            &[],
-            &[first, second],
-            Some(7),
-            &feature_id,
-            None,
-        )
-        .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Native(_)
-    ));
 }
 
 fn recipe_edge_operand(
@@ -617,169 +458,6 @@ fn recipe_reference(candidate_edges: &[i64]) -> DesignRecipeReference {
 }
 
 #[test]
-fn grouped_surface_patch_recipe_requires_agreeing_exact_references() {
-    let mut first = recipe_edge_operand(10, &[], &[]);
-    first.recipe_references = vec![
-        recipe_reference(&[]),
-        recipe_reference(&[17]),
-        recipe_reference(&[17]),
-    ];
-    let mut second = recipe_edge_operand(11, &[], &[]);
-    second.recipe_references = vec![recipe_reference(&[18]), recipe_reference(&[18])];
-
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| surface_patch_grouped_recipe_edges(
-            &[&first, &second],
-            decode_ctx
-        ))
-        .unwrap(),
-        SurfacePatchRecipeEdges::Resolved(vec![
-            EdgeId::mint("f3d:test:edge#17").expect("identity grammar"),
-            EdgeId::mint("f3d:test:edge#18").expect("identity grammar")
-        ])
-    );
-}
-
-#[test]
-fn grouped_surface_patch_recipe_rejects_ambiguous_or_repeated_edges() {
-    let mut ambiguous = recipe_edge_operand(10, &[], &[]);
-    ambiguous.recipe_references = vec![recipe_reference(&[17, 18])];
-    let mut contradictory = recipe_edge_operand(11, &[], &[]);
-    contradictory.recipe_references = vec![recipe_reference(&[18]), recipe_reference(&[19])];
-    let absent = recipe_edge_operand(12, &[], &[]);
-    let mut repeated = recipe_edge_operand(11, &[], &[]);
-    repeated.recipe_references = vec![recipe_reference(&[17])];
-
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| surface_patch_grouped_recipe_edges(
-            &[&ambiguous],
-            decode_ctx
-        ))
-        .unwrap(),
-        SurfacePatchRecipeEdges::Inconclusive
-    );
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| surface_patch_grouped_recipe_edges(
-            &[&contradictory],
-            decode_ctx
-        ))
-        .unwrap(),
-        SurfacePatchRecipeEdges::Inconclusive
-    );
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| surface_patch_grouped_recipe_edges(
-            &[&absent, &contradictory],
-            decode_ctx
-        ))
-        .unwrap(),
-        SurfacePatchRecipeEdges::Inconclusive
-    );
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| surface_patch_grouped_recipe_edges(
-            &[&repeated, &repeated],
-            decode_ctx
-        ))
-        .unwrap(),
-        SurfacePatchRecipeEdges::Inconclusive
-    );
-}
-
-#[test]
-fn grouped_surface_patch_recipe_projects_historical_edges() {
-    let mut group = group(2, 10);
-    group
-        .try_set_members(vec![
-            crate::records::identity::Located {
-                value: 10,
-                offset: 0,
-            },
-            crate::records::identity::Located {
-                value: 11,
-                offset: 11,
-            },
-        ])
-        .unwrap();
-    let mut first = recipe_edge_operand(10, &[], &[]);
-    first.recipe_references = vec![recipe_reference(&[17])];
-    first.surface_patch_recipe_structure = Some(
-        crate::records::topology::edge_recipe::DesignSurfacePatchRecipeStructure {
-            clauses: std::array::from_fn(|_| {
-                crate::records::topology::edge_recipe::DesignSurfacePatchRecipeClause {
-                    fields: vec![
-                        vec![0],
-                        vec![0],
-                        vec![2, 0],
-                        vec![0, 0],
-                        vec![0],
-                        vec![0, 0],
-                    ],
-                    face_reference_ordinals: [0, 0],
-                    edge_reference_ordinals: [0, 0],
-
-                    entries: Vec::new(),
-                }
-            }),
-        },
-    );
-    let mut second = recipe_edge_operand(11, &[], &[]);
-    second.recipe_references = vec![recipe_reference(&[18])];
-    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#surface-patch")
-        .expect("identity grammar");
-
-    let selection = crate::test_support::with_decode_context(|decode_ctx| {
-        resolved_surface_patch_edge_group(
-            &group,
-            std::slice::from_ref(&group),
-            &[first, second],
-            &[],
-            Some(7),
-            &feature_id,
-            decode_ctx,
-        )
-    })
-    .unwrap();
-    let prefix = crate::ids::history_input_prefix(&cadmpeg_ir::identity_key!("surface-patch"), 7);
-    assert!(matches!(
-        selection,
-        cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
-            if edges.as_slice() == [
-                crate::ids::history_input_edge_id(&prefix, 17),
-                crate::ids::history_input_edge_id(&prefix, 18),
-            ]
-    ));
-}
-
-#[test]
-fn contradictory_surface_patch_references_suppress_generic_resolution() {
-    let group = group(2, 10);
-    let mut operand = recipe_edge_operand(10, &[], &[]);
-    operand.recipe_references = vec![recipe_reference(&[17]), recipe_reference(&[18])];
-    operand.resolved_edge_slot = Some(17);
-    operand.recipe_structure = Some(
-        crate::records::topology::edge_recipe::DesignEdgeRecipeStructure {
-            root: 1,
-            sides: Vec::new(),
-        },
-    );
-    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#surface-patch")
-        .expect("identity grammar");
-
-    assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| resolved_surface_patch_edge_group(
-            &group,
-            std::slice::from_ref(&group),
-            std::slice::from_ref(&operand),
-            &[],
-            Some(7),
-            &feature_id,
-            decode_ctx
-        ))
-        .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Native(_)
-    ));
-}
-
-#[test]
 fn unstructured_local_support_face_references_do_not_resolve_an_edge() {
     let context = |reference_ordinal, shared_edge_slots: &[i64]| {
         serde_json::from_value(serde_json::json!({
@@ -1036,81 +714,6 @@ fn compact_identity_group_uses_selected_recipe_context_boundaries() {
     .unwrap();
     assert!(matches!(
         selection,
-        cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
-            if edges.as_slice() == [
-                cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#7:chamfer:7:17").expect("identity grammar"),
-                cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#7:chamfer:7:18").expect("identity grammar"),
-            ]
-    ));
-}
-
-#[test]
-fn lost_references_preserve_a_complete_compact_transition_chain() {
-    let mut selection_group = group(2, 10);
-    selection_group
-        .try_set_members(vec![
-            crate::records::identity::Located {
-                value: 10,
-                offset: 0,
-            },
-            crate::records::identity::Located {
-                value: 11,
-                offset: 11,
-            },
-        ])
-        .unwrap();
-    let first_identity = identity(10, &[(17, 1.0), (18, 1.0)]);
-    let mut second_identity = identity(11, &[(17, 1.0), (18, 1.0)]);
-    second_identity.group_member_ordinal = 1;
-    let recipe_operands = [
-        recipe_edge_operand(10, &[19], &[19]),
-        recipe_edge_operand(11, &[19], &[19]),
-    ];
-    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#chamfer")
-        .expect("identity grammar");
-
-    assert!(matches!(
-        resolved_edge_treatment_group(
-            &selection_group,
-            std::slice::from_ref(&selection_group),
-            &recipe_operands,
-            &[first_identity.clone(), second_identity.clone()],
-            Some(7),
-            &feature_id,
-            None,
-        )
-        .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Native(_)
-    ));
-
-    selection_group.lost_edge_references = vec!["f3d:test:lost#0".into()];
-    assert!(matches!(
-        resolved_edge_treatment_group(
-            &selection_group,
-            std::slice::from_ref(&selection_group),
-            &recipe_operands,
-            &[first_identity.clone(), second_identity.clone()],
-            Some(7),
-            &feature_id,
-            None,
-        )
-        .unwrap(),
-        cadmpeg_ir::features::EdgeSelection::Unresolved
-    ));
-
-    selection_group
-        .lost_edge_references
-        .push("f3d:test:lost#1".into());
-    assert!(matches!(
-        resolved_edge_treatment_group(
-            &selection_group,
-            std::slice::from_ref(&selection_group),
-            &recipe_operands,
-            &[first_identity, second_identity],
-            Some(7),
-            &feature_id,
-            None,
-        ).unwrap(),
         cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
             if edges.as_slice() == [
                 cadmpeg_ir::ids::HistoricalEdgeId::mint("f3d:history-input:edge#7:chamfer:7:17").expect("identity grammar"),
@@ -2016,8 +1619,6 @@ mod scalar_edits;
 
 mod membership;
 
-mod empty_gates;
-
 mod text_comparison;
 
 mod state_consensus;
@@ -2039,3 +1640,12 @@ mod fixed_fillet_temporary_lifetimes;
 mod fixed_variable_radius_lifetimes;
 
 mod main_query_lifetimes;
+
+mod incidence_queries;
+mod intersection_tails;
+mod reference_queries;
+mod terminal_queries;
+
+mod surface_patch_recipes;
+
+mod transition_chains;

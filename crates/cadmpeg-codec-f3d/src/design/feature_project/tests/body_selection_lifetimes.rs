@@ -193,7 +193,7 @@ fn assert_original_work_refusal(operation: &'static str) {
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
         assert_eq!(original.operation, operation);
         assert_eq!(original.additional, 1);
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
+        assert_eq!(ctx.resource_refusal(), Some(original));
         assert!(
             matches!(super::super::design_body_selection(ctx, &scope, [].into_iter(), &[]), Err(CodecError::ResourceLimit(later)) if later == original)
         );
@@ -273,7 +273,7 @@ fn body_selection_lifetime_first_mismatch_skips_text_and_binding_suffix() {
             (original.used, original.additional),
             (before_native, native_bytes)
         );
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
+        assert_eq!(ctx.resource_refusal(), Some(original));
         assert!(
             matches!(super::super::design_body_selection(ctx, &scope, [].into_iter(), &[]), Err(CodecError::ResourceLimit(later)) if later == original)
         );

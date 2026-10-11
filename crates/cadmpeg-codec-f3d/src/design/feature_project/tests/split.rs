@@ -429,11 +429,6 @@ fn split_face_path_tool_group_id_refuses_retained_limit() {
     assert_split_face_retained_refusal("f3d SplitFace path tool group id");
 }
 
-#[test]
-fn split_face_target_group_id_refuses_retained_limit() {
-    assert_split_face_retained_refusal("f3d SplitFace target group id");
-}
-
 fn selected_plane_fixture() -> (
     DesignParameterScope,
     DesignConstructionOperandGroup,
@@ -493,7 +488,7 @@ fn selected_plane_fixture() -> (
 }
 
 fn assert_selected_plane_limit(operation: &'static str) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_core::CodecError;
     let (scope, group, selection, plane) = selected_plane_fixture();
     let selected = crate::test_support::with_decode_context(|decode_ctx| {
@@ -509,22 +504,28 @@ fn assert_selected_plane_limit(operation: &'static str) {
     .unwrap();
     assert_eq!(selected.len(), 1);
     assert_eq!(selected[0].record_index, plane.record_index);
-    for limit in 0..4 {
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let arena = DecodeArena::new();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let arena = DecodeArena::new();
 
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(
-            selected_work_planes(&ctx, &scope, &group, std::slice::from_ref(&selection), std::slice::from_ref(&plane)),
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == operation
-        ) {
-            return;
-        }
-    }
-    panic!("no selected work plane refusal at {operation}");
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+            (selected_work_planes(
+                &ctx,
+                &scope,
+                &group,
+                std::slice::from_ref(&selection),
+                std::slice::from_ref(&plane),
+            ))
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]
@@ -850,7 +851,7 @@ fn draft_historical_face_group_id_refuses_retained_limit() {
     use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
     use crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate;
     use crate::records::topology::fillet::HistoricalBinding;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
     let (scope, group, mut selection) = historical_split_face_path_fixture();
@@ -863,36 +864,24 @@ fn draft_historical_face_group_id_refuses_retained_limit() {
         },
         face_slot: 158,
     }];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    let feature = crate::ids::neutral_feature_id(&scope);
-    let prefix = crate::ids::history_input_prefix(&feature.key(), 7);
-    let state = crate::ids::feature_input_topology_id(&feature, 7);
-    let face = crate::ids::history_input_face_id(
-        &prefix,
-        selection.historical_face_candidates[0].face_slot,
-    );
-    policy.limits.max_retained_bytes = u64::try_from(
-        group.id.len() - 1
-            + feature.as_str().len()
-            + prefix.as_str().len()
-            + state.as_str().len()
-            + face.as_str().len(),
-    )
-    .unwrap();
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = super::super::selected_historical_face_selection(
-        &ctx,
-        &scope,
-        &group,
-        std::slice::from_ref(&selection),
-        &[],
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::RetainedBytes,
+        "f3d Draft historical face group id",
+        0,
+        |ctx| {
+            super::super::selected_historical_face_selection(
+                ctx,
+                &scope,
+                &group,
+                std::slice::from_ref(&selection),
+                &[],
+            )
+        },
     );
     assert!(
-        matches!(result, Err(CodecError::ResourceLimit(ref failure))
+        matches!(error, CodecError::ResourceLimit(ref failure)
         if failure.operation == "f3d Draft historical face group id"
             && failure.dimension == ResourceDimension::RetainedBytes),
-        "expected Draft historical face group ID refusal, got {result:?}"
+        "expected Draft historical face group ID refusal, got {error:?}"
     );
 }

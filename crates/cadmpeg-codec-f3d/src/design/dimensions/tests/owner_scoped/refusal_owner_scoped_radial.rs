@@ -22,12 +22,12 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#radius")
             .expect("identity grammar");
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| radial_dimension_definition(decode_ctx, &entity, "Radius Dimension-2", 0.5, radius_parameter.clone())).transpose().unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| radial_dimension_definition(decode_ctx, &entity, "Radius Dimension-2", 0.5, (&radius_parameter, "f3d radial parameter id"))).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::Radius { entity: ref actual, parameter: ref p })
             if actual == entity.id() && p == &radius_parameter
     ));
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| radial_dimension_definition(decode_ctx, &entity, "Radial Dimension-3", 0.5, radius_parameter.clone())).transpose().unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| radial_dimension_definition(decode_ctx, &entity, "Radial Dimension-3", 0.5, (&radius_parameter, "f3d radial parameter id"))).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::Radius { entity: ref actual, .. })
             if actual == entity.id()
     ));
@@ -35,7 +35,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#diameter")
             .expect("identity grammar");
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| radial_dimension_definition(decode_ctx, &entity, "Diameter Dimension-2", 1.0, diameter_parameter.clone())).transpose().unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| radial_dimension_definition(decode_ctx, &entity, "Diameter Dimension-2", 1.0, (&diameter_parameter, "f3d radial parameter id"))).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::Diameter { entity: ref actual, parameter: ref p })
             if actual == entity.id() && p == &diameter_parameter
     ));
@@ -45,7 +45,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
             &entity,
             "Diameter Dimension-2",
             0.5,
-            diameter_parameter.clone()
+            (&diameter_parameter, "f3d radial parameter id")
         ))
         .transpose()
         .unwrap()
@@ -106,11 +106,8 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
 }
 
 #[test]
-fn owner_scoped_radial_parameter_id_refuses_retained_limit() {
-    fixture(
-        "f3d owner scoped radial parameter id",
-        ResourceDimension::RetainedBytes,
-    );
+fn owner_radial_source_refuses_work_limit() {
+    fixture("f3d owner radial source", ResourceDimension::WorkUnits);
 }
 
 #[test]

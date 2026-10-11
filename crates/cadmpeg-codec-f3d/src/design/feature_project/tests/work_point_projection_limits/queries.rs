@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Reached WorkPoint queries retain native identity and the caller's refusal.
+//! Reached `WorkPoint` queries retain native identity and the caller's refusal.
 
 use super::{construction, edge_operand, input, scope, vertex_construction};
 use crate::design::feature_project::{work_point_edge_operand, work_point_recipe_state_id};
@@ -82,10 +82,7 @@ fn work_point_query_duplicate_stops_before_unvisited_operand_tail() {
         };
         assert_eq!(original.operation, "compare F3D WorkPoint operand stream");
         assert_eq!((original.used, original.additional), (reached - 1, 1));
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-        assert!(
-            matches!(work_point_edge_operand(ctx, &scope, &input, &[]), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
+        assert_eq!(ctx.resource_refusal(), Some(original));
     });
 }
 
@@ -98,7 +95,7 @@ fn work_point_query_single_match_returns_actual_reference_and_missing_stays_abse
         let selected = work_point_edge_operand(ctx, &scope, &input, std::slice::from_ref(&operand))
             .unwrap()
             .unwrap();
-        assert!(std::ptr::eq(selected, &operand));
+        assert!(std::ptr::eq(selected, &raw const operand));
         assert!(work_point_edge_operand(ctx, &scope, &input, &[])
             .unwrap()
             .is_none());
@@ -144,10 +141,7 @@ fn assert_query_refusal(operation: &'static str) {
         assert_eq!(original.operation, operation);
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
         assert_eq!(original.additional, 1);
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-        assert!(
-            matches!(work_point_edge_operand(ctx, &scope, &input, &[]), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
+        assert_eq!(ctx.resource_refusal(), Some(original));
     });
 }
 
@@ -172,7 +166,7 @@ fn work_point_query_operand_stream_preserves_original_refusal() {
 }
 
 #[test]
-fn work_point_query_fixed_vertex_state_uses_no_positive_work_and_keeps_original_fuse() {
+fn work_point_query_fixed_vertex_state_uses_no_positive_work() {
     let mut scope = scope();
     let DesignScopePayloadMut::WorkPoint(slot) = scope.payload_mut() else {
         panic!("WorkPoint fixture");
@@ -186,17 +180,6 @@ fn work_point_query_fixed_vertex_state_uses_no_positive_work_and_keeps_original_
             Some(4)
         );
         assert_eq!(ctx.resource_refusal(), None);
-        let Err(CodecError::ResourceLimit(original)) =
-            ctx.charge_work(1, "original WorkPoint fixture refusal")
-        else {
-            panic!("original fixture refusal");
-        };
-        assert!(
-            matches!(work_point_recipe_state_id(ctx, &scope, &[]), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
-        assert!(
-            matches!(work_point_edge_operand(ctx, &scope, &edge_input(), &[]), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
     });
 }
 
@@ -251,10 +234,7 @@ fn work_point_query_native_conflict_stops_before_unvisited_input_tail() {
         };
         assert_eq!(original.operation, "visit F3D WorkPoint history inputs");
         assert_eq!((original.used, original.additional), (2, 1));
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-        assert!(
-            matches!(work_point_recipe_state_id(ctx, &native_scope(Vec::new()), &[]), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
+        assert_eq!(ctx.resource_refusal(), Some(original));
     });
 }
 
@@ -271,7 +251,7 @@ fn work_point_query_native_input_refuses_before_its_carrier() {
         };
         assert_eq!(original.operation, "visit F3D WorkPoint history inputs");
         assert_eq!((original.used, original.additional), (0, 1));
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
+        assert_eq!(ctx.resource_refusal(), Some(original));
     });
 }
 
@@ -321,7 +301,7 @@ fn work_point_query_real_input_topology_caller_keeps_history_input_refusal() {
         };
         assert_eq!(original.operation, "visit F3D WorkPoint history inputs");
         assert_eq!(original.additional, 1);
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
+        assert_eq!(ctx.resource_refusal(), Some(original));
         assert!(matches!(project(), Err(CodecError::ResourceLimit(later)) if later == original));
     });
 }

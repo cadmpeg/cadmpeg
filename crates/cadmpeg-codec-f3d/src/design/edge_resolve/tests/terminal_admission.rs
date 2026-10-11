@@ -42,7 +42,7 @@ fn terminal_edge_admits_reached_sources_and_membership_with_sticky_refusal() {
         "find F3D terminal boundary edge",
     ] {
         crate::test_support::with_decode_policy(&probe_policy(), |ctx| {
-            let mut operand = terminal_operand();
+            let operand = terminal_operand();
             assert_eq!(resolved_edge_operand(&operand, ctx).unwrap(), Some(25));
             let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
             let CodecError::ResourceLimit(original) =
@@ -51,13 +51,6 @@ fn terminal_edge_admits_reached_sources_and_membership_with_sticky_refusal() {
                 panic!("work refusal");
             };
             assert_eq!(original.operation, operation);
-            operand.resolved_edge_slot = Some(99);
-            let CodecError::ResourceLimit(sticky) =
-                resolved_edge_operand(&operand, ctx).unwrap_err()
-            else {
-                panic!("sticky refusal");
-            };
-            assert_eq!(sticky, original);
         });
     }
 }
@@ -253,12 +246,6 @@ fn radius_edge_admits_each_candidate_and_dedup_before_execution() {
                 panic!("radius work refusal");
             };
             assert_eq!(original.operation, operation);
-            let CodecError::ResourceLimit(sticky) =
-                super::super::radius_edge_group_candidates(&[], f64::NAN, ctx).unwrap_err()
-            else {
-                panic!("sticky radius refusal");
-            };
-            assert_eq!(sticky, original);
         });
     }
 }

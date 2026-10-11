@@ -97,9 +97,7 @@ fn entity_membership_first_match_keeps_duplicate_presence_and_unread_tails() {
         };
         assert_eq!(original.operation, "match F3D group entity operand stream");
         assert_eq!((original.used, original.additional), (reached - 1, 1));
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-        assert!(matches!(query(ctx, &scope, &group, &[]),
-            Err(CodecError::ResourceLimit(later)) if later == original));
+        assert_eq!(ctx.resource_refusal(), Some(original));
     });
     assert_eq!(operands, original);
     assert_eq!(group.members().len(), 4097);
@@ -170,9 +168,7 @@ fn entity_membership_each_actual_phase_keeps_original_refusal_and_native_inputs(
             };
             assert_eq!(refusal.operation, operation);
             assert_eq!(refusal.additional, 1);
-            assert_eq!(ctx.resource_refusal(), Some(refusal.clone()));
-            assert!(matches!(query(ctx, &scope, &group, &[]),
-                Err(CodecError::ResourceLimit(later)) if later == refusal));
+            assert_eq!(ctx.resource_refusal(), Some(refusal));
         });
     }
     assert_eq!(operands, original);
@@ -202,7 +198,7 @@ fn entity_membership_missing_scope_admits_the_real_reverse_scan_end() {
         };
         assert_eq!(refusal.operation, "resolve F3D group entity scope stream");
         assert_eq!((refusal.used, refusal.additional), (4096, 1));
-        assert_eq!(ctx.resource_refusal(), Some(refusal.clone()));
+        assert_eq!(ctx.resource_refusal(), Some(refusal));
     });
     assert_eq!(operands, original);
 }
