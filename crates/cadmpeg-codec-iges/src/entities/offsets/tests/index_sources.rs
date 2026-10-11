@@ -172,6 +172,18 @@ fn boundaries(source: Source) {
             assert_eq!(first.dimension, ResourceDimension::WorkUnits);
             assert_eq!(first.operation, source.operation());
             assert_eq!((first.used, first.additional, first.limit), (cap, 1, cap));
+            let curves = index.curves.clone();
+            let points = index.points.clone();
+            let vertices = index.vertices.clone();
+            let edges = index.edges.clone();
+            let counts = [index.curve_count, index.point_count, index.vertex_count, index.edge_count];
+            assert!(matches!(index.update(&ir, &ctx, &mut storage),
+                Err(CodecError::ResourceLimit(last)) if last == first));
+            assert_eq!(index.curves, curves);
+            assert_eq!(index.points, points);
+            assert_eq!(index.vertices, vertices);
+            assert_eq!(index.edges, edges);
+            assert_eq!([index.curve_count, index.point_count, index.vertex_count, index.edge_count], counts);
             assert_eq!(ir.model, expected_model);
             drop(index);
             drop(storage);
