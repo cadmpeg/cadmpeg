@@ -297,9 +297,11 @@ fn providers_without_payloads_add_no_primitive_arena_work() {
                         &xml,
                         None,
                         &sources,
-                        &mut ctx.reserve_scoped(0, "test GUI diagnostics").expect("owner"),
+                        &mut ctx
+                            .reserve_scoped(0, "test GUI diagnostics")
+                            .expect("owner"),
                     )
-                        .map(|_| ())
+                    .map(|_| ())
                 },
             );
             let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
@@ -315,7 +317,9 @@ fn providers_without_payloads_add_no_primitive_arena_work() {
                         &xml,
                         None,
                         &sources,
-                        &mut ctx.reserve_scoped(0, "test GUI diagnostics").expect("owner"),
+                        &mut ctx
+                            .reserve_scoped(0, "test GUI diagnostics")
+                            .expect("owner"),
                     )
                     .expect("provider without shape payloads");
                     assert_eq!(graph.providers.len(), 1);
@@ -449,9 +453,11 @@ fn zero_provider_transfer_does_not_visit_source_arenas() {
                     &xml,
                     Some("1"),
                     sources,
-                    &mut ctx.reserve_scoped(0, "test GUI diagnostics").expect("owner"),
+                    &mut ctx
+                        .reserve_scoped(0, "test GUI diagnostics")
+                        .expect("owner"),
                 )
-                    .map(|_| ())
+                .map(|_| ())
             },
         );
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
@@ -471,7 +477,9 @@ fn zero_provider_transfer_does_not_visit_source_arenas() {
             &xml,
             Some("1"),
             &populated_sources,
-            &mut ctx.reserve_scoped(0, "test GUI diagnostics").expect("owner"),
+            &mut ctx
+                .reserve_scoped(0, "test GUI diagnostics")
+                .expect("owner"),
         )
         .expect("zero-provider GUI transfer");
         assert_eq!(graph.documents.len(), 1);

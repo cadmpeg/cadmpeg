@@ -243,10 +243,14 @@ fn object_appearance_id(
     ctx: &DecodeContext<'_>,
     provider: &IdentityKey,
 ) -> Result<AppearanceId, CodecError> {
-    AppearanceId::mint_for_decode(ctx, ctx.format_retained(
-        format_args!("{OBJECT_APPEARANCE_ID_PREFIX}{provider}"),
-        "FCStd GUI object appearance identity",
-    )?, "FreeCAD model identity grammar")?
+    AppearanceId::mint_for_decode(
+        ctx,
+        ctx.format_retained(
+            format_args!("{OBJECT_APPEARANCE_ID_PREFIX}{provider}"),
+            "FCStd GUI object appearance identity",
+        )?,
+        "FreeCAD model identity grammar",
+    )?
     .map_err(CodecError::malformed)
 }
 
@@ -254,10 +258,14 @@ fn edge_appearance_id(
     ctx: &DecodeContext<'_>,
     provider: &IdentityKey,
 ) -> Result<AppearanceId, CodecError> {
-    AppearanceId::mint_for_decode(ctx, ctx.format_retained(
-        format_args!("fcstd:appearance:edge#{provider}"),
-        "FCStd GUI edge appearance identity",
-    )?, "FreeCAD model identity grammar")?
+    AppearanceId::mint_for_decode(
+        ctx,
+        ctx.format_retained(
+            format_args!("fcstd:appearance:edge#{provider}"),
+            "FCStd GUI edge appearance identity",
+        )?,
+        "FreeCAD model identity grammar",
+    )?
     .map_err(CodecError::malformed)
 }
 
@@ -265,10 +273,14 @@ fn vertex_appearance_id(
     ctx: &DecodeContext<'_>,
     provider: &IdentityKey,
 ) -> Result<AppearanceId, CodecError> {
-    AppearanceId::mint_for_decode(ctx, ctx.format_retained(
-        format_args!("fcstd:appearance:vertex#{provider}"),
-        "FCStd GUI vertex appearance identity",
-    )?, "FreeCAD model identity grammar")?
+    AppearanceId::mint_for_decode(
+        ctx,
+        ctx.format_retained(
+            format_args!("fcstd:appearance:vertex#{provider}"),
+            "FCStd GUI vertex appearance identity",
+        )?,
+        "FreeCAD model identity grammar",
+    )?
     .map_err(CodecError::malformed)
 }
 
@@ -277,10 +289,14 @@ fn shape_material_appearance_id(
     provider: &IdentityKey,
     index: usize,
 ) -> Result<AppearanceId, CodecError> {
-    AppearanceId::mint_for_decode(ctx, ctx.format_retained(
-        format_args!("fcstd:appearance:shape-material#{provider}:{}", index + 1),
-        "FCStd GUI shape material appearance identity",
-    )?, "FreeCAD model identity grammar")?
+    AppearanceId::mint_for_decode(
+        ctx,
+        ctx.format_retained(
+            format_args!("fcstd:appearance:shape-material#{provider}:{}", index + 1),
+            "FCStd GUI shape material appearance identity",
+        )?,
+        "FreeCAD model identity grammar",
+    )?
     .map_err(CodecError::malformed)
 }
 
@@ -291,10 +307,14 @@ fn topology_appearance_id(
     index: usize,
 ) -> Result<AppearanceId, CodecError> {
     let kind = topology_binding_kind(kind);
-    AppearanceId::mint_for_decode(ctx, ctx.format_retained(
-        format_args!("fcstd:appearance:{kind}#{provider}:{}", index + 1),
-        "FCStd GUI topology appearance identity",
-    )?, "FreeCAD model identity grammar")?
+    AppearanceId::mint_for_decode(
+        ctx,
+        ctx.format_retained(
+            format_args!("fcstd:appearance:{kind}#{provider}:{}", index + 1),
+            "FCStd GUI topology appearance identity",
+        )?,
+        "FreeCAD model identity grammar",
+    )?
     .map_err(CodecError::malformed)
 }
 
@@ -310,8 +330,12 @@ fn binding_id(
     ctx: &DecodeContext<'_>,
     text: std::fmt::Arguments<'_>,
 ) -> Result<AppearanceBindingId, CodecError> {
-    AppearanceBindingId::mint_for_decode(ctx, ctx.format_retained(text, "FCStd GUI appearance binding identity")?, "FreeCAD model identity grammar")?
-        .map_err(CodecError::malformed)
+    AppearanceBindingId::mint_for_decode(
+        ctx,
+        ctx.format_retained(text, "FCStd GUI appearance binding identity")?,
+        "FreeCAD model identity grammar",
+    )?
+    .map_err(CodecError::malformed)
 }
 
 /// Whether the shared application-property registry knows this GUI property.
@@ -732,7 +756,12 @@ pub(crate) fn transfer<'ctx>(
         ) => {
             let declaration = schema_declaration.unwrap_or("missing");
             let mut losses = ctx.collection_vec(1, "FCStd GUI schema losses")?;
-            losses.push(schema_failure_loss(ctx, declaration, error, diagnostic_storage)?);
+            losses.push(schema_failure_loss(
+                ctx,
+                declaration,
+                error,
+                diagnostic_storage,
+            )?);
             Ok(Graph {
                 losses,
                 ..Graph::default()
@@ -1813,13 +1842,17 @@ fn transfer_neutral_presentation(
             ctx.reserve_vec(&mut plan.view_presentations, 1, "FCStd view presentations")
         })?;
         plan.view_presentations.push(ViewPresentation {
-            id: PresentationId::mint_for_decode(ctx, crate::native::model_id_charged_at(
+            id: PresentationId::mint_for_decode(
                 ctx,
-                "presentation-view",
-                &provider.id,
-                "state",
-                "FCStd view presentation identity",
-            )?, "FreeCAD model identity grammar")?
+                crate::native::model_id_charged_at(
+                    ctx,
+                    "presentation-view",
+                    &provider.id,
+                    "state",
+                    "FCStd view presentation identity",
+                )?,
+                "FreeCAD model identity grammar",
+            )?
             .map_err(CodecError::malformed)?,
             object: provider
                 .object
@@ -2681,7 +2714,13 @@ fn append_native_provider(
     };
     let id = &record.id;
     let Some(container) = unique_child(ctx, provider, "Properties")? else {
-        return Err(ctx.format_scoped_text(diagnostic_storage, format_args!("ViewProvider {name} has no Properties"), "FCStd GUI diagnostic").map_or_else(std::convert::identity, CodecError::Malformed));
+        return Err(ctx
+            .format_scoped_text(
+                diagnostic_storage,
+                format_args!("ViewProvider {name} has no Properties"),
+                "FCStd GUI diagnostic",
+            )
+            .map_or_else(std::convert::identity, CodecError::Malformed));
     };
     let (node_storage, property_nodes) = ctx
         .with_scoped_storage("FCStd GUI provider property nodes", || {
@@ -2710,13 +2749,24 @@ fn append_native_provider(
         .transpose()?
         .flatten()
         .ok_or_else(|| {
-            ctx.format_scoped_text(diagnostic_storage, format_args!("ViewProvider {name} has invalid property count"), "FCStd GUI diagnostic").map_or_else(std::convert::identity, CodecError::Malformed)
+            ctx.format_scoped_text(
+                diagnostic_storage,
+                format_args!("ViewProvider {name} has invalid property count"),
+                "FCStd GUI diagnostic",
+            )
+            .map_or_else(std::convert::identity, CodecError::Malformed)
         })?;
     if declared != property_nodes.len() {
-        return Err(ctx.format_scoped_text(diagnostic_storage, format_args!(
-                "ViewProvider {name} declares {declared} properties but contains {}",
-                property_nodes.len()
-            ), "FCStd GUI diagnostic").map_or_else(std::convert::identity, CodecError::Malformed));
+        return Err(ctx
+            .format_scoped_text(
+                diagnostic_storage,
+                format_args!(
+                    "ViewProvider {name} declares {declared} properties but contains {}",
+                    property_nodes.len()
+                ),
+                "FCStd GUI diagnostic",
+            )
+            .map_or_else(std::convert::identity, CodecError::Malformed));
     }
     let mut name_storage = ctx.reserve_scoped(0, "FCStd GUI property names")?;
     let mut names = HashSet::new();
@@ -2730,7 +2780,12 @@ fn append_native_provider(
         let property_name = ctx
             .xml_attribute(property, "name", "FCStd GUI provider attribute")?
             .ok_or_else(|| {
-                ctx.format_scoped_text(diagnostic_storage, format_args!("ViewProvider {name} property has no name"), "FCStd GUI diagnostic").map_or_else(std::convert::identity, CodecError::Malformed)
+                ctx.format_scoped_text(
+                    diagnostic_storage,
+                    format_args!("ViewProvider {name} property has no name"),
+                    "FCStd GUI diagnostic",
+                )
+                .map_or_else(std::convert::identity, CodecError::Malformed)
             })?;
         if !name_storage.with_storage(|| {
             ctx.insert_hash_set(&mut names, property_name, "FCStd GUI property names")
@@ -2742,12 +2797,23 @@ fn append_native_provider(
         let type_name = ctx
             .xml_attribute(property, "type", "FCStd GUI provider attribute")?
             .ok_or_else(|| {
-                ctx.format_scoped_text(diagnostic_storage, format_args!("ViewProvider {name}.{property_name} has no type"), "FCStd GUI diagnostic").map_or_else(std::convert::identity, CodecError::Malformed)
+                ctx.format_scoped_text(
+                    diagnostic_storage,
+                    format_args!("ViewProvider {name}.{property_name} has no type"),
+                    "FCStd GUI diagnostic",
+                )
+                .map_or_else(std::convert::identity, CodecError::Malformed)
             })?;
         if is_gui_link_type(type_name) {
-            crate::persistence::validate_link_property(ctx, property, type_name, Some(&mut *diagnostic_storage))?;
+            crate::persistence::validate_link_property(
+                ctx,
+                property,
+                type_name,
+                Some(&mut *diagnostic_storage),
+            )?;
         } else {
-            diagnostic_storage.with_storage(|| validate_gui_property(ctx, property, property_name, type_name))?;
+            diagnostic_storage
+                .with_storage(|| validate_gui_property(ctx, property, property_name, type_name))?;
         }
         let mut values = Vec::new();
         let mut descendants = property.descendants();
@@ -7219,9 +7285,11 @@ mod shape_association_tests {
                 &xml,
                 None,
                 &sources,
-                &mut ctx.reserve_scoped(0, "test GUI diagnostics").expect("owner"),
+                &mut ctx
+                    .reserve_scoped(0, "test GUI diagnostics")
+                    .expect("owner"),
             )
-                .expect("GUI transfer");
+            .expect("GUI transfer");
             plan.apply(ctx, &mut ir).expect("body assignments");
             assert_eq!(ir.model.bodies[0].visible, None);
             assert_eq!(ir.model.bodies[0].color, None);

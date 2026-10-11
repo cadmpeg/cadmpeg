@@ -139,9 +139,8 @@ fn absent_topology_consumers_skip_populated_owner_and_geometry_indexes() {
                 let original = ir.clone();
                 let mut losses = Vec::new();
                 let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-                let occurrences =
-                    transfer(ctx, &mut ir, payloads, &[property()], &mut losses, &[])
-                        .expect("no topology index has a consumer");
+                let occurrences = transfer(ctx, &mut ir, payloads, &[property()], &mut losses, &[])
+                    .expect("no topology index has a consumer");
                 assert!(occurrences.records.is_empty());
                 assert!(losses.is_empty());
                 assert_eq!(ir, original);
@@ -588,10 +587,13 @@ fn connected_components_fanout_preserves_members_and_releases_scratch() {
             "FreeCAD connected-component stack",
             None,
         );
-        drop(ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(traversal_peak),
-            "test connectivity traversal peak",
-        ).expect("analytically bounded traversal peak"));
+        drop(
+            ctx.reserve_scoped(
+                cadmpeg_core::decode::u64_from_index(traversal_peak),
+                "test connectivity traversal peak",
+            )
+            .expect("analytically bounded traversal peak"),
+        );
         assert_eq!(
             connected_components(ctx, &connectivity).expect("candidate buffer released"),
             vec![(0..connectivity.len()).collect::<Vec<_>>()]

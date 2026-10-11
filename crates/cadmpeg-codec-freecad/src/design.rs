@@ -225,13 +225,17 @@ pub(crate) fn transfer<'ctx>(
                 if !is_sketch(&object.type_name) {
                     continue;
                 }
-                let id = SketchId::mint_for_decode(ctx, design_identity_text(
+                let id = SketchId::mint_for_decode(
                     ctx,
-                    "sketch",
-                    object,
-                    format_args!(""),
-                    "fcstd design sketch identity",
-                )?, "FreeCAD model identity grammar")?
+                    design_identity_text(
+                        ctx,
+                        "sketch",
+                        object,
+                        format_args!(""),
+                        "fcstd design sketch identity",
+                    )?,
+                    "FreeCAD model identity grammar",
+                )?
                 .map_err(CodecError::malformed)?;
                 ctx.insert_hash_map(
                     &mut sketch_ids,
@@ -1235,13 +1239,17 @@ fn append_operation_parameters(
         ctx.push_vec(
             parameters,
             DesignParameter {
-                id: ParameterId::mint_for_decode(ctx, design_identity_text(
+                id: ParameterId::mint_for_decode(
                     ctx,
-                    "parameter",
-                    object,
-                    format_args!(":{}", property.name),
-                    "fcstd operation parameter identity",
-                )?, "FreeCAD model identity grammar")?
+                    design_identity_text(
+                        ctx,
+                        "parameter",
+                        object,
+                        format_args!(":{}", property.name),
+                        "fcstd operation parameter identity",
+                    )?,
+                    "FreeCAD model identity grammar",
+                )?
                 .map_err(CodecError::malformed)?,
                 owner: Some(owner.try_clone_for_decode(ctx, "fcstd operation parameter owner")?),
                 ordinal: u32::try_from(property.order).map_err(|_| {
@@ -1582,13 +1590,17 @@ fn parse_sketch(
     object: &ObjectRecord,
     properties: &[&PropertyRecord],
 ) -> Result<SketchTransfer, CodecError> {
-    let id = SketchId::mint_for_decode(ctx, design_identity_text(
+    let id = SketchId::mint_for_decode(
         ctx,
-        "sketch",
-        object,
-        format_args!(""),
-        "fcstd design sketch identity",
-    )?, "FreeCAD model identity grammar")?
+        design_identity_text(
+            ctx,
+            "sketch",
+            object,
+            format_args!(""),
+            "fcstd design sketch identity",
+        )?,
+        "FreeCAD model identity grammar",
+    )?
     .map_err(CodecError::malformed)?;
     let mut entities = Vec::new();
     let mut matched_storage = ctx.reserve_scoped(0, "fcstd matched reference storage")?;
@@ -1671,13 +1683,17 @@ fn parse_sketch(
             ctx.push_vec(
                 &mut entities,
                 SketchEntity::new(
-                    SketchEntityId::mint_for_decode(ctx, design_identity_text(
+                    SketchEntityId::mint_for_decode(
                         ctx,
-                        "sketch-entity",
-                        object,
-                        format_args!(":{}", index + 1),
-                        "fcstd sketch geometry identity",
-                    )?, "FreeCAD model identity grammar")?
+                        design_identity_text(
+                            ctx,
+                            "sketch-entity",
+                            object,
+                            format_args!(":{}", index + 1),
+                            "fcstd sketch geometry identity",
+                        )?,
+                        "FreeCAD model identity grammar",
+                    )?
                     .map_err(CodecError::malformed)?,
                     id.try_clone_for_decode(ctx, "fcstd sketch entity parent")?,
                     geometry_value,
@@ -1807,13 +1823,17 @@ fn parse_sketch(
             ctx.push_vec(
                 &mut entities,
                 SketchEntity::new(
-                    SketchEntityId::mint_for_decode(ctx, design_identity_text(
+                    SketchEntityId::mint_for_decode(
                         ctx,
-                        "sketch-entity",
-                        object,
-                        format_args!(":external:{external_index}"),
-                        "fcstd sketch external geometry identity",
-                    )?, "FreeCAD model identity grammar")?
+                        design_identity_text(
+                            ctx,
+                            "sketch-entity",
+                            object,
+                            format_args!(":external:{external_index}"),
+                            "fcstd sketch external geometry identity",
+                        )?,
+                        "FreeCAD model identity grammar",
+                    )?
                     .map_err(CodecError::malformed)?,
                     id.try_clone_for_decode(ctx, "fcstd sketch entity parent")?,
                     geometry,
@@ -1897,13 +1917,17 @@ fn parse_sketch(
             ctx.push_vec(
                 &mut entities,
                 SketchEntity::new(
-                    SketchEntityId::mint_for_decode(ctx, design_identity_text(
+                    SketchEntityId::mint_for_decode(
                         ctx,
-                        "sketch-entity",
-                        object,
-                        format_args!(":{entity_kind}:{external_index}"),
-                        "fcstd sketch external link identity",
-                    )?, "FreeCAD model identity grammar")?
+                        design_identity_text(
+                            ctx,
+                            "sketch-entity",
+                            object,
+                            format_args!(":{entity_kind}:{external_index}"),
+                            "fcstd sketch external link identity",
+                        )?,
+                        "FreeCAD model identity grammar",
+                    )?
                     .map_err(CodecError::malformed)?,
                     id.try_clone_for_decode(ctx, "fcstd sketch entity parent")?,
                     SketchGeometry::try_from(SketchGeometryDefinition::ExternalReference {
@@ -1954,13 +1978,17 @@ fn parse_sketch(
         ctx.push_vec(
             &mut entities,
             SketchEntity::new(
-                SketchEntityId::mint_for_decode(ctx, design_identity_text(
+                SketchEntityId::mint_for_decode(
                     ctx,
-                    "sketch-entity",
-                    object,
-                    format_args!(":reference-horizontal-axis"),
-                    "fcstd sketch horizontal axis identity",
-                )?, "FreeCAD model identity grammar")?
+                    design_identity_text(
+                        ctx,
+                        "sketch-entity",
+                        object,
+                        format_args!(":reference-horizontal-axis"),
+                        "fcstd sketch horizontal axis identity",
+                    )?,
+                    "FreeCAD model identity grammar",
+                )?
                 .map_err(CodecError::malformed)?,
                 id.try_clone_for_decode(ctx, "fcstd sketch entity parent")?,
                 SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
@@ -1980,13 +2008,17 @@ fn parse_sketch(
         ctx.push_vec(
             &mut entities,
             SketchEntity::new(
-                SketchEntityId::mint_for_decode(ctx, design_identity_text(
+                SketchEntityId::mint_for_decode(
                     ctx,
-                    "sketch-entity",
-                    object,
-                    format_args!(":reference-vertical-axis"),
-                    "fcstd sketch vertical axis identity",
-                )?, "FreeCAD model identity grammar")?
+                    design_identity_text(
+                        ctx,
+                        "sketch-entity",
+                        object,
+                        format_args!(":reference-vertical-axis"),
+                        "fcstd sketch vertical axis identity",
+                    )?,
+                    "FreeCAD model identity grammar",
+                )?
                 .map_err(CodecError::malformed)?,
                 id.try_clone_for_decode(ctx, "fcstd sketch entity parent")?,
                 SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
@@ -2006,13 +2038,17 @@ fn parse_sketch(
         ctx.push_vec(
             &mut entities,
             SketchEntity::new(
-                SketchEntityId::mint_for_decode(ctx, design_identity_text(
+                SketchEntityId::mint_for_decode(
                     ctx,
-                    "sketch-entity",
-                    object,
-                    format_args!(":reference-root-point"),
-                    "fcstd sketch root point identity",
-                )?, "FreeCAD model identity grammar")?
+                    design_identity_text(
+                        ctx,
+                        "sketch-entity",
+                        object,
+                        format_args!(":reference-root-point"),
+                        "fcstd sketch root point identity",
+                    )?,
+                    "FreeCAD model identity grammar",
+                )?
                 .map_err(CodecError::malformed)?,
                 id.try_clone_for_decode(ctx, "fcstd sketch entity parent")?,
                 SketchGeometry::try_from(SketchGeometryDefinition::Point {
@@ -2827,13 +2863,17 @@ fn parse_constraints(
         };
         let parameter = parameter_value
             .map(|value| {
-                let id = ParameterId::mint_for_decode(ctx, design_identity_text(
+                let id = ParameterId::mint_for_decode(
                     ctx,
-                    "parameter",
-                    object,
-                    format_args!(":constraint:{}", index + 1),
-                    "fcstd constraint parameter identity",
-                )?, "FreeCAD model identity grammar")?
+                    design_identity_text(
+                        ctx,
+                        "parameter",
+                        object,
+                        format_args!(":constraint:{}", index + 1),
+                        "fcstd constraint parameter identity",
+                    )?,
+                    "FreeCAD model identity grammar",
+                )?
                 .map_err(CodecError::malformed)?;
                 let value = match type_code {
                     Some(9) => {
@@ -3136,13 +3176,17 @@ fn parse_constraints(
         ctx.push_vec(
             &mut constraints,
             SketchConstraint {
-                id: SketchConstraintId::mint_for_decode(ctx, design_identity_text(
+                id: SketchConstraintId::mint_for_decode(
                     ctx,
-                    "sketch-constraint",
-                    object,
-                    format_args!(":{}", index + 1),
-                    "fcstd sketch constraint identity",
-                )?, "FreeCAD model identity grammar")?
+                    design_identity_text(
+                        ctx,
+                        "sketch-constraint",
+                        object,
+                        format_args!(":{}", index + 1),
+                        "fcstd sketch constraint identity",
+                    )?,
+                    "FreeCAD model identity grammar",
+                )?
                 .map_err(CodecError::malformed)?,
                 sketch: sketch.try_clone_for_decode(ctx, "fcstd constraint sketch identity")?,
                 definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
@@ -9026,13 +9070,17 @@ fn operation_boolean(kind: &str) -> BooleanOp {
 }
 
 fn feature_id(ctx: &DecodeContext<'_>, object: &ObjectRecord) -> Result<FeatureId, CodecError> {
-    FeatureId::mint_for_decode(ctx, design_identity_text(
+    FeatureId::mint_for_decode(
         ctx,
-        "feature",
-        object,
-        format_args!(""),
-        "fcstd design feature identity",
-    )?, "FreeCAD model identity grammar")?
+        design_identity_text(
+            ctx,
+            "feature",
+            object,
+            format_args!(""),
+            "fcstd design feature identity",
+        )?,
+        "FreeCAD model identity grammar",
+    )?
     .map_err(CodecError::malformed)
 }
 

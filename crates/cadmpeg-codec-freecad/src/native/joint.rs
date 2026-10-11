@@ -294,8 +294,8 @@ impl JointRecord {
             .map_err(|_| CodecError::malformed("joint id is invalid"))?;
         let object = Identity::new_for_decode(ctx, object, "FCStd joint identity admission")?
             .map_err(|_| CodecError::malformed("joint object is invalid"))?;
-        let (id, object) = validate_joint_identity_namespaces(id, object)
-            .map_err(CodecError::malformed)?;
+        let (id, object) =
+            validate_joint_identity_namespaces(id, object).map_err(CodecError::malformed)?;
         Ok(Self {
             id,
             object,

@@ -1459,7 +1459,9 @@ fn both_xlink_list_property_types_use_xlink_sub_list_carriers() {
         let xml = roxmltree::Document::parse(&invalid).unwrap();
         assert!(crate::test_support::with_service_context(
             invalid.as_bytes(),
-            |ctx| { super::parse_link_targets(xml.root_element(), type_name, ctx, &mut None).is_err() }
+            |ctx| {
+                super::parse_link_targets(xml.root_element(), type_name, ctx, &mut None).is_err()
+            }
         ));
     }
 }
@@ -1473,8 +1475,13 @@ fn link_child_framing_rejects_count_and_tag_mismatches() {
     ] {
         let tree = roxmltree::Document::parse(xml).expect("framed XML");
         crate::test_support::with_service_context(xml.as_bytes(), |ctx| {
-            let result =
-                super::counted_children(tree.root_element(), "Link", "App::PropertyLinkList", ctx, &mut None);
+            let result = super::counted_children(
+                tree.root_element(),
+                "Link",
+                "App::PropertyLinkList",
+                ctx,
+                &mut None,
+            );
             assert!(matches!(
                 result,
                 Err(cadmpeg_core::CodecError::Malformed(_))
@@ -1489,9 +1496,14 @@ fn link_child_scan_propagates_work_refusal() {
     let tree = roxmltree::Document::parse(xml).expect("framed XML");
     crate::test_support::with_service_context(xml.as_bytes(), |ctx| {
         let refusal = ctx.refuse_codec_limit("test link work", 0, 1);
-        let error =
-            super::counted_children(tree.root_element(), "Link", "App::PropertyLinkList", ctx, &mut None)
-                .expect_err("fused context");
+        let error = super::counted_children(
+            tree.root_element(),
+            "Link",
+            "App::PropertyLinkList",
+            ctx,
+            &mut None,
+        )
+        .expect_err("fused context");
         assert_eq!(error.to_string(), refusal.to_string());
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
     });
@@ -1502,8 +1514,9 @@ fn empty_link_target_list_returns_no_targets() {
     let markup = "<Property><LinkList count=\"0\"/></Property>";
     let xml = roxmltree::Document::parse(markup).expect("empty LinkList XML");
     crate::test_support::with_service_context(markup.as_bytes(), |ctx| {
-        let targets = super::parse_link_targets(xml.root_element(), "App::PropertyLinkList", ctx, &mut None)
-            .expect("empty LinkList has no targets");
+        let targets =
+            super::parse_link_targets(xml.root_element(), "App::PropertyLinkList", ctx, &mut None)
+                .expect("empty LinkList has no targets");
         assert!(targets.is_empty());
         assert_eq!(ctx.resource_refusal(), None);
     });
@@ -1529,8 +1542,13 @@ fn link_target_visits_stop_at_first_nested_value_before_long_suffix() {
     let short_xml = roxmltree::Document::parse(std::str::from_utf8(short).expect("UTF-8"))
         .expect("valid short link list");
     let short_parse = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        super::parse_link_targets(short_xml.root_element(), "App::PropertyLinkList", ctx, &mut None)
-            .map(|_| ())
+        super::parse_link_targets(
+            short_xml.root_element(),
+            "App::PropertyLinkList",
+            ctx,
+            &mut None,
+        )
+        .map(|_| ())
     };
     let short_cap = successful_work_cap(short, short_parse);
     let short_start = work_before_operation(short, OPERATION, short_parse);
@@ -1538,9 +1556,13 @@ fn link_target_visits_stop_at_first_nested_value_before_long_suffix() {
         .checked_sub(short_start)
         .expect("successful short parse reaches the target visit");
     crate::test_support::with_service_context(short, |ctx| {
-        let targets =
-            super::parse_link_targets(short_xml.root_element(), "App::PropertyLinkList", ctx, &mut None)
-                .expect("short LinkList");
+        let targets = super::parse_link_targets(
+            short_xml.root_element(),
+            "App::PropertyLinkList",
+            ctx,
+            &mut None,
+        )
+        .expect("short LinkList");
         assert_eq!(targets.len(), 1);
         assert_eq!(
             targets[0].as_ref().and_then(|target| target.object()),
@@ -1560,7 +1582,13 @@ fn link_target_visits_stop_at_first_nested_value_before_long_suffix() {
     );
     let long_xml = roxmltree::Document::parse(&long).expect("valid long link list");
     let long_start = work_before_operation(long.as_bytes(), OPERATION, |ctx| {
-        super::parse_link_targets(long_xml.root_element(), "App::PropertyLinkList", ctx, &mut None).map(|_| ())
+        super::parse_link_targets(
+            long_xml.root_element(),
+            "App::PropertyLinkList",
+            ctx,
+            &mut None,
+        )
+        .map(|_| ())
     });
     let cap = long_start
         .checked_add(after_visit_allowance)
@@ -1571,8 +1599,13 @@ fn link_target_visits_stop_at_first_nested_value_before_long_suffix() {
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(long.as_bytes(), &arena, &policy)
             .expect("long link list is within root limits");
-    let error = super::parse_link_targets(long_xml.root_element(), "App::PropertyLinkList", &ctx, &mut None)
-        .expect_err("first nested link value is malformed");
+    let error = super::parse_link_targets(
+        long_xml.root_element(),
+        "App::PropertyLinkList",
+        &ctx,
+        &mut None,
+    )
+    .expect_err("first nested link value is malformed");
     assert!(matches!(
         &error,
         cadmpeg_core::CodecError::Malformed(message)
