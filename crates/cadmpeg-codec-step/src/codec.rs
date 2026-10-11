@@ -108,7 +108,10 @@ impl CodecBackend for StepCodec {
         }
         refuse_alternate_encoding(ctx, bytes)?;
         if self.detect_impl(ctx, root)? == Confidence::No {
-            return Err(CodecError::WrongFormat(ctx.copy_retained_text("missing ISO-10303-21 magic", "STEP missing magic error")?));
+            return Err(CodecError::WrongFormat(ctx.copy_retained_text(
+                "missing ISO-10303-21 magic",
+                "STEP missing magic error",
+            )?));
         }
         reader::decode(bytes, ctx, reader::Packaging::Bare)
     }
@@ -157,7 +160,10 @@ fn inspect_exchange(
     let bytes = root.window();
     refuse_alternate_encoding(ctx, bytes)?;
     if codec.detect_impl(ctx, root)? == Confidence::No {
-        return Err(CodecError::WrongFormat(ctx.copy_retained_text("missing ISO-10303-21 magic", "STEP missing magic error")?));
+        return Err(CodecError::WrongFormat(ctx.copy_retained_text(
+            "missing ISO-10303-21 magic",
+            "STEP missing magic error",
+        )?));
     }
     let mut graph_storage = ctx.reserve_scoped(0, "STEP inspect parsed graph storage")?;
     let (mut exchange, diagnostics) = parse::parse_with_context(bytes, ctx, &mut graph_storage)?;
@@ -525,7 +531,10 @@ fn inspect_zip(
     let root_bytes = root_view.window();
     refuse_alternate_encoding(ctx, root_bytes)?;
     if StepCodec::default().detect_impl(ctx, root_view)? == Confidence::No {
-        return Err(CodecError::WrongFormat(ctx.copy_retained_text("missing ISO-10303-21 magic", "STEP missing magic error")?));
+        return Err(CodecError::WrongFormat(ctx.copy_retained_text(
+            "missing ISO-10303-21 magic",
+            "STEP missing magic error",
+        )?));
     }
     let mut graph_storage = ctx.reserve_scoped(0, "STEP inspect parsed graph storage")?;
     let (mut exchange, diagnostics) =
@@ -660,7 +669,9 @@ pub(crate) fn is_part28_xml(bytes: &[u8]) -> bool {
     let Some(XmlRootTag { name, attributes }) = xml_root_start_tag(bytes) else {
         return false;
     };
-    let local_name = name.iter().rposition(|byte| *byte == b':')
+    let local_name = name
+        .iter()
+        .rposition(|byte| *byte == b':')
         .map_or(name, |separator| &name[separator + 1..]);
     if local_name.eq_ignore_ascii_case(b"iso_10303_28")
         || ascii_starts_with(local_name, b"iso_10303_28_")
@@ -715,8 +726,7 @@ fn xml_root_start_tag(bytes: &[u8]) -> Option<XmlRootTag<'_>> {
             let Some(tail) = bytes.get(cursor + 2..) else {
                 return None;
             };
-            let Some(relative_end) = tail.windows(2).position(|window| window == b"?>")
-            else {
+            let Some(relative_end) = tail.windows(2).position(|window| window == b"?>") else {
                 return None;
             };
             let end = relative_end + cursor + 2;
@@ -727,8 +737,7 @@ fn xml_root_start_tag(bytes: &[u8]) -> Option<XmlRootTag<'_>> {
             let Some(tail) = bytes.get(cursor + 4..) else {
                 return None;
             };
-            let Some(relative_end) = tail.windows(3).position(|window| window == b"-->")
-            else {
+            let Some(relative_end) = tail.windows(3).position(|window| window == b"-->") else {
                 return None;
             };
             let end = relative_end + cursor + 4;
@@ -739,8 +748,7 @@ fn xml_root_start_tag(bytes: &[u8]) -> Option<XmlRootTag<'_>> {
             let Some(tail) = bytes.get(cursor + 2..) else {
                 return None;
             };
-            let Some(relative_end) = tail.iter().position(|byte| *byte == b'>')
-            else {
+            let Some(relative_end) = tail.iter().position(|byte| *byte == b'>') else {
                 return None;
             };
             let end = relative_end + cursor + 2;
@@ -772,10 +780,7 @@ fn xml_root_start_tag(bytes: &[u8]) -> Option<XmlRootTag<'_>> {
     })
 }
 
-fn find_xml_tag_end(
-    bytes: &[u8],
-    mut cursor: usize,
-) -> Option<usize> {
+fn find_xml_tag_end(bytes: &[u8], mut cursor: usize) -> Option<usize> {
     let mut quote = None;
     while let Some(byte) = bytes.get(cursor).copied() {
         match quote {
@@ -790,14 +795,12 @@ fn find_xml_tag_end(
     None
 }
 
-fn has_namespace_value(
-    attributes: &[u8],
-    namespaces: &[&[u8]],
-) -> bool {
+fn has_namespace_value(attributes: &[u8], namespaces: &[&[u8]]) -> bool {
     // Every caller supplies a fixed catalog of namespace literals.
     xml_attribute_value(attributes, |name, value| {
         (name == b"xmlns" || name.starts_with(b"xmlns:")) && namespaces.contains(&value)
-    }).is_some()
+    })
+    .is_some()
 }
 
 fn xml_attribute_value<'a>(
@@ -857,7 +860,9 @@ pub(crate) fn is_ap242_bo_model_xml(bytes: &[u8]) -> bool {
     let Some(XmlRootTag { name, attributes }) = xml_root_start_tag(bytes) else {
         return false;
     };
-    let local_name = name.iter().rposition(|byte| *byte == b':')
+    let local_name = name
+        .iter()
+        .rposition(|byte| *byte == b':')
         .map_or(name, |separator| &name[separator + 1..]);
     // BM-03: the published namespace must be bound on the Uos document
     // element. Text, comments, schemaLocation values, and local names do not
@@ -875,8 +880,8 @@ const BO_MODEL_NAMESPACES: [&[u8]; 2] = [
 
 #[cfg(test)]
 mod tests {
-    mod prefix_admission;
     mod error_admission;
+    mod prefix_admission;
 
     use std::fmt::Write as _;
     use std::io::Cursor;
@@ -1130,9 +1135,18 @@ mod tests {
     #[test]
     fn xml_namespace_values_match_literal_namespaces() {
         let attributes = b" xmlns='urn:test:namespace'";
-        assert!(super::has_namespace_value(attributes, &[b"urn:test:namespace".as_slice()]));
-        assert!(!super::has_namespace_value(attributes, &[b"urn:test:different".as_slice()]));
-        assert!(!super::has_namespace_value(b" xmlns", &[b"urn:test:namespace".as_slice()]));
+        assert!(super::has_namespace_value(
+            attributes,
+            &[b"urn:test:namespace".as_slice()]
+        ));
+        assert!(!super::has_namespace_value(
+            attributes,
+            &[b"urn:test:different".as_slice()]
+        ));
+        assert!(!super::has_namespace_value(
+            b" xmlns",
+            &[b"urn:test:namespace".as_slice()]
+        ));
     }
 
     const INSPECTION_TEXT_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";

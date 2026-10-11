@@ -1232,7 +1232,8 @@ impl Parser<'_, '_, '_> {
             self.punct(&TokenKind::Semicolon)?;
             let span = start..self.previous_end();
             let payload = payload_start..payload_end;
-            let mut signature_storage = self.budget
+            let mut signature_storage = self
+                .budget
                 .reserve_scoped(0, "STEP signature validation storage")?;
             let signature_result = signature_storage.with_storage(|| {
                 crate::signature::decode_payload(self.lexer.input(), &payload, self.budget)
@@ -1242,10 +1243,9 @@ impl Parser<'_, '_, '_> {
                 Err(ParseError::Syntax { offset, message }) => {
                     return Err(ParseError::Syntax {
                         offset,
-                        message: self.budget.copy_retained_text(
-                            &message,
-                            "STEP signature validation error",
-                        )?,
+                        message: self
+                            .budget
+                            .copy_retained_text(&message, "STEP signature validation error")?,
                     });
                 }
                 result => result?,
@@ -3095,7 +3095,10 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                         *nodes,
                     ));
                 }
-                if self.budget.contains_hash_set(stack, name, "STEP anchor cycle search")? {
+                if self
+                    .budget
+                    .contains_hash_set(stack, name, "STEP anchor cycle search")?
+                {
                     let message = self
                         .budget
                         .format_retained(
@@ -3108,10 +3111,12 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 value_node_count(source, Self::MAX_EXPANDED_NODES, self.budget)?;
 
                 stack_storage.with_storage(|| {
-                    self.budget.insert_hash_set(stack, name, "step_anchor_reference_stack")
+                    self.budget
+                        .insert_hash_set(stack, name, "step_anchor_reference_stack")
                 })?;
                 let resolved = self.resolve(source, stack, stack_storage, budget, depth + 1);
-                self.budget.remove_hash_set(stack, name, "STEP anchor active key removal")?;
+                self.budget
+                    .remove_hash_set(stack, name, "STEP anchor active key removal")?;
                 let (value, nodes, _) = resolved?;
                 if nodes > budget {
                     return Err(self.node_limit_error());
@@ -3257,7 +3262,10 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
             };
             storage.with_storage(|| {
                 budget.insert_btree_map(
-                    &mut bindings, reference.name, binding, "step_reference_binding_items",
+                    &mut bindings,
+                    reference.name,
+                    binding,
+                    "step_reference_binding_items",
                 )
             })?;
         }
@@ -3282,7 +3290,8 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
     }
 
     fn resolve_value(&mut self, value: &Value, depth: usize) -> Result<Value, ResolveError> {
-        self.resolve_value_inner(value, depth).map(|resolved| resolved.value)
+        self.resolve_value_inner(value, depth)
+            .map(|resolved| resolved.value)
     }
 
     fn resolve_value_inner(
@@ -3291,55 +3300,92 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
         depth: usize,
     ) -> Result<ReferenceResolution, ResolveError> {
         let _nested = self.budget.enter_nested("step_reference_expansion")?;
-        self.budget.charge_work(1, "step_reference_materialization")?;
+        self.budget
+            .charge_work(1, "step_reference_materialization")?;
         if depth >= recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH) {
-            return Err(self.budget.refuse_codec_limit(
-                "step_reference_depth_limit",
-                u64_from_index(recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH)),
-                u64_from_index(depth + 1),
-            ).into());
+            return Err(self
+                .budget
+                .refuse_codec_limit(
+                    "step_reference_depth_limit",
+                    u64_from_index(recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH)),
+                    u64_from_index(depth + 1),
+                )
+                .into());
         }
         match value {
-            Value::Reference(id) => self.resolve_occurrence(ReferenceName::Entity(*id), value, depth),
-            Value::ExternalReference(id) => self.resolve_occurrence(ReferenceName::Value(*id), value, depth),
+            Value::Reference(id) => {
+                self.resolve_occurrence(ReferenceName::Entity(*id), value, depth)
+            }
+            Value::ExternalReference(id) => {
+                self.resolve_occurrence(ReferenceName::Value(*id), value, depth)
+            }
             Value::List(values) => {
                 self.consume_materialized_node()?;
                 if !self.active.is_empty() && values.len() > self.remaining_nodes {
-                    return Err(self.budget.refuse_codec_limit(
-                        "step_reference_output_node_limit",
-                        u64_from_index(self.remaining_nodes),
-                        u64_from_index(values.len()),
-                    ).into());
+                    return Err(self
+                        .budget
+                        .refuse_codec_limit(
+                            "step_reference_output_node_limit",
+                            u64_from_index(self.remaining_nodes),
+                            u64_from_index(values.len()),
+                        )
+                        .into());
                 }
-                let mut resolved = self.budget.collection_vec(values.len(), "step_reference_list_items")?;
+                let mut resolved = self
+                    .budget
+                    .collection_vec(values.len(), "step_reference_list_items")?;
                 let mut nodes = 1usize;
                 let mut height = 1;
                 let mut stable = true;
                 let mut visited_items = values.iter();
                 for _ in 0..visited_items.len() {
-                    let child = self.budget.next_charged(&mut visited_items, "STEP resolve value value traversal")?
-                        .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
+                    let child = self
+                        .budget
+                        .next_charged(&mut visited_items, "STEP resolve value value traversal")?
+                        .ok_or_else(|| {
+                            CodecError::malformed("STEP bounded traversal source ended early")
+                        })?;
                     let child = self.resolve_value_inner(child, depth + 1)?;
-                    nodes = nodes.checked_add(child.nodes).ok_or_else(|| self.budget.refuse_codec_limit(
-                        "step_reference_output_node_limit", 0, u64::MAX))?;
+                    nodes = nodes.checked_add(child.nodes).ok_or_else(|| {
+                        self.budget.refuse_codec_limit(
+                            "step_reference_output_node_limit",
+                            0,
+                            u64::MAX,
+                        )
+                    })?;
                     height = height.max(child.height + 1);
                     stable &= child.stable;
                     resolved.push(child.value);
                 }
-                Ok(ReferenceResolution { value: Value::List(resolved), nodes, height, stable })
+                Ok(ReferenceResolution {
+                    value: Value::List(resolved),
+                    nodes,
+                    height,
+                    stable,
+                })
             }
             Value::Typed(name, value) => {
                 self.consume_materialized_node()?;
                 let child = self.resolve_value_inner(value, depth + 1)?;
-                self.budget.charge_collection_items(1, "step_reference_typed_value")?;
-                self.budget.charge_retained(u64_from_index(size_of::<Value>()), "step_reference_materialization_storage")?;
+                self.budget
+                    .charge_collection_items(1, "step_reference_typed_value")?;
+                self.budget.charge_retained(
+                    u64_from_index(size_of::<Value>()),
+                    "step_reference_materialization_storage",
+                )?;
                 Ok(ReferenceResolution {
                     value: Value::Typed(
-                        self.budget.copy_retained_text(name, "step_reference_typed_name_copy")?,
+                        self.budget
+                            .copy_retained_text(name, "step_reference_typed_name_copy")?,
                         Box::new(child.value),
                     ),
-                    nodes: child.nodes.checked_add(1).ok_or_else(|| self.budget.refuse_codec_limit(
-                        "step_reference_output_node_limit", 0, u64::MAX))?,
+                    nodes: child.nodes.checked_add(1).ok_or_else(|| {
+                        self.budget.refuse_codec_limit(
+                            "step_reference_output_node_limit",
+                            0,
+                            u64::MAX,
+                        )
+                    })?,
                     height: child.height + 1,
                     stable: child.stable,
                 })
@@ -3354,78 +3400,136 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
         original: &Value,
         depth: usize,
     ) -> Result<ReferenceResolution, ResolveError> {
-        if let Some(cached) = self.budget.get_btree_map(&self.memo, &key, "STEP reference memo lookup")? {
+        if let Some(cached) =
+            self.budget
+                .get_btree_map(&self.memo, &key, "STEP reference memo lookup")?
+        {
             let cap = recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH);
             if depth + cached.height > cap {
-                return Err(self.budget.refuse_codec_limit(
-                    "step_reference_depth_limit", u64_from_index(cap),
-                    u64_from_index(depth + cached.height),
-                ).into());
+                return Err(self
+                    .budget
+                    .refuse_codec_limit(
+                        "step_reference_depth_limit",
+                        u64_from_index(cap),
+                        u64_from_index(depth + cached.height),
+                    )
+                    .into());
             }
             if cached.height > 1 || !self.active.is_empty() {
-            self.remaining_nodes = self.remaining_nodes.checked_sub(cached.nodes).ok_or_else(|| {
-                self.budget.refuse_codec_limit("step_reference_output_node_limit",
-                    u64_from_index(collection_cap(self.budget, Self::MAX_MATERIALIZED_NODES)),
-                    u64_from_index(collection_cap(self.budget, Self::MAX_MATERIALIZED_NODES) + 1))
-            })?;
+                self.remaining_nodes =
+                    self.remaining_nodes
+                        .checked_sub(cached.nodes)
+                        .ok_or_else(|| {
+                            self.budget.refuse_codec_limit(
+                                "step_reference_output_node_limit",
+                                u64_from_index(collection_cap(
+                                    self.budget,
+                                    Self::MAX_MATERIALIZED_NODES,
+                                )),
+                                u64_from_index(
+                                    collection_cap(self.budget, Self::MAX_MATERIALIZED_NODES) + 1,
+                                ),
+                            )
+                        })?;
             }
             return Ok(ReferenceResolution {
-                value: try_clone_value(&cached.value, self.budget, "step_reference_memo_value_copy")?,
+                value: try_clone_value(
+                    &cached.value,
+                    self.budget,
+                    "step_reference_memo_value_copy",
+                )?,
                 nodes: cached.nodes,
                 height: cached.height,
                 stable: true,
             });
         }
-        let Some(binding) = self.budget.get_btree_map(&self.bindings, &key, "STEP reference binding lookup")?.copied() else {
+        let Some(binding) = self
+            .budget
+            .get_btree_map(&self.bindings, &key, "STEP reference binding lookup")?
+            .copied()
+        else {
             return self.clone_leaf(original);
         };
         let resolved = (|| -> Result<ReferenceResolution, ResolveError> {
-        let anchor = match binding {
-            ReferenceBinding::Original => return self.clone_leaf(original),
-            ReferenceBinding::Omitted => return self.clone_leaf(&Value::Omitted),
-            ReferenceBinding::Anchor(anchor) => anchor,
-        };
-        if self.budget.contains_hash_set(&self.active, &key, "STEP reference cycle search")? {
-            let mut resolved = self.clone_leaf(&Value::Omitted)?;
-            resolved.stable = false;
-            return Ok(resolved);
-        }
+            let anchor = match binding {
+                ReferenceBinding::Original => return self.clone_leaf(original),
+                ReferenceBinding::Omitted => return self.clone_leaf(&Value::Omitted),
+                ReferenceBinding::Anchor(anchor) => anchor,
+            };
+            if self
+                .budget
+                .contains_hash_set(&self.active, &key, "STEP reference cycle search")?
+            {
+                let mut resolved = self.clone_leaf(&Value::Omitted)?;
+                resolved.stable = false;
+                return Ok(resolved);
+            }
 
-        self.storage.with_storage(|| {
-            self.budget.insert_hash_set(&mut self.active, key, "step_reference_stack")
-        })?;
-        let mut target_storage = self.budget.reserve_scoped(0, "STEP reference target storage")?;
-        let candidate = target_storage.with_storage(|| self.resolve_value_inner(anchor, depth + 1));
-        self.budget.remove_hash_set(&mut self.active, &key, "STEP reference active key removal")?;
-        let candidate = candidate?;
-        let height = candidate.height + 1;
-        let stable = candidate.stable;
-        let replacement = if let Value::Resource(uri) = &candidate.value {
-            Some(if self.budget.any_by(uri.as_bytes(), |byte| Ok(*byte == b'#'), "STEP resolved URI fragment containment")? {
-                original
-            } else { &Value::Omitted })
-        } else if !reference_target_matches(key, &candidate.value) {
-            Some(&Value::Omitted)
-        } else { None };
-        let mut resolved = if let Some(replacement) = replacement {
-            drop(candidate);
-            drop(target_storage);
-            self.clone_leaf(replacement)?
-        } else {
-            target_storage.commit_value(candidate)?
-        };
-        resolved.height = height;
-        resolved.stable = stable;
-        Ok(resolved)
+            self.storage.with_storage(|| {
+                self.budget
+                    .insert_hash_set(&mut self.active, key, "step_reference_stack")
+            })?;
+            let mut target_storage = self
+                .budget
+                .reserve_scoped(0, "STEP reference target storage")?;
+            let candidate =
+                target_storage.with_storage(|| self.resolve_value_inner(anchor, depth + 1));
+            self.budget.remove_hash_set(
+                &mut self.active,
+                &key,
+                "STEP reference active key removal",
+            )?;
+            let candidate = candidate?;
+            let height = candidate.height + 1;
+            let stable = candidate.stable;
+            let replacement = if let Value::Resource(uri) = &candidate.value {
+                Some(
+                    if self.budget.any_by(
+                        uri.as_bytes(),
+                        |byte| Ok(*byte == b'#'),
+                        "STEP resolved URI fragment containment",
+                    )? {
+                        original
+                    } else {
+                        &Value::Omitted
+                    },
+                )
+            } else if !reference_target_matches(key, &candidate.value) {
+                Some(&Value::Omitted)
+            } else {
+                None
+            };
+            let mut resolved = if let Some(replacement) = replacement {
+                drop(candidate);
+                drop(target_storage);
+                self.clone_leaf(replacement)?
+            } else {
+                target_storage.commit_value(candidate)?
+            };
+            resolved.height = height;
+            resolved.stable = stable;
+            Ok(resolved)
         })()?;
         // A recovered cycle depends on the active occurrence path. It does
         // not invalidate memo entries for independent acyclic bindings.
         if resolved.stable {
             self.storage.with_storage(|| {
-                let value = try_clone_value(&resolved.value, self.budget, "step_reference_memo_value_copy")?;
-                self.budget.insert_btree_map(&mut self.memo, key, ReferenceResolution {
-                    value, nodes: resolved.nodes, height: resolved.height, stable: true,
-                }, "step_reference_memo_entries")?;
+                let value = try_clone_value(
+                    &resolved.value,
+                    self.budget,
+                    "step_reference_memo_value_copy",
+                )?;
+                self.budget.insert_btree_map(
+                    &mut self.memo,
+                    key,
+                    ReferenceResolution {
+                        value,
+                        nodes: resolved.nodes,
+                        height: resolved.height,
+                        stable: true,
+                    },
+                    "step_reference_memo_entries",
+                )?;
                 Ok::<(), CodecError>(())
             })?;
         }

@@ -32,7 +32,6 @@ fn single_index_list_is_borrowed_without_copy_work_or_storage() {
     ctx.finish_session().unwrap();
 }
 
-
 #[test]
 fn multiple_index_lists_release_the_union_backing_after_replay() {
     let arena = DecodeArena::new();

@@ -57,7 +57,8 @@ pub(crate) fn decode_optional_with_context(
         Err(error) => Err(error),
     })?;
     drop(storage);
-    len.map(|len| decode_validated(input, level, ctx, len)).transpose()
+    len.map(|len| decode_validated(input, level, ctx, len))
+        .transpose()
 }
 
 fn decode_validated(
@@ -175,21 +176,24 @@ fn decode_chars(
                 }
                 let direct = &input[start..at];
                 if level.is_edition3() {
-                    let text = match ctx
-                        .validate_utf8(direct, "STEP direct string UTF-8 validation")?
-                    {
-                        Ok(text) => text,
-                        Err(invalid) => return error(
-                            ctx,
-                            start + invalid.valid_up_to(),
-                            "invalid UTF-8 direct string bytes",
-                        ),
-                    };
+                    let text =
+                        match ctx.validate_utf8(direct, "STEP direct string UTF-8 validation")? {
+                            Ok(text) => text,
+                            Err(invalid) => {
+                                return error(
+                                    ctx,
+                                    start + invalid.valid_up_to(),
+                                    "invalid UTF-8 direct string bytes",
+                                )
+                            }
+                        };
                     let mut characters = text.chars();
                     while !characters.as_str().is_empty() {
                         let character = ctx
                             .next_charged(&mut characters, "STEP decode chars traversal")?
-                            .ok_or_else(|| CodecError::malformed("STEP string character source ended early"))?;
+                            .ok_or_else(|| {
+                                CodecError::malformed("STEP string character source ended early")
+                            })?;
                         emit(character)?;
                     }
                 } else {
@@ -197,7 +201,9 @@ fn decode_chars(
                     for _ in 0..bytes.len() {
                         let byte = ctx
                             .next_charged(&mut bytes, "STEP decode chars view traversal")?
-                            .ok_or_else(|| CodecError::malformed("STEP string byte source ended early"))?;
+                            .ok_or_else(|| {
+                                CodecError::malformed("STEP string byte source ended early")
+                            })?;
                         emit(char::from(*byte))?;
                     }
                 }

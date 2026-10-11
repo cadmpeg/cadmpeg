@@ -8,7 +8,8 @@ const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FIL
 
 #[test]
 fn single_selected_queries_need_no_collection_or_backing() {
-    let (exchange, _) = crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner).unwrap();
+    let (exchange, _) =
+        crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -16,12 +17,19 @@ fn single_selected_queries_need_no_collection_or_backing() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     for names in [&["A"][..], &["MISSING", "A", "MISSING"][..]] {
-        let ids = exchange.entities_any(&ctx, names).unwrap()
-            .map(|row| row.map(|(id, _)| id)).collect::<Result<Vec<_>, _>>().unwrap();
+        let ids = exchange
+            .entities_any(&ctx, names)
+            .unwrap()
+            .map(|row| row.map(|(id, _)| id))
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
         assert_eq!(ids, [1, 2]);
     }
-    let ids = exchange.matching_entity_ids(&ctx, |name| name == "A").unwrap()
-        .collect::<Result<Vec<_>, _>>().unwrap();
+    let ids = exchange
+        .matching_entity_ids(&ctx, |name| name == "A")
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     assert_eq!(ids, [1, 2]);
     assert_eq!(ctx.resource_refusal(), None);
     ctx.finish_session().unwrap();
@@ -29,7 +37,8 @@ fn single_selected_queries_need_no_collection_or_backing() {
 
 #[test]
 fn two_selected_lists_admit_actual_reference_scratch_and_keep_refusal() {
-    let (exchange, _) = crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner).unwrap();
+    let (exchange, _) =
+        crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner).unwrap();
     for matching in [false, true] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -40,13 +49,24 @@ fn two_selected_lists_admit_actual_reference_scratch_and_keep_refusal() {
         } else {
             exchange.entities_any(&ctx, &["A", "B"]).err().unwrap()
         };
-        let CodecError::ResourceLimit(refusal) = error else { panic!("actual scratch growth must be refused"); };
+        let CodecError::ResourceLimit(refusal) = error else {
+            panic!("actual scratch growth must be refused");
+        };
         assert_eq!(refusal.dimension, ResourceDimension::CollectionItems);
         assert_eq!(refusal.used, 0);
         assert_eq!(refusal.additional, 1);
         assert_eq!(refusal.limit, 0);
-        assert_eq!(refusal.operation, if matching { "STEP matching entity lists" } else { "STEP entity union lists" });
+        assert_eq!(
+            refusal.operation,
+            if matching {
+                "STEP matching entity lists"
+            } else {
+                "STEP entity union lists"
+            }
+        );
         assert_eq!(ctx.resource_refusal(), Some(refusal));
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == refusal));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == refusal)
+        );
     }
 }

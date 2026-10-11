@@ -8,10 +8,12 @@ use zip::CompressionMethod;
 fn assert_root_error(bytes: &[u8], expected: &str) {
     crate::test_support::with_service_context(bytes, |bytes, ctx| {
         let error = crate::archive::open_root(ctx, View::over_retained(bytes))
-            .err().expect("root error");
+            .err()
+            .expect("root error");
         match error {
-            CodecError::Malformed(message) | CodecError::NotImplemented(message)
-                | CodecError::WrongFormat(message) => assert_eq!(message, expected),
+            CodecError::Malformed(message)
+            | CodecError::NotImplemented(message)
+            | CodecError::WrongFormat(message) => assert_eq!(message, expected),
             error => panic!("unexpected error: {error}"),
         }
     });
@@ -29,7 +31,9 @@ fn assert_root_error(bytes: &[u8], expected: &str) {
 }
 
 fn alter_header(bytes: &mut [u8], local: usize, central: usize, value: u16) {
-    let start = bytes.windows(4).position(|bytes| bytes == b"PK\x01\x02")
+    let start = bytes
+        .windows(4)
+        .position(|bytes| bytes == b"PK\x01\x02")
         .expect("synthetic central header");
     cadmpeg_test_support::bytes::put_u16(bytes, local, value);
     cadmpeg_test_support::bytes::put_u16(bytes, start + central, value);
@@ -43,14 +47,25 @@ fn missing_zip_root_admits_error_text() {
 
 #[test]
 fn unicode_zip_name_admits_error_text() {
-    let mut bytes = super::step_zip(&[(crate::archive::ROOT_NAME, b"".as_slice(), CompressionMethod::Stored)]);
+    let mut bytes = super::step_zip(&[(
+        crate::archive::ROOT_NAME,
+        b"".as_slice(),
+        CompressionMethod::Stored,
+    )]);
     alter_header(&mut bytes, 6, 8, 1 << 11);
     assert_root_error(&bytes, "STEP ZIP uses prohibited Unicode filename support");
 }
 
 #[test]
 fn zstd_zip_member_admits_error_text() {
-    let mut bytes = super::step_zip(&[(crate::archive::ROOT_NAME, b"".as_slice(), CompressionMethod::Stored)]);
+    let mut bytes = super::step_zip(&[(
+        crate::archive::ROOT_NAME,
+        b"".as_slice(),
+        CompressionMethod::Stored,
+    )]);
     alter_header(&mut bytes, 8, 10, 93);
-    assert_root_error(&bytes, "STEP ZIP requires PKZIP 2.04g stored or Deflate entries");
+    assert_root_error(
+        &bytes,
+        "STEP ZIP requires PKZIP 2.04g stored or Deflate entries",
+    );
 }
