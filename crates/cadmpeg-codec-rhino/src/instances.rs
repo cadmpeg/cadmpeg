@@ -930,7 +930,10 @@ fn parse_v5(
     let url_tag = utf16_retained(ctx, &mut reader, "Rhino instance URL tag")?;
     let _bounds = bbox(ctx, &mut reader)?;
     let mut kind = v5_definition_kind(reader.u32()?);
-    let mut legacy_linked_path = utf16_retained(ctx, &mut reader, "Rhino instance linked path")?;
+    let mut linked_path_storage = ctx.reserve_scoped(0, "Rhino instance legacy link")?;
+    let mut legacy_linked_path = linked_path_storage.with_storage(|| {
+        utf16_retained(ctx, &mut reader, "Rhino instance linked path")
+    })?;
     if matches!(
         kind,
         DefinitionKind::Linked | DefinitionKind::LinkedAndEmbedded
@@ -966,6 +969,23 @@ fn parse_v5(
     };
     // Version 1.7 has an abandoned V6-WIP tail. Its fields have no stable grammar.
     reader.skip_remaining()?;
+    let link = match file_reference {
+        Some(value) => {
+            drop(legacy_linked_path);
+            drop(legacy_relative_linked_path);
+            drop(linked_path_storage);
+            LinkSource::Structured(value)
+        }
+        None => {
+            let link = LinkSource::from_legacy(ctx, legacy_linked_path, legacy_relative_linked_path)?;
+            if matches!(link, LinkSource::None) {
+                drop(linked_path_storage);
+                link
+            } else {
+                linked_path_storage.commit_value(link)?
+            }
+        }
+    };
     Ok(InstanceDefinition {
         source_range,
         id,
@@ -979,10 +999,7 @@ fn parse_v5(
         units,
         linked_depth,
         linked_appearance,
-        link: match file_reference {
-            Some(value) => LinkSource::Structured(value),
-            None => LinkSource::from_legacy(ctx, legacy_linked_path, legacy_relative_linked_path)?,
-        },
+        link,
     })
 }
 
@@ -1402,9 +1419,9 @@ pub(crate) fn parse_definitions<'ctx>(
         };
         let parsed = record_storage.with_storage(|| {
             (|| {
-                let mut userdata = Vec::new();
                 let mut userdata_storage =
                     ctx.reserve_scoped(0, "Rhino definition userdata descriptors")?;
+                let mut userdata = Vec::new();
                 let class = scan_class_wrapper(
                     ctx,
                     data,
