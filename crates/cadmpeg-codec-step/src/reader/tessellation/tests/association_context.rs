@@ -136,3 +136,129 @@ fn cycle_cut_tessellation_items_remain_visitable_from_another_active_path() {
         cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
     );
 }
+
+#[test]
+fn tessellation_solid_roots_share_chain_completions() {
+    for records_count in [64_u64, 128, 256] {
+        let mut records = String::from(super::ONE_TRIANGLE);
+        for id in 3..3 + records_count {
+            writeln!(records, "#{id}=TESSELLATED_SOLID('',(#{}),$);", id + 1).unwrap();
+        }
+        writeln!(
+            records,
+            "#{}=TESSELLATED_GEOMETRIC_SET('',(#2));",
+            3 + records_count
+        )
+        .unwrap();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = 512;
+        policy.limits.max_work_units = 50_000 * records_count;
+        let ir = super::decode_tessellation_under_policy(&records, policy).unwrap();
+        assert_eq!(ir.model.tessellations.len(), 1);
+        assert_eq!(ir.model.tessellations[0].triangles(), [[0, 1, 2]]);
+    }
+}
+
+#[test]
+fn tessellation_annotation_roots_share_chain_completions() {
+    let mut records = String::from(super::ONE_TRIANGLE);
+    for id in 3..67 {
+        writeln!(
+            records,
+            "#{id}=TESSELLATED_GEOMETRIC_SET('',(#{}));",
+            id + 1
+        )
+        .unwrap();
+    }
+    records.push_str("#67=TESSELLATED_GEOMETRIC_SET('',(#2));");
+    for id in 100..356 {
+        writeln!(
+            records,
+            "#{id}=TESSELLATED_ANNOTATION_OCCURRENCE('',(),#3);"
+        )
+        .unwrap();
+    }
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 256;
+    policy.limits.max_work_units = 50_000 * (65 + 256);
+    let ir = super::decode_tessellation_under_policy(&records, policy).unwrap();
+    assert_eq!(ir.model.tessellations.len(), 1);
+    assert_eq!(ir.model.tessellations[0].triangles(), [[0, 1, 2]]);
+}
+
+#[test]
+fn tessellation_shared_nonassociating_complex_record_is_classified_once() {
+    let mut records = String::from("#1=(");
+    for partial in 0..4096 {
+        write!(records, "UNKNOWN_KIND_{partial:04}() ").unwrap();
+    }
+    records.push_str(");");
+    for id in 2..4098 {
+        writeln!(
+            records,
+            "#{id}=TESSELLATED_ANNOTATION_OCCURRENCE('',(),#1);"
+        )
+        .unwrap();
+    }
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 5000 * (4096 + 4096);
+    let ir = super::decode_tessellation_under_policy(&records, policy).unwrap();
+    assert!(ir.model.tessellations.is_empty());
+}
+
+#[test]
+fn tessellation_container_and_unknown_items_do_not_build_body_link_sets() {
+    use cadmpeg_ir::ids::BodyId;
+    use std::collections::{BTreeMap, BTreeSet, HashSet};
+
+    let source = format!("ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;{}#3=TESSELLATED_GEOMETRIC_SET('',(#2,#4));#4=UNKNOWN_ITEM();ENDSEC;END-ISO-10303-21;", super::ONE_TRIANGLE);
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("exchange");
+    crate::test_support::with_service_context(source.as_bytes(), |_, ctx| {
+        let geometry =
+            crate::reader::geometry::decode(&exchange, &mut CadIr::empty(), ctx).expect("geometry");
+        let body = BodyId::mint("step:data:body#10").expect("body");
+        let mut reservations =
+            super::super::AssociationReservations::new(ctx).expect("reservations");
+        let mut memo = super::super::AssociationMemo::new(ctx).expect("memo");
+        let mut claim_storage = ctx.reserve_scoped(0, "association claims").expect("scope");
+        let mut item_bodies = BTreeMap::new();
+        let mut declared = BTreeSet::new();
+        let mut unresolved_containers = BTreeSet::new();
+        let mut claims = BTreeSet::new();
+        let mut placements = BTreeMap::new();
+        let mut unresolved_placements = BTreeSet::new();
+        let mut body_context_items = BTreeSet::new();
+        let mut associator = super::super::TessellationItemAssociator {
+            bodies: &[&body],
+            exchange: &exchange,
+            item_bodies: &mut item_bodies,
+            declared_items: &mut declared,
+            unresolved_containers: &mut unresolved_containers,
+            typed: &mut claims,
+            claim_storage: &mut claim_storage,
+            geometry: &geometry.value,
+            placements: &mut placements,
+            unresolved_placements: &mut unresolved_placements,
+            body_context_items: &mut body_context_items,
+            mode: super::super::AssociationMode::BodyItems,
+            active: HashSet::new(),
+            context: 0,
+            memo: &mut memo,
+            cycle_count: 0,
+            reservations: &mut reservations,
+            ctx,
+            active_storage: ctx
+                .reserve_scoped(0, "step_tessellation_active_items")
+                .expect("scope"),
+        };
+        associator.visit(3, None).expect("association");
+        drop(associator);
+        assert_eq!(item_bodies.keys().copied().collect::<Vec<_>>(), [2]);
+        assert_eq!(item_bodies[&2], BTreeSet::from([body]));
+        assert_eq!(declared, BTreeSet::from([2, 3, 4]));
+        assert_eq!(claims, BTreeSet::from([3]));
+        assert_eq!(body_context_items, BTreeSet::from([2]));
+    });
+}
