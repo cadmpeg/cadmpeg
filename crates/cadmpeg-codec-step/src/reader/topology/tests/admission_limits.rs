@@ -189,6 +189,7 @@ fn built_outcome_refuses_collection_limit() {
         body_id: body_id(),
         shell_sources: std::collections::BTreeSet::new(),
         pcurve_admissions: Vec::new(),
+        payload: ctx.provisional_retained("test payload").expect("empty payload"),
     };
     assert!(matches!(
         outcome.push(built, &ctx),
@@ -713,6 +714,9 @@ fn staged_topology_attempt(
         })
         .collect();
     super::super::staged_topology(
+        ctx.provisional_retained("test payload").expect("empty payload"),
+        ctx.reserve_scoped(0, "test staged metadata")
+            .expect("empty staged storage"),
         super::super::StagedTopologyParts {
             typed: std::collections::BTreeSet::new(),
             vertices: Vec::new(),
@@ -737,8 +741,6 @@ fn staged_topology_attempt(
                 visible: None,
             },
         },
-        ctx.reserve_scoped(0, "test staged metadata")
-            .expect("empty staged storage"),
         &ctx,
     )
     .map(|_| ())
