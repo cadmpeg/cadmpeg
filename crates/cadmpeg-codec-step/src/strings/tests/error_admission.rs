@@ -32,24 +32,40 @@ fn assert_error(input: &[u8], level: ImplementationLevel, offset: usize, message
 
 #[test]
 fn invalid_byte_escape_admits_error_text() {
-    assert_error(b"\\X\\GG", ImplementationLevel::LegacyEdition1, 3,
-        "byte escape contains non-hexadecimal digits");
+    assert_error(
+        b"\\X\\GG",
+        ImplementationLevel::LegacyEdition1,
+        3,
+        "byte escape contains non-hexadecimal digits",
+    );
 }
 
 #[test]
 fn invalid_direct_utf8_admits_error_text() {
-    assert_error(b"a\xff", ImplementationLevel::Edition3Class1, 1,
-        "invalid UTF-8 direct string bytes");
+    assert_error(
+        b"a\xff",
+        ImplementationLevel::Edition3Class1,
+        1,
+        "invalid UTF-8 direct string bytes",
+    );
 }
 
 #[test]
 fn invalid_wide_digits_admit_error_text() {
-    assert_error(b"\\X2\\GGGG\\X0\\", ImplementationLevel::LegacyEdition1, 4,
-        "wide escape contains non-hexadecimal digits");
+    assert_error(
+        b"\\X2\\GGGG\\X0\\",
+        ImplementationLevel::LegacyEdition1,
+        4,
+        "wide escape contains non-hexadecimal digits",
+    );
 }
 
 #[test]
 fn invalid_wide_scalar_admits_error_text() {
-    assert_error(b"\\X4\\00110000\\X0\\", ImplementationLevel::LegacyEdition1, 4,
-        "wide escape contains an invalid Unicode scalar");
+    assert_error(
+        b"\\X4\\00110000\\X0\\",
+        ImplementationLevel::LegacyEdition1,
+        4,
+        "wide escape contains an invalid Unicode scalar",
+    );
 }

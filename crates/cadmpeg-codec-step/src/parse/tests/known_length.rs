@@ -8,8 +8,7 @@ use cadmpeg_core::CodecError;
 
 use super::super::{
     schema_names_for_matching, schema_object_identifier_diagnostics, try_clone_value,
-    validate_header_data_references, AdmittedSchemaIdentifier, EntityIds, EntityIndex,
-    Value,
+    validate_header_data_references, AdmittedSchemaIdentifier, EntityIds, EntityIndex, Value,
 };
 
 fn empty_policy(work: u64) -> DecodePolicy {
@@ -92,7 +91,6 @@ fn empty_schema_matching_names_have_no_terminal_visit_or_storage() {
         assert!(ctx.resource_refusal().is_none());
     });
 }
-
 
 #[test]
 fn schema_diagnostics_have_no_empty_or_valid_terminal_visit() {

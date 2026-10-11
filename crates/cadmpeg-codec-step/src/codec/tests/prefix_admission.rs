@@ -14,7 +14,6 @@ fn empty_detection_has_no_input_visit() {
     ctx.finish_session().unwrap();
 }
 
-
 #[test]
 fn magic_trivia_has_no_exhaustion_visit() {
     for (input, work) in [(b" ".as_slice(), 2), (b"\\N\\", 1), (b"/*x*/", 3)] {
@@ -55,8 +54,12 @@ fn bounded_xml_probes_need_no_work_or_storage() {
     assert!(crate::codec::is_ap242_bo_model_xml(
         b"<!-- ignored --><s:Uos xmlns:s='http://standards.iso.org/iso/ts/10303/-3001/-ed-1/tech/xml-schema/bo_model'/>"
     ));
-    assert!(!crate::codec::is_part28_xml(b"<other xmlns='unrelated'/><iso_10303_28/>"));
-    assert!(!crate::codec::is_ap242_bo_model_xml(b"<Uos xmlns='unrelated'/>"));
+    assert!(!crate::codec::is_part28_xml(
+        b"<other xmlns='unrelated'/><iso_10303_28/>"
+    ));
+    assert!(!crate::codec::is_ap242_bo_model_xml(
+        b"<Uos xmlns='unrelated'/>"
+    ));
     ctx.finish_session().unwrap();
 }
 
