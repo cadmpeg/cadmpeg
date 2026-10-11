@@ -471,7 +471,7 @@ mod tests {
         }
     }
 
-#[test]
+    #[test]
     fn empty_native_arena_is_free() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
@@ -487,5 +487,4 @@ mod tests {
             .expect("empty arena performs no work");
         assert!(ir.native.namespace("creo").is_none());
     }
-
 }

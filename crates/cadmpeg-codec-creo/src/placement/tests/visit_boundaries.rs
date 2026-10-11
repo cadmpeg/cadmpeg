@@ -56,13 +56,22 @@ fn carrier_reference_selection_admits_present_ids_and_stops_at_first_conflict() 
                 |ctx| super::super::unique_carrier_reference_id(ctx, section),
             );
             assert_eq!(actual, expected);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = visits;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert_eq!(super::super::unique_carrier_reference_id(&ctx, section).expect("exact reference visits"), expected);
-    let refusal = ctx.charge_work_limit(1, "after exact owner work").expect_err("exact cap exhausted");
-    assert_eq!((refusal.dimension, refusal.used, refusal.additional), (ResourceDimension::WorkUnits, visits, 1));
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = visits;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            assert_eq!(
+                super::super::unique_carrier_reference_id(&ctx, section)
+                    .expect("exact reference visits"),
+                expected
+            );
+            let refusal = ctx
+                .charge_work_limit(1, "after exact owner work")
+                .expect_err("exact cap exhausted");
+            assert_eq!(
+                (refusal.dimension, refusal.used, refusal.additional),
+                (ResourceDimension::WorkUnits, visits, 1)
+            );
 
             if expected.is_none() {
                 let short = match &section.reference_planes {
@@ -153,20 +162,50 @@ fn generated_parent_admits_each_present_datum_plane_and_envelope_without_termina
             super::super::generated_parent_plane_equation(ctx, 1, [0.0, 1.0, 0.0], &mut lookup)
         });
         assert_eq!(actual, expected);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = if sources.plane_envelopes.is_empty() { 1 } else { 2 };
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let mut lookup = super::super::PlacementLookup::new(&ctx, &sources, &[]).expect("lookup");
-    lookup.feature_datums = Some(std::collections::HashMap::from([(1, sources.datums.iter().collect())]));
-    lookup.feature_planes = Some(std::collections::HashMap::from([(1, sources.surface_rows.iter().collect())]));
-    lookup.datums = Some(std::collections::HashMap::new());
-    lookup.models = Some(std::collections::HashMap::new());
-    lookup.outlines = Some(std::collections::HashMap::new());
-    lookup.envelopes = Some(std::collections::HashMap::from([(7, sources.plane_envelopes.iter().collect())]));
-    assert_eq!(super::super::generated_parent_plane_equation(&ctx, 1, [0.0, 1.0, 0.0], &mut lookup).expect("exact cached owner visits"), expected);
-    let refusal = ctx.charge_work_limit(1, "after exact owner work").expect_err("exact cap exhausted");
-    assert_eq!((refusal.dimension, refusal.used, refusal.additional), (ResourceDimension::WorkUnits, if sources.plane_envelopes.is_empty() { 1 } else { 2 }, 1));
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = if sources.plane_envelopes.is_empty() {
+            1
+        } else {
+            2
+        };
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut lookup = super::super::PlacementLookup::new(&ctx, &sources, &[]).expect("lookup");
+        lookup.feature_datums = Some(std::collections::HashMap::from([(
+            1,
+            sources.datums.iter().collect(),
+        )]));
+        lookup.feature_planes = Some(std::collections::HashMap::from([(
+            1,
+            sources.surface_rows.iter().collect(),
+        )]));
+        lookup.datums = Some(std::collections::HashMap::new());
+        lookup.models = Some(std::collections::HashMap::new());
+        lookup.outlines = Some(std::collections::HashMap::new());
+        lookup.envelopes = Some(std::collections::HashMap::from([(
+            7,
+            sources.plane_envelopes.iter().collect(),
+        )]));
+        assert_eq!(
+            super::super::generated_parent_plane_equation(&ctx, 1, [0.0, 1.0, 0.0], &mut lookup)
+                .expect("exact cached owner visits"),
+            expected
+        );
+        let refusal = ctx
+            .charge_work_limit(1, "after exact owner work")
+            .expect_err("exact cap exhausted");
+        assert_eq!(
+            (refusal.dimension, refusal.used, refusal.additional),
+            (
+                ResourceDimension::WorkUnits,
+                if sources.plane_envelopes.is_empty() {
+                    1
+                } else {
+                    2
+                },
+                1
+            )
+        );
     }
 }
 
@@ -192,7 +231,7 @@ fn fixed_and_empty_carrier_reference_selection_is_free() {
                 .expect("fixed or empty selection"),
             *expected
         );
-        }
+    }
 }
 
 #[test]
@@ -357,5 +396,5 @@ fn unique_placement_plane_row_fast_path_is_free() {
             )),
             (kind == SurfaceKind::Plane).then_some((7, 42, 17))
         );
-        }
+    }
 }

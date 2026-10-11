@@ -6,7 +6,10 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 fn assert_positive_work(scan: &ContainerScan<'_>, operations: &[(&str, u64)]) {
     assert!(crate::test_support::assert_work_boundaries(
-        &operations.iter().map(|(operation, _)| *operation).collect::<Vec<_>>(),
+        &operations
+            .iter()
+            .map(|(operation, _)| *operation)
+            .collect::<Vec<_>>(),
         |ctx| has_thumbnail(ctx, scan)
     ));
     let arena = DecodeArena::new();
@@ -18,7 +21,9 @@ fn assert_positive_work(scan: &ContainerScan<'_>, operations: &[(&str, u64)]) {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert!(has_thumbnail(&ctx, scan).expect("source-derived thumbnail work"));
-    let refusal = ctx.charge_work_limit(1, "after thumbnail work").expect_err("exact cap exhausted");
+    let refusal = ctx
+        .charge_work_limit(1, "after thumbnail work")
+        .expect_err("exact cap exhausted");
     assert_eq!((refusal.used, refusal.additional), (work, 1));
 }
 
@@ -56,7 +61,10 @@ fn raw_jpeg_witness_skips_unrelated_expanded_sections() {
         &scan,
         &[
             ("creo thumbnail section selection", 1),
-            ("find Creo thumbnail", u64::try_from(thumbnail_length + JPEG_MAGIC.len()).expect("raw search extent")),
+            (
+                "find Creo thumbnail",
+                u64::try_from(thumbnail_length + JPEG_MAGIC.len()).expect("raw search extent"),
+            ),
         ],
     );
 }
@@ -76,8 +84,14 @@ fn compressed_jpeg_witness_uses_expanded_payload_search() {
         &[
             ("creo thumbnail section selection", 1),
             ("creo expanded section selection", 1),
-            ("creo expanded section name comparison", u64::try_from(2 * NAME.len()).expect("two name comparisons")),
-            ("find Creo expanded thumbnail", u64::try_from(jpeg.len() + JPEG_MAGIC.len()).expect("expanded search extent")),
+            (
+                "creo expanded section name comparison",
+                u64::try_from(2 * NAME.len()).expect("two name comparisons"),
+            ),
+            (
+                "find Creo expanded thumbnail",
+                u64::try_from(jpeg.len() + JPEG_MAGIC.len()).expect("expanded search extent"),
+            ),
         ],
     );
 }

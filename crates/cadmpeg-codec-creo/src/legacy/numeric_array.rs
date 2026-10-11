@@ -139,13 +139,31 @@ mod tests {
         )
         .expect("complete array");
         assert_eq!(payload.element_count(), 4);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 4;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert_eq!(NumericPayload::array(&ctx, vec![2, 2], vec![NumericRun { count: 2, value: 7 }, NumericRun { count: 2, value: 9 }]).expect("two extents and two runs").expect("complete array").element_count(), 4);
-    let refusal = ctx.charge_work_limit(1, "after exact owner work").expect_err("exact cap exhausted");
-    assert_eq!((refusal.dimension, refusal.used, refusal.additional), (ResourceDimension::WorkUnits, 4, 1));
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 4;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert_eq!(
+            NumericPayload::array(
+                &ctx,
+                vec![2, 2],
+                vec![
+                    NumericRun { count: 2, value: 7 },
+                    NumericRun { count: 2, value: 9 }
+                ]
+            )
+            .expect("two extents and two runs")
+            .expect("complete array")
+            .element_count(),
+            4
+        );
+        let refusal = ctx
+            .charge_work_limit(1, "after exact owner work")
+            .expect_err("exact cap exhausted");
+        assert_eq!(
+            (refusal.dimension, refusal.used, refusal.additional),
+            (ResourceDimension::WorkUnits, 4, 1)
+        );
         let NumericPayload::Array(array) = payload else {
             panic!("expected numeric array");
         };
@@ -179,13 +197,23 @@ mod tests {
         )
         .expect("complete zero extent");
         assert_eq!(payload.element_count(), 0);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert_eq!(NumericPayload::<u32>::array(&ctx, vec![0], Vec::new()).expect("one extent").expect("complete zero extent").element_count(), 0);
-    let refusal = ctx.charge_work_limit(1, "after exact owner work").expect_err("exact cap exhausted");
-    assert_eq!((refusal.dimension, refusal.used, refusal.additional), (ResourceDimension::WorkUnits, 1, 1));
-
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert_eq!(
+            NumericPayload::<u32>::array(&ctx, vec![0], Vec::new())
+                .expect("one extent")
+                .expect("complete zero extent")
+                .element_count(),
+            0
+        );
+        let refusal = ctx
+            .charge_work_limit(1, "after exact owner work")
+            .expect_err("exact cap exhausted");
+        assert_eq!(
+            (refusal.dimension, refusal.used, refusal.additional),
+            (ResourceDimension::WorkUnits, 1, 1)
+        );
     }
 }

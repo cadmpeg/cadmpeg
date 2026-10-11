@@ -261,14 +261,21 @@ fn legacy_line_and_decimal_admit_only_present_source_bytes() {
                 line(ctx, source, 0)
             });
         assert_eq!(result, Some((expected, 2)));
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert_eq!(line(&ctx, source, 0).expect("two line bytes"), Some((expected, 2)));
-    let refusal = ctx.charge_work_limit(1, "after exact owner work").expect_err("exact cap exhausted");
-    assert_eq!((refusal.dimension, refusal.used, refusal.additional), (ResourceDimension::WorkUnits, 2, 1));
-
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert_eq!(
+            line(&ctx, source, 0).expect("two line bytes"),
+            Some((expected, 2))
+        );
+        let refusal = ctx
+            .charge_work_limit(1, "after exact owner work")
+            .expect_err("exact cap exhausted");
+        assert_eq!(
+            (refusal.dimension, refusal.used, refusal.additional),
+            (ResourceDimension::WorkUnits, 2, 1)
+        );
     }
     for (source, expected) in [(b"007".as_slice(), (7, 3)), (b"7xTAIL".as_slice(), (7, 1))] {
         let result =
@@ -276,14 +283,25 @@ fn legacy_line_and_decimal_admit_only_present_source_bytes() {
                 decimal(ctx, source, 0)
             });
         assert_eq!(result, Some(expected));
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = if source == b"007" { 3 } else { 2 };
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert_eq!(decimal(&ctx, source, 0).expect("present decimal bytes"), Some(expected));
-    let refusal = ctx.charge_work_limit(1, "after exact owner work").expect_err("exact cap exhausted");
-    assert_eq!((refusal.dimension, refusal.used, refusal.additional), (ResourceDimension::WorkUnits, if source == b"007" { 3 } else { 2 }, 1));
-
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = if source == b"007" { 3 } else { 2 };
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert_eq!(
+            decimal(&ctx, source, 0).expect("present decimal bytes"),
+            Some(expected)
+        );
+        let refusal = ctx
+            .charge_work_limit(1, "after exact owner work")
+            .expect_err("exact cap exhausted");
+        assert_eq!(
+            (refusal.dimension, refusal.used, refusal.additional),
+            (
+                ResourceDimension::WorkUnits,
+                if source == b"007" { 3 } else { 2 },
+                1
+            )
+        );
     }
 }
 
@@ -307,16 +325,27 @@ fn legacy_text_fields_admit_present_characters_and_preserve_unicode_boundaries()
             result.map(|value| (value, pending))
         });
         assert_eq!(actual, (Some("é"), remainder));
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = if source == "é" { 1 } else { 4 };
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let mut pending = source;
-    assert_eq!(text_field(&ctx, &mut pending, false).expect("present characters"), Some("é"));
-    assert_eq!(pending, remainder);
-    let refusal = ctx.charge_work_limit(1, "after exact owner work").expect_err("exact cap exhausted");
-    assert_eq!((refusal.dimension, refusal.used, refusal.additional), (ResourceDimension::WorkUnits, if source == "é" { 1 } else { 4 }, 1));
-
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = if source == "é" { 1 } else { 4 };
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut pending = source;
+        assert_eq!(
+            text_field(&ctx, &mut pending, false).expect("present characters"),
+            Some("é")
+        );
+        assert_eq!(pending, remainder);
+        let refusal = ctx
+            .charge_work_limit(1, "after exact owner work")
+            .expect_err("exact cap exhausted");
+        assert_eq!(
+            (refusal.dimension, refusal.used, refusal.additional),
+            (
+                ResourceDimension::WorkUnits,
+                if source == "é" { 1 } else { 4 },
+                1
+            )
+        );
     }
 }
 
@@ -332,10 +361,17 @@ fn legacy_scope_extent_visits_exclude_terminal_probe_and_preserve_empty_output()
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert_eq!(scan(&ctx, &[], [0..0, 0..0]).expect("two empty scopes"), Persistence::default());
-    let refusal = ctx.charge_work_limit(1, "after exact owner work").expect_err("exact cap exhausted");
-    assert_eq!((refusal.dimension, refusal.used, refusal.additional), (ResourceDimension::WorkUnits, 2, 1));
-
+    assert_eq!(
+        scan(&ctx, &[], [0..0, 0..0]).expect("two empty scopes"),
+        Persistence::default()
+    );
+    let refusal = ctx
+        .charge_work_limit(1, "after exact owner work")
+        .expect_err("exact cap exhausted");
+    assert_eq!(
+        (refusal.dimension, refusal.used, refusal.additional),
+        (ResourceDimension::WorkUnits, 2, 1)
+    );
 }
 
 #[test]
