@@ -161,3 +161,105 @@ fn repeated_long_occurrence_queries_share_common_prefix_probes() {
         "repeated long lookup must grow below quadratic: {small}, {large}"
     );
 }
+
+#[test]
+fn one_use_long_occurrence_queries_keep_no_match_cache() {
+    for count in [1, 32] {
+        let rows = (3..count + 3)
+            .map(|handle| {
+                EdgeRow::new(
+                    1,
+                    vec![0, 1, 2, handle],
+                    EdgeBoundaryLayout::CompleteBoundaryRun,
+                )
+                .expect("long pattern")
+            })
+            .collect::<Vec<_>>();
+        crate::test_support::with_collection_limit(u64::MAX, |ctx| {
+            let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                "catia_mesh_occurrence_matches",
+                None,
+            );
+            assert_eq!(
+                mesh_edge_occurrences(ctx, &rows, &[])
+                    .expect("empty output rows need no match cache"),
+                Some(vec![Vec::new(); rows.len()])
+            );
+            assert_eq!(ctx.resource_refusal(), None);
+        });
+    }
+}
+
+#[test]
+fn single_long_occurrence_query_needs_no_query_index() {
+    let rows = [
+        EdgeRow::new(1, vec![0, 1, 2, 3], EdgeBoundaryLayout::CompleteBoundaryRun)
+            .expect("long pattern"),
+    ];
+    let cycles = [vec![vec![0, 1, 2, 3]]];
+    crate::test_support::with_collection_limit(u64::MAX, |ctx| {
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "catia_mesh_occurrence_queries",
+            None,
+        );
+        assert_eq!(
+            mesh_edge_occurrences(ctx, &rows, &cycles).expect("one query"),
+            Some(vec![vec![MeshEdgeRun {
+                edge: 0,
+                face: 0,
+                cycle: 0,
+                start: 0,
+                segment_count: 3,
+                reversed: false
+            }]])
+        );
+        assert_eq!(ctx.resource_refusal(), None);
+    });
+}
+
+#[test]
+fn repeated_long_occurrences_reapply_each_boundary_layout() {
+    for first_layout in [
+        EdgeBoundaryLayout::CompleteBoundaryRun,
+        EdgeBoundaryLayout::InteriorWithFlankingCorners,
+    ] {
+        let layouts = [
+            first_layout,
+            EdgeBoundaryLayout::CompleteBoundaryRun,
+            EdgeBoundaryLayout::InteriorWithFlankingCorners,
+        ];
+        let rows = layouts.map(|layout| {
+            let handles = match layout {
+                EdgeBoundaryLayout::CompleteBoundaryRun => vec![0, 1, 2, 3],
+                EdgeBoundaryLayout::InteriorWithFlankingCorners => vec![9, 0, 1, 2, 3, 8],
+            };
+            EdgeRow::new(1, handles, layout).expect("long pattern")
+        });
+        let cycles = [vec![vec![0, 1, 2, 3]]];
+        crate::test_support::with_service_context(|ctx| {
+            let result = mesh_edge_occurrences(ctx, &rows, &cycles)
+                .expect("shared query")
+                .expect("one occurrence per cycle");
+            assert_eq!(result.len(), rows.len());
+            for (edge, runs) in result.iter().enumerate() {
+                let (start, segment_count) = match layouts[edge] {
+                    EdgeBoundaryLayout::CompleteBoundaryRun => (0, 3),
+                    EdgeBoundaryLayout::InteriorWithFlankingCorners => (3, 5),
+                };
+                assert_eq!(
+                    runs,
+                    &[MeshEdgeRun {
+                        edge,
+                        face: 0,
+                        cycle: 0,
+                        start,
+                        segment_count,
+                        reversed: false,
+                    }]
+                );
+            }
+        });
+    }
+}
