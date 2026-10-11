@@ -230,3 +230,33 @@ fn face_edge_groups_borrow_one_cached_set_per_source_face() {
     );
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn selected_published_blend_supports_skip_the_support_walk() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+    use crate::test_support::parasolid::{offset_surface_carrier, plane_carrier};
+    let setup = cadmpeg_test_support::service_decode_context();
+    let mut bytes = plane_carrier(181, [0.; 3], [0., 0., 1.], [1., 0., 0.]);
+    bytes.extend(offset_surface_carrier(182, 181, 0.001));
+    let carriers = crate::brep::index::scan_carriers(&setup, &bytes).unwrap();
+    let faces = [crate::brep::graph::WalkedFace {
+        bridge_attr: 10,
+        surface_attr: 181,
+        sense: cadmpeg_ir::topology::Sense::Forward,
+        loops: vec![(20, vec![30])],
+    }];
+    let loops = std::collections::BTreeSet::from([20]);
+    let hidden = std::collections::BTreeSet::from([182]);
+    let tables = crate::brep::topology::Tables::default();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    policy.limits.max_retained_bytes = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut indexes = super::ProceduralSupportIndexes::new(&ctx, &faces, &loops, &tables).unwrap();
+    let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "check Parasolid surface support", None);
+    assert_eq!(indexes.blend_supports_need_emission(&ctx, [182, 181], crate::brep::index::view::CarrierView::Retained(&carriers), &hidden).unwrap(), Some(false));
+    drop(probe);
+    drop(indexes);
+    ctx.finish_session().unwrap();
+}
