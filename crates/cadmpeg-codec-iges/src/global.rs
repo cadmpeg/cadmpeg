@@ -538,7 +538,10 @@ pub(crate) fn layout_global_cards(
     let mut card = ctx.vector_storage(72, "iges global layout card bytes")?;
     let mut field_spans = fields.iter();
     while field_spans.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(range) = ctx.next_charged(&mut field_spans, "iges global layout field spans")? else { break; };
+        let Some(range) = ctx.next_charged(&mut field_spans, "iges global layout field spans")?
+        else {
+            break;
+        };
         let field = &bytes[range.clone()];
         let leading = ctx
             .position_by(
@@ -562,12 +565,11 @@ pub(crate) fn layout_global_cards(
             cards.push(std::mem::take(&mut card));
             card = ctx.vector_storage(72, "iges global layout card bytes")?;
         }
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut source_values = IntoIterator::into_iter(field).copied();
         while source_values.len() != 0 {
-            let Some(byte) = ctx.next_charged(&mut source_values, "iges global layout field copy")? else {
+            let Some(byte) =
+                ctx.next_charged(&mut source_values, "iges global layout field copy")?
+            else {
                 break;
             };
             if card.len() == 72 {
@@ -823,19 +825,18 @@ fn parse_raw<'bytes>(
     })
 }
 
+type ResolvedGlobalWithStorage<'ctx> = (
+    ResolvedGlobal,
+    (Vec<LossNote>, ScopedReservation<'ctx>),
+    ScopedReservation<'ctx>,
+);
+
 /// Recover the Global field boundaries, then resolve every field once.
 /// Keep both returned reservations alive with their Global values.
 pub(crate) fn parse<'ctx>(
     scan: &CardScan,
     ctx: &'ctx DecodeContext<'_>,
-) -> Result<
-    (
-        ResolvedGlobal,
-        (Vec<LossNote>, ScopedReservation<'ctx>),
-        ScopedReservation<'ctx>,
-    ),
-    CodecError,
-> {
+) -> Result<ResolvedGlobalWithStorage<'ctx>, CodecError> {
     let _stream_storage;
     let (bytes, result_stream_storage) = global_bytes(scan, ctx)?;
     _stream_storage = result_stream_storage;
@@ -1588,14 +1589,7 @@ impl Resolution<'_, '_, '_> {
 fn resolve<'ctx>(
     raw: &RawGlobal<'_>,
     ctx: &'ctx DecodeContext<'_>,
-) -> Result<
-    (
-        ResolvedGlobal,
-        (Vec<LossNote>, ScopedReservation<'ctx>),
-        ScopedReservation<'ctx>,
-    ),
-    CodecError,
-> {
+) -> Result<ResolvedGlobalWithStorage<'ctx>, CodecError> {
     let mut storage = ctx.reserve_scoped(0, "IGES resolved Global text")?;
     let RawGlobal {
         parameter_delimiter,
@@ -1906,10 +1900,9 @@ impl ResolvedGlobal {
         }
         if let Some(units) = self.units_name() {
             ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges global summary notes")?;
-            notes.push(ctx.format_retained(
-                format_args!("units={units}"),
-                "iges global summary text",
-            )?);
+            notes.push(
+                ctx.format_retained(format_args!("units={units}"), "iges global summary text")?,
+            );
         }
         if matches!(self.dialect_recovery(), DialectRecovery::Verified) {
             ctx.reserve_scoped_vec(&mut storage, &mut notes, 1, "iges global summary notes")?;

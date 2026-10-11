@@ -72,7 +72,7 @@ fn attribute_primary_layout_admits_definition_queries_after_type_gates() {
     let record = integer_parameter_record(1, &[422, 12]);
     let definition_record = integer_parameter_record(3, &[322, 0, 0, 1, 1, 1, 1]);
     let records = BTreeMap::from([(3, &definition_record)]);
-    for work in [16, 21] {
+    for work in [16, 21, 22] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = work;
@@ -84,11 +84,22 @@ fn attribute_primary_layout_admits_definition_queries_after_type_gates() {
             GlobalTable::V5Later,
             &ctx,
         );
-        if work == 21 {
+        if work == 22 {
             // Two two-key Directory queries (8 each), one one-key record query
-            // (4), and one attribute visit (1).
+            // (4), one attribute visit (1), and the exhausted search probe (1).
             assert_eq!(result.unwrap(), Some(2));
             ctx.finish_session().unwrap();
+        } else if work == 21 {
+            let CodecError::ResourceLimit(first) = result.unwrap_err() else {
+                panic!("expected definition search end refusal");
+            };
+            assert_eq!(first.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(first.operation, "iges parameter primary layout");
+            assert_eq!(first.used, 2 * 8 + 4 + 1);
+            assert_eq!(first.additional, 1);
+            assert!(matches!(ctx.finish_session(),
+                Err(CodecError::ResourceLimit(actual)) if actual == first
+            ));
         } else {
             let CodecError::ResourceLimit(first) = result.unwrap_err() else {
                 panic!("expected definition record query refusal");
