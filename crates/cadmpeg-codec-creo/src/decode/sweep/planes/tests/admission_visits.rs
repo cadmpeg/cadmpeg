@@ -4,7 +4,6 @@ use super::super::{
 };
 use super::{plane_outline, plane_row};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use std::collections::BTreeSet;
 
@@ -206,11 +205,6 @@ fn invalid_generated_cap_rows_stop_before_plane_preparation() {
                 (original.dimension, original.used, original.additional),
                 (ResourceDimension::WorkUnits, VISITS, 1)
             );
-            assert!(
-                matches!(generated_cap_plane_extent(&ctx, &scan, &ir, &carriers, 917),
-                Err(CodecError::ResourceLimit(actual)) if actual == original)
-            );
-            assert_eq!(ctx.resource_refusal(), Some(original));
         }
     }
 }

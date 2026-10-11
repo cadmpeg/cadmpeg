@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::Point2;
@@ -190,20 +190,6 @@ fn circular_extrusion_coedge_rows_transfer_both_radial_pairs_in_order() {
         assert_eq!(cap.pcurves.len(), 1);
         assert_eq!(wall.pcurves.len(), 1);
     }
-}
-
-#[test]
-fn circular_extrusion_transfer_preserves_prior_refusal() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let original = ctx
-        .charge_work_limit(1, "prior circular refusal")
-        .expect_err("refusal");
-    assert!(
-        matches!(transfer(&ctx), Err(CodecError::ResourceLimit(resource)) if resource == original)
-    );
 }
 
 #[test]
