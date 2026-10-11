@@ -402,5 +402,11 @@ fn cylinder_rejected_first_ring_skips_second_ring_curve_index() {
     assert_eq!(out.curves.len(), 2);
     assert_eq!(out.edges.len(), 2);
     assert_eq!(out.loops.len(), 2);
-    assert_eq!(out.points.iter().map(|point| point.position()).collect::<Vec<_>>(), original_points);
+    assert_eq!(
+        out.points
+            .iter()
+            .map(|point| point.position())
+            .collect::<Vec<_>>(),
+        original_points
+    );
 }

@@ -363,22 +363,27 @@ impl<'source, 'ctx> ProceduralSupportIndexes<'source, 'ctx> {
             if self.support_is_published(ctx, attr, carriers, hidden)? {
                 continue;
             }
-        let mut visit = |attr| -> Result<(), cadmpeg_core::CodecError> {
-            if needs_emission {
-                return Ok(());
-            }
-            if !ctx.contains_key_btree_map(
-                self.emitted(ctx)?,
-                &attr,
-                "lookup Parasolid emitted_face_surface_by_carrier",
-            )? && !ctx.contains_btree_set(hidden, &attr, "test emitted Parasolid support surfaces")? {
-                needs_emission = true;
-            }
-            Ok(())
-        };
-            let (acyclic, storage) = ctx.with_scoped_storage("hold Parasolid surface support walk", || {
-                support_is_acyclic_with(ctx, attr, carriers, &mut BTreeSet::new(), &mut visit)
-            })?;
+            let mut visit = |attr| -> Result<(), cadmpeg_core::CodecError> {
+                if needs_emission {
+                    return Ok(());
+                }
+                if !ctx.contains_key_btree_map(
+                    self.emitted(ctx)?,
+                    &attr,
+                    "lookup Parasolid emitted_face_surface_by_carrier",
+                )? && !ctx.contains_btree_set(
+                    hidden,
+                    &attr,
+                    "test emitted Parasolid support surfaces",
+                )? {
+                    needs_emission = true;
+                }
+                Ok(())
+            };
+            let (acyclic, storage) = ctx
+                .with_scoped_storage("hold Parasolid surface support walk", || {
+                    support_is_acyclic_with(ctx, attr, carriers, &mut BTreeSet::new(), &mut visit)
+                })?;
             drop(storage);
             if !acyclic {
                 return Ok(None);
@@ -386,7 +391,6 @@ impl<'source, 'ctx> ProceduralSupportIndexes<'source, 'ctx> {
         }
         Ok(Some(needs_emission))
     }
-
 }
 
 pub(super) struct BrepSink<'ctx, 'arena, 'out> {

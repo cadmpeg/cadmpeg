@@ -93,9 +93,9 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashSet;
 
-/// One consumable graph group owns its vector and admitted tree entry.
+/// One consumable graph group owns its value and admitted tree entry.
 struct GraphGroup<'ctx, T> {
-    values: Vec<T>,
+    value: T,
     storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
@@ -113,48 +113,57 @@ pub(super) fn decode_graph(
         })?;
     let body_records = typed_records.unwrap_or_default();
     let mut metadata_storage = ctx.reserve_scoped(0, "hold Parasolid graph metadata")?;
-    let body_modifiers = metadata_storage.with_storage(||
+    let body_modifiers = metadata_storage.with_storage(|| {
         unique_body_modifiers(ctx, std::mem::take(&mut entity_facts.body_modifiers))
-    )?;
-    let ((face_colors, conflicting_face_colors), color_storage) = ctx.with_scoped_storage(
-        "hold selected Parasolid face colors", || unique_face_colors(
+    })?;
+    let ((face_colors, conflicting_face_colors), color_storage) =
+        ctx.with_scoped_storage("hold selected Parasolid face colors", || {
+            unique_face_colors(
+                ctx,
+                std::mem::take(&mut entity_facts.face_colors),
+                std::mem::take(&mut entity_facts.face_color_versions),
+            )
+        })?;
+    let face_bridge_sequences = metadata_storage.with_storage(|| {
+        sorted_topology_sequences(
             ctx,
-            std::mem::take(&mut entity_facts.face_colors),
-            std::mem::take(&mut entity_facts.face_color_versions),
-        ),
-    )?;
-    let face_bridge_sequences = metadata_storage.with_storage(|| sorted_topology_sequences(
-        ctx,
-        t.bridges()
-            .values()
-            .map(|bridge| (bridge.sequence, bridge.attr)),
-        "collect Parasolid face bridge sequences",
-    ))?;
-    let edge_use_sequences = metadata_storage.with_storage(|| sorted_topology_sequences(
-        ctx,
-        t.edge_uses()
-            .values()
-            .map(|edge_use| (edge_use.sequence, edge_use.attr)),
-        "collect Parasolid edge use sequences",
-    ))?;
-    let vertex_use_sequences = metadata_storage.with_storage(|| sorted_topology_sequences(
-        ctx,
-        t.vertex_uses()
-            .values()
-            .map(|vertex_use| (vertex_use.sequence, vertex_use.attr)),
-        "collect Parasolid vertex use sequences",
-    ))?;
+            t.bridges()
+                .values()
+                .map(|bridge| (bridge.sequence, bridge.attr)),
+            "collect Parasolid face bridge sequences",
+        )
+    })?;
+    let edge_use_sequences = metadata_storage.with_storage(|| {
+        sorted_topology_sequences(
+            ctx,
+            t.edge_uses()
+                .values()
+                .map(|edge_use| (edge_use.sequence, edge_use.attr)),
+            "collect Parasolid edge use sequences",
+        )
+    })?;
+    let vertex_use_sequences = metadata_storage.with_storage(|| {
+        sorted_topology_sequences(
+            ctx,
+            t.vertex_uses()
+                .values()
+                .map(|vertex_use| (vertex_use.sequence, vertex_use.attr)),
+            "collect Parasolid vertex use sequences",
+        )
+    })?;
 
-    let owned_face_colors = metadata_storage.with_storage(|| ctx.try_collect_vec(
-        face_colors.into_iter().map(|value| {
-            Ok::<_, cadmpeg_core::CodecError>(OwnedFaceColor {
-                value,
-                source_stream: copy_graph_stream_name(ctx, stream)?,
-                site_key: None,
-            })
-        }),
-        "collect Parasolid face colors",
-    ))?;
+    let owned_face_colors = metadata_storage.with_storage(|| {
+        ctx.try_collect_vec(
+            face_colors.into_iter().map(|value| {
+                Ok::<_, cadmpeg_core::CodecError>(OwnedFaceColor {
+                    value,
+                    source_stream: copy_graph_stream_name(ctx, stream)?,
+                    site_key: None,
+                })
+            }),
+            "collect Parasolid face colors",
+        )
+    })?;
     drop(color_storage);
     let mut source_storage = ctx.reserve_scoped(0, "hold Parasolid annotation stream")?;
     let mut out = Brep {
@@ -174,36 +183,43 @@ pub(super) fn decode_graph(
     if t.bridges().is_empty() {
         return metadata_storage.commit_value(out);
     }
-    let source_stream = source_storage.with_storage(|| StreamHandle::new(
-        ctx,
-        copy_graph_stream_name(ctx, stream)?,
-        "allocate annotation stream handle",
-    ))?;
+    let source_stream = source_storage.with_storage(|| {
+        StreamHandle::new(
+            ctx,
+            copy_graph_stream_name(ctx, stream)?,
+            "allocate annotation stream handle",
+        )
+    })?;
     let mut annotations = AnnotationBuilder::new();
     // Indexes and membership sets that only steer this walk are held here,
     // apart from the arenas the walk emits.
     let mut scratch = ctx.reserve_scoped(0, "SLDPRT graph walk scratch")?;
 
-    // Select one equivalent bridge per owner before walking its loops. Equal
-    // references and sense give the same ring walk within one owner group.
+    // Equal references and sense give the same ring walk within one owner.
+    // Keep the earliest equivalent bridge; None marks a conflicting owner.
     let mut faces = Vec::new();
-    let mut owned_faces = BTreeMap::<u16, GraphGroup<'_, &topology::Bridge>>::new();
+    let mut owned_faces = BTreeMap::<u16, GraphGroup<'_, Option<&topology::Bridge>>>::new();
     for (_, bridge) in ctx.admit_iter(t.bridges(), "select Parasolid face bridges")? {
         if let Some(owner) = bridge.owner {
             let mut group = GraphGroup {
-                values: Vec::new(),
+                value: Some(bridge),
                 storage: ctx.reserve_scoped(0, "hold Parasolid face owner group")?,
             };
-            match group.storage.with_storage(|| ctx.entry_btree_map(
-                &mut owned_faces, owner, "index Parasolid face owners",
-            ))? {
+            match group.storage.with_storage(|| {
+                ctx.entry_btree_map(&mut owned_faces, owner, "index Parasolid face owners")
+            })? {
                 std::collections::btree_map::Entry::Vacant(slot) => {
-                    ctx.push_scoped_vec(&mut group.storage, &mut group.values, bridge, "collect Parasolid face uses")?;
                     slot.insert(group);
                 }
                 std::collections::btree_map::Entry::Occupied(mut slot) => {
                     let group = slot.get_mut();
-                    ctx.push_scoped_vec(&mut group.storage, &mut group.values, bridge, "collect Parasolid face uses")?;
+                    if let Some(selected) = group.value {
+                        if bridge.refs != selected.refs || bridge.sense != selected.sense {
+                            group.value = None;
+                        } else if (bridge.offset, bridge.attr) < (selected.offset, selected.attr) {
+                            group.value = Some(bridge);
+                        }
+                    }
                 }
             }
         } else {
@@ -212,25 +228,13 @@ pub(super) fn decode_graph(
         }
     }
     let mut ambiguous_face_owners = 0;
-    for (_, mut group) in ctx.admit_iter(owned_faces, "resolve Parasolid face owners")? {
-        let uses = &mut group.values;
-        ctx.stable_sort_by_key(
-            uses,
-            |bridge| (bridge.offset, bridge.attr),
-            Ord::cmp,
-            "sort Parasolid face owners",
-        )?;
-        let Some(&first_bridge) = uses.first() else {
-            continue;
-        };
-        if ctx.all_by(
-            &uses[1..],
-            |bridge| Ok(bridge.refs == first_bridge.refs && bridge.sense == first_bridge.sense),
-            "compare Parasolid face uses",
-        )? {
-            drop(group);
+    for (_, group) in ctx.admit_iter(owned_faces, "resolve Parasolid face owners")? {
+        let selected = group.value;
+        drop(group);
+        if let Some(first_bridge) = selected {
             let first_face = scratch.with_storage(|| walk_face(ctx, first_bridge, t))?;
-            scratch.with_storage(|| ctx.push_vec(&mut faces, first_face, "collect Parasolid faces"))?;
+            scratch
+                .with_storage(|| ctx.push_vec(&mut faces, first_face, "collect Parasolid faces"))?;
         } else {
             ambiguous_face_owners += 1;
         }
@@ -246,7 +250,7 @@ pub(super) fn decode_graph(
     // Edge attr -> [(coedge attr, start vuse, next coedge's start vuse)] from
     // the ring walk. The ring order supplies a boundary edge's second endpoint;
     // a reciprocal twin supplies it for a two-sided edge.
-    let mut edge_incidence = BTreeMap::<u16, GraphGroup<'_, (u16, u16, u16)>>::new();
+    let mut edge_incidence = BTreeMap::<u16, GraphGroup<'_, Vec<(u16, u16, u16)>>>::new();
 
     for f in ctx.admit_iter(&faces, "index Parasolid face edge incidences")? {
         for (_loop_attr, ring) in
@@ -271,28 +275,43 @@ pub(super) fn decode_graph(
                 if edge_attr != 0 {
                     let value = (ce_attr, start_vuse, next_vuse);
                     let mut group = GraphGroup {
-                        values: Vec::new(),
+                        value: Vec::new(),
                         storage: ctx.reserve_scoped(0, "hold Parasolid edge incidence group")?,
                     };
-                    match group.storage.with_storage(|| ctx.entry_btree_map(
-                        &mut edge_incidence, edge_attr, "index Parasolid edge incidences",
-                    ))? {
+                    match group.storage.with_storage(|| {
+                        ctx.entry_btree_map(
+                            &mut edge_incidence,
+                            edge_attr,
+                            "index Parasolid edge incidences",
+                        )
+                    })? {
                         std::collections::btree_map::Entry::Vacant(slot) => {
-                            ctx.push_scoped_vec(&mut group.storage, &mut group.values, value, "collect Parasolid edge incidences")?;
+                            ctx.push_scoped_vec(
+                                &mut group.storage,
+                                &mut group.value,
+                                value,
+                                "collect Parasolid edge incidences",
+                            )?;
                             slot.insert(group);
                         }
                         std::collections::btree_map::Entry::Occupied(mut slot) => {
                             let group = slot.get_mut();
-                            ctx.push_scoped_vec(&mut group.storage, &mut group.values, value, "collect Parasolid edge incidences")?;
+                            ctx.push_scoped_vec(
+                                &mut group.storage,
+                                &mut group.value,
+                                value,
+                                "collect Parasolid edge incidences",
+                            )?;
                         }
                     }
                 }
             }
         }
     }
-    let (forward_coedges, forward_storage) = ctx.with_scoped_storage(
-        "hold Parasolid forward coedge stage", || forward_coedges_by_edge(ctx, t.coedges()),
-    )?;
+    let (forward_coedges, forward_storage) = ctx
+        .with_scoped_storage("hold Parasolid forward coedge stage", || {
+            forward_coedges_by_edge(ctx, t.coedges())
+        })?;
 
     // Kept-entity sets, so only chain-reachable records are emitted.
     let mut kept_vertices: BTreeSet<u16> = BTreeSet::new();
@@ -300,10 +319,8 @@ pub(super) fn decode_graph(
     // Edge attr -> (canonical start vuse, canonical end vuse, curve carrier attr).
     let mut edge_ends: BTreeMap<u16, (u16, u16, u16)> = BTreeMap::new();
 
-    for (edge_attr, group) in
-        ctx.admit_iter(edge_incidence, "resolve Parasolid edge incidences")?
-    {
-        let incidences = &group.values;
+    for (edge_attr, group) in ctx.admit_iter(edge_incidence, "resolve Parasolid edge incidences")? {
+        let incidences = &group.value;
         let canonical = canonical_coedge_attr(
             ctx,
             edge_attr,
@@ -1049,7 +1066,12 @@ pub(super) fn decode_graph(
                         let mut needs_selection = false;
                         for choices in candidates {
                             for attr in choices.into_iter().flatten() {
-                                if !procedural_supports.support_is_published(ctx, attr, carriers, &hidden_supports)? {
+                                if !procedural_supports.support_is_published(
+                                    ctx,
+                                    attr,
+                                    carriers,
+                                    &hidden_supports,
+                                )? {
                                     needs_selection = true;
                                     break;
                                 }
@@ -1108,7 +1130,13 @@ pub(super) fn decode_graph(
                         return Ok(None);
                     };
                     if resolved_offset.is_some() {
-                        if procedural_supports.blend_supports_need_emission(ctx, [first_attr, second_attr], carriers, &hidden_supports)? != Some(true) {
+                        if procedural_supports.blend_supports_need_emission(
+                            ctx,
+                            [first_attr, second_attr],
+                            carriers,
+                            &hidden_supports,
+                        )? != Some(true)
+                        {
                             return Ok(None);
                         }
                     } else {

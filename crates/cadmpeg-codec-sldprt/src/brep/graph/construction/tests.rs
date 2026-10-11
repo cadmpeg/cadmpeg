@@ -233,8 +233,8 @@ fn face_edge_groups_borrow_one_cached_set_per_source_face() {
 
 #[test]
 fn selected_published_blend_supports_skip_the_support_walk() {
-    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
     use crate::test_support::parasolid::{offset_surface_carrier, plane_carrier};
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
     let setup = cadmpeg_test_support::service_decode_context();
     let mut bytes = plane_carrier(181, [0.; 3], [0., 0., 1.], [1., 0., 0.]);
     bytes.extend(offset_surface_carrier(182, 181, 0.001));
@@ -254,8 +254,22 @@ fn selected_published_blend_supports_skip_the_support_walk() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut indexes = super::ProceduralSupportIndexes::new(&ctx, &faces, &loops, &tables).unwrap();
-    let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "check Parasolid surface support", None);
-    assert_eq!(indexes.blend_supports_need_emission(&ctx, [182, 181], crate::brep::index::view::CarrierView::Retained(&carriers), &hidden).unwrap(), Some(false));
+    let probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "check Parasolid surface support",
+        None,
+    );
+    assert_eq!(
+        indexes
+            .blend_supports_need_emission(
+                &ctx,
+                [182, 181],
+                crate::brep::index::view::CarrierView::Retained(&carriers),
+                &hidden
+            )
+            .unwrap(),
+        Some(false)
+    );
     drop(probe);
     drop(indexes);
     ctx.finish_session().unwrap();
