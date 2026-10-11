@@ -523,8 +523,7 @@ fn prototype_local_frame_rejects_nonfinite_origin() {
     );
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::prototype_local_frame(ctx, &record))
-            .expect("frame selection admission"),
+        super::prototype_local_frame(&record),
         None
     );
 }
@@ -570,8 +569,7 @@ fn prototype_local_frame_rejects_nonfinite_unused_support_values() {
     );
 
     assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| super::prototype_local_frame(ctx, &record))
-            .expect("frame selection admission"),
+        super::prototype_local_frame(&record),
         None
     );
 }
