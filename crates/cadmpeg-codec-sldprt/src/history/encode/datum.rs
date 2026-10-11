@@ -5,7 +5,7 @@ use super::super::literals::{valid_direction, valid_plane_frame};
 use super::format::{format_length_like, format_point3_mm, format_vector3};
 use super::support::require_same_family;
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
-use crate::history::classify::is_offset_plane;
+use crate::history::classify::is_offset_plane_record;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{
@@ -99,7 +99,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let existing = self.existing;
         let parent_sources = self.parent_sources;
         Ok({
-            if existing.is_some_and(|record| !is_offset_plane(record)) {
+            if match existing {
+                Some(record) => !is_offset_plane_record(record),
+                None => false,
+            } {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes operation family",
                     feature.id

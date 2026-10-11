@@ -373,10 +373,16 @@ macro_rules! loss_namespace {
 }
 
 /// An owned loss namespace other than the reserved shared namespace.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "String", into = "String")]
 struct LossNamespaceName(String);
+
+impl Serialize for LossNamespaceName {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
 
 impl LossNamespaceName {
     fn as_str(&self) -> &str {
@@ -390,12 +396,6 @@ impl TryFrom<String> for LossNamespaceName {
     fn try_from(namespace: String) -> Result<Self, Self::Error> {
         LossNamespace::new(namespace.as_str())?;
         Ok(Self(namespace))
-    }
-}
-
-impl From<LossNamespaceName> for String {
-    fn from(namespace: LossNamespaceName) -> Self {
-        namespace.0
     }
 }
 
@@ -427,7 +427,6 @@ impl LossKind {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        ctx.charge_work(1, operation)?;
         match self {
             Self::Shared { kind } => Ok(Self::Shared { kind: *kind }),
             Self::Namespaced(kind) => Ok(Self::Namespaced(NamespacedLossKind {
@@ -582,7 +581,6 @@ impl LossNote {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        ctx.charge_work(1, operation)?;
         let message = ctx.copy_retained_text(&self.message, operation)?;
         Ok(Self {
             code: self.code.try_clone_for_decode(ctx, operation)?,

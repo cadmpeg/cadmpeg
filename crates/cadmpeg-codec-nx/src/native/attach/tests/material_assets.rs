@@ -78,3 +78,19 @@ fn material_asset_attachment_refuses_work_limit() {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits));
 }
+
+#[test]
+fn material_asset_identity_charges_only_extended_text() {
+    let ir = material_asset_result(|_| {}).unwrap();
+    let asset = &ir.model.assets[0];
+    let native = asset.native_ref.as_deref().unwrap();
+    assert_eq!(asset.id.as_str(), format!("{native}:asset"));
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "NX material asset identity",
+        |cap| material_asset_result(|policy| policy.limits.max_retained_bytes = cap),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "NX material asset identity"
+            && limit.additional == cadmpeg_core::decode::u64_from_index(native.len() + ":asset".len())));
+}

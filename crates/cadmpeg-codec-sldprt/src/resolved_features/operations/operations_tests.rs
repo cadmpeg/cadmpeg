@@ -80,43 +80,43 @@ fn split_line_limit_error(
 
 #[test]
 fn split_line_enrichment_refuses_collection_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let error = split_line_limit_error(|policy| policy.limits.max_collection_items = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "collect SLDPRT split-line objects")
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "collect SLDPRT split-line objects",
+        |cap| {
+            Err::<(), cadmpeg_core::CodecError>(split_line_limit_error(|policy| {
+                policy.limits.max_collection_items = cap;
+            }))
+        },
     );
 }
 
 #[test]
-fn split_line_enrichment_refuses_retained_limit() {
+fn split_line_enrichment_refuses_scoped_storage_limit() {
     use cadmpeg_core::decode::ResourceDimension;
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "retain SLDPRT split-line observation ID",
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "collect SLDPRT split-line objects",
         |cap| {
             Err::<(), cadmpeg_core::CodecError>(split_line_limit_error(|policy| {
-                policy.limits.max_retained_bytes = cap;
+                policy.limits.max_materialized_bytes = cap;
             }))
         },
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "retain SLDPRT split-line observation ID")
+        if limit.dimension == ResourceDimension::MaterializedBytes
+            && limit.operation == "collect SLDPRT split-line objects")
     );
 }
 
 #[test]
 fn split_line_enrichment_refuses_work_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-    let error = split_line_limit_error(|policy| policy.limits.max_work_units = 0);
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "scan SLDPRT split-line objects")
-    );
+    let error = crate::test_support::work_refusal_at("scan SLDPRT split-line objects", |ctx| {
+        let (mut histories, lanes) = split_line_limit_input();
+        enrich_history_split_lines(ctx, &mut histories, &lanes)
+    });
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
 
 #[test]
@@ -156,7 +156,7 @@ fn feature_operation_binding_refuses_history_index_collection_limit() {
     assert!(matches!(error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "index SLDPRT extrusion history"));
+                && limit.operation == "index SLDPRT operation history"));
 }
 
 #[test]
@@ -237,6 +237,14 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
         sketch_entities: Vec::new(),
     };
 
+    crate::test_support::work_refusal_at("index SLDPRT split-line observations", |ctx| {
+        let mut candidates = vec![history.clone()];
+        enrich_history_split_lines(ctx, &mut candidates, std::slice::from_ref(&lane))
+    });
+    crate::test_support::work_refusal_at("index SLDPRT split-line tools", |ctx| {
+        let mut candidates = vec![history.clone()];
+        enrich_history_split_lines(ctx, &mut candidates, std::slice::from_ref(&lane))
+    });
     let mut projected = vec![history.clone()];
     enrich_history_split_lines(&ctx, &mut projected, std::slice::from_ref(&lane))
         .expect("enrich split line");
@@ -340,26 +348,82 @@ fn inline_operation_binds_join_and_cut_to_their_family_words() {
         Some(1)
     );
     assert_eq!(
-        feature_inline_operation(&lane, &name),
+        feature_inline_operation(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
         Some(BooleanOp::Join)
     );
     // The 0x01ca family supplies subtraction when its operation byte is zero.
     lane.native_payload[trailer + 4] = 0xca;
-    assert_eq!(feature_inline_operation(&lane, &name), Some(BooleanOp::Cut));
-    assert!(feature_inline_operation_fields(&lane, &name).is_some());
+    assert_eq!(
+        feature_inline_operation(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
+        Some(BooleanOp::Cut)
+    );
+    assert!(feature_inline_operation_fields(
+        &cadmpeg_test_support::service_decode_context(),
+        &lane,
+        &name
+    )
+    .unwrap()
+    .is_some());
     lane.native_payload[trailer + 6] = 2;
-    assert_eq!(feature_inline_operation(&lane, &name), Some(BooleanOp::Cut));
+    assert_eq!(
+        feature_inline_operation(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
+        Some(BooleanOp::Cut)
+    );
     lane.native_payload[trailer + 4] = 0x40;
-    assert_eq!(feature_inline_operation(&lane, &name), None);
+    assert_eq!(
+        feature_inline_operation(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
+        None
+    );
     lane.native_payload[trailer + 5] = 2;
     assert_eq!(
-        feature_inline_operation_fields(&lane, &name),
+        feature_inline_operation_fields(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
         Some((0x0240, 2))
     );
-    assert_eq!(feature_inline_operation(&lane, &name), None);
+    assert_eq!(
+        feature_inline_operation(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
+        None
+    );
     lane.native_payload[trailer + 5] = 1;
     lane.native_payload[trailer + 6] = 3;
-    assert_eq!(feature_inline_operation_fields(&lane, &name), None);
+    assert_eq!(
+        feature_inline_operation_fields(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
+        None
+    );
 
     lane.native_payload[trailer + 6] = 0;
     lane.native_payload[trailer + 16..trailer + 19].fill(0);
@@ -368,19 +432,45 @@ fn inline_operation_binds_join_and_cut_to_their_family_words() {
     lane.native_payload[trailer + 24..trailer + 26].copy_from_slice(&0x0185u16.to_le_bytes());
     lane.native_payload[trailer + 38..trailer + 40].copy_from_slice(&0x019fu16.to_le_bytes());
     assert_eq!(
-        feature_inline_operation(&lane, &name),
+        feature_inline_operation(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
         Some(BooleanOp::Join)
     );
     lane.native_payload[trailer + 26..trailer + 30].copy_from_slice(&70_321u32.to_le_bytes());
     assert_eq!(
-        feature_inline_operation(&lane, &name),
+        feature_inline_operation(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
         Some(BooleanOp::Join)
     );
     lane.native_payload[trailer + 26..trailer + 30].fill(0xff);
-    assert_eq!(feature_inline_operation_fields(&lane, &name), None);
+    assert_eq!(
+        feature_inline_operation_fields(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
+        None
+    );
     lane.native_payload[trailer + 26..trailer + 30].fill(0);
     lane.native_payload[trailer + 38..trailer + 40].fill(0);
-    assert_eq!(feature_inline_operation_fields(&lane, &name), None);
+    assert_eq!(
+        feature_inline_operation_fields(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
+        None
+    );
 
     lane.native_payload[trailer + 4] = 0xca;
     lane.native_payload[trailer + 16..trailer + 40].fill(0);
@@ -388,10 +478,23 @@ fn inline_operation_binds_join_and_cut_to_their_family_words() {
     lane.native_payload[trailer + 20..trailer + 24].copy_from_slice(&360u32.to_le_bytes());
     lane.native_payload[trailer + 34..trailer + 36].copy_from_slice(&435u16.to_le_bytes());
     assert_eq!(
-        feature_inline_operation_fields(&lane, &name),
+        feature_inline_operation_fields(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
         Some((0x01ca, 0))
     );
-    assert_eq!(feature_inline_operation(&lane, &name), Some(BooleanOp::Cut));
+    assert_eq!(
+        feature_inline_operation(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
+        Some(BooleanOp::Cut)
+    );
 
     // The common sparse form has its marker at +22 and final token at +38.
     lane.native_payload[trailer + 16..trailer + 40].fill(0);
@@ -400,15 +503,33 @@ fn inline_operation_binds_join_and_cut_to_their_family_words() {
     lane.native_payload[trailer + 24..trailer + 26].copy_from_slice(&0x04efu16.to_le_bytes());
     lane.native_payload[trailer + 38..trailer + 40].copy_from_slice(&0x008bu16.to_le_bytes());
     assert_eq!(
-        feature_inline_operation_fields(&lane, &name),
+        feature_inline_operation_fields(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
         Some((0x01ca, 2))
     );
-    assert_eq!(feature_inline_operation(&lane, &name), Some(BooleanOp::Cut));
+    assert_eq!(
+        feature_inline_operation(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
+        Some(BooleanOp::Cut)
+    );
 
     // An older schema stores u64(1) in the field before the final token.
     lane.native_payload[trailer + 30] = 1;
     assert_eq!(
-        feature_inline_operation_fields(&lane, &name),
+        feature_inline_operation_fields(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
         Some((0x01ca, 2))
     );
 
@@ -419,12 +540,22 @@ fn inline_operation_binds_join_and_cut_to_their_family_words() {
     lane.native_payload[trailer + 24..trailer + 28].copy_from_slice(&0x0252u32.to_le_bytes());
     lane.native_payload[trailer + 38..trailer + 40].copy_from_slice(&0x0097u16.to_le_bytes());
     assert_eq!(
-        feature_inline_operation_fields(&lane, &name),
+        feature_inline_operation_fields(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
         Some((0x01ca, 2))
     );
     lane.native_payload[trailer + 20..trailer + 22].copy_from_slice(&0x00b2u16.to_le_bytes());
     assert_eq!(
-        feature_inline_operation_fields(&lane, &name),
+        feature_inline_operation_fields(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane,
+            &name
+        )
+        .unwrap(),
         Some((0x01ca, 2))
     );
 }

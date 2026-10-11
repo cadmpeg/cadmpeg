@@ -3,7 +3,7 @@
 
 use super::nonempty::NonEmpty;
 use super::state_journal::JournalRow;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,7 +57,6 @@ impl JournalGroup<usize> {
         let [0x04, a, b, 0x00, ..] = tail else {
             return Ok(None);
         };
-        ctx.charge_work(u64_from_index(tail.len()), "scan NX state-journal group")?;
         let selector = [*a, *b];
         let header = if tail.get(4) == Some(&0) {
             Header::Padded
@@ -69,6 +68,7 @@ impl JournalGroup<usize> {
         };
         let mut rows = Vec::new();
         while cursor < end {
+            ctx.charge_work(1, "scan NX state-journal group")?;
             let Some(row) = JournalRow::read(bytes, cursor, end, base) else {
                 break;
             };
@@ -139,5 +139,32 @@ impl JournalGroup {
 
     pub(crate) fn end_offset(&self) -> u64 {
         self.rows.last().end_offset()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::JournalGroup;
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn journal_group_row_scan_refuses_work_before_reading() {
+        let bytes = [0x04, 0x01, 0x02, 0x00, 0x7f];
+        crate::test_support::with_decode_context_over(
+            &bytes,
+            |policy| policy.limits.max_work_units = 0,
+            |ctx| {
+                let error = JournalGroup::read(ctx, &bytes, 0, bytes.len(), 0).unwrap_err();
+                assert!(matches!(
+                    error,
+                    CodecError::ResourceLimit(limit)
+                        if limit.dimension == ResourceDimension::WorkUnits
+                            && limit.used == 0
+                            && limit.additional == 1
+                            && limit.operation == "scan NX state-journal group"
+                ));
+            },
+        );
     }
 }

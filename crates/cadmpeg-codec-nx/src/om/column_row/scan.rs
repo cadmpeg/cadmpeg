@@ -4,7 +4,7 @@
 use super::{IndexRow, LinkedRow, TargetRow};
 use crate::om::compact::LocatedCompactIndex;
 use crate::om::{color::PaletteIndex, discriminators};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 /// Decode complete self-framed index rows from contiguous column storage.
@@ -14,9 +14,9 @@ pub(crate) fn index_rows(
 ) -> Result<Vec<IndexRow>, CodecError> {
     use super::{INDEX_MIDDLE as MIDDLE, INDEX_PREFIX as PREFIX, INDEX_SUFFIX as SUFFIX};
     let mut rows = Vec::new();
-    ctx.charge_work(u64_from_index(bytes.len()), "scan NX index rows")?;
     let mut start = 0;
     while start + PREFIX.len() <= bytes.len() {
+        ctx.charge_work(1, "scan NX index rows")?;
         if bytes.get(start..start + PREFIX.len()) != Some(&PREFIX) {
             start += 1;
             continue;
@@ -72,9 +72,9 @@ pub(crate) fn linked_rows(
 ) -> Result<Vec<LinkedRow>, CodecError> {
     use super::{ROW_SUFFIX as SUFFIX, TARGET_MIDDLE as MIDDLE};
     let mut rows = Vec::new();
-    ctx.charge_work(u64_from_index(bytes.len()), "scan NX linked rows")?;
     let mut start = 0;
     while start + 2 <= bytes.len() {
+        ctx.charge_work(1, "scan NX linked rows")?;
         if bytes.get(start..start + 2) != Some(&super::LINKED_PREFIX) {
             start += 1;
             continue;
@@ -164,9 +164,9 @@ pub(crate) fn target_rows(
     use super::TARGET_PREFIX as PREFIX;
     use super::{ROW_SUFFIX as SUFFIX, TARGET_MIDDLE as MIDDLE};
     let mut rows = Vec::new();
-    ctx.charge_work(u64_from_index(bytes.len()), "scan NX target rows")?;
     let mut start = 0;
     while start + PREFIX.len() <= bytes.len() {
+        ctx.charge_work(1, "scan NX target rows")?;
         if bytes.get(start..start + PREFIX.len()) != Some(&PREFIX) {
             start += 1;
             continue;

@@ -380,3 +380,158 @@ fn surface_start_search_keeps_only_output_storage_after_both_contracts() {
         ctx.finish_session().expect("no retained search storage");
     }
 }
+
+#[test]
+fn surface_distance_bounds_stop_at_the_first_invalid_control() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, WorkBudget};
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let patch = RationalBezierSurfacePatch {
+        u_domain: IncreasingParameterInterval::new([0.0, 1.0]).unwrap(),
+        v_domain: IncreasingParameterInterval::new([0.0, 1.0]).unwrap(),
+        u_degree: 1,
+        v_degree: 1,
+        controls: vec![
+            [0.0, 0.0, 0.0, -1.0],
+            [1.0, 1.0, 1.0, 1.0],
+            [2.0, 2.0, 2.0, 1.0],
+            [3.0, 3.0, 3.0, 1.0],
+        ],
+        _scratch: ctx.reserve_scoped_limit(0, "test patch controls").unwrap(),
+    };
+    assert_eq!(
+        super::super::rational_patch_distance_bounds_with_budget(
+            &ctx, &patch, &WorkBudget::new(1),
+        ).unwrap(),
+        None,
+    );
+    drop(patch);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn surface_segment_validation_preserves_named_work_refusals() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let surface = bilinear_surface();
+    for operation in [
+        "IR surface u span count scan",
+        "IR surface v span count scan",
+        "IR rational surface diagonal finite scan",
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let arena = DecodeArena::new();
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = nurbs_surface_parameter_segment_chord_bound(
+                    &ctx,
+                    &surface,
+                    [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
+                    [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+                );
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                    assert!(matches!(ctx.finish_session(),
+                        Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == *limit));
+                }
+                result
+            },
+        );
+    }
+}
+
+#[test]
+fn surface_patch_grid_lookup_keeps_first_match_at_shared_boundaries() {
+    use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let axis = || NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 2.0, 2.0], false);
+    let points = (0..3)
+        .map(|u| {
+            (0..3)
+                .map(|v| Point3::new(f64::from(u), f64::from(v), 0.0))
+                .collect()
+        })
+        .collect();
+    let surface = NurbsSurface::from_lanes(
+        &ctx,
+        axis(),
+        axis(),
+        NurbsSurfaceLanes::new(points, None),
+        false,
+    )
+    .unwrap()
+    .unwrap();
+    let budget = ctx.work_budget(1_000_000);
+    let patches = super::super::rational_surface_patches_with_budget(&ctx, &surface, &budget)
+        .unwrap()
+        .unwrap();
+    assert_eq!(patches.rows.len(), 4);
+    assert_eq!(patches.v_span_count, 2);
+    for u in [-0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5] {
+        for v in [-0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5] {
+            let expected = patches.rows.iter().find(|patch| {
+                patch.u_domain.lower() <= u
+                    && u <= patch.u_domain.upper()
+                    && patch.v_domain.lower() <= v
+                    && v <= patch.v_domain.upper()
+            });
+            let actual = patches
+                .patch_at_parameters(&ctx, FinitePoint2::new(Point2::new(u, v)).unwrap())
+                .unwrap();
+            assert_eq!(
+                actual.map(std::ptr::from_ref),
+                expected.map(std::ptr::from_ref)
+            );
+        }
+    }
+}
+
+#[test]
+fn surface_patch_split_keeps_first_assembled_controls_through_second_refusal() {
+    use crate::geometry::nurbs::scoped::ScopedRows;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let surface = bilinear_surface();
+    let source_ctx = cadmpeg_test_support::service_decode_context();
+    let source_budget = source_ctx.work_budget(1_000_000);
+    let source =
+        super::super::rational_surface_patches_with_budget(&source_ctx, &surface, &source_budget)
+            .unwrap()
+            .unwrap();
+    // Two header lists hold two line polygons each. Four two-control
+    // polygons and the first four-control assembly stay live at refusal.
+    let live_bytes = 4 * std::mem::size_of::<ScopedRows<'_, [f64; 4]>>()
+        + (4 * 2 + 4) * std::mem::size_of::<[f64; 4]>();
+    for split_u in [false, true] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = u64::try_from(live_bytes).unwrap();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let budget = ctx.work_budget(1_000_000);
+        let limit =
+            super::super::split_rational_surface_patch(&ctx, &source.rows[0], split_u, &budget)
+                .unwrap_err();
+        assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+        assert_eq!(limit.operation, "IR surface patch assembled controls");
+        assert_eq!(limit.used, u64::try_from(live_bytes).unwrap());
+        assert_eq!(
+            limit.additional,
+            4 * u64::try_from(std::mem::size_of::<[f64; 4]>()).unwrap()
+        );
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert_eq!(
+            super::super::split_rational_surface_patch(&ctx, &source.rows[0], split_u, &budget,)
+                .unwrap_err(),
+            limit
+        );
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+        );
+    }
+}

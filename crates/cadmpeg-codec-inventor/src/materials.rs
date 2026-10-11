@@ -27,55 +27,36 @@ pub(crate) fn project_catalog(
     instances: &[ProteinInstanceRecords],
     admitted_entities: &mut u64,
 ) -> Result<MaterialCatalog, CodecError> {
-    let mut records_storage = ctx.reserve_scoped(0, "Inventor material record references")?;
-    let mut instances_iter = ctx.admit_iter(instances, "Inventor material instances")?;
-    let mut instance_records: Option<
-        cadmpeg_core::decode::scan::AdmittedIter<
-            std::slice::Iter<'_, cadmpeg_protein::DecodedRecord>,
-        >,
-    > = None;
-    let records = std::iter::from_fn(move || {
-        (|| -> Result<Option<&cadmpeg_protein::DecodedRecord>, CodecError> {
-            loop {
-                ctx.charge_work(1, "flatten Inventor material records")?;
-                if let Some(records) = instance_records.as_mut() {
-                    if let Some(record) = records.next() {
-                        return Ok(Some(record));
-                    }
-                }
-                instance_records = None;
-                let Some(instance) = instances_iter.next() else {
-                    return Ok(None);
-                };
-                instance_records =
-                    Some(ctx.admit_iter(&instance.records, "Inventor material instance records")?);
-            }
-        })()
-        .transpose()
-    });
-    let records = records_storage
-        .with_storage(|| ctx.try_collect_vec(records, "Inventor material record references"))?;
     let mut guid_counts: BTreeMap<&str, usize> = BTreeMap::new();
     let mut guid_counts_storage = ctx.reserve_scoped(0, "Inventor material GUID counts")?;
-    for record in ctx.admit_iter(&records, "Inventor material GUID count records")? {
-        let guid = record.guid.as_str();
-        guid_counts_storage.with_storage(|| {
-            if let Some(count) =
-                ctx.get_mut_btree_map(&mut guid_counts, guid, "Inventor material GUID counts")?
-            {
-                *count = count
-                    .checked_add(1)
-                    .ok_or_else(|| CodecError::Malformed("Protein GUID count overflows".into()))?;
-            } else {
-                ctx.insert_btree_map(
-                    &mut guid_counts,
-                    guid,
-                    1_usize,
-                    "Inventor material GUID counts",
-                )?;
-            }
-            Ok::<_, CodecError>(())
-        })?;
+    let mut instance_steps = instances.iter();
+    while let Some(instance) = ctx.next_charged(
+        &mut instance_steps,
+        "Inventor material GUID count instances",
+    )? {
+        let mut record_steps = instance.records.iter();
+        while let Some(record) =
+            ctx.next_charged(&mut record_steps, "Inventor material GUID count records")?
+        {
+            let guid = record.guid.as_str();
+            guid_counts_storage.with_storage(|| {
+                if let Some(count) =
+                    ctx.get_mut_btree_map(&mut guid_counts, guid, "Inventor material GUID counts")?
+                {
+                    *count = count.checked_add(1).ok_or_else(|| {
+                        CodecError::Malformed("Protein GUID count overflows".into())
+                    })?;
+                } else {
+                    ctx.insert_btree_map(
+                        &mut guid_counts,
+                        guid,
+                        1_usize,
+                        "Inventor material GUID counts",
+                    )?;
+                }
+                Ok::<_, CodecError>(())
+            })?;
+        }
     }
     let mut duplicate_guids = Vec::new();
     for (guid, count) in ctx.admit_iter(&guid_counts, "Inventor duplicate material GUID scan")? {
@@ -87,57 +68,61 @@ pub(crate) fn project_catalog(
             )?;
         }
     }
-    ctx.stable_sort_by(
-        &mut duplicate_guids,
-        |value| value,
-        Ord::cmp,
-        "Inventor duplicate material GUID sort",
-    )?;
-
+    // The selected GUIDs retain the B-tree's ascending key order.
     let mut textures_storage = ctx.reserve_scoped(0, "Inventor material texture catalog")?;
     let mut textures = BTreeMap::new();
     let mut untyped_distance_properties = 0_usize;
-    for record in ctx.admit_iter(&records, "Inventor material texture records")? {
-        if ctx.get_btree_map(
-            &guid_counts,
-            record.guid.as_str(),
-            "Inventor unique material GUID lookup",
-        )? != Some(&1)
+    let mut instance_steps = instances.iter();
+    while let Some(instance) =
+        ctx.next_charged(&mut instance_steps, "Inventor material texture instances")?
+    {
+        let mut record_steps = instance.records.iter();
+        while let Some(record) =
+            ctx.next_charged(&mut record_steps, "Inventor material texture records")?
         {
-            continue;
-        }
-        let texture = match textures_storage.with_storage(|| texture_asset(ctx, record))? {
-            TextureAssetResult::NotTexture => continue,
-            TextureAssetResult::UnknownDistanceUnit { count } => {
-                untyped_distance_properties = untyped_distance_properties
-                    .checked_add(count)
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::Malformed(
-                            "untyped material distance count overflows".into(),
-                        )
-                    })?;
+            if ctx.get_btree_map(
+                &guid_counts,
+                record.guid.as_str(),
+                "Inventor unique material GUID lookup",
+            )? != Some(&1)
+            {
                 continue;
             }
-            TextureAssetResult::Usable(texture) => texture,
-        };
-        textures_storage.with_storage(|| {
-            let key =
-                ctx.copy_retained_text(&texture.asset_guid, "Inventor material texture key")?;
-            ctx.insert_btree_map(
-                &mut textures,
-                key,
-                texture,
-                "Inventor material texture catalog",
-            )?;
-            Ok::<_, CodecError>(())
-        })?;
+            let texture = match textures_storage.with_storage(|| texture_asset(ctx, record))? {
+                TextureAssetResult::NotTexture => continue,
+                TextureAssetResult::UnknownDistanceUnit { count } => {
+                    untyped_distance_properties = untyped_distance_properties
+                        .checked_add(count)
+                        .ok_or_else(|| {
+                            cadmpeg_core::CodecError::Malformed(
+                                "untyped material distance count overflows".into(),
+                            )
+                        })?;
+                    continue;
+                }
+                TextureAssetResult::Usable(texture) => texture,
+            };
+            // The texture's GUID is its record's GUID; the catalog borrows it.
+            textures_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    &mut textures,
+                    record.guid.as_str(),
+                    texture,
+                    "Inventor material texture catalog",
+                )
+            })?;
+        }
     }
+    drop((guid_counts, guid_counts_storage));
     let mut appearances = Vec::new();
-    for (instance_ordinal, instance) in ctx
-        .admit_iter(instances, "Inventor appearance instances")?
-        .enumerate()
+    let mut instance_steps = instances.iter().enumerate();
+    while let Some((instance_ordinal, instance)) =
+        ctx.next_charged(&mut instance_steps, "Inventor appearance instances")?
     {
-        for record in ctx.admit_iter(&instance.records, "Inventor appearance records")? {
+        let mut record_steps = instance.records.iter();
+        while let Some(record) =
+            ctx.next_charged(&mut record_steps, "Inventor appearance records")?
+        {
             if matches!(
                 record.schema.as_str(),
                 "UnifiedBitmapSchema" | "BumpMapSchema"
@@ -162,13 +147,16 @@ pub(crate) fn project_catalog(
                         )
                     })?;
                 }
-                for guid in ctx.admit_iter(
-                    property.connections(),
+                let mut connection_steps = property.connections().iter();
+                while let Some(guid) = ctx.next_charged(
+                    &mut connection_steps,
                     "Inventor appearance texture connections",
                 )? {
-                    if let Some(texture) =
-                        ctx.get_btree_map(&textures, guid, "Inventor connected texture lookup")?
-                    {
+                    if let Some(texture) = ctx.get_btree_map(
+                        &textures,
+                        guid.as_str(),
+                        "Inventor connected texture lookup",
+                    )? {
                         ctx.push_vec(
                             &mut connected,
                             texture.to_ref(ctx, id)?,
@@ -276,83 +264,24 @@ fn appearance_id(
     instance_ordinal: usize,
     record_ordinal: u64,
 ) -> Result<AppearanceId, CodecError> {
-    let (instance_key, instance_key_storage) = ctx.format_scoped(
-        format_args!("{instance_ordinal}"),
-        "retain Inventor appearance instance key",
-    )?;
-    let (record_key, record_key_storage) = ctx.format_scoped(
-        format_args!("{record_ordinal}"),
-        "retain Inventor appearance record key",
-    )?;
-    let key_len = instance_key
-        .len()
-        .checked_add(record_key.len())
-        .and_then(|len| len.checked_add(1))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("Inventor appearance key length", u64::MAX - 1, u64::MAX)
-        })?;
-    let key_len = cadmpeg_core::decode::u64_from_index(key_len);
-    let (key_text, key_storage) = ctx.format_scoped(
-        format_args!("{instance_key}-{record_key}"),
-        "retain Inventor appearance key",
-    )?;
-    let key_work = key_len.checked_mul(2).ok_or_else(|| {
-        ctx.refuse_codec_limit("validate Inventor appearance key", u64::MAX - 1, u64::MAX)
-    })?;
-    ctx.charge_work(key_work, "validate Inventor appearance key")?;
-    let key = cadmpeg_ir::ids::IdentityKey::try_new(key_text)
-        .map_err(|_| CodecError::malformed("Inventor appearance key is invalid"))?;
-    drop(instance_key);
-    drop(instance_key_storage);
-    drop(record_key);
-    drop(record_key_storage);
-    let namespace = cadmpeg_ir::identity_namespace!("inventor", "protein", "appearance");
-    let namespace_len = namespace
-        .format()
-        .len()
-        .checked_add(namespace.scope().len())
-        .and_then(|len| len.checked_add(namespace.kind().len()))
-        .and_then(|len| len.checked_add(2))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "Inventor appearance namespace length",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?;
-    let id_len = namespace_len
-        .checked_add(key.as_str().len())
-        .and_then(|len| len.checked_add(1))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("Inventor appearance id length", u64::MAX - 1, u64::MAX)
-        })?;
-    let id_text = ctx.format_retained(
-        format_args!(
-            "{}:{}:{}#{}",
-            namespace.format(),
-            namespace.scope(),
-            namespace.kind(),
-            key
-        ),
+    // The literal prefix and two bounded decimal ordinals form a valid key.
+    let instance_digits = usize::try_from(instance_ordinal.max(1).ilog10())
+        .map_err(|_| CodecError::malformed("Inventor numeric value exceeds target range"))?
+        + 1;
+    let record_digits = usize::try_from(record_ordinal.max(1).ilog10())
+        .map_err(|_| CodecError::malformed("Inventor numeric value exceeds target range"))?
+        + 1;
+    let mut id_text = ctx.retained_string(
+        "inventor:protein:appearance#".len() + instance_digits + 1 + record_digits,
         "retain Inventor appearance id",
     )?;
-    let namespace_scan = cadmpeg_core::decode::u64_from_index(namespace_len);
-    let key_scan = cadmpeg_core::decode::u64_from_index(key.as_str().len());
-    let id_scan = cadmpeg_core::decode::u64_from_index(id_len);
-    let identity_work = namespace_scan
-        .checked_add(1)
-        .and_then(|work| work.checked_add(key_scan))
-        .and_then(|work| work.checked_add(id_scan))
-        .and_then(|work| work.checked_add(namespace_scan))
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit("validate Inventor appearance id", u64::MAX - 1, u64::MAX)
-        })?;
-    ctx.charge_work(identity_work, "validate Inventor appearance id")?;
-    let appearance_id = AppearanceId::mint(id_text)
-        .map_err(|_| CodecError::malformed("Inventor appearance id is invalid"))?;
-    drop(key);
-    drop(key_storage);
-    Ok(appearance_id)
+    std::fmt::write(
+        &mut id_text,
+        format_args!("inventor:protein:appearance#{instance_ordinal}-{record_ordinal}"),
+    )
+    .map_err(|_| CodecError::malformed("cannot format Inventor appearance id"))?;
+    AppearanceId::mint(id_text)
+        .map_err(|_| CodecError::malformed("Inventor appearance id is invalid"))
 }
 
 fn library_id(ctx: &DecodeContext<'_>, value: &str) -> Result<Option<String>, CodecError> {
@@ -406,30 +335,24 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[test]
-    fn appearance_identity_refuses_scoped_keys_and_retained_id() {
+    fn appearance_identity_needs_no_scoped_key_and_refuses_retained_id() {
         let arena = DecodeArena::new();
         let bytes = b"fixture";
         let (service, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
             .expect("service context");
         let id = appearance_id(&service, 0, 1).expect("identity admitted");
         assert_eq!(id.as_str(), "inventor:protein:appearance#0-1");
-        // Temporary key strings use scoped bytes; only the composed ID remains retained.
-        for (cap, operation) in [
-            (0, "retain Inventor appearance instance key"),
-            (1, "retain Inventor appearance record key"),
-            (3, "retain Inventor appearance key"),
-        ] {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_materialized_bytes = cap;
-            let (limited, _) =
-                DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("limited context");
-            assert!(matches!(
-                appearance_id(&limited, 0, 1),
-                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                    if limit.dimension == ResourceDimension::MaterializedBytes
-                        && limit.operation == operation
-            ));
-        }
+        // The id is written whole: no temporary key text is needed.
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 0;
+        let (limited, _) =
+            DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("limited context");
+        assert_eq!(
+            appearance_id(&limited, 0, 1)
+                .expect("no scoped storage")
+                .as_str(),
+            id.as_str()
+        );
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes =
             cadmpeg_core::decode::u64_from_index(id.as_str().len()) - 1;
@@ -441,6 +364,114 @@ mod tests {
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.operation == "retain Inventor appearance id"
         ));
+    }
+
+    #[test]
+    fn bounded_appearance_identity_admits_exact_storage_without_work() {
+        for (instance, record, expected) in [
+            (0, 0, "inventor:protein:appearance#0-0"),
+            (9, 10, "inventor:protein:appearance#9-10"),
+            (10, 99, "inventor:protein:appearance#10-99"),
+            (
+                100,
+                u64::MAX,
+                "inventor:protein:appearance#100-18446744073709551615",
+            ),
+        ] {
+            for exact in [false, true] {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = 0;
+                policy.limits.max_materialized_bytes = 0;
+                policy.limits.max_retained_bytes =
+                    cadmpeg_core::decode::u64_from_index(expected.len()) - u64::from(!exact);
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("appearance identity context");
+                let result = appearance_id(&ctx, instance, record);
+                if exact {
+                    assert_eq!(result.expect("exact identity storage").as_str(), expected);
+                    ctx.finish_session()
+                        .expect("bounded identity needs no work");
+                } else {
+                    let error = result.expect_err("identity storage refuses before formatting");
+                    assert!(
+                        matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                        if limit.dimension == ResourceDimension::RetainedBytes
+                            && limit.operation == "retain Inventor appearance id"
+                            && limit.used == 0
+                            && limit.additional == cadmpeg_core::decode::u64_from_index(expected.len()))
+                    );
+                    assert!(
+                        matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                        if matches!(&error, cadmpeg_core::CodecError::ResourceLimit(original) if original == &limit))
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn material_catalog_refuses_only_the_next_source_step() {
+        for count in [1_usize, 512] {
+            let instances: Vec<_> = (0..count)
+                .map(|_| ProteinInstanceRecords {
+                    entry_name: String::new(),
+                    records: Vec::new(),
+                    rejected: Vec::new(),
+                })
+                .collect();
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("material catalog context");
+            let error = project_catalog(&ctx, &instances, &mut 0)
+                .err()
+                .expect("first instance step refuses");
+            assert!(
+                matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "Inventor material GUID count instances"
+                    && limit.used == 0 && limit.additional == 1)
+            );
+            assert!(
+                matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if matches!(&error, cadmpeg_core::CodecError::ResourceLimit(original) if original == &limit))
+            );
+        }
+    }
+
+    #[test]
+    fn empty_material_catalog_admits_three_source_end_probes() {
+        for allowance in [2_u64, 3] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = allowance;
+            policy.limits.max_materialized_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty catalog context");
+            let result = project_catalog(&ctx, &[], &mut 0);
+            if allowance == 2 {
+                let error = result.err().expect("appearance source end probe refuses");
+                assert!(
+                    matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::WorkUnits
+                        && limit.operation == "Inventor appearance instances"
+                        && limit.used == 2 && limit.additional == 1)
+                );
+                assert!(
+                    matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                    if matches!(&error, cadmpeg_core::CodecError::ResourceLimit(original) if original == &limit))
+                );
+            } else {
+                let catalog = result.expect("three flat source end probes fit");
+                assert!(catalog.appearances.is_empty());
+                assert!(catalog.duplicate_guids.is_empty());
+                assert_eq!(catalog.untyped_distance_properties, 0);
+                ctx.finish_session()
+                    .expect("empty catalog needs no scratch");
+            }
+        }
     }
 
     fn project_fixture(
@@ -566,7 +597,8 @@ mod tests {
         }];
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 2;
+        // The texture's GUID count takes the one slot before the catalog entry.
+        policy.limits.max_collection_items = 1;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("fixture fits input limit");
         assert!(matches!(
@@ -582,7 +614,8 @@ mod tests {
         let instances = one_connected_texture();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 5;
+        // Two GUID counts and one texture catalog entry precede the connection.
+        policy.limits.max_collection_items = 3;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("fixture fits input limit");
         assert!(matches!(
@@ -606,7 +639,8 @@ mod tests {
         let instances = one_float_appearance();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 2;
+        // The appearance's GUID count takes the one slot before its property map.
+        policy.limits.max_collection_items = 1;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("fixture fits input limit");
         assert!(matches!(
@@ -695,6 +729,27 @@ mod tests {
         );
         assert!(catalog.appearances[0].textures.is_empty());
         assert_eq!(catalog.duplicate_guids, ["duplicate-texture"]);
+    }
+
+    #[test]
+    fn duplicate_material_guids_retain_tree_key_order() {
+        let texture = |guid: &str| DecodedRecord {
+            ordinal: 0,
+            logical_offset: 0,
+            schema: "UnifiedBitmapSchema".into(),
+            guid: guid.into(),
+            base: String::new(),
+            asset_lib_id: String::new(),
+            properties: BTreeMap::new(),
+        };
+        let instances = [ProteinInstanceRecords {
+            entry_name: "AssetData/InstanceProperties.bin".into(),
+            records: vec![texture("z"), texture("a"), texture("z"), texture("a")],
+            rejected: Vec::new(),
+        }];
+        let catalog = project_fixture(&instances).expect("duplicate-only texture catalog");
+        assert_eq!(catalog.duplicate_guids, ["a", "z"]);
+        assert!(catalog.appearances.is_empty());
     }
 
     #[test]

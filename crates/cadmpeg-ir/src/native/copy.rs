@@ -26,26 +26,25 @@ pub(super) fn insert(
     key: String,
     value: Value,
 ) -> Result<(), CodecError> {
-    let work = key
-        .len()
-        .checked_add(1)
-        .and_then(|bytes| {
-            fields
-                .len()
-                .checked_add(1)
-                .and_then(|count| bytes.checked_mul(count))
-        })
-        .map(u64_from_index)
+    // Map keeps its B-tree private. One entry search visits its search path.
+    let len = fields.len();
+    let (_, comparisons) = super::map_search_bound(len);
+    let work = u64_from_index(key.len())
+        .checked_mul(comparisons)
         .ok_or_else(|| {
             ctx.refuse_codec_limit("insert copied native field", u64::MAX - 1, u64::MAX)
         })?;
     ctx.charge_work(work, "insert copied native field")?;
-    if !fields.contains_key(&key) {
-        ctx.admit_btree_node_storage::<String, Value>(fields.len(), "insert copied native field")?;
-        ctx.charge_collection_items(1, "insert copied native field")?;
-        ctx.charge_work(1, "insert copied native field")?;
+    match fields.entry(key) {
+        serde_json::map::Entry::Vacant(entry) => {
+            ctx.admit_btree_node_storage::<String, Value>(len, "insert copied native field")?;
+            ctx.charge_collection_items(1, "insert copied native field")?;
+            entry.insert(value);
+        }
+        serde_json::map::Entry::Occupied(mut entry) => {
+            entry.insert(value);
+        }
     }
-    fields.insert(key, value);
     Ok(())
 }
 

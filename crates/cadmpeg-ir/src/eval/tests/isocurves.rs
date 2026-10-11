@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::eval::admission::EvaluationAdmission;
-use crate::eval::{nurbs_surface_isocurve, nurbs_surface_isoline, IsolineDirection};
+use crate::eval::nurbs_surface_isocurve;
 use crate::features::FinitePoint3;
 use crate::geometry::nurbs::{
     NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes, SurfaceParameterAxis, WeightedPole3,
@@ -60,10 +60,6 @@ fn isocurve_returns_original_refusals_in_every_used_dimension() {
             nurbs_surface_isocurve(&ctx, &surface, SurfaceParameterAxis::U, 0.5).unwrap_err();
         assert_eq!(original.dimension, dimension);
         assert_eq!(original.operation, operation);
-        assert_eq!(
-            nurbs_surface_isoline(&ctx, &surface, IsolineDirection::ConstantU, f64::NAN),
-            Err(original)
-        );
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
         );
@@ -77,7 +73,7 @@ fn isocurve_admits_actual_copies_and_constructor_visits_once() {
         // Each of two poles visits once and copies its point. Rational
         // output also copies its homogeneous sums and derives weights.
         // Both constructors charge two raw-pole rows and the collector's
-        // terminal `None`; rational output also charges two pole/weight pairings.
+        // terminal `None`; rational output admits two poles and two weights before pairing.
         // Four knots copy eight bytes each, then receive four finiteness
         // visits and three adjacent-order comparisons.
         let work = 2 * (1 + std::mem::size_of::<Point3>())
@@ -85,7 +81,7 @@ fn isocurve_admits_actual_copies_and_constructor_visits_once() {
             + 3
             + 7
             + if rational {
-                2 * std::mem::size_of::<super::super::rational::Homogeneous>() + 22 + 2
+                2 * std::mem::size_of::<super::super::rational::Homogeneous>() + 22 + 4
             } else {
                 0
             };

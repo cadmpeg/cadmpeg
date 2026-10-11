@@ -409,13 +409,17 @@ mod tests {
                 Point3::new(0.0, 0.0, 0.0),
                 Point2::new(f64::NAN, 0.0)
             ),
-            Err(original)
+            Ok(None)
         );
         assert_eq!(
             nurbs_surface_witness_distance(&ctx, &surface, Point3::new(0.0, 0.0, 0.0)),
             Err(original)
         );
         assert_eq!(ctx.resource_refusal(), Some(original));
+        // A non-finite parameter needs no evaluation work; the session owns
+        // the refusal even when that call returns no candidate.
+        assert!(matches!(ctx.finish_session(),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == original));
     }
 
     #[test]

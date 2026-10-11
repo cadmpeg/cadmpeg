@@ -6,7 +6,7 @@ use serde_value::Value;
 fn brep_value_walks_preserve_work_refusals() {
     for operation in [
         "walk F3D BREP owned IDs",
-        "identity rewrite scalar",
+        "identity rewrite sequence",
         "walk F3D BREP references",
     ] {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -17,7 +17,7 @@ fn brep_value_walks_preserve_work_refusals() {
                 "walk F3D BREP owned IDs" => {
                     super::super::graph_ops::collect_owned_ids(ctx, &value, &mut Vec::new())
                 }
-                "identity rewrite scalar" => {
+                "identity rewrite sequence" => {
                     let mut map = IdentityMap::new(ctx, operation, |source: &str| {
                         ctx.copy_retained_text(source, operation)
                     })

@@ -202,7 +202,6 @@ impl FullRoundFilletGroup {
                 FullRoundSideSelection::Automatic | FullRoundSideSelection::Unresolved => None,
             }
         }
-        admission.work(0)?;
         let first = explicit(&side_one_faces);
         let second = explicit(&side_two_faces);
         for (first, second) in [

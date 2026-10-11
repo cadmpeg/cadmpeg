@@ -16,10 +16,7 @@
 //! directly. Untyped carriers use opaque IR geometry while resolvable topology
 //! remains available.
 
-use self::index::scan_carriers;
-use self::spline::patch_nurbs_curve;
-
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{
     CircleCurve, ConeSurface, CylinderSurface, EllipseCurve, LineCurve, PlaneSurface,
@@ -45,6 +42,7 @@ pub(crate) mod evaluation;
 mod index;
 mod intersection;
 mod offset;
+pub(crate) mod patch;
 pub(crate) mod spline;
 mod subset;
 mod sweep;
@@ -209,13 +207,12 @@ pub(crate) struct SurfaceCarrier {
     orientation_reversed: bool,
 }
 
-fn analytic_marker_candidates(body: &[u8], hdr: usize) -> Option<Vec<usize>> {
-    let mut candidates = Vec::with_capacity(2);
-
+/// Marker positions of the partition and deltas framings that open at `hdr`.
+/// Both positions are fixed offsets, so a header has at most two candidates.
+fn analytic_marker_candidates(body: &[u8], hdr: usize) -> Option<[Option<usize>; 2]> {
     let partition_marker = hdr.checked_add(analytic::MARKER)?;
-    if matches!(body.get(partition_marker), Some(0x2b | 0x2d)) {
-        candidates.push(partition_marker);
-    }
+    let partition =
+        matches!(body.get(partition_marker), Some(0x2b | 0x2d)).then_some(partition_marker);
 
     // Deltas records encode each of the five references as [hi][lo][01].
     // The marker follows that fixed-width roster, so its position is not a
@@ -229,11 +226,9 @@ fn analytic_marker_candidates(body: &[u8], hdr: usize) -> Option<Vec<usize>> {
             .and_then(|at| body.get(at))
             == Some(&1)
     });
-    if tripled_refs && matches!(body.get(tripled_marker), Some(0x2b | 0x2d)) {
-        candidates.push(tripled_marker);
-    }
-
-    Some(candidates)
+    let tripled = (tripled_refs && matches!(body.get(tripled_marker), Some(0x2b | 0x2d)))
+        .then_some(tripled_marker);
+    Some([partition, tripled])
 }
 
 fn parse_carrier_at_marker(
@@ -253,20 +248,19 @@ fn parse_carrier_at_marker(
     for value in vals.iter_mut() {
         *value = view.f64_be()?;
     }
-    if vals.iter().any(|value| !value.is_finite()) {
+    if vals.iter().any(|value| !value.is_finite())
+        || !valid_carrier_frame(tt, vals)
+        || !valid_carrier_scalars(tt, vals)
+    {
         return None;
     }
-    if !valid_carrier_frame(tt, vals) || !valid_carrier_scalars(tt, vals) {
-        return None;
-    }
-
     decode_carrier_values(tt, vals, attr, off, end)
 }
 
 /// Try to parse a compact analytic carrier whose tag byte pair `00 TT` begins at
 /// `off`. The partition and deltas framings are both considered, and a carrier
 /// is returned only when exactly one framing passes all structural and geometry
-/// invariants.
+/// invariants. The work is bounded by two framings of at most twelve values.
 pub(crate) fn parse_carrier(body: &[u8], off: usize) -> Option<Carrier> {
     if body.get(off) != Some(&0x00) {
         return None;
@@ -281,6 +275,7 @@ pub(crate) fn parse_carrier(body: &[u8], off: usize) -> Option<Carrier> {
     let attr = View::u16_be_at(body, hdr)?;
     let mut candidates = analytic_marker_candidates(body, hdr)?
         .into_iter()
+        .flatten()
         .filter_map(|marker_at| parse_carrier_at_marker(body, off, tt, attr, n, marker_at));
     let carrier = candidates.next()?;
     candidates.next().is_none().then_some(carrier)
@@ -383,73 +378,6 @@ fn decode_carrier_values(
         _ => return None,
     };
     Some(g)
-}
-
-/// Return the typed curve carried by one stream-local attribute.
-pub(crate) fn curve_by_attr(
-    ctx: &DecodeContext<'_>,
-    body: &[u8],
-    attr: u16,
-) -> Result<Option<CurveGeometry>, cadmpeg_core::CodecError> {
-    let carriers = scan_carriers(ctx, body)?;
-    carriers
-        .curve(attr)
-        .map(|indexed| {
-            indexed
-                .carrier()
-                .geometry
-                .try_clone_for_decode(ctx, "SLDPRT patch curve geometry copy")
-        })
-        .transpose()
-}
-
-/// Replace the scalar run of one compact analytic carrier.
-pub(crate) fn patch_compact_values(
-    ctx: &DecodeContext<'_>,
-    body: &mut [u8],
-    attr: u16,
-    values: &[f64],
-) -> Result<bool, cadmpeg_core::CodecError> {
-    let carriers = scan_carriers(ctx, body)?;
-    let Some(indexed) = carriers.curve(attr) else {
-        return Ok(false);
-    };
-    let carrier = indexed.carrier();
-    let Some(size) = values.len().checked_mul(8) else {
-        return Ok(false);
-    };
-    let Some(start) = carrier.end.checked_sub(size) else {
-        return Ok(false);
-    };
-    let Some(bytes) = body.get_mut(start..carrier.end) else {
-        return Ok(false);
-    };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(size),
-        "patch SLDPRT compact values",
-    )?;
-    for (slot, value) in bytes.chunks_exact_mut(8).zip(values) {
-        slot.copy_from_slice(&value.to_be_bytes());
-    }
-    Ok(true)
-}
-
-/// Patch one stream-local NURBS curve without changing its storage shape.
-pub(crate) fn patch_nurbs_by_attr(
-    ctx: &DecodeContext<'_>,
-    body: &mut [u8],
-    attr: u16,
-    new: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
-) -> Result<bool, cadmpeg_core::CodecError> {
-    let carriers = scan_carriers(ctx, body)?;
-    let Some(indexed) = carriers.curve(attr) else {
-        return Ok(false);
-    };
-    let carrier = indexed.carrier();
-    let Some(SolvedCurveGeometry::Nurbs(old)) = carrier.geometry.solved() else {
-        return Ok(false);
-    };
-    Ok(patch_nurbs_curve(ctx, body, carrier.offset, old, new, 0.001)?.is_some())
 }
 
 #[cfg(test)]
@@ -568,8 +496,8 @@ mod tests {
 
         let carriers = scan_carriers(&ctx, &bytes).expect("carrier scan");
 
-        assert!(carriers.curve(7).is_some());
-        assert!(carriers.curve(8).is_some());
+        assert!(carriers.curve(&ctx, 7).expect("carrier lookup").is_some());
+        assert!(carriers.curve(&ctx, 8).expect("carrier lookup").is_some());
     }
 
     #[test]

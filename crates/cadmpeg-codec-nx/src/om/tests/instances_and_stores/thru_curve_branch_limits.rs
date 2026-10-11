@@ -25,6 +25,7 @@ fn branch_refusal(
                 crate::om::operation_record::OperationPayload::new(&bytes, 0, "THRU_CURVE")
                     .unwrap();
             crate::om::thru_curve_branches::thru_curve_payload_branch_group(ctx, record)
+                .map(|(value, _storage)| value)
                 .unwrap_err()
         },
     )
@@ -48,10 +49,24 @@ fn thru_curve_branches_refuse_collection_limit() {
 }
 
 #[test]
-fn thru_curve_branches_refuse_retained_limit() {
-    let error = branch_refusal(|policy| policy.limits.max_retained_bytes = 0);
+fn thru_curve_branches_refuse_scoped_limit() {
+    let bytes = branch_bytes();
+    let error = crate::test_support::resource_refusal_at(
+        &bytes,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "NX thru-curve branch members",
+        |ctx| {
+            let record =
+                crate::om::operation_record::OperationPayload::new(&bytes, 0, "THRU_CURVE")
+                    .unwrap();
+            crate::om::thru_curve_branches::thru_curve_payload_branch_group(ctx, record)
+                .map(|(value, _storage)| value)
+        },
+    );
     assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+            && limit.operation == "NX thru-curve branch members")
     );
 }
 

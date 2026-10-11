@@ -222,7 +222,12 @@ fn offset_store_named_point_test<'a>(
 ) -> Option<crate::om::OffsetStoreNamedPoint> {
     crate::test_support::with_decode_context(|ctx| offset_store_named_point(ctx, blocks)).unwrap()
 }
-use crate::om::operation_body_reference;
+fn operation_body_reference(
+    record: crate::om::operation_record::OperationBodyInput<'_>,
+) -> Option<crate::om::OperationBodyReference> {
+    crate::test_support::with_decode_context(|ctx| crate::om::operation_body_reference(ctx, record))
+        .unwrap()
+}
 fn operation_body_references(
     record: crate::om::operation_record::OperationBodyInput<'_>,
 ) -> Vec<crate::om::OperationBodyReference> {
@@ -446,7 +451,7 @@ fn om_common_frame_route_refuses_retained_limit() {
         |ctx| {
             let record =
                 crate::om::operation_record::OperationPayload::new(bytes, 0, "FSET").unwrap();
-            let error = crate::om::operation_terminal_frame(ctx, record).unwrap_err();
+            let error = crate::om::operation_common_frames(ctx, record).unwrap_err();
             assert!(
                 matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
             );
@@ -1028,7 +1033,11 @@ fn om_hole_package_lane_retains_the_exact_four_block_group() {
     ];
     let record =
         crate::om::operation_record::OperationPayload::new(&payload, 200, "HOLE PACKAGE").unwrap();
-    let lane = hole_package_construction_group_lane(record).unwrap();
+    let lane = crate::test_support::with_decode_context(|ctx| {
+        hole_package_construction_group_lane(ctx, record)
+    })
+    .unwrap()
+    .unwrap();
     assert_eq!(lane.offset, 1);
     assert_eq!(lane.selector.get(), 0x46);
     assert_eq!(lane.branch.get(), 0x11);
@@ -1049,15 +1058,19 @@ fn om_hole_package_lane_retains_the_exact_four_block_group() {
 
     let mut mismatched_branch = payload;
     mismatched_branch[17] = 0x12;
-    assert!(hole_package_construction_group_lane(
-        crate::om::operation_record::OperationPayload::new(
-            &mismatched_branch,
-            record.payload_offset(),
-            record.name()
-        )
+    assert!(
+        crate::test_support::with_decode_context(|ctx| hole_package_construction_group_lane(
+            ctx,
+            crate::om::operation_record::OperationPayload::new(
+                &mismatched_branch,
+                record.payload_offset(),
+                record.name()
+            )
+            .unwrap()
+        ))
         .unwrap()
-    )
-    .is_none());
+        .is_none()
+    );
 }
 
 #[test]
@@ -1745,50 +1758,69 @@ fn om_fset_reference_graph_requires_exact_groups_and_bounds() {
         crate::om::operation_record::OperationPayload::new(payload, 100, "FSET").unwrap()
     }
 
-    let payload = [
-        0x01, 0x13, 0x3c, b'T', b';', b':', b'S', b'5', b'6', b'7', b'R', b'8', b'9', b'3', 0x90,
-        0x19, 0x40, 0x90, 0x19, 0x41, 0x3e, 0x90, 0x19, 0x30, 0x90, 0x19, 0x31, 0x90, 0x19, 0x32,
-        0x00, 0x03, 0x00,
-    ];
-    let graph = crate::om::fset_references::FsetReferences::read(record(&payload)).unwrap();
-    assert_eq!(graph.selector(), "T;:S567R893");
-    assert_eq!(graph.offset(), 100);
-    assert_eq!(
-        graph
+    crate::test_support::with_decode_context(|ctx| {
+        let payload = [
+            0x01, 0x13, 0x3c, b'T', b';', b':', b'S', b'5', b'6', b'7', b'R', b'8', b'9', b'3',
+            0x90, 0x19, 0x40, 0x90, 0x19, 0x41, 0x3e, 0x90, 0x19, 0x30, 0x90, 0x19, 0x31, 0x90,
+            0x19, 0x32, 0x00, 0x03, 0x00,
+        ];
+        let graph = crate::om::fset_references::FsetReferences::read(ctx, record(&payload))
+            .unwrap()
+            .unwrap();
+        assert_eq!(graph.selector(), "T;:S567R893");
+        assert_eq!(graph.offset(), 100);
+        assert_eq!(
+            graph
+                .first()
+                .each_ref()
+                .map(|(index, ())| u32::from(*index)),
+            [6464, 6465]
+        );
+        assert_eq!(
+            graph
+                .second()
+                .each_ref()
+                .map(|(index, ())| u32::from(*index)),
+            [6448, 6449, 6450]
+        );
+        let raw = graph
             .first()
             .each_ref()
-            .map(|(index, ())| u32::from(*index)),
-        [6464, 6465]
-    );
-    assert_eq!(
-        graph
-            .second()
-            .each_ref()
-            .map(|(index, ())| u32::from(*index)),
-        [6448, 6449, 6450]
-    );
-    let raw = graph
-        .first()
-        .each_ref()
-        .map(|(index, ())| crate::om::fset_references::word_reference_bytes(*index));
-    assert_eq!(
-        raw.each_ref().map(<[u8; 3]>::as_slice),
-        [[0x90, 0x19, 0x40].as_slice(), [0x90, 0x19, 0x41].as_slice(),]
-    );
+            .map(|(index, ())| crate::om::fset_references::word_reference_bytes(*index));
+        assert_eq!(
+            raw.each_ref().map(<[u8; 3]>::as_slice),
+            [[0x90, 0x19, 0x40].as_slice(), [0x90, 0x19, 0x41].as_slice(),]
+        );
 
-    let mut wrong_length = payload;
-    wrong_length[1] -= 1;
-    assert!(crate::om::fset_references::FsetReferences::read(record(&wrong_length)).is_none());
-    let mut wrong_suffix = payload;
-    wrong_suffix[31] = 0x04;
-    assert!(crate::om::fset_references::FsetReferences::read(record(&wrong_suffix)).is_none());
-    let mut wrong_reference_form = payload;
-    wrong_reference_form[14] = 0xf1;
-    assert!(
-        crate::om::fset_references::FsetReferences::read(record(&wrong_reference_form)).is_none()
-    );
-    let duplicate = [payload.as_slice(), payload.as_slice()].concat();
-    assert!(crate::om::fset_references::FsetReferences::read(record(&duplicate)).is_none());
+        let mut wrong_length = payload;
+        wrong_length[1] -= 1;
+        assert!(
+            crate::om::fset_references::FsetReferences::read(ctx, record(&wrong_length))
+                .unwrap()
+                .is_none()
+        );
+        let mut wrong_suffix = payload;
+        wrong_suffix[31] = 0x04;
+        assert!(
+            crate::om::fset_references::FsetReferences::read(ctx, record(&wrong_suffix))
+                .unwrap()
+                .is_none()
+        );
+        let mut wrong_reference_form = payload;
+        wrong_reference_form[14] = 0xf1;
+        assert!(crate::om::fset_references::FsetReferences::read(
+            ctx,
+            record(&wrong_reference_form)
+        )
+        .unwrap()
+        .is_none());
+        let duplicate = [payload.as_slice(), payload.as_slice()].concat();
+        assert!(
+            crate::om::fset_references::FsetReferences::read(ctx, record(&duplicate))
+                .unwrap()
+                .is_none()
+        );
+    });
 }
 
 #[test]
@@ -1936,3 +1968,20 @@ fn om_size_frame_uses_validated_internal_record_area_pointer() {
 
 mod operation_reference_lanes;
 mod record_area_and_operation_frames;
+
+#[test]
+fn terminal_frame_scratch_does_not_require_retained_storage() {
+    let bytes = one_common_frame_payload();
+    crate::test_support::with_decode_context_over(
+        bytes,
+        |policy| policy.limits.max_retained_bytes = 0,
+        |ctx| {
+            let record =
+                crate::om::operation_record::OperationPayload::new(bytes, 0, "FSET").unwrap();
+            let terminal = crate::om::operation_terminal_frame(ctx, record)
+                .unwrap()
+                .unwrap();
+            assert_eq!(terminal, operation_terminal_frame(record).unwrap());
+        },
+    );
+}

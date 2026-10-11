@@ -42,7 +42,6 @@ fn spatial_oriented_endpoints(
     reversed: bool,
 ) -> Result<Option<(crate::math::Point3, crate::math::Point3)>, cadmpeg_core::decode::ResourceLimit>
 {
-    ctx.charge_work_limit(0, "geometry helper boundary")?;
     let endpoints = match geometry.definition() {
         SpatialSketchGeometryDefinition::Line { start, end } => (start.get(), end.get()),
         SpatialSketchGeometryDefinition::Arc {
@@ -687,53 +686,7 @@ pub(super) fn check_sketches(
                 ),
             )?;
         }
-        let mut entities = Scratch::new(ctx)?;
-        match constraint.definition.kind() {
-            SpatialConstraint::Native { .. } => {}
-            SpatialConstraint::SplineGroup { entities: members }
-            | SpatialConstraint::RepeatedLineLength {
-                entities: members, ..
-            } => entities.extend(members, |member| member)?,
-            SpatialConstraint::Coincident { first, second }
-            | SpatialConstraint::Tangent { first, second }
-            | SpatialConstraint::PointDistance { first, second, .. }
-            | SpatialConstraint::ParallelLineDistance { first, second, .. } => {
-                entities.extend(&[first, second], |entity| *entity)?;
-            }
-            SpatialConstraint::PointLineDistance { point, line, .. } => {
-                entities.extend(&[point, line], |entity| *entity)?;
-            }
-            SpatialConstraint::LineLength { entity, .. }
-            | SpatialConstraint::ParallelToDirection { entity, .. } => entities.push(entity)?,
-            SpatialConstraint::RepeatedParallelLineDistance { pairs, .. } => {
-                for pair in pairs {
-                    ctx.charge_work(1, "spatial constraint pair scan")?;
-                    entities.extend(&[&pair.first, &pair.second], |entity| *entity)?;
-                }
-            }
-            SpatialConstraint::ParallelLineSetDistance { first, second, .. } => {
-                entities.extend(first, |entity| entity)?;
-                entities.extend(second, |entity| entity)?;
-            }
-            SpatialConstraint::Offset {
-                sources, results, ..
-            } => {
-                entities.extend(sources, |entity| entity)?;
-                entities.extend(results, |entity| entity)?;
-            }
-            SpatialConstraint::Symmetric {
-                first,
-                second,
-                axis,
-            } => entities.extend(&[first, second, axis], |entity| *entity)?,
-            SpatialConstraint::Midpoint { point, entity } => {
-                entities.extend(&[point, entity], |entity| *entity)?;
-            }
-            SpatialConstraint::PointOnSurface { point, surface } => {
-                entities.extend(&[point, surface], |entity| *entity)?;
-            }
-        }
-        for &entity in ctx.admit_iter(&*entities, "spatial constraint member scan")? {
+        visit_spatial_constraint_entities(ctx, constraint.definition.kind(), |entity| {
             if !same_spatial_owner(
                 ctx,
                 spatial_geometry
@@ -753,7 +706,8 @@ pub(super) fn check_sketches(
                     ),
                 )?;
             }
-        }
+            Ok(())
+        })?;
         match constraint.definition.kind() {
             SpatialConstraint::Native { .. } => {}
             SpatialConstraint::Coincident { first, second }
@@ -1589,10 +1543,9 @@ pub(super) fn check_sketches(
                 format_args!("{message}"),
             )?;
         }
-        let loci = constraint_loci(ctx, constraint.definition.kind())?;
-        for locus in ctx.admit_iter(&*loci, "sketch constraint locus scan")? {
+        visit_constraint_loci(ctx, constraint.definition.kind(), |locus| {
             let Some(entity_geometry) = geometry.get(ctx, locus_entity(locus).as_str())? else {
-                continue;
+                return Ok(());
             };
             let valid = match locus {
                 SketchLocus::Entity(_) => true,
@@ -1623,8 +1576,8 @@ pub(super) fn check_sketches(
                     ),
                 )?;
             }
-        }
-        drop(loci);
+            Ok(())
+        })?;
         if let Constraint::Offset {
             pairs, distance, ..
         } = constraint.definition.kind()
@@ -1948,18 +1901,29 @@ fn sketch_locus_point(
     })
 }
 
-fn constraint_loci<'ctx, 'definition>(
-    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+fn visit_constraint_loci<'definition>(
+    ctx: &DecodeContext<'_>,
     definition: &'definition Constraint,
-) -> Result<Scratch<'ctx, &'definition SketchLocus>, cadmpeg_core::CodecError> {
+    mut visit: impl FnMut(&'definition SketchLocus) -> Result<(), CodecError>,
+) -> Result<(), CodecError> {
     use crate::sketches::SketchDistanceMeasurement;
-
-    let mut loci = Scratch::new(ctx)?;
     match definition {
-        Constraint::CoincidentLoci { loci: members } => loci.extend(members, |locus| locus)?,
+        Constraint::CoincidentLoci { loci: members }
+        | Constraint::Group { elements: members }
+        | Constraint::Text {
+            elements: members, ..
+        } => {
+            let mut loci = members.iter();
+            while loci.len() != 0 {
+                ctx.charge_work(1, "sketch constraint locus scan")?;
+                if let Some(locus) = loci.next() {
+                    visit(locus)?;
+                }
+            }
+        }
         Constraint::Midpoint { point, .. }
         | Constraint::PointOnObject { point, .. }
-        | Constraint::PointCoordinateValues { point, .. } => loci.push(point)?,
+        | Constraint::PointCoordinateValues { point, .. } => visit(point)?,
         Constraint::Symmetric { first, second, .. }
         | Constraint::DistanceLoci { first, second, .. }
         | Constraint::DistanceLociValue { first, second, .. }
@@ -1967,36 +1931,119 @@ fn constraint_loci<'ctx, 'definition>(
         | Constraint::PolarDistance { first, second, .. }
         | Constraint::HorizontalDistance { first, second, .. }
         | Constraint::VerticalDistance { first, second, .. } => {
-            loci.extend(&[first, second], |locus| *locus)?;
+            visit(first)?;
+            visit(second)?;
         }
         Constraint::EqualDistance { first, second } => {
-            loci.extend(
-                &[&first.first, &first.second, &second.first, &second.second],
-                |locus| *locus,
-            )?;
+            for locus in [&first.first, &first.second, &second.first, &second.second] {
+                visit(locus)?;
+            }
         }
         Constraint::RepeatedDistance { measurements, .. } => {
-            for measurement in measurements {
+            let mut measurements = measurements.iter();
+            while measurements.len() != 0 {
                 ctx.charge_work(1, "sketch distance measurement scan")?;
-                let (first, second) = match measurement {
-                    SketchDistanceMeasurement::Distance { first, second }
-                    | SketchDistanceMeasurement::Horizontal { first, second }
-                    | SketchDistanceMeasurement::Vertical { first, second } => (first, second),
-                };
-                loci.extend(&[first, second], |locus| *locus)?;
+                if let Some(measurement) = measurements.next() {
+                    let (first, second) = match measurement {
+                        SketchDistanceMeasurement::Distance { first, second }
+                        | SketchDistanceMeasurement::Horizontal { first, second }
+                        | SketchDistanceMeasurement::Vertical { first, second } => (first, second),
+                    };
+                    visit(first)?;
+                    visit(second)?;
+                }
             }
         }
         Constraint::SnellsLaw {
             incident,
             refracted,
             ..
-        } => loci.extend(&[incident, refracted], |locus| *locus)?,
-        Constraint::Group { elements } | Constraint::Text { elements, .. } => {
-            loci.extend(elements, |locus| locus)?;
+        } => {
+            visit(incident)?;
+            visit(refracted)?;
         }
         _ => {}
     }
-    Ok(loci)
+    Ok(())
+}
+
+fn visit_spatial_constraint_entities<'definition, U, L>(
+    ctx: &DecodeContext<'_>,
+    definition: &'definition SpatialConstraint<U, L>,
+    mut visit: impl FnMut(&'definition crate::sketches::SpatialSketchEntityId) -> Result<(), CodecError>,
+) -> Result<(), CodecError> {
+    match definition {
+        SpatialConstraint::Native { .. } => {}
+        SpatialConstraint::SplineGroup { entities: members }
+        | SpatialConstraint::RepeatedLineLength {
+            entities: members, ..
+        } => {
+            let mut members = members.iter();
+            while members.len() != 0 {
+                ctx.charge_work(1, "spatial constraint member scan")?;
+                if let Some(member) = members.next() {
+                    visit(member)?;
+                }
+            }
+        }
+        SpatialConstraint::Coincident { first, second }
+        | SpatialConstraint::Tangent { first, second }
+        | SpatialConstraint::PointDistance { first, second, .. }
+        | SpatialConstraint::ParallelLineDistance { first, second, .. } => {
+            visit(first)?;
+            visit(second)?;
+        }
+        SpatialConstraint::PointLineDistance { point, line, .. } => {
+            visit(point)?;
+            visit(line)?;
+        }
+        SpatialConstraint::LineLength { entity, .. }
+        | SpatialConstraint::ParallelToDirection { entity, .. } => visit(entity)?,
+        SpatialConstraint::RepeatedParallelLineDistance { pairs, .. } => {
+            let mut pairs = pairs.iter();
+            while pairs.len() != 0 {
+                ctx.charge_work(1, "spatial constraint pair scan")?;
+                if let Some(pair) = pairs.next() {
+                    visit(&pair.first)?;
+                    visit(&pair.second)?;
+                }
+            }
+        }
+        SpatialConstraint::ParallelLineSetDistance { first, second, .. }
+        | SpatialConstraint::Offset {
+            sources: first,
+            results: second,
+            ..
+        } => {
+            for members in [first, second] {
+                let mut members = members.iter();
+                while members.len() != 0 {
+                    ctx.charge_work(1, "spatial constraint member scan")?;
+                    if let Some(member) = members.next() {
+                        visit(member)?;
+                    }
+                }
+            }
+        }
+        SpatialConstraint::Symmetric {
+            first,
+            second,
+            axis,
+        } => {
+            visit(first)?;
+            visit(second)?;
+            visit(axis)?;
+        }
+        SpatialConstraint::Midpoint { point, entity } => {
+            visit(point)?;
+            visit(entity)?;
+        }
+        SpatialConstraint::PointOnSurface { point, surface } => {
+            visit(point)?;
+            visit(surface)?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

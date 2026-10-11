@@ -121,7 +121,7 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
         f64::from_bits(0x7ff8_0000_0000_0002).to_be_bytes(),
     ];
 
-    crate::brep::spline::patch_nurbs_surface(&ctx, &mut bytes, 0, old, &new, 0.001)
+    crate::brep::spline::patch::patch_nurbs_surface(&ctx, &mut bytes, 0, old, &new, 0.001)
         .expect("compact NURBS patch fits policy")
         .expect("compact NURBS patch");
 

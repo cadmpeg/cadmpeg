@@ -33,7 +33,7 @@ fn jt_int32_cdp2_refuses_counted_vector_at_caller_limit() {
                 error,
                 cadmpeg_core::CodecError::ResourceLimit(limit)
                     if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                        && limit.operation == "nx JT decoded vector"
+                        && limit.operation == "JT bitlength values"
             ));
         },
     );
@@ -56,7 +56,7 @@ fn jt_int32_cdp2_refuses_retained_vector_at_caller_limit() {
                 error,
                 cadmpeg_core::CodecError::ResourceLimit(limit)
                     if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                        && limit.operation == "nx JT decoded vector"
+                        && limit.operation == "JT bitlength values"
             ));
         },
     );
@@ -88,22 +88,19 @@ fn jt_int32_cdp2_refuses_nesting_at_caller_limit() {
 fn jt_int32_cdp2_refuses_symbol_work_at_caller_limit() {
     let packet = [2, 0, 0, 0, 1, 21, 0, 0, 0, 0x00, 0xc0, 0x16, 0x04];
 
-    crate::test_support::with_decode_context_over(
+    let error = crate::test_support::resource_refusal_at(
         &packet,
-        |policy| {
-            policy.limits.max_work_units = 1;
-        },
-        |ctx| {
-            let error = super::decode_int32_cdp2(ctx, &packet, 0)
-                .expect_err("two decoded integers exceed one work unit");
-            assert!(matches!(
-                error,
-                cadmpeg_core::CodecError::ResourceLimit(limit)
-                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                        && limit.operation == "decode JT bitlength symbols"
-            ));
-        },
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "decode JT bitlength symbols",
+        |ctx| super::decode_int32_cdp2(ctx, &packet, 0),
     );
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "decode JT bitlength symbols"
+                && limit.additional == 1
+    ));
 }
 
 fn frame_int32_cdp2(bytes: &[u8], depth: u8) -> Option<(u32, u8, usize)> {
@@ -178,7 +175,7 @@ fn parse_probability_context(bytes: &[u8]) -> Option<(Vec<super::ProbabilityEntr
         |ctx| {
             super::parse_probability_context(ctx, bytes)
                 .expect("service decode budget")
-                .map(|(entries, length, _reservation)| (entries, length))
+                .map(|(entries, length)| (entries.values, length))
         },
     )
 }
@@ -368,7 +365,7 @@ fn jt_int32_cdp2_refuses_scoped_probability_table_at_caller_limit() {
                 error,
                 cadmpeg_core::CodecError::ResourceLimit(limit)
                     if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-                        && limit.operation == "nx JT decoded vector"
+                        && limit.operation == "JT probability entries"
             ));
         },
     );
@@ -442,7 +439,7 @@ fn jt_int32_cdp2_rejects_an_oversized_declared_count_before_allocation() {
 }
 
 #[test]
-fn jt_arithmetic_decode_bounds_table_lookup_work() {
+fn jt_arithmetic_decode_does_not_admit_unvisited_table_work() {
     let entries = vec![
         super::ProbabilityEntry {
             symbol: 0,
@@ -455,12 +452,11 @@ fn jt_arithmetic_decode_bounds_table_lookup_work() {
         &[],
         |_| {},
         |ctx| {
-            let error =
-                super::decode_arithmetic(ctx, &[], 0, super::MAX_ARITHMETIC_VALUES, &entries)
-                    .err()
-                    .expect("local work limit");
+            // No symbols are searched when the sixteen-bit prefix is absent.
             assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "decode JT arithmetic symbols")
+                super::decode_arithmetic(ctx, &[], 0, super::MAX_ARITHMETIC_VALUES, &entries)
+                    .unwrap()
+                    .is_none()
             );
         },
     );
@@ -680,7 +676,7 @@ fn jt_coordinate_array_refuses_scoped_component_storage() {
                 error,
                 cadmpeg_core::CodecError::ResourceLimit(limit)
                     if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-                        && limit.operation == "nx JT decoded vector"
+                        && limit.operation == "JT coordinate array"
             ));
         },
     );
@@ -953,7 +949,7 @@ fn jt_lossless_component_uses_scoped_storage() {
 }
 
 #[test]
-fn jt_arithmetic_local_work_refusal_is_structured() {
+fn jt_arithmetic_missing_prefix_does_not_refuse_prospective_work() {
     let entries = vec![
         super::ProbabilityEntry {
             symbol: 0,
@@ -966,12 +962,10 @@ fn jt_arithmetic_local_work_refusal_is_structured() {
         &[],
         |_| {},
         |ctx| {
-            let error = super::decode_arithmetic(ctx, &[], 0, 700_000, &entries)
-                .err()
-                .unwrap();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "decode JT arithmetic symbols" && limit.limit == 64_000_000)
-            );
+            // The 70,000,000 prospective visits never occur without code bits.
+            assert!(super::decode_arithmetic(ctx, &[], 0, 700_000, &entries)
+                .unwrap()
+                .is_none());
         },
     );
 }
@@ -1016,15 +1010,14 @@ fn single_symbol_probability_packet(raw: u32) -> (Vec<u8>, Vec<u8>) {
 #[test]
 fn jt_arithmetic_output_copy_refuses_work_before_formation() {
     let (_, packet) = single_symbol_probability_packet(2);
-    crate::test_support::with_decode_context_over(
+    let error = crate::test_support::resource_refusal_at(
         &packet,
-        |policy| policy.limits.max_work_units = 3,
-        |ctx| {
-            let error = super::decode_int32_cdp2(ctx, &packet, 0).unwrap_err();
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits && limit.operation == "form JT arithmetic values")
-            );
-        },
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "form JT arithmetic values",
+        |ctx| super::decode_int32_cdp2(ctx, &packet, 0),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits && limit.operation == "form JT arithmetic values")
     );
 }
 
@@ -1051,16 +1044,115 @@ fn jt_variable_bitlength_delta_cycles_refuse_code_work() {
     }
     crate::test_support::with_decode_context_over(
         &packet,
-        |policy| policy.limits.max_work_units = u64::from(bit_len),
+        // One run visit and three delta visits per cycle precede the final delta.
+        |policy| policy.limits.max_work_units = 1 + 128 * 3,
         |ctx| {
             let error = super::decode_int32_cdp2(ctx, &packet, 0).unwrap_err();
             assert!(
                 matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                    && limit.operation == "decode JT bitlength code bits"
-                    && limit.additional == u64::from(bit_len))
+                    && limit.operation == "read JT bitlength deltas"
+                    && limit.additional == 1)
             );
         },
     );
     assert_eq!(decode_int32_cdp2(&packet, 0), Some((vec![0], packet.len())));
+}
+
+#[test]
+fn msb_fixed_bit_range_needs_no_decode_admission() {
+    let bytes = [0xa5];
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_work_units = 3,
+        |ctx| {
+            let mut bits = super::MsbBitReader::new(&bytes);
+            assert_eq!(bits.read(4), Some(10));
+            assert_eq!(bits.bit, 4);
+            assert_eq!(ctx.resource_refusal(), None);
+        },
+    );
+}
+
+#[test]
+fn code_fixed_bit_range_needs_no_decode_admission() {
+    let bytes = [0, 0, 0, 0];
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_work_units = 3,
+        |ctx| {
+            let mut bits = super::CodeBits {
+                words: &bytes,
+                bit_len: 32,
+                bit: 0,
+            };
+            assert_eq!(bits.read(4), Some(0));
+            assert_eq!(bits.bit, 4);
+            assert_eq!(ctx.resource_refusal(), None);
+        },
+    );
+}
+
+#[test]
+fn signed_fixed_bit_range_needs_no_decode_admission() {
+    let bytes = [0xff; 4];
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_work_units = 3,
+        |ctx| {
+            let mut bits = super::CodeBits {
+                words: &bytes,
+                bit_len: 32,
+                bit: 0,
+            };
+            assert_eq!(bits.read_signed(4), Some(-1));
+            assert_eq!(bits.bit, 4);
+            assert_eq!(ctx.resource_refusal(), None);
+        },
+    );
+}
+
+#[test]
+fn jt_arithmetic_search_refuses_at_the_visited_entry() {
+    let entries = [super::ProbabilityEntry {
+        symbol: 0,
+        occurrence_count: 1,
+        value: 0,
+    }; 65];
+    let code = 0xffff_0000_u32.to_le_bytes();
+    let error = crate::test_support::resource_refusal_at(
+        &code,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "JT probability entry search",
+        |ctx| super::decode_arithmetic(ctx, &code, 32, 1, &entries).map(|_| ()),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "JT probability entry search" && limit.additional == 1)
+    );
+}
+
+#[test]
+fn jt_arithmetic_short_search_admits_large_lane_at_actual_work() {
+    let mut entries = [super::ProbabilityEntry {
+        symbol: 0,
+        occurrence_count: 0,
+        value: 7,
+    }; 65];
+    entries[0].occurrence_count = 1;
+    let code = [0; 4];
+    let count = super::MAX_ARITHMETIC_VALUES;
+    crate::test_support::with_decode_context_over(
+        &code,
+        // Total traversal: 65 entries + terminal step. Symbol traversal:
+        // 1,000,000 + terminal step. One entry search per symbol; no shifts.
+        |policy| policy.limits.max_work_units = 66 + 1_000_001 + 1_000_000,
+        |ctx| {
+            let lane = super::decode_arithmetic(ctx, &code, 16, count, &entries)
+                .unwrap()
+                .unwrap();
+            assert_eq!(lane.len(), count);
+            assert!(lane.iter().all(|value| *value == Some(7)));
+        },
+    );
 }
