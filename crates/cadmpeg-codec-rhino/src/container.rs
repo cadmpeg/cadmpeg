@@ -1454,11 +1454,11 @@ fn scan_with_record_limit<'a>(
             let crate::instances::DefinitionParse {
                 scan: parsed_definitions,
                 opaque_records: parsed_opaque_records,
-                _definition_storage: parsed_definition_storage,
-                _definitions_storage: parsed_definitions_storage,
-                _definition_guards_storage: parsed_definition_guards_storage,
-                _member_storage: parsed_member_storage,
-                _ambiguous_storage: parsed_ambiguous_storage,
+                definition_storage: parsed_definition_storage,
+                definitions_storage: parsed_definitions_storage,
+                definition_guards_storage: parsed_definition_guards_storage,
+                member_storage: parsed_member_storage,
+                ambiguous_storage: parsed_ambiguous_storage,
             } = parse_definitions(ctx, data, &records, archive, chunk.typecode)?;
             definitions = parsed_definitions;
             definition_storage = parsed_definition_storage;
@@ -1478,9 +1478,9 @@ fn scan_with_record_limit<'a>(
             let crate::history::HistoryScan {
                 records: parsed_history,
                 opaque_records: parsed_opaque_records,
-                _records_storage: parsed_history_storage,
-                _record_storage: parsed_record_storage,
-                _record_guards_storage: parsed_record_guards_storage,
+                records_storage: parsed_history_storage,
+                record_storage: parsed_record_storage,
+                record_guards_storage: parsed_record_guards_storage,
             } = crate::history::parse_records(
                 ctx,
                 data,

@@ -51,14 +51,23 @@ fn explicit_display_materials_release_the_replaced_legacy_list() {
         policy.limits.max_materialized_bytes = legacy_bytes;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let parsed = crate::objects::parse_attributes(
-            &ctx, &bytes, 0..bytes.len(), 0..bytes.len(), ArchiveVersion::V4, None,
+            &ctx,
+            &bytes,
+            0..bytes.len(),
+            0..bytes.len(),
+            ArchiveVersion::V4,
+            None,
             &mut Diagnostics::new(),
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(parsed.name, "name");
         assert_eq!(parsed.url, "https://example.test");
-        assert_eq!(parsed.display_materials,
-            [(Uuid::from_wire([3; 16]), Uuid::from_wire([4; 16]))]);
-        let reusable = ctx.reserve_scoped(legacy_bytes, "next legacy display list")
+        assert_eq!(
+            parsed.display_materials,
+            [(Uuid::from_wire([3; 16]), Uuid::from_wire([4; 16]))]
+        );
+        let reusable = ctx
+            .reserve_scoped(legacy_bytes, "next legacy display list")
             .expect("replaced legacy slots released while explicit values stay live");
         drop(reusable);
         ctx.finish_session().unwrap();
@@ -78,13 +87,22 @@ fn empty_explicit_display_materials_retain_the_selected_legacy_list() {
             u64::try_from("name".len() + "https://example.test".len()).unwrap() + legacy_bytes;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let parsed = crate::objects::parse_attributes(
-            &ctx, &bytes, 0..bytes.len(), 0..bytes.len(), ArchiveVersion::V4, None,
+            &ctx,
+            &bytes,
+            0..bytes.len(),
+            0..bytes.len(),
+            ArchiveVersion::V4,
+            None,
             &mut Diagnostics::new(),
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(parsed.display_materials.len(), count);
-        assert!(parsed.display_materials.iter().all(|pair|
-            *pair == (Uuid::from_wire([1; 16]), Uuid::from_wire([2; 16]))));
-        let reusable = ctx.reserve_scoped(legacy_bytes, "next legacy display list")
+        assert!(parsed
+            .display_materials
+            .iter()
+            .all(|pair| *pair == (Uuid::from_wire([1; 16]), Uuid::from_wire([2; 16]))));
+        let reusable = ctx
+            .reserve_scoped(legacy_bytes, "next legacy display list")
             .expect("selected legacy slots transferred out of scratch");
         drop(reusable);
         ctx.finish_session().unwrap();
