@@ -330,13 +330,14 @@ impl<'input, 'ctx, 'arena> Sources<'input, 'ctx, 'arena> {
             None
         } else {
             self.array(multiplicity_attr)?;
-            let eligible = if ctx.get_btree_map(&self.arrays.u16s, &multiplicity_attr, HEADER)?
+            let eligible = if ctx
+                .get_btree_map(&self.arrays.u16s, &multiplicity_attr, HEADER)?
                 .is_some_and(|array| array.span.count >= count)
             {
                 true
-            } else if let Some(headers) = ctx.get_btree_map(
-                &self.arrays.compact, &multiplicity_attr, HEADER,
-            )? {
+            } else if let Some(headers) =
+                ctx.get_btree_map(&self.arrays.compact, &multiplicity_attr, HEADER)?
+            {
                 ctx.any_by(
                     headers,
                     |array| Ok(array.count >= count && array.span::<u16>(self.bytes).is_some()),
@@ -348,7 +349,10 @@ impl<'input, 'ctx, 'arena> Sources<'input, 'ctx, 'arena> {
             if eligible {
                 self.array(knot_attr)?;
                 surface_knot_values(
-                    ctx, &mut output, self.bytes, &self.arrays,
+                    ctx,
+                    &mut output,
+                    self.bytes,
+                    &self.arrays,
                     (knot_attr, multiplicity_attr, count),
                 )?
             } else {

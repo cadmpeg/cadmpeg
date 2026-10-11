@@ -231,7 +231,8 @@ pub(super) fn unique_surface_knot_span(
             let knot_spans = array_spans(ctx, bytes, arrays, 0x80, knot_attr)?;
             let multiplicity_spans = array_spans(ctx, bytes, arrays, 0x7f, multiplicity_attr)?;
             let bounded = |span: ArraySpan, width: usize| {
-                span.count.checked_mul(width)
+                span.count
+                    .checked_mul(width)
                     .and_then(|size| span.start.checked_add(size))
                     .is_some_and(|end| end <= bytes.len())
             };
@@ -239,14 +240,18 @@ pub(super) fn unique_surface_knot_span(
             let ambiguous = ctx.find_map(
                 knot_spans,
                 |knot_span| {
-                    if declared_count == 0 || knot_span.count < declared_count
-                        || !bounded(knot_span, std::mem::size_of::<f64>()) {
+                    if declared_count == 0
+                        || knot_span.count < declared_count
+                        || !bounded(knot_span, std::mem::size_of::<f64>())
+                    {
                         return Ok(None);
                     }
                     if !ctx.any_by(
                         &multiplicity_spans,
-                        |&span| Ok(span.count == knot_span.count
-                            && bounded(span, std::mem::size_of::<u16>())),
+                        |&span| {
+                            Ok(span.count == knot_span.count
+                                && bounded(span, std::mem::size_of::<u16>()))
+                        },
                         "find Parasolid paired patch multiplicity count",
                     )? {
                         return Ok(None);
@@ -256,34 +261,42 @@ pub(super) fn unique_surface_knot_span(
                         &multiplicity_spans,
                         |&multiplicity_span| {
                             if multiplicity_span.count != knot_span.count
-                                || !bounded(multiplicity_span, std::mem::size_of::<u16>()) {
+                                || !bounded(multiplicity_span, std::mem::size_of::<u16>())
+                            {
                                 return Ok(None);
                             }
                             let _multiplicity_storage;
                             let multiplicities;
-                            (multiplicities, _multiplicity_storage) = ctx
-                                .with_scoped_storage("hold Parasolid patch multiplicity values", || {
-                                    u16_values(ctx, bytes, multiplicity_span)
-                                })?;
+                            (multiplicities, _multiplicity_storage) = ctx.with_scoped_storage(
+                                "hold Parasolid patch multiplicity values",
+                                || u16_values(ctx, bytes, multiplicity_span),
+                            )?;
                             let Some(multiplicities) = multiplicities else {
                                 return Ok(None);
                             };
                             let Some(multiplicities) = surface_multiplicity_lane(
-                                ctx, knot_span.count, &multiplicities, declared_count,
+                                ctx,
+                                knot_span.count,
+                                &multiplicities,
+                                declared_count,
                             )?
                             else {
                                 return Ok(None);
                             };
                             if !knots_match {
-                                let mut storage = ctx.reserve_scoped(
-                                    0, "hold Parasolid patch knot values",
-                                )?;
+                                let mut storage =
+                                    ctx.reserve_scoped(0, "hold Parasolid patch knot values")?;
                                 let Some(knots) = storage.with_storage(|| {
-                                    f64_values(ctx, bytes, ArraySpan {
-                                        count: declared_count,
-                                        ..knot_span
-                                    })
-                                })? else {
+                                    f64_values(
+                                        ctx,
+                                        bytes,
+                                        ArraySpan {
+                                            count: declared_count,
+                                            ..knot_span
+                                        },
+                                    )
+                                })?
+                                else {
                                     return Ok(Some(PairStop::KnotMismatch));
                                 };
                                 if !ctx.all_by(
@@ -299,7 +312,8 @@ pub(super) fn unique_surface_knot_span(
                                 multiplicities.iter().zip(old_multiplicities),
                                 |(&native, &expected)| Ok(usize::from(native) == expected),
                                 "match Parasolid patch multiplicity values",
-                            )? && selected.replace(knot_span).is_some() {
+                            )? && selected.replace(knot_span).is_some()
+                            {
                                 return Ok(Some(PairStop::Ambiguous));
                             }
                             Ok(None)
@@ -313,11 +327,7 @@ pub(super) fn unique_surface_knot_span(
                 },
                 "scan Parasolid patch knot spans",
             )?;
-            Ok(if ambiguous.is_some() {
-                None
-            } else {
-                selected
-            })
+            Ok(if ambiguous.is_some() { None } else { selected })
         },
     )?;
     Ok(result)

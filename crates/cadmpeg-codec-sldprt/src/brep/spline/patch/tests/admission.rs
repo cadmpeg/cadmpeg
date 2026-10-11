@@ -12,8 +12,9 @@ use super::super::{
     unique_control_span, unique_surface_knot_span,
 };
 use crate::test_support::parasolid::{
-    compact_counted_nurbs_surface_carrier, compact_f64_array, f64_array, linear_nurbs_curve_carrier,
-    nurbs_curve_carrier, nurbs_surface_carrier, rational_nurbs_surface_carrier, u16_array,
+    compact_counted_nurbs_surface_carrier, compact_f64_array, f64_array,
+    linear_nurbs_curve_carrier, nurbs_curve_carrier, nurbs_surface_carrier,
+    rational_nurbs_surface_carrier, u16_array,
 };
 
 fn probe_policy() -> DecodePolicy {
@@ -163,7 +164,10 @@ fn patch_control_matching_stops_at_each_first_mismatch() {
                 let mut policy = probe_policy();
                 policy.limits.max_work_units = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                assert_eq!(unique_control_span(&ctx, &bytes, &Arrays::default(), 40, old)?, None);
+                assert_eq!(
+                    unique_control_span(&ctx, &bytes, &Arrays::default(), 40, old)?,
+                    None
+                );
                 ctx.charge_work(1, operation)
             },
         );
@@ -334,7 +338,6 @@ fn truncated_patch_surface_wrapper_skips_descriptor_index() {
     drop(probe);
 }
 
-
 fn assert_unpaired_patch_knots(multiplicity_bytes: &[u8]) {
     let mut bytes = f64_array(0x80, 40, &vec![0.0; 100_000]);
     bytes.extend_from_slice(multiplicity_bytes);
@@ -342,10 +345,23 @@ fn assert_unpaired_patch_knots(multiplicity_bytes: &[u8]) {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &probe_policy()).unwrap();
     let operation = "read Parasolid patch scalar values";
     let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-    assert_eq!(unique_surface_knot_span(
-        &ctx, &bytes, &Arrays::default(), (40, 41), 2, &[0.0, 1.0], &[2, 2]
-    ).unwrap(), None);
-    assert!(matches!(ctx.charge_work(1, operation), Err(CodecError::ResourceLimit(_))));
+    assert_eq!(
+        unique_surface_knot_span(
+            &ctx,
+            &bytes,
+            &Arrays::default(),
+            (40, 41),
+            2,
+            &[0.0, 1.0],
+            &[2, 2]
+        )
+        .unwrap(),
+        None
+    );
+    assert!(matches!(
+        ctx.charge_work(1, operation),
+        Err(CodecError::ResourceLimit(_))
+    ));
     drop(probe);
 }
 
@@ -401,11 +417,22 @@ fn patch_knot_matching_reads_only_the_declared_scalar_prefix() {
     policy.limits.max_materialized_bytes = 512 * 1024;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let span = unique_surface_knot_span(
-        &ctx, &bytes, &Arrays::default(), (40, 41), 2, &[0.0, 1.0], &[2, 2],
-    ).unwrap().unwrap();
+        &ctx,
+        &bytes,
+        &Arrays::default(),
+        (40, 41),
+        2,
+        &[0.0, 1.0],
+        &[2, 2],
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(span.count, 100_000);
-    assert_eq!(span.start, super::super::array_body(&bytes, 0, 0x80).unwrap()
-        + crate::layout::bspline_array_header::LEN);
+    assert_eq!(
+        span.start,
+        super::super::array_body(&bytes, 0, 0x80).unwrap()
+            + crate::layout::bspline_array_header::LEN
+    );
     ctx.finish_session().unwrap();
 }
 
@@ -429,7 +456,9 @@ fn patch_knot_ambiguity_skips_payloads_after_the_second_distinct_pair() {
     let boundary = |count, discovery_only| {
         let operation = "test completed patch knot prefix";
         let error = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits, operation, |cap| {
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = probe_policy();
                 policy.limits.max_work_units = cap;
@@ -439,9 +468,18 @@ fn patch_knot_ambiguity_skips_payloads_after_the_second_distinct_pair() {
                     array_spans(&ctx, &bytes, &arrays, 0x80, 40)?;
                     array_spans(&ctx, &bytes, &arrays, 0x7f, 41)?;
                 } else {
-                    assert_eq!(unique_surface_knot_span(
-                        &ctx, &bytes, &arrays, (40, 41), 2, &[0.0, 1.0], &[2, 2]
-                    )?, None);
+                    assert_eq!(
+                        unique_surface_knot_span(
+                            &ctx,
+                            &bytes,
+                            &arrays,
+                            (40, 41),
+                            2,
+                            &[0.0, 1.0],
+                            &[2, 2]
+                        )?,
+                        None
+                    );
                 }
                 ctx.charge_work(1, operation)
             },
@@ -458,9 +496,19 @@ fn patch_knot_ambiguity_skips_payloads_after_the_second_distinct_pair() {
     let mut policy = probe_policy();
     policy.limits.max_work_units = cap;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(unique_surface_knot_span(
-        &ctx, &bytes, &arrays(128), (40, 41), 2, &[0.0, 1.0], &[2, 2]
-    ).unwrap(), None);
+    assert_eq!(
+        unique_surface_knot_span(
+            &ctx,
+            &bytes,
+            &arrays(128),
+            (40, 41),
+            2,
+            &[0.0, 1.0],
+            &[2, 2]
+        )
+        .unwrap(),
+        None
+    );
     ctx.finish_session().unwrap();
 }
 
@@ -483,7 +531,9 @@ fn patch_knot_mismatch_skips_later_multiplicity_payloads() {
     let boundary = |count, discovery_only| {
         let operation = "test completed patch knot mismatch";
         let error = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits, operation, |cap| {
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = probe_policy();
                 policy.limits.max_work_units = cap;
@@ -493,9 +543,18 @@ fn patch_knot_mismatch_skips_later_multiplicity_payloads() {
                     array_spans(&ctx, &bytes, &arrays, 0x80, 40)?;
                     array_spans(&ctx, &bytes, &arrays, 0x7f, 41)?;
                 } else {
-                    assert_eq!(unique_surface_knot_span(
-                        &ctx, &bytes, &arrays, (40, 41), 2, &[2.0, 3.0], &[2, 2],
-                    )?, None);
+                    assert_eq!(
+                        unique_surface_knot_span(
+                            &ctx,
+                            &bytes,
+                            &arrays,
+                            (40, 41),
+                            2,
+                            &[2.0, 3.0],
+                            &[2, 2],
+                        )?,
+                        None
+                    );
                 }
                 ctx.charge_work(1, operation)
             },
@@ -510,9 +569,19 @@ fn patch_knot_mismatch_skips_later_multiplicity_payloads() {
     let mut policy = probe_policy();
     policy.limits.max_work_units = cap;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(unique_surface_knot_span(
-        &ctx, &bytes, &arrays(128), (40, 41), 2, &[2.0, 3.0], &[2, 2],
-    ).unwrap(), None);
+    assert_eq!(
+        unique_surface_knot_span(
+            &ctx,
+            &bytes,
+            &arrays(128),
+            (40, 41),
+            2,
+            &[2.0, 3.0],
+            &[2, 2],
+        )
+        .unwrap(),
+        None
+    );
     ctx.finish_session().unwrap();
     crate::test_support::work_refusal_at("scan Parasolid patch multiplicity spans", |ctx| {
         unique_surface_knot_span(ctx, &bytes, &arrays(128), (40, 41), 2, &[2.0, 3.0], &[2, 2])
@@ -524,10 +593,19 @@ fn two_multiplicity_locations_make_one_patch_knot_span_ambiguous() {
     let mut bytes = f64_array(0x80, 40, &[0.0, 1.0]);
     bytes.extend(u16_array(41, &[2, 2]));
     bytes.extend(u16_array(41, &[2, 2]));
-    assert_eq!(unique_surface_knot_span(
-        &cadmpeg_test_support::service_decode_context(), &bytes, &Arrays::default(),
-        (40, 41), 2, &[0.0, 1.0], &[2, 2]
-    ).unwrap(), None);
+    assert_eq!(
+        unique_surface_knot_span(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+            &Arrays::default(),
+            (40, 41),
+            2,
+            &[0.0, 1.0],
+            &[2, 2]
+        )
+        .unwrap(),
+        None
+    );
 }
 
 fn assert_framed_patch_index_unused(operation: &'static str) {
@@ -541,9 +619,15 @@ fn assert_framed_patch_index_unused(operation: &'static str) {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &probe_policy()).unwrap();
     let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
     let mut patched = bytes.clone();
-    assert_eq!(patch_nurbs_surface(&ctx, &mut patched, 0, surface, surface, 0.001).unwrap(), Some(()));
+    assert_eq!(
+        patch_nurbs_surface(&ctx, &mut patched, 0, surface, surface, 0.001).unwrap(),
+        Some(())
+    );
     assert_eq!(patched, bytes);
-    assert!(matches!(ctx.charge_work(1, operation), Err(CodecError::ResourceLimit(_))));
+    assert!(matches!(
+        ctx.charge_work(1, operation),
+        Err(CodecError::ResourceLimit(_))
+    ));
     drop(probe);
 }
 
@@ -564,22 +648,47 @@ fn assert_rejected_surface_span_skips_replacement(reference: usize) {
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) = carriers[&10].geometry.solved() else {
         panic!("surface");
     };
-    let controls = f64_array(0x2d, 12,
-        &[0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.5]);
-    let control_at = original.windows(controls.len()).position(|w| w == controls).unwrap();
+    let controls = f64_array(
+        0x2d,
+        12,
+        &[0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.5],
+    );
+    let control_at = original
+        .windows(controls.len())
+        .position(|w| w == controls)
+        .unwrap();
     // Decode multiplies coordinates by 1000; scale 2 needs these controls.
-    let controls_at_scale = f64_array(0x2d, 12,
-        &[0.0, 0.0, 0.0, 0.0, 2000.0, 0.0, 2000.0, 0.0, 0.0, 2000.0, 2000.0, 1000.0]);
+    let controls_at_scale = f64_array(
+        0x2d,
+        12,
+        &[
+            0.0, 0.0, 0.0, 0.0, 2000.0, 0.0, 2000.0, 0.0, 0.0, 2000.0, 2000.0, 1000.0,
+        ],
+    );
     original[control_at..control_at + controls.len()].copy_from_slice(&controls_at_scale);
     let mut confirmed = original.clone();
-    assert_eq!(patch_nurbs_surface(&baseline, &mut confirmed, 0, surface, surface, 2.0).unwrap(), Some(()));
+    assert_eq!(
+        patch_nurbs_surface(&baseline, &mut confirmed, 0, surface, surface, 2.0).unwrap(),
+        Some(())
+    );
     assert_eq!(confirmed, original);
     let mut replacement = surface.clone();
-    replacement.try_map_control_points(
-        |_, _| Ok::<_, std::convert::Infallible>(cadmpeg_ir::features::FinitePoint3::new(
-            cadmpeg_ir::math::Point3::new(f64::MAX, 0.0, 0.0)
-        ).unwrap()), &baseline
-    ).unwrap().unwrap();
+    replacement
+        .try_map_control_points(
+            |_, _| {
+                Ok::<_, std::convert::Infallible>(
+                    cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                        f64::MAX,
+                        0.0,
+                        0.0,
+                    ))
+                    .unwrap(),
+                )
+            },
+            &baseline,
+        )
+        .unwrap()
+        .unwrap();
     let mut bytes = original.clone();
     let body = bytes.windows(2).position(|w| w == [0, 0x7e]).unwrap() + 2;
     let at = body + crate::layout::bspline_surface_descriptor::ARRAY_REFS + reference * 2;
@@ -587,13 +696,18 @@ fn assert_rejected_surface_span_skips_replacement(reference: usize) {
     let operation = "test completed rejected surface patch";
     let boundary = |new| {
         let error = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits, operation, |cap| {
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = probe_policy();
                 policy.limits.max_work_units = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
                 let mut patched = bytes.clone();
-                assert_eq!(patch_nurbs_surface(&ctx, &mut patched, 0, surface, new, 2.0)?, None);
+                assert_eq!(
+                    patch_nurbs_surface(&ctx, &mut patched, 0, surface, new, 2.0)?,
+                    None
+                );
                 assert_eq!(patched, bytes);
                 ctx.charge_work(1, operation)
             },
@@ -611,10 +725,16 @@ fn assert_rejected_surface_span_skips_replacement(reference: usize) {
     let mut policy = probe_policy();
     policy.limits.max_work_units = cap;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(patch_nurbs_surface(&ctx, &mut bytes.clone(), 0, surface, surface, 2.0).unwrap(), None);
+    assert_eq!(
+        patch_nurbs_surface(&ctx, &mut bytes.clone(), 0, surface, surface, 2.0).unwrap(),
+        None
+    );
     ctx.finish_session().unwrap();
     let mut bytes = original.clone();
-    assert_eq!(patch_nurbs_surface(&baseline, &mut bytes, 0, surface, &replacement, 2.0).unwrap(), None);
+    assert_eq!(
+        patch_nurbs_surface(&baseline, &mut bytes, 0, surface, &replacement, 2.0).unwrap(),
+        None
+    );
     assert_eq!(bytes, original);
 }
 

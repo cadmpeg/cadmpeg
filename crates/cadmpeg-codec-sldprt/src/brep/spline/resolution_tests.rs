@@ -138,15 +138,11 @@ fn missing_or_disjoint_knot_headers_skip_both_payload_lanes() {
             }
             let mut output = ctx.reserve_scoped(0, "test knot output").unwrap();
             let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-            assert!(super::surface_knot_values(
-                &ctx,
-                &mut output,
-                &bytes,
-                &arrays,
-                (40, 41, 2)
-            )
-            .unwrap()
-            .is_none());
+            assert!(
+                super::surface_knot_values(&ctx, &mut output, &bytes, &arrays, (40, 41, 2))
+                    .unwrap()
+                    .is_none()
+            );
             assert!(arrays.u16s[&41].values.get().is_none());
             if !missing {
                 assert!(arrays.f64s[&40].values.get().is_none());
@@ -224,17 +220,16 @@ fn knot_resolution(ctx: &DecodeContext<'_>, suffix: usize) -> Result<bool, Codec
     }
     arrays.compact.insert(40, compact);
     let mut output = ctx.reserve_scoped(0, "test knot output").unwrap();
-    Ok(
-        super::surface_knot_values(ctx, &mut output, &bytes, &arrays, (40, 41, 2))?
-            .is_some(),
-    )
+    Ok(super::surface_knot_values(ctx, &mut output, &bytes, &arrays, (40, 41, 2))?.is_some())
 }
 
 #[test]
 fn surface_knot_ambiguity_skips_a_long_payload_suffix() {
     let operation = "test completed knot ambiguity prefix";
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits, operation, |cap| {
+        ResourceDimension::WorkUnits,
+        operation,
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = policy();
             policy.limits.max_work_units = cap;
@@ -271,15 +266,11 @@ fn absent_multiplicity_headers_skip_knot_count_index_storage() {
         framed(&bytes, 0, "decode Parasolid scalar array values"),
     );
     let mut output = ctx.reserve_scoped(0, "test knot output").unwrap();
-    assert!(super::surface_knot_values(
-        &ctx,
-        &mut output,
-        &bytes,
-        &arrays,
-        (40, 41, 2)
-    )
-    .unwrap()
-    .is_none());
+    assert!(
+        super::surface_knot_values(&ctx, &mut output, &bytes, &arrays, (40, 41, 2))
+            .unwrap()
+            .is_none()
+    );
     assert!(arrays.f64s[&40].values.get().is_none());
     drop(arrays);
     drop(output);
@@ -305,15 +296,11 @@ fn invalid_surface_multiplicities_skip_output_copy() {
     let mut output = ctx.reserve_scoped(0, "test knot output").unwrap();
     let operation = "copy Parasolid knot multiplicities";
     let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-    assert!(super::surface_knot_values(
-        &ctx,
-        &mut output,
-        &bytes,
-        &arrays,
-        (40, 41, 2)
-    )
-    .unwrap()
-    .is_none());
+    assert!(
+        super::surface_knot_values(&ctx, &mut output, &bytes, &arrays, (40, 41, 2))
+            .unwrap()
+            .is_none()
+    );
     require_armed(&ctx, operation);
     drop(probe);
 }
@@ -359,20 +346,15 @@ fn invalid_multiplicity_count_skips_later_knot_payloads() {
     let mut output = ctx.reserve_scoped(0, "test knot output").unwrap();
     let operation = "decode Parasolid compact values";
     let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-    assert!(super::surface_knot_values(
-        &ctx,
-        &mut output,
-        &bytes,
-        &arrays,
-        (40, 41, 2)
-    )
-    .unwrap()
-    .is_none());
+    assert!(
+        super::surface_knot_values(&ctx, &mut output, &bytes, &arrays, (40, 41, 2))
+            .unwrap()
+            .is_none()
+    );
     assert!(arrays.f64s[&40].values.get().is_none());
     require_armed(&ctx, operation);
     drop(probe);
 }
-
 
 fn assert_invalid_large_multiplicities_skip_knots(trailing: bool) {
     let mut multiplicities = vec![0; 100_000];
@@ -387,18 +369,27 @@ fn assert_invalid_large_multiplicities_skip_knots(trailing: bool) {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy()).unwrap();
     let mut arrays = Arrays::default();
-    arrays.u16s.insert(41, framed(&bytes, 0, "decode Parasolid integer array values"));
-    arrays.f64s.insert(40, framed(&bytes, knot_at, "decode Parasolid scalar array values"));
+    arrays.u16s.insert(
+        41,
+        framed(&bytes, 0, "decode Parasolid integer array values"),
+    );
+    arrays.f64s.insert(
+        40,
+        framed(&bytes, knot_at, "decode Parasolid scalar array values"),
+    );
     let mut output = ctx.reserve_scoped(0, "test invalid knot output").unwrap();
     let operation = "decode Parasolid scalar array values";
     let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-    assert!(super::surface_knot_values(&ctx, &mut output, &bytes, &arrays, (40, 41, 2)).unwrap().is_none());
+    assert!(
+        super::surface_knot_values(&ctx, &mut output, &bytes, &arrays, (40, 41, 2))
+            .unwrap()
+            .is_none()
+    );
     assert!(arrays.f64s[&40].values.get().is_none());
     assert!(arrays.u16s[&41].values.get().is_some());
     require_armed(&ctx, operation);
     drop(probe);
 }
-
 
 #[test]
 fn invalid_large_multiplicity_lanes_skip_the_first_knot_payload() {
@@ -421,18 +412,32 @@ fn assert_ineligible_multiplicity_source_skips_knots(axis: usize, short: bool) {
     }
     let mult_ref = refs + (axis + 1) * 2;
     bytes[mult_ref..mult_ref + 2].copy_from_slice(&65000_u16.to_be_bytes());
-    bytes.extend(f64_array(0x2d, 256, &[0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.5]));
-    for attr in [512, 768] { bytes.extend(u16_array(attr, &[2, 2])); }
-    for attr in [1024, 1280] { bytes.extend(f64_array(0x80, attr, &[0.0, 1.0])); }
-    if short { bytes.extend(u16_array(65000, &[2])); }
+    bytes.extend(f64_array(
+        0x2d,
+        256,
+        &[0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.5],
+    ));
+    for attr in [512, 768] {
+        bytes.extend(u16_array(attr, &[2, 2]));
+    }
+    for attr in [1024, 1280] {
+        bytes.extend(f64_array(0x80, attr, &[0.0, 1.0]));
+    }
+    if short {
+        bytes.extend(u16_array(65000, &[2]));
+    }
     let knot_attr = if axis == 0 { 1024 } else { 1280 };
-    for _ in 0..128 { bytes.extend(compact_f64_array(knot_attr, &[0.0, 1.0])); }
+    for _ in 0..128 {
+        bytes.extend(compact_f64_array(knot_attr, &[0.0, 1.0]));
+    }
     let mut baseline = bytes.clone();
     let knot_ref = refs + (axis + 3) * 2;
     baseline[knot_ref..knot_ref + 2].copy_from_slice(&65001_u16.to_be_bytes());
     let operation = "test completed ineligible axis discovery";
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits, operation, |cap| {
+        ResourceDimension::WorkUnits,
+        operation,
+        |cap| {
             let arena = DecodeArena::new();
             let mut policy = policy();
             policy.limits.max_work_units = cap;
@@ -451,7 +456,9 @@ fn assert_ineligible_multiplicity_source_skips_knots(axis: usize, short: bool) {
     policy.limits.max_work_units = limit.used;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut losses = Vec::new();
-    assert!(super::scan_surface_carriers(&ctx, &bytes, &mut losses).unwrap().is_empty());
+    assert!(super::scan_surface_carriers(&ctx, &bytes, &mut losses)
+        .unwrap()
+        .is_empty());
     assert!(losses.is_empty());
     ctx.finish_session().unwrap();
 }
