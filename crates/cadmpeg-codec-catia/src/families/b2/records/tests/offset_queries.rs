@@ -167,8 +167,8 @@ fn offset_active_slots_reuse_backing_while_one_carrier_stays_live() {
         })
         .collect();
     // An ordered usize set node used 11 key slots, 16 pointer-width slots,
-    // and two alignment slots. The active vector now holds at most two ids
-    // in reusable backing; no such node is allocated on any entry cycle.
+    // and two alignment slots. Prefix counts use one fixed vector; no such
+    // node is allocated on any entry cycle.
     let node_bytes = cadmpeg_core::decode::u64_from_index(29 * std::mem::size_of::<usize>());
     let _probe = RefusalProbe::arm(
         ResourceDimension::MaterializedBytes,
@@ -296,4 +296,60 @@ fn optional_knot_bands_preserve_rounded_unique_bindings() {
     let bindings = crate::test_support::with_service_context(run)
         .expect("rounded knot-band bounds admit the exact match");
     assert_eq!(bindings, vec![Some(0); 9558]);
+}
+
+#[test]
+fn offset_active_removal_preserves_carrier_index_traversal() {
+    use std::borrow::Borrow;
+    use std::cell::RefCell;
+    struct TracedCarrier<'a> {
+        index: usize,
+        value: FreeformSurface,
+        visits: &'a RefCell<Vec<usize>>,
+    }
+    impl Borrow<FreeformSurface> for TracedCarrier<'_> {
+        fn borrow(&self) -> &FreeformSurface {
+            self.visits.borrow_mut().push(self.index);
+            &self.value
+        }
+    }
+    let visits = RefCell::new(Vec::new());
+    let carriers: Vec<_> = [
+        surface([0.0, 10.0], vec![0.0, 0.0, 0.75, 1.0, 1.0]),
+        surface([0.0, 1.0], vec![0.0, 0.0, 1.0, 1.0]),
+        surface([0.1, 10.0], vec![0.0, 0.0, 0.75, 1.0, 1.0]),
+        surface([0.2, 10.0], vec![0.0, 0.0, 0.25, 1.0, 1.0]),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, value)| TracedCarrier {
+        index,
+        value,
+        visits: &visits,
+    })
+    .collect();
+    let query = offset([2.0, 3.0], [0.0, 0.75]);
+    let queries = [query.clone(), query];
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            offset_support_carriers(ctx, &queries, &carriers)
+        })
+        .expect("source-ordered ambiguity"),
+        [None, None]
+    );
+    // The domain build borrows all four carriers. Each query then visits
+    // carriers zero and two, stopping before carrier three's knot searches.
+    assert_eq!(*visits.borrow(), [0, 1, 2, 3, 0, 2, 0, 2]);
+    for operation in [
+        "catia_b2_offset_active_update",
+        "catia_b2_offset_active_search",
+    ] {
+        let refused = crate::test_support::with_work_refusal(operation, |ctx| {
+            offset_support_carriers(ctx, &queries, &carriers)
+        });
+        assert!(
+            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == operation)
+        );
+    }
 }
