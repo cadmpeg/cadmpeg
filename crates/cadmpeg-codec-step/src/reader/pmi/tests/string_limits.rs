@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resource refusals from STEP PMI string fields.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -174,6 +174,8 @@ fn annotation_text_refuses_materialized_limit() {
     let (exchange, _) =
         crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
             .expect("valid text exchange");
+    let setup = cadmpeg_test_support::service_decode_context();
+    let geometry = crate::reader::geometry::decode(&exchange, &mut cadmpeg_ir::CadIr::empty(), &setup).expect("geometry setup");
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::MaterializedBytes,
         "step_string_text",
@@ -183,21 +185,11 @@ fn annotation_text_refuses_materialized_limit() {
             policy.limits.max_materialized_bytes = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
                 .expect("root fits retained policy");
-            let mut visited = BTreeSet::new();
-            let mut candidates = BTreeMap::new();
             let mut storage = ctx.reserve_scoped(0, "text fixture").expect("scope");
             let mut losses = Vec::<LossNote>::new();
-            let reports =
-                std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
-            super::super::collect_annotation_text(
-                1,
-                &exchange,
-                &mut visited,
-                (&mut candidates, &mut storage),
-                (&mut losses, &reports),
-                0,
-                &ctx,
-            )
+            let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
+            let mut index = super::super::discovery::AnnotationDiscoveryIndex::new(&ctx)?;
+            index.text(1, &exchange, &geometry.value, (&mut BTreeSet::new(), &mut storage), (&mut losses, &reports)).map(|_| ())
         },
     );
     assert!(
@@ -240,76 +232,35 @@ fn measure_item_name_refuses_materialized_limit() {
     );
 }
 
-fn annotation_collection_result(limit: u64, consume_text: bool) -> Result<(), CodecError> {
+fn annotation_collection_result(limit: u64) -> Result<(), CodecError> {
     let source = source("#1=TEXT_LITERAL('annotation text',$,'left',.RIGHT.,$);");
-    let (exchange, _) =
-        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
-            .expect("valid text exchange");
+    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid text exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
-        .expect("root fits collection policy");
-    let mut visited = BTreeSet::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy).expect("root fits collection policy");
     let mut storage = ctx.reserve_scoped(0, "text fixture").expect("scope");
     let mut losses = Vec::new();
     let reports = std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope"));
-    if consume_text {
-        super::super::find_annotation_text(
-            1,
-            &exchange,
-            &mut visited,
-            (&mut BTreeSet::new(), &mut storage),
-            (&mut losses, &reports),
-            0,
-            &ctx,
-        )?;
-    } else {
-        super::super::collect_annotation_text(
-            1,
-            &exchange,
-            &mut visited,
-            (&mut BTreeMap::new(), &mut storage),
-            (&mut losses, &reports),
-            0,
-            &ctx,
-        )?;
-    }
-    Ok(())
+    let setup = cadmpeg_test_support::service_decode_context();
+    let geometry = crate::reader::geometry::decode(&exchange, &mut cadmpeg_ir::CadIr::empty(), &setup).expect("geometry setup");
+    let mut index = super::super::discovery::AnnotationDiscoveryIndex::new(&ctx)?;
+    index.text(1, &exchange, &geometry.value, (&mut BTreeSet::new(), &mut storage), (&mut losses, &reports)).map(|_| ())
 }
 
 macro_rules! annotation_collection_limit_test {
-    ($name:ident, $limit:expr, $consume:expr, $operation:literal) => {
+    ($name:ident, $operation:literal) => {
         #[test]
         fn $name() {
-            assert!(matches!(
-                annotation_collection_result($limit, $consume),
-                Err(CodecError::ResourceLimit(refusal))
-                    if refusal.dimension == ResourceDimension::CollectionItems
-                        && refusal.operation == $operation
-            ));
+            let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, $operation, annotation_collection_result);
+            assert!(matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::CollectionItems && refusal.operation == $operation));
         }
     };
 }
 
-annotation_collection_limit_test!(
-    annotation_text_visited_refuses_collection_limit,
-    0,
-    false,
-    "step_pmi_annotation_text_visited"
-);
-annotation_collection_limit_test!(
-    annotation_text_candidates_refuse_collection_limit,
-    1,
-    false,
-    "step_pmi_annotation_text_candidates"
-);
-annotation_collection_limit_test!(
-    annotation_text_used_refuses_collection_limit,
-    2,
-    true,
-    "step_pmi_annotation_text_used"
-);
+annotation_collection_limit_test!(annotation_text_visited_refuses_collection_limit, "STEP carrier graph nodes");
+annotation_collection_limit_test!(annotation_text_candidates_refuse_collection_limit, "STEP annotation text cache");
+annotation_collection_limit_test!(annotation_text_used_refuses_collection_limit, "step_pmi_annotation_text_used");
 
 #[test]
 fn characteristic_measure_values_refuse_collection_limit() {
@@ -327,6 +278,7 @@ fn characteristic_measure_values_refuse_collection_limit() {
         length_scale: 1.0,
         angle_scale: 1.0,
         graph_limit: 64,
+        cache: &std::cell::RefCell::new(super::super::MeasureWalk::new(&ctx).expect("measure cache")),
         losses: (
             &mut losses,
             &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope")),
@@ -335,9 +287,9 @@ fn characteristic_measure_values_refuse_collection_limit() {
     let value = crate::parse::Value::Real(
         cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite fixture"),
     );
-    let mut storage = ctx.reserve_scoped(0, "value fixture").expect("scope");
+    let mut index = super::super::measure_carriers::CharacteristicIndex::new(&ctx).expect("carrier index");
     assert!(matches!(
-        super::super::characteristic_measure_values(&super::super::MeasureParameters::Items(std::slice::from_ref(&value)), &exchange, &mut measurements, &mut storage, &ctx),
+        index.analyze(&super::super::MeasureParameters::Items(std::slice::from_ref(&value)), &exchange, &mut measurements),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_pmi_measure_values"
@@ -493,5 +445,23 @@ fn accepted_fit_fields_charge_retained_storage() {
                 if refusal.dimension == ResourceDimension::RetainedBytes
                     && refusal.operation == "STEP limits-and-fits candidate scratch")
         );
+    }
+}
+
+#[test]
+fn fallback_datum_identifications_admit_retained_storage() {
+    for (records, operation) in [
+        ("#1=DATUM($);", "STEP datum fallback identification"),
+        ("#1=DATUM_TARGET($,$,$,.F.,$);", "STEP datum target fallback identification"),
+    ] {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::RetainedBytes, operation, |cap| pmi_only_result(records, ResourceDimension::RetainedBytes, cap));
+        assert!(matches!(error, CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::RetainedBytes && refusal.operation == operation && refusal.additional == 2));
+        let ir = pmi_only_result(records, ResourceDimension::RetainedBytes, DecodePolicy::service().limits.max_retained_bytes).expect("fallback identification and model slots fit");
+        assert_eq!(ir.model.pmi.len(), 1);
+        match &ir.model.pmi[0].definition {
+            cadmpeg_ir::pmi::PmiDefinition::Datum { identification }
+            | cadmpeg_ir::pmi::PmiDefinition::DatumTarget { identification, .. } => assert_eq!(identification, "#1"),
+            _ => panic!("datum definition"),
+        }
     }
 }
