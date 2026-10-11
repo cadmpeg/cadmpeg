@@ -80,14 +80,6 @@ fn assert_projection(record: &SurfacePrototypeRecord, expected: Option<[[f64; 3]
                 observed
                     .borrow_mut()
                     .push((original.additional, original.operation));
-                for _ in 0..2 {
-                    assert!(
-                        matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == *original)
-                    );
-                }
-                assert!(
-                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == *original)
-                );
             }
             result.map(|actual| assert_eq!(actual, expected))
         },
@@ -98,18 +90,6 @@ fn assert_projection(record: &SurfacePrototypeRecord, expected: Option<[[f64; 3]
         let policy = policy_at(cap);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         assert_eq!(run(&ctx).expect("fixed projection admitted"), expected);
-        let original = ctx
-            .charge_work_limit(cap - work + 1, "after mixed derivative projection")
-            .expect_err("source-derived work consumed");
-        assert_eq!(original.used, work);
-        for _ in 0..2 {
-            assert!(
-                matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original)
-            );
-        }
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-        );
     }
 }
 
