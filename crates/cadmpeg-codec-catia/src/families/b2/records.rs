@@ -4097,7 +4097,7 @@ pub(in crate::families) fn offset_support_carriers(
     }
     let index = ctx.with_scoped_storage("catia_b2_offset_index", || {
         let mut events: [OffsetEvents; 3] = std::array::from_fn(|_| OffsetEvents::new());
-        let mut knot_count = 0usize;
+        let mut knot_count = 0_u128;
         let mut band =
             |lane: usize, index: usize, lower: f64, upper: f64| -> Result<(), CodecError> {
                 for (parameter, event) in [
@@ -4137,7 +4137,11 @@ pub(in crate::families) fn offset_support_carriers(
             let v_tolerance = EPS_OFFSET_PARAMETER_RELATIVE * v_span;
             band(0, index, u_min - u_tolerance, u_max + u_tolerance)?;
             band(1, index, v_min - v_tolerance, v_max + v_tolerance)?;
-            knot_count = knot_count.saturating_add(surface.v_knots().len());
+            knot_count = knot_count
+                .checked_add(u128::from(cadmpeg_core::decode::u64_from_index(
+                    surface.v_knots().len(),
+                )))
+                .ok_or_else(|| CodecError::malformed("CATIA offset knot count overflow"))?;
         }
         if knot_count == 0 {
             return Ok((events, Vec::new(), knot_count));
@@ -4187,15 +4191,32 @@ pub(in crate::families) fn offset_support_carriers(
         }
         for (lane, &required) in required.iter().enumerate() {
             if !evaluate && lane == 2 {
-                let domain_visits = ctx.sum(
+                let (domain_visits, max_candidates) = ctx.fold(
                     &choices,
-                    |total: usize, &(count, _)| Ok(total.saturating_add(count)),
+                    (0_u128, 0_usize),
+                    |(total, maximum), &(count, _)| {
+                        let total = total
+                            .checked_add(u128::from(cadmpeg_core::decode::u64_from_index(count)))
+                            .ok_or_else(|| {
+                                CodecError::malformed("CATIA offset candidate count overflow")
+                            })?;
+                        Ok((total, maximum.max(count)))
+                    },
                     "catia_b2_offset_query_lanes",
                 )?;
+                // Two domain candidates need at most two carrier checks with
+                // binary knot searches. Keep that fixed population off the
+                // knot-band construction route.
+                if max_candidates <= 2 {
+                    continue;
+                }
                 // Tree entries, grouped event slots and two event walks cost
                 // more than a knot visit. Build bands only when the remaining
                 // domain candidates amortize that construction.
-                if domain_visits <= knot_count.saturating_mul(2048) {
+                let knot_cost = knot_count.checked_mul(2048).ok_or_else(|| {
+                    CodecError::malformed("CATIA offset knot index cost overflow")
+                })?;
+                if domain_visits <= knot_cost {
                     continue;
                 }
                 index_storage.with_storage(|| {
