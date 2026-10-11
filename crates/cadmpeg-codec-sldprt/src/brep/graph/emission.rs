@@ -107,13 +107,15 @@ pub(super) fn decode_graph(
             typed_body_records(ctx, typed_facts, t)
         })?;
     let body_records = typed_records.unwrap_or_default();
-    let body_modifiers =
-        unique_body_modifiers(ctx, std::mem::take(&mut entity_facts.body_modifiers))?;
-    let (face_colors, conflicting_face_colors) = unique_face_colors(
-        ctx,
-        std::mem::take(&mut entity_facts.face_colors),
-        std::mem::take(&mut entity_facts.face_color_versions),
-    )?;
+    let (body_modifiers, body_modifier_storage) = entity_facts.take_body_modifiers();
+    let body_modifiers = unique_body_modifiers(ctx, body_modifiers)?;
+    drop(body_modifier_storage);
+    let (face_colors, face_color_storage) = entity_facts.take_face_colors();
+    let (face_color_versions, face_color_version_storage) = entity_facts.take_face_color_versions();
+    let (face_colors, conflicting_face_colors) =
+        unique_face_colors(ctx, face_colors, face_color_versions)?;
+    drop(face_color_storage);
+    drop(face_color_version_storage);
     let face_bridge_sequences = sorted_topology_sequences(
         ctx,
         t.bridges()
@@ -1390,10 +1392,8 @@ pub(super) fn decode_graph(
         };
     }
     let mut bound_faces = BTreeSet::new();
-    for atom in ctx.admit_iter(
-        std::mem::take(&mut entity_facts.face_atoms),
-        "bind Parasolid face atoms",
-    )? {
+    let (face_atoms, face_atom_storage) = entity_facts.take_face_atoms();
+    for atom in ctx.admit_iter(face_atoms, "bind Parasolid face atoms")? {
         let Some(identity) = atom.identity.as_ref() else {
             continue;
         };
@@ -1421,6 +1421,7 @@ pub(super) fn decode_graph(
             )?;
         }
     }
+    drop(face_atom_storage);
     solve_face_orientation(ctx, &mut out)?;
     synthesize_cylinder_seams(ctx, &mut out, &mut annotations, &source_stream)?;
     synthesize_sphere_seams(ctx, &mut out, &mut annotations, &source_stream)?;
