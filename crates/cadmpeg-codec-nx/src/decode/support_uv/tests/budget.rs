@@ -189,7 +189,7 @@ fn validated_candidates_do_not_materialize_chart_samples() {
                 |ctx| {
                     let mut ir = ir.clone();
                     let support = WorkBudget::new(1000);
-                    let geometry = GeometryWorkBudget::from_context(ctx, 100000);
+                    let geometry = GeometryWorkBudget::from_context(ctx, 100_000);
                     let mut storage = ctx.reserve_scoped(0, "nx test witnesses")?;
                     let mut witnesses = BTreeMap::new();
                     invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
@@ -233,7 +233,7 @@ fn depleted_support_budgets_leave_pending_suffixes_unvisited() {
                 let mut ir = ir.clone();
                 let support = WorkBudget::new(if phase == "direct" { 2 } else { 0 });
                 let empty_support = WorkBudget::new(0);
-                let geometry = GeometryWorkBudget::from_context(ctx, 100000);
+                let geometry = GeometryWorkBudget::from_context(ctx, 100_000);
                 let mut witnesses = BTreeMap::new();
                 let mut storage = ctx.reserve_scoped(0, "nx test witnesses").unwrap();
                 let mut sink = EndpointWitnessSink::new(&mut witnesses, &mut storage);
@@ -319,7 +319,7 @@ fn validation_publishes_a_witness_when_the_sample_budget_fits_exactly() {
     with_decode_context(|ctx| {
         let mut ir = ir.clone();
         let support = WorkBudget::new(2);
-        let geometry = GeometryWorkBudget::from_context(ctx, 100000);
+        let geometry = GeometryWorkBudget::from_context(ctx, 100_000);
         let mut storage = ctx.reserve_scoped(0, "nx test witnesses").unwrap();
         let mut witnesses = BTreeMap::new();
         invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
@@ -344,7 +344,7 @@ fn retry_states_release_replaced_payloads_and_use_no_retained_bytes() {
         &[],
         |policy| {
             policy.limits.max_retained_bytes = 0;
-            policy.limits.max_materialized_bytes = 131072;
+            policy.limits.max_materialized_bytes = 131_072;
         },
         |ctx| {
             let mut storage = ctx.reserve_scoped(0, "nx support UV retry table").unwrap();
@@ -364,7 +364,7 @@ fn retry_states_release_replaced_payloads_and_use_no_retained_bytes() {
             drop(attempts);
             drop(storage);
             // Both the node reservation and its final payload lease are released.
-            ctx.reserve_scoped(131072, "nx test retry release proof")
+            ctx.reserve_scoped(131_072, "nx test retry release proof")
                 .unwrap();
         },
     );
@@ -408,7 +408,7 @@ fn retry_routes_admit_geometry_comparisons_after_the_lookup() {
             let mut ir = ir.clone();
             let support = WorkBudget::new(1000);
             let empty_support = WorkBudget::new(0);
-            let geometry = GeometryWorkBudget::from_context(ctx, 100000);
+            let geometry = GeometryWorkBudget::from_context(ctx, 100_000);
             let mut witness_storage = ctx.reserve_scoped(0, "nx test witnesses")?;
             let mut witnesses = BTreeMap::new();
             let mut sink = EndpointWitnessSink::new(&mut witnesses, &mut witness_storage);
