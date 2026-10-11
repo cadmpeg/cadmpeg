@@ -400,7 +400,7 @@ fn append_b5_closed_triangle_native_vertex_chain(
     loop_payload.extend_from_slice(&b5_object_ref(surface));
     loop_payload.extend_from_slice(&[0x83, 0x05, 0x05, 0x03]);
     for _ in 0..pcurves.len() {
-        loop_payload.extend_from_slice(&[0x01, 0x00, 0xff, 0xff, 0x01, 0x00]);
+        loop_payload.extend_from_slice(&[0x01, 0x00, 0x01, 0x00, 0x01, 0x00]);
     }
     loop_payload.push(0x01);
     append_b5_record(bytes, 0x62, LOOP, &loop_payload);

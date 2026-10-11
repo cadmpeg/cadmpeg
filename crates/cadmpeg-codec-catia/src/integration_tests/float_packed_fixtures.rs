@@ -4,7 +4,11 @@ use cadmpeg_test_support::wire;
 
 const EPS_FIXTURE_POINT_MM: f64 = 1.0e-12;
 
-fn assert_native_fixture(bytes: &[u8], expected_points: &[[f64; 3]]) {
+fn assert_native_fixture(
+    bytes: &[u8],
+    expected_points: &[[f64; 3]],
+    expected_loops: usize,
+) -> cadmpeg_test_support::EditableDecodeResult {
     let result = decode(bytes.to_vec());
     let model = &result.ir().model;
     let count = expected_points.len();
@@ -13,7 +17,7 @@ fn assert_native_fixture(bytes: &[u8], expected_points: &[[f64; 3]]) {
     assert_eq!(model.regions.len(), 1);
     assert_eq!(model.shells.len(), 1);
     assert_eq!(model.faces.len(), 1);
-    assert_eq!(model.loops.len(), 1);
+    assert_eq!(model.loops.len(), expected_loops);
     assert_eq!(model.surfaces.len(), 1);
     assert_eq!(model.coedges.len(), count);
     assert_eq!(model.edges.len(), count);
@@ -85,6 +89,7 @@ fn assert_native_fixture(bytes: &[u8], expected_points: &[[f64; 3]]) {
     );
     assert_eq!(loss.severity, Severity::Warning);
     assert_valid(&result);
+    result
 }
 
 #[test]
@@ -92,6 +97,7 @@ fn frozen_native_plane_fixture_transfers_its_complete_identity_chain() {
     assert_native_fixture(
         include_bytes!("../../tests/golden/fixtures/float_packed_native_plane.catpart"),
         &[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        1,
     );
 }
 
@@ -105,5 +111,37 @@ fn frozen_native_cone_fixture_preserves_radius_and_radial_plane_angle() {
             [0.0, 6.229_309_382_424_138, 1.446_461_727_859_848],
             [0.0, 4.364_654_691_212_069, 0.723_230_863_929_924],
         ],
+        1,
     );
+}
+
+#[test]
+fn frozen_native_plane_hole_uses_location_controls_with_nurbs_boundaries() {
+    let result = assert_native_fixture(
+        include_bytes!("../../tests/golden/fixtures/float_packed_native_plane_hole.catpart"),
+        &[
+            [0.0, 0.0, 0.0],
+            [6.0, 0.0, 0.0],
+            [0.0, 6.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [1.0, 2.0, 0.0],
+            [2.0, 1.0, 0.0],
+        ],
+        2,
+    );
+    assert_eq!(
+        result.ir().model.faces[0].loops,
+        cadmpeg_ir::topology::FaceLoops::classified(
+            cadmpeg_ir::ids::LoopId::mint("catia:b5:loop#400".to_string())
+                .expect("fixture identity"),
+            vec![
+                cadmpeg_ir::ids::LoopId::mint("catia:b5:loop#401".to_string())
+                    .expect("fixture identity")
+            ],
+        )
+    );
+    assert!(result.ir().model.pcurves.iter().all(|pcurve| matches!(
+        pcurve.geometry,
+        cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { .. }
+    )));
 }

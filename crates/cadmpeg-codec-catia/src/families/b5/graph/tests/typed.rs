@@ -278,6 +278,23 @@ fn native_triangle_rosters_derive_coordinates_without_endpoint_fallback() {
             &mut crate::nurbs::LaneRefusals::new(),
         )?
         .expect("native triangle graph");
+        for loop_ in graph.loops.values() {
+            for member in &loop_.members {
+                let edge = &graph.edges[&member.edge];
+                assert_eq!(edge.support, member.pcurve);
+                let stations = edge.parameter_incidences.map(|id| {
+                    let incidence = &graph.parameter_incidences[&id];
+                    let lane = incidence
+                        .lanes
+                        .iter()
+                        .find(|lane| lane.curve == member.pcurve)
+                        .expect("the shared curve incidence is present");
+                    (lane.control, lane.parameter)
+                });
+                assert!(stations[0] < stations[1]);
+                assert_eq!(member.controls[1], 1);
+            }
+        }
         let records = crate::families::b5::graph::records(&stream);
         let by_id = records
             .iter()

@@ -821,3 +821,19 @@ The sole decode loss is the `topology.b5-gauge-substituted` warning.
 The smaller nine-frame coordinate-backed triangle remains a routing fixture.
 Its empty edge payloads do not exercise native edge or vertex identity grammar.
 Successful fallback transfer does not establish incidence-roster coincidence.
+
+## Native object-loop boundary roles
+
+B5 face transfer uses the second loop control to select the unique outer loop
+and each inner loop. Classification applies to analytic, freeform and opaque
+carriers and does not require planar pcurves or a containment calculation.
+Absent or multiple outer selections leave the loop roles unspecified.
+The first loop control retains face-to-carrier orientation independently;
+shell orientation and neutral chart conversion remain separate relations.
+
+The frozen plane-with-hole graph has 34 frames and two three-edge loops.
+Its face lists the inner loop first, and its boundaries are degree-one NURBS
+pcurves. Transfer selects loop 400 as outer and loop 401 as inner from their
+location controls. All six vertex loci and every source annotation are checked.
+The plane and cone identity fixtures also check the middle occurrence sign
+against their common curve/pcurve stations; each direction product is `+1`.

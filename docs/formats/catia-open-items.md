@@ -394,14 +394,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the difference to validate and write the face.
 
-### OS-03. Object-stream face normal sense
-
-**Question.** Which field or relation gives a `b5 03 5f` face normal sense relative to its surface frame?
-
-**Known.** Closed endpoint chains fix coedge traversal. They do not fix this face-level sign.
-
-**Need.** We must know the sign to orient the neutral face.
-
 ### OS-04. Object-stream body kind
 
 **Question.** Which source field gives the object-stream body kind?
@@ -425,14 +417,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `catia.md` §6.7 "`b5 03 5e` (edge node):" defines the common edge record and its topology incidences.
 
 **Need.** We must know the namespace to validate and write an edge.
-
-### OS-07. Class-`0x62` secondary framing control
-
-**Question.** What does the class-`0x62` secondary framing control select?
-
-**Known.** The decoder retains it independently of the length-framed loop-node payload.
-
-**Need.** We must know its role to parse other framing branches.
 
 ### OS-11. Class-`0x2c` auxiliary scalars
 
@@ -494,18 +478,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `catia.md` §9 "The E5 `0xaa` current-limit program" defines the limit and affine fields. Class `0xaa` has one extrapolation control. The E7 surface program has three flags, eight continuation scalars and six suffix controls. Zero controls disable extrapolation.
 
 **Need.** We must identify an active branch before interpreting its continuation fields.
-
-## 7. FBB-only and float-packed variants
-
-### FV-05. Object-stream loop controls
-
-**Question.** What does the object-stream loop control select?
-
-**Known.** The float-packed decoder retains the control with its loop record.
-
-**Need.** We must know its role to classify and write the loop.
-
-
 
 ## 8. Appearance
 
