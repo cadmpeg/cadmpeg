@@ -10,7 +10,11 @@ fn pcurve_diagnostics_keep_storage_after_the_identity_map_drops() {
         crate::brep::ValidatedRawBrep::try_new(expand.ctx(), raw)
     })
     .unwrap();
-    for release in [false, true] {
+    let mut costs = [0; 3];
+    for (index, (backing_only, release)) in [(false, false), (false, true), (true, true)]
+        .into_iter()
+        .enumerate()
+    {
         let error = cadmpeg_test_support::refusal::resource_limit_at(
             ResourceDimension::MaterializedBytes,
             "pcurve diagnostic lifetime checkpoint",
@@ -59,6 +63,14 @@ fn pcurve_diagnostics_keep_storage_after_the_identity_map_drops() {
                     drop(destination);
                     drop(metadata);
                 }
+                // Reproduce the same vector growth without retaining a message.
+                let mut control_storage = ctx.reserve_scoped(0, "diagnostic backing control")?;
+                let mut control = Diagnostics::new();
+                if backing_only {
+                    control_storage.with_storage(|| {
+                        control.push_coded_admitted(&ctx, None, format_args!(""))
+                    })?;
+                }
                 let held = ctx.reserve_scoped(1 << 20, "pcurve diagnostic lifetime checkpoint")?;
                 drop(held);
                 Ok(())
@@ -67,12 +79,17 @@ fn pcurve_diagnostics_keep_storage_after_the_identity_map_drops() {
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
             panic!("checkpoint refusal");
         };
-        if release {
+        costs[index] = limit.used;
+        if release && !backing_only {
             assert_eq!(limit.used, 0, "consumed diagnostics release all scratch");
-        } else {
+        } else if !release {
             assert!(limit.used > 0, "live diagnostics retain their reservation");
         }
     }
+    assert!(
+        costs[0] > costs[2],
+        "the live diagnostic message remains charged beyond vector backing"
+    );
 }
 
 #[test]
@@ -544,7 +561,11 @@ fn brep_mesh_diagnostics_keep_storage_after_candidate_fields_drop() {
         },
         userdata: Vec::new(),
     })];
-    for release in [false, true] {
+    let mut costs = [0; 3];
+    for (index, (backing_only, release)) in [(false, false), (false, true), (true, true)]
+        .into_iter()
+        .enumerate()
+    {
         let error = cadmpeg_test_support::refusal::resource_limit_at(
             ResourceDimension::MaterializedBytes,
             "mesh diagnostic lifetime checkpoint",
@@ -601,6 +622,14 @@ fn brep_mesh_diagnostics_keep_storage_after_candidate_fields_drop() {
                     drop(warnings);
                     drop(metadata);
                 }
+                // Reproduce the same vector growth without retaining a message.
+                let mut control_storage = ctx.reserve_scoped(0, "diagnostic backing control")?;
+                let mut control = Diagnostics::new();
+                if backing_only {
+                    control_storage.with_storage(|| {
+                        control.push_coded_admitted(&ctx, None, format_args!(""))
+                    })?;
+                }
                 let held = ctx.reserve_scoped(1 << 20, "mesh diagnostic lifetime checkpoint")?;
                 drop(held);
                 Ok(())
@@ -609,12 +638,17 @@ fn brep_mesh_diagnostics_keep_storage_after_candidate_fields_drop() {
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
             panic!("checkpoint refusal");
         };
-        if release {
+        costs[index] = limit.used;
+        if release && !backing_only {
             assert_eq!(limit.used, 0);
-        } else {
+        } else if !release {
             assert!(limit.used > 0, "live diagnostic fields retain scratch");
         }
     }
+    assert!(
+        costs[0] > costs[2],
+        "the live diagnostic message remains charged beyond vector backing"
+    );
 }
 
 #[test]
