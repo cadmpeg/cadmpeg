@@ -13,6 +13,7 @@ use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use crate::wire;
 
 const EPS_PARAMETER_ENDPOINT: f64 = 1.0e-9;
+const EPS_ARC_LOCAL_BOUND: f64 = 1.0e-9;
 
 /// Resolved graph of an E5 `0D 03` record stream: bodies, faces, edges, and
 /// the geometry records they reference. Produced by [`parse_topology`], which
@@ -918,12 +919,13 @@ fn bound_representation_parameter(
             return (entry.code == 1).then_some(entry.parameter);
         }
     };
-    let parameter = start + entry.parameter.get();
-    let tolerance = EPS_PARAMETER_ENDPOINT * (1.0 + start.abs().max(end.abs()));
-    if end <= start || parameter < start - tolerance || parameter > end + tolerance {
+    let local = entry.parameter.get();
+    let width = end - start;
+    let tolerance = EPS_ARC_LOCAL_BOUND * (1.0 + local.abs());
+    if width <= 0.0 || local < -tolerance || local > width + tolerance {
         return None;
     }
-    FiniteReal::new(parameter)
+    FiniteReal::new(start + local)
 }
 
 fn parse_curve_support(
@@ -2994,51 +2996,60 @@ mod tests {
 
     #[test]
     fn nurbs_bounds_use_distinct_arcs_and_nonzero_first_knot() {
-        let pcurves = BTreeMap::from([(
-            20,
-            E5Pcurve::Nurbs {
-                surface: 1,
-                degree: 1,
-                knots: finite_lane(&[-23.0, -23.0, -22.5, -22.0, -22.0]),
-                control_points: vec![finite_pair([0.0, 0.0]); 3],
-                range: finite_pair([-23.0, -22.0]),
-            },
-        )]);
-        let resolve = |local, code, representation| {
-            let bounds = BTreeMap::from([(
-                10,
-                E5Bounds {
-                    entries: vec![E5BoundEntry {
-                        representation,
-                        parameter: finite(local),
-                        code,
-                    }],
+        for first_knot in [-23.0, 1.0e12] {
+            let pcurves = BTreeMap::from([(
+                20,
+                E5Pcurve::Nurbs {
+                    surface: 1,
+                    degree: 1,
+                    knots: finite_lane(&[
+                        first_knot,
+                        first_knot,
+                        first_knot + 0.5,
+                        first_knot + 1.0,
+                        first_knot + 1.0,
+                    ]),
+                    control_points: vec![finite_pair([0.0, 0.0]); 3],
+                    range: finite_pair([first_knot, first_knot + 1.0]),
                 },
             )]);
-            super::bound_representation_parameter(&bounds, &pcurves, 10, representation)
-                .map(cadmpeg_ir::scalar::FiniteReal::get)
-        };
-        assert_eq!(resolve(0.0, 1, 20), Some(-23.0));
-        assert_eq!(resolve(0.5, 1, 20), Some(-22.5));
-        assert_eq!(resolve(0.5, 2, 20), Some(-22.0));
-        assert_eq!(resolve(0.0, 2, 20), Some(-22.5));
-        assert_eq!(resolve(0.0, 0, 20), None);
-        assert_eq!(resolve(0.0, 3, 20), None);
-        assert_eq!(resolve(0.0, u32::MAX, 20), None);
-        assert_eq!(resolve(0.6, 2, 20), None);
-        assert_eq!(resolve(0.0, 1, 21), None);
-        let error = crate::test_support::with_work_limit(0, |ctx| {
-            super::charge_bound_arc_scan(ctx, &pcurves, 20)
-        })
-        .expect_err("expanded knot scan requires work");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == "catia_e5_bound_arc_scan")
-        );
-        assert!(crate::test_support::with_work_limit(5, |ctx| {
-            super::charge_bound_arc_scan(ctx, &pcurves, 20)
-        })
-        .is_ok());
+            let resolve = |local, code, representation| {
+                let bounds = BTreeMap::from([(
+                    10,
+                    E5Bounds {
+                        entries: vec![E5BoundEntry {
+                            representation,
+                            parameter: finite(local),
+                            code,
+                        }],
+                    },
+                )]);
+                super::bound_representation_parameter(&bounds, &pcurves, 10, representation)
+                    .map(cadmpeg_ir::scalar::FiniteReal::get)
+            };
+            assert_eq!(resolve(0.0, 1, 20), Some(first_knot));
+            assert_eq!(resolve(0.5, 1, 20), Some(first_knot + 0.5));
+            assert_eq!(resolve(0.5, 2, 20), Some(first_knot + 1.0));
+            assert_eq!(resolve(0.0, 2, 20), Some(first_knot + 0.5));
+            assert_eq!(resolve(0.0, 0, 20), None);
+            assert_eq!(resolve(0.0, 3, 20), None);
+            assert_eq!(resolve(0.0, u32::MAX, 20), None);
+            assert_eq!(resolve(0.6, 2, 20), None);
+            assert_eq!(resolve(0.0, 1, 21), None);
+            assert_eq!(resolve(-0.25, 1, 20), None);
+            let error = crate::test_support::with_work_limit(0, |ctx| {
+                super::charge_bound_arc_scan(ctx, &pcurves, 20)
+            })
+            .expect_err("expanded knot scan requires work");
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "catia_e5_bound_arc_scan")
+            );
+            assert!(crate::test_support::with_work_limit(5, |ctx| {
+                super::charge_bound_arc_scan(ctx, &pcurves, 20)
+            })
+            .is_ok());
+        }
     }
 
     #[test]
