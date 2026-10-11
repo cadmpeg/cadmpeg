@@ -31,17 +31,18 @@ fn gui_native_graph_copies_are_scoped_and_fields_survive_transfer() {
         policy.limits.max_retained_bytes = u64::MAX;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let probe = RefusalProbe::arm(ResourceDimension::RetainedBytes, operation, None);
-        let (graph, plan) =
-            super::super::transfer_schema_one(
-                &ctx,
-                &ir,
-                GUI,
-                &xml,
-                Some("1"),
-                &sources,
-                &mut ctx.reserve_scoped(0, "test GUI diagnostics").expect("owner"),
-            )
-                .expect("native copies are not retained output");
+        let (graph, plan) = super::super::transfer_schema_one(
+            &ctx,
+            &ir,
+            GUI,
+            &xml,
+            Some("1"),
+            &sources,
+            &mut ctx
+                .reserve_scoped(0, "test GUI diagnostics")
+                .expect("owner"),
+        )
+        .expect("native copies are not retained output");
         drop(probe);
         assert_eq!(graph.documents[0].attributes["extra"], "native attribute");
         assert_eq!(graph.documents[0].states[0].kind, "Camera");
@@ -88,7 +89,9 @@ fn gui_native_graph_requires_materialized_storage() {
                 element_maps: &[],
                 requires_alpha_conversion: false,
             },
-            &mut ctx.reserve_scoped(0, "test GUI diagnostics").expect("owner"),
+            &mut ctx
+                .reserve_scoped(0, "test GUI diagnostics")
+                .expect("owner"),
         )
         .map(|_| ())
     });
@@ -115,7 +118,9 @@ fn gui_native_graph_keeps_storage_until_records_drop() {
                 element_maps: &[],
                 requires_alpha_conversion: false,
             },
-            &mut ctx.reserve_scoped(0, "test GUI diagnostics").expect("owner"),
+            &mut ctx
+                .reserve_scoped(0, "test GUI diagnostics")
+                .expect("owner"),
         )
         .expect("GUI graph");
         let graph = keep_graph.then_some(graph);
@@ -151,33 +156,50 @@ fn assert_recovered_diagnostic_lifetime(text: &str, expected_diagnostic: &str) {
     let xml = roxmltree::Document::parse(text).expect("GUI XML");
     let entries = std::collections::BTreeMap::new();
     let sources = super::super::GuiSources {
-        entries: &entries, objects: &[], properties: &[], payloads: &[],
-        element_maps: &[], requires_alpha_conversion: false,
+        entries: &entries,
+        objects: &[],
+        properties: &[],
+        payloads: &[],
+        element_maps: &[],
+        requires_alpha_conversion: false,
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let mut diagnostic_storage = ctx.reserve_scoped(0, "GUI recovered diagnostic").expect("owner");
-    let error = match super::super::transfer_schema_one(
-        &ctx, &cadmpeg_ir::CadIr::empty(), text, &xml, Some("2"),
-        &sources, &mut diagnostic_storage,
-    ) {
-        Err(error) => error,
-        Ok(_) => panic!("missing Properties"),
+    let mut diagnostic_storage = ctx
+        .reserve_scoped(0, "GUI recovered diagnostic")
+        .expect("owner");
+    let Err(error) = super::super::transfer_schema_one(
+        &ctx,
+        &cadmpeg_ir::CadIr::empty(),
+        text,
+        &xml,
+        Some("2"),
+        &sources,
+        &mut diagnostic_storage,
+    ) else {
+        panic!("missing Properties");
     };
     assert!(matches!(&error, CodecError::Malformed(message)
         if message == expected_diagnostic));
     let probe = RefusalProbe::arm(
-        ResourceDimension::MaterializedBytes, "FCStd GUI schema loss text", None,
+        ResourceDimension::MaterializedBytes,
+        "FCStd GUI schema loss text",
+        None,
     );
     // Observe the production loss constructor while it reads the diagnostic.
     // The native graph has dropped; only diagnostic storage remains live.
-    let CodecError::Malformed(message) = &error else { panic!("malformed diagnostic"); };
+    let CodecError::Malformed(message) = &error else {
+        panic!("malformed diagnostic");
+    };
     let diagnostic_len = cadmpeg_core::decode::u64_from_index(message.len());
-    let CodecError::ResourceLimit(limit) = ctx.with_scoped_storage("fallback observation", || {
-        super::super::schema_failure_loss(&ctx, "2", error, diagnostic_storage)
-    }).expect_err("fallback allocation boundary") else {
+    let CodecError::ResourceLimit(limit) = ctx
+        .with_scoped_storage("fallback observation", || {
+            super::super::schema_failure_loss(&ctx, "2", error, diagnostic_storage)
+        })
+        .expect_err("fallback allocation boundary")
+    else {
         panic!("materialized refusal");
     };
     assert_eq!(limit.used, diagnostic_len);
@@ -190,7 +212,8 @@ fn assert_recovered_diagnostic_lifetime(text: &str, expected_diagnostic: &str) {
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let mut ir = cadmpeg_ir::CadIr::empty();
-    let graph = super::super::transfer(&ctx, &mut ir, text.as_bytes(), &sources).expect("schema fallback");
+    let graph =
+        super::super::transfer(&ctx, &mut ir, text.as_bytes(), &sources).expect("schema fallback");
     assert!(graph.documents.is_empty());
     assert!(graph.providers.is_empty());
     assert!(graph.properties.is_empty());
@@ -198,15 +221,22 @@ fn assert_recovered_diagnostic_lifetime(text: &str, expected_diagnostic: &str) {
     assert_eq!(graph.losses[0].message, format!("GuiDocument.xml could not be decoded with the schema-1 vocabulary; declared schema 2 is the probable cause: malformed container: {expected_diagnostic}"));
     drop(graph);
     assert_eq!(ctx.resource_refusal(), None);
-    let CodecError::ResourceLimit(released) = ctx.reserve_scoped(u64::MAX, "fallback diagnostics released")
-        .expect_err("finite materialized allowance") else {
+    let CodecError::ResourceLimit(released) = ctx
+        .reserve_scoped(u64::MAX, "fallback diagnostics released")
+        .expect_err("finite materialized allowance")
+    else {
         panic!("materialized refusal");
     };
     assert_eq!(released.dimension, ResourceDimension::MaterializedBytes);
     assert_eq!(released.used, 0);
     assert_eq!(ctx.resource_refusal(), Some(released));
-    crate::test_support::assert_retained_refusal_at(
-        &[], "FCStd GUI schema loss text",
-        |ctx| super::super::transfer(ctx, &mut cadmpeg_ir::CadIr::empty(), text.as_bytes(), &sources).map(|_| ()),
-    );
+    crate::test_support::assert_retained_refusal_at(&[], "FCStd GUI schema loss text", |ctx| {
+        super::super::transfer(
+            ctx,
+            &mut cadmpeg_ir::CadIr::empty(),
+            text.as_bytes(),
+            &sources,
+        )
+        .map(|_| ())
+    });
 }
