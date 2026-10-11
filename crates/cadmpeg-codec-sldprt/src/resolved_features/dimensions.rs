@@ -2480,10 +2480,13 @@ pub(crate) fn project_marker_dimensioned_circles(
                         else {
                             continue;
                         };
-                        // The profile filter admits each use's key bytes for this comparison.
-                        sketch
-                            .profiles
-                            .retain_uses(ctx, |usage| usage.entity != removed)?;
+                        sketch.profiles.retain_uses(ctx, |usage| {
+                            Ok(!ctx.equal_bytes(
+                                usage.entity.as_str().as_bytes(),
+                                removed.as_str().as_bytes(),
+                                OPERATION,
+                            )?)
+                        })?;
                         for (index, (parameter, radius)) in ctx
                             .admit_iter(&(radial_dimensions)[..], "scan SLDPRT dimensions records")?
                             .copied()
@@ -2725,10 +2728,9 @@ pub(crate) fn project_marker_dimensioned_circles(
                 let Some(sketch) = sketch_position.map(|position| &mut sketches[position]) else {
                     continue;
                 };
-                // The profile filter admits each use's key bytes for this lookup.
-                sketch
-                    .profiles
-                    .retain_uses(ctx, |usage| !removed.contains(&usage.entity))?;
+                sketch.profiles.retain_uses(ctx, |usage| {
+                    Ok(!ctx.contains_hash_set(&removed, &usage.entity, OPERATION)?)
+                })?;
                 for (index, geometry) in ctx
                     .admit_iter(transformed, MARKER_CIRCLE_OPERATION)?
                     .enumerate()
@@ -2935,10 +2937,9 @@ pub(crate) fn project_marker_dimensioned_circles(
                     else {
                         continue;
                     };
-                    // The profile filter admits each use's key bytes for this lookup.
-                    sketch
-                        .profiles
-                        .retain_uses(ctx, |usage| !removed.contains(&usage.entity))?;
+                    sketch.profiles.retain_uses(ctx, |usage| {
+                        Ok(!ctx.contains_hash_set(&removed, &usage.entity, OPERATION)?)
+                    })?;
                     for (record, geometry) in
                         ctx.admit_iter(transformed, MARKER_CIRCLE_OPERATION)?
                     {

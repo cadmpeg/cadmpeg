@@ -207,7 +207,8 @@ pub(crate) fn parse_meta_tables<'a>(
         counted_section(&mut view, 4, "block-size table")?;
     let mut blocks = ctx.vector_storage(block_count, "admit Inventor RSe block descriptors")?;
     let mut sizes = section_1_payload;
-    for ordinal in ctx.admit_iter(&(0..block_count), "visit Inventor RSe table entries")? {
+    let mut entries = 0..block_count;
+    while let Some(ordinal) = ctx.next_charged(&mut entries, "visit Inventor RSe table entries")? {
         let encoded = crate::reader::u32(&mut sizes, "block-size entry")?;
         ctx.push_vec(
             &mut blocks,
@@ -252,13 +253,9 @@ pub(crate) fn parse_meta_tables<'a>(
             "RSe type table has more than 256 entries".into(),
         ));
     }
-    // The eleven metadata sections occupy eleven collection slots.
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(SECTION_COUNT),
-        "admit Inventor RSe metadata tables",
-    )?;
     let mut types = ctx.vector_storage(type_count, "admit Inventor RSe metadata tables")?;
-    for index in ctx.admit_iter(&(0..type_count), "visit Inventor RSe table entries")? {
+    let mut entries = 0..type_count;
+    while let Some(index) = ctx.next_charged(&mut entries, "visit Inventor RSe table entries")? {
         let entry = child(
             section_4_payload,
             index * type_desc::LEN,
@@ -342,10 +339,11 @@ pub(crate) fn frame_bulk_records<'a>(
         .count();
     let mut cursor = Cursor::new(bulk);
     let mut records = ctx.vector_storage(stored_count, "admit Inventor RSe record frames")?;
-    for block in ctx
-        .admit_iter(&tables.blocks, "scan stored Inventor RSe blocks")?
-        .filter(|block| block.stored)
-    {
+    let mut blocks = tables.blocks.iter();
+    while let Some(block) = ctx.next_charged(&mut blocks, "scan stored Inventor RSe blocks")? {
+        if !block.stored {
+            continue;
+        }
         let selector = cursor.u32("record type selector")?;
         let type_index = u8::try_from(selector & 0xff).map_err(|_| {
             CodecError::Malformed("Inventor numeric value exceeds target range".into())
@@ -540,11 +538,14 @@ fn parse_extended_record_trailer(
             "RSe record trailer property count exceeds 65536".into(),
         ));
     }
-    ctx.charge_collection_items(
-        u64::from(property_count),
-        "admit Inventor RSe record trailer properties",
-    )?;
-    for _ in ctx.admit_iter(&(0..property_count), "visit Inventor RSe table entries")? {
+    // A property is at least its name length and type words; the trailer is
+    // skipped, not collected.
+    cursor.fits(property_count, 8, "record trailer property count")?;
+    let mut entries = 0..property_count;
+    while ctx
+        .next_charged(&mut entries, "visit Inventor RSe table entries")?
+        .is_some()
+    {
         cursor.sized_bytes(65_536, "record trailer property name")?;
         match cursor.u32("record trailer property type")? {
             1 => cursor.skip(3, "record trailer property")?,
@@ -583,13 +584,15 @@ fn parse_extended_record_trailer(
             "RSe record trailer reference count exceeds 65536".into(),
         ));
     }
-    ctx.charge_collection_items(
-        u64::from(reference_count),
-        "admit Inventor RSe record trailer references",
-    )?;
     if reference_count != 0 {
         cursor.skip(8, "record trailer reference header")?;
-        for _ in ctx.admit_iter(&(0..reference_count), "visit Inventor RSe table entries")? {
+        // A reference is at least its name length and value words.
+        cursor.fits(reference_count, 8, "record trailer reference count")?;
+        let mut entries = 0..reference_count;
+        while ctx
+            .next_charged(&mut entries, "visit Inventor RSe table entries")?
+            .is_some()
+        {
             cursor.sized_bytes(65_536, "record trailer reference name")?;
             cursor.skip(4, "record trailer reference value")?;
         }
@@ -705,6 +708,17 @@ impl<'a> Cursor<'a> {
         crate::reader::u16(&mut self.source, name)
     }
 
+    /// Refuses a count whose entries, at `min_entry_bytes` each (nonzero),
+    /// cannot fit in the unread bytes, before their traversal is admitted.
+    fn fits(&self, count: u32, min_entry_bytes: usize, name: &str) -> Result<(), CodecError> {
+        self.source
+            .counted(u64::from(count), min_entry_bytes)
+            .map(|_| ())
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("RSe {name} exceeds remaining payload"))
+            })
+    }
+
     fn u32(&mut self, name: &'static str) -> Result<u32, CodecError> {
         crate::reader::u32(&mut self.source, name)
     }
@@ -745,6 +759,35 @@ mod tests {
     use crate::test_support::test_fixtures::push_u32;
     use crate::test_support::truncation::located_truncation;
     use cadmpeg_core::decode::{DecodeContext, View};
+
+    #[test]
+    fn record_trailer_admits_only_the_next_declared_property_step() {
+        for count in [1_u32, 512] {
+            let mut bytes = vec![1];
+            bytes.extend_from_slice(&count.to_le_bytes());
+            bytes.resize(5 + usize::try_from(count).expect("test count") * 8, 0);
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = 0;
+            let (ctx, view) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                    .expect("record trailer context");
+            let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+                super::parse_extended_record_trailer(&ctx, &mut super::Cursor::new(view))
+            else {
+                panic!("first property step must refuse before reading");
+            };
+            assert_eq!(
+                limit.dimension,
+                cadmpeg_core::decode::ResourceDimension::WorkUnits
+            );
+            assert_eq!(limit.operation, "visit Inventor RSe table entries");
+            assert_eq!(limit.used, 0);
+            assert_eq!(limit.additional, 1);
+            assert!(matches!(ctx.finish_session(),
+                Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit));
+        }
+    }
 
     #[test]
     fn record_trailer_type_diagnostic_refuses_retained_limit_before_format() {

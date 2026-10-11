@@ -826,7 +826,7 @@ fn repeated_scalar_block_reference_route_refuses_retained_limit() {
 }
 
 #[test]
-fn repeated_scalar_block_reference_route_refuses_scoped_limit() {
+fn repeated_scalar_block_reference_route_refuses_digest_storage_limit() {
     let container = repeated_scalar_block_reference_container();
     let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         let history = crate::native::features::FeatureHistory::new(ctx, &container)?;
@@ -836,11 +836,13 @@ fn repeated_scalar_block_reference_route_refuses_scoped_limit() {
         )
     };
     // Build the section caches once so every walk step charges the same route.
-    crate::test_support::with_decode_context(route).expect("admitted block references");
+    let references =
+        crate::test_support::with_decode_context(route).expect("admitted block references");
+    assert_eq!(references.len(), 1);
     crate::test_support::resource_refusal_at(
         &[],
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-        "NX simple hole data block index",
+        "NX data block identity digests",
         route,
     );
 }

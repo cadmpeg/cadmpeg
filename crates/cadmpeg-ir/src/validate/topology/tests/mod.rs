@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+mod budget_scans;
 mod feature_operations;
 mod features;
 mod finding_limits;

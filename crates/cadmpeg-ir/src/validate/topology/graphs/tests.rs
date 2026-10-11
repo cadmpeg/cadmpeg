@@ -106,3 +106,162 @@ fn radial_ring_crossing_keeps_error_order_and_owner() {
     assert_eq!(findings[0].message, "radial ring crosses edges");
     assert_eq!(findings[1].message, "radial ring does not close");
 }
+
+#[test]
+fn shell_connectivity_preserves_incidence_and_shell_ownership() {
+    let mut ir = crate::examples::unit_cube().unwrap();
+    ir.model.coedges.clear();
+    let vertices = ["test:model:vertex#a", "test:model:vertex#b"];
+    for (index, loop_) in ir.model.loops.iter_mut().enumerate() {
+        loop_.boundary = crate::topology::LoopBoundary::Vertex {
+            vertex: vertices[usize::from(index > 1)].try_into().unwrap(),
+            pcurves: Vec::new(),
+        };
+    }
+    let mut bridge = ir.model.loops[1].clone();
+    bridge.id = "test:model:loop#bridge".try_into().unwrap();
+    bridge.boundary = crate::topology::LoopBoundary::Vertex {
+        vertex: vertices[1].try_into().unwrap(),
+        pcurves: Vec::new(),
+    };
+    ir.model.loops.push(bridge.clone());
+    // Repeated incidences do not change connectivity.
+    bridge.id = "test:model:loop#bridge-repeat".try_into().unwrap();
+    ir.model.loops.push(bridge);
+    let original = ir.model.shells[0].clone();
+    for (members, disconnected) in [
+        (
+            vec![ir.model.faces[0].id.clone(), ir.model.faces[2].id.clone()],
+            true,
+        ),
+        (
+            vec![
+                ir.model.faces[0].id.clone(),
+                ir.model.faces[1].id.clone(),
+                ir.model.faces[2].id.clone(),
+            ],
+            false,
+        ),
+        (original.faces().to_vec(), false),
+    ] {
+        ir.model.shells[0] = crate::topology::Shell::with_faces(
+            original.id.clone(),
+            original.region.clone(),
+            members,
+        )
+        .unwrap();
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut findings = Vec::new();
+        super::check_shell_connectivity(&ctx, &ir, &mut findings).unwrap();
+        assert_eq!(findings.len(), usize::from(disconnected));
+        if disconnected {
+            assert_eq!(findings[0].check, Check::ShellTopology);
+            assert_eq!(findings[0].severity, Severity::Error);
+            assert_eq!(findings[0].entity.as_deref(), Some(original.id.as_str()));
+            assert_eq!(
+                findings[0].message,
+                "shell faces are disconnected through shared edges or vertices"
+            );
+        }
+    }
+}
+
+#[test]
+fn shell_connectivity_uses_shared_edges_without_endpoint_records() {
+    let mut ir = crate::examples::unit_cube().unwrap();
+    let template = ir.model.coedges[0].clone();
+    ir.model.coedges.clear();
+    ir.model.edges.clear();
+    for (index, face) in ir.model.faces.iter().enumerate() {
+        let mut coedge = template.clone();
+        coedge.id = format!("test:model:coedge#{index}").try_into().unwrap();
+        coedge.owner_loop = ir
+            .model
+            .loops
+            .iter()
+            .find(|loop_| loop_.face == face.id)
+            .unwrap()
+            .id
+            .clone();
+        ir.model.coedges.push(coedge);
+    }
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut findings = Vec::new();
+    super::check_shell_connectivity(&ctx, &ir, &mut findings).unwrap();
+    assert!(findings.is_empty());
+}
+
+#[test]
+fn shell_connectivity_keeps_shared_vertex_storage_proportional_to_faces() {
+    const FACE_COUNT: usize = 64;
+    let mut ir = crate::examples::unit_cube().unwrap();
+    let face = ir.model.faces[0].clone();
+    let loop_ = ir.model.loops[0].clone();
+    ir.model.faces.clear();
+    ir.model.loops.clear();
+    ir.model.coedges.clear();
+    ir.model.edges.clear();
+    for index in 0..FACE_COUNT {
+        let mut face = face.clone();
+        let mut loop_ = loop_.clone();
+        face.id = format!("test:model:face#{index}").try_into().unwrap();
+        loop_.id = format!("test:model:loop#{index}").try_into().unwrap();
+        loop_.face = face.id.clone();
+        loop_.boundary = crate::topology::LoopBoundary::Vertex {
+            vertex: "test:model:vertex#shared".try_into().unwrap(),
+            pcurves: Vec::new(),
+        };
+        face.loops = crate::topology::FaceLoops::classified(loop_.id.clone(), Vec::new());
+        ir.model.faces.push(face);
+        ir.model.loops.push(loop_);
+    }
+    let shell = &ir.model.shells[0];
+    ir.model.shells[0] = crate::topology::Shell::with_faces(
+        shell.id.clone(),
+        shell.region.clone(),
+        ir.model.faces.iter().map(|face| face.id.clone()).collect(),
+    )
+    .unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // One KiB per face covers the borrowed indexes, incidence slots,
+    // traversal sets, pending stack, and their vector growth overlap.
+    // A 64-face clique alone needs 64 * 63 * 24 bytes of neighbor slots.
+    let scratch_bound = cadmpeg_core::decode::u64_from_index(FACE_COUNT) * 1024;
+    policy.limits.max_materialized_bytes = scratch_bound;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut findings = Vec::new();
+    super::check_shell_connectivity(&ctx, &ir, &mut findings).unwrap();
+    assert!(findings.is_empty());
+    drop(
+        ctx.reserve_scoped(scratch_bound, "shell incidence scopes released")
+            .unwrap(),
+    );
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn shell_connectivity_admits_one_incidence_before_child_work() {
+    let ir = crate::examples::unit_cube().unwrap();
+    let run = |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        let mut findings = Vec::new();
+        let result = super::check_shell_connectivity(&ctx, &ir, &mut findings);
+        assert!(findings.is_empty());
+        result
+    };
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "shell connectivity incidence scan",
+        run,
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("incidence traversal refusal");
+    };
+    assert_eq!(limit.additional, 1); // Only the first incidence precedes its child work.
+    run(u64::MAX).unwrap();
+}
