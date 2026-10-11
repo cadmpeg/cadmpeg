@@ -322,6 +322,12 @@ current levels require those matrices and representative fixtures.
   in `properties["source_name"]`. Their native fields, paired entities,
   definition selectors, and values retain source identities. Structural
   ancestry does not assign a feature parameter owner or collection position.
+- Native camera programs and their associated catalogs remain retained native
+  records. Camera names and view/capture field-class labels do not create design
+  configurations, annotation ownership, capture membership, active TPS-view
+  state, or geometric targets. These relations require independent native
+  incidences. Range-only size dimensions retain their source values and remain
+  targetless until a target relation is established.
 - Operation-like schema labels retain native design-object identity, fields,
   definition-bound values, range intervals, and relations. Structural ownership
   and class identity do not establish an operation instance or a neutral
