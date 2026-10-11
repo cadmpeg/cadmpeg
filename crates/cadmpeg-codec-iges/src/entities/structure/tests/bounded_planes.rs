@@ -120,10 +120,15 @@ fn plane_nurbs_boundary_points_refuse_collection_limit() {
 
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let points =
-        super::super::linear_nurbs_boundary_points(&nurbs, [0.0, 4.0], Transform::identity(), None, &ctx)
-            .unwrap()
-            .unwrap();
+    let points = super::super::linear_nurbs_boundary_points(
+        &nurbs,
+        [0.0, 4.0],
+        Transform::identity(),
+        None,
+        &ctx,
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(points.len(), 5);
     assert_eq!(points[0], points[4]);
     let translated = Transform::affine([
@@ -150,11 +155,15 @@ fn plane_nurbs_boundary_points_refuse_collection_limit() {
         [0.0, 0.0, 1.0, 0.0],
     ])
     .unwrap();
-    assert!(
-        super::super::linear_nurbs_boundary_points(&nurbs, [0.0, 4.0], overflowing, None, &ctx)
-            .unwrap()
-            .is_none()
-    );
+    assert!(super::super::linear_nurbs_boundary_points(
+        &nurbs,
+        [0.0, 4.0],
+        overflowing,
+        None,
+        &ctx
+    )
+    .unwrap()
+    .is_none());
 }
 
 fn has_entity_projection_loss(result: &cadmpeg_ir::codec::DecodeResult) -> bool {
@@ -672,7 +681,7 @@ fn repeated_plane_boundaries_reuse_the_complete_geometric_proof() {
             .unwrap()
             .unwrap();
         let mut proofs = super::super::PlaneBoundaryProofs {
-            sequences: crate::entities::plane_proof::PlaneProofSequences::default(),
+            keys: crate::entities::plane_proof::PlaneProofKeys::default(),
             proven: std::collections::BTreeMap::new(),
             storage: ctx
                 .reserve_scoped(0, "iges plane boundary proof cache")
@@ -734,7 +743,7 @@ fn repeated_plane_boundaries_reuse_the_complete_geometric_proof() {
             let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
             let plane = super::super::plane_carrier(&index, 1, ctx)?.unwrap();
             let mut proofs = super::super::PlaneBoundaryProofs {
-                sequences: crate::entities::plane_proof::PlaneProofSequences::default(),
+                keys: crate::entities::plane_proof::PlaneProofKeys::default(),
                 proven: std::collections::BTreeMap::new(),
                 storage: ctx.reserve_scoped(0, "iges plane boundary proof cache")?,
             };
@@ -788,7 +797,7 @@ fn repeated_plane_boundaries_reuse_the_complete_geometric_proof() {
                 let index = ModelIndex::build(decoded.ir(), cadmpeg_ir::index::StandardIndex);
                 let plane = super::super::plane_carrier(&index, 1, ctx)?.unwrap();
                 let mut proofs = super::super::PlaneBoundaryProofs {
-                    sequences: crate::entities::plane_proof::PlaneProofSequences::default(),
+                    keys: crate::entities::plane_proof::PlaneProofKeys::default(),
                     proven: std::collections::BTreeMap::new(),
                     storage: ctx.reserve_scoped(0, "iges plane boundary proof cache")?,
                 };
@@ -883,7 +892,8 @@ fn nurbs_plane_boundary_model(points: Vec<Point3>) -> CadIr {
         .find(|edge| edge.id.as_str() == "iges:model:edge#D3")
         .unwrap();
     edge.carrier =
-        cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, last_parameter])).unwrap();
+        cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, last_parameter]))
+            .unwrap();
     let vertices = [edge.start.clone(), edge.end.clone()];
     for vertex in vertices {
         let point = &ir
@@ -916,10 +926,10 @@ fn bounded_plane_cache_reuses_oblique_translations_of_an_uncertified_boundary() 
     let normal = Vector3::new(1.0, 1.0, 0.0).unit().unwrap();
     let entries = std::collections::BTreeMap::new();
     let mut policy = DecodePolicy::service();
-policy.limits.max_recursion_depth = u64::MAX;
-crate::test_support::with_policy_context(&[], &policy, |ctx| {
+    policy.limits.max_recursion_depth = u64::MAX;
+    crate::test_support::with_policy_context(&[], &policy, |ctx| {
         let mut proofs = super::super::PlaneBoundaryProofs {
-            sequences: crate::entities::plane_proof::PlaneProofSequences::default(),
+            keys: crate::entities::plane_proof::PlaneProofKeys::default(),
             proven: std::collections::BTreeMap::new(),
             storage: ctx.reserve_scoped(0, "test bounded plane proofs").unwrap(),
         };
@@ -989,7 +999,7 @@ fn bounded_plane_cache_preserves_origin_sensitive_simplicity() {
     let entries = std::collections::BTreeMap::new();
     crate::test_support::with_service_context(&[], |ctx| {
         let make_proofs = || super::super::PlaneBoundaryProofs {
-            sequences: crate::entities::plane_proof::PlaneProofSequences::default(),
+            keys: crate::entities::plane_proof::PlaneProofKeys::default(),
             proven: std::collections::BTreeMap::new(),
             storage: ctx
                 .reserve_scoped(0, "test origin-sensitive plane proofs")
@@ -1033,19 +1043,41 @@ fn bounded_plane_cache_preserves_origin_sensitive_simplicity() {
 fn bounded_plane_cache_reuses_exact_collinear_polyline_and_nurbs_translations() {
     use cadmpeg_ir::geometry::sampled::{PolylineCurve, PolylineSamples};
     let points = vec![
-        Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0),
-        Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 1.0, 0.0),
-        Point3::new(0.0, 1.0, 0.0), Point3::new(0.0, 0.0, 0.0),
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(1.0, 0.0, 0.0),
+        Point3::new(2.0, 0.0, 0.0),
+        Point3::new(2.0, 1.0, 0.0),
+        Point3::new(0.0, 1.0, 0.0),
+        Point3::new(0.0, 0.0, 0.0),
     ];
     let nurbs = nurbs_plane_boundary_model(points.clone());
     let mut polyline = nurbs.clone();
-    polyline.model.curves.iter_mut().find(|curve| curve.id.as_str() == "iges:model:curve#D3").unwrap().geometry =
-        CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
-            PolylineCurve::new(PolylineSamples::Unparameterized { points: points.try_into().unwrap() }, 0.0,
-                &cadmpeg_test_support::service_decode_context()).unwrap().unwrap(),
-        ));
-    polyline.model.edges.iter_mut().find(|edge| edge.id.as_str() == "iges:model:edge#D3").unwrap().carrier =
-        cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(CurveId::mint("iges:model:curve#D3").unwrap()));
+    polyline
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
+        .unwrap()
+        .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
+        PolylineCurve::new(
+            PolylineSamples::Unparameterized {
+                points: points.try_into().unwrap(),
+            },
+            0.0,
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap()
+        .unwrap(),
+    ));
+    polyline
+        .model
+        .edges
+        .iter_mut()
+        .find(|edge| edge.id.as_str() == "iges:model:edge#D3")
+        .unwrap()
+        .carrier = cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(
+        CurveId::mint("iges:model:curve#D3").unwrap(),
+    ));
     for ir in [nurbs, polyline] {
         let index = ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
         let normal = Vector3::new(0.0, 0.0, 1.0);
@@ -1054,19 +1086,45 @@ fn bounded_plane_cache_reuses_exact_collinear_polyline_and_nurbs_translations() 
         policy.limits.max_work_units = u64::MAX;
         crate::test_support::with_policy_context(&[], &policy, |ctx| {
             let mut proofs = super::super::PlaneBoundaryProofs {
-                sequences: crate::entities::plane_proof::PlaneProofSequences::default(),
+                keys: crate::entities::plane_proof::PlaneProofKeys::default(),
                 proven: std::collections::BTreeMap::new(),
-                storage: ctx.reserve_scoped(0, "test collinear plane proofs").unwrap(),
+                storage: ctx
+                    .reserve_scoped(0, "test collinear plane proofs")
+                    .unwrap(),
             };
-            let edge = super::super::plane_boundary_edge(&index, (Point3::new(0.0, 0.0, 0.0), normal),
-                3, &entries, 0.001, ctx, &mut proofs).ok().unwrap();
-            assert_eq!(proofs.proven.values().next().unwrap().orientation_margin, 0.0);
-            let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits,
-                "iges planar self-intersection comparisons", None);
+            let edge = super::super::plane_boundary_edge(
+                &index,
+                (Point3::new(0.0, 0.0, 0.0), normal),
+                3,
+                &entries,
+                0.001,
+                ctx,
+                &mut proofs,
+            )
+            .ok()
+            .unwrap();
+            assert_eq!(
+                proofs.proven.values().next().unwrap().orientation_margin,
+                0.0
+            );
+            let _probe = RefusalProbe::arm(
+                ResourceDimension::WorkUnits,
+                "iges planar self-intersection comparisons",
+                None,
+            );
             for number in 1..2000 {
                 let coordinate = f64::from(number);
-                let reused = super::super::plane_boundary_edge(&index, (Point3::new(coordinate, 0.0, 0.0), normal),
-                    3, &entries, 0.001, ctx, &mut proofs).ok().unwrap();
+                let reused = super::super::plane_boundary_edge(
+                    &index,
+                    (Point3::new(coordinate, 0.0, 0.0), normal),
+                    3,
+                    &entries,
+                    0.001,
+                    ctx,
+                    &mut proofs,
+                )
+                .ok()
+                .unwrap();
                 assert_eq!(reused, edge);
             }
             assert_eq!(proofs.proven.len(), 1);
