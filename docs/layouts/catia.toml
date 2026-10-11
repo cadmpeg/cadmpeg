@@ -970,6 +970,114 @@ note = "The enumerated header fields total 14 bytes but the same sentence states
 # --- §7 Outer schema records -------------------------------------------------
 
 [[record]]
+name = "numeric_pair_prefix"
+kind = "byte"
+section = "7.3"
+anchor = "A complete nullable numeric-pair value payload is"
+size = 8
+note = "Each prefix atom is one byte. Slot zero follows at offset eight; nullable slots change subsequent offsets."
+
+[[record.field]]
+name = "prefix_atoms"
+offset = 0
+type = "bytes[2]"
+source = "spec"
+anchor = "the two prefix atoms at offsets zero and one"
+
+[[record.field]]
+name = "type_marker"
+offset = 2
+type = "u8"
+source = "spec"
+anchor = "`E8` at two"
+value = 232
+
+[[record.field]]
+name = "type_atom"
+offset = 3
+type = "bytes[2]"
+source = "spec"
+anchor = "`E4 07` at three"
+
+[[record.field]]
+name = "separator"
+offset = 5
+type = "u8"
+source = "spec"
+anchor = "`37` at five"
+value = 55
+
+[[record.field]]
+name = "layout_atom"
+offset = 6
+type = "u8"
+source = "spec"
+anchor = "`83` at six"
+value = 131
+
+[[record.field]]
+name = "value_atom"
+offset = 7
+type = "u8"
+source = "spec"
+anchor = "`81` at seven"
+value = 129
+
+
+[[record]]
+name = "numeric_pair_binary64"
+kind = "byte"
+section = "7.3"
+anchor = "A complete nullable numeric-pair value payload is"
+size = 28
+note = "Both slots are binary64. Nullable slots use the variable-width production instead of this layout."
+
+[[record.field]]
+name = "prefix"
+offset = 0
+type = "bytes[8]"
+source = "spec"
+anchor = "The prefix has eight bytes"
+
+[[record.field]]
+name = "slot0_marker"
+offset = 8
+type = "u8"
+source = "spec"
+anchor = "`E6` at eight and seventeen"
+value = 230
+
+[[record.field]]
+name = "slot0_bits"
+offset = 9
+type = "u64"
+source = "spec"
+anchor = "the two `u64le` bit fields at nine and eighteen"
+
+[[record.field]]
+name = "slot1_marker"
+offset = 17
+type = "u8"
+source = "spec"
+anchor = "`E6` at eight and seventeen"
+value = 230
+
+[[record.field]]
+name = "slot1_bits"
+offset = 18
+type = "u64"
+source = "spec"
+anchor = "the two `u64le` bit fields at nine and eighteen"
+
+[[record.field]]
+name = "terminators"
+offset = 26
+type = "bytes[2]"
+source = "spec"
+anchor = "`FE FE` at twenty-six"
+
+
+[[record]]
 name = "sketch_owner_list_prefix"
 kind = "byte"
 section = "7.3"

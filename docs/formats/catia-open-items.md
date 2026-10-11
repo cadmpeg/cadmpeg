@@ -142,19 +142,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must identify the complete geometry-owned construction-state production, including both standard and construction states, and the exact native profile-membership incidence. Closed profiles require standard curves and exact endpoint identities; point coordinates and geometric proximity do not establish that relation.
 
-### DI-21. Sketch geometry classes
-
-**Question.** What neutral geometry does each unresolved sketch-geometry class represent?
-
-**Known.** The source-schema catalog gives each selected class name. A class name alone does not give the instance grammar.
-
-**Need.** We must know the instance grammar to transfer the geometry.
-
 ### DI-22. Sketch constraints
 
 **Question.** What are the operand and value fields of each dimensional and non-dimensional sketch constraint?
 
-**Known.** Constraint-range values and structural incidences are retained separately. An exact `2DPoint` field-to-`ConstraintDYS` reference retains both native field and entity identities, offsets, and outbound reference occurrences. This incidence assigns no neutral sketch geometry or constraint type. A structurally proven sketch-owned `Range`/`CstAttr_Dimension` constraint with a finite bit-agreeing nominal carries that nominal as a neutral millimetre length parameter. No dimensional subtype, driving or active state, or solver semantics is assigned.
+**Known.** Constraint-range values and structural incidences are retained separately. An exact `2DPoint` field-to-`ConstraintDYS` reference retains both native field and entity identities, offsets, and outbound reference occurrences. This incidence assigns no neutral sketch geometry or constraint type. A structurally proven sketch-owned `Range`/`CstAttr_Dimension` constraint retains its exact nominal and interval values natively. These selectors and values alone do not assign a physical quantity, neutral parameter, dimensional subtype, driving or active state, or solver semantics.
 
 **Need.** We must know the fields to transfer and solve the constraints.
 

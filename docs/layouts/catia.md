@@ -396,6 +396,36 @@ Parsed by:
 
 - The enumerated header fields total 14 bytes but the same sentence states the record stride as `payload_size + 13`, which implies a 13-byte header. The parser follows both at once: it advances by `size + 13` yet decodes carrier fields from record `+14`, and checks the `0xff` edge-use lead byte at record `+13`. The spec does not say which of the two numbers is authoritative.
 
+## `numeric_pair_prefix`
+
+Spec §7.3 · layout: byte offsets · size: 8 B
+
+Each prefix atom is one byte. Slot zero follows at offset eight; nullable slots change subsequent offsets.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `prefix_atoms` | `bytes[2]` | little | spec | the two prefix atoms at offsets zero and one |
+| 2 | 1 | `type_marker` | `u8` | little | spec | `E8` at two · value `232` |
+| 3 | 2 | `type_atom` | `bytes[2]` | little | spec | `E4 07` at three |
+| 5 | 1 | `separator` | `u8` | little | spec | `37` at five · value `55` |
+| 6 | 1 | `layout_atom` | `u8` | little | spec | `83` at six · value `131` |
+| 7 | 1 | `value_atom` | `u8` | little | spec | `81` at seven · value `129` |
+
+## `numeric_pair_binary64`
+
+Spec §7.3 · layout: byte offsets · size: 28 B
+
+Both slots are binary64. Nullable slots use the variable-width production instead of this layout.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `prefix` | `bytes[8]` | little | spec | The prefix has eight bytes |
+| 8 | 1 | `slot0_marker` | `u8` | little | spec | `E6` at eight and seventeen · value `230` |
+| 9 | 8 | `slot0_bits` | `u64` | little | spec | the two `u64le` bit fields at nine and eighteen |
+| 17 | 1 | `slot1_marker` | `u8` | little | spec | `E6` at eight and seventeen · value `230` |
+| 18 | 8 | `slot1_bits` | `u64` | little | spec | the two `u64le` bit fields at nine and eighteen |
+| 26 | 2 | `terminators` | `bytes[2]` | little | spec | `FE FE` at twenty-six |
+
 ## `sketch_owner_list_prefix`
 
 Spec §7.3 · layout: byte offsets · size: 1 B
