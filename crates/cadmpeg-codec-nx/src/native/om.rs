@@ -592,8 +592,9 @@ pub(super) fn operation_state_slot_lanes(
             else {
                 continue;
             };
-            let (slots, _slots_storage) = slots.into_parts();
-            let Ok(frame) = crate::om::state_slot_lane::StateSlotLane::new(source_offset, slots)
+            let (slots, slots_storage) = slots.into_parts();
+            let Ok(frame) =
+                crate::om::state_slot_lane::StateSlotLane::from_wire(ctx, source_offset, slots)?
             else {
                 continue;
             };
@@ -608,7 +609,7 @@ pub(super) fn operation_state_slot_lanes(
                 )?,
                 section_link: ctx.copy_retained_text(&link.id, "NX state slot section link")?,
                 ordinal: lane_ordinal,
-                frame,
+                frame: slots_storage.commit_value(frame)?,
                 source_entry: ctx.copy_retained_text(&entry.name, "NX state slot source entry")?,
             });
         }
@@ -3216,7 +3217,7 @@ pub(super) fn external_reference_records(
     ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<ExternalReferenceRecord>, cadmpeg_core::CodecError> {
-    let (parsed, _parsed_storage, _parsed_handles_storage) =
+    let (parsed, _parsed_storage, parsed_handles_storage) =
         container.external_reference_records(ctx)?;
     let count = parsed.len();
     let mut output = ctx.vector_storage(count, "nx native external reference records")?;
@@ -3247,7 +3248,7 @@ pub(super) fn external_reference_records(
             source_offset,
         });
     }
-    Ok(output)
+    parsed_handles_storage.commit_value(output)
 }
 
 fn external_reference_record_id(
@@ -3407,7 +3408,10 @@ pub(super) fn external_reference_tail_reference_pairs(
         else {
             continue;
         };
-        let pairs = crate::container::parse_extref_reference_pairs(ctx, bytes)?;
+        let (pairs, _pairs_storage) = ctx
+            .with_scoped_storage("NX parsed external reference tail pairs", || {
+                crate::container::parse_extref_reference_pairs(ctx, bytes)
+            })?;
         let record_key = ctx
             .split_once(&record.id, "#", "nx native external reference tail pair id")?
             .map_or(record.id.as_str(), |(_, key)| key);
@@ -4868,7 +4872,12 @@ pub(super) fn data_block_control_values(
             0,
             "NX control value block id",
         )?;
-        for (ordinal, value) in values.into_iter().enumerate() {
+        for (ordinal, value) in ctx
+            .admit_iter(values.initial(), "project NX control values")?
+            .copied()
+            .chain(std::iter::once(*values.last()))
+            .enumerate()
+        {
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX data block control value ordinal", 0, 1))?;
             let source_offset = entry_offset
@@ -5066,7 +5075,12 @@ pub(super) fn data_block_control_index_values(
             .len()
             .checked_add(1)
             .ok_or_else(|| ctx.refuse_codec_limit("NX control index value block count", 0, 1))?;
-        for (ordinal, value) in values.into_iter().enumerate() {
+        for (ordinal, value) in ctx
+            .admit_iter(values.initial(), "project NX control index values")?
+            .copied()
+            .chain(std::iter::once(*values.last()))
+            .enumerate()
+        {
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX control index value ordinal", 0, 1))?;
             let source_offset = entry_offset
@@ -5830,9 +5844,9 @@ pub(super) fn string_values(
                 let source_offset = entry_offset
                     .checked_add(cadmpeg_core::decode::u64_from_index(value.offset))
                     .ok_or_else(|| ctx.refuse_codec_limit("NX string value source offset", 0, 1))?;
-                let text = ctx.copy_retained_text(value.value.as_str(), "NX string value text")?;
-                let text = PrintableString::new(text)
-                    .map_err(|_| ctx.refuse_codec_limit("validate NX string value", 0, 1))?;
+                let text = value
+                    .value
+                    .try_into_owned_for_decode(ctx, "NX string value text")?;
                 ctx.reserve_vec(&mut output, 1, "NX native string values")?;
                 output.push(StringValue {
                     id: retained_om_three_number_id(

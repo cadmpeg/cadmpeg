@@ -1895,3 +1895,5 @@ fn nx_object_record_handle_pair_work_loops_refuse_named_sites() {
 mod registry_search;
 
 mod column_search;
+
+mod budget_projection;

@@ -1439,3 +1439,29 @@ fn simple_hole_reference_pairs_preserve_wire_and_reject_wrong_witness_wrappers()
         assert!(error.to_string().contains(field));
     }
 }
+
+#[test]
+fn symbolic_thread_text_projection_copies_the_checked_value() {
+    let record = crate::om::operation_record::OperationPayload::new(
+        b"\x03\x0bM Profile\0\x03\x0aM3_x_0.5\0\x03\x05CUT\0",
+        500,
+        "SYMBOLIC_THREAD",
+    )
+    .unwrap();
+    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let frames = super::symbolic_thread_text_frames(ctx, record)?.unwrap();
+        super::owned_symbolic_thread(ctx, frames, "0", 0, 0, 0)
+    };
+    let row = crate::test_support::with_decode_context(|ctx| decode(ctx)).unwrap();
+    assert_eq!(row.text_frames.len(), 3);
+    assert_eq!(row.text_frames[0].value.as_str(), "M Profile");
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX symbolic thread text frame value",
+        decode,
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 9)
+    );
+}

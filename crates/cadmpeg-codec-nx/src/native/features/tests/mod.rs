@@ -24,3 +24,5 @@ mod sketch_point_limits;
 mod sketch_record_limits;
 mod source_and_sketch;
 mod state_journal_uses;
+
+mod text_projection;

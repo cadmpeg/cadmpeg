@@ -651,7 +651,11 @@ pub(crate) fn terminal_feature_body_ids(
 ) -> Result<Option<BTreeSet<BodyId>>, CodecError> {
     let mut storage = ctx.reserve_scoped(0, "nx terminal body workspace")?;
     let mut statuses_by_binding = BTreeMap::new();
-    for status in ctx.admit_iter(statuses, "nx terminal body statuses")? {
+    let mut statuses = statuses.iter();
+    while statuses.len() != 0 {
+        let Some(status) = ctx.next_charged(&mut statuses, "nx terminal body statuses")? else {
+            break;
+        };
         if ctx.contains_key_btree_map(
             &statuses_by_binding,
             status.segment_body_binding.as_str(),
@@ -670,7 +674,11 @@ pub(crate) fn terminal_feature_body_ids(
     }
     let mut mapped = BTreeSet::new();
     let mut selected = BTreeSet::new();
-    for binding in ctx.admit_iter(bindings, "nx terminal body bindings")? {
+    let mut bindings = bindings.iter();
+    while bindings.len() != 0 {
+        let Some(binding) = ctx.next_charged(&mut bindings, "nx terminal body bindings")? else {
+            break;
+        };
         let Some(status) = ctx.remove_btree_map(
             &mut statuses_by_binding,
             binding.id.as_str(),
