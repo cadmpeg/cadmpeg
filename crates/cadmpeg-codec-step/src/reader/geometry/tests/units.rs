@@ -497,11 +497,13 @@ fn uncertainty_name_refuses_materialized_limit() {
         crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
             .expect("valid uncertainty exchange");
     crate::test_support::with_service_context(SOURCE, |_, ctx| {
-        let (measures, unresolved) =
-            super::super::context_length_uncertainties(&original.records()[&3], &original, ctx,
- &mut super::super::scalar_resolver(&original, ctx),
-)
-                .expect("original production uncertainty route");
+        let (measures, unresolved) = super::super::context_length_uncertainties(
+            &original.records()[&3],
+            &original,
+            ctx,
+            &mut super::super::scalar_resolver(&original, ctx),
+        )
+        .expect("original production uncertainty route");
         assert_eq!(measures.len(), 1);
         assert_eq!(measures[0].get(), 0.2);
         assert_eq!(unresolved, 0);
@@ -525,10 +527,13 @@ fn uncertainty_name_refuses_materialized_limit() {
             let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
                 .expect("root fits materialized policy");
             let mut scalar = super::super::scalar_resolver(&exchange, &ctx);
-            super::super::context_length_uncertainties(&exchange.records()[&3], &exchange, &ctx,
- &mut scalar,
-)
-                .map(|_| ())
+            super::super::context_length_uncertainties(
+                &exchange.records()[&3],
+                &exchange,
+                &ctx,
+                &mut scalar,
+            )
+            .map(|_| ())
         },
     );
     assert!(
@@ -765,9 +770,8 @@ fn resolve_unit_scales_for_test(
         (losses, &mut loss_storage),
         &mut storage,
         &ctx,
-
- &mut scalar,
-)
+        &mut scalar,
+    )
     .expect("unit scales fit policy")
 }
 
