@@ -381,3 +381,35 @@ fn scalar_conflict_losses_preserve_both_targets() {
         .iter()
         .any(|loss| loss.message.contains("body#31")));
 }
+
+#[test]
+fn scalar_conflict_losses_follow_first_physical_style_encounter() {
+    let base = String::from_utf8_lossy(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21"))
+        .lines()
+        .filter(|line| !line.starts_with("#47=") && !line.starts_with("#67=") && !line.starts_with("#68="))
+        .collect::<Vec<_>>()
+        .join("\n");
+    for (styles, expected) in [
+        (
+            "#900=STYLED_ITEM('',(#46),#31);\n#100=STYLED_ITEM('',(#46),#29);\n#101=STYLED_ITEM('',(#66),#29);\n#901=STYLED_ITEM('',(#66),#31);\n",
+            ["body#31", "face#29"],
+        ),
+        (
+            "#100=STYLED_ITEM('',(#46),#29);\n#900=STYLED_ITEM('',(#46),#31);\n#901=STYLED_ITEM('',(#66),#31);\n#101=STYLED_ITEM('',(#66),#29);\n",
+            ["face#29", "body#31"],
+        ),
+    ] {
+        let source = base.replace("ENDSEC;\nEND-ISO-10303-21;", &format!("{styles}ENDSEC;\nEND-ISO-10303-21;"));
+        let result = StepCodec::default()
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .expect("source-ordered scalar conflicts");
+        let conflicts: Vec<_> = result.report().losses.iter()
+            .filter(|loss| loss.code == StepLossCode::ConflictingScalarColors.kind())
+            .collect();
+        assert_eq!(conflicts.len(), 2);
+        for (loss, target) in conflicts.iter().zip(expected) {
+            assert!(loss.message.contains(target), "{}: {target}", loss.message);
+        }
+        assert_eq!(result.ir().model.appearance_bindings.len(), 4);
+    }
+}

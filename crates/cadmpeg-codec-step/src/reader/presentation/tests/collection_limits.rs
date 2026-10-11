@@ -880,7 +880,7 @@ fn scalar_candidate_refuses(operation: &str, retained: bool) {
     let result = super::super::push_scalar_candidate(
         &mut std::array::from_fn(|_| std::collections::BTreeMap::new()),
         &cadmpeg_ir::appearance::AppearanceTarget::Body(body),
-        1,
+        (1, 0),
         color,
         &ctx,
     );
