@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Collection admissions in the STEP PMI reader.
 
-use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -200,17 +199,8 @@ fn pmi_geometric_usage_identity_refuses_retained_limit() {
 
 #[test]
 fn pmi_presentation_semantics_refuse_collection_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits collection policy");
-    assert!(matches!(
-        ctx.push_vec(&mut Vec::new(), 1u64, "step_pmi_presentation_semantics"),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_pmi_presentation_semantics"
-    ));
+    pmi_refuses("#1=DATUM('D');#2=ANNOTATION_TEXT_OCCURRENCE('note',(#1));", "step_pmi_presentation_semantics");
+
 }
 
 #[test]
@@ -330,6 +320,7 @@ fn pmi_datum_modifier_text_refuses_materialized_limit() {
                 length_scale: 1.0,
                 angle_scale: 1.0,
                 graph_limit: 64,
+                cache: &std::cell::RefCell::new(super::super::MeasureWalk::new(&ctx).expect("measure cache")),
                 losses: (&mut losses, &reports),
             };
             let value = crate::parse::Value::Enumeration("ABC".into());
@@ -386,6 +377,7 @@ fn datum_reference_refuses(records: &str, operation: &str) {
                 length_scale: 1.0,
                 angle_scale: 1.0,
                 graph_limit: 64,
+                cache: &std::cell::RefCell::new(super::super::MeasureWalk::new(&ctx).expect("measure cache")),
                 losses: (
                     &mut losses,
                     &std::cell::RefCell::new(
@@ -441,7 +433,7 @@ fn pmi_datum_modifier_items_refuse_collection_limit() {
 
 fn placement_refuses(operation: &str) {
     let source = format!(
-        "{HEADER}#1=CARTESIAN_POINT('',(0.,0.,0.));#2=DIRECTION('',(0.,0.,1.));#3=DIRECTION('',(1.,0.,0.));#4=AXIS2_PLACEMENT_3D('',#1,#2,#3);#5=TEXT_LITERAL('note',#4,'left',.RIGHT.,$);{TAIL}"
+        "{HEADER}#1=CARTESIAN_POINT('',(0.,0.,0.));#2=DIRECTION('',(0.,0.,1.));#3=DIRECTION('',(1.,0.,0.));#4=AXIS2_PLACEMENT_3D('',#1,#2,#3);#5=TEXT_LITERAL('note',#4,'left',.RIGHT.,$);#6=ANNOTATION_TEXT_OCCURRENCE('',(),#5);{TAIL}"
     );
     let (exchange, _) =
         crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
@@ -462,15 +454,8 @@ fn placement_refuses(operation: &str) {
             policy.limits.max_collection_items = limit;
             let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
                 .expect("empty root fits collection policy");
-            let result = super::super::collect_placement_candidates(
-                5,
-                &exchange,
-                &geometry.value,
-                &mut BTreeMap::new(),
-                &mut BTreeMap::new(),
-                0,
-                &ctx,
-            );
+            let mut index = super::super::discovery::AnnotationDiscoveryIndex::new(&ctx).expect("discovery");
+            let result = index.placement(exchange.records().get(&6).expect("annotation"),&exchange,&geometry.value);
             if let Err(CodecError::ResourceLimit(refusal)) = &result {
                 assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
             }
@@ -487,38 +472,12 @@ fn placement_refuses(operation: &str) {
 
 #[test]
 fn pmi_placement_visited_refuses_collection_limit() {
-    placement_refuses("step_pmi_placement_visited");
+    placement_refuses("STEP carrier graph nodes");
 }
 
 #[test]
-fn pmi_placement_candidates_refuse_collection_limit() {
-    placement_refuses("step_pmi_placement_candidates");
-}
-
-#[test]
-fn pmi_placement_walk_refuses_depth_limit() {
-    let source = format!("{HEADER}#1=ITEM();{TAIL}");
-    let (exchange, _) =
-        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
-            .expect("valid exchange");
-    let arena = DecodeArena::new();
-    let (setup_ctx, _) =
-        DecodeContext::from_root_bytes(source.as_bytes(), &arena, &DecodePolicy::default())
-            .expect("setup root fits policy");
-    let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let geometry =
-        crate::reader::geometry::decode(&exchange, &mut ir, &setup_ctx).expect("geometry setup");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_recursion_depth = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits depth policy");
-    assert!(matches!(
-        super::super::collect_placement_candidates(1, &exchange, &geometry.value, &mut BTreeMap::new(), &mut BTreeMap::new(), 0, &ctx),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RecursionDepth
-                && refusal.operation == "step_pmi_placement_walk"
-    ));
+fn pmi_placement_summary_refuses_collection_limit() {
+    placement_refuses("STEP annotation placement summaries");
 }
 
 fn target_slot_refusal(operation: &'static str) -> CodecError {
@@ -549,6 +508,7 @@ fn target_slot_refusal(operation: &'static str) -> CodecError {
     )
     .expect_err("target slot exceeds collection limit")
 }
+
 
 #[test]
 fn pmi_datum_basis_targets_refuse_collection_limit() {
@@ -582,72 +542,40 @@ fn pmi_geometric_usage_targets_refuse_collection_limit() {
 
 #[test]
 fn pmi_usage_annotation_indices_refuse_collection_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits collection policy");
-    assert!(matches!(
-        ctx.insert_btree_set(&mut std::collections::BTreeSet::new(), 1u64, "step_pmi_usage_annotation_indices").map(|_| ()),
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_pmi_usage_annotation_indices"
-    ));
+    pmi_refuses("#1=SHAPE_ASPECT('','',#99,.T.);#2=DIMENSIONAL_SIZE(#1,'');#3=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#1,$,#99);#99=ITEM();", "step_pmi_usage_annotation_indices");
+
 }
 
-fn measure_id_refusal(limit: u64, depth_limit: Option<u64>) -> CodecError {
+fn measure_id_refusal(limit: u64, depth_limit: Option<u64>) -> Result<(),CodecError> {
     let source = format!("{HEADER}#1=MEASURE_REPRESENTATION_ITEM();{TAIL}");
-    let (exchange, _) =
-        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
-            .expect("valid measure exchange");
-    let arena = DecodeArena::new();
+    let (exchange,_) = crate::test_support::with_service_context(source.as_bytes(),crate::parse::parse_inner).expect("exchange");
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
-    if let Some(depth_limit) = depth_limit {
-        policy.limits.max_recursion_depth = depth_limit;
-    }
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    super::super::collect_measure_ids(
-        &crate::parse::Value::Reference(1),
-        &exchange,
-        &mut std::collections::BTreeMap::new(),
-        0,
-        64,
-        &mut std::collections::BTreeSet::new(),
-        &ctx,
-    )
-    .expect_err("measure ID walk exceeds the limit")
+    if let Some(limit) = depth_limit { policy.limits.max_recursion_depth = limit; }
+    crate::test_support::with_policy_context(b"",&policy,|_,ctx| {
+        let mut losses = Vec::new();
+        let reports = std::cell::RefCell::new(ctx.reserve_scoped(0,"test reports")?);
+        let cache = std::cell::RefCell::new(super::super::MeasureWalk::new(ctx)?);
+        let measurements = super::super::MeasureContext { length_scale: 1.0,angle_scale: 1.0,graph_limit: 64,cache: &cache,losses: (&mut losses,&reports) };
+        let mut index = super::super::measure_carriers::CharacteristicIndex::new(ctx)?;
+        index.value_summary(&crate::parse::Value::Reference(1),0,&exchange,&measurements).map(|_|())
+    })
 }
 
 #[test]
 fn pmi_measure_visited_ids_refuse_collection_limit() {
-    assert!(matches!(
-        measure_id_refusal(0, None),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_pmi_measure_visited_ids"
-    ));
+    assert!(matches!(measure_id_refusal(0,None),Err(CodecError::ResourceLimit(refusal)) if refusal.dimension == ResourceDimension::CollectionItems && refusal.operation == "STEP carrier graph nodes"));
 }
 
 #[test]
 fn pmi_measure_ids_refuse_collection_limit() {
-    assert!(matches!(
-        measure_id_refusal(1, None),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_pmi_measure_ids"
-    ));
+    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems,"step_pmi_measure_values",|limit|measure_id_refusal(limit,None));
+    assert!(matches!(error,CodecError::ResourceLimit(refusal) if refusal.dimension == ResourceDimension::CollectionItems && refusal.operation == "step_pmi_measure_values"));
 }
 
 #[test]
 fn pmi_measure_id_walk_refuses_depth_limit() {
-    assert!(matches!(
-        measure_id_refusal(8, Some(0)),
-        CodecError::ResourceLimit(refusal)
-            if refusal.dimension == ResourceDimension::RecursionDepth
-                && refusal.operation == "step_pmi_measure_id_walk"
-    ));
+    assert!(matches!(measure_id_refusal(8,Some(0)),Err(CodecError::ResourceLimit(refusal)) if refusal.dimension == ResourceDimension::RecursionDepth && refusal.operation == "step_pmi_measure_id_walk"));
 }
 
 fn measure_eval_refusal(limit: u64, depth_limit: Option<u64>, record: &str) -> CodecError {
@@ -668,6 +596,7 @@ fn measure_eval_refusal(limit: u64, depth_limit: Option<u64>, record: &str) -> C
         length_scale: 1.0,
         angle_scale: 1.0,
         graph_limit: 64,
+        cache: &std::cell::RefCell::new(super::super::MeasureWalk::new(&ctx).expect("measure cache")),
         losses: (
             &mut losses,
             &std::cell::RefCell::new(ctx.reserve_scoped(0, "report fixture").expect("scope")),
@@ -776,6 +705,7 @@ fn typed_measure_length_containment_preserves_refusal() {
                 length_scale: 1.0,
                 angle_scale: 1.0,
                 graph_limit: 64,
+                cache: &std::cell::RefCell::new(super::super::MeasureWalk::new(&ctx).expect("measure cache")),
                 losses: (
                     &mut losses,
                     &std::cell::RefCell::new(
@@ -813,6 +743,7 @@ fn typed_measure_angle_containment_preserves_refusal() {
                 length_scale: 1.0,
                 angle_scale: 1.0,
                 graph_limit: 64,
+                cache: &std::cell::RefCell::new(super::super::MeasureWalk::new(&ctx).expect("measure cache")),
                 losses: (
                     &mut losses,
                     &std::cell::RefCell::new(
@@ -916,6 +847,7 @@ fn record_measure_length_containment_preserves_refusal() {
                 length_scale: 1.0,
                 angle_scale: 1.0,
                 graph_limit: 64,
+                cache: &std::cell::RefCell::new(super::super::MeasureWalk::new(&ctx).expect("measure cache")),
                 losses: (
                     &mut losses,
                     &std::cell::RefCell::new(
@@ -950,6 +882,7 @@ fn record_measure_angle_containment_preserves_refusal() {
                 length_scale: 1.0,
                 angle_scale: 1.0,
                 graph_limit: 64,
+                cache: &std::cell::RefCell::new(super::super::MeasureWalk::new(&ctx).expect("measure cache")),
                 losses: (
                     &mut losses,
                     &std::cell::RefCell::new(
@@ -1012,6 +945,7 @@ fn typed_measure_length_prefix_does_not_scan_name_suffix() {
             length_scale: 1.0,
             angle_scale: 1.0,
             graph_limit: 64,
+            cache: &std::cell::RefCell::new(super::super::MeasureWalk::new(&ctx).expect("measure cache")),
             losses: (&mut losses, &reports),
         };
         let result = super::super::measure(&value, &exchange, &mut measurements, ctx)
@@ -1049,6 +983,7 @@ fn record_measure_length_prefix_does_not_scan_name_suffix() {
             length_scale: 1.0,
             angle_scale: 1.0,
             graph_limit: 64,
+            cache: &std::cell::RefCell::new(super::super::MeasureWalk::new(&ctx).expect("measure cache")),
             losses: (&mut losses, &reports),
         };
         let result = super::super::measure(&value, &exchange, &mut measurements, ctx)

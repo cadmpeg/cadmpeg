@@ -4,16 +4,15 @@
 use super::super::geometry::GeometryData;
 use super::super::reference::references;
 use super::super::RecordExt;
-use super::{
-    collect_placement_candidates, collect_typed_placement_candidates, find_annotation_text,
-};
+use super::visit_typed_placement_candidates;
+use super::carriers::{CarrierGraph, CarrierSets, RecordCarriers, SetId};
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord};
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 #[derive(Clone, Copy, Default)]
 enum TextSelection {
@@ -48,11 +47,44 @@ enum RecordReferences {
     Many,
 }
 
+#[derive(Clone, Copy)]
+enum WarningRange {
+    Record { id: u64, warnings: SetId },
+    Branch { left: usize, right: usize, warnings: SetId },
+}
+
+impl WarningRange {
+    fn warnings(self) -> SetId { match self { Self::Record { warnings,.. } | Self::Branch { warnings,.. } => warnings } }
+}
+
+#[derive(Clone, Copy)]
+enum WarningJob { Record(u64), Range(u64,usize) }
+
+fn warning_ranges(graph: &mut CarrierGraph<'_, '_>, id: u64, start: usize, end: usize, ranges: &mut Vec<WarningRange>, storage: &mut ScopedReservation<'_>, ctx: &DecodeContext<'_>) -> Result<usize,CodecError> {
+    // Balanced range construction has at most usize::BITS active calls.
+    ctx.charge_work(1,"STEP annotation warning range construction")?;
+    let range = if end-start == 1 {
+        let child = graph.children(id)?[start].0;
+        WarningRange::Record { id: child,warnings: graph.summary(child,256)?[1] }
+    } else {
+        let middle = start+(end-start)/2;
+        let left = warning_ranges(graph,id,start,middle,ranges,storage,ctx)?;
+        let right = warning_ranges(graph,id,middle,end,ranges,storage,ctx)?;
+        let warnings = graph.sets.union(ranges[left].warnings(),ranges[right].warnings())?;
+        WarningRange::Branch { left,right,warnings }
+    };
+    let index = ranges.len();
+    ctx.push_scoped_vec(storage,ranges,range,"STEP annotation warning range nodes")?;
+    Ok(index)
+}
+
 pub(super) struct AnnotationDiscoveryIndex<'ctx, 'arena> {
-    aliases: BTreeMap<(u64, usize, bool), (u64, usize)>,
-    texts: BTreeMap<u64, CachedText>,
-    summaries: BTreeMap<(u64, usize), Option<TextSummary>>,
-    placements: BTreeMap<(u64, usize), PlacementSelection>,
+    aliases: HashMap<(u64, usize, bool), Option<(u64, usize)>>,
+    texts: HashMap<u64, CachedText>,
+    summaries: HashMap<(u64, usize), TextSummary>,
+    placements: HashMap<(u64, usize), PlacementSelection>,
+    graph: CarrierGraph<'ctx, 'arena>,
+    warning_ranges: HashMap<u64,Vec<WarningRange>>,
     ctx: &'ctx DecodeContext<'arena>,
     storage: ScopedReservation<'ctx>,
 }
@@ -93,10 +125,12 @@ fn record_references(
 impl<'ctx, 'arena> AnnotationDiscoveryIndex<'ctx, 'arena> {
     pub(super) fn new(ctx: &'ctx DecodeContext<'arena>) -> Result<Self, CodecError> {
         Ok(Self {
-            aliases: BTreeMap::new(),
-            texts: BTreeMap::new(),
-            summaries: BTreeMap::new(),
-            placements: BTreeMap::new(),
+            aliases: HashMap::new(),
+            texts: HashMap::new(),
+            summaries: HashMap::new(),
+            placements: HashMap::new(),
+            graph: CarrierGraph::new(ctx)?,
+            warning_ranges: HashMap::new(),
             ctx,
             storage: ctx.reserve_scoped(0, "STEP annotation discovery index scratch")?,
         })
@@ -110,75 +144,97 @@ impl<'ctx, 'arena> AnnotationDiscoveryIndex<'ctx, 'arena> {
         placement: bool,
         exchange: &Exchange,
         geometry: &GeometryData,
-    ) -> Result<(u64, usize), CodecError> {
+    ) -> Result<Option<(u64, usize)>, CodecError> {
         let ctx = self.ctx;
         let mut scratch = ctx.reserve_scoped(0, "STEP annotation alias scratch")?;
-        let mut seen = BTreeSet::new();
+        let mut seen = HashSet::new();
         let mut path = Vec::new();
-        loop {
-            if let Some(&query) = ctx.get_btree_map(
-                &self.aliases,
-                &(key.0, key.1, placement),
-                "STEP annotation alias lookup",
-            )? {
-                key = query;
-                break;
+        let mut empty_at_any_depth = false;
+        let query = loop {
+            if let Some(&query) = ctx.get_hash_map(&self.aliases, &(key.0, key.1, placement), "STEP annotation alias lookup")? {
+                empty_at_any_depth = query.is_none() && key.1 == 0;
+                break query;
             }
-            if key.1 >= 256
-                || !scratch.with_storage(|| {
-                    ctx.insert_btree_set(&mut seen, key.0, "STEP annotation alias visited")
-                })?
-            {
-                break;
+            if key.1 != 0 && ctx.get_hash_map(&self.aliases, &(key.0, 0, placement), "STEP annotation empty alias lookup")?.is_some_and(Option::is_none) {
+                empty_at_any_depth = true;
+                break None;
             }
-            let Some(record) =
-                ctx.get_btree_map(exchange.records(), &key.0, "STEP annotation alias record")?
-            else {
-                break;
+            if key.1 >= 256 { break None; }
+            if !scratch.with_storage(|| ctx.insert_hash_set(&mut seen, key.0, "STEP annotation alias visited"))? {
+                // A carrier-free single-child cycle has no exit to a carrier.
+                empty_at_any_depth = true;
+                break None;
+            }
+            let Some(record) = ctx.get_btree_map(exchange.records(), &key.0, "STEP annotation alias record")? else {
+                empty_at_any_depth = true;
+                break None;
             };
             if placement {
-                let (local, _local_storage) =
-                    ctx.with_scoped_storage("STEP annotation local placement scratch", || {
-                        let mut local = BTreeMap::new();
-                        collect_typed_placement_candidates(record, geometry, &mut local, ctx)?;
-                        Ok::<_, CodecError>(local)
-                    })?;
-                if !local.is_empty() {
-                    break;
-                }
-            } else if record
-                .partial(ctx, "TEXT_LITERAL")?
-                .and_then(|partial| partial.parameters.first())
-                .is_some()
-                || record
-                    .partial(ctx, "TEXT_LITERAL_WITH_ASSOCIATED_CURVES")?
-                    .and_then(|partial| partial.parameters.first())
-                    .is_some()
-            {
-                break;
+                let mut has_local = false;
+                visit_typed_placement_candidates(record,geometry,ctx,|_,_| { has_local = true; Ok(()) })?;
+                if has_local { break Some(key); }
+            } else if record.partial(ctx, "TEXT_LITERAL")?.and_then(|partial| partial.parameters.first()).is_some()
+                || record.partial(ctx, "TEXT_LITERAL_WITH_ASSOCIATED_CURVES")?.and_then(|partial| partial.parameters.first()).is_some() {
+                break Some(key);
             }
-            let RecordReferences::One(child) = record_references(record, ctx)? else {
-                break;
-            };
-            ctx.push_scoped_vec(&mut scratch, &mut path, key, "STEP annotation alias path")?;
-            key = (child, key.1 + 1);
+            match record_references(record, ctx)? {
+                RecordReferences::None => {
+                    empty_at_any_depth = true;
+                    break None;
+                },
+                RecordReferences::Many => break Some(key),
+                RecordReferences::One(child) => {
+                    ctx.push_scoped_vec(&mut scratch, &mut path, key, "STEP annotation alias path")?;
+                    key = (child, key.1 + 1);
+                },
+            }
+        };
+        if empty_at_any_depth {
+            self.storage.with_storage(|| ctx.insert_hash_map(&mut self.aliases, (key.0, 0, placement), None, "STEP annotation aliases"))?;
         }
-        for source in ctx.admit_iter(path, "STEP annotation alias installation")? {
-            self.storage.with_storage(|| {
-                ctx.insert_btree_map(
-                    &mut self.aliases,
-                    (source.0, source.1, placement),
-                    key,
-                    "STEP annotation aliases",
-                )
-            })?;
+        let mut source_rows = path.into_iter();
+        for _ in 0..source_rows.len() {
+            let source = ctx.next_charged(&mut source_rows, "STEP annotation alias installation")?.ok_or_else(|| CodecError::malformed("STEP annotation source ended early"))?;
+            let depth = if empty_at_any_depth { 0 } else { source.1 };
+            self.storage.with_storage(|| ctx.insert_hash_map(&mut self.aliases, (source.0, depth, placement), query, "STEP annotation aliases"))?;
         }
-        Ok(key)
+        Ok(query)
     }
 
-    fn cache_text(&mut self, id: u64, exchange: &Exchange) -> Result<(), CodecError> {
+    fn ensure(&mut self, id: u64, exchange: &Exchange, geometry: &GeometryData) -> Result<(),CodecError> {
         let ctx = self.ctx;
-        if ctx.contains_key_btree_map(&self.texts, &id, "STEP annotation text cache lookup")? {
+        let texts = &mut self.texts;
+        let storage = &mut self.storage;
+        self.graph.ensure(id, |id, sets, node_storage| {
+            let mut local = [SetId::default();3];
+            let mut children = Vec::new();
+            let Some(record) = ctx.get_btree_map(exchange.records(),&id,"STEP annotation graph record")? else { return Ok(RecordCarriers { local,children }); };
+            if record.partial(ctx,"TEXT_LITERAL")?.and_then(|partial|partial.parameters.first()).is_some()
+                || record.partial(ctx,"TEXT_LITERAL_WITH_ASSOCIATED_CURVES")?.and_then(|partial|partial.parameters.first()).is_some() {
+                Self::cache_text(id,exchange,texts,storage,ctx)?;
+                let cached = ctx.get_hash_map(texts,&id,"STEP annotation text cache lookup")?.expect("cached carrier");
+                if cached.text.is_some() { local[0] = CarrierSets::leaf(id); }
+                if !cached.losses.is_empty() { local[1] = CarrierSets::leaf(id); }
+            }
+            visit_typed_placement_candidates(record,geometry,ctx,|placement,_| {
+                local[2] = sets.union(local[2],CarrierSets::leaf(placement))?;
+                Ok(())
+            })?;
+            let mut partials = record.partials.iter();
+            for _ in 0..partials.len() {
+                let partial = ctx.next_charged(&mut partials,"STEP annotation graph partial traversal")?.ok_or_else(||CodecError::malformed("STEP annotation partial source ended early"))?;
+                let mut parameters = partial.parameters.iter();
+                for _ in 0..parameters.len() {
+                    let value = ctx.next_charged(&mut parameters,"STEP annotation graph parameter traversal")?.ok_or_else(||CodecError::malformed("STEP annotation parameter source ended early"))?;
+                    for child in references(value,ctx) { ctx.push_scoped_vec(node_storage,&mut children,(child?,1),"STEP annotation graph edges")?; }
+                }
+            }
+            Ok(RecordCarriers { local,children })
+        })
+    }
+
+    fn cache_text(id: u64, exchange: &Exchange, texts: &mut HashMap<u64,CachedText>, storage: &mut ScopedReservation<'_>, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+        if ctx.contains_key_hash_map(texts, &id, "STEP annotation text cache lookup")? {
             return Ok(());
         }
         let record = ctx
@@ -196,7 +252,7 @@ impl<'ctx, 'arena> AnnotationDiscoveryIndex<'ctx, 'arena> {
                 |value| Ok(Some(value)),
             )?
             .ok_or_else(|| CodecError::malformed("STEP annotation text value is missing"))?;
-        self.storage.with_storage(|| {
+        storage.with_storage(|| {
             let mut losses = Vec::new();
             let text = super::super::decode_text_charged(
                 exchange,
@@ -207,8 +263,8 @@ impl<'ctx, 'arena> AnnotationDiscoveryIndex<'ctx, 'arena> {
                 StepLossCode::MetadataStringInvalid,
                 ctx,
             )?;
-            ctx.insert_btree_map(
-                &mut self.texts,
+            ctx.insert_hash_map(
+                texts,
                 id,
                 CachedText { text, losses },
                 "STEP annotation text cache",
@@ -217,86 +273,102 @@ impl<'ctx, 'arena> AnnotationDiscoveryIndex<'ctx, 'arena> {
         Ok(())
     }
 
-    fn collect_text_summary(
-        &mut self,
-        (id, depth): (u64, usize),
-        exchange: &Exchange,
-        (visited, visited_storage): (&mut BTreeSet<u64>, &mut ScopedReservation<'_>),
-        (summary, summary_storage): (&mut TextSummary, &mut ScopedReservation<'_>),
-    ) -> Result<bool, CodecError> {
+    fn collect_warnings(&mut self, (id,_depth): (u64,usize), (visited,visited_storage): (&mut HashSet<u64>,&mut ScopedReservation<'_>), (summary,summary_storage): (&mut TextSummary,&mut ScopedReservation<'_>)) -> Result<(),CodecError> {
         let ctx = self.ctx;
-        if depth >= 256 {
-            return Ok(false);
-        }
-        if !visited_storage
-            .with_storage(|| ctx.insert_btree_set(visited, id, "STEP annotation summary visited"))?
-        {
-            return Ok(true);
-        }
-        let _nested = ctx.enter_nested("STEP annotation summary walk")?;
-        let Some(record) =
-            ctx.get_btree_map(exchange.records(), &id, "STEP annotation summary record")?
-        else {
-            return Ok(true);
-        };
-        if record
-            .partial(ctx, "TEXT_LITERAL")?
-            .and_then(|partial| partial.parameters.first())
-            .is_some()
-            || record
-                .partial(ctx, "TEXT_LITERAL_WITH_ASSOCIATED_CURVES")?
-                .and_then(|partial| partial.parameters.first())
-                .is_some()
-        {
-            self.cache_text(id, exchange)?;
-            let cached = ctx
-                .get_btree_map(&self.texts, &id, "STEP annotation text cache lookup")?
-                .ok_or_else(|| CodecError::malformed("STEP annotation text was not cached"))?;
-            if cached.text.is_some() {
-                summary.selection = match summary.selection {
-                    TextSelection::Absent => TextSelection::Unique(id),
-                    TextSelection::Unique(_) => TextSelection::Ambiguous(2),
-                    TextSelection::Ambiguous(count) => TextSelection::Ambiguous(count + 1),
-                };
+        let mut scratch = ctx.reserve_scoped(0,"STEP annotation diagnostic cursor scratch")?;
+        let mut jobs = Vec::new();
+        ctx.push_scoped_vec(&mut scratch,&mut jobs,WarningJob::Record(id),"STEP annotation diagnostic cursor")?;
+        let mut emitted = SetId::default();
+        while !jobs.is_empty() {
+            ctx.charge_work(1,"STEP annotation diagnostic cursor traversal")?;
+            match jobs.pop().expect("diagnostic job") {
+                WarningJob::Record(id) => {
+                    let reachable = self.graph.summary(id,256)?[1];
+                    let combined = self.graph.sets.union(reachable,emitted)?;
+                    if self.graph.sets.count(combined) == self.graph.sets.count(emitted) { continue; }
+                    if !visited_storage.with_storage(||ctx.insert_hash_set(visited,id,"STEP annotation diagnostic visited"))? { continue; }
+                    let local = self.graph.local(id)?[1];
+                    if let Some(carrier) = self.graph.sets.first(local) {
+                        ctx.push_scoped_vec(summary_storage,&mut summary.warnings,carrier,"STEP annotation diagnostic carriers")?;
+                        emitted = self.graph.sets.union(emitted,local)?;
+                    }
+                    let count = self.graph.children(id)?.len();
+                    if count != 0 {
+                        if !ctx.contains_key_hash_map(&self.warning_ranges,&id,"STEP annotation warning ranges lookup")? {
+                            let mut ranges = Vec::new();
+                            warning_ranges(&mut self.graph,id,0,count,&mut ranges,&mut self.storage,ctx)?;
+                            self.storage.with_storage(||ctx.insert_hash_map(&mut self.warning_ranges,id,ranges,"STEP annotation warning ranges"))?;
+                        }
+                        let index = ctx.get_hash_map(&self.warning_ranges,&id,"STEP annotation warning ranges lookup")?.expect("warning ranges").len()-1;
+                        ctx.push_scoped_vec(&mut scratch,&mut jobs,WarningJob::Range(id,index),"STEP annotation diagnostic cursor")?;
+                    }
+                },
+                WarningJob::Range(id,index) => {
+                    let range = ctx.get_hash_map(&self.warning_ranges,&id,"STEP annotation warning ranges lookup")?.expect("warning ranges")[index];
+                    let combined = self.graph.sets.union(range.warnings(),emitted)?;
+                    if self.graph.sets.count(combined) == self.graph.sets.count(emitted) { continue; }
+                    match range {
+                        WarningRange::Record { id,.. } => ctx.push_scoped_vec(&mut scratch,&mut jobs,WarningJob::Record(id),"STEP annotation diagnostic cursor")?,
+                        WarningRange::Branch { left,right,.. } => {
+                            ctx.push_scoped_vec(&mut scratch,&mut jobs,WarningJob::Range(id,right),"STEP annotation diagnostic cursor")?;
+                            ctx.push_scoped_vec(&mut scratch,&mut jobs,WarningJob::Range(id,left),"STEP annotation diagnostic cursor")?;
+                        },
+                    }
+                },
             }
-            if !cached.losses.is_empty() {
-                ctx.push_scoped_vec(
-                    summary_storage,
-                    &mut summary.warnings,
-                    id,
-                    "STEP annotation diagnostic carriers",
-                )?;
-            }
         }
-        let mut complete = true;
-        let mut partials = record.partials.iter();
-        for _ in 0..partials.len() {
-            let partial = ctx
-                .next_charged(&mut partials, "STEP annotation summary partial traversal")?
-                .ok_or_else(|| {
-                    CodecError::malformed("STEP annotation partial source ended early")
-                })?;
-            let mut parameters = partial.parameters.iter();
-            for _ in 0..parameters.len() {
-                let value = ctx
-                    .next_charged(
-                        &mut parameters,
-                        "STEP annotation summary parameter traversal",
-                    )?
-                    .ok_or_else(|| {
-                        CodecError::malformed("STEP annotation parameter source ended early")
-                    })?;
-                for reference in references(value, ctx) {
-                    complete &= self.collect_text_summary(
-                        (reference?, depth + 1),
-                        exchange,
-                        (visited, visited_storage),
-                        (summary, summary_storage),
-                    )?;
+        Ok(())
+    }
+
+    fn collect_cutoff_summary(&mut self, (id, depth): (u64, usize), (visited, visited_storage): (&mut HashSet<u64>, &mut ScopedReservation<'_>), (selected, summary, summary_storage): (&mut SetId, &mut TextSummary, &mut ScopedReservation<'_>)) -> Result<(), CodecError> {
+        if depth >= 256 { return Ok(()); }
+        let ctx = self.ctx;
+        let _nested = ctx.enter_nested("step_pmi_annotation_text_walk")?;
+        let mut scratch = ctx.reserve_scoped(0,"STEP annotation cutoff frames scratch")?;
+        let mut frames = Vec::new();
+        ctx.push_scoped_vec(&mut scratch,&mut frames,(id,depth,None::<usize>),"STEP annotation cutoff frames")?;
+        while !frames.is_empty() {
+            ctx.charge_work(1,"STEP annotation cutoff frame traversal")?;
+            let (id,depth,next) = frames.pop().expect("cutoff frame");
+            if let Some(index) = next {
+                if let Some(&(child,_)) = self.graph.children(id)?.get(index) {
+                    ctx.charge_work(1,"STEP annotation cutoff edge traversal")?;
+                    ctx.push_scoped_vec(&mut scratch,&mut frames,(id,depth,Some(index+1)),"STEP annotation cutoff frames")?;
+                    ctx.push_scoped_vec(&mut scratch,&mut frames,(child,depth+1,None),"STEP annotation cutoff frames")?;
                 }
+                continue;
             }
+            if depth >= 256 || ctx.contains_hash_set(visited,&id,"STEP annotation cutoff visited lookup")? { continue; }
+            visited_storage.with_storage(||ctx.insert_hash_set(visited,id,"STEP annotation cutoff visited"))?;
+            let local = self.graph.local(id)?;
+            *selected = self.graph.sets.union(*selected,local[0])?;
+            if let Some(carrier) = self.graph.sets.first(local[1]) {
+                ctx.push_scoped_vec(summary_storage,&mut summary.warnings,carrier,"STEP annotation diagnostic carriers")?;
+            }
+            ctx.push_scoped_vec(&mut scratch,&mut frames,(id,depth,Some(0)),"STEP annotation cutoff frames")?;
         }
-        Ok(complete)
+        Ok(())
+    }
+
+    fn collect_text_summary(&mut self, key: (u64,usize), exchange: &Exchange, geometry: &GeometryData, (visited,visited_storage): (&mut HashSet<u64>,&mut ScopedReservation<'_>), (summary,summary_storage): (&mut TextSummary,&mut ScopedReservation<'_>)) -> Result<(),CodecError> {
+        self.ensure(key.0,exchange,geometry)?;
+        // First-visit depth is observable when a path reaches the cutoff.
+        // Keep that traversal over the shared decoded graph, and cache its
+        // selection and diagnostic order for this query.
+        let mut selected = SetId::default();
+        if self.graph.height(key.0)?.saturating_add(key.1) >= 256 {
+            self.collect_cutoff_summary(key, (visited, visited_storage), (&mut selected, summary, summary_storage))?;
+        } else {
+            let carriers = self.graph.summary(key.0,256-key.1)?;
+            selected = carriers[0];
+            if carriers[1] != SetId::Empty { self.collect_warnings(key,(visited,visited_storage),(summary,summary_storage))?; }
+        }
+        summary.selection = match self.graph.sets.count(selected) {
+            0 => TextSelection::Absent,
+            1 => TextSelection::Unique(self.graph.sets.first(selected).expect("one text carrier")),
+            count => TextSelection::Ambiguous(count),
+        };
+        Ok(())
     }
 
     pub(super) fn text(
@@ -311,31 +383,25 @@ impl<'ctx, 'arena> AnnotationDiscoveryIndex<'ctx, 'arena> {
         ),
     ) -> Result<Option<String>, CodecError> {
         let ctx = self.ctx;
-        let key = self.canonical((id, 0), false, exchange, geometry)?;
-        if !ctx.contains_key_btree_map(&self.summaries, &key, "STEP annotation summary lookup")? {
+        let Some(key) = self.canonical((id, 0), false, exchange, geometry)? else { return Ok(None); };
+        if !ctx.contains_key_hash_map(&self.summaries, &key, "STEP annotation summary lookup")? {
             let mut visited_storage =
                 ctx.reserve_scoped(0, "STEP annotation summary visited scratch")?;
             let mut summary_storage = ctx.reserve_scoped(0, "STEP annotation summary scratch")?;
             let mut summary = TextSummary::default();
-            let mut visited = BTreeSet::new();
-            let complete = self.collect_text_summary(
+            let mut visited = HashSet::new();
+            self.collect_text_summary(
                 key,
                 exchange,
+                geometry,
                 (&mut visited, &mut visited_storage),
                 (&mut summary, &mut summary_storage),
             )?;
             drop(visited);
             drop(visited_storage);
-            let summary = if complete {
-                self.storage.absorb(&mut summary_storage)?;
-                Some(summary)
-            } else {
-                drop(summary);
-                drop(summary_storage);
-                None
-            };
+            self.storage.absorb(&mut summary_storage)?;
             self.storage.with_storage(|| {
-                ctx.insert_btree_map(
+                ctx.insert_hash_map(
                     &mut self.summaries,
                     key,
                     summary,
@@ -344,26 +410,19 @@ impl<'ctx, 'arena> AnnotationDiscoveryIndex<'ctx, 'arena> {
             })?;
         }
         let summary = ctx
-            .get_btree_map(&self.summaries, &key, "STEP annotation summary lookup")?
+            .get_hash_map(&self.summaries, &key, "STEP annotation summary lookup")?
             .ok_or_else(|| CodecError::malformed("STEP annotation summary is missing"))?;
-        let Some(summary) = summary else {
-            return find_annotation_text(
-                id,
-                exchange,
-                &mut BTreeSet::new(),
-                (used, claims),
-                (losses, reports),
-                0,
-                ctx,
-            );
-        };
-        for carrier in ctx.admit_iter(&summary.warnings, "STEP annotation diagnostic replay")? {
+        let mut source_rows = (&summary.warnings).iter();
+        for _ in 0..source_rows.len() {
+            let carrier = ctx.next_charged(&mut source_rows, "STEP annotation diagnostic replay")?.ok_or_else(|| CodecError::malformed("STEP annotation source ended early"))?;
             let cached = ctx
-                .get_btree_map(&self.texts, carrier, "STEP annotation text cache lookup")?
+                .get_hash_map(&self.texts, carrier, "STEP annotation text cache lookup")?
                 .ok_or_else(|| {
                     CodecError::malformed("STEP annotation diagnostic carrier is missing")
                 })?;
-            for loss in ctx.admit_iter(&cached.losses, "STEP annotation loss replay")? {
+            let mut source_rows = (&cached.losses).iter();
+        for _ in 0..source_rows.len() {
+            let loss = ctx.next_charged(&mut source_rows, "STEP annotation loss replay")?.ok_or_else(|| CodecError::malformed("STEP annotation source ended early"))?;
                 let loss = loss.try_clone_for_decode(ctx, "STEP annotation cached loss copy")?;
                 ctx.push_scoped_vec(&mut reports.borrow_mut(), losses, loss, "step_pmi_losses")?;
             }
@@ -375,7 +434,7 @@ impl<'ctx, 'arena> AnnotationDiscoveryIndex<'ctx, 'arena> {
                     ctx.insert_btree_set(used, carrier, "step_pmi_annotation_text_used")
                 })?;
                 let text = ctx
-                    .get_btree_map(&self.texts, &carrier, "STEP annotation text cache lookup")?
+                    .get_hash_map(&self.texts, &carrier, "STEP annotation text cache lookup")?
                     .and_then(|cached| cached.text.as_deref())
                     .ok_or_else(|| {
                         CodecError::malformed("STEP selected annotation text is missing")
@@ -395,124 +454,50 @@ impl<'ctx, 'arena> AnnotationDiscoveryIndex<'ctx, 'arena> {
         }
     }
 
-    pub(super) fn placement(
-        &mut self,
-        record: &RawRecord,
-        exchange: &Exchange,
-        geometry: &GeometryData,
-    ) -> Result<PlacementSelection, CodecError> {
+    fn select_placement(&self, selected: SetId, geometry: &GeometryData) -> Result<PlacementSelection,CodecError> {
+        Ok(match self.graph.sets.count(selected) {
+            0 => PlacementSelection::Absent,
+            1 => {
+                let carrier = self.graph.sets.first(selected).expect("one placement carrier");
+                let placement = self.ctx.get_btree_map(&geometry.placements,&carrier,"STEP pmi geometry.placements get")?.expect("admitted placement");
+                PlacementSelection::Unique(super::super::geometry::placement_transform(*placement).expect("admitted placement transform"))
+            },
+            count => PlacementSelection::Ambiguous(count),
+        })
+    }
+
+    pub(super) fn placement(&mut self, record: &RawRecord, exchange: &Exchange, geometry: &GeometryData) -> Result<PlacementSelection,CodecError> {
         let ctx = self.ctx;
-        match record_references(record, ctx)? {
+        match record_references(record,ctx)? {
             RecordReferences::None => Ok(PlacementSelection::Absent),
             RecordReferences::One(id) => {
-                let key = self.canonical((id, 0), true, exchange, geometry)?;
-                if !ctx.contains_key_btree_map(
-                    &self.placements,
-                    &key,
-                    "STEP annotation placement summary lookup",
-                )? {
-                    let (summary, scratch) = ctx.with_scoped_storage(
-                        "STEP annotation placement selection scratch",
-                        || {
-                            let mut visited = BTreeMap::new();
-                            let mut candidates = BTreeMap::new();
-                            collect_placement_candidates(
-                                key.0,
-                                exchange,
-                                geometry,
-                                &mut visited,
-                                &mut candidates,
-                                key.1,
-                                ctx,
-                            )?;
-                            Ok::<_, CodecError>(match candidates.len() {
-                                0 => PlacementSelection::Absent,
-                                1 => PlacementSelection::Unique(
-                                    *candidates
-                                        .first_key_value()
-                                        .expect("one placement candidate")
-                                        .1,
-                                ),
-                                count => PlacementSelection::Ambiguous(count),
-                            })
-                        },
-                    )?;
-                    drop(scratch);
-                    self.storage.with_storage(|| {
-                        ctx.insert_btree_map(
-                            &mut self.placements,
-                            key,
-                            summary,
-                            "STEP annotation placement summaries",
-                        )
-                    })?;
+                let Some(key) = self.canonical((id,0),true,exchange,geometry)? else { return Ok(PlacementSelection::Absent); };
+                if !ctx.contains_key_hash_map(&self.placements,&key,"STEP annotation placement summary lookup")? {
+                    self.ensure(key.0,exchange,geometry)?;
+                    let selected = self.graph.summary(key.0,256-key.1)?[2];
+                    let summary = self.select_placement(selected,geometry)?;
+                    self.storage.with_storage(||ctx.insert_hash_map(&mut self.placements,key,summary,"STEP annotation placement summaries"))?;
                 }
-                let summary = ctx
-                    .get_btree_map(
-                        &self.placements,
-                        &key,
-                        "STEP annotation placement summary lookup",
-                    )?
-                    .ok_or_else(|| {
-                        CodecError::malformed("STEP annotation placement summary is missing")
-                    })?;
-                Ok(*summary)
-            }
+                Ok(*ctx.get_hash_map(&self.placements,&key,"STEP annotation placement summary lookup")?.expect("placement summary"))
+            },
             RecordReferences::Many => {
-                let (summary, _scratch) =
-                    ctx.with_scoped_storage("STEP annotation placement selection scratch", || {
-                        let mut visited = BTreeMap::new();
-                        let mut candidates = BTreeMap::new();
-                        let mut partials = record.partials.iter();
-                        for _ in 0..partials.len() {
-                            let partial = ctx
-                                .next_charged(
-                                    &mut partials,
-                                    "STEP annotation placement partial traversal",
-                                )?
-                                .ok_or_else(|| {
-                                    CodecError::malformed(
-                                        "STEP annotation partial source ended early",
-                                    )
-                                })?;
-                            let mut parameters = partial.parameters.iter();
-                            for _ in 0..parameters.len() {
-                                let value = ctx
-                                    .next_charged(
-                                        &mut parameters,
-                                        "STEP annotation placement parameter traversal",
-                                    )?
-                                    .ok_or_else(|| {
-                                        CodecError::malformed(
-                                            "STEP annotation parameter source ended early",
-                                        )
-                                    })?;
-                                for reference in references(value, ctx) {
-                                    collect_placement_candidates(
-                                        reference?,
-                                        exchange,
-                                        geometry,
-                                        &mut visited,
-                                        &mut candidates,
-                                        0,
-                                        ctx,
-                                    )?;
-                                }
-                            }
+                let mut selected = SetId::default();
+                let mut partials = record.partials.iter();
+                for _ in 0..partials.len() {
+                    let partial = ctx.next_charged(&mut partials,"STEP annotation placement partial traversal")?.ok_or_else(||CodecError::malformed("STEP annotation partial source ended early"))?;
+                    let mut parameters = partial.parameters.iter();
+                    for _ in 0..parameters.len() {
+                        let value = ctx.next_charged(&mut parameters,"STEP annotation placement parameter traversal")?.ok_or_else(||CodecError::malformed("STEP annotation parameter source ended early"))?;
+                        for reference in references(value,ctx) {
+                            let child = reference?;
+                            self.ensure(child,exchange,geometry)?;
+                            let child = self.graph.summary(child,256)?[2];
+                            selected = self.graph.sets.union(selected,child)?;
                         }
-                        Ok::<_, CodecError>(match candidates.len() {
-                            0 => PlacementSelection::Absent,
-                            1 => PlacementSelection::Unique(
-                                *candidates
-                                    .first_key_value()
-                                    .expect("one placement candidate")
-                                    .1,
-                            ),
-                            count => PlacementSelection::Ambiguous(count),
-                        })
-                    })?;
-                Ok(summary)
-            }
+                    }
+                }
+                self.select_placement(selected,geometry)
+            },
         }
     }
 }
