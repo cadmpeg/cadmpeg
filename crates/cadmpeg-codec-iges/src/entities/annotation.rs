@@ -253,7 +253,7 @@ impl<'ctx, 'ir> SectionedAreaGeometryCache<'ctx, 'ir> {
             }
         }
         if self.sequences.contains(sequence) {
-            for neighbor in super::plane_proof::coplanarity_neighbors(plane_key, pattern_plane.1) {
+            for neighbor in super::plane_proof::coplanarity_neighbors(plane_key) {
                 if let Some(proof) = ctx.get_btree_map(
                     &self.proofs,
                     &(sequence, neighbor),

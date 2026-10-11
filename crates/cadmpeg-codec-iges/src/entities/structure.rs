@@ -2286,7 +2286,7 @@ fn plane_boundary_edge<'ir>(
         }
     }
     if proofs.sequences.contains(boundary_sequence) {
-        for neighbor in super::plane_proof::coplanarity_neighbors(plane_key, plane.1) {
+        for neighbor in super::plane_proof::coplanarity_neighbors(plane_key) {
             if let Some(proof) = ctx.get_btree_map(
                 &proofs.proven,
                 &(boundary_sequence, neighbor),
