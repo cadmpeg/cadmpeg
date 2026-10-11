@@ -359,7 +359,10 @@ fn image_reference<'a>(
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
-    warnings: &mut impl FnMut(Option<crate::loss::RhinoLossCode>, std::fmt::Arguments<'_>) -> Result<(), CodecError>,
+    warnings: &mut impl FnMut(
+        Option<crate::loss::RhinoLossCode>,
+        std::fmt::Arguments<'_>,
+    ) -> Result<(), CodecError>,
 ) -> Result<(ImageReference, std::ops::Range<usize>), FramingError> {
     let value = crate::instances::file_reference(ctx, data, reader, archive, warnings)?;
     let source_range = value.source_range.clone();
@@ -413,11 +416,13 @@ fn parse_trace_image(
     let filtered = minor >= 3 && reader.bool()?;
     let (file_reference, file_reference_range) = if minor >= 4 {
         let source_offset = reader.position();
-        let mut diagnostics_storage = ctx.reserve_scoped(0, "Rhino image file-reference diagnostics")?;
+        let mut diagnostics_storage =
+            ctx.reserve_scoped(0, "Rhino image file-reference diagnostics")?;
         let mut warnings = Diagnostics::new();
         let parsed = staging.with_storage(|| {
             image_reference(ctx, data, &mut reader, archive, &mut |code, message| {
-                diagnostics_storage.with_storage(|| warnings.push_coded_admitted(ctx, code, message))
+                diagnostics_storage
+                    .with_storage(|| warnings.push_coded_admitted(ctx, code, message))
             })
         });
         append_file_reference_diagnostics(
@@ -475,11 +480,13 @@ fn parse_wallpaper(
     let hidden = minor >= 1 && reader.bool()?;
     let (file_reference, file_reference_range) = if minor >= 2 {
         let source_offset = reader.position();
-        let mut diagnostics_storage = ctx.reserve_scoped(0, "Rhino image file-reference diagnostics")?;
+        let mut diagnostics_storage =
+            ctx.reserve_scoped(0, "Rhino image file-reference diagnostics")?;
         let mut warnings = Diagnostics::new();
         let parsed = staging.with_storage(|| {
             image_reference(ctx, data, &mut reader, archive, &mut |code, message| {
-                diagnostics_storage.with_storage(|| warnings.push_coded_admitted(ctx, code, message))
+                diagnostics_storage
+                    .with_storage(|| warnings.push_coded_admitted(ctx, code, message))
             })
         });
         append_file_reference_diagnostics(
@@ -2033,8 +2040,8 @@ mod tests {
     mod attributes_projection;
     mod budget_repairs;
     mod fallible_prefix;
-    mod image_limits;
     mod file_reference_storage;
+    mod image_limits;
     mod resource_limits;
     mod terminal_work;
 

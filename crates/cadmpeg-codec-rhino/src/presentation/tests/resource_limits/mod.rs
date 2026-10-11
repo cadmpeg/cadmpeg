@@ -1149,7 +1149,7 @@ fn presentation_install_limit_operations(
         match crate::presentation::install(&ctx, &scan, &mut cadmpeg_ir::document::CadIr::empty())
             .map(drop)
         {
-            Ok(_) => return operations,
+            Ok(()) => return operations,
             Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
                 if refusal.dimension == dimension =>
             {
@@ -1167,7 +1167,7 @@ fn presentation_install_limit_operations(
                 }
             }
             Err(error) => panic!("unexpected presentation install failure: {error}"),
-        };
+        }
     }
     panic!("presentation install limit ladder did not terminate");
 }

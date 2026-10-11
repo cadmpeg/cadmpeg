@@ -9,7 +9,9 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 const STORAGE_LIMIT: u64 = 16_384;
 
 fn image_reference_bytes(reference: &super::super::ImageReference) -> usize {
-    reference.full_path.len() + reference.relative_path.len() + reference.content_sha1.len()
+    reference.full_path.len()
+        + reference.relative_path.len()
+        + reference.content_sha1.len()
         + reference.embedded_file_uuid.as_ref().map_or(0, String::len)
 }
 
@@ -38,9 +40,15 @@ fn assert_image_diagnostics_released(trace: bool) {
     // Keep each admitted image alive while proving that only its final text is scoped.
     if trace {
         let (image, range) = super::super::parse_trace_image(
-            &ctx, &bytes, 0..bytes.len(), archive, crate::settings::MillimeterScale::IDENTITY,
-            &mut losses, &mut staging,
-        ).unwrap();
+            &ctx,
+            &bytes,
+            0..bytes.len(),
+            archive,
+            crate::settings::MillimeterScale::IDENTITY,
+            &mut losses,
+            &mut staging,
+        )
+        .unwrap();
         assert_eq!(range, Some(reference_start..bytes.len()));
         assert_eq!(image.legacy_file_path, "image.png");
         assert!(image.hidden && image.filtered && !image.grayscale);
@@ -51,16 +59,29 @@ fn assert_image_diagnostics_released(trace: bool) {
         assert_eq!(losses[0].code, RhinoLossCode::IntegrityFailure.kind());
         let provenance = losses[0].provenance.as_ref().unwrap();
         assert_eq!(provenance.offset, u64::try_from(reference_start).unwrap());
-        assert_eq!(provenance.tag.as_deref(), Some("VIEW/TRACE_IMAGE/FILE_REFERENCE"));
+        assert_eq!(
+            provenance.tag.as_deref(),
+            Some("VIEW/TRACE_IMAGE/FILE_REFERENCE")
+        );
         drop(losses);
-        let released = ctx.reserve_scoped(STORAGE_LIMIT - u64::try_from(surviving).unwrap(),
-            "trace image temporary diagnostics released").unwrap();
+        let released = ctx
+            .reserve_scoped(
+                STORAGE_LIMIT - u64::try_from(surviving).unwrap(),
+                "trace image temporary diagnostics released",
+            )
+            .unwrap();
         drop(released);
         drop(image);
     } else {
         let (image, range) = super::super::parse_wallpaper(
-            &ctx, &bytes, 0..bytes.len(), archive, &mut losses, &mut staging,
-        ).unwrap();
+            &ctx,
+            &bytes,
+            0..bytes.len(),
+            archive,
+            &mut losses,
+            &mut staging,
+        )
+        .unwrap();
         assert_eq!(range, Some(reference_start..bytes.len()));
         assert_eq!(image.legacy_file_path, "image.png");
         assert!(image.grayscale && !image.hidden);
@@ -71,10 +92,17 @@ fn assert_image_diagnostics_released(trace: bool) {
         assert_eq!(losses[0].code, RhinoLossCode::IntegrityFailure.kind());
         let provenance = losses[0].provenance.as_ref().unwrap();
         assert_eq!(provenance.offset, u64::try_from(reference_start).unwrap());
-        assert_eq!(provenance.tag.as_deref(), Some("VIEW/WALLPAPER/FILE_REFERENCE"));
+        assert_eq!(
+            provenance.tag.as_deref(),
+            Some("VIEW/WALLPAPER/FILE_REFERENCE")
+        );
         drop(losses);
-        let released = ctx.reserve_scoped(STORAGE_LIMIT - u64::try_from(surviving).unwrap(),
-            "wallpaper temporary diagnostics released").unwrap();
+        let released = ctx
+            .reserve_scoped(
+                STORAGE_LIMIT - u64::try_from(surviving).unwrap(),
+                "wallpaper temporary diagnostics released",
+            )
+            .unwrap();
         drop(released);
         drop(image);
     }

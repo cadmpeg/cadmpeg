@@ -161,10 +161,15 @@ fn assert_layer_wrapper_without_admission(payload: &[u8], label: &str, needed: u
         record.body(),
         archive,
         &mut Diagnostics::new(),
-    ).unwrap().class_data_range.end;
+    )
+    .unwrap()
+    .class_data_range
+    .end;
     assert_eq!(offset, expected_offset);
     let source = FramingError::OutOfBounds {
-        offset: expected_offset, end: expected_offset + needed, bound: expected_offset,
+        offset: expected_offset,
+        end: expected_offset + needed,
+        bound: expected_offset,
     };
     assert_eq!(message, format!("{label}: {source}"));
     assert!(warnings.is_empty());
