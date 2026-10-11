@@ -846,3 +846,52 @@ fn positional_relation_triples_do_not_charge_an_absent_bounded_row() {
         Ok::<_, CodecError>(())
     });
 }
+
+#[test]
+fn positional_skamp_rows_do_not_visit_next_definition() {
+    let mut payload = b"\xf8\x01\xf7\x58\xfb\xe2\xf7\x59".to_vec();
+    payload.extend_from_slice(b"feat_defs_2\0");
+    // Uniqueness visits seven offsets and performs its charged end probe.
+    let operations = std::iter::once("creo positional array header search")
+        .chain(std::iter::repeat_n("creo positional array header uniqueness", 8))
+        .collect::<Vec<_>>();
+    crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &operations, |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let table = parse_positional_feature_skamps(&ctx, &payload, 0, 8, 88)?
+            .expect("complete header");
+        assert!(table.rows().is_empty());
+        let refusal = ctx.charge_work_limit(1, "measure bounded skamps")
+            .expect_err("header scans use the complete cap");
+        assert_eq!((refusal.used, refusal.additional), (9, 1));
+        Ok::<_, CodecError>(())
+    });
+}
+
+#[test]
+fn positional_relation_table_header_stays_in_definition() {
+    let payload = b"\xf8\x01\xf7\x64\xfb\xe2";
+    for end in 0..payload.len() {
+        assert!(positional_relation_table(payload, 0, end, 100).is_none(), "header cut at {end}");
+    }
+    let table = positional_relation_table(payload, 0, payload.len(), 100)
+        .expect("complete header");
+    assert_eq!(table.declared_count, 1);
+    assert!(table.rows.is_empty());
+}
+
+#[test]
+fn positional_triples_do_not_count_a_truncated_nullable_integer() {
+    let incomplete = b"\xf8\x01\xf7\x58\xfb\xe2\xf7\x59\x01\x02\x80";
+    assert!(positional_relation_triples(incomplete, 0, incomplete.len(), 88).is_empty());
+    let null = b"\xf8\x01\xf7\x58\xfb\xe2\xf7\x59\x01\x02\xf6";
+    let rows = positional_relation_triples(null, 0, null.len(), 88);
+    assert_eq!(rows.len(), 1);
+    assert_eq!((rows[0].relation_id, rows[0].equation_id, rows[0].skamp_id),
+        (Some(1), Some(2), None));
+}

@@ -379,3 +379,25 @@ fn positional_definition_inherits_the_labeled_dimension_table_class() {
     assert_eq!(dimensions.rows[0].value.resolved(), Some(3.0));
     assert_eq!(dimensions.rows[0].external_id, 43);
 }
+
+#[test]
+fn positional_dimension_external_id_stays_in_row_window() {
+    let definition = b"\x02\xe4\0\x18";
+    let mut payload = definition.to_vec();
+    payload.extend_from_slice(b"feat_defs_2\0");
+    assert!(positional_dimension(&payload, 0, definition.len(), &scalar::ScalarCache::default()).is_none());
+    assert!(positional_dimension(&[2, 0xe4, 0, 0x18, 0x80, 0x80], 0, 5,
+        &scalar::ScalarCache::default()).is_none());
+    let row = positional_dimension(&[2, 0xe4, 0, 0x18, 0x80, 0x80], 0, 6,
+        &scalar::ScalarCache::default()).expect("complete two-byte external ID");
+    assert_eq!(row.external_id, 128);
+}
+
+#[test]
+fn positional_dimension_table_header_stays_in_definition() {
+    let payload = b"\xf8\x01\xf7\x58\xfb\xe2\xf7\x59\x02\xe4\0\x18\x2a";
+    for end in 0..6 {
+        assert!(positional_dimension_table(payload, 0, end, 88,
+            &scalar::ScalarCache::default()).is_none(), "header cut at {end}");
+    }
+}
