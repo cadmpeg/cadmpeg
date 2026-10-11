@@ -28,7 +28,7 @@ pub(super) fn group(
     ordinal: u32,
     role: DesignOperandRole,
 ) -> DesignConstructionOperandGroup {
-    let mut group = super::super::extrude_limits::profile_group(index, ordinal);
+    let mut group = crate::design::feature_project::extrude::test_support::profile_group(index, ordinal);
     group.operand_role = DesignConstructionOperandRole::Other(role);
     group
 }

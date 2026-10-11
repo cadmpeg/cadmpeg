@@ -782,22 +782,6 @@ fn sketch_arrangement_faces_propagates_session_work_refusal() {
     assert!(budget.exhausted());
 }
 
-#[test]
-fn arrangement_visit_marks_refuse_collection_limit() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::arrangement_has_alternate_path(&[], 0, 0, 0, 2, &ctx)
-        .expect_err("two visit marks exceed one admitted item");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.used == 0
-                && limit.additional == 2
-    ));
-}
 
 fn arrangement_refusal_with_collection_limit(maximum: u64) -> cadmpeg_core::CodecError {
     let (sketch, entities, _, _) = coincident_circle_arc_arrangement();
@@ -828,83 +812,9 @@ fn arrangement_refusal_at_operation(
     panic!("arrangement did not reach the requested resource operation");
 }
 
-#[test]
-fn arrangement_outgoing_refuses_collection_limit() {
-    let (limit, maximum) = arrangement_refusal_at_operation("f3d_arrangement_outgoing", 0);
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::CollectionItems
-    );
-    assert_eq!(limit.used, maximum);
-    assert_eq!(limit.additional, 2);
-}
 
-#[test]
-fn arrangement_outgoing_entries_refuse_collection_limit() {
-    let (sketch, entities, _, _) = coincident_circle_arc_arrangement();
-    let error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-        "f3d arrangement outgoing entry",
-        0,
-        |ctx| {
-            let budget = local_arrangement_budget();
-            sketch_arrangement_faces(&sketch, &entities, EPS_ARRANGEMENT_SESSION, &budget, ctx)
-                .map(|_| ())
-        },
-    );
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            && limit.operation == "f3d arrangement outgoing entry")
-    );
-}
 
-#[test]
-fn arrangement_pending_boundaries_refuse_materialized_limit() {
-    let (mut sketch, mut entities, _, _) = coincident_circle_arc_arrangement();
-    for region in 0..32 {
-        let x = 4.0 + f64::from(region) * 3.0;
-        let points = [Point2::new(x, 0.0), Point2::new(x + 1.0, 0.0), Point2::new(x, 1.0)];
-        let mut boundary = Vec::new();
-        for edge in 0..3 {
-            let id = SketchEntityId::mint(format!("synthetic:test:outgoing#{region}-{edge}")).unwrap();
-            entities.push(SketchEntity::new(
-                id.clone(), sketch.id.clone(),
-                SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                    start: points[edge], end: points[(edge + 1) % 3],
-                }).unwrap(),
-            ));
-            boundary.push(SketchEntityUse { entity: id, reversed: false });
-        }
-        sketch.profiles.try_push(boundary).unwrap();
-    }
-    crate::test_support::with_decode_context(|ctx| {
-        let budget = local_arrangement_budget();
-        assert_eq!(sketch_arrangement_faces(&sketch, &entities, EPS_ARRANGEMENT_SESSION, &budget, ctx).unwrap().unwrap().len(), 34);
-    });
-    let error = crate::test_support::resource_refusal_at(
-        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-        "f3d arrangement pending boundary", 0,
-        |ctx| {
-            let budget = local_arrangement_budget();
-            sketch_arrangement_faces(&sketch, &entities, EPS_ARRANGEMENT_SESSION, &budget, ctx).map(|_| ())
-        },
-    );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-            && limit.operation == "f3d arrangement pending boundary"));
-}
 
-#[test]
-fn arrangement_edge_visits_refuse_collection_limit() {
-    let (limit, maximum) = arrangement_refusal_at_operation("f3d arrangement edge visits", 0);
-    assert_eq!(
-        limit.dimension,
-        cadmpeg_core::decode::ResourceDimension::CollectionItems
-    );
-    assert_eq!(limit.used, maximum);
-    assert_eq!(limit.additional, 3);
-}
 
 #[test]
 fn analytic_arrangement_intersections_include_hidden_second_crossing() {
@@ -1672,240 +1582,13 @@ fn an_arc_shorter_than_twice_the_tolerance_has_no_strict_interior() {
     assert!(!angle_strictly_inside_arc(0.0, 0.0, PI, 1.0, 0.0));
 }
 
-#[test]
-fn numerical_audit_line_circle_intersections_are_scale_invariant() {
-    for radius in [1.0e-150, 1.0e-4, 1.0, 1.0e150] {
-        let circle = ProfileBoundarySegment::Arc {
-            center: Point2::new(0.0, 0.0),
-            radius: positive_radius(radius),
-            start_angle: 0.0,
-            end_angle: std::f64::consts::TAU,
-        };
-        assert!(super::line_arc_intersection_points(
-            (
-                Point2::new(-radius, 2.0 * radius),
-                Point2::new(radius, 2.0 * radius)
-            ),
-            &circle
-        )
-        .unwrap()
-        .iter()
-        .all(Option::is_none));
-        let tangent = super::line_arc_intersection_points(
-            (Point2::new(-radius, radius), Point2::new(radius, radius)),
-            &circle,
-        )
-        .unwrap();
-        assert_eq!(
-            tangent.into_iter().flatten().collect::<Vec<_>>(),
-            vec![Point2::new(0.0, radius)]
-        );
-    }
-}
 
-#[test]
-fn numerical_followup_profile_speed_bound_retains_common_weights() {
-    for weight in [1.0, 1e-200, 1e200] {
-        let curve = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-            &cadmpeg_test_support::service_decode_context(),
-            1,
-            vec![0., 0., 1., 1.],
-            vec![Point2::new(0., 0.), Point2::new(1., 0.)],
-            Some(vec![weight; 2]),
-            false,
-        )
-        .expect("fixture pcurve construction admission")
-        .unwrap();
-        assert_eq!(
-            super::nurbs_speed_bound(&cadmpeg_test_support::service_decode_context(), &curve)
-                .expect("speed bound admission"),
-            Some(1.0)
-        );
-    }
-}
 
-#[test]
-fn implicit_profile_unit_weights_match_explicit_units() {
-    let points = vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)];
-    let implicit = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        points.clone(),
-        None,
-        false,
-    )
-    .expect("fixture pcurve construction admission")
-    .expect("polynomial pcurve");
-    let explicit = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        points,
-        Some(vec![1.0, 1.0]),
-        false,
-    )
-    .expect("fixture pcurve construction admission")
-    .expect("unit-weight pcurve");
-    assert_eq!(
-        super::nurbs_speed_bound(&cadmpeg_test_support::service_decode_context(), &implicit)
-            .expect("speed bound admission"),
-        super::nurbs_speed_bound(&cadmpeg_test_support::service_decode_context(), &explicit)
-            .expect("speed bound admission")
-    );
-}
 
-#[test]
-fn numerical_followup_boolean_line_arc_matches_point_intersections() {
-    let radius = 1e-4;
-    let arc = ProfileBoundarySegment::Arc {
-        center: Point2::new(0., 0.),
-        radius: positive_radius(radius),
-        start_angle: 0.,
-        end_angle: std::f64::consts::TAU,
-    };
-    let line = ProfileBoundarySegment::Line {
-        start: Point2::new(-radius, 2. * radius),
-        end: Point2::new(radius, 2. * radius),
-    };
-    assert!(!super::boundary_segments_intersect(&line, &arc));
-    let point = ProfileBoundarySegment::Line {
-        start: Point2::new(radius, 0.),
-        end: Point2::new(radius, 0.),
-    };
-    assert!(super::boundary_segments_intersect(&point, &arc));
-}
 
-#[test]
-fn scaled_planar_intersections_preserve_separation_and_witnesses() {
-    for r in [1e-200, 1e-100, 1., 1e200] {
-        let a = Point2::new(0., 0.);
-        let b = Point2::new(r, 0.);
-        assert!(!super::segments_intersect(
-            (a, b),
-            (Point2::new(0., 2. * r), Point2::new(r, 2. * r))
-        ));
-        assert!(super::segments_intersect(
-            (a, Point2::new(r, r)),
-            (Point2::new(0., r), b)
-        ));
-        assert_eq!(super::point_distance(a, b), r);
-        assert_eq!(
-            super::point_segment_distance(Point2::new(0.5 * r, r), (a, b)),
-            r
-        );
-        let arc = |x| ProfileBoundarySegment::Arc {
-            center: Point2::new(x, 0.),
-            radius: positive_radius(r),
-            start_angle: 0.,
-            end_angle: std::f64::consts::TAU,
-        };
-        let points = super::arc_intersection_points(&arc(0.), &arc(r)).unwrap();
-        assert_eq!(points.iter().flatten().count(), 2);
-        assert!(super::boundary_segments_intersect(&arc(0.), &arc(r)));
-        for point in points.into_iter().flatten() {
-            assert!((point.u / r - 0.5).abs() <= 4. * f64::EPSILON);
-        }
-    }
-}
 
-#[test]
-fn disparate_segment_and_point_scales_preserve_distance() {
-    let segment = (Point2::new(0., 0.), Point2::new(1e-200, 0.));
-    assert_eq!(
-        super::point_segment_distance(Point2::new(0., 1e200), segment),
-        1e200
-    );
-    let arc = ProfileBoundarySegment::Arc {
-        center: Point2::new(0., 0.),
-        radius: positive_radius(1e-6),
-        start_angle: 0.,
-        end_angle: std::f64::consts::TAU,
-    };
-    assert!(super::line_arc_intersection_points(
-        (Point2::new(-1e200, 1.), Point2::new(1e200, 1.)),
-        &arc
-    )
-    .unwrap()
-    .iter()
-    .all(Option::is_none));
-}
 
 const LARGE_LINE_TOLERANCE: f64 = 1e-6;
-#[test]
-fn numerical_0922b_line_arc_crossings() {
-    let arc = ProfileBoundarySegment::Arc {
-        center: Point2::new(0., 0.),
-        radius: positive_radius(0.001),
-        start_angle: 0.,
-        end_angle: std::f64::consts::TAU,
-    };
-    for half in [0.001, 1., 1e4] {
-        let points = super::line_arc_intersection_points(
-            (Point2::new(-half, 0.), Point2::new(half, 0.)),
-            &arc,
-        )
-        .unwrap();
-        println!("Fusion line[-{half},{half}],r=.001 => {points:?}");
-        assert_eq!(
-            points.into_iter().flatten().collect::<Vec<_>>(),
-            vec![Point2::new(-0.001, 0.), Point2::new(0.001, 0.)]
-        );
-    }
-}
-#[test]
-fn numerical_0922b_large_line_crossing() {
-    for s in [1., 1e200] {
-        let a = ProfileBoundarySegment::Line {
-            start: Point2::new(-s, 0.),
-            end: Point2::new(s, 0.),
-        };
-        let b = ProfileBoundarySegment::Line {
-            start: Point2::new(0., -s),
-            end: Point2::new(0., s),
-        };
-        let r = analytic_segment_intersections(&a, &b).unwrap();
-        println!("Fusion crossing scale{s:e}: {r:?}");
-        assert_eq!(
-            r.into_iter().flatten().collect::<Vec<_>>(),
-            vec![Point2::new(0., 0.)]
-        );
-    }
-}
-#[test]
-fn numerical_0922b_large_line_split() {
-    for scale in [1., 1e200] {
-        let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
-            start: Point2::new(0., 0.),
-            end: Point2::new(scale, 0.),
-        })
-        .unwrap();
-        let r = crate::test_support::with_decode_context(|decode_ctx| {
-            super::arrangement_split_parameters(
-                &line,
-                [0., 1.],
-                &[Point2::new(0.5 * scale, 0.)],
-                LARGE_LINE_TOLERANCE,
-                decode_ctx,
-            )
-        })
-        .unwrap()
-        .unwrap();
-        println!("Fusion split scale{scale:e}: {r:?}");
-        assert_eq!(r, vec![0., 0.5, 1.]);
-    }
-}
-#[test]
-fn numerical_0922b_wide_segment_incidence() {
-    for scale in [1., 1e308] {
-        let r = super::point_segment_distance(
-            Point2::new(0., 0.),
-            (Point2::new(-scale, 0.), Point2::new(scale, 0.)),
-        );
-        println!("Fusion segment[-{scale:e},{scale:e}],origin distance{r:e}");
-        assert_eq!(r, 0.);
-    }
-}
 
 mod arrangement_allocation;
 mod certified_allocation;
@@ -1920,29 +1603,7 @@ mod sort_limits;
 
 mod profile_limits;
 
-#[test]
-fn arrangement_cycle_work_rejects_unrepresentable_traversal_bound() {
-    let edge_count = 1usize << (usize::BITS / 2);
-    let error = crate::test_support::with_decode_context(|ctx| {
-        super::arrangement_cycle_work(edge_count, 1, ctx)
-    })
-    .expect_err("the squared work count cannot be represented");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "F3D arrangement cycle work")
-    );
-}
 
-#[test]
-fn arrangement_cycle_work_admits_cubic_ring_bound() {
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| {
-            super::arrangement_cycle_work(1_000, 1_000, ctx)
-        })
-        .unwrap(),
-        1_002_001_000
-    );
-}
 
 #[test]
 fn sketch_arrangement_faces_propagates_local_work_refusal() {
@@ -1960,38 +1621,6 @@ fn sketch_arrangement_faces_propagates_local_work_refusal() {
     });
 }
 
-#[test]
-fn arrangement_ring_refuses_unadmitted_cubic_scan() {
-    let entity = SketchEntityId::mint("synthetic:test:id#ring").unwrap();
-    let boundary = super::ArrangementBoundary {
-        entity: &entity,
-        parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new([0.0, 1.0]).unwrap(),
-        reversed: false,
-    };
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 250_000;
-    crate::test_support::with_decode_policy(&policy, |ctx| {
-        let mut edges: Vec<_> = (0..500)
-            .map(|index| super::SketchArrangementEdge {
-                nodes: [index, (index + 1) % 500],
-                boundary,
-                polyline: Vec::new(),
-                _polyline_storage: ctx
-                    .reserve_scoped(0, "test arrangement empty polyline storage")
-                    .unwrap(),
-            })
-            .collect();
-        let budget = ctx.work_budget(1_000_000_000);
-        let error =
-            super::arrangement_retain_cycle_edges(&mut edges, 500, &budget, ctx).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && ctx.resource_refusal() == Some(limit))
-        );
-        assert_eq!(edges.len(), 500);
-    });
-}
 
 mod ordered_profiles;
 
@@ -2000,3 +1629,7 @@ mod endpoint_walks;
 mod containment_admission;
 
 mod graph_admission;
+
+mod arrangement;
+
+mod numerical_geometry;

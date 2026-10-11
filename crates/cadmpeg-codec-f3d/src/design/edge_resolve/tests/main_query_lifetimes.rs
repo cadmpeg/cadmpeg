@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Query backing drops independently of accepted native selections.
 
-use super::super::EdgeTreatmentInputs;
+use crate::design::edge_resolve::{EdgeTreatmentInputs,SurfacePatchRecipeEdges,surface_patch_grouped_recipe_edges};
 use super::*;
 use cadmpeg_core::decode::refusal_probe::RefusalProbe;
 use cadmpeg_core::CodecError;

@@ -57,7 +57,7 @@ impl Lane {
 
 fn scope(lane: Lane) -> crate::records::feature::scope::DesignParameterScope {
     if matches!(lane, Lane::Extrude) {
-        let mut scope = super::super::extrude_limits::scope();
+        let mut scope = crate::design::feature_project::extrude::test_support::scope();
         scope
             .try_edit(|draft| {
                 draft.previous_history_state_id = Some(7);
@@ -137,8 +137,8 @@ fn project(lane: Lane, slots: Vec<i64>, ctx: &DecodeContext<'_>) -> Result<Selec
         }
         Lane::Extrude => {
             let groups = [
-                super::super::extrude_limits::profile_group(100, 0),
-                super::super::extrude_limits::profile_group(101, 1),
+                crate::design::feature_project::extrude::test_support::profile_group(100, 0),
+                crate::design::feature_project::extrude::test_support::profile_group(101, 1),
             ];
             operands[0].group = Some(crate::records::topology::body_recipe::DesignOperandGroup {
                 group_record_index: 100,
@@ -247,8 +247,8 @@ fn assert_identity(lane: Lane) {
                 assert_eq!(
                     native.as_slice(),
                     &[
-                        super::super::extrude_limits::profile_group(100, 0).id,
-                        super::super::extrude_limits::profile_group(101, 1).id,
+                        crate::design::feature_project::extrude::test_support::profile_group(100, 0).id,
+                        crate::design::feature_project::extrude::test_support::profile_group(101, 1).id,
                     ]
                 );
             }
