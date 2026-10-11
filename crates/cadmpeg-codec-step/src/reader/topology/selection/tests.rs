@@ -20,15 +20,19 @@ fn completed_pcurve_ranges_are_reused_with_each_use_identity() {
     let mut cache = PcurveSelections::new(&ctx).expect("empty cache");
     let candidates = [candidate()];
     for (edge, range) in [(42, Some([1.0, -2.0])), (45, None)] {
-        let first = cache.select(edge, 26, &candidates, &ctx, || {
-            Ok(SelectedPcurve {
-                id: candidates[0].try_clone_for_decode(&ctx, "test first pcurve")?,
-                parameter_range: range,
+        let first = cache
+            .select(edge, 26, &candidates, &ctx, || {
+                Ok(SelectedPcurve {
+                    id: candidates[0].try_clone_for_decode(&ctx, "test first pcurve")?,
+                    parameter_range: range,
+                })
             })
-        }).expect("first selection");
-        let second = cache.select(edge, 26, &candidates, &ctx, || {
-            panic!("completed selection must not run its witness twice")
-        }).expect("reused selection");
+            .expect("first selection");
+        let second = cache
+            .select(edge, 26, &candidates, &ctx, || {
+                panic!("completed selection must not run its witness twice")
+            })
+            .expect("reused selection");
         assert_eq!(first.id, candidates[0]);
         assert_eq!(second.id, candidates[0]);
         assert_eq!(first.parameter_range, range);
@@ -49,11 +53,16 @@ fn reused_miss(miss: Selection) {
     let cached = cache.select(42, 26, &candidates, &ctx, || {
         panic!("completed geometric miss must not be evaluated twice")
     });
-    for error in [result.err().expect("first miss"), cached.err().expect("cached miss")] {
-        assert!(matches!((miss, error),
+    for error in [
+        result.err().expect("first miss"),
+        cached.err().expect("cached miss"),
+    ] {
+        assert!(matches!(
+            (miss, error),
             (Selection::Carrier, PcurveSelectionFailure::Carrier)
-            | (Selection::Endpoint, PcurveSelectionFailure::Endpoint)
-            | (Selection::Locus, PcurveSelectionFailure::Locus)));
+                | (Selection::Endpoint, PcurveSelectionFailure::Endpoint)
+                | (Selection::Locus, PcurveSelectionFailure::Locus)
+        ));
     }
 }
 
@@ -79,10 +88,13 @@ fn completed_pcurve_keys_distinguish_source_edges_and_surfaces() {
     let candidates = [candidate()];
     let calls = Cell::new(0);
     for (edge, surface) in [(42, 26), (45, 26), (42, 28)] {
-        assert!(matches!(cache.select(edge, surface, &candidates, &ctx, || {
-            calls.set(calls.get() + 1);
+        assert!(matches!(
+            cache.select(edge, surface, &candidates, &ctx, || {
+                calls.set(calls.get() + 1);
+                Err(PcurveSelectionFailure::Endpoint)
+            }),
             Err(PcurveSelectionFailure::Endpoint)
-        }), Err(PcurveSelectionFailure::Endpoint)));
+        ));
     }
     assert_eq!(calls.get(), 3);
 }
@@ -92,27 +104,35 @@ fn pcurve_resource_refusals_do_not_complete_cache_entries() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let refusal_ctx = cadmpeg_test_support::service_decode_context();
     let CodecError::ResourceLimit(limit) = refusal_ctx
-        .charge_work(u64::MAX, "test witness refusal").expect_err("resource refusal") else {
+        .charge_work(u64::MAX, "test witness refusal")
+        .expect_err("resource refusal")
+    else {
         panic!("work refusal");
     };
     let mut cache = PcurveSelections::new(&ctx).expect("empty cache");
     let candidates = [candidate()];
     for resource_variant in [false, true] {
-        let error = cache.select(42, 26, &candidates, &ctx, || {
-            Err(if resource_variant {
-                PcurveSelectionFailure::Resource(CodecError::ResourceLimit(limit))
-            } else {
-                PcurveSelectionFailure::ResourceLimit(limit)
+        let error = cache
+            .select(42, 26, &candidates, &ctx, || {
+                Err(if resource_variant {
+                    PcurveSelectionFailure::Resource(CodecError::ResourceLimit(limit))
+                } else {
+                    PcurveSelectionFailure::ResourceLimit(limit)
+                })
             })
-        }).err().expect("witness refusal propagates");
+            .err()
+            .expect("witness refusal propagates");
         assert!(matches!(error,
             PcurveSelectionFailure::ResourceLimit(found)
             | PcurveSelectionFailure::Resource(CodecError::ResourceLimit(found)) if found == limit));
         assert!(cache.completed.is_empty());
     }
-    assert!(matches!(cache.select(42, 26, &candidates, &ctx, || {
+    assert!(matches!(
+        cache.select(42, 26, &candidates, &ctx, || {
+            Err(PcurveSelectionFailure::Locus)
+        }),
         Err(PcurveSelectionFailure::Locus)
-    }), Err(PcurveSelectionFailure::Locus)));
+    ));
 }
 
 #[test]
@@ -122,10 +142,13 @@ fn ambiguous_pcurve_candidates_do_not_populate_selection_cache() {
     let candidates = [candidate(), candidate()];
     let calls = Cell::new(0);
     for _ in 0..2 {
-        assert!(matches!(cache.select(42, 26, &candidates, &ctx, || {
-            calls.set(calls.get() + 1);
+        assert!(matches!(
+            cache.select(42, 26, &candidates, &ctx, || {
+                calls.set(calls.get() + 1);
+                Err(PcurveSelectionFailure::NotUnique { count: 2 })
+            }),
             Err(PcurveSelectionFailure::NotUnique { count: 2 })
-        }), Err(PcurveSelectionFailure::NotUnique { count: 2 })));
+        ));
     }
     assert_eq!(calls.get(), 2);
     assert!(cache.completed.is_empty());
@@ -133,7 +156,10 @@ fn ambiguous_pcurve_candidates_do_not_populate_selection_cache() {
 
 #[test]
 fn completed_pcurve_cache_refuses_unadmitted_storage() {
-    for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::CollectionItems] {
+    for dimension in [
+        ResourceDimension::MaterializedBytes,
+        ResourceDimension::CollectionItems,
+    ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         match dimension {
@@ -143,9 +169,12 @@ fn completed_pcurve_cache_refuses_unadmitted_storage() {
         }
         let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty input");
         let mut cache = PcurveSelections::new(&ctx).expect("empty cache needs no storage");
-        let error = cache.select(42, 26, &[candidate()], &ctx, || {
-            Err(PcurveSelectionFailure::Carrier)
-        }).err().expect("cache storage refuses");
+        let error = cache
+            .select(42, 26, &[candidate()], &ctx, || {
+                Err(PcurveSelectionFailure::Carrier)
+            })
+            .err()
+            .expect("cache storage refuses");
         assert!(matches!(error,
             PcurveSelectionFailure::Resource(CodecError::ResourceLimit(limit))
                 if limit.dimension == dimension
@@ -163,12 +192,20 @@ fn completed_pcurve_hit_refuses_unadmitted_output_identity() {
     let mut cache = PcurveSelections::new(&ctx).expect("empty cache");
     let candidates = [candidate()];
     // Supply a completed witness without allocating an output identity in the context.
-    cache.select(42, 26, &candidates, &ctx, || {
-        Ok(SelectedPcurve { id: candidate(), parameter_range: None })
-    }).expect("completed witness");
-    let error = cache.select(42, 26, &candidates, &ctx, || {
-        panic!("cache hit must not repeat the witness")
-    }).err().expect("output identity refuses");
+    cache
+        .select(42, 26, &candidates, &ctx, || {
+            Ok(SelectedPcurve {
+                id: candidate(),
+                parameter_range: None,
+            })
+        })
+        .expect("completed witness");
+    let error = cache
+        .select(42, 26, &candidates, &ctx, || {
+            panic!("cache hit must not repeat the witness")
+        })
+        .err()
+        .expect("output identity refuses");
     assert!(matches!(error,
         PcurveSelectionFailure::Resource(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
@@ -180,12 +217,17 @@ fn completed_pcurve_hit_refuses_unadmitted_output_identity() {
 fn completed_pcurve_cache_releases_scoped_storage() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut cache = PcurveSelections::new(&ctx).expect("empty cache");
-    assert!(matches!(cache.select(42, 26, &[candidate()], &ctx, || {
+    assert!(matches!(
+        cache.select(42, 26, &[candidate()], &ctx, || {
+            Err(PcurveSelectionFailure::Carrier)
+        }),
         Err(PcurveSelectionFailure::Carrier)
-    }), Err(PcurveSelectionFailure::Carrier)));
+    ));
     drop(cache);
     let CodecError::ResourceLimit(limit) = ctx
-        .reserve_scoped(u64::MAX, "test cache release").expect_err("storage probe") else {
+        .reserve_scoped(u64::MAX, "test cache release")
+        .expect_err("storage probe")
+    else {
         panic!("materialized refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);

@@ -68,9 +68,11 @@ impl<'ctx> PcurveSelections<'ctx> {
             Err(PcurveSelectionFailure::Carrier) => Selection::Carrier,
             Err(PcurveSelectionFailure::Endpoint) => Selection::Endpoint,
             Err(PcurveSelectionFailure::Locus) => Selection::Locus,
-            Err(PcurveSelectionFailure::NotUnique { .. }
+            Err(
+                PcurveSelectionFailure::NotUnique { .. }
                 | PcurveSelectionFailure::ResourceLimit(_)
-                | PcurveSelectionFailure::Resource(_)) => return result,
+                | PcurveSelectionFailure::Resource(_),
+            ) => return result,
         };
         self.storage.with_storage(|| {
             ctx.insert_btree_map(
