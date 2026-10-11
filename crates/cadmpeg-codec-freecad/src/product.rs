@@ -430,21 +430,21 @@ pub(crate) fn transfer_neutral(
     }
 
     let definition_id = |object: &str| -> Result<ProductDefinitionId, CodecError> {
-        ProductDefinitionId::mint(crate::native::model_id_charged(
+        ProductDefinitionId::mint_for_decode(ctx, crate::native::model_id_charged(
             ctx,
             "product_definition",
             object,
             "definition",
-        )?)
+        )?, "FreeCAD model identity grammar")?
         .map_err(CodecError::malformed)
     };
     let container_occurrence_id = |object: &str| -> Result<OccurrenceId, CodecError> {
-        OccurrenceId::mint(crate::native::model_id_charged(
+        OccurrenceId::mint_for_decode(ctx, crate::native::model_id_charged(
             ctx,
             "occurrence",
             object,
             "container",
-        )?)
+        )?, "FreeCAD model identity grammar")?
         .map_err(CodecError::malformed)
     };
     let mut parent_by_object = HashMap::<&str, &str>::new();
@@ -589,7 +589,7 @@ pub(crate) fn transfer_neutral(
             };
             ctx.reserve_vec(&mut occurrences, 1, "fcstd product occurrences")?;
             occurrences.push(Occurrence {
-                id: OccurrenceId::mint(occurrence_id).map_err(CodecError::malformed)?,
+                id: OccurrenceId::mint_for_decode(ctx, occurrence_id, "FreeCAD model identity grammar")?.map_err(CodecError::malformed)?,
                 prototype: if let Some(document) = record.external_document() {
                     PrototypeReference::External {
                         document: external_document_reference_charged(

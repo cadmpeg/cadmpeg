@@ -291,12 +291,12 @@ pub(crate) fn transfer_neutral(
         };
         let id = usable_references
             .map(|_| {
-                JointId::mint(crate::native::model_id_charged(
+                JointId::mint_for_decode(ctx, crate::native::model_id_charged(
                     ctx,
                     "joint",
                     record.object(),
                     "constraint",
-                )?)
+                )?, "FreeCAD model identity grammar")?
                 .map_err(CodecError::malformed)
             })
             .transpose()?;
