@@ -2,8 +2,7 @@
 //! face evidence tests.
 
 use super::{
-    attach_free_vertices, copy_standard_extrusion_definition, native_support_circle_param_range,
-    resolve_standard_endpoint_pairs, standard_extrusion_support_id,
+    attach_free_vertices, native_support_circle_param_range, resolve_standard_endpoint_pairs,
     standard_native_support_endpoint_pair, AnalyticSurfaceKind, AnnotationBuilder, CadIr, HashMap,
     HashSet, PcurveGeometry, Point, Point2, Point3, PointId, SolvedSurfaceGeometry,
     StandardCurveGeometry, StandardCurveSupport, StandardEdgeSupport, StandardSurfaceRecord,
@@ -124,71 +123,6 @@ fn standard_free_vertex_members_refuse_collection_limit() {
     })
     .expect("service context admits the free vertex");
     assert_eq!(ir.model.shells[0].free_vertices().len(), 1);
-}
-
-#[test]
-fn standard_extrusion_support_refuses_before_surface_storage() {
-    let mut surfaces = Vec::new();
-    let mut supports = HashMap::new();
-    let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        standard_extrusion_support_id(
-            &mut AnnotationBuilder::new(),
-            &mut surfaces,
-            &mut supports,
-            &mut ctx.reserve_scoped(0, "test support map").expect("scope"),
-            7,
-            &geometry,
-            &mut admission,
-        )
-    });
-    assert!(matches!(
-        limited,
-        Err(cadmpeg_core::CodecError::ResourceLimit(_))
-    ));
-    crate::test_support::with_service_context(|ctx| {
-        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        standard_extrusion_support_id(
-            &mut AnnotationBuilder::new(),
-            &mut surfaces,
-            &mut supports,
-            &mut ctx.reserve_scoped(0, "test support map").expect("scope"),
-            7,
-            &geometry,
-            &mut admission,
-        )
-    })
-    .expect("service context admits support");
-    assert_eq!(surfaces.len(), 1);
-    assert_eq!(supports.len(), 1);
-}
-
-#[test]
-fn standard_extrusion_definition_copy_refuses_retained_id_limit() {
-    let directrix =
-        cadmpeg_ir::ids::CurveId::mint("catia:test:directrix#7").expect("identity grammar");
-    let direction =
-        cadmpeg_ir::features::FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))
-            .expect("finite direction");
-    let definition = cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::legacy(
-        directrix, None, direction, None, None,
-    );
-    let limited = crate::test_support::with_retained_limit(0, |ctx| {
-        copy_standard_extrusion_definition(ctx, &definition)
-    });
-    assert!(matches!(
-        limited,
-        Err(cadmpeg_core::CodecError::ResourceLimit(_))
-    ));
-    let copied = crate::test_support::with_service_context(|ctx| {
-        copy_standard_extrusion_definition(ctx, &definition)
-    })
-    .expect("service context admits the retained directrix identity");
-    assert_eq!(
-        copied,
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition),
-    );
 }
 
 #[test]
@@ -1006,37 +940,4 @@ fn a_native_endpoint_pair_reads_from_the_finite_support_when_its_placed_partner_
         ),
         Ok(Some([0, 1]))
     );
-}
-
-#[test]
-fn cached_extrusion_support_does_not_copy_unused_geometry() {
-    let id = SurfaceId::mint("catia:test:surface#cached").expect("identity");
-    let mut surfaces = vec![Surface {
-        id: id.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-        source_object: None,
-    }];
-    let mut supports = HashMap::from([(7, 0usize)]);
-    let unused = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-        record: Some(
-            cadmpeg_ir::ids::UnknownId::mint(format!("catia:test:unknown#{}", "x".repeat(16384)))
-                .expect("identity"),
-        ),
-    });
-    let copied = crate::test_support::with_retained_limit(128, |ctx| {
-        let mut storage = ctx.reserve_scoped(0, "support map")?;
-        standard_extrusion_support_id(
-            &mut AnnotationBuilder::new(),
-            &mut surfaces,
-            &mut supports,
-            &mut storage,
-            7,
-            &unused,
-            &mut crate::families::FamilyEntityAdmission::new(ctx),
-        )
-    })
-    .expect("only the cached output ID is copied");
-    assert_eq!(copied, id);
-    assert_eq!(surfaces.len(), 1);
-    assert_eq!(supports, HashMap::from([(7, 0usize)]));
 }

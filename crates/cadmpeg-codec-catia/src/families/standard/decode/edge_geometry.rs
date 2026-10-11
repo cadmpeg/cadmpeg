@@ -9,18 +9,21 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_ir::geometry::nurbs::NurbsSurface;
+use cadmpeg_ir::geometry::{
+    DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
+    ProceduralCurveDefinition, SupportPcurve,
+};
+use cadmpeg_ir::ids::ProceduralCurveId;
 
 use super::{
     annotate, cgm_source, circle_parameter_range_from_surface_branch, face_surface,
     nurbs_surface_parameter_domain, ordered_range, point_on_nurbs_surface, rational_pcurve_arc,
     standard_id, standard_native_support_endpoint_pair, unit_vector, unwrap_angle,
-    AnnotationBuilder, CadIr, CodecError, Curve, CurveGeometry, CurveId, DecodeContext,
-    DirectedParameterRange, Exactness, FamilyEntityAdmission, FinitePoint3, FiniteVector3, HashMap,
-    IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, OrthonormalFrame3, PcurveGeometry,
-    Point, Point2, Point3, PositiveLength, ProceduralCurve, ProceduralCurveDefinition,
-    ProceduralCurveId, ProceduralSurface, ProceduralSurfaceId, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, StandardEdgeSupport, SupportPcurve, Surface, SurfaceGeometry, SurfaceId,
-    UnitVector3, UnknownId, Vector3, ANALYTIC_CURVE_ENDPOINT_TOLERANCE,
+    AnnotationBuilder, CadIr, CodecError, Curve, CurveGeometry, CurveId, DecodeContext, Exactness,
+    FamilyEntityAdmission, FinitePoint3, FiniteVector3, HashMap, NurbsCurve, OrthonormalFrame3,
+    PcurveGeometry, Point, Point2, Point3, PositiveLength, ProceduralSurface, ProceduralSurfaceId,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, StandardEdgeSupport, Surface, SurfaceGeometry,
+    SurfaceId, UnitVector3, UnknownId, Vector3, ANALYTIC_CURVE_ENDPOINT_TOLERANCE,
     CYLINDER_PLANE_CONIC_TOLERANCE, EPS_STANDARD_DECODE_COARSE_GEOMETRY,
     EPS_STANDARD_DECODE_GEOMETRY, PERPENDICULAR_CYLINDER_CONIC_TOLERANCE,
     SPHERE_CENTER_COINCIDENCE_TOLERANCE, SPHERE_SECTION_ENDPOINT_TOLERANCE,
