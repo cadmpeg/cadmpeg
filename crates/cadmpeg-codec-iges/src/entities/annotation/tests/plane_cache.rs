@@ -303,25 +303,32 @@ fn sectioned_area_plane_cache_reuses_normals_across_both_adjacent_bins() {
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
-            ).unwrap(),
+            )
+            .unwrap(),
         )),
         source_object: None,
     });
     with_coplanarity_probe_context(|ctx| {
         let mut cache = super::super::SectionedAreaGeometryCache::new(&ir, ctx).unwrap();
         let origin = Point3::new(0.0, 0.0, 0.0);
-        assert!(cache.curve_coplanar(1, (origin, Vector3::new(1.0, -2e-11, 0.0)), 0.001, ctx).unwrap());
+        assert!(cache
+            .curve_coplanar(1, (origin, Vector3::new(1.0, -2e-11, 0.0)), 0.001, ctx)
+            .unwrap());
         let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
             ResourceDimension::RecursionDepth,
             "iges coplanar curve recursion",
             None,
         );
-        assert!(cache.curve_coplanar(1, (origin, Vector3::new(1.0, 6e-11, 0.0)), 0.001, ctx).unwrap());
+        assert!(cache
+            .curve_coplanar(1, (origin, Vector3::new(1.0, 6e-11, 0.0)), 0.001, ctx)
+            .unwrap());
         assert_eq!(cache.proofs.len(), 1);
     });
 }
 
-fn with_coplanarity_probe_context<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
+fn with_coplanarity_probe_context<T>(
+    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+) -> T {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_recursion_depth = u64::MAX;
     crate::test_support::with_policy_context(&[], &policy, run)

@@ -82,12 +82,16 @@ pub(super) fn procedural_surface(
             array_allocation::<cadmpeg_ir::ids::PcurveId>(boundary_pcurves.len(), ctx)?;
             let mut input = boundaries.iter();
             while input.len() != 0 {
-                let Some(id) = ctx.next_charged(&mut input, COPY)? else { break; };
+                let Some(id) = ctx.next_charged(&mut input, COPY)? else {
+                    break;
+                };
                 text_allocation(id.as_str(), ctx)?;
             }
             let mut input = boundary_pcurves.iter();
             while input.len() != 0 {
-                let Some(id) = ctx.next_charged(&mut input, COPY)? else { break; };
+                let Some(id) = ctx.next_charged(&mut input, COPY)? else {
+                    break;
+                };
                 text_allocation(id.as_str(), ctx)?;
             }
         }
@@ -124,7 +128,9 @@ pub(super) fn procedural_curve(
             >(payload.components().len(), ctx)?;
             let mut input = payload.components().iter();
             while input.len() != 0 {
-                let Some(component) = ctx.next_charged(&mut input, COPY)? else { break; };
+                let Some(component) = ctx.next_charged(&mut input, COPY)? else {
+                    break;
+                };
                 text_allocation(component.component.as_str(), ctx)?;
             }
         }

@@ -57,7 +57,7 @@ fn cached_fixed_route_is_free(route: &CachedRoute) {
         let mut validation = AnnotationValidation::new(&ctx).expect("empty validation owner");
         let mut geometry =
             SectionedAreaGeometryCache::new(&ir, &ctx).expect("empty geometry owner");
-        
+
         for _ in 0..64 {
             let result = match route {
                 CachedRoute::Coplanarity => geometry.curve_coplanar(
@@ -89,9 +89,9 @@ fn cached_fixed_route_is_free(route: &CachedRoute) {
                 ),
             };
             assert_eq!(
-                    result.expect("fixed cached recovery is free"),
-                    matches!(route, CachedRoute::Symbol)
-                );
+                result.expect("fixed cached recovery is free"),
+                matches!(route, CachedRoute::Symbol)
+            );
             assert!(validation.primary.is_empty());
             assert!(validation.width_sums.is_empty());
             assert!(geometry.index.is_none());
@@ -114,7 +114,9 @@ fn with_zero_context(mut run: impl FnMut(&cadmpeg_core::decode::DecodeContext<'_
     policy.limits.max_entities = 0;
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    for _ in 0..64 { run(&ctx); }
+    for _ in 0..64 {
+        run(&ctx);
+    }
     ctx.finish_session().unwrap();
 }
 
@@ -144,9 +146,9 @@ fn annotation_empty_children_probe_once_and_are_invalid_without_work() {
             None::<Result<Option<u32>, CodecError>>
         });
         let result = dimension_children_valid(&parent, children, &BTreeMap::new(), ctx);
-        
-                assert!(matches!(result, Ok(false)));
-                assert_eq!(probes, 1);
+
+        assert!(matches!(result, Ok(false)));
+        assert_eq!(probes, 1);
     });
 }
 

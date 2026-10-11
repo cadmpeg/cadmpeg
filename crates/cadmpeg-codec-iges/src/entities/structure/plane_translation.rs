@@ -55,7 +55,9 @@ impl TranslationLattice {
         let components = [previous.1.x, previous.1.y, previous.1.z];
         if previous.1 != current.1
             || components.iter().filter(|value| value.abs() == 1.0).count() != 1
-            || components.iter().any(|value| *value != 0.0 && value.abs() != 1.0)
+            || components
+                .iter()
+                .any(|value| *value != 0.0 && value.abs() != 1.0)
             || !previous.0.is_finite()
             || !current.0.is_finite()
         {
@@ -64,11 +66,16 @@ impl TranslationLattice {
         let old = [previous.0.x, previous.0.y, previous.0.z];
         let new = [current.0.x, current.0.y, current.0.z];
         (0..3).all(|axis| {
-            let magnitude = self.magnitude[axis].max(old[axis].abs()).max(new[axis].abs());
+            let magnitude = self.magnitude[axis]
+                .max(old[axis].abs())
+                .max(new[axis].abs());
             if magnitude > f64::MAX / 4.0 {
                 return false;
             }
-            let spacing = finer(finer(self.spacing[axis], dyadic_spacing(old[axis])), dyadic_spacing(new[axis]));
+            let spacing = finer(
+                finer(self.spacing[axis], dyadic_spacing(old[axis])),
+                dyadic_spacing(new[axis]),
+            );
             // All coordinates and origins are integer multiples of spacing.
             // Their magnitudes use at most 51 bits, so two subtractions fit
             // within the 53-bit significand without rounding or overflow.
@@ -84,7 +91,9 @@ mod tests {
     #[test]
     fn dyadic_spacing_covers_normal_and_subnormal_significands() {
         for (value, spacing) in [
-            (1.0, 1.0), (3.0, 1.0), (0.75, 0.25),
+            (1.0, 1.0),
+            (3.0, 1.0),
+            (0.75, 0.25),
             (2.0_f64.powi(-1022), 2.0_f64.powi(-1022)),
             (f64::from_bits(3), f64::from_bits(1)),
             (f64::from_bits(1 << 51), f64::from_bits(1 << 51)),
@@ -100,22 +109,43 @@ mod tests {
 
     #[test]
     fn exact_translation_keeps_projected_differences_for_every_axis_frame() {
-        let points = [Point3::new(-2.0, 0.25, 0.0), Point3::new(3.5, 2.0, -1.0), Point3::new(1.0, 4.0, 2.5)];
+        let points = [
+            Point3::new(-2.0, 0.25, 0.0),
+            Point3::new(3.5, 2.0, -1.0),
+            Point3::new(1.0, 4.0, 2.5),
+        ];
         let mut lattice = TranslationLattice::default();
-        for point in points { lattice.record(point); }
+        for point in points {
+            lattice.record(point);
+        }
         crate::test_support::with_service_context(&[], |ctx| {
-            for normal in [Vector3::new(1.0, 0.0, 0.0), Vector3::new(0.0, 1.0, 0.0), Vector3::new(0.0, 0.0, 1.0)] {
+            for normal in [
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            ] {
                 for normal in [normal, normal.scale(-1.0)] {
                     let previous = (Point3::new(0.0, 0.0, 0.0), normal);
-                    let before = crate::entities::geometry::plane_coordinates(&points, previous, ctx).expect("projection admission").expect("finite axis projection");
+                    let before =
+                        crate::entities::geometry::plane_coordinates(&points, previous, ctx)
+                            .expect("projection admission")
+                            .expect("finite axis projection");
                     for offset in [-1024.0, -1.0, 0.25, 1.0, 1024.0] {
                         let current = (Point3::new(offset, -offset, offset / 2.0), normal);
                         assert!(lattice.preserves_projection(previous, current));
-                        let after = crate::entities::geometry::plane_coordinates(&points, current, ctx).expect("projection admission").expect("finite axis projection");
-                        let difference = |first: [f64; 2], second: [f64; 2]| [first[0] - second[0], first[1] - second[1]];
+                        let after =
+                            crate::entities::geometry::plane_coordinates(&points, current, ctx)
+                                .expect("projection admission")
+                                .expect("finite axis projection");
+                        let difference = |first: [f64; 2], second: [f64; 2]| {
+                            [first[0] - second[0], first[1] - second[1]]
+                        };
                         for (before_first, after_first) in before.iter().zip(&after) {
                             for (before_second, after_second) in before.iter().zip(&after) {
-                                assert_eq!(difference(*before_first, *before_second), difference(*after_first, *after_second));
+                                assert_eq!(
+                                    difference(*before_first, *before_second),
+                                    difference(*after_first, *after_second)
+                                );
                             }
                         }
                     }

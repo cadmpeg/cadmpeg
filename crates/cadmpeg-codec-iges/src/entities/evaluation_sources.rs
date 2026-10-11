@@ -36,7 +36,9 @@ fn index_positions<T: EntitySchema>(
 ) -> Result<(), CodecError> {
     let mut input = values.iter().enumerate();
     while input.len() != 0 {
-        let Some((position, value)) = ctx.next_charged(&mut input, INDEX)? else { break; };
+        let Some((position, value)) = ctx.next_charged(&mut input, INDEX)? else {
+            break;
+        };
         if let Some(existing) = ctx.get_mut_btree_map(positions, value.identity(), INDEX)? {
             if !first {
                 *existing = position;
@@ -83,7 +85,9 @@ impl EvaluationSources {
         )?;
         let mut input = ir.model.curves.iter().enumerate();
         while input.len() != 0 {
-            let Some((position, curve)) = ctx.next_charged(&mut input, INDEX)? else { break; };
+            let Some((position, curve)) = ctx.next_charged(&mut input, INDEX)? else {
+                break;
+            };
             if let Some(construction) = curve.geometry.procedural_construction() {
                 if ctx.contains_key_btree_map(
                     &result.curve_constructions,
@@ -110,9 +114,13 @@ impl EvaluationSources {
         ir: &CadIr,
         ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
-        let mut input = ir.model.procedural_surfaces[self.indexed_procedural_surfaces..].iter().enumerate();
+        let mut input = ir.model.procedural_surfaces[self.indexed_procedural_surfaces..]
+            .iter()
+            .enumerate();
         while input.len() != 0 {
-            let Some((position, construction)) = ctx.next_charged(&mut input, INDEX)? else { break; };
+            let Some((position, construction)) = ctx.next_charged(&mut input, INDEX)? else {
+                break;
+            };
             let position = self.indexed_procedural_surfaces + position;
             if !ctx.contains_key_btree_map(
                 &self.surface_constructions,
@@ -123,9 +131,13 @@ impl EvaluationSources {
                 ctx.insert_btree_map(&mut self.surface_constructions, id, position, INDEX)?;
             }
         }
-        let mut input = ir.model.surfaces[self.indexed_surfaces..].iter().enumerate();
+        let mut input = ir.model.surfaces[self.indexed_surfaces..]
+            .iter()
+            .enumerate();
         while input.len() != 0 {
-            let Some((position, surface)) = ctx.next_charged(&mut input, INDEX)? else { break; };
+            let Some((position, surface)) = ctx.next_charged(&mut input, INDEX)? else {
+                break;
+            };
             let position = self.indexed_surfaces + position;
             if let Some(existing) =
                 ctx.get_mut_btree_map(&mut self.surfaces, surface.id.as_str(), INDEX)?
@@ -202,7 +214,9 @@ impl EvaluationSources {
             SolvedCurveGeometry::Composite { segments, .. } => {
                 let mut input = segments.iter();
                 while input.len() != 0 {
-                    let Some(segment) = ctx.next_charged(&mut input, WALK)? else { break; };
+                    let Some(segment) = ctx.next_charged(&mut input, WALK)? else {
+                        break;
+                    };
                     self.enqueue_curve(segment.curve.as_str(), queue, ctx)?;
                 }
             }
@@ -325,7 +339,9 @@ impl EvaluationSources {
                     {
                         let mut input = owners.iter();
                         while input.len() != 0 {
-                            let Some(owner) = ctx.next_charged(&mut input, WALK)? else { break; };
+                            let Some(owner) = ctx.next_charged(&mut input, WALK)? else {
+                                break;
+                            };
                             let carrier = &source.model.curves[*owner];
                             if *owner != position {
                                 ctx.push_vec(
@@ -349,7 +365,11 @@ impl EvaluationSources {
                                             ProceduralCurveDefinition::Compound(payload) => {
                                                 let mut input = payload.components().iter();
                                                 while input.len() != 0 {
-                                                    let Some(component) = ctx.next_charged(&mut input, WALK)? else { break; };
+                                                    let Some(component) =
+                                                        ctx.next_charged(&mut input, WALK)?
+                                                    else {
+                                                        break;
+                                                    };
                                                     self.enqueue_curve(
                                                         component.component.as_str(),
                                                         &mut queue,

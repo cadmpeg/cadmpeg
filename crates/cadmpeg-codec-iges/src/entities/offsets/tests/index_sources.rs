@@ -176,14 +176,27 @@ fn boundaries(source: Source) {
             let points = index.points.clone();
             let vertices = index.vertices.clone();
             let edges = index.edges.clone();
-            let counts = [index.curve_count, index.point_count, index.vertex_count, index.edge_count];
+            let counts = [
+                index.curve_count,
+                index.point_count,
+                index.vertex_count,
+                index.edge_count,
+            ];
             assert!(matches!(index.update(&ir, &ctx, &mut storage),
                 Err(CodecError::ResourceLimit(last)) if last == first));
             assert_eq!(index.curves, curves);
             assert_eq!(index.points, points);
             assert_eq!(index.vertices, vertices);
             assert_eq!(index.edges, edges);
-            assert_eq!([index.curve_count, index.point_count, index.vertex_count, index.edge_count], counts);
+            assert_eq!(
+                [
+                    index.curve_count,
+                    index.point_count,
+                    index.vertex_count,
+                    index.edge_count
+                ],
+                counts
+            );
             assert_eq!(ir.model, expected_model);
             drop(index);
             drop(storage);

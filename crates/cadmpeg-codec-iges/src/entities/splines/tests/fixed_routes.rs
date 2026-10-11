@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::entities::geometry::SourceSequences;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::CadIr;
-use crate::entities::geometry::SourceSequences;
 
 fn with_zero_context(mut run: impl FnMut(&cadmpeg_core::decode::DecodeContext<'_>)) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -17,16 +17,25 @@ fn with_zero_context(mut run: impl FnMut(&cadmpeg_core::decode::DecodeContext<'_
     policy.limits.max_entities = 0;
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    for _ in 0..64 { run(&ctx); }
+    for _ in 0..64 {
+        run(&ctx);
+    }
     ctx.finish_session().unwrap();
 }
 
 #[test]
 fn spline_invalid_edge_interval_adds_no_edge() {
     let nurbs = crate::test_support::with_service_context(&[], |ctx| {
-        NurbsCurve::from_lanes(ctx, 1, vec![0.0, 0.0, 1.0, 1.0],
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)], None, false)
-            .expect("fixture admission").expect("valid fixture")
+        NurbsCurve::from_lanes(
+            ctx,
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("fixture admission")
+        .expect("valid fixture")
     });
     // Prebuild all consumed arguments outside the measured caller sessions.
     // The fresh session calls the route sixty-four times.
@@ -36,9 +45,14 @@ fn spline_invalid_edge_interval_adds_no_edge() {
     let before = ir.model.clone();
     let mut sequences = SourceSequences::default();
     with_zero_context(|ctx| {
-        let result = super::super::add_edge(&mut ir, &entry,
+        let result = super::super::add_edge(
+            &mut ir,
+            &entry,
             fixtures.pop().expect("prebuilt fixture"),
-            [FiniteReal::ZERO, FiniteReal::ZERO], &mut sequences, ctx);
+            [FiniteReal::ZERO, FiniteReal::ZERO],
+            &mut sequences,
+            ctx,
+        );
         assert!(matches!(result, Ok(None)));
         assert_eq!(ir.model, before);
     });

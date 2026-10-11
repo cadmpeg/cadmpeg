@@ -188,7 +188,9 @@ fn with_zero_context(mut run: impl FnMut(&cadmpeg_core::decode::DecodeContext<'_
     policy.limits.max_entities = 0;
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    for _ in 0..64 { run(&ctx); }
+    for _ in 0..64 {
+        run(&ctx);
+    }
     ctx.finish_session().unwrap();
 }
 
@@ -199,9 +201,8 @@ fn surface_absent_bezier_record_needs_no_work() {
     let global = global();
     with_zero_context(|ctx| {
         let result = interval_certified_linear_bezier(&geometry, &record, &global, ctx);
-         let value = result.expect("fixed recovery is free");
-            assert!(!value);
-        
+        let value = result.expect("fixed recovery is free");
+        assert!(!value);
     });
 }
 
@@ -218,9 +219,8 @@ fn surface_admitted_weight_needs_no_work() {
     let weight = NonZeroReal::new(1.0).expect("nonzero weight");
     with_zero_context(|ctx| {
         let result = weight.admit(0, ctx);
-         let value = result.expect("fixed recovery is free");
-            assert_eq!(value.expect("admitted weight").get(), 1.0);
-        
+        let value = result.expect("fixed recovery is free");
+        assert_eq!(value.expect("admitted weight").get(), 1.0);
     });
 }
 
@@ -229,9 +229,8 @@ fn surface_constant_rail_spans_needs_no_work() {
     let constant = rail(0, vec![0.0, 1.0], vec![Point3::new(0.0, 0.0, 0.0)]);
     with_zero_context(|ctx| {
         let result = ruled_surface_span_lanes(&constant, &constant, ctx);
-         let value = result.expect("fixed recovery is free");
-            assert!(value.is_none());
-        
+        let value = result.expect("fixed recovery is free");
+        assert!(value.is_none());
     });
 }
 
@@ -248,9 +247,8 @@ fn surface_constant_speed_rails_needs_no_work() {
             &global,
             ctx,
         );
-         let value = result.expect("fixed recovery is free");
-            assert!(value);
-        
+        let value = result.expect("fixed recovery is free");
+        assert!(value);
     });
 }
 
@@ -258,9 +256,8 @@ fn surface_constant_speed_rails_needs_no_work() {
 fn surface_empty_product_controls_have_no_product_or_work() {
     with_zero_context(|ctx| {
         let result = homogeneous_product_control(&[], &[], 0, ctx);
-         let value = result.expect("fixed recovery is free");
-            assert_eq!(value, None);
-        
+        let value = result.expect("fixed recovery is free");
+        assert_eq!(value, None);
     });
 }
 
@@ -268,9 +265,8 @@ fn surface_empty_product_controls_have_no_product_or_work() {
 fn surface_invalid_angular_span_rejects_without_work() {
     with_zero_context(|ctx| {
         let result = angular_basis(0.0, 0.0, ctx);
-         let value = result.expect("fixed recovery is free");
-            assert!(value.is_none());
-        
+        let value = result.expect("fixed recovery is free");
+        assert!(value.is_none());
     });
 }
 
@@ -287,9 +283,8 @@ fn surface_invalid_arc_length_interval_rejects_without_work() {
             &global,
             ctx,
         );
-         let value = result.expect("fixed recovery is free");
-            assert!(!value);
-        
+        let value = result.expect("fixed recovery is free");
+        assert!(!value);
     });
 }
 
@@ -299,9 +294,8 @@ fn surface_invalid_boundary_resolution_rejects_without_work() {
     with_zero_context(|ctx| {
         let result =
             homogeneous_curve_boundary_matches(ctx, &geometry, &geometry, [0.0, 1.0], -1.0);
-         let value = result.expect("fixed recovery is free");
-            assert_eq!(value, None);
-        
+        let value = result.expect("fixed recovery is free");
+        assert_eq!(value, None);
     });
 }
 
@@ -313,9 +307,8 @@ fn surface_invalid_span_cut_rejects_without_work() {
     };
     with_zero_context(|ctx| {
         let result = split_homogeneous_bezier_span(&span, 0.0, ctx);
-         let value = result.expect("fixed recovery is free");
-            assert!(value.is_none());
-        
+        let value = result.expect("fixed recovery is free");
+        assert!(value.is_none());
     });
 }
 
@@ -333,9 +326,8 @@ fn surface_mismatched_weight_counts_have_no_shared_weights_or_work() {
     );
     with_zero_context(|ctx| {
         let result = projectively_shared_weights(&first, &second, ctx);
-         let value = result.expect("fixed recovery is free");
-            assert!(value.is_none());
-        
+        let value = result.expect("fixed recovery is free");
+        assert!(value.is_none());
     });
 }
 
@@ -344,9 +336,8 @@ fn surface_plain_line_interval_is_unit_range_without_work() {
     let geometry = line();
     with_zero_context(|ctx| {
         let result = source_parameter_interval(&geometry, [2.0, 3.0], ctx);
-         let value = result.expect("fixed recovery is free");
-            assert_eq!(value, [0.0, 1.0]);
-        
+        let value = result.expect("fixed recovery is free");
+        assert_eq!(value, [0.0, 1.0]);
     });
 }
 
@@ -360,9 +351,8 @@ fn surface_polynomial_grid_admits_empty_rows_without_work() {
             "test row",
             "test pole",
         );
-         let value = result.expect("fixed recovery is free");
-            assert!(matches!(value, Ok(NurbsPoleGrid::Polynomial { rows }) if rows.is_empty()));
-        
+        let value = result.expect("fixed recovery is free");
+        assert!(matches!(value, Ok(NurbsPoleGrid::Polynomial { rows }) if rows.is_empty()));
     });
 }
 
@@ -370,8 +360,7 @@ fn surface_polynomial_grid_admits_empty_rows_without_work() {
 fn surface_valid_raw_weight_needs_no_work() {
     with_zero_context(|ctx| {
         let result = 1.0_f64.admit(0, ctx);
-         let value = result.expect("fixed recovery is free");
-            assert_eq!(value.expect("valid weight").get(), 1.0);
-        
+        let value = result.expect("fixed recovery is free");
+        assert_eq!(value.expect("valid weight").get(), 1.0);
     });
 }

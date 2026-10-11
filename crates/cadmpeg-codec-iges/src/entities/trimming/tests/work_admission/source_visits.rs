@@ -466,7 +466,9 @@ fn pcurve_knot_last_overflow_recovers_with_exact_visit_admission() {
 }
 
 fn zero_work_trimming_result(run: impl Fn(&DecodeContext<'_>) -> Result<bool, CodecError>) {
-    with_zero_context(|ctx| { assert!(run(ctx).unwrap()); });
+    with_zero_context(|ctx| {
+        assert!(run(ctx).unwrap());
+    });
 }
 
 fn with_zero_context(mut run: impl FnMut(&cadmpeg_core::decode::DecodeContext<'_>)) {
@@ -480,10 +482,11 @@ fn with_zero_context(mut run: impl FnMut(&cadmpeg_core::decode::DecodeContext<'_
     policy.limits.max_entities = 0;
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    for _ in 0..64 { run(&ctx); }
+    for _ in 0..64 {
+        run(&ctx);
+    }
     ctx.finish_session().unwrap();
 }
-
 
 #[test]
 fn trimming_absent_support_bounds_needs_no_work() {

@@ -126,8 +126,15 @@ fn empty_copious_directory_has_no_outputs_or_work() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     let mut sequences = super::super::super::geometry::SourceSequences::default();
     let outcome = super::super::project(
-        &mut ir, &[], &entries, &records, &global, &ctx, &mut sequences,
-    ).unwrap();
+        &mut ir,
+        &[],
+        &entries,
+        &records,
+        &global,
+        &ctx,
+        &mut sequences,
+    )
+    .unwrap();
     assert!(outcome.decoded.is_empty());
     assert!(outcome.losses.is_empty());
     assert!(outcome.wire_edges.is_empty());
