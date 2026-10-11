@@ -73,8 +73,9 @@ fn emitted_profile_entity_refuses_work_and_preserves_construction_state() {
             let mut losses = Vec::new();
             let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
             let mut entity_slots = ctx.reserve_scoped(0, "test section entity staging")?;
-            transfer_section_entities(ctx,
-SectionEntityTransfer {
+            transfer_section_entities(
+                ctx,
+                SectionEntityTransfer {
                     scan: &scan,
                     ir: &mut ir,
                     annotations: &mut annotations,
@@ -99,9 +100,10 @@ SectionEntityTransfer {
                     profile_entities: &profile_entities,
                     losses: &mut losses,
                     entity_slots: &mut entity_slots,
-            source_carriers: &mut source_carriers,
+                    source_carriers: &mut source_carriers,
                 },
-).and_then(|rows| entity_slots.commit_value(rows))
+            )
+            .and_then(|rows| entity_slots.commit_value(rows))
         },
     );
     assert_eq!(entities.len(), 1);
@@ -195,8 +197,9 @@ fn mixed_section_families_keep_family_and_source_order() {
             let mut losses = Vec::new();
             let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
             let mut entity_slots = ctx.reserve_scoped(0, "test section entity staging")?;
-            transfer_section_entities(ctx,
-SectionEntityTransfer {
+            transfer_section_entities(
+                ctx,
+                SectionEntityTransfer {
                     scan: &scan,
                     ir: &mut ir,
                     annotations: &mut annotations,
@@ -220,9 +223,10 @@ SectionEntityTransfer {
                     profile_entities: &empty_entities,
                     losses: &mut losses,
                     entity_slots: &mut entity_slots,
-            source_carriers: &mut source_carriers,
+                    source_carriers: &mut source_carriers,
                 },
-).and_then(|rows| entity_slots.commit_value(rows))
+            )
+            .and_then(|rows| entity_slots.commit_value(rows))
         },
     );
     assert_eq!(

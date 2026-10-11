@@ -411,8 +411,11 @@ fn schema_fast_operation_class_is_free() {
     policy.limits.max_entities = 0;
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert_eq!(super::feature_schema_class_with_operation(&ctx, &scan, 40, Some(&selected))
-        .expect("fixed class"), Some(crate::feature::schema::SchemaClass::Protrusion));
+    assert_eq!(
+        super::feature_schema_class_with_operation(&ctx, &scan, 40, Some(&selected))
+            .expect("fixed class"),
+        Some(crate::feature::schema::SchemaClass::Protrusion)
+    );
     ctx.finish_session().expect("active fixed route");
 }
 
@@ -427,9 +430,17 @@ fn empty_feature_operation_routes_are_free() {
     policy.limits.max_entities = 0;
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    assert!(super::current_feature_operation(&ctx, &[], 40).expect("empty selection").is_none());
-    assert!(super::current_feature_recipe(&ctx, &[], 40).expect("empty recipe").is_none());
-    assert!(super::current_additive_feature_recipe(&ctx, &[], 40).expect("empty additive recipe").is_none());
-    assert!(super::current_feature_recipe_parent(&ctx, &[], 40).expect("empty recipe parent").is_none());
+    assert!(super::current_feature_operation(&ctx, &[], 40)
+        .expect("empty selection")
+        .is_none());
+    assert!(super::current_feature_recipe(&ctx, &[], 40)
+        .expect("empty recipe")
+        .is_none());
+    assert!(super::current_additive_feature_recipe(&ctx, &[], 40)
+        .expect("empty additive recipe")
+        .is_none());
+    assert!(super::current_feature_recipe_parent(&ctx, &[], 40)
+        .expect("empty recipe parent")
+        .is_none());
     ctx.finish_session().expect("active free routes");
 }

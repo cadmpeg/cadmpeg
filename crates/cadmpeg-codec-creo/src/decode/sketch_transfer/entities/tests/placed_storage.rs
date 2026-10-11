@@ -136,8 +136,9 @@ fn assert_duplicate_curve_storage(family: Family) {
         let mut ir = CadIr::empty();
         ir.model.curves.push(existing.clone());
         let mut entity_slots = ctx.reserve_scoped(0, "test section entity staging")?;
-        let result = transfer_section_entities(&ctx,
-SectionEntityTransfer {
+        let result = transfer_section_entities(
+            &ctx,
+            SectionEntityTransfer {
                 scan: &scan,
                 ir: &mut ir,
                 annotations: &mut cadmpeg_ir::AnnotationBuilder::new(),
@@ -161,9 +162,10 @@ SectionEntityTransfer {
                 profile_entities: &BTreeSet::new(),
                 losses: &mut Vec::new(),
                 entity_slots: &mut entity_slots,
-            source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+                source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
             },
-).and_then(|rows| entity_slots.commit_value(rows));
+        )
+        .and_then(|rows| entity_slots.commit_value(rows));
         if let Err(CodecError::ResourceLimit(resource)) = &result {
             assert_ne!(resource.operation, "creo section curve identity");
         }

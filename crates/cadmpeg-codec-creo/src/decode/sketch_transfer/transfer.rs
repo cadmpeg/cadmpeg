@@ -787,7 +787,12 @@ pub(in super::super) fn transfer_sketches(
                 Exactness::ByteExact,
             )?;
             ctx.charge_entities(1, "admit Creo model sketch_entities")?;
-            ctx.reserve_scoped_vec(&mut entity_slots, &mut entities, 1, "creo solver-only sketch entities")?;
+            ctx.reserve_scoped_vec(
+                &mut entity_slots,
+                &mut entities,
+                1,
+                "creo solver-only sketch entities",
+            )?;
             let native_kind = match solver_only_section_entity_family(ctx, definition, external_id)?
             {
                 Some(SectionEntityIncidenceFamily::Point) => "point",
@@ -836,7 +841,8 @@ pub(in super::super) fn transfer_sketches(
             })?;
             entities.push(entity);
         }
-        let (mut constraints, mut constraint_slots) = ctx.temporary_vec(0, "creo sketch constraint rows")?;
+        let (mut constraints, mut constraint_slots) =
+            ctx.temporary_vec(0, "creo sketch constraint rows")?;
         for segment in ctx.admit_iter(&segments, "creo segment orientation rows")? {
             if segment.vertical_horizontal.is_none() {
                 continue;
@@ -1138,17 +1144,24 @@ pub(in super::super) fn transfer_sketches(
                 )?;
                 let constraint = storage.commit_value(constraint)?;
                 ctx.charge_entities(1, "admit Creo model sketch_constraints")?;
-                ctx.push_scoped_vec(&mut constraint_slots, &mut constraints, constraint, "creo sketch constraint rows")?;
+                ctx.push_scoped_vec(
+                    &mut constraint_slots,
+                    &mut constraints,
+                    constraint,
+                    "creo sketch constraint rows",
+                )?;
             }
         }
         let (rows, row_slots) = section_segment_radius_candidates_for_emitted(
-                ctx,
-                definition,
-                &sketch_id,
-                &emitted_entity_ids,
-                &available_parameter_ids,
-            )?;
-        for (constraint, offset, storage) in ctx.admit_iter(rows, "creo transferred radius constraint rows")? {
+            ctx,
+            definition,
+            &sketch_id,
+            &emitted_entity_ids,
+            &available_parameter_ids,
+        )?;
+        for (constraint, offset, storage) in
+            ctx.admit_iter(rows, "creo transferred radius constraint rows")?
+        {
             annotate(
                 ctx,
                 annotations,
@@ -1160,7 +1173,12 @@ pub(in super::super) fn transfer_sketches(
             )?;
             let constraint = storage.commit_value(constraint)?;
             ctx.charge_entities(1, "admit Creo model sketch_constraints")?;
-            ctx.push_scoped_vec(&mut constraint_slots, &mut constraints, constraint, "creo sketch constraint rows")?;
+            ctx.push_scoped_vec(
+                &mut constraint_slots,
+                &mut constraints,
+                constraint,
+                "creo sketch constraint rows",
+            )?;
         }
         drop(row_slots);
         let (mut equation_constraints, mut equation_slots) =
@@ -1281,7 +1299,12 @@ pub(in super::super) fn transfer_sketches(
             )?;
             let constraint = storage.commit_value(constraint)?;
             ctx.charge_entities(1, "admit Creo model sketch_constraints")?;
-            ctx.push_scoped_vec(&mut constraint_slots, &mut constraints, constraint, "creo sketch constraint rows")?;
+            ctx.push_scoped_vec(
+                &mut constraint_slots,
+                &mut constraints,
+                constraint,
+                "creo sketch constraint rows",
+            )?;
         }
         drop(reconciled_slots);
         let mut typed_equation_offsets = BTreeSet::new();
@@ -1302,12 +1325,14 @@ pub(in super::super) fn transfer_sketches(
         }
         drop(equation_offsets);
         let (rows, row_slots) = section_equation_native_candidates(
-                ctx,
-                definition,
-                &sketch_id,
-                &typed_equation_offsets,
-            )?;
-        for (constraint, offset, storage) in ctx.admit_iter(rows, "creo transferred native equation rows")? {
+            ctx,
+            definition,
+            &sketch_id,
+            &typed_equation_offsets,
+        )?;
+        for (constraint, offset, storage) in
+            ctx.admit_iter(rows, "creo transferred native equation rows")?
+        {
             annotate(
                 ctx,
                 annotations,
@@ -1321,7 +1346,12 @@ pub(in super::super) fn transfer_sketches(
             )?;
             let constraint = storage.commit_value(constraint)?;
             ctx.charge_entities(1, "admit Creo model sketch_constraints")?;
-            ctx.push_scoped_vec(&mut constraint_slots, &mut constraints, constraint, "creo sketch constraint rows")?;
+            ctx.push_scoped_vec(
+                &mut constraint_slots,
+                &mut constraints,
+                constraint,
+                "creo sketch constraint rows",
+            )?;
         }
         drop(row_slots);
         let (skamp_rows, skamp_slots) = section_skamp_candidates_for_geometry(
@@ -1356,7 +1386,12 @@ pub(in super::super) fn transfer_sketches(
             )?;
             let constraint = storage.commit_value(constraint)?;
             ctx.charge_entities(1, "admit Creo model sketch_constraints")?;
-            ctx.push_scoped_vec(&mut constraint_slots, &mut constraints, constraint, "creo sketch constraint rows")?;
+            ctx.push_scoped_vec(
+                &mut constraint_slots,
+                &mut constraints,
+                constraint,
+                "creo sketch constraint rows",
+            )?;
         }
         drop(skamp_slots);
         source_carriers.admit_sketch_entities(ctx, ir, entities)?;
@@ -1472,7 +1507,11 @@ fn emitted_entity_views(
 
 fn emit_verhor_constraint(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    output: (&mut AnnotationBuilder, &mut Vec<SketchConstraint>, &mut cadmpeg_core::decode::ScopedReservation<'_>),
+    output: (
+        &mut AnnotationBuilder,
+        &mut Vec<SketchConstraint>,
+        &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    ),
     emitted_entity_ids: &BTreeSet<SketchEntityId>,
     sketch: &SketchId,
     suffix: &str,
@@ -1528,7 +1567,12 @@ fn emit_verhor_constraint(
     })?;
     let constraint = storage.commit_value(constraint)?;
     ctx.charge_entities(1, "admit Creo model sketch_constraints")?;
-    ctx.push_scoped_vec(constraint_slots, constraints, constraint, "creo sketch constraint rows")
+    ctx.push_scoped_vec(
+        constraint_slots,
+        constraints,
+        constraint,
+        "creo sketch constraint rows",
+    )
 }
 
 fn available_parameter_ids<'a>(

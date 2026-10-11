@@ -67,26 +67,47 @@ fn constraint_retain_mut_refuses_work_and_service_keeps_constraint() {
 fn parameter_closure_moves_native_operands_without_copying_them() {
     let mut document = cadmpeg_ir::CadIr::empty();
     document.model.sketch_constraints.push(SketchConstraint {
-        id: SketchConstraintId::mint("synthetic:test:sketch-constraint#native").expect("constraint ID"),
+        id: SketchConstraintId::mint("synthetic:test:sketch-constraint#native")
+            .expect("constraint ID"),
         sketch: SketchId::mint("synthetic:test:sketch#native").expect("sketch ID"),
         definition: SketchConstraintDefinition::try_from(SketchConstraintDefinitionInput::Native {
-            native_kind: cadmpeg_core::text::NonBlankString::try_from("native").expect("native kind"),
+            native_kind: cadmpeg_core::text::NonBlankString::try_from("native")
+                .expect("native kind"),
             native_state: None,
             native_flags: None,
             native_properties: std::collections::BTreeMap::new(),
             entities: Vec::new(),
-            parameter: Some(cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#missing").expect("parameter ID")),
-            operands: (0..128).map(|index| cadmpeg_ir::sketches::SketchNativeOperand {
-                native_kind: cadmpeg_core::text::NonBlankString::try_from("operand").expect("operand kind"),
-                field: None,
-                object_index: Some(index),
-                native_ref: Some("synthetic:test:operand#reference".to_owned()),
-            }).collect(),
-        }).expect("native constraint"),
-        name: None, driving: None, active: None, virtual_space: None, visible: None,
-        orientation: None, label_distance: None, label_position: None, metadata: None, native_ref: None,
+            parameter: Some(
+                cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#missing")
+                    .expect("parameter ID"),
+            ),
+            operands: (0..128)
+                .map(|index| cadmpeg_ir::sketches::SketchNativeOperand {
+                    native_kind: cadmpeg_core::text::NonBlankString::try_from("operand")
+                        .expect("operand kind"),
+                    field: None,
+                    object_index: Some(index),
+                    native_ref: Some("synthetic:test:operand#reference".to_owned()),
+                })
+                .collect(),
+        })
+        .expect("native constraint"),
+        name: None,
+        driving: None,
+        active: None,
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
+        native_ref: None,
     });
-    let SketchConstraintDefinitionInput::Native { operands, .. } = document.model.sketch_constraints[0].definition.kind() else { panic!("native input"); };
+    let SketchConstraintDefinitionInput::Native { operands, .. } =
+        document.model.sketch_constraints[0].definition.kind()
+    else {
+        panic!("native input");
+    };
     let pointer = operands.as_ptr();
     let capacity = operands.capacity();
     let arena = DecodeArena::new();
@@ -95,15 +116,29 @@ fn parameter_closure_moves_native_operands_without_copying_them() {
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    close_sketch_constraint_parameter_references(&ctx, &mut document).expect("closure reuses owned payload");
-    let SketchConstraintDefinitionInput::Native { operands, parameter, .. } = document.model.sketch_constraints[0].definition.kind() else { panic!("native output"); };
+    close_sketch_constraint_parameter_references(&ctx, &mut document)
+        .expect("closure reuses owned payload");
+    let SketchConstraintDefinitionInput::Native {
+        operands,
+        parameter,
+        ..
+    } = document.model.sketch_constraints[0].definition.kind()
+    else {
+        panic!("native output");
+    };
     assert_eq!(operands.as_ptr(), pointer);
     assert_eq!(operands.capacity(), capacity);
     assert_eq!(operands.len(), 128);
     assert!(parameter.is_none());
     for (index, operand) in operands.iter().enumerate() {
-        assert_eq!(operand.object_index, Some(u32::try_from(index).expect("fixture index")));
-        assert_eq!(operand.native_ref.as_deref(), Some("synthetic:test:operand#reference"));
+        assert_eq!(
+            operand.object_index,
+            Some(u32::try_from(index).expect("fixture index"))
+        );
+        assert_eq!(
+            operand.native_ref.as_deref(),
+            Some("synthetic:test:operand#reference")
+        );
     }
     ctx.finish_session().expect("active closure");
 }
