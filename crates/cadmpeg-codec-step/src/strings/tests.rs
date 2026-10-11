@@ -330,8 +330,9 @@ fn decoded_string_text_refuses_retained_limit_before_output_allocation() {
     );
     assert!(matches!(
         malformed,
-        Err(crate::strings::StringDecodeFailure::Invalid(error))
-            if error.message == "byte escape contains non-hexadecimal digits"
+        Err(crate::strings::StringDecodeFailure::Resource(CodecError::ResourceLimit(limit)))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "STEP string error message"
     ));
 }
 
@@ -571,3 +572,5 @@ fn decoded_string_cursor_and_terminator_search_preserve_refusal() {
 }
 
 mod prefix;
+
+mod error_admission;

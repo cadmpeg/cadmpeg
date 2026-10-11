@@ -41,6 +41,32 @@ pub(crate) fn decode_with_context(
     ctx: &DecodeContext<'_>,
 ) -> Result<String, StringDecodeFailure> {
     let len = decoded_len(ctx, input, level)?;
+    decode_validated(input, level, ctx, len)
+}
+
+/// Drop malformed validation text and retain only a successfully decoded string.
+pub(crate) fn decode_optional_with_context(
+    input: &[u8],
+    level: ImplementationLevel,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<String>, StringDecodeFailure> {
+    let mut storage = ctx.reserve_scoped(0, "STEP optional string validation storage")?;
+    let len = storage.with_storage(|| match decoded_len(ctx, input, level) {
+        Ok(len) => Ok(Some(len)),
+        Err(StringDecodeFailure::Invalid(_)) => Ok(None),
+        Err(error) => Err(error),
+    })?;
+    drop(storage);
+    len.map(|len| decode_validated(input, level, ctx, len))
+        .transpose()
+}
+
+fn decode_validated(
+    input: &[u8],
+    level: ImplementationLevel,
+    ctx: &DecodeContext<'_>,
+    len: usize,
+) -> Result<String, StringDecodeFailure> {
     let operation = "step_string_text";
     let mut output = ctx
         .retained_string(len, operation)
@@ -150,27 +176,34 @@ fn decode_chars(
                 }
                 let direct = &input[start..at];
                 if level.is_edition3() {
-                    let text = ctx
-                        .validate_utf8(direct, "STEP direct string UTF-8 validation")?
-                        .map_err(|error| StringError {
-                            offset: start + error.valid_up_to(),
-                            message: "invalid UTF-8 direct string bytes".into(),
-                        })?;
+                    let text =
+                        match ctx.validate_utf8(direct, "STEP direct string UTF-8 validation")? {
+                            Ok(text) => text,
+                            Err(invalid) => {
+                                return error(
+                                    ctx,
+                                    start + invalid.valid_up_to(),
+                                    "invalid UTF-8 direct string bytes",
+                                )
+                            }
+                        };
                     let mut characters = text.chars();
-                    ctx.charge_work(0, "STEP decode chars traversal")?;
                     while !characters.as_str().is_empty() {
                         let character = ctx
                             .next_charged(&mut characters, "STEP decode chars traversal")?
-                            .ok_or_else(|| CodecError::malformed("STEP string character source ended early"))?;
+                            .ok_or_else(|| {
+                                CodecError::malformed("STEP string character source ended early")
+                            })?;
                         emit(character)?;
                     }
                 } else {
                     let mut bytes = direct.iter();
-                    ctx.charge_work(0, "STEP decode chars view traversal")?;
                     for _ in 0..bytes.len() {
                         let byte = ctx
                             .next_charged(&mut bytes, "STEP decode chars view traversal")?
-                            .ok_or_else(|| CodecError::malformed("STEP string byte source ended early"))?;
+                            .ok_or_else(|| {
+                                CodecError::malformed("STEP string byte source ended early")
+                            })?;
                         emit(char::from(*byte))?;
                     }
                 }
@@ -212,7 +245,10 @@ fn decode_page_byte(
         _ => {
             return Err(StringError {
                 offset,
-                message: format!("ISO 8859 part {part} is unavailable"),
+                message: ctx.format_retained(
+                    format_args!("ISO 8859 part {part} is unavailable"),
+                    "STEP string error message",
+                )?,
             }
             .into())
         }
@@ -229,13 +265,10 @@ fn decode_page_byte(
         );
     }
     // Each selected single-byte page maps one byte to one BMP scalar.
-    char::from_u32(u32::from(units[0]))
-        .filter(|_| written != 0)
-        .ok_or_else(|| StringError {
-            offset,
-            message: "S escape decoded to no character".into(),
-        })
-        .map_err(StringDecodeFailure::Invalid)
+    match char::from_u32(u32::from(units[0])).filter(|_| written != 0) {
+        Some(character) => Ok(character),
+        None => error(ctx, offset, "S escape decoded to no character"),
+    }
 }
 
 /// Encode text as bytes suitable between Part 21 apostrophe delimiters.
@@ -292,13 +325,12 @@ fn decode_wide(
     let mut offset = start;
     while offset < end {
         ctx.charge_work(1, "STEP wide escape cursor traversal")?;
-        let raw = std::str::from_utf8(&input[offset..offset + width])
+        let Some(raw) = std::str::from_utf8(&input[offset..offset + width])
             .ok()
             .and_then(|hex| u32::from_str_radix(hex, 16).ok())
-            .ok_or_else(|| StringError {
-                offset,
-                message: "wide escape contains non-hexadecimal digits".into(),
-            })?;
+        else {
+            return error(ctx, offset, "wide escape contains non-hexadecimal digits");
+        };
         if width == 4 {
             let Ok(unit) = u16::try_from(raw) else {
                 return error(ctx, offset, "wide escape contains non-hexadecimal digits");
@@ -331,10 +363,9 @@ fn decode_wide(
                 }
             }
         } else {
-            let character = char::from_u32(raw).ok_or_else(|| StringError {
-                offset: start,
-                message: "wide escape contains an invalid Unicode scalar".into(),
-            })?;
+            let Some(character) = char::from_u32(raw) else {
+                return error(ctx, start, "wide escape contains an invalid Unicode scalar");
+            };
             emit(character)?;
         }
         offset += width;
@@ -353,14 +384,13 @@ fn hex_byte(
     let Some(bytes) = input.get(offset..offset + 2) else {
         return error(ctx, offset, "truncated byte escape");
     };
-    std::str::from_utf8(bytes)
+    match std::str::from_utf8(bytes)
         .ok()
         .and_then(|hex| u8::from_str_radix(hex, 16).ok())
-        .ok_or_else(|| StringError {
-            offset,
-            message: "byte escape contains non-hexadecimal digits".into(),
-        })
-        .map_err(StringDecodeFailure::Invalid)
+    {
+        Some(byte) => Ok(byte),
+        None => error(ctx, offset, "byte escape contains non-hexadecimal digits"),
+    }
 }
 
 fn error<T>(

@@ -395,7 +395,6 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
     }
 
     fn skip_trivia(&mut self) -> Result<bool, LexError> {
-        self.budget.charge_work(0, "STEP lexer cursor traversal")?;
         while self.at < self.input.len() {
             self.budget.charge_work(1, "STEP lexer cursor traversal")?;
             while self.input.get(self.at).is_some_and(u8::is_ascii_control) {

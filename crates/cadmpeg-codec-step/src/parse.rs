@@ -6,11 +6,10 @@
 //! producer, represented by its own diagnostic kind, and rejectable by strict
 //! decode policy. Ambiguous records and duplicate names remain parse errors.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::mem::size_of;
 use std::num::NonZeroUsize;
 use std::ops::Range;
-use std::sync::Arc;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
@@ -90,7 +89,6 @@ fn try_clone_value(
         Value::List(values) => {
             let mut copied = budget.collection_vec(values.len(), operation)?;
             let mut visited_items = (values.as_slice()).iter();
-            budget.charge_work(0, "STEP try clone value value traversal")?;
             for _ in 0..visited_items.len() {
                 let value = budget
                     .next_charged(&mut visited_items, "STEP try clone value value traversal")?
@@ -294,7 +292,7 @@ pub(crate) struct Exchange {
 }
 
 #[derive(Debug, Clone, Default)]
-struct EntityIndex(Arc<BTreeMap<String, Vec<u64>>>);
+struct EntityIndex(BTreeMap<String, Vec<u64>>);
 
 impl PartialEq for EntityIndex {
     fn eq(&self, _other: &Self) -> bool {
@@ -339,7 +337,6 @@ impl EntityIndex {
     ) -> Result<Self, ParseError> {
         let mut index = BTreeMap::<String, Vec<u64>>::new();
         let mut visited_items = (records).iter();
-        budget.charge_work(0, "STEP build traversal")?;
         for _ in 0..visited_items.len() {
             let (&id, record) = budget
                 .next_charged(&mut visited_items, "STEP build traversal")?
@@ -347,7 +344,6 @@ impl EntityIndex {
                     CodecError::malformed("STEP bounded traversal source ended early")
                 })?;
             let mut visited_items = (record.partials[..]).iter();
-            budget.charge_work(0, "STEP build traversal")?;
             for _ in 0..visited_items.len() {
                 let partial = budget
                     .next_charged(&mut visited_items, "STEP build traversal")?
@@ -368,13 +364,12 @@ impl EntityIndex {
                 }
             }
         }
-        Ok(Self(Arc::new(index)))
+        Ok(Self(index))
     }
     fn ordered_ids<'source, 'ctx>(
         lists: &[&'source [u64]],
         ctx: &'ctx DecodeContext<'_>,
     ) -> Result<EntityIds<'source, 'ctx>, CodecError> {
-        ctx.charge_work(0, "STEP entity union list traversal")?;
         match lists {
             [] => return Ok(EntityIds::Borrowed([].iter().copied())),
             [ids] => return Ok(EntityIds::Borrowed(ids.iter().copied())),
@@ -528,7 +523,6 @@ impl Exchange {
         let mut lists = Vec::new();
         let mut first: Option<&[u64]> = None;
         let mut visited_items = (self.entity_ids()).iter();
-        ctx.charge_work(0, "STEP matching entity name traversal")?;
         for _ in 0..visited_items.len() {
             let (name, ids) = ctx
                 .next_charged(&mut visited_items, "STEP matching entity name traversal")?
@@ -618,7 +612,6 @@ impl Exchange {
         let mut lists = Vec::new();
         let mut first: Option<&[u64]> = None;
         let mut visited_items = (names).iter();
-        ctx.charge_work(0, "STEP entity union name traversal")?;
         for _ in 0..visited_items.len() {
             let name = ctx
                 .next_charged(&mut visited_items, "STEP entity union name traversal")?
@@ -1239,11 +1232,25 @@ impl Parser<'_, '_, '_> {
             self.punct(&TokenKind::Semicolon)?;
             let span = start..self.previous_end();
             let payload = payload_start..payload_end;
-            self.budget
-                .with_scoped_storage("STEP signature validation storage", || {
-                    crate::signature::decode_payload(self.lexer.input(), &payload, self.budget)
-                        .map(|_| ())
-                })?;
+            let mut signature_storage = self
+                .budget
+                .reserve_scoped(0, "STEP signature validation storage")?;
+            let signature_result = signature_storage.with_storage(|| {
+                crate::signature::decode_payload(self.lexer.input(), &payload, self.budget)
+                    .map(|_| ())
+            });
+            match signature_result {
+                Err(ParseError::Syntax { offset, message }) => {
+                    return Err(ParseError::Syntax {
+                        offset,
+                        message: self
+                            .budget
+                            .copy_retained_text(&message, "STEP signature validation error")?,
+                    });
+                }
+                result => result?,
+            }
+            drop(signature_storage);
             self.budget
                 .push_vec(&mut signatures, span, "step_parse_signature_spans")?;
         }
@@ -1282,7 +1289,6 @@ impl Parser<'_, '_, '_> {
                 .reserve_scoped(0, "step_anchor_binding_storage")?;
             let mut anchor_bindings = BTreeMap::new();
             let mut visited_items = (anchors[..]).iter();
-            self.budget.charge_work(0, "STEP exchange traversal")?;
             for _ in 0..visited_items.len() {
                 let anchor = self
                     .budget
@@ -1314,8 +1320,6 @@ impl Parser<'_, '_, '_> {
             let mut resolver = AnchorResolver::new(&anchor_bindings, self.budget)
                 .map_err(|error| error.into_parse_error(0))?;
             let mut resolving_anchors = anchors.iter_mut();
-            self.budget
-                .charge_work(0, "STEP anchor resolution traversal")?;
             for _ in 0..resolving_anchors.len() {
                 let anchor = self
                     .budget
@@ -1327,8 +1331,6 @@ impl Parser<'_, '_, '_> {
                     .resolve_root(&anchor.value)
                     .map_err(|error| error.into_parse_error(0))?;
                 let mut tags = anchor.tags.iter_mut();
-                self.budget
-                    .charge_work(0, "STEP anchor tag resolution traversal")?;
                 for _ in 0..tags.len() {
                     let tag = self
                         .budget
@@ -1342,8 +1344,6 @@ impl Parser<'_, '_, '_> {
                 }
             }
             let mut resolving_records = records.iter_mut();
-            self.budget
-                .charge_work(0, "STEP mutable record traversal")?;
             for _ in 0..resolving_records.len() {
                 let (_, record) = self
                     .budget
@@ -1352,8 +1352,6 @@ impl Parser<'_, '_, '_> {
                         CodecError::malformed("STEP bounded traversal source ended early")
                     })?;
                 let mut partials = record.partials.iter_mut();
-                self.budget
-                    .charge_work(0, "STEP mutable partial traversal")?;
                 for _ in 0..partials.len() {
                     let partial = self
                         .budget
@@ -1362,8 +1360,6 @@ impl Parser<'_, '_, '_> {
                             CodecError::malformed("STEP bounded traversal source ended early")
                         })?;
                     let mut parameters = partial.parameters.iter_mut();
-                    self.budget
-                        .charge_work(0, "STEP mutable parameter traversal")?;
                     for _ in 0..parameters.len() {
                         let value = self
                             .budget
@@ -1427,8 +1423,6 @@ impl Parser<'_, '_, '_> {
         resolve_local_references(&mut anchors, &mut records, &reference_entries, self.budget)
             .map_err(|error| error.into_parse_error(0))?;
         let mut visited_items = (records).iter_mut();
-        self.budget
-            .charge_work(0, "STEP mutable record traversal")?;
         for _ in 0..visited_items.len() {
             let (_, record) = self
                 .budget
@@ -1459,7 +1453,6 @@ impl Parser<'_, '_, '_> {
         let mut refs = Vec::new();
         let mut value_refs = Vec::new();
         let mut validating_anchors = anchors.iter();
-        self.budget.charge_work(0, "STEP exchange traversal")?;
         for _ in 0..validating_anchors.len() {
             let anchor = self
                 .budget
@@ -1503,7 +1496,6 @@ impl Parser<'_, '_, '_> {
                 return self.err("unresolved value instance reference in anchor binding");
             }
             let mut tags = anchor.tags.iter();
-            self.budget.charge_work(0, "STEP exchange traversal")?;
             for _ in 0..tags.len() {
                 let tag = self
                     .budget
@@ -1549,7 +1541,6 @@ impl Parser<'_, '_, '_> {
             }
         }
         let mut validating_records = records.values();
-        self.budget.charge_work(0, "STEP exchange map traversal")?;
         for _ in 0..validating_records.len() {
             let record = self
                 .budget
@@ -1560,7 +1551,6 @@ impl Parser<'_, '_, '_> {
             refs.clear();
             value_refs.clear();
             let mut visited_items = (record.partials[..]).iter();
-            self.budget.charge_work(0, "STEP exchange traversal")?;
             for _ in 0..visited_items.len() {
                 let partial = self
                     .budget
@@ -1569,7 +1559,6 @@ impl Parser<'_, '_, '_> {
                         CodecError::malformed("STEP bounded traversal source ended early")
                     })?;
                 let mut visited_items = (partial.parameters[..]).iter();
-                self.budget.charge_work(0, "STEP exchange traversal")?;
                 for _ in 0..visited_items.len() {
                     let value = self
                         .budget
@@ -1728,7 +1717,6 @@ impl Parser<'_, '_, '_> {
                 let mut name_storage = self.budget.reserve_scoped(0, "step partial name lookup")?;
                 let mut canonical_names = Vec::new();
                 let mut visited_items = (parts[..]).iter();
-                self.budget.charge_work(0, "STEP record traversal")?;
                 for _ in 0..visited_items.len() {
                     let part = self
                         .budget
@@ -2153,7 +2141,6 @@ fn validate_header(
         budget.reserve_scoped(0, "STEP schema identifier uniqueness storage")?;
     let mut normalized_identifiers = BTreeSet::new();
     let mut identifiers = identifiers.iter();
-    budget.charge_work(0, "STEP schema identifier validation traversal")?;
     for _ in 0..identifiers.len() {
         let value = budget
             .next_charged(
@@ -2209,10 +2196,6 @@ fn schema_object_identifier_diagnostics<'a>(
     std::iter::from_fn(move || {
         if failed {
             return None;
-        }
-        if let Err(error) = budget.charge_work(0, "STEP schema identifier diagnostic traversal") {
-            failed = true;
-            return Some(Err(error));
         }
         loop {
             if identifiers.len() == 0 {
@@ -2291,7 +2274,6 @@ fn validate_header_sections(
     let mut language_sections = BTreeSet::new();
     let mut context_sections = BTreeSet::new();
     let mut optional = header.get(3..).unwrap_or_default().iter();
-    budget.charge_work(0, "STEP validate header sections traversal")?;
     for _ in 0..optional.len() {
         let record = budget
             .next_charged(&mut optional, "STEP validate header sections traversal")?
@@ -2454,7 +2436,6 @@ fn admit_file_population(
         Value::List(sections) if !sections.is_empty() => {
             let mut names = BTreeSet::new();
             let mut sections = sections.iter();
-            budget.charge_work(0, "STEP file population section traversal")?;
             for _ in 0..sections.len() {
                 let section = budget
                     .next_charged(&mut sections, "STEP file population section traversal")?
@@ -2537,11 +2518,14 @@ fn is_decodable_string(
     let Value::String(bytes) = value else {
         return Ok(false);
     };
-    match crate::strings::decoded_char_count(budget, bytes, implementation_level) {
-        Ok(_) => Ok(true),
-        Err(crate::strings::StringDecodeFailure::Invalid(_)) => Ok(false),
-        Err(crate::strings::StringDecodeFailure::Resource(error)) => Err(error),
-    }
+    let mut storage = budget.reserve_scoped(0, "STEP header string validation storage")?;
+    storage.with_storage(|| {
+        match crate::strings::decoded_char_count(budget, bytes, implementation_level) {
+            Ok(_) => Ok(true),
+            Err(crate::strings::StringDecodeFailure::Invalid(_)) => Ok(false),
+            Err(crate::strings::StringDecodeFailure::Resource(error)) => Err(error),
+        }
+    })
 }
 
 fn is_decodable_string_list(
@@ -2582,11 +2566,14 @@ fn string_within_limit(
     let Value::String(bytes) = value else {
         return Ok(false);
     };
-    match crate::strings::decoded_char_count(budget, bytes, implementation_level) {
-        Ok(count) => Ok(count <= limit),
-        Err(crate::strings::StringDecodeFailure::Invalid(_)) => Ok(false),
-        Err(crate::strings::StringDecodeFailure::Resource(error)) => Err(error),
-    }
+    let mut storage = budget.reserve_scoped(0, "STEP header string validation storage")?;
+    storage.with_storage(|| {
+        match crate::strings::decoded_char_count(budget, bytes, implementation_level) {
+            Ok(count) => Ok(count <= limit),
+            Err(crate::strings::StringDecodeFailure::Invalid(_)) => Ok(false),
+            Err(crate::strings::StringDecodeFailure::Resource(error)) => Err(error),
+        }
+    })
 }
 
 fn string_list_within_limit(
@@ -2804,9 +2791,8 @@ fn decoded_bytes(
     implementation_level: ImplementationLevel,
     budget: &DecodeContext<'_>,
 ) -> Result<Option<String>, CodecError> {
-    let result = crate::strings::decode_with_context(bytes, implementation_level, budget);
-    match result {
-        Ok(value) => Ok(Some(value)),
+    match crate::strings::decode_optional_with_context(bytes, implementation_level, budget) {
+        Ok(value) => Ok(value),
         Err(crate::strings::StringDecodeFailure::Invalid(_)) => Ok(None),
         Err(crate::strings::StringDecodeFailure::Resource(error)) => Err(error),
     }
@@ -2837,7 +2823,6 @@ fn validate_header_data_references(
     data_section_names: &BTreeSet<String>,
 ) -> Result<(), ValidationError> {
     let mut references = references.iter();
-    budget.charge_work(0, "STEP header DATA reference traversal")?;
     for _ in 0..references.len() {
         let reference = budget
             .next_charged(&mut references, "STEP header DATA reference traversal")?
@@ -2845,7 +2830,6 @@ fn validate_header_data_references(
         match reference {
             HeaderDataReferences::FilePopulation(sections) => {
                 let mut sections = sections.iter();
-                budget.charge_work(0, "STEP FILE_POPULATION section traversal")?;
                 for _ in 0..sections.len() {
                     let section = budget
                         .next_charged(&mut sections, "STEP FILE_POPULATION section traversal")?
@@ -3042,7 +3026,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
         let mut stack_storage = self
             .budget
             .reserve_scoped(0, "step_anchor_reference_stack_storage")?;
-        let mut stack = Vec::new();
+        let mut stack = HashSet::new();
         let (value, _, expanded_nodes) = self.resolve(
             value,
             &mut stack,
@@ -3070,7 +3054,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
     fn resolve(
         &mut self,
         value: &Value,
-        stack: &mut Vec<&'a str>,
+        stack: &mut HashSet<&'a str>,
         stack_storage: &mut ScopedReservation<'ctx>,
         budget: usize,
         depth: usize,
@@ -3111,14 +3095,10 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                         *nodes,
                     ));
                 }
-                if self.budget.any_by(
-                    stack.as_slice(),
-                    |previous| {
-                        self.budget
-                            .equal(*previous, name, "STEP anchor cycle name equality")
-                    },
-                    "STEP anchor cycle search",
-                )? {
+                if self
+                    .budget
+                    .contains_hash_set(stack, name, "STEP anchor cycle search")?
+                {
                     let message = self
                         .budget
                         .format_retained(
@@ -3130,20 +3110,13 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 }
                 value_node_count(source, Self::MAX_EXPANDED_NODES, self.budget)?;
 
-                stack_storage
-                    .with_storage(|| {
-                        self.budget
-                            .charge_collection_items(1, "step_anchor_reference_stack")?;
-                        self.budget.reserve_capacity(
-                            stack,
-                            1,
-                            "step_anchor_reference_stack_storage",
-                        )
-                    })
-                    .map_err(ResolveError::Resource)?;
-                stack.push(name);
+                stack_storage.with_storage(|| {
+                    self.budget
+                        .insert_hash_set(stack, name, "step_anchor_reference_stack")
+                })?;
                 let resolved = self.resolve(source, stack, stack_storage, budget, depth + 1);
-                stack.pop();
+                self.budget
+                    .remove_hash_set(stack, name, "STEP anchor active key removal")?;
                 let (value, nodes, _) = resolved?;
                 if nodes > budget {
                     return Err(self.node_limit_error());
@@ -3173,7 +3146,6 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                     .collection_vec(values.len(), "step_anchor_list_items")
                     .map_err(ResolveError::Resource)?;
                 let mut values = values.iter();
-                self.budget.charge_work(0, "STEP resolve value traversal")?;
                 for _ in 0..values.len() {
                     let value = self
                         .budget
@@ -3231,10 +3203,51 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
     }
 }
 
+// A source alias can travel at most the codec depth ceiling before refusal.
+// A closing path can start on either side of that active prefix.
+const REFERENCE_JUMP_LEVELS: usize = 9;
+
+#[derive(Clone, Copy)]
+enum ReferenceLeaf<'a> {
+    Original(ReferenceName),
+    Omitted,
+    Borrowed(&'a Value),
+}
+
+#[derive(Clone, Copy)]
+enum ReferenceTemplate<'a> {
+    Leaf {
+        value: ReferenceLeaf<'a>,
+        height: usize,
+    },
+    Tree {
+        value: &'a Value,
+        root: usize,
+        distance: usize,
+        jumps: [usize; REFERENCE_JUMP_LEVELS],
+    },
+}
+
+#[derive(Clone, Copy)]
+enum ReferenceNode<'a> {
+    Leaf {
+        value: ReferenceLeaf<'a>,
+        height: usize,
+    },
+    Tree(&'a Value),
+    Link(ReferenceName, &'a Value),
+    Alias(usize),
+    Pending {
+        next: usize,
+        position: usize,
+    },
+    Ready(ReferenceTemplate<'a>),
+}
+
 struct ReferenceResolver<'a, 'ctx, 'arena> {
-    bindings: BTreeMap<ReferenceName, &'a str>,
-    anchors: &'a BTreeMap<String, Value>,
-    stack: Vec<ReferenceName>,
+    bindings: BTreeMap<ReferenceName, usize>,
+    memo: Vec<ReferenceNode<'a>>,
+    active: HashMap<usize, usize>,
     remaining_nodes: usize,
     budget: &'ctx DecodeContext<'arena>,
     storage: ScopedReservation<'ctx>,
@@ -3245,62 +3258,273 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
     const MAX_REFERENCE_DEPTH: usize = 256;
 
     fn new(
-        references: &'a [ReferenceEntry],
+        references: &[ReferenceEntry],
         anchors: &'a BTreeMap<String, Value>,
         budget: &'ctx DecodeContext<'arena>,
     ) -> Result<Self, ResolveError> {
         let mut storage = budget.reserve_scoped(0, "step_reference_binding_storage")?;
         let mut bindings = BTreeMap::new();
-        let mut visited_items = (references).iter();
-        budget.charge_work(0, "STEP new traversal")?;
-        for _ in 0..visited_items.len() {
+        let mut memo = Vec::new();
+        let mut references = references.iter();
+        for _ in 0..references.len() {
             let reference = budget
-                .next_charged(&mut visited_items, "STEP new traversal")?
+                .next_charged(&mut references, "STEP reference template declarations")?
                 .ok_or_else(|| {
                     CodecError::malformed("STEP bounded traversal source ended early")
                 })?;
+            let source = match budget.position_by(
+                reference.uri.as_bytes(),
+                |byte| Ok(*byte == b'#'),
+                "STEP reference URI fragment split",
+            )? {
+                None => ReferenceNode::Leaf {
+                    value: ReferenceLeaf::Omitted,
+                    height: 1,
+                },
+                Some(separator) if separator != 0 => ReferenceNode::Leaf {
+                    value: ReferenceLeaf::Original(reference.name),
+                    height: 1,
+                },
+                Some(separator) => {
+                    let fragment = &reference.uri[separator + 1..];
+                    match budget.get_btree_map(anchors, fragment, "STEP reference anchor lookup")? {
+                        Some(value) => Self::classify_target(reference.name, value, budget)?,
+                        None if is_uuid_fragment(fragment) => ReferenceNode::Leaf {
+                            value: ReferenceLeaf::Original(reference.name),
+                            height: 1,
+                        },
+                        None => ReferenceNode::Leaf {
+                            value: ReferenceLeaf::Omitted,
+                            height: 1,
+                        },
+                    }
+                }
+            };
             storage.with_storage(|| {
                 budget.insert_btree_map(
                     &mut bindings,
                     reference.name,
-                    reference.uri.as_str(),
+                    memo.len(),
                     "step_reference_binding_items",
-                )
+                )?;
+                budget.push_vec(&mut memo, source, "step_reference_memo_entries")
             })?;
         }
+        let mut nodes = memo.iter_mut();
+        for _ in 0..nodes.len() {
+            let node = budget
+                .next_charged(&mut nodes, "STEP reference template links")?
+                .ok_or_else(|| {
+                    CodecError::malformed("STEP bounded traversal source ended early")
+                })?;
+            if let ReferenceNode::Link(name, original) = *node {
+                *node = match budget.get_btree_map(
+                    &bindings,
+                    &name,
+                    "STEP reference template destination",
+                )? {
+                    Some(index) => ReferenceNode::Alias(*index),
+                    None => ReferenceNode::Leaf {
+                        value: ReferenceLeaf::Borrowed(original),
+                        height: 2,
+                    },
+                };
+            }
+        }
+        Self::compile_templates(&mut memo, budget)?;
         Ok(Self {
-            storage,
             bindings,
-            anchors,
-            stack: Vec::new(),
+            memo,
+            active: HashMap::new(),
             remaining_nodes: collection_cap(budget, Self::MAX_MATERIALIZED_NODES),
             budget,
+            storage,
         })
+    }
+
+    fn classify_target(
+        name: ReferenceName,
+        value: &'a Value,
+        budget: &DecodeContext<'_>,
+    ) -> Result<ReferenceNode<'a>, CodecError> {
+        let target = match value {
+            Value::Reference(id) => Some(ReferenceName::Entity(*id)),
+            Value::ExternalReference(id) => Some(ReferenceName::Value(*id)),
+            _ => None,
+        };
+        if let Some(target) = target {
+            // A cross-class alias always recovers to an omitted node. No
+            // descendant value can satisfy both occurrence classes.
+            return Ok(
+                if std::mem::discriminant(&name) == std::mem::discriminant(&target) {
+                    ReferenceNode::Link(target, value)
+                } else {
+                    ReferenceNode::Leaf {
+                        value: ReferenceLeaf::Omitted,
+                        height: 2,
+                    }
+                },
+            );
+        }
+        if let Value::Resource(uri) = value {
+            let fragment = budget.any_by(
+                uri.as_bytes(),
+                |byte| Ok(*byte == b'#'),
+                "STEP resolved URI fragment containment",
+            )?;
+            return Ok(ReferenceNode::Leaf {
+                value: if fragment {
+                    ReferenceLeaf::Original(name)
+                } else {
+                    ReferenceLeaf::Omitted
+                },
+                height: 2,
+            });
+        }
+        if !reference_target_matches(name, value) {
+            return Ok(ReferenceNode::Leaf {
+                value: ReferenceLeaf::Omitted,
+                height: 2,
+            });
+        }
+        Ok(match value {
+            Value::List(_) | Value::Typed(_, _) => ReferenceNode::Tree(value),
+            _ => ReferenceNode::Leaf {
+                value: ReferenceLeaf::Borrowed(value),
+                height: 2,
+            },
+        })
+    }
+
+    fn compile_templates(
+        nodes: &mut [ReferenceNode<'a>],
+        budget: &DecodeContext<'_>,
+    ) -> Result<(), CodecError> {
+        let mut path_storage = budget.reserve_scoped(0, "STEP reference template path storage")?;
+        let mut path = Vec::new();
+        for root in 0..nodes.len() {
+            budget.charge_work(1, "STEP reference template roots")?;
+            let mut current = root;
+            loop {
+                budget.charge_work(1, "STEP reference template cursor")?;
+                match nodes[current] {
+                    ReferenceNode::Ready(_) => break,
+                    ReferenceNode::Leaf { value, height } => {
+                        nodes[current] =
+                            ReferenceNode::Ready(ReferenceTemplate::Leaf { value, height });
+                        break;
+                    }
+                    ReferenceNode::Tree(value) => {
+                        nodes[current] = ReferenceNode::Ready(ReferenceTemplate::Tree {
+                            value,
+                            root: current,
+                            distance: 0,
+                            jumps: [current; REFERENCE_JUMP_LEVELS],
+                        });
+                        break;
+                    }
+                    ReferenceNode::Alias(next) => {
+                        nodes[current] = ReferenceNode::Pending {
+                            next,
+                            position: path.len(),
+                        };
+                        budget.push_scoped_vec(
+                            &mut path_storage,
+                            &mut path,
+                            current,
+                            "STEP reference template path",
+                        )?;
+                        current = next;
+                    }
+                    ReferenceNode::Pending { position, .. } => {
+                        let height = path.len() - position + 1;
+                        while path.len() > position {
+                            budget.charge_work(1, "STEP reference alias cycle completion")?;
+                            let Some(index) = path.pop() else {
+                                break;
+                            };
+                            nodes[index] = ReferenceNode::Ready(ReferenceTemplate::Leaf {
+                                value: ReferenceLeaf::Omitted,
+                                height,
+                            });
+                        }
+                        break;
+                    }
+                    ReferenceNode::Link(_, _) => return Err(Self::incomplete_template(budget)?),
+                }
+            }
+            while !path.is_empty() {
+                budget.charge_work(1, "STEP reference template completion")?;
+                let Some(index) = path.pop() else {
+                    break;
+                };
+                let ReferenceNode::Pending { next, .. } = nodes[index] else {
+                    return Err(Self::incomplete_template(budget)?);
+                };
+                let compiled = match Self::template(nodes, next, budget)? {
+                    ReferenceTemplate::Leaf { value, height } => ReferenceTemplate::Leaf {
+                        value,
+                        height: height + 1,
+                    },
+                    ReferenceTemplate::Tree {
+                        value,
+                        root,
+                        distance,
+                        ..
+                    } => {
+                        let mut jumps = [next; REFERENCE_JUMP_LEVELS];
+                        let mut level = 1;
+                        while level < REFERENCE_JUMP_LEVELS {
+                            let ReferenceTemplate::Tree { jumps: parent, .. } =
+                                Self::template(nodes, jumps[level - 1], budget)?
+                            else {
+                                return Err(Self::incomplete_template(budget)?);
+                            };
+                            jumps[level] = parent[level - 1];
+                            level += 1;
+                        }
+                        ReferenceTemplate::Tree {
+                            value,
+                            root,
+                            distance: distance + 1,
+                            jumps,
+                        }
+                    }
+                };
+                nodes[index] = ReferenceNode::Ready(compiled);
+            }
+        }
+        Ok(())
+    }
+
+    fn incomplete_template(budget: &DecodeContext<'_>) -> Result<CodecError, CodecError> {
+        Ok(CodecError::Malformed(budget.copy_retained_text(
+            "STEP reference template is incomplete",
+            "STEP reference template error",
+        )?))
+    }
+
+    fn template(
+        nodes: &[ReferenceNode<'a>],
+        index: usize,
+        budget: &DecodeContext<'_>,
+    ) -> Result<ReferenceTemplate<'a>, CodecError> {
+        match nodes[index] {
+            ReferenceNode::Ready(template) => Ok(template),
+            _ => Err(Self::incomplete_template(budget)?),
+        }
     }
 
     fn clone_leaf(&mut self, value: &Value) -> Result<Value, ResolveError> {
         self.consume_materialized_node()?;
-        try_clone_value(value, self.budget, "step_reference_leaf_copy")
-            .map_err(ResolveError::Resource)
+        try_clone_value(value, self.budget, "step_reference_leaf_copy").map_err(Into::into)
     }
 
     fn resolve_value(&mut self, value: &Value, depth: usize) -> Result<Value, ResolveError> {
-        let _nested = self
-            .budget
-            .enter_nested("step_reference_expansion")
-            .map_err(ResolveError::Resource)?;
+        let _nested = self.budget.enter_nested("step_reference_expansion")?;
         self.budget
             .charge_work(1, "step_reference_materialization")?;
-        if depth >= recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH) {
-            return Err(self
-                .budget
-                .refuse_codec_limit(
-                    "step_reference_depth_limit",
-                    u64_from_index(recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH)),
-                    u64_from_index(depth + 1),
-                )
-                .into());
-        }
+        self.check_depth(depth + 1)?;
         match value {
             Value::Reference(id) => {
                 self.resolve_occurrence(ReferenceName::Entity(*id), value, depth)
@@ -3310,7 +3534,7 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
             }
             Value::List(values) => {
                 self.consume_materialized_node()?;
-                if !self.stack.is_empty() && values.len() > self.remaining_nodes {
+                if !self.active.is_empty() && values.len() > self.remaining_nodes {
                     return Err(self
                         .budget
                         .refuse_codec_limit(
@@ -3322,15 +3546,12 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                 }
                 let mut resolved = self
                     .budget
-                    .collection_vec(values.len(), "step_reference_list_items")
-                    .map_err(ResolveError::Resource)?;
-                let mut visited_items = (values.as_slice()).iter();
-                self.budget
-                    .charge_work(0, "STEP resolve value value traversal")?;
-                for _ in 0..visited_items.len() {
+                    .collection_vec(values.len(), "step_reference_list_items")?;
+                let mut values = values.iter();
+                for _ in 0..values.len() {
                     let value = self
                         .budget
-                        .next_charged(&mut visited_items, "STEP resolve value value traversal")?
+                        .next_charged(&mut values, "STEP resolve value value traversal")?
                         .ok_or_else(|| {
                             CodecError::malformed("STEP bounded traversal source ended early")
                         })?;
@@ -3340,7 +3561,7 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
             }
             Value::Typed(name, value) => {
                 self.consume_materialized_node()?;
-                let resolved = self.resolve_value(value, depth + 1)?;
+                let value = self.resolve_value(value, depth + 1)?;
                 self.budget
                     .charge_collection_items(1, "step_reference_typed_value")?;
                 self.budget.charge_retained(
@@ -3349,13 +3570,103 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                 )?;
                 Ok(Value::Typed(
                     self.budget
-                        .copy_retained_text(name, "step_reference_typed_name_copy")
-                        .map_err(ResolveError::Resource)?,
-                    Box::new(resolved),
+                        .copy_retained_text(name, "step_reference_typed_name_copy")?,
+                    Box::new(value),
                 ))
             }
             _ => self.clone_leaf(value),
         }
+    }
+
+    fn check_depth(&self, requested: usize) -> Result<(), ResolveError> {
+        let cap = recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH);
+        if requested > cap {
+            return Err(self
+                .budget
+                .refuse_codec_limit(
+                    "step_reference_depth_limit",
+                    u64_from_index(cap),
+                    u64_from_index(requested),
+                )
+                .into());
+        }
+        Ok(())
+    }
+
+    fn closing_distance(
+        &self,
+        child: usize,
+        start: usize,
+        depth: usize,
+    ) -> Result<usize, ResolveError> {
+        let ReferenceTemplate::Tree {
+            distance: child_distance,
+            ..
+        } = Self::template(&self.memo, child, self.budget)?
+        else {
+            return Err(Self::incomplete_template(self.budget)?.into());
+        };
+        let ReferenceTemplate::Tree {
+            distance: start_distance,
+            ..
+        } = Self::template(&self.memo, start, self.budget)?
+        else {
+            return Err(Self::incomplete_template(self.budget)?.into());
+        };
+        let lower_bound = child_distance.saturating_sub(start_distance);
+        self.check_depth(depth + lower_bound + 1)?;
+        let mut left = child;
+        let mut right = start;
+        let difference = child_distance.abs_diff(start_distance);
+        // The active start is below the 256-depth ceiling. The admitted
+        // lower bound leaves at most 511 links to the common ancestor.
+        for level in 0..REFERENCE_JUMP_LEVELS {
+            if difference & (1 << level) != 0 {
+                let node = if child_distance > start_distance {
+                    &mut left
+                } else {
+                    &mut right
+                };
+                let ReferenceTemplate::Tree { jumps, .. } =
+                    Self::template(&self.memo, *node, self.budget)?
+                else {
+                    return Err(Self::incomplete_template(self.budget)?.into());
+                };
+                *node = jumps[level];
+            }
+        }
+        if left != right {
+            for level in (0..REFERENCE_JUMP_LEVELS).rev() {
+                let ReferenceTemplate::Tree {
+                    jumps: left_jumps, ..
+                } = Self::template(&self.memo, left, self.budget)?
+                else {
+                    return Err(Self::incomplete_template(self.budget)?.into());
+                };
+                let ReferenceTemplate::Tree {
+                    jumps: right_jumps, ..
+                } = Self::template(&self.memo, right, self.budget)?
+                else {
+                    return Err(Self::incomplete_template(self.budget)?.into());
+                };
+                if left_jumps[level] != right_jumps[level] {
+                    left = left_jumps[level];
+                    right = right_jumps[level];
+                }
+            }
+            let ReferenceTemplate::Tree { jumps, .. } =
+                Self::template(&self.memo, left, self.budget)?
+            else {
+                return Err(Self::incomplete_template(self.budget)?.into());
+            };
+            left = jumps[0];
+        }
+        let ReferenceTemplate::Tree { distance, .. } =
+            Self::template(&self.memo, left, self.budget)?
+        else {
+            return Err(Self::incomplete_template(self.budget)?.into());
+        };
+        Ok(child_distance - distance)
     }
 
     fn resolve_occurrence(
@@ -3364,88 +3675,79 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
         original: &Value,
         depth: usize,
     ) -> Result<Value, ResolveError> {
-        let Some(uri) = self
+        let Some(index) = self
             .budget
             .get_btree_map(&self.bindings, &key, "STEP reference binding lookup")?
             .copied()
         else {
             return self.clone_leaf(original);
         };
-        let Some(separator) = self
-            .budget
-            .position_by(
-                uri.as_bytes(),
-                |byte| Ok(*byte == b'#'),
-                "STEP reference URI fragment split",
-            )
-            .map_err(ResolveError::Resource)?
-        else {
-            return self.clone_leaf(&Value::Omitted);
-        };
-        let (path, fragment) = (&uri[..separator], &uri[separator + 1..]);
-        if !path.is_empty() {
-            return self.clone_leaf(original);
+        match Self::template(&self.memo, index, self.budget)? {
+            ReferenceTemplate::Leaf { value, height } => {
+                self.check_depth(depth + height)?;
+                if self.active.is_empty() && height > 1 {
+                    self.consume_expanded_nodes(1)?;
+                }
+                match value {
+                    ReferenceLeaf::Original(ReferenceName::Entity(id)) => {
+                        self.clone_leaf(&Value::Reference(id))
+                    }
+                    ReferenceLeaf::Original(ReferenceName::Value(id)) => {
+                        self.clone_leaf(&Value::ExternalReference(id))
+                    }
+                    ReferenceLeaf::Omitted => self.clone_leaf(&Value::Omitted),
+                    ReferenceLeaf::Borrowed(value) => self.clone_leaf(value),
+                }
+            }
+            ReferenceTemplate::Tree {
+                value,
+                root,
+                distance,
+                ..
+            } => {
+                if let Some(start) = self
+                    .budget
+                    .get_hash_map(&self.active, &root, "STEP reference cycle search")?
+                    .copied()
+                {
+                    let closing = self.closing_distance(index, start, depth)?;
+                    self.check_depth(depth + closing + 1)?;
+                    return self.clone_leaf(&Value::Omitted);
+                }
+                self.check_depth(depth + distance + 2)?;
+                self.storage.with_storage(|| {
+                    self.budget.insert_hash_map(
+                        &mut self.active,
+                        root,
+                        index,
+                        "step_reference_stack",
+                    )
+                })?;
+                let result = self.resolve_value(value, depth + distance + 1);
+                self.budget.remove_hash_map(
+                    &mut self.active,
+                    &root,
+                    "STEP reference active key removal",
+                )?;
+                result
+            }
         }
-        if self.budget.any_by(
-            self.stack.as_slice(),
-            |previous| Ok(*previous == key),
-            "STEP reference cycle search",
-        )? {
-            return self.clone_leaf(&Value::Omitted);
-        }
-        let Some(anchor) =
-            self.budget
-                .get_btree_map(self.anchors, fragment, "STEP reference anchor lookup")?
-        else {
-            return if is_uuid_fragment(fragment) {
-                self.clone_leaf(original)
-            } else {
-                self.clone_leaf(&Value::Omitted)
-            };
-        };
+    }
 
-        self.storage
-            .with_storage(|| {
-                self.budget
-                    .charge_collection_items(1, "step_reference_stack")?;
-                self.budget
-                    .reserve_capacity(&mut self.stack, 1, "step_reference_stack_storage")
-            })
-            .map_err(ResolveError::Resource)?;
-        self.stack.push(key);
-        let resolved = self.resolve_value(anchor, depth + 1);
-        self.stack.pop();
-        let resolved = resolved?;
-        if let Value::Resource(uri) = &resolved {
-            return if self
-                .budget
-                .any_by(
-                    uri.as_bytes(),
-                    |byte| Ok(*byte == b'#'),
-                    "STEP resolved URI fragment containment",
-                )
-                .map_err(ResolveError::Resource)?
-            {
-                self.clone_leaf(original)
-            } else {
-                self.clone_leaf(&Value::Omitted)
-            };
-        }
-        if !reference_target_matches(key, &resolved) {
-            return self.clone_leaf(&Value::Omitted);
-        }
-        Ok(resolved)
+    fn consume_expanded_nodes(&mut self, count: usize) -> Result<(), ResolveError> {
+        self.remaining_nodes = self.remaining_nodes.checked_sub(count).ok_or_else(|| {
+            self.budget.refuse_codec_limit(
+                "step_reference_output_node_limit",
+                u64_from_index(collection_cap(self.budget, Self::MAX_MATERIALIZED_NODES)),
+                u64_from_index(collection_cap(self.budget, Self::MAX_MATERIALIZED_NODES) + 1),
+            )
+        })?;
+        Ok(())
     }
 
     fn consume_materialized_node(&mut self) -> Result<(), ResolveError> {
-        if !self.stack.is_empty() {
-            self.remaining_nodes = self.remaining_nodes.checked_sub(1).ok_or_else(|| {
-                self.budget.refuse_codec_limit(
-                    "step_reference_output_node_limit",
-                    u64_from_index(collection_cap(self.budget, Self::MAX_MATERIALIZED_NODES)),
-                    u64_from_index(collection_cap(self.budget, Self::MAX_MATERIALIZED_NODES) + 1),
-                )
-            })?;
+        if !self.active.is_empty() {
+            self.consume_expanded_nodes(1)?;
         }
         Ok(())
     }
@@ -3463,7 +3765,6 @@ fn resolve_local_references(
     let mut snapshot_storage = budget.reserve_scoped(0, "step_reference_anchor_copy_storage")?;
     let mut anchor_bindings = BTreeMap::new();
     let mut visited_items = (anchors[..]).iter();
-    budget.charge_work(0, "STEP resolve local references traversal")?;
     for _ in 0..visited_items.len() {
         let anchor = budget
             .next_charged(
@@ -3486,14 +3787,12 @@ fn resolve_local_references(
     }
     let mut resolver = ReferenceResolver::new(references, &anchor_bindings, budget)?;
     let mut visited_items = (anchors).iter_mut();
-    budget.charge_work(0, "STEP local anchor resolution traversal")?;
     for _ in 0..visited_items.len() {
         let anchor = budget
             .next_charged(&mut visited_items, "STEP local anchor resolution traversal")?
             .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
         anchor.value = resolver.resolve_value(&anchor.value, 0)?;
         let mut visited_items = (anchor.tags.as_mut_slice()).iter_mut();
-        budget.charge_work(0, "STEP local anchor tag traversal")?;
         for _ in 0..visited_items.len() {
             let tag = budget
                 .next_charged(&mut visited_items, "STEP local anchor tag traversal")?
@@ -3504,13 +3803,11 @@ fn resolve_local_references(
         }
     }
     let mut visited_items = (records).iter_mut();
-    budget.charge_work(0, "STEP local record resolution traversal")?;
     for _ in 0..visited_items.len() {
         let (_, record) = budget
             .next_charged(&mut visited_items, "STEP local record resolution traversal")?
             .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
         let mut visited_items = (record.partials[..]).iter_mut();
-        budget.charge_work(0, "STEP local partial resolution traversal")?;
         for _ in 0..visited_items.len() {
             let partial = budget
                 .next_charged(
@@ -3521,7 +3818,6 @@ fn resolve_local_references(
                     CodecError::malformed("STEP bounded traversal source ended early")
                 })?;
             let mut visited_items = (partial.parameters.as_mut_slice()).iter_mut();
-            budget.charge_work(0, "STEP local parameter resolution traversal")?;
             for _ in 0..visited_items.len() {
                 let value = budget
                     .next_charged(
@@ -3591,7 +3887,6 @@ fn value_node_count(
         match value {
             Value::List(values) => {
                 let mut visited_items = (values.as_slice()).iter();
-                budget.charge_work(0, "STEP visit value traversal")?;
                 for _ in 0..visited_items.len() {
                     let child = budget
                         .next_charged(&mut visited_items, "STEP visit value traversal")?
@@ -3641,7 +3936,6 @@ fn references(
             }
             Value::List(values) => {
                 let mut visited_items = (values[..]).iter().rev();
-                budget.charge_work(0, "STEP references traversal")?;
                 for _ in 0..visited_items.len() {
                     let child = budget
                         .next_charged(&mut visited_items, "STEP references traversal")?
