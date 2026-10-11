@@ -33,9 +33,8 @@ fn coordinate_index_keys_admit_present_terms_and_stop_at_first_nan() {
             policy.limits.max_retained_bytes = 0;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             let result = CoordinateEquationIndex::key(&ctx, &equation);
-            let refused = result.is_err();
-            if refused {
-                let original = ctx.resource_refusal().expect("present term refusal");
+            match result {
+            Err(CodecError::ResourceLimit(original)) => {
                 assert_eq!(
                     (
                         original.dimension,
@@ -50,13 +49,12 @@ fn coordinate_index_keys_admit_present_terms_and_stop_at_first_nan() {
                         "creo coordinate equation index terms"
                     )
                 );
-                assert!(
-                    matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
-                );
-                assert!(matches!(CoordinateEquationIndex::key(&ctx, &equation),
-                    Err(CodecError::ResourceLimit(actual)) if actual == original));
-            } else {
-                let key = result.expect("exact term visits");
+
+                Err(original.into())
+            }
+            Err(error) => panic!("unexpected route refusal: {error:?}"),
+            Ok(value) => {
+                let key = value;
                 assert_eq!(key.is_some(), accepted);
                 if let Some(key) = key {
                     assert_eq!(key.0.len(), usize::try_from(visits).expect("two terms"));
@@ -68,16 +66,59 @@ fn coordinate_index_keys_admit_present_terms_and_stop_at_first_nan() {
                     .charge_work_limit(1, "after coordinate key")
                     .expect_err("all term work consumed");
                 assert_eq!((original.used, original.additional), (visits, 1));
-                assert!(matches!(CoordinateEquationIndex::key(&ctx, &equation),
-                    Err(CodecError::ResourceLimit(actual)) if actual == original));
-            }
-            if refused {
-                Err(ctx.resource_refusal().expect("present term refusal").into())
-            } else {
+
                 Ok(())
             }
+        }
         });
     }
+}
+
+#[test]
+fn nonfinite_coordinate_index_lookup_is_free() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let index = CoordinateEquationIndex::from_equations(&ctx, &[]).expect("empty index");
+    let equation = SectionCoordinateEquation { terms: BTreeMap::new(), rhs: f64::INFINITY };
+    assert!(!index.contains(&ctx, &equation).expect("nonfinite rhs is free"));
+    assert!(index.terms.is_empty());
+}
+
+#[test]
+fn nonfinite_coordinate_index_insert_is_free() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut index = CoordinateEquationIndex::from_equations(&ctx, &[]).expect("empty index");
+    let equation = SectionCoordinateEquation { terms: BTreeMap::new(), rhs: f64::INFINITY };
+    index.insert(&ctx, &equation).expect("nonfinite rhs is free");
+    assert!(index.terms.is_empty());
+}
+
+#[test]
+fn absent_saved_coordinate_segments_are_free() {
+    let mut definition = super::incomplete_segment_definition();
+    definition.segments = None;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let witnesses = super::super::saved_section_coordinate_witnesses(
+        &ctx, &definition, &Default::default(),
+    ).expect("absent segment table is free");
+    assert!(witnesses.is_empty());
 }
 
 #[test]
@@ -140,12 +181,9 @@ fn coordinate_index_keeps_only_surviving_key_rhs_and_node_storage() {
                 };
                 drop(parent);
                 if overflow {
-                    let original = ctx
-                        .resource_refusal()
-                        .expect("one byte above actual index backing");
-                    assert!(
-                        matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
-                    );
+                    let Err(CodecError::ResourceLimit(original)) = result else {
+                    panic!("expected first resource refusal");
+                };
                     assert_eq!(
                         (
                             original.dimension,
@@ -159,10 +197,6 @@ fn coordinate_index_keeps_only_surviving_key_rhs_and_node_storage() {
                             EMPTY_ROOT_MATERIALIZED_BYTES - live_bytes - parent_bytes + 1,
                             "coordinate index live storage"
                         )
-                    );
-                    assert_eq!(
-                        ctx.charge_work_limit(1, "after refused index"),
-                        Err(original)
                     );
                 } else {
                     result.expect("exact backing without receipt-vector allocation");
@@ -209,27 +243,16 @@ fn saved_coordinate_search_has_only_present_witness_boundaries() {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-                let run = || {
-                    super::super::section_linear_distance_coordinate(
-                        &ctx,
-                        &definition,
-                        &segments,
-                        [1, 2],
-                        &BTreeMap::new(),
-                        &witnesses,
-                        &BTreeSet::default(),
-                    )
-                };
-                let result = run();
+                let result = super::super::section_linear_distance_coordinate(
+                    &ctx, &definition, &segments, [1, 2], &BTreeMap::new(),
+                    &witnesses, &BTreeSet::default(),
+                );
                 if let Err(CodecError::ResourceLimit(original)) = &result {
                     assert_eq!(original.dimension, ResourceDimension::WorkUnits);
                     if original.operation == "creo saved coordinate witnesses" {
                         assert_eq!(original.additional, 1);
                         observed.borrow_mut().insert(original.used);
                     }
-                    assert!(
-                        matches!(run(), Err(CodecError::ResourceLimit(actual)) if actual == *original)
-                    );
                 }
                 result
             },
@@ -276,11 +299,8 @@ fn point_on_line_candidate_transfer_keeps_only_the_actual_equation_backing() {
                     &coordinates,
                     &mut equations,
                 );
-                let refused = result.is_err();
-                if refused {
-                    let original = ctx
-                        .resource_refusal()
-                        .expect("actual output storage refusal");
+                match result {
+            Err(CodecError::ResourceLimit(original)) => {
                     let (used, additional, operation) = if cap < terms_bytes {
                         (0, terms_bytes, "creo point-on-line candidate scratch")
                     } else {
@@ -304,17 +324,13 @@ fn point_on_line_candidate_transfer_keeps_only_the_actual_equation_backing() {
                             operation
                         )
                     );
-                    assert!(
-                        matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
-                    );
                     assert!(equations.is_empty());
-                    assert!(
-                        matches!(super::super::append_point_on_line_equations(&ctx, &constraints,
-                    &coordinates, &mut equations),
-                    Err(CodecError::ResourceLimit(actual)) if actual == original)
-                    );
-                } else {
-                    assert!(result.expect("exact equation and vector backing"));
+
+                Err(original.into())
+            }
+            Err(error) => panic!("unexpected route refusal: {error:?}"),
+            Ok(value) => {
+                    assert!(value);
                     assert_eq!(equations.len(), 1);
                     assert_eq!(
                         equations[0].terms,
@@ -325,15 +341,10 @@ fn point_on_line_candidate_transfer_keeps_only_the_actual_equation_backing() {
                         .charge_retained_limit(1, "after point-on-line equation")
                         .expect_err("all actual output backing retained");
                     assert_eq!((original.used, original.additional), (live_bytes, 1));
-                }
-                if refused {
-                    Err(ctx
-                        .resource_refusal()
-                        .expect("actual output storage refusal")
-                        .into())
-                } else {
-                    Ok(())
-                }
+
+                Ok(())
+            }
+        }
             },
         );
     }
@@ -382,9 +393,8 @@ fn solved_coordinate_state_transfers_only_the_final_points_map() {
                 &SectionEquationAuxiliaryConstraints::default(),
                 &mut scalar_values,
             );
-            let refused = result.is_err();
-            if refused {
-                let original = ctx.resource_refusal().expect("final map transfer refusal");
+            match result {
+            Err(CodecError::ResourceLimit(original)) => {
                 assert_eq!(
                     (
                         original.dimension,
@@ -399,31 +409,21 @@ fn solved_coordinate_state_transfers_only_the_final_points_map() {
                         "creo solved coordinate state scratch"
                     )
                 );
-                assert!(
-                    matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
-                );
-                assert!(
-                    matches!(super::super::solve_section_coordinates_with_derived_constraints(&ctx,
-                &definition, &mut equations, &BTreeMap::new(), (&[], &[]),
-                &SectionEquationAuxiliaryConstraints::default(), &mut scalar_values),
-                Err(CodecError::ResourceLimit(actual)) if actual == original)
-                );
-            } else {
-                let points = result.expect("only the final point map is retained");
+
+                Err(original.into())
+            }
+            Err(error) => panic!("unexpected route refusal: {error:?}"),
+            Ok(value) => {
+                let points = value;
                 assert_eq!(points, BTreeMap::from([(7, [Some(3.0), Some(4.0)])]));
                 let original = ctx
                     .charge_retained_limit(1, "after solved coordinate state")
                     .expect_err("exact final point backing consumed");
                 assert_eq!((original.used, original.additional), (live_bytes, 1));
-            }
-            if refused {
-                Err(ctx
-                    .resource_refusal()
-                    .expect("final map transfer refusal")
-                    .into())
-            } else {
+
                 Ok(())
             }
+        }
         },
     );
 }

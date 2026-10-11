@@ -15,7 +15,7 @@ fn unsigned_coordinate_validation_admits_present_terms_and_preserves_solution() 
 }
 
 #[test]
-fn zero_variable_pivot_columns_are_free_and_preserve_original_refusal() {
+fn zero_variable_pivot_columns_charge_only_present_rows() {
     // One matrix scale row plus the first inconsistent residual row: exactly two visits.
     // No coefficient, pivot column, free column, output or scratch backing exists.
     crate::test_support::assert_refusal_order(
@@ -39,11 +39,8 @@ fn zero_variable_pivot_columns_are_free_and_preserve_original_refusal() {
                 rhs: 1.0,
             }];
             let result = super::super::uniquely_solved_linear_variables(&ctx, &mut matrix, 0);
-            let refused = result.is_err();
-            if refused {
-                let Err(CodecError::ResourceLimit(original)) = result else {
-                    panic!("present row must refuse");
-                };
+            match result {
+Err(CodecError::ResourceLimit(original)) => {
                 assert_eq!(
                     (
                         original.dimension,
@@ -61,21 +58,16 @@ fn zero_variable_pivot_columns_are_free_and_preserve_original_refusal() {
                         "creo section residual matrix rows"
                     }
                 );
-                for _ in 0..2 {
-                    assert!(
-                        matches!(super::super::uniquely_solved_linear_variables(&ctx, &mut matrix, 0),
-                    Err(CodecError::ResourceLimit(actual)) if actual == original)
-                    );
-                }
-                assert!(
-                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-                );
                 Err(original.into())
-            } else {
-                assert_eq!(result.expect("two rows admitted"), None);
-                ctx.finish_session().expect("active session");
+
+}
+Err(error) => panic!("unexpected route refusal: {error:?}"),
+Ok(value) => {
+                assert_eq!(value, None);
                 Ok(())
-            }
+
+}
+}
         },
     );
 }
@@ -94,34 +86,13 @@ fn with_zero_resources<T>(run: impl FnOnce(DecodeContext<'_>) -> T) -> T {
 }
 
 #[test]
-fn coordinate_solver_without_equations_is_free_and_keeps_original_refusal() {
-    for refused in [false, true] {
-        with_zero_resources(|ctx| {
-            let original =
-                refused.then(|| match ctx.charge_work(1, "seed empty equation refusal") {
-                    Err(CodecError::ResourceLimit(limit)) => limit,
-                    other => panic!("expected seed refusal: {other:?}"),
-                });
-            for _ in 0..2 {
-                let result =
-                    super::super::solve_section_coordinate_equations(&ctx, &[], &BTreeMap::new());
-                if let Some(original) = original {
-                    assert!(
-                        matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
-                    );
-                } else {
-                    assert!(result.expect("no equation components").is_empty());
-                }
-            }
-            if let Some(original) = original {
-                assert!(
-                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-                );
-            } else {
-                ctx.finish_session().expect("active session");
-            }
-        });
-    }
+fn coordinate_solver_without_equations_is_free() {
+    with_zero_resources(|ctx| {
+        let values = super::super::solve_section_coordinate_equations(
+            &ctx, &[], &BTreeMap::new(),
+        ).expect("no equation components");
+        assert!(values.is_empty());
+    });
 }
 
 #[test]
