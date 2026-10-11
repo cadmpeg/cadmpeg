@@ -206,96 +206,117 @@ pub(crate) fn decode<'ctx>(
     } else {
         [false, false]
     };
+    let mut staging_storage = expand
+        .ctx()
+        .reserve_scoped(0, "Rhino extrusion boundary staging")?;
+    let mut warning_storage = expand
+        .ctx()
+        .reserve_scoped(0, "Rhino extrusion diagnostics staging")?;
     let mut warnings = Diagnostics::new();
     let mut payload_children = [profile_range, 0..0];
     let mut child_count = 1;
-    let (meshes, mesh_storage) = if minor >= 3 {
-        let cache_start = reader.position();
-        let cache_range = chunk_at(data, cache_start, reader.end(), archive, false)
-            .ok()
-            .map(|chunk| chunk.range());
-        if let Some(range) = cache_range {
-            payload_children[1] = range;
-            child_count = 2;
-        }
-        match read_mesh_cache(
-            expand,
+    let cached_meshes = warning_storage.with_storage(|| {
+        let cached_meshes = if minor >= 3 {
+            let cache_start = reader.position();
+            let cache_range = chunk_at(data, cache_start, reader.end(), archive, false)
+                .ok()
+                .map(|chunk| chunk.range());
+            if let Some(range) = cache_range {
+                payload_children[1] = range;
+                child_count = 2;
+            }
+            match read_mesh_cache(
+                expand,
+                data,
+                &mut reader,
+                ExtrusionFormat {
+                    archive,
+                    writer_version,
+                    scale,
+                },
+                mesh_budget,
+                &mut warnings,
+            ) {
+                Ok(meshes) => meshes,
+                Err(error @ GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(_))) => {
+                    return Err(error);
+                }
+                Err(cache_error) => {
+                    // MeshBudget counters stay monotonic after rejection.
+                    // Decoded meshes, descriptors, and their list-backing
+                    // guards drop with `read_mesh_cache`.
+                    warnings.push_admitted(
+                        expand.ctx(),
+                        format_args!("extrusion mesh cache dropped: {cache_error}"),
+                    )?;
+                    reader.skip(reader.remaining())?;
+                    (
+                        Vec::new(),
+                        expand
+                            .ctx()
+                            .reserve_scoped(0, "Rhino extrusion cache meshes")?,
+                        expand
+                            .ctx()
+                            .reserve_scoped(0, "Rhino extrusion mesh-cache payloads")?,
+                    )
+                }
+            }
+        } else {
+            match read_v5_mesh_cache(
+                expand,
+                data,
+                ExtrusionFormat {
+                    archive,
+                    writer_version,
+                    scale,
+                },
+                userdata,
+                mesh_budget,
+                &mut warnings,
+            ) {
+                Ok(meshes) => meshes,
+                Err(error @ GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(_))) => {
+                    return Err(error);
+                }
+                Err(cache_error) => {
+                    warnings.push_admitted(
+                        expand.ctx(),
+                        format_args!("V5 extrusion mesh cache dropped: {cache_error}"),
+                    )?;
+                    (
+                        Vec::new(),
+                        expand
+                            .ctx()
+                            .reserve_scoped(0, "Rhino extrusion cache meshes")?,
+                        expand
+                            .ctx()
+                            .reserve_scoped(0, "Rhino V5 extrusion mesh-cache payloads")?,
+                    )
+                }
+            }
+        };
+        Ok::<_, GeometryError>(cached_meshes)
+    })?;
+    // Declare the reservations before the meshes so rejection drops values first.
+    let (cache_payload_storage, mut mesh_storage, meshes) =
+        (cached_meshes.2, cached_meshes.1, cached_meshes.0);
+    staging_storage.absorb(&mut mesh_storage)?;
+    warning_storage.with_storage(|| {
+        expand.ctx().fold(
+            &meshes[..],
+            (),
+            |(), mesh| warnings.extend_cloned_admitted(expand.ctx(), &mesh.warnings),
+            "Rhino extrusion cached mesh warning traversal",
+        )?;
+        finish_payload(
+            expand.ctx(),
             data,
-            &mut reader,
-            ExtrusionFormat {
-                archive,
-                writer_version,
-                scale,
-            },
-            mesh_budget,
+            &outer,
+            reader,
+            &payload_children[..child_count],
             &mut warnings,
-        ) {
-            Ok(meshes) => meshes,
-            Err(error @ GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(_))) => {
-                return Err(error);
-            }
-            Err(cache_error) => {
-                // MeshBudget counters stay monotonic after rejection.
-                // Decoded meshes, descriptors, and their list-backing
-                // guards drop with `read_mesh_cache`.
-                warnings.push_admitted(
-                    expand.ctx(),
-                    format_args!("extrusion mesh cache dropped: {cache_error}"),
-                )?;
-                reader.skip(reader.remaining())?;
-                (
-                    Vec::new(),
-                    expand
-                        .ctx()
-                        .reserve_scoped(0, "Rhino extrusion cache meshes")?,
-                )
-            }
-        }
-    } else {
-        match read_v5_mesh_cache(
-            expand,
-            data,
-            ExtrusionFormat {
-                archive,
-                writer_version,
-                scale,
-            },
-            userdata,
-            mesh_budget,
-            &mut warnings,
-        ) {
-            Ok(meshes) => meshes,
-            Err(error @ GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(_))) => {
-                return Err(error);
-            }
-            Err(cache_error) => {
-                warnings.push_admitted(
-                    expand.ctx(),
-                    format_args!("V5 extrusion mesh cache dropped: {cache_error}"),
-                )?;
-                (
-                    Vec::new(),
-                    expand
-                        .ctx()
-                        .reserve_scoped(0, "Rhino extrusion cache meshes")?,
-                )
-            }
-        }
-    };
-    expand.ctx().fold(
-        &meshes[..],
-        (),
-        |(), mesh| warnings.extend_cloned_admitted(expand.ctx(), &mesh.warnings),
-        "Rhino extrusion cached mesh warning traversal",
-    )?;
-    finish_payload(
-        expand.ctx(),
-        data,
-        &outer,
-        reader,
-        &payload_children[..child_count],
-        &mut warnings,
-    )?;
+        )
+    })?;
 
     let path_delta = path_to.vector_from(path_from);
     let path_length = path_delta.norm();
@@ -341,11 +362,9 @@ pub(crate) fn decode<'ctx>(
         path_from.translated(path_delta, trim[1]),
     ];
     let direction = cap_origins[1].vector_from(cap_origins[0]);
-    let mut staging_storage = expand
+    let mut start_curve_storage = expand
         .ctx()
-        .reserve_scoped(0, "Rhino extrusion boundary staging")?;
-    let mut mesh_storage = mesh_storage;
-    staging_storage.absorb(&mut mesh_storage)?;
+        .reserve_scoped(0, "Rhino extrusion start curves")?;
     let mut boundaries = staging_storage.with_storage(|| {
         expand
             .ctx()
@@ -404,15 +423,17 @@ pub(crate) fn decode<'ctx>(
                 version_offset,
             )
         })?;
-        let mut boundary_warnings = Diagnostics::new();
         let source_warnings = source.into_warnings();
-        boundary_warnings.extend_cloned_admitted(expand.ctx(), &source_warnings)?;
-        let start_curve = DecodedCurve::leaf(
-            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                start_nurbs.try_clone_for_decode(expand.ctx(), "Rhino extrusion start curve")?,
-            )),
-            boundary_warnings,
-        );
+        let start_curve = start_curve_storage.with_storage(|| {
+            let mut boundary_warnings = Diagnostics::new();
+            boundary_warnings.extend_cloned_admitted(expand.ctx(), &source_warnings)?;
+            Ok::<_, GeometryError>(DecodedCurve::leaf(
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                    start_nurbs.try_clone_for_decode(expand.ctx(), "Rhino extrusion start curve")?,
+                )),
+                boundary_warnings,
+            ))
+        })?;
         let start_frame = cap_frame(
             expand.ctx(),
             xaxis.into(),
@@ -519,6 +540,15 @@ pub(crate) fn decode<'ctx>(
             version_offset,
         )?,
     ];
+    let meshes = cache_payload_storage.commit_value(meshes)?;
+    let boundaries = start_curve_storage.commit_value(boundaries)?;
+    // Retain output diagnostics without promoting discarded cache-parser scratch.
+    let mut retained_warnings = Diagnostics::new();
+    if !warnings.is_empty() {
+        retained_warnings.extend_cloned_admitted(expand.ctx(), &warnings)?;
+    }
+    drop(warnings);
+    drop(warning_storage);
     Ok((
         DecodedExtrusion {
             boundaries,
@@ -528,7 +558,7 @@ pub(crate) fn decode<'ctx>(
             cap_u_axes: [cap_frames[0].0, cap_frames[1].0],
             caps,
             meshes,
-            warnings,
+            warnings: retained_warnings,
         },
         staging_storage,
     ))
@@ -958,6 +988,7 @@ fn read_mesh_cache<'ctx>(
     (
         Vec<crate::mesh::DecodedMesh>,
         cadmpeg_core::decode::ScopedReservation<'ctx>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
     ),
     GeometryError,
 > {
@@ -975,15 +1006,17 @@ fn read_mesh_cache<'ctx>(
         0,
         "extrusion mesh cache",
     )?;
-    let (mut meshes, mut mesh_storage) = expand
+    let mut mesh_storage = expand
         .ctx()
-        .temporary_vec(0, "Rhino extrusion cache meshes")?;
+        .reserve_scoped(0, "Rhino extrusion cache meshes")?;
     let mut payload_storage = expand
         .ctx()
         .reserve_scoped(0, "Rhino extrusion mesh-cache payloads")?;
-    let (mut cache_children, mut child_storage) = expand
+    let mut meshes = Vec::new();
+    let mut child_storage = expand
         .ctx()
-        .temporary_vec(0, "Rhino extrusion cache child ranges")?;
+        .reserve_scoped(0, "Rhino extrusion cache child ranges")?;
+    let mut cache_children = Vec::new();
     let mut index = 0_usize;
     loop {
         expand
@@ -1082,7 +1115,7 @@ fn read_mesh_cache<'ctx>(
         },
         warnings,
     )?;
-    Ok((payload_storage.commit_value(meshes)?, mesh_storage))
+    Ok((meshes, mesh_storage, payload_storage))
 }
 
 fn read_v5_mesh_cache<'ctx>(
@@ -1095,6 +1128,7 @@ fn read_v5_mesh_cache<'ctx>(
 ) -> Result<
     (
         Vec<crate::mesh::DecodedMesh>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
         cadmpeg_core::decode::ScopedReservation<'ctx>,
     ),
     GeometryError,
@@ -1117,18 +1151,23 @@ fn read_v5_mesh_cache<'ctx>(
         "Rhino read v5 mesh cache traversal",
     )?
     else {
-        return Ok(expand
+        let payload_storage = expand
             .ctx()
-            .temporary_vec(0, "Rhino V5 extrusion cache meshes")?);
+            .reserve_scoped(0, "Rhino V5 extrusion mesh-cache payloads")?;
+        let mesh_storage = expand
+            .ctx()
+            .reserve_scoped(0, "Rhino V5 extrusion cache meshes")?;
+        return Ok((Vec::new(), mesh_storage, payload_storage));
     };
 
     let mut offset = cache.payload_range.start;
-    let (mut meshes, mut mesh_storage) = expand
+    let mut mesh_storage = expand
         .ctx()
-        .temporary_vec(0, "Rhino V5 extrusion cache meshes")?;
+        .reserve_scoped(0, "Rhino V5 extrusion cache meshes")?;
     let mut payload_storage = expand
         .ctx()
         .reserve_scoped(0, "Rhino V5 extrusion mesh-cache payloads")?;
+    let mut meshes = Vec::new();
     for index in 0..3_usize {
         let wrapper = chunk_at(data, offset, cache.payload_range.end, archive, false)?;
         let mut userdata_storage = expand
@@ -1179,7 +1218,7 @@ fn read_v5_mesh_cache<'ctx>(
     // `ReadObject` calls. The enclosing anonymous-chunk end operation then
     // skips any later bounded suffix, so preserve that forward-compatible
     // boundary instead of rejecting the optional cache.
-    Ok((payload_storage.commit_value(meshes)?, mesh_storage))
+    Ok((meshes, mesh_storage, payload_storage))
 }
 
 fn anonymous_chunk(
