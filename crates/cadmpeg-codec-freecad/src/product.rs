@@ -1736,9 +1736,7 @@ pub(crate) fn product_cycle_nodes<'a>(
         };
         let mut targets = Vec::new();
         let mut member_visits = node.members().iter();
-        let mut prototype = node
-            .prototype()
-            .filter(|_| node.external_document().is_none());
+        let mut prototype = node.prototype();
         while member_visits.len() != 0 || prototype.is_some() {
             let target = if member_visits.len() != 0 {
                 ctx.next_charged(&mut member_visits, "fcstd product cycle members")?

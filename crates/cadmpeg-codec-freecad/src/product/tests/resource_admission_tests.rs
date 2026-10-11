@@ -12,7 +12,7 @@ use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 
 #[test]
-fn external_prototype_name_does_not_create_a_local_product_cycle() {
+fn external_prototype_name_creates_a_local_product_cycle() {
     use crate::native::{
         ExternalDocument, LinkArray, LinkOccurrence, ProductNode, ProductNodeRecord,
     };
@@ -41,9 +41,10 @@ fn external_prototype_name_does_not_create_a_local_product_cycle() {
     };
     with_service_context(&[], |ctx| {
         let records = [super::node(assembly, &[occurrence]), link.clone()];
-        assert!(product_cycle_nodes(ctx, &records)
-            .expect("external prototype")
-            .is_empty());
+        assert_eq!(
+            product_cycle_nodes(ctx, &records).expect("external prototype"),
+            std::collections::BTreeSet::from([assembly, occurrence]),
+        );
     });
     let ProductNode::Occurrence(value) = &mut link.node else {
         unreachable!("occurrence fixture")
