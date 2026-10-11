@@ -102,12 +102,10 @@ fn blank_equation_expression_stops_before_expression_copies() {
         property(&mut source, "Start", "0".into());
         property(&mut source, "End", "1".into());
         for (index, name) in keys.iter().enumerate() {
-            let value = if index == blank {
-                " \t\u{2003} ".into()
-            } else if index < blank {
-                "t".into()
-            } else {
-                "x".repeat(100_000)
+            let value = match index.cmp(&blank) {
+                std::cmp::Ordering::Equal => " \t\u{2003} ".into(),
+                std::cmp::Ordering::Less => "t".into(),
+                std::cmp::Ordering::Greater => "x".repeat(100_000),
             };
             property(&mut source, name, value);
         }
@@ -129,7 +127,9 @@ fn blank_equation_expression_stops_before_expression_copies() {
             "retain SLDPRT datum and curve reference",
             None,
         );
-        assert!(super::super::project_equation_curve(&ctx, &source).unwrap().is_none());
+        assert!(super::super::project_equation_curve(&ctx, &source)
+            .unwrap()
+            .is_none());
         ctx.finish_session().unwrap();
     }
 }

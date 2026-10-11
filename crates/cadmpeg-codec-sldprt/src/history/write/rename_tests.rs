@@ -141,7 +141,8 @@ fn feature_rename_without_identifier_consumers_does_not_scan_owner_suffixes() {
         parameters[1].dependencies = DistinctMembers::try_from(
             vec![parameters[0].id.clone()],
             &cadmpeg_test_support::service_decode_context(),
-        ).unwrap();
+        )
+        .unwrap();
         let expected = parameters.clone();
         apply_feature_name_changes(&mut parameters, &changes).unwrap();
         assert_eq!(parameters, expected);

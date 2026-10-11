@@ -153,7 +153,9 @@ pub(crate) fn apply_feature_name_changes(
                     else {
                         return Ok(None);
                     };
-                    let Some(prefix) = ctx.strip_suffix(token.value(), old_owner.as_str(), OPERATION)? else {
+                    let Some(prefix) =
+                        ctx.strip_suffix(token.value(), old_owner.as_str(), OPERATION)?
+                    else {
                         return Ok(None);
                     };
                     Ok(prefix.strip_suffix('@').map(|base| (base, new_owner)))
@@ -163,7 +165,8 @@ pub(crate) fn apply_feature_name_changes(
             if let Some((base, new_owner)) = replacement {
                 storage.with_storage(|| {
                     let alias = ctx.copy_retained_text(token.value(), OPERATION)?;
-                    let value = ctx.format_retained(format_args!("{base}@{new_owner}"), OPERATION)?;
+                    let value =
+                        ctx.format_retained(format_args!("{base}@{new_owner}"), OPERATION)?;
                     ctx.insert_hash_map(&mut aliases, alias, value, OPERATION)
                 })?;
             }
