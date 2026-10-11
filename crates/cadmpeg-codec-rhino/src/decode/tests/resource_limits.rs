@@ -653,12 +653,20 @@ fn instance_nurbs_surface_transform_preserves_budget_refusals_and_grid_lanes() {
             vec![Point3::new(7.0, 8.0, 9.0), Point3::new(10.0, 11.0, 12.0)],
         ]
         .into_iter()
-        .map(|row| row.into_iter().map(|point| FinitePoint3::new(point).unwrap()).collect())
+        .map(|row| {
+            row.into_iter()
+                .map(|point| FinitePoint3::new(point).unwrap())
+                .collect()
+        })
         .collect();
         let weights = rational.then(|| {
             vec![vec![1.0, 2.0], vec![3.0, 4.0]]
                 .into_iter()
-                .map(|row| row.into_iter().map(|weight| NonZeroReal::new(weight).unwrap()).collect())
+                .map(|row| {
+                    row.into_iter()
+                        .map(|weight| NonZeroReal::new(weight).unwrap())
+                        .collect()
+                })
                 .collect()
         });
         let nurbs = NurbsSurface::from_checked_lanes(
@@ -683,9 +691,8 @@ fn instance_nurbs_surface_transform_preserves_budget_refusals_and_grid_lanes() {
                     let arena = DecodeArena::new();
                     let mut policy = DecodePolicy::service();
                     policy.limits.max_work_units = cap;
-                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                        &[], &arena, &policy,
-                    )?;
+                    let (ctx, _) =
+                        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
                     let result = super::transform_surface(&ctx, &mut fixture.clone(), transform);
                     match result {
                         Err(super::ReferenceFailure::Codec(error)) => {
