@@ -955,21 +955,27 @@ fn legacy_curve(
 ) -> Result<NurbsCurve, CodecError> {
     let offset = range.start;
     let mut source_storage = ctx.reserve_scoped(0, "Rhino V1 joined source curves")?;
-    let sources = legacy_curve_segments(ctx, &mut source_storage, data, range, scale)?;
-    // Each segment's own reservation lives until the joined curve is built.
-    let (mut segments, _segment_storage) =
+    let sources = match legacy_curve_segments(ctx, &mut source_storage, data, range, scale) {
+        Ok(sources) => sources,
+        Err(error) => {
+            output_storage.absorb(&mut source_storage)?;
+            return Err(error);
+        }
+    };
+    let (mut segments, mut segment_storage) =
         ctx.temporary_vec(sources.len(), "Rhino V1 joined curve lanes")?;
-    let (mut segment_storages, _segment_storages_storage) =
-        ctx.temporary_vec(sources.len(), "Rhino V1 joined child result reservations")?;
-    for (segment, storage) in ctx.admit_iter(sources, "Rhino V1 joined curve lanes")? {
+    for (segment, mut storage) in ctx.admit_iter(sources, "Rhino V1 joined curve lanes")? {
+        segment_storage.absorb(&mut storage)?;
         segments.push(segment);
-        segment_storages.push(storage);
     }
+    // The tuple backing is gone. The join owns both the new backing and every
+    // segment's lanes until it drops the source geometry.
+    drop(source_storage);
     let mut warnings =
         crate::loss::ScratchDiagnostics::new(ctx, "Rhino temporary V1 joined curve diagnostics")?;
     let joined = crate::curves::join_nurbs_curves(
         ctx,
-        Some(source_storage),
+        Some(segment_storage),
         segments,
         offset,
         Some(output_storage),

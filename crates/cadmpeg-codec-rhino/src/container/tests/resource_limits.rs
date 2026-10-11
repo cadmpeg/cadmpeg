@@ -378,3 +378,35 @@ fn scan_tables_and_typecode_maps_consume_materialized_budget() {
         );
     }
 }
+
+#[test]
+fn checksum_child_error_storage_lives_through_warning_copy() {
+    let archive = ArchiveVersion::V5;
+    let bytes = crc_chunk(archive, super::super::TCODE_RENDER_USERDATA, &[]);
+    let chunk = crate::chunks::chunk_at(&bytes, 0, bytes.len(), archive, false).unwrap();
+    let expected = format!(
+        "checksum child framing at offset 0 for typecode 0x20008136 could not be verified: framing error at {}: render-settings userdata is missing its class end",
+        chunk.body().end,
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = u64::try_from(expected.len()).unwrap();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let mut output_storage = ctx.reserve_scoped(0, "checksum warning output").unwrap();
+    let error = output_storage.with_storage(|| super::super::checksum_warning(
+        &ctx, &bytes, chunk.typecode, 0, bytes.len(), archive,
+    )).expect_err("the live child error and its warning need separate storage");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 64 * 1024;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let warning = super::super::checksum_warning(&ctx, &bytes, chunk.typecode, 0, bytes.len(), archive)
+        .unwrap().unwrap();
+    assert_eq!(warning, expected);
+    drop(warning);
+    drop(ctx.reserve_scoped(policy.limits.max_materialized_bytes, "released checksum child error")
+        .expect("child workspace is released after warning creation"));
+    ctx.finish_session().unwrap();
+}

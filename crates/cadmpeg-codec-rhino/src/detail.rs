@@ -77,9 +77,22 @@ pub(crate) fn decode(
 ) -> Result<Detail, GeometryError> {
     let (mut outer, next, minor) = anonymous(ctx, data, range.start, range.end, archive, "detail")?;
     if next != range.end || minor < 0 {
+        let digits = usize::try_from(minor.unsigned_abs().checked_ilog10().unwrap_or(0))
+            .unwrap_or(0)
+            + 1
+            + usize::from(minor < 0);
+        let mut message = String::new();
+        ctx.try_reserve_retained_text(
+            &mut message,
+            "unsupported detail version 1.".len() + digits,
+            "Rhino detail version message",
+        )?;
+        write!(message, "unsupported detail version 1.{minor}").map_err(|_| {
+            GeometryError::malformed(range.start, "detail version formatting failed")
+        })?;
         return Err(GeometryError::UnsupportedVersion {
             offset: range.start,
-            message: format!("unsupported detail version 1.{minor}"),
+            message,
         });
     }
     let view_start = outer.position();
@@ -227,6 +240,39 @@ mod tests {
             assert_eq!(message, expected);
             assert_eq!(ctx.resource_refusal(), None);
             ctx.finish_session().unwrap();
+        }
+    }
+
+    #[test]
+    fn detail_minor_version_errors_admit_storage_without_work() {
+        for (minor, trailing) in [(i32::MIN, false), (7, true)] {
+            let mut body = 1_i32.to_le_bytes().to_vec();
+            body.extend(minor.to_le_bytes());
+            let mut bytes = crc_chunk(ArchiveVersion::V5, ANONYMOUS, &body);
+            if trailing {
+                bytes.push(0);
+            }
+            let expected = format!("unsupported detail version 1.{minor}");
+            for retained in [0, u64::try_from(expected.len()).unwrap()] {
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_work_units = 0;
+                policy.limits.max_retained_bytes = retained;
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &bytes, &arena, &policy,
+                ).unwrap();
+                let error = super::decode(&ctx, &bytes, 0..bytes.len(), ArchiveVersion::V5)
+                    .unwrap_err();
+                if retained == 0 {
+                    assert!(matches!(error, crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                            && limit.operation == "Rhino detail version message"));
+                } else {
+                    assert!(matches!(error, crate::curves::GeometryError::UnsupportedVersion { offset: 0, message }
+                        if message == expected));
+                    ctx.finish_session().unwrap();
+                }
+            }
         }
     }
 
