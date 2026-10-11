@@ -407,7 +407,10 @@ frame_limit_tests!(
 
 #[test]
 fn surface_text_projection_copies_the_checked_value() {
-    let (container, payload) = frame_fixture(FrameRoute::SurfaceString);
+    let (file, payload) = frame_fixture(FrameRoute::SurfaceString);
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic container");
     let rows = crate::test_support::with_decode_context(|ctx| {
         run_frame_route(FrameRoute::SurfaceString, ctx, &container, &payload)
     })

@@ -9,13 +9,15 @@ use super::super::{
 use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
 
-fn fixture(operation_bytes: &[u8], store_bytes: &[u8]) -> crate::container::Container<'static> {
+fn fixture(operation_bytes: &[u8], store_bytes: &[u8]) -> Vec<u8> {
     let part = crate::test_support::test_om::composed_feature_history_payload(
         &[(&[0xff; 4], "EXTRUDE", operation_bytes.to_vec())],
         &[store_bytes, b""],
     );
-    let file =
-        crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)]);
+    crate::test_support::test_prt::prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", part)])
+}
+
+fn scan(file: &[u8]) -> crate::container::Container<'_> {
     crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file)).unwrap()
 }
 
@@ -28,7 +30,7 @@ fn construction(container: &crate::container::Container<'_>) -> FeatureConstruct
             .unwrap()
             .clone();
         let content: FeaturePayloadContent<Vec<FeaturePayloadBlock>> =
-            FeaturePayloadContent::from_source(ctx, [id], &blocks)?.unwrap();
+            FeaturePayloadContent::from_source(ctx, [id], blocks)?.unwrap();
         Ok::<_, CodecError>(FeatureConstructionPayload {
             id: "nx:feature-history:construction-payload#0-0000000000".into(),
             operation_label: "operation".into(),
@@ -44,7 +46,8 @@ fn construction(container: &crate::container::Container<'_>) -> FeatureConstruct
 
 #[test]
 fn feature_payload_text_projection_copies_the_checked_value() {
-    let container = fixture(b"\x04\x07BLOCK\0", b"A");
+    let file = fixture(b"\x04\x07BLOCK\0", b"A");
+    let container = scan(&file);
     let rows = crate::test_support::with_decode_context(|ctx| {
         super::super::feature_payload_strings(ctx, &FeatureHistory::new(ctx, &container)?)
     })
@@ -62,7 +65,8 @@ fn feature_payload_text_projection_copies_the_checked_value() {
 
 #[test]
 fn projected_curve_text_projection_copies_the_checked_value() {
-    let container = fixture(b"", b"\x66\x32\x03\x05ABC\0");
+    let file = fixture(b"", b"\x66\x32\x03\x05ABC\0");
+    let container = scan(&file);
     let payload = construction(&container);
     let rows = crate::test_support::with_decode_context(|ctx| {
         feature_projected_curve_construction_strings(
@@ -91,7 +95,8 @@ fn projected_curve_text_projection_copies_the_checked_value() {
 
 #[test]
 fn pattern_text_projection_copies_the_checked_value() {
-    let container = fixture(b"", b"\x66\x32\x03\x05ABC\0");
+    let file = fixture(b"", b"\x66\x32\x03\x05ABC\0");
+    let container = scan(&file);
     let payload = construction(&container);
     let rows = crate::test_support::with_decode_context(|ctx| {
         feature_pattern_construction_strings(ctx, &container, std::slice::from_ref(&payload))
