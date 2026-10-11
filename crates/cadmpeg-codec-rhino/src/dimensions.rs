@@ -311,14 +311,18 @@ pub(crate) fn annotation(
         if overrides.bool()? {
             override_present = true;
             let wrapper = chunk_at(data, overrides.position(), overrides.end(), archive, false)?;
+            let mut warning_storage =
+                ctx.reserve_scoped(0, "Rhino annotation override diagnostics")?;
             let mut warnings = Diagnostics::new();
-            parse_class_wrapper(
-                ctx,
-                data,
-                overrides.position()..wrapper.next_offset(),
-                archive,
-                &mut warnings,
-            )?;
+            warning_storage.with_storage(|| {
+                parse_class_wrapper(
+                    ctx,
+                    data,
+                    overrides.position()..wrapper.next_offset(),
+                    archive,
+                    &mut warnings,
+                )
+            })?;
             overrides.skip(wrapper.next_offset() - overrides.position())?;
         }
         overrides.skip_remaining()?;
@@ -1842,17 +1846,19 @@ pub(crate) fn project(
             })
         })
         .transpose()?;
-    let (key, _key_storage) = ctx.with_scoped_storage("Rhino dimension identity key", || {
-        cadmpeg_ir::ids::IdentityKey::try_new(
-            ctx.copy_retained_text(key, "Rhino dimension identity key")?,
-        )
-        .or_else(|error| {
-            Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
-                format_args!("{error}"),
-                "Rhino project text",
-            )?))
-        })
-    })?;
+    let (key_buffer, _key_storage) =
+        ctx.with_scoped_storage("Rhino dimension identity key", || {
+            cadmpeg_ir::ids::IdentityKey::try_new(
+                ctx.copy_retained_text(key, "Rhino dimension identity key")?,
+            )
+            .or_else(|error| {
+                Err(cadmpeg_core::CodecError::malformed(ctx.format_retained(
+                    format_args!("{error}"),
+                    "Rhino project text",
+                )?))
+            })
+        })?;
+    let key = key_buffer;
     let annotation_id = SemanticAnnotationId::try_from(ctx.format_retained(
         format_args!("rhino:dimension:annotation#{}", key.as_str()),
         "Rhino dimension annotation identity",

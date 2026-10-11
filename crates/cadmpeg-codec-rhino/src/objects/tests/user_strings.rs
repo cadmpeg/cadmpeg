@@ -137,7 +137,7 @@ fn user_string_staging_slots_are_scoped_and_strings_are_retained() {
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = limit.additional;
+    policy.limits.max_materialized_bytes = limit.additional + 8;
     policy.limits.max_retained_bytes = 8;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let parsed = parse_user_string_list(
@@ -152,4 +152,50 @@ fn user_string_staging_slots_are_scoped_and_strings_are_retained() {
     drop(parsed);
     ctx.reserve_scoped(limit.additional, "reclaimed user-string entries")
         .unwrap();
+}
+
+#[test]
+fn malformed_user_string_suffix_releases_all_prefix_text_and_slots() {
+    const SCRATCH_BYTES: u64 = 1 << 20;
+    let archive = ArchiveVersion::V5;
+    for length in [1, 4096] {
+        let key = "é".repeat(length);
+        let value = "😀".repeat(length);
+        let mut valid = utf16_bytes(&key);
+        valid.extend(utf16_bytes(&value));
+        let mut invalid = utf16_bytes("suffix");
+        invalid.extend(2_u32.to_le_bytes());
+        invalid.extend([0x00, 0xd8, 0x00, 0x00]);
+        let mut body = 2_i32.to_le_bytes().to_vec();
+        body.extend(anonymous_chunk(archive, 0, &valid));
+        body.extend(anonymous_chunk(archive, 0, &invalid));
+        let bytes = anonymous_chunk(archive, 0, &body);
+        for selection in [
+            UserStringSelection::All,
+            UserStringSelection::ExcludeFirstTempObject,
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_materialized_bytes = SCRATCH_BYTES;
+            let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+            for _ in 0..3 {
+                let Err(error) =
+                    parse_user_string_list(&ctx, &bytes, 0..bytes.len(), archive, selection)
+                else {
+                    panic!("malformed suffix discards the successful prefix");
+                };
+                assert!(
+                    matches!(error, crate::chunks::FramingError::Structural { ref message, .. }
+                    if message == "invalid UTF-16 surrogate sequence")
+                );
+                drop(error);
+                let reusable = ctx
+                    .reserve_scoped(SCRATCH_BYTES, "next user-string list")
+                    .expect("discarded text and vector slots are released");
+                drop(reusable);
+            }
+            ctx.finish_session().unwrap();
+        }
+    }
 }

@@ -326,15 +326,15 @@ pub(crate) struct DefinitionParse<'ctx> {
     /// Complete records whose registered class payload was not admitted.
     pub(crate) opaque_records: Vec<OpaqueRecord>,
     /// Accepted definition fields stay scratch until native projection.
-    pub(crate) _definition_storage: Vec<(Uuid, cadmpeg_core::decode::ScopedReservation<'ctx>)>,
+    pub(crate) definition_storage: Vec<(Uuid, cadmpeg_core::decode::ScopedReservation<'ctx>)>,
     /// Definition guards and diagnostic storage stay scratch through projection.
-    pub(crate) _definition_guards_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+    pub(crate) definition_guards_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
     /// Definition-vector backing stays scratch until the scan is dropped.
-    pub(crate) _definitions_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+    pub(crate) definitions_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
     /// Definition-member identity index stays scratch through resolution.
-    pub(crate) _member_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+    pub(crate) member_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
     /// Ambiguous-definition index stays scratch through native projection.
-    pub(crate) _ambiguous_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+    pub(crate) ambiguous_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
 /// Recoverable instance-definition parser diagnostic.
@@ -930,7 +930,9 @@ fn parse_v5(
     let url_tag = utf16_retained(ctx, &mut reader, "Rhino instance URL tag")?;
     let _bounds = bbox(ctx, &mut reader)?;
     let mut kind = v5_definition_kind(reader.u32()?);
-    let mut legacy_linked_path = utf16_retained(ctx, &mut reader, "Rhino instance linked path")?;
+    let mut linked_path_storage = ctx.reserve_scoped(0, "Rhino instance legacy link")?;
+    let mut legacy_linked_path = linked_path_storage
+        .with_storage(|| utf16_retained(ctx, &mut reader, "Rhino instance linked path"))?;
     if matches!(
         kind,
         DefinitionKind::Linked | DefinitionKind::LinkedAndEmbedded
@@ -966,6 +968,24 @@ fn parse_v5(
     };
     // Version 1.7 has an abandoned V6-WIP tail. Its fields have no stable grammar.
     reader.skip_remaining()?;
+    let link = match file_reference {
+        Some(value) => {
+            drop(legacy_linked_path);
+            drop(legacy_relative_linked_path);
+            drop(linked_path_storage);
+            LinkSource::Structured(value)
+        }
+        None => {
+            let link =
+                LinkSource::from_legacy(ctx, legacy_linked_path, legacy_relative_linked_path)?;
+            if matches!(link, LinkSource::None) {
+                drop(linked_path_storage);
+                link
+            } else {
+                linked_path_storage.commit_value(link)?
+            }
+        }
+    };
     Ok(InstanceDefinition {
         source_range,
         id,
@@ -979,10 +999,7 @@ fn parse_v5(
         units,
         linked_depth,
         linked_appearance,
-        link: match file_reference {
-            Some(value) => LinkSource::Structured(value),
-            None => LinkSource::from_legacy(ctx, legacy_linked_path, legacy_relative_linked_path)?,
-        },
+        link,
     })
 }
 
@@ -1256,7 +1273,6 @@ fn apply_idef_alternative_path(
     }
 
     let mut degraded = false;
-    ctx.charge_work(0, "Rhino apply idef alternative path traversal")?;
     let mut userdata = userdata.iter();
     for _ in 0..userdata.len() {
         let descriptor = ctx
@@ -1368,12 +1384,12 @@ pub(crate) fn parse_definitions<'ctx>(
     let mut result = DefinitionParse {
         scan: DefinitionScan::default(),
         opaque_records: Vec::new(),
-        _definition_storage: Vec::new(),
-        _definition_guards_storage: ctx
+        definition_storage: Vec::new(),
+        definition_guards_storage: ctx
             .reserve_scoped(0, "Rhino instance definition storage guards")?,
-        _definitions_storage: ctx.reserve_scoped(0, "Rhino instance definitions")?,
-        _member_storage: ctx.reserve_scoped(0, "Rhino definition member identities")?,
-        _ambiguous_storage: ctx.reserve_scoped(0, "Rhino ambiguous definition identities")?,
+        definitions_storage: ctx.reserve_scoped(0, "Rhino instance definitions")?,
+        member_storage: ctx.reserve_scoped(0, "Rhino definition member identities")?,
+        ambiguous_storage: ctx.reserve_scoped(0, "Rhino ambiguous definition identities")?,
     };
     let mut seen_workspace = ctx.reserve_scoped(0, "Rhino definition identity workspace")?;
     let mut opaque_workspace = ctx.reserve_scoped(0, "Rhino opaque definition workspace")?;
@@ -1389,10 +1405,10 @@ pub(crate) fn parse_definitions<'ctx>(
         let mut record_storage = ctx.reserve_scoped(0, "Rhino instance definition fields")?;
         let mut warnings = |code, message: std::fmt::Arguments<'_>| {
             let message = result
-                ._definition_guards_storage
+                .definition_guards_storage
                 .with_storage(|| ctx.format_retained(message, "Rhino diagnostic message"))?;
             ctx.push_scoped_vec(
-                &mut result._definition_guards_storage,
+                &mut result.definition_guards_storage,
                 &mut result.scan.diagnostics,
                 DefinitionDiagnostic {
                     diagnostic: RhinoDiagnostic { code, message },
@@ -1403,9 +1419,9 @@ pub(crate) fn parse_definitions<'ctx>(
         };
         let parsed = record_storage.with_storage(|| {
             (|| {
-                let mut userdata = Vec::new();
                 let mut userdata_storage =
                     ctx.reserve_scoped(0, "Rhino definition userdata descriptors")?;
+                let mut userdata = Vec::new();
                 let class = scan_class_wrapper(
                     ctx,
                     data,
@@ -1465,7 +1481,7 @@ pub(crate) fn parse_definitions<'ctx>(
                                         "Rhino instance source ended early",
                                     )
                                 })?;
-                            result._member_storage.with_storage(|| {
+                            result.member_storage.with_storage(|| {
                                 ctx.insert_hash_set(
                                     &mut result.scan.member_object_ids,
                                     *member,
@@ -1497,7 +1513,7 @@ pub(crate) fn parse_definitions<'ctx>(
                                                 "Rhino instance source ended early",
                                             )
                                         })?;
-                                    result._member_storage.with_storage(|| {
+                                    result.member_storage.with_storage(|| {
                                         ctx.insert_hash_set(
                                             &mut result.scan.member_object_ids,
                                             member,
@@ -1550,7 +1566,7 @@ pub(crate) fn parse_definitions<'ctx>(
                         source_order,
                         "Rhino opaque instance definition indexes",
                     )?;
-                    if result._ambiguous_storage.with_storage(|| {
+                    if result.ambiguous_storage.with_storage(|| {
                         ctx.insert_hash_set(
                             &mut result.scan.ambiguous_ids,
                             definition.id,
@@ -1558,7 +1574,7 @@ pub(crate) fn parse_definitions<'ctx>(
                         )
                     })? {
                         ctx.reserve_scoped_vec(
-                            &mut result._definition_guards_storage,
+                            &mut result.definition_guards_storage,
                             &mut result.scan.diagnostics,
                             1,
                             "Rhino instance definition diagnostics",
@@ -1566,7 +1582,7 @@ pub(crate) fn parse_definitions<'ctx>(
                         result.scan.diagnostics.push(DefinitionDiagnostic {
                             diagnostic: RhinoDiagnostic {
                                 code: Some(RhinoLossCode::ContainerInstanceDefinitionDegraded),
-                                message: result._definition_guards_storage.with_storage(|| {
+                                message: result.definition_guards_storage.with_storage(|| {
                                     ctx.format_retained(
                                         format_args!(
                                             "duplicate instance definition UUID {}",
@@ -1580,7 +1596,7 @@ pub(crate) fn parse_definitions<'ctx>(
                         });
                     }
                     ctx.reserve_scoped_vec(
-                        &mut result._definition_guards_storage,
+                        &mut result.definition_guards_storage,
                         &mut result.scan.diagnostics,
                         1,
                         "Rhino instance definition diagnostics",
@@ -1588,7 +1604,7 @@ pub(crate) fn parse_definitions<'ctx>(
                     result.scan.diagnostics.push(DefinitionDiagnostic {
                         diagnostic: RhinoDiagnostic {
                             code: Some(RhinoLossCode::ContainerInstanceDefinitionDegraded),
-                            message: result._definition_guards_storage.with_storage(|| {
+                            message: result.definition_guards_storage.with_storage(|| {
                                 ctx.format_retained(
                                     format_args!(
                                         "duplicate instance definition UUID {}",
@@ -1611,19 +1627,19 @@ pub(crate) fn parse_definitions<'ctx>(
                     })?;
                     let id = definition.id;
                     ctx.reserve_scoped_vec(
-                        &mut result._definitions_storage,
+                        &mut result.definitions_storage,
                         &mut result.scan.definitions,
                         1,
                         "Rhino instance definitions",
                     )?;
                     result.scan.definitions.push(definition);
                     ctx.reserve_scoped_vec(
-                        &mut result._definition_guards_storage,
-                        &mut result._definition_storage,
+                        &mut result.definition_guards_storage,
+                        &mut result.definition_storage,
                         1,
                         "Rhino instance definition storage guards",
                     )?;
-                    result._definition_storage.push((id, record_storage));
+                    result.definition_storage.push((id, record_storage));
                 }
             }
             Err(FramingError::Resource(limit)) => {
@@ -1631,12 +1647,12 @@ pub(crate) fn parse_definitions<'ctx>(
             }
             Err(error) => {
                 ctx.reserve_scoped_vec(
-                    &mut result._definition_guards_storage,
+                    &mut result.definition_guards_storage,
                     &mut result.scan.diagnostics,
                     1,
                     "Rhino instance definition diagnostics",
                 )?;
-                let message = result._definition_guards_storage.with_storage(|| {
+                let message = result.definition_guards_storage.with_storage(|| {
                     ctx.format_retained(
                         format_args!("instance definition retained: {error}"),
                         "Rhino instance definition diagnostic",
@@ -1671,7 +1687,7 @@ pub(crate) fn parse_definitions<'ctx>(
         "Rhino ambiguous instance definition retention",
     )?;
     ctx.retain_vec(
-        &mut result._definition_storage,
+        &mut result.definition_storage,
         |(id, _)| {
             Ok(!ctx.contains_hash_set(
                 &result.scan.ambiguous_ids,
@@ -1681,7 +1697,7 @@ pub(crate) fn parse_definitions<'ctx>(
         },
         "Rhino ambiguous instance definition storage retention",
     )?;
-    let mut opaque_records = result._definition_guards_storage.with_storage(|| {
+    let mut opaque_records = result.definition_guards_storage.with_storage(|| {
         ctx.collection_vec(opaque_indices.len(), "Rhino opaque instance definitions")
     })?;
     for index in ctx.admit_iter(opaque_indices, "Rhino opaque definition traversal")? {

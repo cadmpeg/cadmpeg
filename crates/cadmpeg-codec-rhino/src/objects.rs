@@ -809,6 +809,7 @@ pub(crate) fn parse_user_string_list<'ctx>(
         },
         "Rhino user-string entries",
     )?;
+    let mut text_storage = ctx.reserve_scoped(0, "Rhino user-string text")?;
     let mut values = values_buffer;
     let mut omit_temporary = matches!(selection, UserStringSelection::ExcludeFirstTempObject);
     for _ in 0..count_bytes {
@@ -840,14 +841,20 @@ pub(crate) fn parse_user_string_list<'ctx>(
                 omit_temporary = false;
                 settings::utf16_deferred(ctx, &mut entry_reader)?;
             } else {
-                let key = settings::decode_utf16_retained(
-                    ctx,
-                    key_bytes,
-                    entry_reader.position(),
-                    "Rhino user-string key",
-                )?;
-                let value =
-                    settings::utf16_retained(ctx, &mut entry_reader, "Rhino user-string value")?;
+                let (key, value) = text_storage.with_storage(|| {
+                    let key = settings::decode_utf16_retained(
+                        ctx,
+                        key_bytes,
+                        entry_reader.position(),
+                        "Rhino user-string key",
+                    )?;
+                    let value = settings::utf16_retained(
+                        ctx,
+                        &mut entry_reader,
+                        "Rhino user-string value",
+                    )?;
+                    Ok::<_, FramingError>((key, value))
+                })?;
                 if !matches!(selection, UserStringSelection::All) {
                     workspace.with_storage(|| {
                         ctx.reserve_vec(&mut values, 1, "Rhino user-string entries")
@@ -861,7 +868,7 @@ pub(crate) fn parse_user_string_list<'ctx>(
     }
     reader.skip_remaining()?;
     Ok(UserStrings {
-        entries: values,
+        entries: text_storage.commit_value(values)?,
         _workspace: workspace,
     })
 }
@@ -1114,20 +1121,23 @@ pub(crate) fn parse_attributes(
         } else {
             object_mode & 0x0f != HIDDEN_OBJECT_MODE
         };
-        let display_materials = if version.1 >= 3 {
-            let count = reader.i32()?;
-            let bytes = bounded_count(&reader, count, 32)?;
-            let mut values = ctx
-                .collection_vec(bytes / 32, "Rhino object display materials")
-                .map_err(crate::chunks::FramingError::from)?;
-            for _ in 0..bytes / 32 {
-                ctx.charge_work(1, "Rhino objects cursor traversal")?;
-                values.push((uuid(&mut reader)?, uuid(&mut reader)?));
+        let mut display_storage = ctx.reserve_scoped(0, "Rhino legacy display materials")?;
+        let display_materials = display_storage.with_storage(|| {
+            if version.1 >= 3 {
+                let count = reader.i32()?;
+                let bytes = bounded_count(&reader, count, 32)?;
+                let mut values = ctx
+                    .collection_vec(bytes / 32, "Rhino object display materials")
+                    .map_err(crate::chunks::FramingError::from)?;
+                for _ in 0..bytes / 32 {
+                    ctx.charge_work(1, "Rhino objects cursor traversal")?;
+                    values.push((uuid(&mut reader)?, uuid(&mut reader)?));
+                }
+                Ok::<_, FramingError>(values)
+            } else {
+                Ok(Vec::new())
             }
-            values
-        } else {
-            Vec::new()
-        };
+        })?;
         let (decoration, plot_color_source, plot_color, plot_weight_source, plot_weight) =
             if version.1 >= 4 {
                 (
@@ -1176,6 +1186,13 @@ pub(crate) fn parse_attributes(
         )?;
         let obsolete_scale = finite(ctx, obsolete_scale_offset, obsolete_scale, "obsolete scale")?;
         reader.skip_remaining()?;
+        let display_materials = if explicit_display_materials.is_empty() {
+            display_storage.commit_value(display_materials)?
+        } else {
+            drop(display_materials);
+            drop(display_storage);
+            explicit_display_materials
+        };
         return Ok(ObjectAttributes {
             source: SourceRange {
                 range: source_range.clone(),
@@ -1205,11 +1222,7 @@ pub(crate) fn parse_attributes(
             url,
             rendering_range,
             groups,
-            display_materials: if explicit_display_materials.is_empty() {
-                display_materials
-            } else {
-                explicit_display_materials
-            },
+            display_materials,
             active_space,
             viewport_id,
             display_order: 0,
