@@ -268,15 +268,17 @@ pub(crate) fn bind_pattern_inputs(
             .admit_iter(&starts, "scan SLDPRT pattern input candidates")?
             .enumerate()
         {
-            let has_derived_cosmetic_thread_output =
-                match starts.get(start_index + 1) {
-                    Some((_, candidate)) => ctx.equal(
-                        candidate.input_class.as_deref().unwrap_or_default(),
-                        "moDerivedCosmeticThread_c",
-                        "compare SLDPRT derived cosmetic thread output class",
-                    )?,
-                    None => false,
-                };
+            let has_derived_cosmetic_thread_output = match starts
+                .get(start_index + 1)
+                .and_then(|(_, candidate)| candidate.input_class.as_deref())
+            {
+                Some(class) => ctx.equal(
+                    class,
+                    "moDerivedCosmeticThread_c",
+                    "compare SLDPRT derived cosmetic thread output class",
+                )?,
+                None => false,
+            };
             // The end of this pattern's object is the next object name's
             // offset, or the end of the payload when this is the last one.
             // Both are inside `native_payload`: an object name states the
@@ -2178,9 +2180,12 @@ pub(super) fn bind_detached_legacy_sketch_objects(
     let mut owners = Vec::new();
     for history in ctx.admit_iter(histories, "collect SLDPRT detached sketch owners")? {
         for feature in ctx.admit_iter(&history.features, "collect SLDPRT detached sketch owners")? {
-            if !ctx.equal(feature.xml_tag.as_str(), "Sketch", "compare SLDPRT detached sketch XML tag")?
-                || native_object_class(feature.input_class.as_deref().unwrap_or_default())
-                    == NativeClassKind::OriginProfileFeature
+            if !ctx.equal(
+                feature.xml_tag.as_str(),
+                "Sketch",
+                "compare SLDPRT detached sketch XML tag",
+            )? || native_object_class(feature.input_class.as_deref().unwrap_or_default())
+                == NativeClassKind::OriginProfileFeature
                 || ctx.contains_hash_set(represented, feature.id.as_str(), SCALAR_BINDING_INDEX)?
                 || ctx.any_by(
                     &relation_bindings,
