@@ -5826,7 +5826,8 @@ pub(super) fn string_values(
             .admit_iter(records, "NX indexed OM records")?
             .enumerate()
         {
-            let values = record.string_values(ctx)?;
+            let mut value_storage = ctx.reserve_scoped(0, "NX OM string parser rows")?;
+            let values = value_storage.with_storage(|| record.string_values(ctx))?;
             for (value_ordinal, value) in ctx
                 .admit_iter(&values, "NX OM values output visits")?
                 .enumerate()
@@ -6854,3 +6855,6 @@ cadmpeg_core::named_optional_field!(
     "target_expression_declaration"
 );
 cadmpeg_core::named_optional_field!(deserialize_handle_set_record, String, "handle_set_record");
+
+#[cfg(test)]
+mod text_storage_tests;

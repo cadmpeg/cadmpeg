@@ -934,7 +934,8 @@ pub(in crate::native) fn feature_draft_construction_graph_payloads(
         )? {
             continue;
         }
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, blocks)? else {
+        let Some(content) = FeaturePayloadContent::from_source_array(ctx, data_blocks, blocks)?
+        else {
             continue;
         };
         let Some(key) = operation_key(ctx, &lane.id, "find NX draft graph operation key")? else {
@@ -1089,11 +1090,11 @@ pub(in crate::native) fn feature_draft_construction_graph_strings(
         else {
             continue;
         };
+        let mut value_storage = ctx.reserve_scoped(0, "NX draft string parser rows")?;
+        let values =
+            value_storage.with_storage(|| crate::om::string_values(ctx, joined.bytes(), 0))?;
         for (ordinal, value) in ctx
-            .admit_iter(
-                crate::om::string_values(ctx, joined.bytes(), 0)?,
-                "visit NX draft payload strings",
-            )?
+            .admit_iter(values, "visit NX draft payload strings")?
             .enumerate()
         {
             let payload_offset = cadmpeg_core::decode::u64_from_index(value.offset);
@@ -1233,3 +1234,6 @@ mod tests;
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_data_block, String, "data_block");
 cadmpeg_core::named_optional_field!(deserialize_data_blocks, Vec<String>, "data_blocks");
+
+#[cfg(test)]
+mod text_storage_tests;

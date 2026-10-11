@@ -54,7 +54,7 @@ impl<B: AsRef<[FeaturePayloadBlock]>> FeaturePayloadContent<B> {
     }
 }
 
-impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> FeaturePayloadContent<B> {
+impl FeaturePayloadContent<Vec<FeaturePayloadBlock>> {
     pub(super) fn from_source<I>(
         ctx: &DecodeContext<'_>,
         ids: I,
@@ -64,55 +64,90 @@ impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> Featur
         I: IntoIterator<Item = String>,
         I::IntoIter: ExactSizeIterator,
     {
-        let mut hash = Sha256::new();
-        let mut rows = Vec::new();
-
-        let mut byte_len = 0u64;
-        let mut ids = ids.into_iter();
-        while ids.len() != 0 {
-            let Some(id) = ctx.next_charged(&mut ids, "scan NX feature payload block ids")? else {
-                return Err(ctx.refuse_codec_limit("scan NX feature payload block ids", 0, 1));
-            };
-            let Some((bytes, source_offset)) = ctx
-                .get_btree_map(blocks, &id, "find NX feature payload block")?
-                .copied()
-            else {
-                return Ok(None);
-            };
-            let length = u64_from_index(bytes.len());
-            byte_len = byte_len
-                .checked_add(length)
-                .ok_or_else(|| ctx.refuse_codec_limit("count NX feature payload bytes", 0, 1))?;
-            ctx.reserve_vec(&mut rows, 1, "NX feature payload blocks")?;
-            ctx.charge_work(
-                length
-                    .checked_add(1)
-                    .ok_or_else(|| ctx.refuse_codec_limit("hash NX feature payload bytes", 0, 1))?,
-                "hash NX feature payload bytes",
-            )?;
-
-            hash.update(bytes);
-            rows.push(FeaturePayloadBlock {
-                id,
-                byte_len: length,
-                source_offset,
-            });
-        }
-        let Ok(blocks) = B::try_from(rows) else {
+        let mut storage = ctx.reserve_scoped(0, "NX feature payload blocks")?;
+        let Some((rows, hash)) = payload_blocks_from_source(ctx, ids, blocks, &mut storage)? else {
             return Ok(None);
         };
-
-        let digest = cadmpeg_ir::hash::digest::Sha256Digest::from_bytes_for_decode(
+        let blocks = storage.commit_value(rows)?;
+        let sha256 = cadmpeg_ir::hash::digest::Sha256Digest::from_bytes_for_decode(
             ctx,
             hash.finalize().into(),
             "retain NX feature payload digest",
         )?;
-        // The block lengths were summed with an overflow check while hashing.
-        Ok(Some(Self {
-            blocks,
-            sha256: digest,
-        }))
+        Ok(Some(Self { blocks, sha256 }))
     }
+}
+
+impl<const N: usize> FeaturePayloadContent<[FeaturePayloadBlock; N]> {
+    pub(super) fn from_source_array<I>(
+        ctx: &DecodeContext<'_>,
+        ids: I,
+        blocks: &BTreeMap<String, (&[u8], u64)>,
+    ) -> Result<Option<Self>, CodecError>
+    where
+        I: IntoIterator<Item = String>,
+        I::IntoIter: ExactSizeIterator,
+    {
+        let mut storage = ctx.reserve_scoped(0, "NX feature payload blocks")?;
+        let Some((rows, hash)) = payload_blocks_from_source(ctx, ids, blocks, &mut storage)? else {
+            return Ok(None);
+        };
+        let Ok(blocks) = <[_; N]>::try_from(rows) else {
+            return Ok(None);
+        };
+        drop(storage);
+        let sha256 = cadmpeg_ir::hash::digest::Sha256Digest::from_bytes_for_decode(
+            ctx,
+            hash.finalize().into(),
+            "retain NX feature payload digest",
+        )?;
+        Ok(Some(Self { blocks, sha256 }))
+    }
+}
+
+fn payload_blocks_from_source<I>(
+    ctx: &DecodeContext<'_>,
+    ids: I,
+    blocks: &BTreeMap<String, (&[u8], u64)>,
+    storage: &mut ScopedReservation<'_>,
+) -> Result<Option<(Vec<FeaturePayloadBlock>, Sha256)>, CodecError>
+where
+    I: IntoIterator<Item = String>,
+    I::IntoIter: ExactSizeIterator,
+{
+    let mut hash = Sha256::new();
+    let mut rows = Vec::new();
+    let mut byte_len = 0u64;
+    let mut ids = ids.into_iter();
+    while ids.len() != 0 {
+        let Some(id) = ctx.next_charged(&mut ids, "scan NX feature payload block ids")? else {
+            return Err(ctx.refuse_codec_limit("scan NX feature payload block ids", 0, 1));
+        };
+        let Some((bytes, source_offset)) = ctx
+            .get_btree_map(blocks, &id, "find NX feature payload block")?
+            .copied()
+        else {
+            return Ok(None);
+        };
+        let length = u64_from_index(bytes.len());
+        byte_len = byte_len
+            .checked_add(length)
+            .ok_or_else(|| ctx.refuse_codec_limit("count NX feature payload bytes", 0, 1))?;
+        ctx.reserve_scoped_vec(storage, &mut rows, 1, "NX feature payload blocks")?;
+        ctx.charge_work(
+            length
+                .checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit("hash NX feature payload bytes", 0, 1))?,
+            "hash NX feature payload bytes",
+        )?;
+        hash.update(bytes);
+        rows.push(FeaturePayloadBlock {
+            id,
+            byte_len: length,
+            source_offset,
+        });
+    }
+    Ok(Some((rows, hash)))
 }
 
 /// Separator between a data-block store and the block ordinal in a block id.
@@ -464,6 +499,139 @@ mod tests {
         );
     }
 
+    fn source_blocks() -> BTreeMap<String, (&'static [u8], u64)> {
+        BTreeMap::from([
+            ("first".to_owned(), (b"abc".as_slice(), 10)),
+            ("second".to_owned(), (b"defgh".as_slice(), 100)),
+        ])
+    }
+
+    #[test]
+    fn payload_array_releases_row_storage_after_conversion() {
+        let blocks = source_blocks();
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes = 64;
+                policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
+                    4 * std::mem::size_of::<FeaturePayloadBlock>(),
+                );
+            },
+            |ctx| {
+                let content = FeaturePayloadContent::<[FeaturePayloadBlock; 2]>::from_source_array(
+                    ctx,
+                    ["first".to_owned(), "second".to_owned()],
+                    &blocks,
+                )?
+                .unwrap();
+                let mut expected: serde_json::Value = serde_json::from_str(TWO_BLOCKS).unwrap();
+                expected["sha256"] = serde_json::to_value(
+                    cadmpeg_ir::hash::digest::Sha256Digest::digest(b"abcdefgh"),
+                )
+                .unwrap();
+                assert_eq!(serde_json::to_value(&content).unwrap(), expected);
+                // A complete second reservation proves the first backing allocation was released.
+                let _checkpoint = ctx.reserve_scoped(
+                    cadmpeg_core::decode::u64_from_index(
+                        4 * std::mem::size_of::<FeaturePayloadBlock>(),
+                    ),
+                    "test payload array scratch release",
+                )?;
+                Ok::<_, CodecError>(())
+            },
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn payload_missing_later_block_releases_row_storage() {
+        let blocks = source_blocks();
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes = 0;
+                policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
+                    4 * std::mem::size_of::<FeaturePayloadBlock>(),
+                );
+            },
+            |ctx| {
+                let content = FeaturePayloadContent::<Vec<FeaturePayloadBlock>>::from_source(
+                    ctx,
+                    ["first".to_owned(), "missing".to_owned()],
+                    &blocks,
+                )?;
+                assert!(content.is_none());
+                let _checkpoint = ctx.reserve_scoped(
+                    cadmpeg_core::decode::u64_from_index(
+                        4 * std::mem::size_of::<FeaturePayloadBlock>(),
+                    ),
+                    "test missing payload scratch release",
+                )?;
+                Ok::<_, CodecError>(())
+            },
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn payload_wrong_array_cardinality_releases_row_storage() {
+        let blocks = source_blocks();
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes = 0;
+                policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
+                    4 * std::mem::size_of::<FeaturePayloadBlock>(),
+                );
+            },
+            |ctx| {
+                let content = FeaturePayloadContent::<[FeaturePayloadBlock; 2]>::from_source_array(
+                    ctx,
+                    ["first".to_owned()],
+                    &blocks,
+                )?;
+                assert!(content.is_none());
+                let _checkpoint = ctx.reserve_scoped(
+                    cadmpeg_core::decode::u64_from_index(
+                        4 * std::mem::size_of::<FeaturePayloadBlock>(),
+                    ),
+                    "test rejected payload scratch release",
+                )?;
+                Ok::<_, CodecError>(())
+            },
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn payload_vector_promotes_surviving_row_storage_once() {
+        let blocks = source_blocks();
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::RetainedBytes,
+            "test payload vector retained checkpoint",
+            |ctx| {
+                let content = FeaturePayloadContent::<Vec<FeaturePayloadBlock>>::from_source(
+                    ctx,
+                    ["first".to_owned(), "second".to_owned()],
+                    &blocks,
+                )?
+                .unwrap();
+                assert_eq!(content.blocks().len(), 2);
+                assert_eq!(content.byte_len(ctx)?, 8);
+                assert_eq!(
+                    content.sha256,
+                    cadmpeg_ir::hash::digest::Sha256Digest::digest(b"abcdefgh")
+                );
+                ctx.charge_retained(1, "test payload vector retained checkpoint")?;
+                Ok(content)
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.used == 64 + cadmpeg_core::decode::u64_from_index(
+                4 * std::mem::size_of::<FeaturePayloadBlock>()) && limit.additional == 1));
+    }
+
     #[test]
     fn payload_hash_work_follows_successful_row_storage() {
         let blocks = BTreeMap::from([("a".to_owned(), (b"abc".as_slice(), 10))]);
@@ -472,6 +640,9 @@ mod tests {
             |policy| {
                 policy.limits.max_work_units = 2;
                 policy.limits.max_retained_bytes = 0;
+                policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
+                    4 * std::mem::size_of::<FeaturePayloadBlock>(),
+                ) - 1;
             },
             |ctx| {
                 let error = FeaturePayloadContent::<Vec<FeaturePayloadBlock>>::from_source(
@@ -481,9 +652,28 @@ mod tests {
                 )
                 .unwrap_err();
                 assert!(matches!(error, CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "NX feature payload blocks"));
+                    if limit.dimension == ResourceDimension::MaterializedBytes
+                        && limit.operation == "NX feature payload blocks"));
             },
         );
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::MaterializedBytes,
+            "NX feature payload blocks",
+            |ctx| {
+                FeaturePayloadContent::<Vec<FeaturePayloadBlock>>::from_source(
+                    ctx,
+                    ["a".to_owned()],
+                    &blocks,
+                )
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && limit.operation == "NX feature payload blocks"
+                && limit.used == 0
+                && limit.additional == cadmpeg_core::decode::u64_from_index(
+                    4 * std::mem::size_of::<FeaturePayloadBlock>())));
         let error = crate::test_support::resource_refusal_at(
             &[],
             ResourceDimension::WorkUnits,
