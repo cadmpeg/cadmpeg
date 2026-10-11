@@ -952,8 +952,7 @@ pub(super) fn try_decode_geometry(
                     )? {
                         for side in 0..2 {
                             if support_uv[side].is_none() {
-                                support_uv[side] =
-                                    copy_support_uv_lane(ctx, ext_support_uv[side].as_ref())?;
+                                support_uv[side] = copy_support_uv_lane(ctx, ext_support_uv[side])?;
                             }
                         }
                     }
