@@ -559,8 +559,8 @@ fn object_stream_runs_cross_complete_vertex_allocations() {
 }
 
 #[test]
-fn object_stream_runs_cross_support_bound_external_pole_allocations() {
-    let bytes = crate::test_support::test_b5::a8_elided_surface_stream_with_native_vertex_chain();
+fn object_stream_runs_include_complete_inline_surface_frames() {
+    let bytes = crate::test_support::test_b5::a8_inline_surface_stream_with_native_vertex_chain();
 
     assert_eq!(
         crate::test_support::with_service_context(|ctx| object_stream_run_ranges(ctx, &bytes))

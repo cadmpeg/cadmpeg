@@ -200,6 +200,7 @@ fn freeform_fallback_retains_exact_consolidated_spheres() {
         freeform_surface_carriers(
             ctx,
             &bytes,
+            &[vec![crate::wire::records::SourceExtent::whole(&bytes)]],
             &records,
             &mut crate::nurbs::LaneRefusals::new(),
         )
@@ -226,6 +227,7 @@ fn freeform_surface_carrier_refuses_collection_limit() {
         freeform_surface_carriers(
             ctx,
             &bytes,
+            &[vec![crate::wire::records::SourceExtent::whole(&bytes)]],
             &records,
             &mut crate::nurbs::LaneRefusals::new(),
         )
@@ -238,6 +240,7 @@ fn freeform_surface_carrier_refuses_collection_limit() {
         freeform_surface_carriers(
             ctx,
             &bytes,
+            &[vec![crate::wire::records::SourceExtent::whole(&bytes)]],
             &records,
             &mut crate::nurbs::LaneRefusals::new(),
         )
@@ -295,6 +298,7 @@ fn freeform_fallback_retains_exact_consolidated_tori() {
         freeform_surface_carriers(
             ctx,
             &bytes,
+            &[vec![crate::wire::records::SourceExtent::whole(&bytes)]],
             &records,
             &mut crate::nurbs::LaneRefusals::new(),
         )
@@ -348,6 +352,7 @@ fn a_cone_record_is_refused_when_read_or_builds_its_freeform_carrier() {
             freeform_surface_carriers(
                 ctx,
                 &bytes,
+                &[vec![crate::wire::records::SourceExtent::whole(&bytes)]],
                 &records,
                 &mut crate::nurbs::LaneRefusals::new(),
             )
@@ -477,6 +482,7 @@ fn freeform_fallback_retains_range_origin_cylinder_carriers() {
         freeform_surface_carriers(
             ctx,
             &bytes,
+            &[vec![crate::wire::records::SourceExtent::whole(&bytes)]],
             &records,
             &mut crate::nurbs::LaneRefusals::new(),
         )

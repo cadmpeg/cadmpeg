@@ -749,3 +749,46 @@ fn parameters_without_feature_aggregation_stay_document_scoped() {
     assert!(entity.definition_chain_value().is_some());
     assert_valid(&result);
 }
+
+#[test]
+fn decode_reconstructs_inline_poles_from_nonphysical_extent_order() {
+    use crate::test_support::test_container::object_main_catpart;
+    use cadmpeg_core::decode::View;
+
+    let stream = crate::test_support::test_a5a8::a8_inline_tail_surface_stream();
+    let header_end = 59;
+    let grid_end = header_end + 9 * 24;
+    let mut physical = stream[header_end..grid_end].to_vec();
+    physical.extend_from_slice(&stream[..header_end]);
+    physical.extend_from_slice(&stream[grid_end..]);
+    let mut file = object_main_catpart(&physical);
+    let directory = 32 + physical.len() + 1;
+    let descriptor = directory + 16;
+    file[descriptor + 80..descriptor + 84].copy_from_slice(&3_u32.to_be_bytes());
+    let mut extents = Vec::new();
+    for (offset, length, logical) in [
+        (16 + 9 * 24, header_end, 0),
+        (16, 9 * 24, header_end),
+        (16 + grid_end, stream.len() - grid_end, grid_end),
+    ] {
+        for value in [offset, length, length, logical, 0] {
+            extents.extend_from_slice(&u32::try_from(value).unwrap().to_be_bytes());
+        }
+    }
+    file.splice(descriptor + 84..descriptor + 104, extents);
+    let directory_length = View::u32_be_at(&file, 28).unwrap() + 40;
+    file[28..32].copy_from_slice(&directory_length.to_be_bytes());
+    let outer_end = u32::try_from(file.len()).unwrap();
+    file[8..12].copy_from_slice(&outer_end.to_be_bytes());
+    let expected = CatiaCodec
+        .decode(
+            &mut Cursor::new(object_main_catpart(&stream)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let reconstructed = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(reconstructed.ir().model, expected.ir().model);
+    assert_eq!(reconstructed.ir().model.surfaces.len(), 1);
+}

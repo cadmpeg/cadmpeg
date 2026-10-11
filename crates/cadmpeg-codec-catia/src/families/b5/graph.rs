@@ -1106,7 +1106,7 @@ fn parse_from_records_with_class21(
         )?;
     }
     for frame in frames {
-        let Some(surface) = crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
+        let Some(surface) = crate::families::a5a8::records::a8_surface_from_object_frame(
             ctx,
             bytes,
             frame.start,
@@ -2169,7 +2169,7 @@ pub(in crate::families) fn targeted_surfaces_from_frames(
 ) -> Result<BTreeMap<u32, B5Surface>, CodecError> {
     let mut resolved = HashMap::<u32, Option<B5Surface>>::new();
     for frame in frames {
-        let Some(surface) = crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
+        let Some(surface) = crate::families::a5a8::records::a8_surface_from_object_frame(
             ctx,
             bytes,
             frame.start,
@@ -6308,7 +6308,6 @@ fn object_stream_run_ranges(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Vec<Range<usize>>, CodecError> {
-    let external_grids = crate::families::a5a8::records::a8_external_grid_ranges(ctx, bytes)?;
     let mut ranges = Vec::new();
     let mut position = 0usize;
     while position + 8 <= bytes.len() {
@@ -6331,12 +6330,6 @@ fn object_stream_run_ranges(
             } else {
                 None
             };
-            let allocation_end = allocation_end.or_else(|| {
-                external_grids
-                    .iter()
-                    .find(|range| range.start == position)
-                    .map(|range| range.end)
-            });
             let Some(end) = allocation_end else {
                 break;
             };
@@ -7588,7 +7581,7 @@ mod nested_frame_work_tests {
     #[test]
     fn nested_a8_frame_scanning_refuses_caller_work_before_collection() {
         let bytes =
-            crate::test_support::test_b5::a8_elided_surface_stream_with_native_vertex_chain();
+            crate::test_support::test_b5::a8_inline_surface_stream_with_native_vertex_chain();
         let result = crate::test_support::with_work_limit(0, |ctx| {
             crate::families::b5::graph::collect_object_stream_frames(ctx, &bytes)
         });

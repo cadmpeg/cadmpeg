@@ -7,9 +7,9 @@ use cadmpeg_ir::codec::Codec;
 
 use super::{
     a5_freeform_curve_stream, a5_guide_curve_stream, a5_guide_curve_stream_with_count,
-    a6_freeform_curve_stream, a8_catpart, a8_elided_surface_stream,
-    a8_elided_surface_stream_with_native_vertex_chain, a8_freeform_curve_stream,
-    a8_freeform_curve_stream_with_count, a8_pcurve_stream, inner_no_directory_a8_catpart, le_f64,
+    a6_freeform_curve_stream, a8_catpart, a8_freeform_curve_stream,
+    a8_freeform_curve_stream_with_count, a8_inline_surface_stream_with_native_vertex_chain,
+    a8_pcurve_stream, a8_surface_stream_with_pcurve, inner_no_directory_a8_catpart, le_f64,
     object_main_catpart, parsed_a5_freeform_curves, parsed_a8_freeform_curves, CatiaCodec, Cursor,
     DecodeOptions, EditableDecodeResult, Point3, SolvedSurfaceGeometry, SurfaceGeometry, Variant,
 };
@@ -470,8 +470,8 @@ fn a5_nurbs_curve_parser_rejects_broken_frame_invariants() {
 }
 
 #[test]
-fn decode_geometry_fallback_transfers_an_external_a8_pole_grid() {
-    let file = object_main_catpart(&a8_elided_surface_stream());
+fn decode_geometry_fallback_transfers_an_inline_a8_pole_grid() {
+    let file = object_main_catpart(&a8_surface_stream_with_pcurve());
     let mut cur = Cursor::new(file);
     let result = CatiaCodec
         .decode(&mut cur, &DecodeOptions::default())
@@ -489,8 +489,8 @@ fn decode_geometry_fallback_transfers_an_external_a8_pole_grid() {
 }
 
 #[test]
-fn decode_float_packed_stream_transfers_an_elided_a8_surface_with_native_topology() {
-    let stream = a8_elided_surface_stream_with_native_vertex_chain();
+fn decode_float_packed_stream_transfers_an_inline_a8_surface_with_native_topology() {
+    let stream = a8_inline_surface_stream_with_native_vertex_chain();
     let graph = crate::test_support::with_service_context(|ctx| {
         crate::families::b5::graph::parse(ctx, &stream, &mut crate::nurbs::LaneRefusals::new())
     })
@@ -525,7 +525,7 @@ fn decode_float_packed_stream_transfers_an_elided_a8_surface_with_native_topolog
             &mut Cursor::new(object_main_catpart(&stream)),
             &DecodeOptions::default(),
         )
-        .expect("decode elided A8 surface topology");
+        .expect("decode inline A8 surface topology");
     assert_eq!(result.ir().model.surfaces.len(), 1);
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
         result.ir().model.surfaces[0].geometry.solved()

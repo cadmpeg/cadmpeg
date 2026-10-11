@@ -10,7 +10,9 @@ use crate::math::distance;
 use crate::wire::bytes::{compact_int, f64_le, f64_point, read_f64_array, u32_le_24};
 #[cfg(test)]
 use crate::wire::records::{consolidated_records, ConsolidatedPcurve};
-use crate::wire::records::{ConsolidatedFamily, ConsolidatedFrame, ConsolidatedRecord};
+use crate::wire::records::{
+    ConsolidatedFamily, ConsolidatedFrame, ConsolidatedRecord, SourceExtent,
+};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
@@ -21,7 +23,6 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal};
 use cadmpeg_ir::units::FiniteVector;
-use std::ops::Range;
 
 const EPS_GUIDE_DIRECTION_UNIT: f64 = 1.0e-9;
 const EPS_ROLLING_BALL_RADIUS: f64 = 1.0e-9;
@@ -37,15 +38,6 @@ pub(crate) struct FreeformSurface {
     pub(in crate::families) identity: Option<u32>,
     /// The decoded NURBS carrier.
     pub(in crate::families) geometry: NurbsSurface,
-}
-
-/// Whether an `a8 <flag> 34` surface stores poles inline or in an external grid.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PoleStorage {
-    /// Pole and weight grid occupy the payload after the mode byte.
-    Inline,
-    /// The fixed 141-byte surface tail begins immediately after the mode byte.
-    Elided,
 }
 
 impl FreeformSurface {
@@ -164,7 +156,7 @@ fn closed_a8_child_run(data: &[u8], start: usize, end: usize) -> bool {
 /// Return the start of a length-closed B5 child run owned by an A8 frame.
 ///
 /// Common-form surface frames may place their child run after the complete
-/// inline pole representation or after the fixed elided-pole tail. A marker
+/// inline pole representation and its optional surface tail. A marker
 /// shaped byte sequence elsewhere in a surface payload is payload data and is
 /// not a child run.
 pub(in crate::families) fn a8_nested_b5_run_start(
@@ -192,81 +184,46 @@ pub(in crate::families) fn a8_nested_b5_run_start(
             object_id: frame.object_id,
         },
     )?;
-    let suffix_start = if layout.pole_storage == PoleStorage::Elided {
-        layout.pole_start.checked_add(141)?
+    let poles = crate::nurbs_surface_control_count(
+        usize::try_from(layout.u.poles).ok()?,
+        usize::try_from(layout.v.poles).ok()?,
+    )?;
+    let pole_bytes = poles.checked_mul(24)?;
+    let weight_bytes = if layout.rational {
+        poles.checked_mul(8)?
     } else {
-        let poles = crate::nurbs_surface_control_count(
-            usize::try_from(layout.u.poles).ok()?,
-            usize::try_from(layout.v.poles).ok()?,
-        )?;
-        let pole_bytes = poles.checked_mul(24)?;
-        let weight_bytes = if layout.rational {
-            poles.checked_mul(8)?
-        } else {
-            0
-        };
-        layout
-            .pole_start
-            .checked_add(pole_bytes)?
-            .checked_add(weight_bytes)?
+        0
     };
+    let suffix_start = layout
+        .pole_start
+        .checked_add(pole_bytes)?
+        .checked_add(weight_bytes)?;
     let child_start = a8_surface_suffix_start(data, suffix_start, frame_end)?;
     (child_start < frame_end).then_some(child_start)
 }
 
-fn parse_a8_elided_surface_tail(data: &[u8], at: usize, expected_v_span: f64) -> Option<usize> {
-    let end = at.checked_add(141)?;
-    let tail = data.get(at..end)?;
-    if tail[0] != 0x05
-        || tail[2] != 0x05
-        || tail[1] % 4 != 1
-        || tail[3] % 4 != 1
-        || tail[68..71] != [0x01, 0x01, 0x01]
-        || !tail[71..135].iter().all(|byte| *byte == 0)
-        || tail[135..141] != [0x01, 0x00, 0x01, 0x00, 0x07, 0x07]
-    {
-        return None;
-    }
-    let read_f64 = |offset: usize| View::f64_le_at(tail, offset);
-    let zero_u = read_f64(4)?;
-    let positive_u = read_f64(12)?;
-    let zero_v = read_f64(20)?;
-    let v_span = read_f64(28)?;
-    let one_u = read_f64(36)?;
-    let zero_w = read_f64(44)?;
-    let one_v = read_f64(52)?;
-    let zero_x = read_f64(60)?;
-    (zero_u == 0.0
-        && positive_u.is_finite()
-        && positive_u > 0.0
-        && zero_v == 0.0
-        && v_span.is_finite()
-        && v_span > 0.0
-        && v_span == expected_v_span
-        && one_u == 1.0
-        && zero_w == 0.0
-        && one_v == 1.0
-        && zero_x == 0.0)
-        .then_some(end)
-}
-
 fn parse_surface_tail(data: &[u8], at: usize, end: usize) -> Option<usize> {
+    use crate::layout::surface_terminal_span_tail as layout;
+
     let tail_len = end.checked_sub(at)?;
     let continuation_bytes = match tail_len {
         133 => 56,
-        141 | 142 => 64,
+        layout::LEN | 142 => layout::SUFFIX - layout::CONTINUATION,
         _ => return None,
     };
     let tail = data.get(at..end)?;
-    if tail[0] != 0x05
-        || tail[2] != 0x05
-        || tail[1] % 4 != 1
-        || tail[3] % 4 != 1
-        || !matches!(tail[68..71], [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01])
+    if tail[layout::CONTROLS] != 0x05
+        || tail[layout::CONTROLS + 2] != 0x05
+        || tail[layout::CONTROLS + 1] % 4 != 1
+        || tail[layout::CONTROLS + 3] % 4 != 1
+        || !matches!(
+            tail[layout::FLAGS..layout::CONTINUATION],
+            [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01]
+        )
     {
         return None;
     }
-    let parameters = read_f64_array::<8>(tail, 4)?.map(FiniteReal::get);
+    let parameters = read_f64_array::<8>(tail, layout::PARAMETERS)?.map(FiniteReal::get);
     if parameters[0] >= parameters[1]
         || parameters[2] >= parameters[3]
         || parameters[4] == 0.0
@@ -274,7 +231,7 @@ fn parse_surface_tail(data: &[u8], at: usize, end: usize) -> Option<usize> {
     {
         return None;
     }
-    let continuation_start = 71;
+    let continuation_start = layout::CONTINUATION;
     let continuation_end = continuation_start + continuation_bytes;
     let continuation = tail.get(continuation_start..continuation_end)?;
     for index in 0..continuation_bytes / 8 {
@@ -284,7 +241,7 @@ fn parse_surface_tail(data: &[u8], at: usize, end: usize) -> Option<usize> {
         }
     }
     let suffix = &tail[continuation_end..];
-    let valid_suffix = match (tail_len, &tail[68..71]) {
+    let valid_suffix = match (tail_len, &tail[layout::FLAGS..layout::CONTINUATION]) {
         (133, [0x01, 0x01, 0x01]) => suffix == [0x01, 0x00, 0x01, 0x00, 0x07, 0x07],
         (141, [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01]) => matches!(
             suffix,
@@ -378,8 +335,6 @@ pub(in crate::families) struct A8SurfaceHeader {
     pub(super) v_knots: A8KnotLane,
     /// Whether the record selects rational weights.
     rational: bool,
-    /// Whether poles occupy the payload or an external grid.
-    pole_storage: PoleStorage,
 }
 
 impl A8SurfaceHeader {
@@ -395,7 +350,6 @@ impl A8SurfaceHeader {
             u_knots: self.u_knots.copy_charged(ctx)?,
             v_knots: self.v_knots.copy_charged(ctx)?,
             rational: self.rational,
-            pole_storage: self.pole_storage,
         })
     }
 
@@ -1632,33 +1586,69 @@ pub(crate) fn a8_surfaces(
     Ok(surfaces)
 }
 
-/// Decode every complete common-form object-stream NURBS surface, including
-/// parameter records whose pole grids occupy a uniquely bounded external
-/// allocation.
-pub(in crate::families) fn resolved_a8_surfaces(
+/// Decode A8 carriers within each logical source and retain physical frame offsets.
+pub(in crate::families) fn a8_surfaces_in_sources(
     ctx: &DecodeContext<'_>,
     data: &[u8],
+    sources: &[Vec<SourceExtent>],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<FreeformSurface>, CodecError> {
-    ctx.charge_work(u64_from_index(data.len()), "catia_a8_frame_scan")?;
     let mut surfaces = Vec::new();
-    for frame in a8_frames(data, 0x34) {
-        if let Some(surface) = resolved_a8_surface_from_object_frame(
-            ctx,
-            data,
-            frame.pos,
-            frame.end,
-            frame.object_id,
-            refusal,
-        )? {
-            ctx.push_vec(&mut surfaces, surface, "catia_a8_resolved_surfaces")?;
+    for source in sources {
+        ctx.charge_work(u64_from_index(source.len()), "catia_a8_source_extents")?;
+        let mut length = 0usize;
+        let mut contiguous = true;
+        let mut physical_end = None;
+        for extent in source {
+            let range = extent.range();
+            if data.get(range.clone()).is_none() {
+                return Err(CodecError::malformed(
+                    "A8 source extent is outside the image",
+                ));
+            }
+            contiguous &= physical_end.is_none_or(|end| end == range.start);
+            physical_end = Some(range.end);
+            length = length
+                .checked_add(range.len())
+                .ok_or_else(|| CodecError::malformed("A8 logical source length overflow"))?;
+        }
+        let Some(first) = source.first() else {
+            continue;
+        };
+        let decoded = if contiguous {
+            a8_surfaces(
+                ctx,
+                &data[first.range().start..physical_end.unwrap_or(first.range().start)],
+                refusal,
+            )?
+        } else {
+            ctx.charge_work(u64_from_index(length), "catia_a8_source_copy")?;
+            let (mut bytes, _storage) =
+                ctx.scoped_vector_storage(length, "catia_a8_source_bytes")?;
+            for extent in source {
+                bytes.extend_from_slice(&data[extent.range()]);
+            }
+            a8_surfaces(ctx, &bytes, refusal)?
+        };
+        for mut surface in decoded {
+            let mut offset = surface.pos;
+            for extent in source {
+                ctx.charge_work(1, "catia_a8_source_offset")?;
+                let range = extent.range();
+                if offset < range.len() {
+                    surface.pos = range.start + offset;
+                    break;
+                }
+                offset -= range.len();
+            }
+            ctx.push_vec(&mut surfaces, surface, "catia_a8_source_surfaces")?;
         }
     }
     Ok(surfaces)
 }
 
 /// Decode every structurally complete `a8 <flag> 34` parameter lattice, including
-/// records whose pole representation is not inline.
+/// records whose complete pole grid has not been decoded.
 #[cfg(test)]
 fn a8_surface_headers<'a>(
     ctx: &'a DecodeContext<'_>,
@@ -1690,7 +1680,7 @@ pub(in crate::families) fn a8_surface_header_from_object_frame(
 }
 
 /// Decode one selected `a8 <flag> 34` frame and its complete pole grid.
-pub(in crate::families) fn resolved_a8_surface_from_object_frame(
+pub(in crate::families) fn a8_surface_from_object_frame(
     ctx: &DecodeContext<'_>,
     data: &[u8],
     start: usize,
@@ -1701,283 +1691,7 @@ pub(in crate::families) fn resolved_a8_surface_from_object_frame(
     let Some(parsed) = parse_selected_a8_surface_header(ctx, data, start, end, object_id)? else {
         return Ok(None);
     };
-    if parsed.header.pole_storage == PoleStorage::Elided {
-        a8_surface_from_external_grid(ctx, data, &parsed.header, refusal)
-    } else {
-        a8_surface_from_parsed(ctx, data, parsed, refusal)
-    }
-}
-
-/// Resolve an elided-pole `a8 <flag> 34` carrier from its support-referenced
-/// external grid allocation. The allocation occupies the complete unframed gap
-/// between a length-closed `b5 <flag> 21` pcurve and the following A/B-family
-/// frame; its pcurve support reference must equal the surface object id.
-fn a8_surface_from_external_grid(
-    ctx: &DecodeContext<'_>,
-    data: &[u8],
-    header: &A8SurfaceHeader,
-    refusal: &mut crate::nurbs::LaneRefusals,
-) -> Result<Option<FreeformSurface>, CodecError> {
-    let Some(need) = ExternalGridNeed::from_header(ctx, header)? else {
-        return Ok(None);
-    };
-    let mut ranges = a8_external_grid_candidate_ranges(ctx, data, need)?;
-    let Some(range) = ranges.next().transpose()? else {
-        return Ok(None);
-    };
-    if ranges.next().transpose()?.is_some() {
-        return Ok(None);
-    }
-    let Some(ExternalGridCandidate {
-        control_points,
-        weights,
-        ..
-    }) = parse_external_grid_candidate(ctx, data, header, range)?
-    else {
-        return Ok(None);
-    };
-    let Some(row_len) = header
-        .v_count(ctx)?
-        .and_then(|count| usize::try_from(count).ok())
-    else {
-        return Ok(None);
-    };
-    let u_knots = header.u_knots.expanded(ctx)?;
-    let v_knots = header.v_knots.expanded(ctx)?;
-    let control_points = grid_rows(ctx, control_points, row_len, "catia_a8_external_pole_rows")?;
-    let weights = weights
-        .map(|values| grid_rows(ctx, values, row_len, "catia_a8_external_weight_rows"))
-        .transpose()?;
-    crate::nurbs::note_refusal(
-        ctx,
-        NurbsSurface::from_checked_lanes(
-            ctx,
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(header.u_degree, u_knots, false),
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(header.v_degree, v_knots, false),
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights),
-            false,
-        )?,
-        refusal,
-        format_args!(
-            "a8 NURBS surface record #{} at byte {}",
-            header.object_id, header.pos
-        ),
-    )
-    .map(|geometry| {
-        geometry.map(|geometry| FreeformSurface {
-            pos: header.pos,
-            identity: Some(header.object_id),
-            geometry,
-        })
-    })
-}
-
-/// Return every complete support-bound external A8 pole allocation.
-pub(in crate::families) fn a8_external_grid_ranges(
-    ctx: &DecodeContext<'_>,
-    data: &[u8],
-) -> Result<Vec<Range<usize>>, CodecError> {
-    ctx.charge_work(u64_from_index(data.len()), "catia_a8_frame_scan")?;
-    let mut ranges = Vec::new();
-    for frame in a8_frames(data, 0x34) {
-        let Some(payload_bytes) = data.get(frame.payload..frame.end) else {
-            continue;
-        };
-        ctx.charge_work(
-            u64_from_index(payload_bytes.len()),
-            "catia_a8_lane_preflight",
-        )?;
-        let Some(layout) = scan_a8_surface_layout(data, frame) else {
-            continue;
-        };
-        for range in a8_external_grid_candidate_ranges(
-            ctx,
-            data,
-            ExternalGridNeed::from_layout(frame.object_id, &layout),
-        )? {
-            ctx.push_vec(&mut ranges, range?, "catia_a8_external_grid_ranges")?;
-        }
-    }
-    ctx.sort_unstable_by(
-        &mut ranges,
-        |left, right| (left.start, left.end).cmp(&(right.start, right.end)),
-        |_| 0,
-        "catia_a8_external_grid_ranges_sort",
-    )?;
-    ranges.dedup();
-    Ok(ranges)
-}
-
-struct ExternalGridCandidate {
-    control_points: Vec<FinitePoint3>,
-    weights: Option<Vec<NonZeroReal>>,
-}
-
-#[derive(Clone, Copy)]
-struct ExternalGridNeed {
-    object_id: u32,
-    u_count: u32,
-    v_count: u32,
-    rational: bool,
-    pole_storage: PoleStorage,
-}
-
-impl ExternalGridNeed {
-    fn from_header(
-        ctx: &DecodeContext<'_>,
-        header: &A8SurfaceHeader,
-    ) -> Result<Option<Self>, CodecError> {
-        let (Some(u_count), Some(v_count)) = (header.u_count(ctx)?, header.v_count(ctx)?) else {
-            return Ok(None);
-        };
-        Ok(Some(Self {
-            object_id: header.object_id,
-            u_count,
-            v_count,
-            rational: header.rational,
-            pole_storage: header.pole_storage,
-        }))
-    }
-
-    fn from_layout(object_id: u32, layout: &A8SurfaceLayout) -> Self {
-        Self {
-            object_id,
-            u_count: layout.u.poles,
-            v_count: layout.v.poles,
-            rational: layout.rational,
-            pole_storage: layout.pole_storage,
-        }
-    }
-}
-
-fn a8_external_grid_candidate_ranges<'a>(
-    ctx: &'a DecodeContext<'_>,
-    data: &'a [u8],
-    need: ExternalGridNeed,
-) -> Result<impl Iterator<Item = Result<Range<usize>, CodecError>> + 'a, CodecError> {
-    let scan_work = u64_from_index(data.len()).checked_mul(2).ok_or_else(|| {
-        ctx.refuse_codec_limit("catia_external_grid_frame_scan", u64::MAX - 1, u64::MAX)
-    })?;
-    ctx.charge_work(scan_work, "catia_external_grid_frame_scan")?;
-    let layout = (|| {
-        if need.pole_storage != PoleStorage::Elided {
-            return None;
-        }
-        let (Some(u_count), Some(v_count)) = (
-            usize::try_from(need.u_count).ok(),
-            usize::try_from(need.v_count).ok(),
-        ) else {
-            return None;
-        };
-        let poles = crate::nurbs_surface_control_count(u_count, v_count)?;
-        let weight_bytes = if need.rational {
-            poles.checked_mul(8)?
-        } else {
-            0
-        };
-        let grid_bytes = poles
-            .checked_mul(24)
-            .and_then(|bytes| bytes.checked_add(weight_bytes))?;
-        Some((poles, grid_bytes))
-    })();
-    Ok(object_stream_frames(data)
-        .filter(|frame| frame.family == 0xb5 && frame.class == 0x21)
-        .filter(move |frame| {
-            let Some(mut at) = frame.payload.checked_add(1) else {
-                return false;
-            };
-            object_stream_reference(data, &mut at) == Some(need.object_id)
-        })
-        .filter_map(move |frame| {
-            (|| -> Result<Option<Range<usize>>, CodecError> {
-                let Some((poles, grid_bytes)) = layout else {
-                    return Ok(None);
-                };
-                let start = frame.end;
-                let Some(end) = start.checked_add(grid_bytes) else {
-                    return Ok(None);
-                };
-                if object_stream_frame(data, end).is_none() {
-                    return Ok(None);
-                }
-                ctx.charge_work(
-                    u64_from_index(poles),
-                    "catia_a8_external_grid_candidate_scan",
-                )?;
-                if need.rational {
-                    ctx.charge_work(u64_from_index(poles), "catia_a8_external_grid_weight_scan")?;
-                }
-                Ok((|| {
-                    let mut at = start;
-                    for _ in 0..poles {
-                        f64_point(data, at)?;
-                        at += 24;
-                    }
-                    if need.rational {
-                        for _ in 0..poles {
-                            NonZeroReal::new(f64_le(data, at)?.get())?;
-                            at += 8;
-                        }
-                    }
-                    (at == end).then_some(start..end)
-                })())
-            })()
-            .transpose()
-        }))
-}
-
-fn parse_external_grid_candidate(
-    ctx: &DecodeContext<'_>,
-    data: &[u8],
-    header: &A8SurfaceHeader,
-    range: Range<usize>,
-) -> Result<Option<ExternalGridCandidate>, CodecError> {
-    let Some(poles) = header
-        .u_count(ctx)?
-        .zip(header.v_count(ctx)?)
-        .and_then(|(u, v)| {
-            crate::nurbs_surface_control_count(usize::try_from(u).ok()?, usize::try_from(v).ok()?)
-        })
-    else {
-        return Ok(None);
-    };
-    let mut control_points = Vec::new();
-    ctx.charge_work(
-        u64_from_index(poles),
-        "catia_a8_external_pole_materialization",
-    )?;
-    ctx.reserve_vec(&mut control_points, poles, "catia_a8_external_poles")?;
-    let mut at = range.start;
-    for _ in 0..poles {
-        let Some(point) = f64_point(data, at) else {
-            return Ok(None);
-        };
-        control_points.push(point);
-        at += 24;
-    }
-    let weights = if header.rational {
-        let mut weights = Vec::new();
-        ctx.charge_work(
-            u64_from_index(poles),
-            "catia_a8_external_weight_materialization",
-        )?;
-        ctx.reserve_vec(&mut weights, poles, "catia_a8_external_weights")?;
-        for _ in 0..poles {
-            let Some(weight) = f64_le(data, at).and_then(|value| NonZeroReal::new(value.get()))
-            else {
-                return Ok(None);
-            };
-            weights.push(weight);
-            at += 8;
-        }
-        Some(weights)
-    } else {
-        None
-    };
-    Ok((at == range.end).then_some(ExternalGridCandidate {
-        control_points,
-        weights,
-    }))
+    a8_surface_from_parsed(ctx, data, parsed, refusal)
 }
 
 fn grid_rows<T>(
@@ -2231,7 +1945,6 @@ struct A8SurfaceLayout {
     v: A8LaneLayout,
     pole_start: usize,
     rational: bool,
-    pole_storage: PoleStorage,
 }
 
 fn scan_a8_lane(
@@ -2240,19 +1953,17 @@ fn scan_a8_lane(
     count: usize,
     degree: u32,
     end: usize,
-) -> Option<(A8LaneLayout, f64, f64)> {
+) -> Option<A8LaneLayout> {
     let distinct_start = *at;
     if at.checked_add(count.checked_mul(8)?)? > end {
         return None;
     }
-    let mut first = None;
     let mut last = None;
     for _ in 0..count {
         let value = f64_le(data, *at)?.get();
         if last.is_some_and(|previous| previous >= value) {
             return None;
         }
-        first.get_or_insert(value);
         last = Some(value);
         *at += 8;
     }
@@ -2266,16 +1977,12 @@ fn scan_a8_lane(
         total = total.checked_add(multiplicity)?;
     }
     let poles = total.checked_sub(degree.checked_add(1)?)?;
-    Some((
-        A8LaneLayout {
-            distinct_start,
-            multiplicity_start,
-            count,
-            poles,
-        },
-        first?,
-        last?,
-    ))
+    Some(A8LaneLayout {
+        distinct_start,
+        multiplicity_start,
+        count,
+        poles,
+    })
 }
 
 fn scan_a8_surface_layout(data: &[u8], frame: A8Frame) -> Option<A8SurfaceLayout> {
@@ -2283,17 +1990,18 @@ fn scan_a8_surface_layout(data: &[u8], frame: A8Frame) -> Option<A8SurfaceLayout
     if end.checked_sub(payload)? < 20 {
         return None;
     }
+    let data = data.get(..end)?;
     let mut at = payload.checked_add(1)?;
     let u_degree = compact_int(data, &mut at)?;
     at = at.checked_add(2)?;
     let u_count = usize::try_from(compact_int(data, &mut at)?).ok()?;
     at = consume_array_marker(data, at)?;
-    let (u, _, _) = scan_a8_lane(data, &mut at, u_count, u_degree, end)?;
+    let u = scan_a8_lane(data, &mut at, u_count, u_degree, end)?;
     let v_degree = compact_int(data, &mut at)?;
     at = at.checked_add(2)?;
     let v_count = usize::try_from(compact_int(data, &mut at)?).ok()?;
     at = consume_array_marker(data, at)?;
-    let (v, v_first, v_last) = scan_a8_lane(data, &mut at, v_count, v_degree, end)?;
+    let v = scan_a8_lane(data, &mut at, v_count, v_degree, end)?;
     let mode = *data.get(at)?;
     at += 1;
     if !(1..=9).contains(&u_degree)
@@ -2306,10 +2014,6 @@ fn scan_a8_surface_layout(data: &[u8], frame: A8Frame) -> Option<A8SurfaceLayout
     {
         return None;
     }
-    let tail_end = at.checked_add(141)?;
-    let elided = tail_end <= end
-        && closed_a8_child_run(data, tail_end, end)
-        && parse_a8_elided_surface_tail(data, at, v_last - v_first).is_some();
     Some(A8SurfaceLayout {
         u_degree,
         v_degree,
@@ -2317,11 +2021,6 @@ fn scan_a8_surface_layout(data: &[u8], frame: A8Frame) -> Option<A8SurfaceLayout
         v,
         pole_start: at,
         rational: mode == 0x05,
-        pole_storage: if elided {
-            PoleStorage::Elided
-        } else {
-            PoleStorage::Inline
-        },
     })
 }
 
@@ -2390,7 +2089,6 @@ fn parse_a8_surface_header(
             u_knots,
             v_knots,
             rational: layout.rational,
-            pole_storage: layout.pole_storage,
         },
         pole_start: layout.pole_start,
         end: frame.end,
@@ -2428,12 +2126,8 @@ fn a8_surface_from_parsed(
         u_knots,
         v_knots,
         rational,
-        pole_storage,
         ..
     } = header;
-    if pole_storage == PoleStorage::Elided {
-        return Ok(None);
-    }
     let Some(poles) = crate::nurbs_surface_control_count(u_count, v_count) else {
         return Ok(None);
     };

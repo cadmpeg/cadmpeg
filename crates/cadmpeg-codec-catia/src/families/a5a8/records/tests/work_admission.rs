@@ -252,43 +252,6 @@ fn a5_surface_knot_and_grid_materialization_refuse_caller_work() {
 }
 
 #[test]
-fn external_grid_inspection_and_materialization_preserve_work_refusals() {
-    let bytes = crate::test_support::test_a5a8::a8_elided_surface_stream();
-    let frame = super::super::a8_frames(&bytes, 0x34)
-        .next()
-        .expect("one A8 surface frame");
-    let header = crate::test_support::with_service_context(|ctx| {
-        super::super::parse_a8_surface_header(ctx, &bytes, frame)
-    })
-    .expect("service header")
-    .expect("complete header")
-    .header;
-    require_work_operations(
-        |ctx| {
-            super::super::a8_surface_from_external_grid(
-                ctx,
-                &bytes,
-                &header,
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-        },
-        &[
-            "catia_external_grid_frame_scan",
-            "catia_a8_external_grid_candidate_scan",
-            "catia_a8_external_pole_materialization",
-            "catia_a8_external_pole_rows",
-        ],
-    );
-    require_work_operations(
-        |ctx| super::super::a8_external_grid_ranges(ctx, &bytes),
-        &[
-            "catia_a8_lane_preflight",
-            "catia_a8_external_grid_candidate_scan",
-        ],
-    );
-}
-
-#[test]
 fn mirrored_weight_program_refuses_seed_and_copy_work() {
     let mut bytes = vec![0x01, 0x03, 0x00];
     for weight in [1.0_f64, 0.8] {
@@ -347,53 +310,53 @@ fn grid_partition_refuses_move_work_before_rows_are_created() {
 }
 
 #[test]
-fn external_rational_grid_inspection_and_weight_copy_refuse_caller_work() {
-    let mut bytes = crate::test_support::test_a5a8::a8_elided_surface_stream();
-    bytes[58] = 0x05;
-    let next_frame = bytes.len() - 10;
-    let weights = std::iter::repeat_n(2.0_f64, 9).flat_map(f64::to_le_bytes);
-    bytes.splice(next_frame..next_frame, weights);
-    let frame = super::super::a8_frames(&bytes, 0x34)
-        .next()
-        .expect("one surface frame");
-    let header = crate::test_support::with_service_context(|ctx| {
-        super::super::parse_a8_surface_header(ctx, &bytes, frame)
-    })
-    .expect("service header")
-    .expect("complete header")
-    .header;
-    require_work_operations(
-        |ctx| {
-            super::super::a8_surface_from_external_grid(
-                ctx,
-                &bytes,
-                &header,
-                &mut crate::nurbs::LaneRefusals::new(),
-            )
-        },
-        &[
-            "catia_a8_external_grid_weight_scan",
-            "catia_a8_external_weight_materialization",
-            "catia_a8_external_weight_rows",
-        ],
-    );
-    let surface = crate::test_support::with_service_context(|ctx| {
-        super::super::a8_surface_from_external_grid(
+fn a8_source_reconstruction_refuses_work_and_retains_physical_offsets() {
+    use crate::wire::records::SourceExtent;
+
+    let logical = crate::test_support::test_a5a8::a8_inline_tail_surface_stream();
+    let split = 100;
+    let mut bytes = logical[split..].to_vec();
+    bytes.extend_from_slice(&logical[..split]);
+    let header_start = logical.len() - split;
+    let sources = [vec![
+        SourceExtent::within(&bytes, header_start, bytes.len()).unwrap(),
+        SourceExtent::within(&bytes, 0, header_start).unwrap(),
+    ]];
+    let run = |ctx: &DecodeContext<'_>| {
+        super::super::a8_surfaces_in_sources(
             ctx,
             &bytes,
-            &header,
+            &sources,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    };
+    require_work_operations(
+        run,
+        &[
+            "catia_a8_source_extents",
+            "catia_a8_source_copy",
+            "catia_a8_source_offset",
+        ],
+    );
+    let decoded = crate::test_support::with_service_context(run).expect("source work admitted");
+    let [surface] = decoded.as_slice() else {
+        panic!("one reconstructed surface")
+    };
+    assert_eq!(surface.pos, header_start);
+    let expected = crate::test_support::with_service_context(|ctx| {
+        super::super::a8_surfaces(ctx, &logical, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("contiguous surface work admitted");
+    assert_eq!(surface.geometry, expected[0].geometry);
+    let independent_sources = [vec![sources[0][0].clone()], vec![sources[0][1].clone()]];
+    let independent = crate::test_support::with_service_context(|ctx| {
+        super::super::a8_surfaces_in_sources(
+            ctx,
+            &bytes,
+            &independent_sources,
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
-    .expect("service external grid")
-    .expect("complete rational surface");
-    assert_eq!(
-        surface
-            .geometry
-            .pole_grid()
-            .weights()
-            .expect("rational grid")
-            .concat(),
-        vec![2.0; 9]
-    );
+    .expect("independent sources admitted");
+    assert!(independent.is_empty());
 }

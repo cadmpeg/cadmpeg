@@ -704,6 +704,23 @@ Parsed by:
 | 33 | 5 | `trailing_controls` | `u8[5]` | little | spec | \| `+33` \| `5×u8` \| patch IDs U0, V0, U1, V1, then compact zero \| |
 | 38 | 24 | `bounds` | `f32[6]` | little | spec | \| `+38` \| `6×f32le` \| Cartesian X low/high, Y low/high, Z low/high \| |
 
+## `surface_terminal_span_tail`
+
+Spec §6.6 · layout: byte offsets · size: 141 B
+
+Tail-relative offsets. The generic 133-byte and 142-byte surface tails share the prefix through offset 71.
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/a5a8/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `controls` | `bytes[4]` | little | spec | 4*(K_U-1)+1 |
+| 4 | 64 | `parameters` | `bytes[64]` | little | spec | U[-1]-U[-2] |
+| 68 | 3 | `flags` | `bytes[3]` | little | spec | Preserve the fixed flag, continuation and suffix bytes. |
+| 71 | 64 | `continuation` | `bytes[64]` | little | spec | eight zero `f64le` values |
+| 135 | 6 | `suffix` | `bytes[6]` | little | spec | 01 00 01 00 07 07 |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
@@ -712,4 +729,4 @@ Parsed by:
 | Trim records and the standard spine (§5.2, §5.3) | §5.3 | Every count in a trim packet is a variable-width `count()` atom and the spine tables are count-driven, so no field sits at a fixed offset. The stride-8 FBB row and the 15-byte vertex record are the exceptions and are tabled. |
 | Analytic payload slots of `b2 03 19/28/29/2a/2b` (§5.9-§5.14) | §5.9 | These records state a total payload length and an ordered f64 slot list, but no per-slot byte offsets, and the leading compact record id has variable width in the circle case. They are slot layouts rather than byte layouts. |
 | `7C09` inline object records and `7C0A` atom payloads (§7.3) | §7.3 | Reference tokens are one or two bytes depending on value, and the head forms vary in arity, so every later field position depends on preceding values. |
-| Freeform surface and curve cores `a5 03 34` / `a5 03 32` (§6.1, §6.2) | §6.1 | Knot counts and pole grids drive every later position. The two fixed tails the spec states (141 bytes for an `a8 03 34` elided-pole record and 59 bytes for an `a8 03 32` jet) sit at count-dependent offsets. |
+| Freeform surface and curve cores `a5 03 34` / `a5 03 32` (§6.1, §6.2) | §6.1 | Knot counts and pole grids drive every later position. The tail starts at a count-dependent offset. The fixed 141-byte surface tail has a separate relative layout; the 59-byte `a8 03 32` jet tail starts after the variable jet grid. |

@@ -389,11 +389,12 @@ pub(super) fn try_decode_freeform_surfaces(
             Ok(sources) => sources,
             Err(error) => return Some(Err(error)),
         };
-        let consolidated_records =
-            match crate::wire::records::consolidated_records_in_sources(ctx, &scan.data, sources) {
-                Ok(records) => records,
-                Err(error) => return Some(Err(error)),
-            };
+        let consolidated_records = match crate::wire::records::consolidated_records_in_sources(
+            ctx, &scan.data, &sources,
+        ) {
+            Ok(records) => records,
+            Err(error) => return Some(Err(error)),
+        };
         let mut b5_graph = match crate::families::b5::graph::parse_from_records_budgeted(
             ctx,
             &object_source,
@@ -546,7 +547,13 @@ pub(super) fn try_decode_freeform_surfaces(
         let typed_vertex_incidence_roster_member_count =
             typed_vertex_incidence_rosters.values().map(Vec::len).sum();
         let mut fallback_surfaces = if b5_graph.is_none() {
-            match freeform_surface_carriers(ctx, &scan.data, &consolidated_records, refusal) {
+            match freeform_surface_carriers(
+                ctx,
+                &scan.data,
+                &sources,
+                &consolidated_records,
+                refusal,
+            ) {
                 Ok(surfaces) => Some(surfaces),
                 Err(error) => return Some(Err(error)),
             }
@@ -707,8 +714,13 @@ pub(super) fn try_decode_freeform_surfaces(
             let surfaces = match fallback_surfaces.take() {
                 Some(surfaces) => surfaces,
                 None => {
-                    match freeform_surface_carriers(ctx, &scan.data, &consolidated_records, refusal)
-                    {
+                    match freeform_surface_carriers(
+                        ctx,
+                        &scan.data,
+                        &sources,
+                        &consolidated_records,
+                        refusal,
+                    ) {
                         Ok(surfaces) => surfaces,
                         Err(error) => return Some(Err(error)),
                     }
@@ -1531,10 +1543,12 @@ fn attach_standalone_wires(
 fn freeform_surface_carriers(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
+    sources: &[Vec<crate::wire::records::SourceExtent>],
     records: &[crate::wire::records::ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<FreeformSurfaceCarrier>, cadmpeg_core::CodecError> {
-    let resolved = crate::families::a5a8::records::resolved_a8_surfaces(ctx, data, refusal)?;
+    let resolved =
+        crate::families::a5a8::records::a8_surfaces_in_sources(ctx, data, sources, refusal)?;
     let a5 = crate::families::a5a8::records::a5_surfaces_from_records(ctx, data, records, refusal)?;
     let mut surfaces = Vec::new();
     for surface in resolved.into_iter().chain(a5) {
@@ -1834,14 +1848,19 @@ fn append_consolidated_line_profiles(
 pub(super) fn append_freeform_surface_pools(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
-    data: &[u8],
+    source: (&[u8], &[Vec<crate::wire::records::SourceExtent>]),
     records: &[crate::wire::records::ConsolidatedRecord],
     surface_alias_tags: &HashMap<u32, Option<u32>>,
     refusal: &mut crate::nurbs::LaneRefusals,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<ConsolidatedCurveBindingCounts, cadmpeg_core::CodecError> {
-    let mut surfaces =
-        crate::families::a5a8::records::resolved_a8_surfaces(admission.context(), data, refusal)?;
+    let (data, sources) = source;
+    let mut surfaces = crate::families::a5a8::records::a8_surfaces_in_sources(
+        admission.context(),
+        data,
+        sources,
+        refusal,
+    )?;
     let a5 = crate::families::a5a8::records::a5_surfaces_from_records(
         admission.context(),
         data,
@@ -4299,7 +4318,10 @@ mod tests {
             let Err(error) = append_freeform_surface_pools(
                 &mut ir,
                 &mut AnnotationBuilder::new(),
-                &bytes,
+                (
+                    &bytes,
+                    &[vec![crate::wire::records::SourceExtent::whole(&bytes)]],
+                ),
                 &crate::wire::records::consolidated_records(&bytes),
                 &HashMap::new(),
                 &mut crate::nurbs::LaneRefusals::new(),
@@ -4829,7 +4851,10 @@ mod tests {
             append_freeform_surface_pools(
                 &mut ir,
                 &mut annotations,
-                &bytes,
+                (
+                    &bytes,
+                    &[vec![crate::wire::records::SourceExtent::whole(&bytes)]],
+                ),
                 &records,
                 &HashMap::new(),
                 &mut crate::nurbs::LaneRefusals::new(),
@@ -4866,7 +4891,10 @@ mod tests {
             append_freeform_surface_pools(
                 &mut ir,
                 &mut annotations,
-                &bytes,
+                (
+                    &bytes,
+                    &[vec![crate::wire::records::SourceExtent::whole(&bytes)]],
+                ),
                 &records,
                 &HashMap::new(),
                 &mut crate::nurbs::LaneRefusals::new(),
@@ -4907,7 +4935,10 @@ mod tests {
             append_freeform_surface_pools(
                 &mut pooled,
                 &mut AnnotationBuilder::new(),
-                &bytes,
+                (
+                    &bytes,
+                    &[vec![crate::wire::records::SourceExtent::whole(&bytes)]],
+                ),
                 &records,
                 &HashMap::new(),
                 &mut crate::nurbs::LaneRefusals::new(),
@@ -4942,7 +4973,10 @@ mod tests {
             append_freeform_surface_pools(
                 &mut ir,
                 &mut AnnotationBuilder::new(),
-                &bytes,
+                (
+                    &bytes,
+                    &[vec![crate::wire::records::SourceExtent::whole(&bytes)]],
+                ),
                 &crate::wire::records::consolidated_records(&bytes),
                 &HashMap::new(),
                 &mut crate::nurbs::LaneRefusals::new(),
@@ -4976,6 +5010,7 @@ mod tests {
             freeform_surface_carriers(
                 ctx,
                 &bytes,
+                &[vec![crate::wire::records::SourceExtent::whole(&bytes)]],
                 &records,
                 &mut crate::nurbs::LaneRefusals::new(),
             )

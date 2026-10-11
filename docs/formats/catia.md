@@ -643,41 +643,25 @@ When these clamped NURBS or bounded spatial-circle carriers are the complete geo
 
 Frame: `a8 <frame_flag> <cls> <payload_len:u32le @+3> <object_id:u32le @+7> <payload @+11>`, where `frame_flag` is `03`, `13`, or `83`. The family stores an inline `object_id` at `+7`, explicit multiplicity vectors, mixed degrees, and an inline rational weight grid after the poles. `a8 <frame_flag> 32` stores the same complete degree-5 rolling-ball value/derivative jet and exact procedural surface as the consolidated `a5 03 32` form, followed by a fixed 59-byte tail. Its knots are strictly increasing. The endpoint multiplicities are six and every interior multiplicity is one or three. A class-`20` frame stores a pcurve under every valid frame flag.
 
-For `a8 <frame_flag> 34`, the lead byte, U degree/flags, finite strictly increasing distinct U knots and multiplicities, V degree/flags, finite strictly increasing distinct V knots and multiplicities, and mode form a complete parameter-lattice header. The pole counts are `sum(multiplicities) - degree - 1` independently in U and V. Header validity is independent of whether the following pole representation is the inline XYZ grid.
+Reconstruct the logical stream from its descriptor extents before reading an A8 frame. Physical extent order does not define record order. A frame can cross an extent boundary, and the next logical extent can start at a lower physical address.
 
-The elided-pole form places a fixed 141-byte range/affine/extrapolation tail immediately after the mode byte. This form has the following byte layout:
+For `a8 <frame_flag> 34`, the lead byte, U degree/flags, finite strictly increasing distinct U knots and multiplicities, V degree/flags, finite strictly increasing distinct V knots and multiplicities, and mode form a complete parameter-lattice header. The pole counts are `sum(multiplicities) - degree - 1` independently in U and V. The `nu*nv*24` inline XYZ bytes follow mode. Mode `05` adds `nu*nv*8` inline weight bytes after the XYZ grid.
 
-| Tail offset | Width | Value                                                  |
-| ----------- | ----: | ------------------------------------------------------ |
-| `+0`        |     1 | `05`                                                   |
-| `+1`        |     1 | `4n+1` control                                         |
-| `+2`        |     1 | `05`                                                   |
-| `+3`        |     1 | `4n+1` control                                         |
-| `+4`        |     8 | `f64le` zero                                           |
-| `+12`       |     8 | finite positive `f64le`                                |
-| `+20`       |     8 | `f64le` zero                                           |
-| `+28`       |     8 | finite positive `f64le`, equal to `last(V) - first(V)` |
-| `+36`       |     8 | `f64le` one                                            |
-| `+44`       |     8 | `f64le` zero                                           |
-| `+52`       |     8 | `f64le` one                                            |
-| `+60`       |     8 | `f64le` zero                                           |
-| `+68`       |     3 | `01 01 01`                                             |
-| `+71`       |    64 | zero bytes                                             |
-| `+135`      |     6 | `01 00 01 00 07 07`                                    |
+The fixed 141-byte terminal-span tail follows the complete inline grid. Its controls contain the U lower/upper patch identifiers, then the V lower/upper patch identifiers. The lower identifiers are one; the upper identifiers select the last distinct-knot span on each axis. The lower local coordinates are zero on the first patch; the upper local coordinates are the final knot-span lengths on the last patch. Its affine pairs are identity pairs.
 
-The first four bytes are two independent control lanes: `+1` is the U-side
-control and `+3` is the V-side control. The eight f64 lanes are, in order,
-`u_min`, `u_max`, `v_min`, `v_max`, `coef_u`, `shift_u`, `coef_v`, and
-`shift_v`. The active chart applies `u_after = coef_u * u_before + shift_u`
-and `v_after = coef_v * v_before + shift_v`; the two intervals are the active
-U and V limits. The three flag bytes select the extrapolation branch. The
-64-byte continuation is eight zero f64 values in this fixed elided form. The
-decoder retains these fields as one `A8SurfaceParameterTail` rather than
-validating them as unrelated literals.
+| Tail offset | Width | Value |
+| ----------- | ----: | ----- |
+| `+0` | 4 | `05, 4*(K_U-1)+1, 05, 4*(K_V-1)+1` |
+| `+4` | 64 | `8*f64le`: `0, U[-1]-U[-2], 0, V[-1]-V[-2], 1, 0, 1, 0` |
+| `+68` | 3 | `01 01 01` |
+| `+71` | 64 | eight zero `f64le` values |
+| `+135` | 6 | `01 00 01 00 07 07` |
+
+Apply the patch identifiers when interpreting the local coordinates. The local coordinate pairs alone are not global surface limits. The full knot domain comes from the knot vectors. Preserve the fixed flag, continuation and suffix bytes.
 
 The inline-pole form ends after its XYZ pole grid and optional rational weight grid, or places a complete 133-byte, 141-byte, or 142-byte structured surface tail after that grid. The inline tail uses the common A5 tail grammar in §6.1: its range and affine lanes are finite and ordered, both affine coefficients are nonzero, its flag lane is `01 01 01` or `05 05 01`, and its continuation and suffix close one of the three defined lengths. The 133-byte form has seven zero continuation values and suffix `01 00 01 00 07 07`. The 141-byte form has eight finite continuation values and either six-byte suffix. The 142-byte form has eight finite continuation values and suffix `<4n+1> 00 09 01 <4n+1> 07 07`. Flag and suffix choices are independent in the 141-byte and 142-byte forms.
 
-The byte after the tail, or after an inline grid when no tail is present, is the end of the `a8` frame or the first owned A/B-family child record. The elided form carries no inline XYZ pole grid or rational-weight grid. Its external pole allocation is an unframed `nu×nv` XYZ grid, followed by the rational-weight grid when `mode=0x05`, occupying the complete gap between a length-closed `b5 <frame_flag> 21` pcurve and the next A/B-family frame. The pcurve's support reference must equal the surface object id. Grid cardinality comes from the elided surface header. A grid binds only when that support reference, its byte length, finite coordinate payload, and following frame boundary select one allocation.
+The byte after the tail, or after an inline grid when no tail is present, is the end of the `a8` frame or the first owned B5 child record. The complete pole and weight grids lie inside the declared logical frame. A pcurve reference does not bind an unframed byte gap to a surface grid.
 
 **In-stream object-id resolver:** `a8 <frame_flag>` and `b5 <frame_flag>` records hold an inline `object_id`; references are compact tokens selecting an id width (`18`→u16, `38`→u24). Binding is an **in-stream walk** (index `object_id → record` while walking; resolve each ref), not a byte-offset directory. Each contiguous object-record run in one reconstructed logical stream has an independent object-id namespace. A run does not resolve references through another logical-stream descriptor or another run, except for the explicitly referenced isolated geometry frame admitted below. The `object_id` is a dense creation-order ordinal (monotonic with offset, with clean segment resets), so ids can equivalently be assigned by counting objects.
 
@@ -688,8 +672,8 @@ B5 frames. The flag byte is `03`, `13`, or `83`; topology-bearing frames use
 `03`, while alternate-flag records can bridge adjacent topology frames in the
 same run. Starting at a frame boundary, advance by the declared frame length;
 the next byte begins another A8/B5 frame, a complete `05 08 01` coordinate
-allocation, a support-bound external A8 pole allocation, or the run terminator.
-The two complete allocation forms do not end the surrounding object-id
+allocation, or the run terminator.
+A complete coordinate allocation does not end the surrounding object-id
 namespace. Any other non-frame byte ends the run. Marker bytes inside an
 accepted frame payload do not start peer records. An A8 wrapper may
 own a nested length-closed B5 run; that run is walked recursively within the A8
@@ -743,7 +727,7 @@ Its first control can differ from `0d`, and its remaining controls can differ fr
 - `b5 03 05` (vertex incidence roster): payload `<0x80 + count> incidence_ref{count}` names every class `06` parameter incidence at the vertex.
 - `b5 03 06` (parameter incidence): payload `<0x80 + count> curve_ref{count} <0x80 + count> (<local_parameter:f64le> <arc_number:compact-u32>){count}`. Each finite local parameter and compact arc number form one `CATCrvParam` station, index-aligned with its curve reference. A station orders by arc number first and local parameter within one arc. A local scalar can decrease when its arc number increases. Repeated references resolve only when both the local parameter and arc number agree; conflicting pairs leave the station unassigned. References to typed pcurves evaluate their selected stations and lift through the pcurve support to the vertex locus.
 - `b2/b3/b4 03 5e` (width-coded edge node): after the B-family payload length is one canonical `compact_int` header token whose encoded width equals the width declared by the record lead. The payload is `curve_ref start_vertex_ref end_vertex_ref start_parameter_ref end_parameter_ref <terminal>`, with all five references encoded by `allocation_ref`. The terminal is one single-byte `allocation_ref` with value/form pairs `(0,backward_distance)`, `(0,selector2)`, `(8,backward_distance)`, `(8,selector2)`, `(9,backward_distance)`, `(10,backward_distance)`, or `(10,selector2)`, encoded respectively as `01`, `02`, `21`, `22`, `25`, `29`, or `2a`. It is retained as its raw byte and decoded value/form, and exhausts the payload. The second and third references are native vertex identities in the compact allocation namespace. The terminal reference is not one of the five payload references.
-- An `a8 03 34` surface with an unresolved indirect pole program remains an identity-bearing surface node. Its object id participates in face, loop, and pcurve references and its payload is retained byte-exactly; unresolved carrier geometry does not erase those topology references.
+- An `a8 03 34` surface with an unresolved pole data remains an identity-bearing surface node. Its object id participates in face, loop, and pcurve references and its payload is retained byte-exactly; unresolved carrier geometry does not erase those topology references.
 - `b5 03 27/28/29/2a/2b/2d` analytic surfaces: plane origin+unit chart basis, cylinder origin+unit frame+radius+angular gauge, cone apex+orthonormal frame+half-angle+slant chart, sphere center+radius-scaled frame, torus center+orthonormal frame+major/minor radii, and revolution profile reference+axis origin+direction+angular gauge. The profile reference uses the same positional-byte token forms as loop members; the axis fields immediately follow its variable-width token.
 
 For `b5 03 0e`, the 73-byte payload is `80 point:3f64le direction:3f64le one:f64le parameter_range:2f64le`. The direction is unit length, the fixed scalar is exactly `1`, and the parameter interval is strictly increasing. The chart is `P(U)=point+U·direction`.

@@ -474,13 +474,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the construction to transfer the result without using an incorrect cone offset.
 
-### OS-15. Class-`0x34` elided pole program
-
-**Question.** What does the fixed 141-byte program of an `a8 03 34` freeform surface encode?
-
-**Known.** `catia.md` §6.1 "Payload: `degU` and `K_U`" and §6.7 "The elided-pole form places the fixed 141-byte" define the header lanes, the byte layout of the program, and the external pole allocation. The layout table gives a literal value or a shape test for each lane. It assigns a role to one lane only: the `f64le` at tail offset `+28` equals `last(V) - first(V)`. The specification names the program a "range/affine/extrapolation tail" and does not say which lanes hold the range, which hold the affine part, and which hold the extrapolation.
-
-**Need.** We must know the lane roles to validate the program against the surface it belongs to, and to write it.
 
 ## 5. Zero-entity `a9 03`
 
@@ -528,13 +521,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know its role to classify and write the loop.
 
-### FV-09. External pole-grid ownership
-
-**Question.** Which identity relation binds an elided-pole `a8 03 34` carrier to its external pole grid?
-
-**Known.** `catia.md` §6.6 defines the elided-pole carrier and external pole allocation. Object-stream topology independently defines pcurve, edge, loop, and face ownership.
-
-**Need.** We must define the grid identity and scope that bind the carrier, its pcurves, and its topology to one external pole allocation.
 
 ### FV-10. Float-packed fixture validity
 

@@ -427,3 +427,25 @@ pub(crate) mod b5_loop_numeric_terminal {
     /// Offset of `bounds` (`f32[6]`, little-endian). Spec §6.7.
     pub(crate) const BOUNDS: usize = 38;
 }
+
+/// Byte offsets for the `surface_terminal_span_tail` record.
+///
+/// Spec §6.6. Record length 141 B.
+///
+/// ```text
+/// Tail-relative offsets. The generic 133-byte and 142-byte surface tails share the prefix through offset 71.
+/// ```
+pub(crate) mod surface_terminal_span_tail {
+    /// Record length in bytes. Spec §6.6.
+    pub(crate) const LEN: usize = 141;
+    /// Offset of `controls` (`bytes[4]`). Spec §6.6.
+    pub(crate) const CONTROLS: usize = 0;
+    /// Offset of `parameters` (`bytes[64]`). Spec §6.6.
+    pub(crate) const PARAMETERS: usize = 4;
+    /// Offset of `flags` (`bytes[3]`). Spec §6.6.
+    pub(crate) const FLAGS: usize = 68;
+    /// Offset of `continuation` (`bytes[64]`). Spec §6.6.
+    pub(crate) const CONTINUATION: usize = 71;
+    /// Offset of `suffix` (`bytes[6]`). Spec §6.6.
+    pub(crate) const SUFFIX: usize = 135;
+}

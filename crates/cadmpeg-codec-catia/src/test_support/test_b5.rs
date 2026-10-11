@@ -457,14 +457,21 @@ fn append_b5_closed_triangle_native_vertex_chain(
     }
 }
 
-/// Build an elided-pole freeform surface with one external grid allocation and
+/// Build an inline-pole freeform surface with its structured tail and
 /// the complete native endpoint chain required to transfer its face.
-pub(crate) fn a8_elided_surface_stream_with_native_vertex_chain() -> Vec<u8> {
+pub(crate) fn a8_inline_surface_stream_with_native_vertex_chain() -> Vec<u8> {
     const SURFACE: u32 = 100;
 
     let mut bytes = a8_surface_stream();
     bytes.truncate(59);
     bytes[7..11].copy_from_slice(&SURFACE.to_le_bytes());
+    for u in 0..3 {
+        for v in 0..3 {
+            for coordinate in [f64::from(u) * 0.5, f64::from(v) * 0.5, 0.0] {
+                bytes.extend_from_slice(&le_f64(coordinate));
+            }
+        }
+    }
     bytes.extend_from_slice(&a8_surface_tail());
     let payload_len = u32::try_from(bytes.len() - 11).expect("small A8 payload");
     bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
@@ -479,13 +486,6 @@ pub(crate) fn a8_elided_surface_stream_with_native_vertex_chain() -> Vec<u8> {
             [1.0, 0.0],
         ),
     );
-    for u in 0..3 {
-        for v in 0..3 {
-            for coordinate in [f64::from(u) * 0.5, f64::from(v) * 0.5, 0.0] {
-                bytes.extend_from_slice(&le_f64(coordinate));
-            }
-        }
-    }
     append_b5_record(
         &mut bytes,
         0x18,

@@ -2392,7 +2392,7 @@ fn try_decode_standard_population(
         Err(error) => return Some(Err(error)),
     };
     let consolidated_records = match crate::wire::records::consolidated_records_in_sources(
-        ctx, &scan.data, sources,
+        ctx, &scan.data, &sources,
     ) {
         Ok(records) => records,
         Err(error) => return Some(Err(error)),
@@ -3187,7 +3187,7 @@ fn try_decode_standard_population(
     let mut consolidated_curve_bindings = match append_freeform_surface_pools(
         &mut ir,
         &mut annotations,
-        &scan.data,
+        (&scan.data, &sources),
         &consolidated_records,
         surface_alias_tags,
         refusal,

@@ -1427,7 +1427,7 @@ anchor = "Its ordinary references use `80..d0 → byte−80`"
 
 [[not_applicable]]
 area = "Freeform surface and curve cores `a5 03 34` / `a5 03 32` (§6.1, §6.2)"
-reason = "Knot counts and pole grids drive every later position. The two fixed tails the spec states (141 bytes for an `a8 03 34` elided-pole record and 59 bytes for an `a8 03 32` jet) sit at count-dependent offsets."
+reason = "Knot counts and pole grids drive every later position. The tail starts at a count-dependent offset. The fixed 141-byte surface tail has a separate relative layout; the 59-byte `a8 03 32` jet tail starts after the variable jet grid."
 section = "6.1"
 anchor = "### 6.1 `a5 03 34` freeform surface (consolidated class)"
 
@@ -1961,3 +1961,47 @@ offset = 38
 type = "f32[6]"
 source = "spec"
 anchor = "| `+38` | `6×f32le` | Cartesian X low/high, Y low/high, Z low/high |"
+
+[[record]]
+name = "surface_terminal_span_tail"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/a5a8/records.rs"
+kind = "byte"
+section = "6.6"
+anchor = "The fixed 141-byte terminal-span tail follows the complete inline grid."
+size = 141
+note = "Tail-relative offsets. The generic 133-byte and 142-byte surface tails share the prefix through offset 71."
+
+[[record.field]]
+name = "controls"
+offset = 0
+type = "bytes[4]"
+source = "spec"
+anchor = "4*(K_U-1)+1"
+
+[[record.field]]
+name = "parameters"
+offset = 4
+type = "bytes[64]"
+source = "spec"
+anchor = "U[-1]-U[-2]"
+
+[[record.field]]
+name = "flags"
+offset = 68
+type = "bytes[3]"
+source = "spec"
+anchor = "Preserve the fixed flag, continuation and suffix bytes."
+
+[[record.field]]
+name = "continuation"
+offset = 71
+type = "bytes[64]"
+source = "spec"
+anchor = "eight zero `f64le` values"
+
+[[record.field]]
+name = "suffix"
+offset = 135
+type = "bytes[6]"
+source = "spec"
+anchor = "01 00 01 00 07 07"

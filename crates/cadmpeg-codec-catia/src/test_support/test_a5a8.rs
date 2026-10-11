@@ -67,7 +67,7 @@ pub(crate) fn a8_surface_stream_with_u_count(u_count: u32) -> Vec<u8> {
 
 pub(crate) fn a8_surface_tail() -> Vec<u8> {
     let mut tail = vec![0; 141];
-    tail[..4].copy_from_slice(&[0x05, 0x21, 0x05, 0x05]);
+    tail[..4].copy_from_slice(&[0x05, 0x05, 0x05, 0x05]);
     for (offset, value) in [
         (4, 0.0),
         (12, 1.0),
@@ -93,29 +93,31 @@ pub(crate) fn a8_inline_tail_surface_stream() -> Vec<u8> {
     bytes
 }
 
-pub(crate) fn a8_elided_surface_stream() -> Vec<u8> {
+pub(crate) fn a8_surface_stream_with_pcurve() -> Vec<u8> {
     const SURFACE: u32 = 100;
 
     let mut bytes = a8_surface_stream();
     bytes.truncate(59);
     bytes[7..11].copy_from_slice(&SURFACE.to_le_bytes());
-    bytes.extend_from_slice(&a8_surface_tail());
-    let payload_len = u32::try_from(bytes.len() - 11).unwrap();
-    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
-
-    let mut pcurve_payload = vec![0; 58];
-    pcurve_payload[0] = 0x81;
-    pcurve_payload[1] = 0x18;
-    pcurve_payload[2..4]
-        .copy_from_slice(&(u16::try_from(SURFACE).expect("fixture value fits u16")).to_le_bytes());
-    pcurve_payload[57] = 0x07;
-    bytes.extend_from_slice(&[0xb5, 0x03, 0x21, 58, 1, 0, 0, 0]);
-    bytes.extend_from_slice(&pcurve_payload);
     for point in 0..9 {
         for coordinate in [f64::from(point), f64::from(point % 3), 2.0] {
             bytes.extend_from_slice(&coordinate.to_le_bytes());
         }
     }
+    bytes.extend_from_slice(&a8_surface_tail());
+    let payload_len = u32::try_from(bytes.len() - 11).unwrap();
+    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+
+    crate::test_support::test_b5::append_b5_record(
+        &mut bytes,
+        0x21,
+        1,
+        &crate::test_support::test_b5::b5_linear_pcurve_payload(
+            u16::try_from(SURFACE).expect("fixture value fits u16"),
+            [0.0, 0.0],
+            [1.0, 0.0],
+        ),
+    );
     bytes.extend_from_slice(&[0xb5, 0x03, 0x5e, 0, 2, 0, 0, 0, 0, 0]);
     bytes
 }
