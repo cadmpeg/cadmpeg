@@ -185,10 +185,6 @@ fn group(record_index: u32, member: u32) -> DesignConstructionOperandGroup {
     .expect("construction operand group")
 }
 
-
-
-
-
 fn recipe_edge_operand(
     record_index: u32,
     changed_boundary_edge_slots: &[i64],
@@ -461,10 +457,6 @@ fn recipe_reference(candidate_edges: &[i64]) -> DesignRecipeReference {
     }
 }
 
-
-
-
-
 #[test]
 fn unstructured_local_support_face_references_do_not_resolve_an_edge() {
     let context = |reference_ordinal, shared_edge_slots: &[i64]| {
@@ -729,7 +721,6 @@ fn compact_identity_group_uses_selected_recipe_context_boundaries() {
             ]
     ));
 }
-
 
 #[test]
 fn compact_identity_group_does_not_displace_a_possible_support_group() {
@@ -1628,7 +1619,6 @@ mod scalar_edits;
 
 mod membership;
 
-
 mod text_comparison;
 
 mod state_consensus;
@@ -1652,9 +1642,9 @@ mod fixed_variable_radius_lifetimes;
 mod main_query_lifetimes;
 
 mod incidence_queries;
+mod intersection_tails;
 mod reference_queries;
 mod terminal_queries;
-mod intersection_tails;
 
 mod surface_patch_recipes;
 

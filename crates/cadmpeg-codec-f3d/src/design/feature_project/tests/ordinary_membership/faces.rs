@@ -225,7 +225,10 @@ fn assert_identity(lane: Lane) {
             }
             (Lane::Offset, Selection::Face(FaceSelection::Resolved { faces, native })) => {
                 assert_eq!(
-                    faces.iter().map(cadmpeg_ir::ids::FaceId::as_str).collect::<Vec<_>>(),
+                    faces
+                        .iter()
+                        .map(cadmpeg_ir::ids::FaceId::as_str)
+                        .collect::<Vec<_>>(),
                     [
                         "f3d:brep:entity#42",
                         "f3d:brep:entity#43",
@@ -247,8 +250,14 @@ fn assert_identity(lane: Lane) {
                 assert_eq!(
                     native.as_slice(),
                     &[
-                        crate::design::feature_project::extrude::test_support::profile_group(100, 0).id,
-                        crate::design::feature_project::extrude::test_support::profile_group(101, 1).id,
+                        crate::design::feature_project::extrude::test_support::profile_group(
+                            100, 0
+                        )
+                        .id,
+                        crate::design::feature_project::extrude::test_support::profile_group(
+                            101, 1
+                        )
+                        .id,
                     ]
                 );
             }
@@ -305,8 +314,14 @@ fn membership_single_face_skips_empty_query_in_all_direct_and_grouped_lanes() {
     policy.limits.max_work_units = u64::MAX;
     for lane in [Lane::Full, Lane::Partial, Lane::Thread, Lane::Offset] {
         let operations = match lane {
-            Lane::Full => ["visit F3D direct historical face membership", "compare F3D direct historical face identity"],
-            Lane::Partial => ["visit F3D direct partial face membership", "compare F3D direct partial face identity"],
+            Lane::Full => [
+                "visit F3D direct historical face membership",
+                "compare F3D direct historical face identity",
+            ],
+            Lane::Partial => [
+                "visit F3D direct partial face membership",
+                "compare F3D direct partial face identity",
+            ],
             _ => lane.operations(),
         };
         for operation in operations {

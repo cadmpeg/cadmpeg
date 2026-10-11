@@ -14,7 +14,6 @@ pub(super) fn unique_face_operand<'ir>(
     scope_record_index: u32,
     record_index: u32,
 ) -> Result<Option<&'ir DesignFaceOperand>, CodecError> {
-
     if operands.is_empty() {
         return Ok(None);
     }

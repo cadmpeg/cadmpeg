@@ -102,12 +102,12 @@ fn plane_query_first_match_keeps_native_long_suffix_unvisited() {
             assert_eq!(ctx.resource_refusal(), None);
             ctx.finish_session().unwrap();
         } else {
-            let original = refusal(&
-                result.unwrap_err(),
+            let original = refusal(
+                &result.unwrap_err(),
                 "compare F3D plane surface identity",
                 cap,
             );
-            
+
             assert!(
                 matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
             );
@@ -184,4 +184,3 @@ fn plane_query_duplicate_carrier_keeps_first_source_plane() {
     assert_eq!(serde_json::to_value(&planes).unwrap(), before);
     ctx.finish_session().unwrap();
 }
-

@@ -143,7 +143,6 @@ fn spatial_curve_constant_geometry_needs_no_work() {
         assert_eq!(sketch_curve_is_spatial(&ctx, curve).unwrap(), *expected);
     }
     assert_eq!(ctx.resource_refusal(), None);
-
 }
 
 #[test]
@@ -249,8 +248,8 @@ fn spatial_point_stream_refuses_before_owner_backing_or_publication() {
     let arena = DecodeArena::new();
     let policy = policy(1);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let original = refusal(&
-        spatial_geometry_owners(&ctx, std::slice::from_ref(&point), &[]).unwrap_err(),
+    let original = refusal(
+        &spatial_geometry_owners(&ctx, std::slice::from_ref(&point), &[]).unwrap_err(),
         "resolve F3D spatial point owner stream",
         1,
     );
@@ -309,8 +308,8 @@ fn spatial_owner_nurbs_refusal_precedes_stream_search_and_backing() {
     let arena = DecodeArena::new();
     let policy = policy(1);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let original = refusal(&
-        spatial_geometry_owners(&ctx, &[], std::slice::from_ref(&curve)).unwrap_err(),
+    let original = refusal(
+        &spatial_geometry_owners(&ctx, &[], std::slice::from_ref(&curve)).unwrap_err(),
         "classify F3D sketch NURBS poles",
         1,
     );

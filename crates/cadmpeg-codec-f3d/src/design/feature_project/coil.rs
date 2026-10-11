@@ -1,16 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Coil section, extent, and result projection.
 
-use super::{design_length,design_positive_length,feature_stream_matches};
+use super::{design_length, design_positive_length, feature_stream_matches};
 use crate::design::face_resolve::design_angle;
 use crate::ids;
 use crate::layout::coil_long_scope_fixed_prologue as coil_long;
-use crate::records::{feature::{coil::{DesignCoilExtent,DesignCoilSection,DesignCoilSectionPlacement},
-    extrude::DesignExtrudeOperation,scope::DesignParameterScope},parameters::DesignParameter,
-    topology::{construction::DesignConstructionOperandGroup,extrude_selection::DesignOperandRole}};
-use cadmpeg_core::decode::{DecodeContext,u64_from_index};
+use crate::records::{
+    feature::{
+        coil::{DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement},
+        extrude::DesignExtrudeOperation,
+        scope::DesignParameterScope,
+    },
+    parameters::DesignParameter,
+    topology::{
+        construction::DesignConstructionOperandGroup, extrude_selection::DesignOperandRole,
+    },
+};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::math::{Point3,Vector3};
+use cadmpeg_ir::math::{Point3, Vector3};
 
 pub(super) fn project_coil(
     ctx: &DecodeContext<'_>,
@@ -23,7 +31,9 @@ pub(super) fn project_coil(
         CoilSectionPlacement, FeatureDefinition, FeatureOperation,
     };
 
-    if !matches!(parameters.len(), 4 | 5) { return Ok(None); }
+    if !matches!(parameters.len(), 4 | 5) {
+        return Ok(None);
+    }
     let parsed = (|| {
         let unique = |kind: &str| {
             let mut matches = parameters.iter().filter_map(|(_, parameter)| {
@@ -132,36 +142,51 @@ pub(super) fn project_coil(
             operation,
         ))
     })();
-    let Some((diameter, extent, taper, section, section_placement, operation)) =
-        parsed
-    else {
+    let Some((diameter, extent, taper, section, section_placement, operation)) = parsed else {
         return Ok(None);
     };
-    let stream = or_none!(ids::native_stream_charged(ctx, &scope.id, "f3d Coil scope stream")?);
-        let first_body_group = if operation == DesignExtrudeOperation::NewBody {
-            // The long Coil form carries one role-4 construction group for its
-            // generated body even when the result is a new body. It is not a
-            // Boolean target and must not suppress the typed result.
-            None
+    let stream = or_none!(ids::native_stream_charged(
+        ctx,
+        &scope.id,
+        "f3d Coil scope stream"
+    )?);
+    let first_body_group = if operation == DesignExtrudeOperation::NewBody {
+        // The long Coil form carries one role-4 construction group for its
+        // generated body even when the result is a new body. It is not a
+        // Boolean target and must not suppress the typed result.
+        None
+    } else {
+        let expected_role = if scope.coil_operation_offset()
+            == scope
+                .byte_offset()
+                .checked_add(u64_from_index(coil_long::OPERATION))
+        {
+            DesignOperandRole::BODIES_A
         } else {
-            let expected_role = if scope.coil_operation_offset()
-                == scope
-                    .byte_offset()
-                    .checked_add(u64_from_index(coil_long::OPERATION))
-            {
-                DesignOperandRole::BODIES_A
-            } else {
-                DesignOperandRole::BODIES_B
-            };
-            let mut source = construction_groups.iter();
-            let mut body_groups = || ctx.find_by(&mut source, |group| {
-                Ok(feature_stream_matches(ctx, &group.id, Some(stream), "f3d Coil body group stream")?
-                    && group.scope_record_index == scope.record_index && group.role() == expected_role)
-            }, "f3d Coil body group source");
-            let first_body_group = body_groups()?;
-            if body_groups()?.is_some() { return Ok(None); }
-            first_body_group
+            DesignOperandRole::BODIES_B
         };
+        let mut source = construction_groups.iter();
+        let mut body_groups = || {
+            ctx.find_by(
+                &mut source,
+                |group| {
+                    Ok(feature_stream_matches(
+                        ctx,
+                        &group.id,
+                        Some(stream),
+                        "f3d Coil body group stream",
+                    )? && group.scope_record_index == scope.record_index
+                        && group.role() == expected_role)
+                },
+                "f3d Coil body group source",
+            )
+        };
+        let first_body_group = body_groups()?;
+        if body_groups()?.is_some() {
+            return Ok(None);
+        }
+        first_body_group
+    };
     let result = match (operation, first_body_group) {
         (DesignExtrudeOperation::NewBody, None) => CoilResult::NewBody {},
         (operation, Some(group)) => CoilResult::Boolean {
@@ -223,7 +248,6 @@ pub(super) fn project_coil(
         result,
     })))
 }
-
 
 #[cfg(test)]
 #[allow(

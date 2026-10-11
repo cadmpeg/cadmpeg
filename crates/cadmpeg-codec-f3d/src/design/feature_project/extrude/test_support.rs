@@ -1,13 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::records::topology::construction::{
- DesignConstructionOperandGroup,DesignConstructionOperandGroupDraft,
- DesignConstructionOperandGroupFrame,DesignConstructionOperandGroupFrameDraft,
- DesignConstructionOperandRole,
+use crate::records::feature::extrude::{
+    DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
 };
-use crate::records::feature::extrude::{DesignExtrudeExtent,DesignExtrudeOperation,DesignExtrudePrologue,DesignExtrudeStart};
-use crate::records::feature::scope::{DesignExtrudeScope,DesignParameterScope,DesignParameterScopeDraft,DesignScopePayload};
+use crate::records::feature::scope::{
+    DesignExtrudeScope, DesignParameterScope, DesignParameterScopeDraft, DesignScopePayload,
+};
+use crate::records::topology::construction::{
+    DesignConstructionOperandGroup, DesignConstructionOperandGroupDraft,
+    DesignConstructionOperandGroupFrame, DesignConstructionOperandGroupFrameDraft,
+    DesignConstructionOperandRole,
+};
 
-pub(in crate::design::feature_project) fn profile_group(index: u32, ordinal: u32) -> DesignConstructionOperandGroup {
+pub(in crate::design::feature_project) fn profile_group(
+    index: u32,
+    ordinal: u32,
+) -> DesignConstructionOperandGroup {
     DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
         id: format!("f3d:Design/BulkStream.dat:operand-group#{index}"),
         scope_record_index: 12,
@@ -49,7 +56,9 @@ pub(in crate::design::feature_project) fn scope() -> DesignParameterScope {
     scope_with_extent(DesignExtrudeExtent::OneSidedDistance)
 }
 
-pub(in crate::design::feature_project) fn scope_with_extent(extent: DesignExtrudeExtent) -> DesignParameterScope {
+pub(in crate::design::feature_project) fn scope_with_extent(
+    extent: DesignExtrudeExtent,
+) -> DesignParameterScope {
     DesignParameterScope::try_new(
         DesignParameterScopeDraft {
             id: "f3d:Design/BulkStream.dat:scope#12".into(),
@@ -98,4 +107,3 @@ pub(in crate::design::feature_project) fn scope_with_extent(extent: DesignExtrud
     )
     .unwrap()
 }
-

@@ -187,8 +187,12 @@ fn assert_direct_face_refusal(
     if partial {
         operands.push(direct_face_operand(102, 1, Vec::new()));
     }
-    let error = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| super::super::direct_face_selection(ctx, &scope, &operands));
-    assert!(matches!(error, CodecError::ResourceLimit(failure) if failure.operation == operation && failure.dimension == dimension));
+    let error = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+        super::super::direct_face_selection(ctx, &scope, &operands)
+    });
+    assert!(
+        matches!(error, CodecError::ResourceLimit(failure) if failure.operation == operation && failure.dimension == dimension)
+    );
 }
 
 #[test]
@@ -312,9 +316,19 @@ fn direct_face_native_output_excludes_borrowed_members_and_feature_id() {
 
 #[test]
 fn direct_historical_selection_refuses_retained_limit() {
-    assert_direct_face_refusal("f3d direct face selection storage", ResourceDimension::RetainedBytes, false, true);
+    assert_direct_face_refusal(
+        "f3d direct face selection storage",
+        ResourceDimension::RetainedBytes,
+        false,
+        true,
+    );
 }
 #[test]
 fn direct_partial_selection_refuses_retained_limit() {
-    assert_direct_face_refusal("f3d direct face selection storage", ResourceDimension::RetainedBytes, true, true);
+    assert_direct_face_refusal(
+        "f3d direct face selection storage",
+        ResourceDimension::RetainedBytes,
+        true,
+        true,
+    );
 }

@@ -7,7 +7,6 @@ use crate::records::topology::face::DesignFaceOperand;
 use cadmpeg_core::decode::DecodePolicy;
 use cadmpeg_core::CodecError;
 
-
 fn operand(lane: u8) -> DesignFaceOperand {
     let mut operand: DesignFaceOperand = serde_json::from_value(serde_json::json!({
         "id": "f3d:test:face-operand#20", "scope_record_index": 12,

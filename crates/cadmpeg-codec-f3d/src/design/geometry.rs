@@ -1265,7 +1265,10 @@ fn arrangement_retain_cycle_edges(
         }
         let mut keep_storage = ctx.reserve_scoped(0, "f3d arrangement cycle mark storage")?;
         let mut keep = Vec::new();
-        for (index, edge) in ctx.admit_iter(&edges[..], "f3d arrangement cycle edge source")?.enumerate() {
+        for (index, edge) in ctx
+            .admit_iter(&edges[..], "f3d arrangement cycle edge source")?
+            .enumerate()
+        {
             let has_cycle = arrangement_has_alternate_path(
                 edges,
                 index,
@@ -1278,7 +1281,11 @@ fn arrangement_retain_cycle_edges(
                 ctx.push_vec(&mut keep, has_cycle, "f3d arrangement retained edge mark")
             })?;
         }
-        if ctx.all_by(&keep, |keep| Ok(*keep), "f3d arrangement cycle retained source")? {
+        if ctx.all_by(
+            &keep,
+            |keep| Ok(*keep),
+            "f3d arrangement cycle retained source",
+        )? {
             break;
         }
         let mut index = 0;
@@ -3369,7 +3376,9 @@ fn historical_entity_positions<'ctx>(
         }
         AsmHistoricalEntityKind::Vertex => {
             let mut vertices = HistoricalVertexPositions::new(topology, ctx)?;
-            if let Some(points) = vertices.positions(ctx, local_id, "f3d historical vertex lookup")? {
+            if let Some(points) =
+                vertices.positions(ctx, local_id, "f3d historical vertex lookup")?
+            {
                 for point in ctx.admit_iter(points, "f3d historical vertex position scan")? {
                     position_storage.with_storage(|| {
                         ctx.push_vec(&mut positions, *point, "f3d historical vertex position")
@@ -3630,20 +3639,25 @@ impl<'source, 'ctx> HistoricalVertexPositions<'source, 'ctx> {
             let mut positions = Vec::new();
             if binding.is_some() && self.points.is_none() {
                 self.points = Some(crate::design::profile_select::first_historical_index(
-                    self.topology.point_positions.iter().map(|point| (point.point, point.position)),
+                    self.topology
+                        .point_positions
+                        .iter()
+                        .map(|point| (point.point, point.position)),
                     ctx,
                     "f3d historical point index",
                 )?);
             }
             while let Some(current) = binding {
                 if let Some((points, _storage)) = &self.points {
-                    if let Some(point) = ctx.get_hash_map(
-                        points,
-                        &current.carrier,
-                        "f3d historical point lookup",
-                    )? {
+                    if let Some(point) =
+                        ctx.get_hash_map(points, &current.carrier, "f3d historical point lookup")?
+                    {
                         self.storage.with_storage(|| {
-                            ctx.push_vec(&mut positions, *point, "f3d historical vertex index point")
+                            ctx.push_vec(
+                                &mut positions,
+                                *point,
+                                "f3d historical vertex index point",
+                            )
                         })?;
                     }
                 }
@@ -3662,7 +3676,8 @@ impl<'source, 'ctx> HistoricalVertexPositions<'source, 'ctx> {
                 )
             })?;
         }
-        Ok(ctx.get_hash_map(&self.vertices, &vertex_ref, operation)?
+        Ok(ctx
+            .get_hash_map(&self.vertices, &vertex_ref, operation)?
             .filter(|positions| !positions.is_empty())
             .map(Vec::as_slice))
     }

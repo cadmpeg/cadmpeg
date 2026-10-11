@@ -180,30 +180,43 @@ fn assert_identity_transition_refusal(operation: &'static str) {
     let mut group = group(2, 10);
     let mut identities = vec![identity(10, &[(17, 3.0), (18, 5.0)])];
     if operation != "f3d single identity transition slot" {
-        group.try_set_members(vec![
-            crate::records::identity::Located { value: 10, offset: 0 },
-            crate::records::identity::Located { value: 11, offset: 11 },
-        ]).unwrap();
+        group
+            .try_set_members(vec![
+                crate::records::identity::Located {
+                    value: 10,
+                    offset: 0,
+                },
+                crate::records::identity::Located {
+                    value: 11,
+                    offset: 11,
+                },
+            ])
+            .unwrap();
         identities.push(identity(11, &[(17, 3.0), (18, 5.0)]));
     }
     let feature_id =
         cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#transition-index").unwrap();
-    let error = crate::test_support::resource_refusal_at(ResourceDimension::CollectionItems, operation, 0, |ctx| {
-        resolved_edge_treatment_group_with_corners(
-            &group,
-            crate::design::edge_resolve::EdgeTreatmentInputs {
-                groups: std::slice::from_ref(&group),
-                operands: &[],
-                identity_operands: &identities,
-                vertex_operands: &[],
-                histories: &[],
-                previous_state_id: Some(7),
-                feature_id: &feature_id,
-                treatment_radius: None,
-            },
-            ctx,
-        )
-    });
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::CollectionItems,
+        operation,
+        0,
+        |ctx| {
+            resolved_edge_treatment_group_with_corners(
+                &group,
+                crate::design::edge_resolve::EdgeTreatmentInputs {
+                    groups: std::slice::from_ref(&group),
+                    operands: &[],
+                    identity_operands: &identities,
+                    vertex_operands: &[],
+                    histories: &[],
+                    previous_state_id: Some(7),
+                    feature_id: &feature_id,
+                    treatment_radius: None,
+                },
+                ctx,
+            )
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(failure)
         if failure.operation == operation && failure.dimension == ResourceDimension::CollectionItems));
 }

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Construct input-derived identities under the caller decode budget.
 
+use crate::ids::{escaped_scope_len, EscapedIdentityComponent};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use std::fmt;
-use crate::ids::{escaped_scope_len, EscapedIdentityComponent};
 
 pub(super) fn neutral_configuration_id(
     ctx: &DecodeContext<'_>,
@@ -17,7 +17,8 @@ pub(super) fn neutral_configuration_id(
     let text = ctx.format_retained(
         format_args!(
             "f3d:configuration:variant#{entry_len}:{}{name_len}:{}",
-            EscapedIdentityComponent(entry, false), EscapedIdentityComponent(name, false)
+            EscapedIdentityComponent(entry, false),
+            EscapedIdentityComponent(name, false)
         ),
         operation,
     )?;
@@ -78,7 +79,8 @@ pub(super) fn neutral_parameter_id_with_operation(
         ctx.format_retained(
             format_args!(
                 "f3d:model:parameter#{len}:{}{}",
-                EscapedIdentityComponent(stream, false), parameter.record_index
+                EscapedIdentityComponent(stream, false),
+                parameter.record_index
             ),
             operation,
         )?,
@@ -99,7 +101,7 @@ pub(super) fn neutral_sketch_id_with_operation(
 ) -> Result<cadmpeg_ir::sketches::SketchId, CodecError> {
     let stream = crate::ids::native_stream_charged(ctx, &placement.id, operation)?
         .unwrap_or(crate::ids::DEFAULT_STREAM);
-    
+
     mint(
         ctx,
         ctx.format_retained(
@@ -120,7 +122,7 @@ pub(super) fn neutral_spatial_sketch_id(
     let stream =
         crate::ids::native_stream_charged(ctx, &placement.id, "f3d spatial sketch identifier")?
             .unwrap_or(crate::ids::DEFAULT_STREAM);
-    
+
     mint(
         ctx,
         ctx.format_retained(
@@ -147,7 +149,9 @@ macro_rules! tagged_entity_id {
                 ctx.format_retained(
                     format_args!(
                         concat!($namespace, "#{}:{}", $tag, "{}"),
-                        len, EscapedIdentityComponent(sketch.as_str(), false), index
+                        len,
+                        EscapedIdentityComponent(sketch.as_str(), false),
+                        index
                     ),
                     $operation,
                 )?,
@@ -259,7 +263,7 @@ pub(super) fn neutral_sketch_constraint_id(
     let stream =
         crate::ids::native_stream_charged(ctx, native_ref, "f3d sketch constraint identifier")?
             .unwrap_or(crate::ids::DEFAULT_STREAM);
-    
+
     mint(
         ctx,
         ctx.format_retained(
@@ -337,7 +341,8 @@ pub(super) fn neutral_assembly_joint_id(
         ctx.format_retained(
             format_args!(
                 "f3d:model:joint#{len}:{}{}",
-                EscapedIdentityComponent(stream, false), scope.record_index
+                EscapedIdentityComponent(stream, false),
+                scope.record_index
             ),
             operation,
         )?,
@@ -348,9 +353,11 @@ pub(super) fn configuration_entry_id(
     ctx: &DecodeContext<'_>,
     entry: &str,
 ) -> Result<String, CodecError> {
-    
     ctx.format_retained(
-        format_args!("f3d:configuration:entry#{}", EscapedIdentityComponent(entry, false)),
+        format_args!(
+            "f3d:configuration:entry#{}",
+            EscapedIdentityComponent(entry, false)
+        ),
         "f3d configuration native identifier",
     )
 }

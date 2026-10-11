@@ -21,9 +21,14 @@ fn identity_singlepass_preserves_literal_unicode_and_ascii_lowercase_bytes() {
     ] {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
-        
+
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let encoded = ctx.format_retained(format_args!("{}", EscapedIdentityComponent(source, lowercase)), "encode identity control").unwrap();
+        let encoded = ctx
+            .format_retained(
+                format_args!("{}", EscapedIdentityComponent(source, lowercase)),
+                "encode identity control",
+            )
+            .unwrap();
         assert_eq!(encoded, expected);
         assert!(ctx.resource_refusal().is_none());
     }

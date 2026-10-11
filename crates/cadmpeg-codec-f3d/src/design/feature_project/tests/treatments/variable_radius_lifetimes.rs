@@ -67,7 +67,9 @@ fn authored_variable_radius_typed_allocation_refuses_before_conversion() {
     let end = endpoint(2, "EndRadius", 0.4);
     let controls = [(0, &start), (1, &end)];
     let error = crate::test_support::resource_refusal_at(
-        ResourceDimension::MaterializedBytes, "IR variable radius admitted samples", 0,
+        ResourceDimension::MaterializedBytes,
+        "IR variable radius admitted samples",
+        0,
         |ctx| crate::design::feature_project::variable_fillet_law(ctx, &controls),
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)

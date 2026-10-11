@@ -4,7 +4,6 @@
 use super::*;
 use crate::design::feature_project::visit_work_point_history_states;
 
-
 #[test]
 fn work_point_visitor_ordinary_error_preserves_unvisited_native_input() {
     let scope = scope();

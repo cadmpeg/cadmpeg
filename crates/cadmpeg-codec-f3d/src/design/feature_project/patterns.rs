@@ -1,15 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Circular, rectangular, and mirror pattern projection.
 
-use super::{feature_stream_matches,unique_feature_match_for_decode};
+use super::{feature_stream_matches, unique_feature_match_for_decode};
 use crate::design::face_resolve::resolved_historical_face_group;
 use crate::ids;
-use crate::records::{feature::scope::DesignParameterScope,
-    topology::{construction::DesignConstructionOperandGroup,extrude_selection::DesignOperandRole,
-    face::DesignFaceOperand}};
+use crate::records::{
+    feature::scope::DesignParameterScope,
+    topology::{
+        construction::DesignConstructionOperandGroup, extrude_selection::DesignOperandRole,
+        face::DesignFaceOperand,
+    },
+};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::math::{Point3,Vector3};
+use cadmpeg_ir::math::{Point3, Vector3};
 
 pub(super) fn project_circular_pattern(
     ctx: &DecodeContext<'_>,
@@ -201,14 +205,29 @@ pub(super) fn project_rectangular_pattern_scalars(
                 .ok()?,
             )),
         });
-    let group_seed = if let Some(stream) = ids::native_stream_charged(ctx, &scope.id, "f3d rectangular pattern scope stream")? {
+    let group_seed = if let Some(stream) =
+        ids::native_stream_charged(ctx, &scope.id, "f3d rectangular pattern scope stream")?
+    {
         let mut source = groups.iter();
-        let mut matching = || ctx.find_by(&mut source, |group| {
-            Ok(feature_stream_matches(ctx, &group.id, Some(stream), "f3d rectangular pattern group stream")?
-                && group.scope_record_index == scope.record_index
-                && matches!(group.role(), DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B)
-                && !group.members().is_empty())
-        }, "f3d rectangular pattern group source");
+        let mut matching = || {
+            ctx.find_by(
+                &mut source,
+                |group| {
+                    Ok(feature_stream_matches(
+                        ctx,
+                        &group.id,
+                        Some(stream),
+                        "f3d rectangular pattern group stream",
+                    )? && group.scope_record_index == scope.record_index
+                        && matches!(
+                            group.role(),
+                            DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
+                        )
+                        && !group.members().is_empty())
+                },
+                "f3d rectangular pattern group source",
+            )
+        };
         let first = matching()?;
         let second = matching()?;
         match (first, second) {
@@ -426,7 +445,6 @@ pub(super) fn project_mirror(
         },
     )))
 }
-
 
 #[cfg(test)]
 mod tests;

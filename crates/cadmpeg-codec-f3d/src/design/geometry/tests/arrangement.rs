@@ -21,12 +21,12 @@ fn arrangement_visit_marks_refuse_collection_limit() {
 
 #[test]
 fn arrangement_outgoing_refuses_collection_limit() {
-    let (limit, maximum) = arrangement_refusal_at_operation("f3d_arrangement_outgoing", 0);
+    let limit = arrangement_refusal_at_operation("f3d_arrangement_outgoing");
     assert_eq!(
         limit.dimension,
         cadmpeg_core::decode::ResourceDimension::CollectionItems
     );
-    assert_eq!(limit.used, maximum);
+    assert_eq!(limit.used + limit.additional, limit.limit + 1);
     assert_eq!(limit.additional, 2);
 }
 
@@ -55,45 +55,66 @@ fn arrangement_pending_boundaries_refuse_materialized_limit() {
     let (mut sketch, mut entities, _, _) = coincident_circle_arc_arrangement();
     for region in 0..32 {
         let x = 4.0 + f64::from(region) * 3.0;
-        let points = [Point2::new(x, 0.0), Point2::new(x + 1.0, 0.0), Point2::new(x, 1.0)];
+        let points = [
+            Point2::new(x, 0.0),
+            Point2::new(x + 1.0, 0.0),
+            Point2::new(x, 1.0),
+        ];
         let mut boundary = Vec::new();
         for edge in 0..3 {
-            let id = SketchEntityId::mint(format!("synthetic:test:outgoing#{region}-{edge}")).unwrap();
+            let id =
+                SketchEntityId::mint(format!("synthetic:test:outgoing#{region}-{edge}")).unwrap();
             entities.push(SketchEntity::new(
-                id.clone(), sketch.id.clone(),
+                id.clone(),
+                sketch.id.clone(),
                 SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                    start: points[edge], end: points[(edge + 1) % 3],
-                }).unwrap(),
+                    start: points[edge],
+                    end: points[(edge + 1) % 3],
+                })
+                .unwrap(),
             ));
-            boundary.push(SketchEntityUse { entity: id, reversed: false });
+            boundary.push(SketchEntityUse {
+                entity: id,
+                reversed: false,
+            });
         }
         sketch.profiles.try_push(boundary).unwrap();
     }
     crate::test_support::with_decode_context(|ctx| {
         let budget = local_arrangement_budget();
-        assert_eq!(sketch_arrangement_faces(&sketch, &entities, EPS_ARRANGEMENT_SESSION, &budget, ctx).unwrap().unwrap().len(), 34);
+        assert_eq!(
+            sketch_arrangement_faces(&sketch, &entities, EPS_ARRANGEMENT_SESSION, &budget, ctx)
+                .unwrap()
+                .unwrap()
+                .len(),
+            34
+        );
     });
     let error = crate::test_support::resource_refusal_at(
         cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-        "f3d arrangement pending boundary", 0,
+        "f3d arrangement pending boundary",
+        0,
         |ctx| {
             let budget = local_arrangement_budget();
-            sketch_arrangement_faces(&sketch, &entities, EPS_ARRANGEMENT_SESSION, &budget, ctx).map(|_| ())
+            sketch_arrangement_faces(&sketch, &entities, EPS_ARRANGEMENT_SESSION, &budget, ctx)
+                .map(|_| ())
         },
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
-            && limit.operation == "f3d arrangement pending boundary"));
+            && limit.operation == "f3d arrangement pending boundary")
+    );
 }
 
 #[test]
 fn arrangement_edge_visits_refuse_collection_limit() {
-    let (limit, maximum) = arrangement_refusal_at_operation("f3d arrangement edge visits", 0);
+    let limit = arrangement_refusal_at_operation("f3d arrangement edge visits");
     assert_eq!(
         limit.dimension,
         cadmpeg_core::decode::ResourceDimension::CollectionItems
     );
-    assert_eq!(limit.used, maximum);
+    assert_eq!(limit.used + limit.additional, limit.limit + 1);
     assert_eq!(limit.additional, 3);
 }
 

@@ -243,9 +243,22 @@ fn spatial_constraint_indices_refuse_collection_limits() {
             "f3d spatial constraint entity index",
         ),
     ] {
-        let error = crate::test_support::resource_refusal_at(ResourceDimension::CollectionItems, operation, 0, |ctx| {
-            project_spatial_sketch_constraints(ctx, placements, &[], &[], std::slice::from_ref(&curve), &[], entities)
-        });
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            0,
+            |ctx| {
+                project_spatial_sketch_constraints(
+                    ctx,
+                    placements,
+                    &[],
+                    &[],
+                    std::slice::from_ref(&curve),
+                    &[],
+                    entities,
+                )
+            },
+        );
         assert!(
             matches!(
                 error,
@@ -410,8 +423,6 @@ fn spatial_surface_lanes_refuse_each_collection_limit() {
         );
     }
 }
-
-
 
 #[test]
 fn sketch_nurbs_lanes_refuse_collection_limit() {
@@ -582,7 +593,7 @@ fn projected_sketch_entries_refuse_collection_limit() {
 
 #[test]
 fn spatial_constraint_sketch_membership_refuses_work_limit() {
-    use cadmpeg_core::decode::{ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
     let placement = owner_limit_placement();
@@ -601,9 +612,17 @@ fn spatial_constraint_sketch_membership_refuses_work_limit() {
         ResourceDimension::WorkUnits,
         "f3d spatial constraint sketch membership work",
         0,
-        |ctx| project_spatial_sketch_constraints(
-            ctx, std::slice::from_ref(&placement), &[], &[], &[], &[], std::slice::from_ref(&entity),
-        ),
+        |ctx| {
+            project_spatial_sketch_constraints(
+                ctx,
+                std::slice::from_ref(&placement),
+                &[],
+                &[],
+                &[],
+                &[],
+                std::slice::from_ref(&entity),
+            )
+        },
     );
     assert!(matches!(error, CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::WorkUnits

@@ -27,10 +27,18 @@ fn run_case(owner: &str, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
     match owner {
         "identity_uniform" => {
             let mut selection_group = group(2, 10);
-            selection_group.try_set_members(vec![
-                crate::records::identity::Located { value: 10, offset: 0 },
-                crate::records::identity::Located { value: 11, offset: 11 },
-            ]).unwrap();
+            selection_group
+                .try_set_members(vec![
+                    crate::records::identity::Located {
+                        value: 10,
+                        offset: 0,
+                    },
+                    crate::records::identity::Located {
+                        value: 11,
+                        offset: 11,
+                    },
+                ])
+                .unwrap();
             let operand = identity(10, &[(17, 3.0)]);
             let second = identity(11, &[(17, 3.0)]);
             let feature =

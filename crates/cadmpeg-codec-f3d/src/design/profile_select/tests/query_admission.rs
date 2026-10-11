@@ -48,7 +48,10 @@ fn missing_historical_face_relations_skip_deeper_indexes() {
         AsmHistoricalCoedge, AsmHistoricalEdge, AsmHistoricalRelation, AsmHistoricalTopology,
     };
     let mut topology = AsmHistoricalTopology {
-        face_loops: vec![AsmHistoricalRelation { owner_ref: 10, member_refs: vec![11] }],
+        face_loops: vec![AsmHistoricalRelation {
+            owner_ref: 10,
+            member_refs: vec![11],
+        }],
         ..AsmHistoricalTopology::default()
     };
     let mut policy = DecodePolicy::service();
@@ -61,7 +64,9 @@ fn missing_historical_face_relations_skip_deeper_indexes() {
     ] {
         crate::test_support::with_decode_policy(&policy, |ctx| {
             let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-                cadmpeg_core::decode::ResourceDimension::WorkUnits, operation, None,
+                cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                operation,
+                None,
             );
             let points = super::super::historical_face_points(10, &topology, ctx)?;
             assert!(points.is_none());
@@ -71,15 +76,25 @@ fn missing_historical_face_relations_skip_deeper_indexes() {
         .unwrap();
         match operation {
             "f3d historical coedge index" => topology.loop_coedges.push(AsmHistoricalRelation {
-                owner_ref: 11, member_refs: vec![12],
+                owner_ref: 11,
+                member_refs: vec![12],
             }),
-            "f3d historical face edge index" => topology.coedge_topology.push(AsmHistoricalCoedge {
-                coedge: 12, owner_loop: 11, edge: 20, next: 12, previous: 12, radial_next: 12,
-            }),
+            "f3d historical face edge index" => {
+                topology.coedge_topology.push(AsmHistoricalCoedge {
+                    coedge: 12,
+                    owner_loop: 11,
+                    edge: 20,
+                    next: 12,
+                    previous: 12,
+                    radial_next: 12,
+                });
+            }
             "f3d historical face vertex index" => topology.edge_vertices.push(AsmHistoricalEdge {
-                edge: 20, start_vertex: 30, end_vertex: 31,
+                edge: 20,
+                start_vertex: 30,
+                end_vertex: 31,
             }),
-            _ => {},
+            _ => {}
         }
     }
 }

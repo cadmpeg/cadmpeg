@@ -3,7 +3,7 @@
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::math::{Point3,Vector3};
+use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::BTreeSet;
 
 fn spatial_sketch_entity_endpoints(
@@ -268,7 +268,6 @@ pub(in crate::design) fn closed_spatial_sketch_profiles(
     )?;
     Ok(profiles)
 }
-
 
 #[cfg(test)]
 #[allow(

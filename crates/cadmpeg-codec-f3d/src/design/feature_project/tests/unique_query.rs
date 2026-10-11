@@ -213,12 +213,23 @@ fn unique_query_selected_plane_duplicate_skips_the_large_operand_tail() {
     tail.id = format!("f3d:Other/BulkStream.dat:{}", "x".repeat(4096));
     let selections = [first.clone(), first, tail];
     let CodecError::ResourceLimit(prefix) = crate::test_support::resource_refusal_at(
-        ResourceDimension::WorkUnits, "test selected plane reached prefix", 0,
+        ResourceDimension::WorkUnits,
+        "test selected plane reached prefix",
+        0,
         |ctx| {
-            assert!(super::super::selected_work_planes(ctx, &scope, &group, &selections[..2], &[])?.is_none());
+            assert!(super::super::selected_work_planes(
+                ctx,
+                &scope,
+                &group,
+                &selections[..2],
+                &[]
+            )?
+            .is_none());
             ctx.charge_work(1, "test selected plane reached prefix")
         },
-    ) else { panic!("reached prefix work boundary"); };
+    ) else {
+        panic!("reached prefix work boundary");
+    };
     let reached = prefix.used;
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = reached;

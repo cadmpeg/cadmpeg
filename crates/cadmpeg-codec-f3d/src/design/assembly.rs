@@ -277,55 +277,96 @@ impl<'a, 'ctx, 'arena> AssemblyTargets<'a, 'ctx, 'arena> {
     ) -> Result<Option<&'a DesignParameterScope>, CodecError> {
         let key = (stream, record_index, kind);
         if let Some(found) = self.ctx.get_hash_map(
-            &self.scope_queries, &key, "f3d assembly target scope lookup",
+            &self.scope_queries,
+            &key,
+            "f3d assembly target scope lookup",
         )? {
             return Ok(*found);
         }
         let matches = |scope: &&DesignParameterScope| -> Result<bool, CodecError> {
             let same_stream = match crate::ids::native_stream_charged(
-                self.ctx, &scope.id, "f3d assembly target native stream",
+                self.ctx,
+                &scope.id,
+                "f3d assembly target native stream",
             )? {
-                Some(source) => self.ctx.equal(source, stream, "f3d assembly target stream")?,
+                Some(source) => self
+                    .ctx
+                    .equal(source, stream, "f3d assembly target stream")?,
                 None => false,
             };
-            Ok(same_stream && scope.record_index == record_index
-                && self.ctx.equal(scope.kind_name(), kind, "f3d assembly target kind")?)
+            Ok(same_stream
+                && scope.record_index == record_index
+                && self
+                    .ctx
+                    .equal(scope.kind_name(), kind, "f3d assembly target kind")?)
         };
         let mut source = self.scopes.iter();
-        let first = self.ctx.find_by(&mut source, matches, "f3d assembly target scopes")?;
+        let first = self
+            .ctx
+            .find_by(&mut source, matches, "f3d assembly target scopes")?;
         let found = match first {
-            Some(first) if !self.ctx.any_by(
-                source, |scope| matches(&scope), "f3d assembly target scopes",
-            )? => Some(first),
+            Some(first)
+                if !self.ctx.any_by(
+                    source,
+                    |scope| matches(&scope),
+                    "f3d assembly target scopes",
+                )? =>
+            {
+                Some(first)
+            }
             _ => None,
         };
-        self.storage.with_storage(|| self.ctx.insert_hash_map(
-            &mut self.scope_queries, key, found, "f3d assembly target scope cache",
-        ))?;
+        self.storage.with_storage(|| {
+            self.ctx.insert_hash_map(
+                &mut self.scope_queries,
+                key,
+                found,
+                "f3d assembly target scope cache",
+            )
+        })?;
         Ok(found)
     }
 
     fn unique_feature(&mut self, native_ref: &'a str) -> Result<Option<&'a Feature>, CodecError> {
         if let Some(found) = self.ctx.get_hash_map(
-            &self.feature_queries, native_ref, "f3d assembly target feature lookup",
+            &self.feature_queries,
+            native_ref,
+            "f3d assembly target feature lookup",
         )? {
             return Ok(*found);
         }
         let matches = |feature: &&Feature| match feature.native_ref.as_deref() {
-            Some(reference) => self.ctx.equal(reference, native_ref, "f3d assembly target feature reference"),
+            Some(reference) => self.ctx.equal(
+                reference,
+                native_ref,
+                "f3d assembly target feature reference",
+            ),
             None => Ok(false),
         };
         let mut source = self.features.iter();
-        let first = self.ctx.find_by(&mut source, matches, "f3d assembly target features")?;
+        let first = self
+            .ctx
+            .find_by(&mut source, matches, "f3d assembly target features")?;
         let found = match first {
-            Some(first) if !self.ctx.any_by(
-                source, |feature| matches(&feature), "f3d assembly target features",
-            )? => Some(first),
+            Some(first)
+                if !self.ctx.any_by(
+                    source,
+                    |feature| matches(&feature),
+                    "f3d assembly target features",
+                )? =>
+            {
+                Some(first)
+            }
             _ => None,
         };
-        self.storage.with_storage(|| self.ctx.insert_hash_map(
-            &mut self.feature_queries, native_ref, found, "f3d assembly target feature cache",
-        ))?;
+        self.storage.with_storage(|| {
+            self.ctx.insert_hash_map(
+                &mut self.feature_queries,
+                native_ref,
+                found,
+                "f3d assembly target feature cache",
+            )
+        })?;
         Ok(found)
     }
 }
@@ -340,7 +381,9 @@ pub(crate) fn project_assembly_joints(
     let mut lookup_storage = ctx.reserve_scoped(0, "f3d assembly lookup storage")?;
     let mut occurrences = BTreeMap::new();
     for occurrence in ctx.admit_iter(native_occurrences, "f3d assembly native occurrences")? {
-        let Some(stream) = native_stream_charged(ctx, &occurrence.id, "f3d assembly native stream")? else {
+        let Some(stream) =
+            native_stream_charged(ctx, &occurrence.id, "f3d assembly native stream")?
+        else {
             continue;
         };
         lookup_storage.with_storage(|| -> Result<(), CodecError> {
@@ -364,7 +407,8 @@ pub(crate) fn project_assembly_joints(
     let mut targets = AssemblyTargets::new(ctx, scopes, features)?;
     let mut joints = BTreeMap::new();
     for scope in ctx.admit_iter(scopes, "f3d assembly scopes")? {
-        let Some(stream) = native_stream_charged(ctx, &scope.id, "f3d assembly native stream")? else {
+        let Some(stream) = native_stream_charged(ctx, &scope.id, "f3d assembly native stream")?
+        else {
             continue;
         };
         let Some(alignment) = scope.assembly_alignment() else {
@@ -556,13 +600,15 @@ fn project_qualified_operands<'a>(
                         selectors,
                         ..
                     } => {
-                        let Some(target_scope) = targets.unique_scope(stream, *component_insert_scope_record_index, "Component Insert")?
+                        let Some(target_scope) = targets.unique_scope(
+                            stream,
+                            *component_insert_scope_record_index,
+                            "Component Insert",
+                        )?
                         else {
                             return Ok(None);
                         };
-                        let Some(feature) =
-                            targets.unique_feature(&target_scope.id)?
-                        else {
+                        let Some(feature) = targets.unique_feature(&target_scope.id)? else {
                             return Ok(None);
                         };
                         let FeatureDefinition::Operation(FeatureOperation::InsertComponent {
@@ -586,25 +632,11 @@ fn project_qualified_operands<'a>(
                     }
                     DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
                         scope_record_index,
-                    } => {
-                        project_joint_origin_operand(
-                            ctx,
-                            *scope_record_index,
-                            stream,
-                            targets,
-                        )
-                    }
+                    } => project_joint_origin_operand(ctx, *scope_record_index, stream, targets),
                 },
                 DesignAssemblyOperandQualifier::JointOrigin {
                     scope_record_index, ..
-                } => {
-                    project_joint_origin_operand(
-                        ctx,
-                        *scope_record_index,
-                        stream,
-                        targets,
-                    )
-                }
+                } => project_joint_origin_operand(ctx, *scope_record_index, stream, targets),
             }
         };
     let Some(first) = project(qualifiers[0])? else {
@@ -644,19 +676,23 @@ fn project_joint_origin_operand<'a>(
     stream: &'a str,
     targets: &mut AssemblyTargets<'a, '_, '_>,
 ) -> Result<Option<JointOperand>, CodecError> {
-    let Some(target_scope) = targets.unique_scope(stream, scope_record_index, "JointOrigin")? else {
+    let Some(target_scope) = targets.unique_scope(stream, scope_record_index, "JointOrigin")?
+    else {
         return Ok(None);
     };
     if let Some(feature) = targets.unique_feature(&target_scope.id)? {
-        if !matches!(feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { .. })) {
+        if !matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { .. })
+        ) {
             return Ok(None);
         }
     } else if target_scope.joint_origin_transform().is_none() {
         return Ok(None);
     }
     Ok(Some(JointOperand::root(
-        super::identity::neutral_feature_id(ctx, target_scope)?.into_string(), Vec::new(),
+        super::identity::neutral_feature_id(ctx, target_scope)?.into_string(),
+        Vec::new(),
     )))
 }
 
@@ -1906,16 +1942,27 @@ mod tests {
     fn assembly_target_indexes_keep_duplicate_keys_excluded() {
         let scope = DesignParameterScope::empty(
             "f3d:synthetic:design-parameter-scope#1",
-            crate::records::feature::scope::DesignFeatureKind::JointOrigin, 1,
+            crate::records::feature::scope::DesignFeatureKind::JointOrigin,
+            1,
         );
-        let feature = feature(&scope.id, FeatureDefinition::Operation(FeatureOperation::InsertComponent {
-            occurrence: OccurrenceId::mint("test:model:occurrence#1").unwrap(),
-        }));
+        let feature = feature(
+            &scope.id,
+            FeatureDefinition::Operation(FeatureOperation::InsertComponent {
+                occurrence: OccurrenceId::mint("test:model:occurrence#1").unwrap(),
+            }),
+        );
         let scopes = [scope.clone(), scope.clone(), scope];
         let features = [feature.clone(), feature.clone(), feature];
         crate::test_support::with_decode_context(|ctx| {
             let mut targets = super::AssemblyTargets::new(ctx, &scopes, &features).unwrap();
-            assert!(targets.unique_scope(crate::ids::native_stream(&scopes[0].id).unwrap(), 1, "JointOrigin").unwrap().is_none());
+            assert!(targets
+                .unique_scope(
+                    crate::ids::native_stream(&scopes[0].id).unwrap(),
+                    1,
+                    "JointOrigin"
+                )
+                .unwrap()
+                .is_none());
             assert!(targets.unique_feature(&scopes[0].id).unwrap().is_none());
         });
     }
@@ -1935,14 +1982,22 @@ mod tests {
             );
         let error = crate::test_support::resource_refusal_at(
             ResourceDimension::CollectionItems,
-            "f3d assembly target feature cache", 1,
+            "f3d assembly target feature cache",
+            1,
             |ctx| {
                 let mut targets = super::AssemblyTargets::new(ctx, &scopes, &[])?;
-                super::project_qualified_operands(ctx, qualifiers.each_ref(),
-                    crate::ids::native_stream(&scopes[0].id).unwrap(), &BTreeMap::new(), &mut targets)
+                super::project_qualified_operands(
+                    ctx,
+                    qualifiers.each_ref(),
+                    crate::ids::native_stream(&scopes[0].id).unwrap(),
+                    &BTreeMap::new(),
+                    &mut targets,
+                )
             },
         );
-        let CodecError::ResourceLimit(limit) = error else { panic!("cache insertion refusal"); };
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("cache insertion refusal");
+        };
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = limit.used.checked_add(limit.additional).unwrap();

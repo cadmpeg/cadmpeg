@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Query backing drops independently of accepted native selections.
 
-use crate::design::edge_resolve::{EdgeTreatmentInputs,SurfacePatchRecipeEdges,surface_patch_grouped_recipe_edges};
 use super::*;
+use crate::design::edge_resolve::{
+    surface_patch_grouped_recipe_edges, EdgeTreatmentInputs, SurfacePatchRecipeEdges,
+};
 use cadmpeg_core::decode::refusal_probe::RefusalProbe;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{EdgeSelection, FeatureId};
@@ -65,7 +67,10 @@ fn edge_query_lifetime_conflicting_recipe_refunds_cloned_prefix() {
 
 #[test]
 fn edge_query_lifetime_repeated_recipe_refunds_clones_and_distinct_index() {
-    rejected_recipe(&exact_recipe(11, 17), &SurfacePatchRecipeEdges::Inconclusive);
+    rejected_recipe(
+        &exact_recipe(11, 17),
+        &SurfacePatchRecipeEdges::Inconclusive,
+    );
 }
 
 #[test]
@@ -124,20 +129,19 @@ fn edge_query_lifetime_recipe_retained_one_below_preserves_original_refusal() {
 #[test]
 fn edge_query_lifetime_distinct_index_refusal_does_not_escape_candidate() {
     let first = exact_recipe(10, 17);
-    let mut policy = scratch_policy();
-    policy.limits.max_materialized_bytes = 0;
-    crate::test_support::with_decode_policy(&policy, |ctx| {
-        let Err(CodecError::ResourceLimit(original)) =
-            surface_patch_grouped_recipe_edges(&[&first], ctx)
-        else {
-            panic!("actual distinct index growth must refuse");
-        };
-        assert_eq!(original.dimension, ResourceDimension::MaterializedBytes);
-        assert_eq!(original.operation, "f3d surface patch distinct recipe edge");
-        assert_eq!(original.used, 0);
-        assert!(original.additional > 0);
-        assert_eq!(ctx.resource_refusal(), Some(original));
-    });
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::MaterializedBytes,
+        "f3d surface patch distinct recipe edge",
+        0,
+        |ctx| surface_patch_grouped_recipe_edges(&[&first], ctx),
+    );
+    let CodecError::ResourceLimit(original) = error else {
+        panic!("actual distinct index growth must refuse");
+    };
+    assert_eq!(original.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!(original.operation, "f3d surface patch distinct recipe edge");
+    assert_eq!(original.used + original.additional, original.limit + 1);
+    assert!(original.additional > 0);
 }
 
 fn pair_group() -> DesignConstructionOperandGroup {

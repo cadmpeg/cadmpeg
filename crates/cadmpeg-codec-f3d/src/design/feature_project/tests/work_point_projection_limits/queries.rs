@@ -83,7 +83,6 @@ fn work_point_query_duplicate_stops_before_unvisited_operand_tail() {
         assert_eq!(original.operation, "compare F3D WorkPoint operand stream");
         assert_eq!((original.used, original.additional), (reached - 1, 1));
         assert_eq!(ctx.resource_refusal(), Some(original));
-        
     });
 }
 
@@ -143,7 +142,6 @@ fn assert_query_refusal(operation: &'static str) {
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
         assert_eq!(original.additional, 1);
         assert_eq!(ctx.resource_refusal(), Some(original));
-        
     });
 }
 
@@ -237,7 +235,6 @@ fn work_point_query_native_conflict_stops_before_unvisited_input_tail() {
         assert_eq!(original.operation, "visit F3D WorkPoint history inputs");
         assert_eq!((original.used, original.additional), (2, 1));
         assert_eq!(ctx.resource_refusal(), Some(original));
-        
     });
 }
 

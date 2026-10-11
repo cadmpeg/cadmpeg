@@ -157,4 +157,3 @@ fn base_flange_missing_operation_skips_unused_scope_and_all_storage() {
     });
     assert_eq!(scope, original);
 }
-

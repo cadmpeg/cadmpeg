@@ -16,7 +16,6 @@ pub(super) fn plane_for_face(
     faces: &[Face],
     surfaces: &[Surface],
 ) -> Result<Option<(usize, PlaneSurface)>, CodecError> {
-
     if faces.is_empty() || surfaces.is_empty() {
         return Ok(None);
     }

@@ -18,13 +18,9 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
     let second = entity("synthetic:test:entity#second", Point2::new(2.0, 3.0));
     let parameter = ParameterId::mint("synthetic:test:parameter#two-locus").unwrap();
     super::assert_dimension_refusal(operation, dimension, |ctx| {
-        crate::design::dimensions::two_locus_distance_dimension(
-            ctx,
-            &[&first, &second],
-            &parameter,
-        )
-        .transpose()
-        .map(|_| ())
+        crate::design::dimensions::two_locus_distance_dimension(ctx, &[&first, &second], &parameter)
+            .transpose()
+            .map(|_| ())
     });
 }
 #[test]

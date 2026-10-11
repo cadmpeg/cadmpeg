@@ -25,49 +25,132 @@ fn selector(edges: Vec<i64>) -> DesignEdgeRecipeSelectorContext {
 
 #[test]
 fn edge_recipe_reference_intersection_admits_candidates_and_membership() {
-    for operation in ["scan F3D reference intersection candidates", "scan F3D reference intersection sets", "find F3D reference intersection edge"] {
+    for operation in [
+        "scan F3D reference intersection candidates",
+        "scan F3D reference intersection sets",
+        "find F3D reference intersection edge",
+    ] {
         crate::test_support::with_decode_policy(&probe_policy(), |ctx| {
-            assert_eq!(super::super::super::resolved_edge_candidate_intersection(ctx, &[], [&[17, 18][..], &[17, 19][..]]).unwrap(), Some(17));
+            assert_eq!(
+                super::super::super::resolved_edge_candidate_intersection(
+                    ctx,
+                    &[],
+                    [&[17, 18][..], &[17, 19][..]]
+                )
+                .unwrap(),
+                Some(17)
+            );
         });
-        let error = crate::test_support::resource_refusal_at(ResourceDimension::WorkUnits, operation, 0, |ctx| super::super::super::resolved_edge_candidate_intersection(ctx, &[], [&[17, 18][..], &[17, 19][..]]));
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| {
+                super::super::super::resolved_edge_candidate_intersection(
+                    ctx,
+                    &[],
+                    [&[17, 18][..], &[17, 19][..]],
+                )
+            },
+        );
         assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == operation));
     }
 }
 
 #[test]
 fn edge_recipe_selector_intersection_admits_membership() {
-    for operation in ["scan F3D selector intersection candidates", "scan F3D corroborating selectors", "find F3D corroborating selector edge", "find F3D shared selector edge"] {
+    for operation in [
+        "scan F3D selector intersection candidates",
+        "scan F3D corroborating selectors",
+        "find F3D corroborating selector edge",
+        "find F3D shared selector edge",
+    ] {
         let selectors = [selector(vec![17, 18]), selector(vec![17, 19])];
         crate::test_support::with_decode_policy(&probe_policy(), |ctx| {
-            assert_eq!(super::super::super::resolved_edge_candidate_intersection(ctx, &selectors, [&[17][..]]).unwrap(), Some(17));
+            assert_eq!(
+                super::super::super::resolved_edge_candidate_intersection(
+                    ctx,
+                    &selectors,
+                    [&[17][..]]
+                )
+                .unwrap(),
+                Some(17)
+            );
         });
-        let error = crate::test_support::resource_refusal_at(ResourceDimension::WorkUnits, operation, 0, |ctx| super::super::super::resolved_edge_candidate_intersection(ctx, &selectors, [&[17][..]]));
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| {
+                super::super::super::resolved_edge_candidate_intersection(
+                    ctx,
+                    &selectors,
+                    [&[17][..]],
+                )
+            },
+        );
         assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == operation));
     }
 }
 
 #[test]
 fn edge_recipe_incidence_intersection_admits_set_equality_and_membership() {
-    for operation in ["compare F3D reference edge sets", "find F3D incidence reference edge", "scan F3D incidence edge candidates"] {
+    for operation in [
+        "compare F3D reference edge sets",
+        "find F3D incidence reference edge",
+        "scan F3D incidence edge candidates",
+    ] {
         let selectors = [selector(vec![11])];
         let sets = [&[10, 11][..], &[11, 10, 10][..], &[11, 12][..]];
         crate::test_support::with_decode_policy(&probe_policy(), |ctx| {
-            assert_eq!(super::super::super::unique_incidence_edge_shared_by_reference_faces(ctx, &selectors, sets).unwrap(), Some(11));
+            assert_eq!(
+                super::super::super::unique_incidence_edge_shared_by_reference_faces(
+                    ctx, &selectors, sets
+                )
+                .unwrap(),
+                Some(11)
+            );
         });
-        let error = crate::test_support::resource_refusal_at(ResourceDimension::WorkUnits, operation, 0, |ctx| super::super::super::unique_incidence_edge_shared_by_reference_faces(ctx, &selectors, sets));
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| {
+                super::super::super::unique_incidence_edge_shared_by_reference_faces(
+                    ctx, &selectors, sets,
+                )
+            },
+        );
         assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == operation));
     }
 }
 
-
-
 #[test]
 fn edge_recipe_disjoint_intersection_charges_only_reached_searches() {
     crate::test_support::with_decode_context(|ctx| {
-        assert!(matches!(super::super::super::unique_edge_set_intersection(&[17, 18], &std::iter::once(&[19][..]), ctx).unwrap(), super::super::super::EdgeSetIntersection::Disjoint));
+        assert!(matches!(
+            super::super::super::unique_edge_set_intersection(
+                &[17, 18],
+                &std::iter::once(&[19][..]),
+                ctx
+            )
+            .unwrap(),
+            super::super::super::EdgeSetIntersection::Disjoint
+        ));
     });
     let operation = "scan F3D reference intersection candidates";
-    let error = crate::test_support::resource_refusal_at(ResourceDimension::WorkUnits, operation, 2, |ctx| super::super::super::unique_edge_set_intersection(&[17, 18], &std::iter::once(&[19][..]), ctx));
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        2,
+        |ctx| {
+            super::super::super::unique_edge_set_intersection(
+                &[17, 18],
+                &std::iter::once(&[19][..]),
+                ctx,
+            )
+        },
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == operation));
 }
 
@@ -114,9 +197,19 @@ fn edge_recipe_triplet_intersection_admits_overlap_and_corroboration() {
                 .unwrap(),
                 Some(17)
             );
-
         });
-        let error = crate::test_support::resource_refusal_at(ResourceDimension::WorkUnits, operation, 0, |ctx| super::super::super::resolved_edge_candidate_intersection(ctx, &selectors, [&[17, 18][..]]));
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| {
+                super::super::super::resolved_edge_candidate_intersection(
+                    ctx,
+                    &selectors,
+                    [&[17, 18][..]],
+                )
+            },
+        );
         assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == operation));
     }
 }
@@ -143,5 +236,3 @@ fn edge_recipe_rejected_assignment_candidates_release_scratch() {
         );
     });
 }
-
-

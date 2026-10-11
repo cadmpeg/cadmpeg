@@ -76,11 +76,14 @@ fn unique_operand_single_source_is_allowed_at_exact_work_and_refuses_one_below()
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = unique_face_operand(&ctx, &operands, Some("f3d:test"), 100, 200);
         if cap == work {
-            assert!(std::ptr::eq(result.unwrap().unwrap(), &raw const operands[0]));
+            assert!(std::ptr::eq(
+                result.unwrap().unwrap(),
+                &raw const operands[0]
+            ));
             ctx.finish_session().unwrap();
         } else {
             let original = failure(&result.unwrap_err(), cap, "compare F3D face operand stream");
-            
+
             assert!(
                 matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
             );
@@ -168,8 +171,8 @@ fn actual_face_group_refuses_before_operand_visit_with_original_native_source() 
     let arena = DecodeArena::new();
     let policy = policy(cap);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let original = failure(&
-        crate::design::face_resolve::resolved_face_group(&ctx, &group, &operands).unwrap_err(),
+    let original = failure(
+        &crate::design::face_resolve::resolved_face_group(&ctx, &group, &operands).unwrap_err(),
         cap,
         "visit F3D face operand",
     );
@@ -180,7 +183,7 @@ fn actual_face_group_refuses_before_operand_visit_with_original_native_source() 
         ),
         before
     );
-    
+
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
     );

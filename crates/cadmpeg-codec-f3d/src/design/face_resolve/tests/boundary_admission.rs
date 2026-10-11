@@ -642,7 +642,10 @@ fn retained_operand_sources_membership_and_kept_slot_refuse_limits() {
     let (mut operand, group, _) = super::start_geometry_fixture();
     operand.candidate_faces = vec![face(10)];
     for (dimension, operation) in [
-        (ResourceDimension::WorkUnits, "visit F3D retained face operand"),
+        (
+            ResourceDimension::WorkUnits,
+            "visit F3D retained face operand",
+        ),
         (
             ResourceDimension::WorkUnits,
             "find F3D retained face group member",

@@ -5,13 +5,13 @@ use cadmpeg_core::container::ContainerRole;
 
 use crate::container::ContainerScan;
 use crate::design::decode::operands::{entity_selection_matches_curve, parse_sketch_profile};
+use crate::design::feature_project::unique_feature_match_for_decode;
 use crate::design::geometry::{
     arrangement_region_containing_points, historical_member_points_in_state, point_in_polygon,
     point_on_sketch_entity, point_segment_distance, profile_loops_are_independent,
     project_to_sketch, region_containing_points,
 };
 use crate::ids::native_stream_charged;
-use crate::design::feature_project::unique_feature_match_for_decode;
 use crate::records::{
     decal::DesignRecordHeader,
     entity_header::DesignEntityHeader,
@@ -176,7 +176,9 @@ pub(crate) fn bind_sweep_sketch_selections(
                         break 'feature_edit;
                     };
 
-                    let Some(scope) = unique_feature_match_for_decode(ctx, scopes.iter(),
+                    let Some(scope) = unique_feature_match_for_decode(
+                        ctx,
+                        scopes.iter(),
                         |scope| {
                             ctx.equal(
                                 scope.id.as_str(),
@@ -190,7 +192,9 @@ pub(crate) fn bind_sweep_sketch_selections(
                         break 'feature_edit;
                     };
 
-                    let Some(stream) = native_stream_charged(ctx, &scope.id, "f3d profile native stream")? else {
+                    let Some(stream) =
+                        native_stream_charged(ctx, &scope.id, "f3d profile native stream")?
+                    else {
                         break 'feature_edit;
                     };
                     let FeatureDefinition::Operation(FeatureOperation::Sweep {
@@ -209,7 +213,9 @@ pub(crate) fn bind_sweep_sketch_selections(
                         {
                             let group_id = group_id.as_str();
                             let group_matches = {
-                                unique_feature_match_for_decode(ctx, groups.iter(),
+                                unique_feature_match_for_decode(
+                                    ctx,
+                                    groups.iter(),
                                     |group| {
                                         Ok(ctx.equal(
                                             group.id.as_str(),
@@ -223,7 +229,11 @@ pub(crate) fn bind_sweep_sketch_selections(
                                                 .map(|member| member.value)
                                                 .eq([profile_operand.record_index])
                                             && ctx.equal(
-                                                &native_stream_charged(ctx, &group.id, "f3d profile native stream")?,
+                                                &native_stream_charged(
+                                                    ctx,
+                                                    &group.id,
+                                                    "f3d profile native stream",
+                                                )?,
                                                 &Some(stream),
                                                 "f3d profile candidate stream comparison",
                                             )?)
@@ -233,10 +243,16 @@ pub(crate) fn bind_sweep_sketch_selections(
                                 .is_some()
                             };
                             if group_matches {
-                                if let Some(placement) = unique_feature_match_for_decode(ctx, placements.iter(),
+                                if let Some(placement) = unique_feature_match_for_decode(
+                                    ctx,
+                                    placements.iter(),
                                     |placement| {
                                         Ok(ctx.equal(
-                                            &native_stream_charged(ctx, &placement.id, "f3d profile native stream")?,
+                                            &native_stream_charged(
+                                                ctx,
+                                                &placement.id,
+                                                "f3d profile native stream",
+                                            )?,
                                             &Some(stream),
                                             "f3d profile candidate stream comparison",
                                         )? && placement.entity_id.suffix()
@@ -274,7 +290,9 @@ pub(crate) fn bind_sweep_sketch_selections(
                                 ctx.reserve_scoped(0, "f3d sweep resolved entity storage")?;
                             let resolved = resolved_storage.with_storage(
                                 || -> Result<Option<_>, CodecError> {
-                                    let group = or_none!(unique_feature_match_for_decode(ctx, groups.iter(),
+                                    let group = or_none!(unique_feature_match_for_decode(
+                                        ctx,
+                                        groups.iter(),
                                         |group| Ok(ctx.equal(
                                             group.id.as_str(),
                                             group_id.as_ref(),
@@ -284,30 +302,46 @@ pub(crate) fn bind_sweep_sketch_selections(
                                             && group.role() == DesignOperandRole::PROFILE
                                             && group.members().len() == 1
                                             && ctx.equal(
-                                                &native_stream_charged(ctx, &group.id, "f3d profile native stream")?,
+                                                &native_stream_charged(
+                                                    ctx,
+                                                    &group.id,
+                                                    "f3d profile native stream"
+                                                )?,
                                                 &Some(stream),
                                                 "f3d profile candidate stream comparison"
                                             )?),
                                         "f3d profile candidate source search"
                                     )?);
 
-                                    let operand = or_none!(unique_feature_match_for_decode(ctx, operands.iter(),
+                                    let operand = or_none!(unique_feature_match_for_decode(
+                                        ctx,
+                                        operands.iter(),
                                         |operand| Ok(operand.scope_record_index
                                             == scope.record_index
                                             && operand.group_record_index == group.record_index
                                             && operand.group_member_ordinal == 0
                                             && operand.record_index() == group.members()[0].value
                                             && ctx.equal(
-                                                &native_stream_charged(ctx, &operand.id, "f3d profile native stream")?,
+                                                &native_stream_charged(
+                                                    ctx,
+                                                    &operand.id,
+                                                    "f3d profile native stream"
+                                                )?,
                                                 &Some(stream),
                                                 "f3d profile candidate stream comparison"
                                             )?),
                                         "f3d profile candidate source search"
                                     )?);
 
-                                    let placement = or_none!(unique_feature_match_for_decode(ctx, placements.iter(),
+                                    let placement = or_none!(unique_feature_match_for_decode(
+                                        ctx,
+                                        placements.iter(),
                                         |placement| Ok(ctx.equal(
-                                            &native_stream_charged(ctx, &placement.id, "f3d profile native stream")?,
+                                            &native_stream_charged(
+                                                ctx,
+                                                &placement.id,
+                                                "f3d profile native stream"
+                                            )?,
                                             &Some(stream),
                                             "f3d profile candidate stream comparison"
                                         )? && placement.entity_id.suffix()
@@ -333,9 +367,15 @@ pub(crate) fn bind_sweep_sketch_selections(
                                     let owner_reference =
                                         or_none!(u32::try_from(operand.primary_identity).ok());
 
-                                    let curve = or_none!(unique_feature_match_for_decode(ctx, curve_identities.iter(),
+                                    let curve = or_none!(unique_feature_match_for_decode(
+                                        ctx,
+                                        curve_identities.iter(),
                                         |curve| Ok(ctx.equal(
-                                            &native_stream_charged(ctx, &curve.id, "f3d profile native stream")?,
+                                            &native_stream_charged(
+                                                ctx,
+                                                &curve.id,
+                                                "f3d profile native stream"
+                                            )?,
                                             &Some(stream),
                                             "f3d profile candidate stream comparison"
                                         )? && curve.owner_reference
@@ -385,7 +425,9 @@ pub(crate) fn bind_sweep_sketch_selections(
                                 return Ok(None);
                             };
 
-                            let Some(group) = unique_feature_match_for_decode(ctx, groups.iter(),
+                            let Some(group) = unique_feature_match_for_decode(
+                                ctx,
+                                groups.iter(),
                                 |group| {
                                     Ok(ctx.equal(
                                         group.id.as_str(),
@@ -394,7 +436,11 @@ pub(crate) fn bind_sweep_sketch_selections(
                                     )? && group.scope_record_index == scope.record_index
                                         && group.role() == DesignOperandRole::ROLE_0X5
                                         && ctx.equal(
-                                            &native_stream_charged(ctx, &group.id, "f3d profile native stream")?,
+                                            &native_stream_charged(
+                                                ctx,
+                                                &group.id,
+                                                "f3d profile native stream",
+                                            )?,
                                             &Some(stream),
                                             "f3d profile candidate stream comparison",
                                         )?)
@@ -452,7 +498,9 @@ pub(crate) fn bind_split_face_sketch_selections(
                         break 'feature_edit;
                     };
 
-                    let Some(group) = unique_feature_match_for_decode(ctx, resolution.groups.iter(),
+                    let Some(group) = unique_feature_match_for_decode(
+                        ctx,
+                        resolution.groups.iter(),
                         |group| {
                             Ok(ctx.equal(
                                 group.id.as_str(),
@@ -504,7 +552,9 @@ pub(crate) fn bind_surface_trim_sketch_selections(
                         break 'feature_edit;
                     };
 
-                    let Some(group) = unique_feature_match_for_decode(ctx, resolution.groups.iter(),
+                    let Some(group) = unique_feature_match_for_decode(
+                        ctx,
+                        resolution.groups.iter(),
                         |group| {
                             Ok(ctx.equal(
                                 group.id.as_str(),
@@ -610,15 +660,25 @@ pub(crate) fn bind_extrude_profile_selections(
                         break 'feature_edit;
                     };
                     if let ProfileRef::Planar(PlanarProfileRef::Native(native)) = profile {
-                        if let Some(group) = unique_feature_match_for_decode(ctx, curve_resolution.groups.iter(),
+                        if let Some(group) = unique_feature_match_for_decode(
+                            ctx,
+                            curve_resolution.groups.iter(),
                             |group| {
                                 Ok(ctx.equal(
                                     group.id.as_str(),
                                     native.as_ref(),
                                     "f3d profile candidate identity comparison",
                                 )? && ctx.equal(
-                                    &native_stream_charged(ctx, &group.id, "f3d profile native stream")?,
-                                    &native_stream_charged(ctx, &scope.id, "f3d profile native stream")?,
+                                    &native_stream_charged(
+                                        ctx,
+                                        &group.id,
+                                        "f3d profile native stream",
+                                    )?,
+                                    &native_stream_charged(
+                                        ctx,
+                                        &scope.id,
+                                        "f3d profile native stream",
+                                    )?,
                                     "f3d profile candidate stream comparison",
                                 )? && group.scope_record_index == scope.record_index)
                             },
@@ -832,9 +892,10 @@ pub(crate) fn bind_extrude_profile_selections(
                         ));
                         break 'feature_edit;
                     };
-                    if let (Some(profile_operand), Some(stream)) =
-                        (scope.extrude_profile(), native_stream_charged(ctx, &scope.id, "f3d profile native stream")?)
-                    {
+                    if let (Some(profile_operand), Some(stream)) = (
+                        scope.extrude_profile(),
+                        native_stream_charged(ctx, &scope.id, "f3d profile native stream")?,
+                    ) {
                         if let Some(profiles) = resolved_sketch_profile_regions(
                             stream,
                             profile_operand,
@@ -1068,7 +1129,9 @@ fn resolve_entity_selection_profile(
             let mut profiles = Vec::new();
             let mut curve_source = curves.iter();
             while let Some(curve) = ctx.next_charged(&mut curve_source, "f3d curve scan")? {
-                let Some((index, _)) = unique_feature_match_for_decode(ctx, source.profiles.iter().enumerate(),
+                let Some((index, _)) = unique_feature_match_for_decode(
+                    ctx,
+                    source.profiles.iter().enumerate(),
                     |(_, profile)| {
                         ctx.any_by(
                             profile.boundary(),
@@ -1161,8 +1224,11 @@ fn historical_face_profile_selection(
     if next_state()?.is_some() {
         return Ok(None);
     }
-    let Some(first_group) = groups.first() else { return Ok(None); };
-    let Some(stream) = native_stream_charged(ctx, &first_group.id, "f3d profile native stream")? else {
+    let Some(first_group) = groups.first() else {
+        return Ok(None);
+    };
+    let Some(stream) = native_stream_charged(ctx, &first_group.id, "f3d profile native stream")?
+    else {
         return Ok(None);
     };
     let mut selected_faces_storage =
@@ -1849,7 +1915,9 @@ pub(super) fn resolved_extrude_profile_selection(
                         )
                     })?;
 
-                    let Some((index, _)) = unique_feature_match_for_decode(ctx, sketch.profiles.iter().enumerate(),
+                    let Some((index, _)) = unique_feature_match_for_decode(
+                        ctx,
+                        sketch.profiles.iter().enumerate(),
                         |(_, profile)| {
                             ctx.any_by(
                                 profile,
@@ -2363,7 +2431,9 @@ fn resolved_spatial_extrude_profile_selection(
                 )
             })?;
 
-            let Some((index, _)) = unique_feature_match_for_decode(ctx, sketch.profiles.iter().enumerate(),
+            let Some((index, _)) = unique_feature_match_for_decode(
+                ctx,
+                sketch.profiles.iter().enumerate(),
                 |(_, profile)| {
                     ctx.any_by(
                         profile.boundary(),
@@ -2938,8 +3008,9 @@ pub(super) fn historical_face_points<'ctx>(
                     "f3d historical coedge index",
                 )?);
             }
-            let (coedges, _storage) = scoped_coedges.as_ref().ok_or_else(||
-                CodecError::malformed("Historical coedges index is absent"))?;
+            let (coedges, _storage) = scoped_coedges
+                .as_ref()
+                .ok_or_else(|| CodecError::malformed("Historical coedges index is absent"))?;
             let Some(coedge) =
                 ctx.get_hash_map(coedges, coedge_ref, "f3d historical coedge lookup")?
             else {
@@ -2952,8 +3023,9 @@ pub(super) fn historical_face_points<'ctx>(
                     "f3d historical face edge index",
                 )?);
             }
-            let (edges, _storage) = scoped_edges.as_ref().ok_or_else(||
-                CodecError::malformed("Historical edges index is absent"))?;
+            let (edges, _storage) = scoped_edges
+                .as_ref()
+                .ok_or_else(|| CodecError::malformed("Historical edges index is absent"))?;
             let Some(edge) =
                 ctx.get_hash_map(edges, &coedge.edge, "f3d historical face edge lookup")?
             else {
@@ -2970,8 +3042,9 @@ pub(super) fn historical_face_points<'ctx>(
                         "f3d historical face vertex index",
                     )?);
                 }
-                let (vertices, _storage) = scoped_vertices.as_ref().ok_or_else(||
-                    CodecError::malformed("Historical vertices index is absent"))?;
+                let (vertices, _storage) = scoped_vertices
+                    .as_ref()
+                    .ok_or_else(|| CodecError::malformed("Historical vertices index is absent"))?;
                 let Some(point_ref) =
                     ctx.get_hash_map(vertices, &vertex_ref, "f3d historical face vertex lookup")?
                 else {
@@ -2987,8 +3060,9 @@ pub(super) fn historical_face_points<'ctx>(
                         "f3d historical face point index",
                     )?);
                 }
-                let (points, _storage) = scoped_points.as_ref().ok_or_else(||
-                    CodecError::malformed("Historical points index is absent"))?;
+                let (points, _storage) = scoped_points
+                    .as_ref()
+                    .ok_or_else(|| CodecError::malformed("Historical points index is absent"))?;
                 let Some(position) =
                     ctx.get_hash_map(points, point_ref, "f3d historical face point lookup")?
                 else {
@@ -3120,7 +3194,8 @@ fn historical_selection_regions(
     let mut conflicting_state_selections = false;
     let mut selected_states = state_ids.into_iter();
     while let Some(state_id) = ctx.next_charged(
-        &mut selected_states, "visit F3D historical selection selected state",
+        &mut selected_states,
+        "visit F3D historical selection selected state",
     )? {
         let Some(topology) = ctx
             .get_hash_map(states, &state_id, "f3d historical state lookup")?
@@ -3877,17 +3952,31 @@ fn resolve_entity_selection_path(
     if group.members().is_empty() {
         return Ok(None);
     }
-    let stream = or_none!(native_stream_charged(ctx, &group.id, "f3d profile native stream")?);
+    let stream = or_none!(native_stream_charged(
+        ctx,
+        &group.id,
+        "f3d profile native stream"
+    )?);
     let mut operand_storage = ctx.reserve_scoped(0, "f3d entity path operand keys")?;
     let mut operand_entries = Vec::new();
     let mut operand_source = resolution.operands.iter();
-    while let Some(operand) = ctx.next_charged(&mut operand_source, "f3d entity path operand source")? {
+    while let Some(operand) =
+        ctx.next_charged(&mut operand_source, "f3d entity path operand source")?
+    {
         let stream = native_stream_charged(ctx, &operand.id, "f3d profile native stream")?;
         ctx.push_scoped_vec(
             &mut operand_storage,
             &mut operand_entries,
-            ((stream, operand.scope_record_index, operand.group_record_index,
-              operand.group_member_ordinal, operand.record_index()), operand),
+            (
+                (
+                    stream,
+                    operand.scope_record_index,
+                    operand.group_record_index,
+                    operand.group_member_ordinal,
+                    operand.record_index(),
+                ),
+                operand,
+            ),
             "f3d entity path operand key",
         )?;
     }
@@ -3931,11 +4020,19 @@ fn resolve_entity_selection_path(
         let secondary = or_none!(operand.secondary());
         if primary_identity.is_some_and(|expected| expected != operand.primary_identity)
             || match asset_id {
-                Some(expected) => !ctx.equal(expected, operand.asset_id.as_str(), "f3d entity path asset comparison")?,
+                Some(expected) => !ctx.equal(
+                    expected,
+                    operand.asset_id.as_str(),
+                    "f3d entity path asset comparison",
+                )?,
                 None => false,
             }
             || match context_id {
-                Some(expected) => !ctx.equal(expected, operand.context_id.as_str(), "f3d entity path context comparison")?,
+                Some(expected) => !ctx.equal(
+                    expected,
+                    operand.context_id.as_str(),
+                    "f3d entity path context comparison",
+                )?,
                 None => false,
             }
         {
@@ -3953,7 +4050,9 @@ fn resolve_entity_selection_path(
         })?;
     }
     let primary_identity = or_none!(primary_identity);
-    let placement = or_none!(unique_feature_match_for_decode(ctx, resolution.placements,
+    let placement = or_none!(unique_feature_match_for_decode(
+        ctx,
+        resolution.placements,
         |placement| Ok(ctx.equal(
             &native_stream_charged(ctx, &placement.id, "f3d profile native stream")?,
             &Some(stream),
@@ -3968,7 +4067,9 @@ fn resolve_entity_selection_path(
     while let Some(secondary) =
         ctx.next_charged(&mut identities, "f3d entity path selected identity scan")?
     {
-        let curve = or_none!(unique_feature_match_for_decode(ctx, resolution.curve_identities,
+        let curve = or_none!(unique_feature_match_for_decode(
+            ctx,
+            resolution.curve_identities,
             |curve| Ok(ctx.equal(
                 &native_stream_charged(ctx, &curve.id, "f3d profile native stream")?,
                 &Some(stream),
@@ -4136,7 +4237,9 @@ fn spatial_profile_member_entity<'a>(
     curve_identities: &[SketchCurveIdentity],
     spatial_entities: &'a [cadmpeg_ir::sketches::SpatialSketchEntity],
 ) -> Result<Option<&'a cadmpeg_ir::sketches::SpatialSketchEntity>, CodecError> {
-    let curve = or_none!(unique_feature_match_for_decode(ctx, curve_identities,
+    let curve = or_none!(unique_feature_match_for_decode(
+        ctx,
+        curve_identities,
         |curve| Ok(ctx.equal(
             &native_stream_charged(ctx, &curve.id, "f3d profile native stream")?,
             &Some(stream),
@@ -4155,7 +4258,9 @@ fn spatial_profile_member_entity<'a>(
             curve.secondary_id,
         )
     })?;
-    unique_feature_match_for_decode(ctx, spatial_entities,
+    unique_feature_match_for_decode(
+        ctx,
+        spatial_entities,
         |entity| {
             Ok(ctx.equal(
                 &entity.sketch,
@@ -4180,7 +4285,9 @@ fn sketch_profile_member_entity<'a>(
     curve_identities: &[SketchCurveIdentity],
     sketch_entities: &'a [cadmpeg_ir::sketches::SketchEntity],
 ) -> Result<Option<&'a cadmpeg_ir::sketches::SketchEntityId>, CodecError> {
-    let curve = or_none!(unique_feature_match_for_decode(ctx, curve_identities,
+    let curve = or_none!(unique_feature_match_for_decode(
+        ctx,
+        curve_identities,
         |curve| Ok(ctx.equal(
             &native_stream_charged(ctx, &curve.id, "f3d profile native stream")?,
             &Some(stream),
@@ -4199,7 +4306,9 @@ fn sketch_profile_member_entity<'a>(
             curve.secondary_id,
         )
     })?;
-    Ok(unique_feature_match_for_decode(ctx, sketch_entities,
+    Ok(unique_feature_match_for_decode(
+        ctx,
+        sketch_entities,
         |entity| {
             Ok(ctx.equal(
                 &entity.sketch,
@@ -4240,7 +4349,9 @@ fn resolved_sketch_profile_regions(
             curve_identities,
             sketch_entities
         )?);
-        let (profile_index, selected_profile) = or_none!(unique_feature_match_for_decode(ctx, sketch.profiles.iter().enumerate(),
+        let (profile_index, selected_profile) = or_none!(unique_feature_match_for_decode(
+            ctx,
+            sketch.profiles.iter().enumerate(),
             |(_, profile)| ctx.any_by(
                 profile,
                 |use_| ctx.equal(&use_.entity, first, "f3d planar region entity comparison"),
@@ -4380,7 +4491,9 @@ fn resolved_spatial_sketch_profile_regions(
             resolution.curve_identities,
             resolution.spatial_sketch_entities
         )?);
-        let (profile_index, selected_profile) = or_none!(unique_feature_match_for_decode(ctx, spatial_sketch.profiles.iter().enumerate(),
+        let (profile_index, selected_profile) = or_none!(unique_feature_match_for_decode(
+            ctx,
+            spatial_sketch.profiles.iter().enumerate(),
             |(_, candidate)| ctx.any_by(
                 candidate.boundary(),
                 |use_| ctx.equal(
@@ -4477,7 +4590,9 @@ fn spatial_profile_containing_entity(
     entity: &cadmpeg_ir::sketches::SpatialSketchEntityId,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<u32>, CodecError> {
-    Ok(unique_feature_match_for_decode(ctx, sketch.profiles.iter().enumerate(),
+    Ok(unique_feature_match_for_decode(
+        ctx,
+        sketch.profiles.iter().enumerate(),
         |(_, profile)| {
             ctx.any_by(
                 profile.boundary(),
@@ -4511,7 +4626,8 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
     let mut header_storage = ctx.reserve_scoped(0, "f3d loft header storage")?;
     let mut header_index = HashMap::new();
     for header in ctx.admit_iter(headers, "f3d loft header scan")? {
-        let Some(stream) = native_stream_charged(ctx, &header.id, "f3d profile native stream")? else {
+        let Some(stream) = native_stream_charged(ctx, &header.id, "f3d profile native stream")?
+        else {
             continue;
         };
         header_storage
@@ -4536,7 +4652,8 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             ) && group.members().len() == 1
         })
     {
-        let Some(stream) = native_stream_charged(ctx, &group.id, "f3d profile native stream")? else {
+        let Some(stream) = native_stream_charged(ctx, &group.id, "f3d profile native stream")?
+        else {
             continue;
         };
         let Some(entry) =
@@ -4569,7 +4686,9 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             continue;
         };
 
-        let Some(placement) = unique_feature_match_for_decode(ctx, resolution.placements.iter(),
+        let Some(placement) = unique_feature_match_for_decode(
+            ctx,
+            resolution.placements.iter(),
             |placement| {
                 Ok(ctx.equal(
                     &native_stream_charged(ctx, &placement.id, "f3d profile native stream")?,
@@ -4698,11 +4817,14 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         .admit_iter(groups, "f3d profile source group scan")?
         .filter(|group| group.role() == DesignOperandRole::ROLE_0X5 && group.members().len() == 1)
     {
-        let Some(stream) = native_stream_charged(ctx, &group.id, "f3d profile native stream")? else {
+        let Some(stream) = native_stream_charged(ctx, &group.id, "f3d profile native stream")?
+        else {
             continue;
         };
 
-        let Some(operand) = unique_feature_match_for_decode(ctx, resolution.entity_selection_operands.iter(),
+        let Some(operand) = unique_feature_match_for_decode(
+            ctx,
+            resolution.entity_selection_operands.iter(),
             |operand| {
                 Ok(ctx.equal(
                     &native_stream_charged(ctx, &operand.id, "f3d profile native stream")?,
@@ -4719,7 +4841,9 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             continue;
         };
 
-        let Some(placement) = unique_feature_match_for_decode(ctx, resolution.placements.iter(),
+        let Some(placement) = unique_feature_match_for_decode(
+            ctx,
+            resolution.placements.iter(),
             |placement| {
                 Ok(ctx.equal(
                     &native_stream_charged(ctx, &placement.id, "f3d profile native stream")?,
@@ -4755,7 +4879,9 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             continue;
         };
 
-        let Some(curve) = unique_feature_match_for_decode(ctx, resolution.curve_identities.iter(),
+        let Some(curve) = unique_feature_match_for_decode(
+            ctx,
+            resolution.curve_identities.iter(),
             |curve| {
                 Ok(ctx.equal(
                     &native_stream_charged(ctx, &curve.id, "f3d profile native stream")?,

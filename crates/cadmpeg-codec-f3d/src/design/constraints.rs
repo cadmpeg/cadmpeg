@@ -99,7 +99,9 @@ pub(crate) fn project_sketch_constraints(
                 record_storage.with_storage(|| -> Result<_, CodecError> {
                     let mut record_keys_by_native_ref = HashMap::new();
                     for point in ctx.admit_iter(points, "f3d sketch constraint points scan")? {
-                        if let Some(scope) = native_stream_charged(ctx, &point.id, "f3d constraint native stream")? {
+                        if let Some(scope) =
+                            native_stream_charged(ctx, &point.id, "f3d constraint native stream")?
+                        {
                             ctx.insert_hash_map(
                                 &mut record_keys_by_native_ref,
                                 point.id.as_str(),
@@ -110,7 +112,9 @@ pub(crate) fn project_sketch_constraints(
                         }
                     }
                     for curve in ctx.admit_iter(curves, "f3d sketch constraint curves scan")? {
-                        if let Some(scope) = native_stream_charged(ctx, &curve.id, "f3d constraint native stream")? {
+                        if let Some(scope) =
+                            native_stream_charged(ctx, &curve.id, "f3d constraint native stream")?
+                        {
                             ctx.insert_hash_map(
                                 &mut record_keys_by_native_ref,
                                 curve.id.as_str(),
@@ -121,7 +125,9 @@ pub(crate) fn project_sketch_constraints(
                         }
                     }
                     for text in ctx.admit_iter(texts, "f3d sketch constraint texts scan")? {
-                        if let Some(scope) = native_stream_charged(ctx, &text.id, "f3d constraint native stream")? {
+                        if let Some(scope) =
+                            native_stream_charged(ctx, &text.id, "f3d constraint native stream")?
+                        {
                             ctx.insert_hash_map(
                                 &mut record_keys_by_native_ref,
                                 text.id.as_str(),
@@ -159,7 +165,9 @@ pub(crate) fn project_sketch_constraints(
             drop(record_storage);
             let mut point_native_refs = HashMap::new();
             for point in ctx.admit_iter(points, "f3d sketch constraint points scan")? {
-                if let Some(scope) = native_stream_charged(ctx, &point.id, "f3d constraint native stream")? {
+                if let Some(scope) =
+                    native_stream_charged(ctx, &point.id, "f3d constraint native stream")?
+                {
                     ctx.insert_hash_map(
                         &mut point_native_refs,
                         (scope, point.record_index),
@@ -171,7 +179,9 @@ pub(crate) fn project_sketch_constraints(
             }
             let mut curve_native_refs = HashMap::new();
             for curve in ctx.admit_iter(curves, "f3d sketch constraint curves scan")? {
-                if let Some(scope) = native_stream_charged(ctx, &curve.id, "f3d constraint native stream")? {
+                if let Some(scope) =
+                    native_stream_charged(ctx, &curve.id, "f3d constraint native stream")?
+                {
                     ctx.insert_hash_map(
                         &mut curve_native_refs,
                         (scope, curve.record_index),
@@ -183,7 +193,9 @@ pub(crate) fn project_sketch_constraints(
             }
             let mut text_native_refs = HashMap::new();
             for text in ctx.admit_iter(texts, "f3d sketch constraint texts scan")? {
-                if let Some(scope) = native_stream_charged(ctx, &text.id, "f3d constraint native stream")? {
+                if let Some(scope) =
+                    native_stream_charged(ctx, &text.id, "f3d constraint native stream")?
+                {
                     ctx.insert_hash_map(
                         &mut text_native_refs,
                         (scope, text.record_index),
@@ -263,7 +275,9 @@ pub(crate) fn project_sketch_constraints(
     let mut pattern_parameters = PatternParameters::new(ctx, parameters);
     let mut project_relation =
         |relation: &SketchRelation| -> Result<Option<SketchConstraint>, CodecError> {
-            let Some(scope) = native_stream_charged(ctx, &relation.id, "f3d constraint native stream")? else {
+            let Some(scope) =
+                native_stream_charged(ctx, &relation.id, "f3d constraint native stream")?
+            else {
                 return Ok(None);
             };
             let Some(sketch) = ctx.get_hash_map(
@@ -533,9 +547,14 @@ impl<'a, 'ctx> PatternParameters<'a, 'ctx> {
                 let values = storage.with_storage(|| -> Result<_, CodecError> {
                     let mut index = HashMap::new();
                     for parameter in ctx.admit_iter(self.source, "f3d pattern parameter scan")? {
-                        let (Some(stream), Some(owner)) =
-                            (native_stream_charged(ctx, &parameter.id, "f3d constraint native stream")?, parameter.owner_record_index())
-                        else {
+                        let (Some(stream), Some(owner)) = (
+                            native_stream_charged(
+                                ctx,
+                                &parameter.id,
+                                "f3d constraint native stream",
+                            )?,
+                            parameter.owner_record_index(),
+                        ) else {
                             continue;
                         };
                         ctx.entry_hash_map(

@@ -54,7 +54,7 @@ fn face_membership_first_match_does_not_visit_native_suffix() {
             ctx.finish_session().unwrap();
         } else {
             let original = refusal(&result.unwrap_err(), "first face match", cap);
-            
+
             assert!(matches!(ctx.finish_session(),
                 Err(CodecError::ResourceLimit(actual)) if actual == original));
         }
@@ -129,8 +129,8 @@ fn face_slot_membership_pays_only_reached_slots_and_terminal_probe() {
     let arena = DecodeArena::new();
     let policy = policy(3);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let original = refusal(&
-        contains_slot(&ctx, &values, 4, "stable slot query").unwrap_err(),
+    let original = refusal(
+        &contains_slot(&ctx, &values, 4, "stable slot query").unwrap_err(),
         "stable slot query",
         3,
     );

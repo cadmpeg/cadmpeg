@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::super::{
-    explicit_bounded_face_candidates, historical_face_operand_candidates,
-    legacy_face_recipe_reference_candidates, nested_bounded_face_history_candidates,
-    resolved_extrude_profile_active_faces, resolved_face_operand,
+    historical_face_operand_candidates, legacy_face_recipe_reference_candidates,
+    nested_bounded_face_history_candidates, resolved_extrude_profile_active_faces,
     split_face_complete_candidate_slots,
 };
+use super::borrowed_candidates::{explicit_bounded_face_candidates, resolved_face_operand};
 use super::{face, legacy_face_candidate_limit_fixture, reference, stable_bounded_face_operand};
 use crate::records::recipes::ConstructionRecipeKind;
 use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
@@ -237,7 +237,7 @@ fn resolved_slot_cache_stops_before_candidate_tail_and_admits_sources() {
     operand.resolved_face_slots = vec![10, 10];
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 1024;
-    policy.limits.max_collection_items = 5; // One index entry, two selected slots, two output slots.
+    policy.limits.max_collection_items = 5; // Cache and selected proofs fit; the candidate tail cannot fit.
     crate::test_support::with_decode_policy(&policy, |ctx| {
         assert_eq!(
             resolved_face_operand(ctx, &operand).unwrap(),

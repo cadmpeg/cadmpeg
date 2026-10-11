@@ -101,7 +101,6 @@ fn single_operand_query_duplicate_stops_before_long_unread_source_tail() {
         assert_eq!(original.operation, "match F3D single operand group stream");
         assert_eq!((original.used, original.additional), (reached - 1, 1));
         assert_eq!(ctx.resource_refusal(), Some(original));
-        
     });
     assert_eq!(groups, original);
 }
@@ -203,7 +202,6 @@ fn single_operand_query_each_reached_phase_keeps_original_refusal() {
             assert_eq!(original.dimension, ResourceDimension::WorkUnits);
             assert_eq!(original.additional, 1);
             assert_eq!(ctx.resource_refusal(), Some(original));
-            
         });
     }
 }
@@ -249,7 +247,6 @@ fn single_operand_query_remove_body_caller_keeps_native_output_and_original_refu
         };
         assert_eq!(original.operation, "find F3D single operand group");
         assert_eq!(ctx.resource_refusal(), Some(original));
-        
     });
     assert_eq!(group, original);
 }

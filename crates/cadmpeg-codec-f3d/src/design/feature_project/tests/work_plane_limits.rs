@@ -61,13 +61,13 @@ fn work_plane_vertex_recipe_id_refuses_retained_limit() {
         FeatureDefinition::Operation(FeatureOperation::DatumThreePointPlane { .. })
     ));
     let error = crate::test_support::resource_refusal_at(
-        ResourceDimension::RetainedBytes, "f3d WorkPlane vertex recipe id", 0,
+        ResourceDimension::RetainedBytes,
+        "f3d WorkPlane vertex recipe id",
+        0,
         |ctx| super::super::project_work_plane(ctx, &plane, transform),
     );
-    assert!(
-        matches!(error,
+    assert!(matches!(error,
         CodecError::ResourceLimit(failure)
             if failure.dimension == ResourceDimension::RetainedBytes
-                && failure.operation == "f3d WorkPlane vertex recipe id")
-    );
+                && failure.operation == "f3d WorkPlane vertex recipe id"));
 }

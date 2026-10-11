@@ -227,7 +227,9 @@ fn edge_text_partition_target_identity_is_compared_once_per_group() {
     let result = measure(|ctx| partition_ids(id, id, ctx).unwrap());
     assert_eq!(result.0, None);
     crate::test_support::resource_refusal_at(
-        ResourceDimension::WorkUnits, "compare F3D partition group identity", 0,
+        ResourceDimension::WorkUnits,
+        "compare F3D partition group identity",
+        0,
         |ctx| partition_ids(id, id, ctx),
     );
 }

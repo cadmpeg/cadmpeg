@@ -431,8 +431,6 @@ fn assert_coincident_limit(
     );
 }
 
-
-
 #[test]
 fn coincident_solution_entity_id_refuses_retained_limit() {
     assert_coincident_limit(

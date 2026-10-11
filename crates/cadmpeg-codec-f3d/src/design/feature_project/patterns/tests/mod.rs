@@ -6,5 +6,5 @@
     clippy::uninlined_format_args
 )]
 
-mod seeds;
 mod mirror;
+mod seeds;

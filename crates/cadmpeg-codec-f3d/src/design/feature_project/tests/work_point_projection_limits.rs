@@ -131,10 +131,24 @@ fn assert_retained_refusal(
     scope_ids: &HashMap<(&str, u32), FeatureId>,
     operation: &'static str,
 ) {
-    let error = crate::test_support::resource_refusal_at(ResourceDimension::RetainedBytes, operation, 0, |ctx| {
-        super::super::project_work_point_construction(ctx, &scope(), construction, &[], edge_operands, scope_ids)
-    });
-    assert!(matches!(error, CodecError::ResourceLimit(failure) if failure.operation == operation && failure.dimension == ResourceDimension::RetainedBytes));
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::RetainedBytes,
+        operation,
+        0,
+        |ctx| {
+            super::super::project_work_point_construction(
+                ctx,
+                &scope(),
+                construction,
+                &[],
+                edge_operands,
+                scope_ids,
+            )
+        },
+    );
+    assert!(
+        matches!(error, CodecError::ResourceLimit(failure) if failure.operation == operation && failure.dimension == ResourceDimension::RetainedBytes)
+    );
 }
 
 #[test]

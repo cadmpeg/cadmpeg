@@ -100,8 +100,14 @@ fn text_frame_curve_records<'a>(
     let (curve_owners, text_owners) = storage.with_storage(|| -> Result<_, CodecError> {
         let mut curve_owners = HashMap::new();
         for curve in ctx.admit_iter(curves, "f3d text frame curve scan")? {
-            let (Some(scope), Some(owner)) = (crate::ids::native_stream_charged(ctx, &curve.id, "resolve F3D sketch projection stream")?, curve.owner_reference)
-            else {
+            let (Some(scope), Some(owner)) = (
+                crate::ids::native_stream_charged(
+                    ctx,
+                    &curve.id,
+                    "resolve F3D sketch projection stream",
+                )?,
+                curve.owner_reference,
+            ) else {
                 continue;
             };
             ctx.insert_hash_map(
@@ -113,7 +119,12 @@ fn text_frame_curve_records<'a>(
         }
         let mut text_owners = HashMap::new();
         for text in ctx.admit_iter(texts, "f3d text frame text scan")? {
-            let Some(scope) = crate::ids::native_stream_charged(ctx, &text.id, "resolve F3D sketch projection stream")? else {
+            let Some(scope) = crate::ids::native_stream_charged(
+                ctx,
+                &text.id,
+                "resolve F3D sketch projection stream",
+            )?
+            else {
                 continue;
             };
             ctx.insert_hash_map(
@@ -133,7 +144,12 @@ fn text_frame_curve_records<'a>(
         else {
             continue;
         };
-        let Some(scope) = crate::ids::native_stream_charged(ctx, &relation.id, "resolve F3D sketch projection stream")? else {
+        let Some(scope) = crate::ids::native_stream_charged(
+            ctx,
+            &relation.id,
+            "resolve F3D sketch projection stream",
+        )?
+        else {
             continue;
         };
         if crate::design::relation_kinds::sole_constraint_kind(relation).is_none()
@@ -215,7 +231,11 @@ pub(crate) fn project_sketch_design(
             let mut placements_by_suffix = HashMap::new();
             for placement in ctx.admit_iter(placements, "f3d sketch projection placements scan")? {
                 let (Some(scope), Ok(owner)) = (
-                    crate::ids::native_stream_charged(ctx, &placement.id, "resolve F3D sketch projection stream")?,
+                    crate::ids::native_stream_charged(
+                        ctx,
+                        &placement.id,
+                        "resolve F3D sketch projection stream",
+                    )?,
                     u32::try_from(placement.entity_id.suffix()),
                 ) else {
                     continue;
@@ -235,7 +255,11 @@ pub(crate) fn project_sketch_design(
     for placement in ctx.admit_iter(placements, "f3d sketch projection placements scan")? {
         if let (Ok(owner), Some(scope)) = (
             u32::try_from(placement.entity_id.suffix()),
-            crate::ids::native_stream_charged(ctx, &placement.id, "resolve F3D sketch projection stream")?,
+            crate::ids::native_stream_charged(
+                ctx,
+                &placement.id,
+                "resolve F3D sketch projection stream",
+            )?,
         ) {
             if ctx.contains_hash_set(
                 &spatial_owners,
@@ -297,7 +321,12 @@ pub(crate) fn project_sketch_design(
         let Some(owner) = point.owner_reference else {
             continue;
         };
-        let Some(scope) = crate::ids::native_stream_charged(ctx, &point.id, "resolve F3D sketch projection stream")? else {
+        let Some(scope) = crate::ids::native_stream_charged(
+            ctx,
+            &point.id,
+            "resolve F3D sketch projection stream",
+        )?
+        else {
             continue;
         };
         if ctx.contains_hash_set(
@@ -353,7 +382,12 @@ pub(crate) fn project_sketch_design(
         let Some(owner) = curve.owner_reference else {
             continue;
         };
-        let Some(scope) = crate::ids::native_stream_charged(ctx, &curve.id, "resolve F3D sketch projection stream")? else {
+        let Some(scope) = crate::ids::native_stream_charged(
+            ctx,
+            &curve.id,
+            "resolve F3D sketch projection stream",
+        )?
+        else {
             continue;
         };
         if ctx.contains_hash_set(
@@ -488,7 +522,12 @@ pub(crate) fn project_sketch_design(
         )?;
     }
     for text in ctx.admit_iter(texts, "f3d sketch projection texts scan")? {
-        let Some(scope) = crate::ids::native_stream_charged(ctx, &text.id, "resolve F3D sketch projection stream")? else {
+        let Some(scope) = crate::ids::native_stream_charged(
+            ctx,
+            &text.id,
+            "resolve F3D sketch projection stream",
+        )?
+        else {
             continue;
         };
         let Some(placement) = ctx.get_hash_map(
@@ -604,7 +643,11 @@ pub(crate) fn project_spatial_sketch_design(
             let mut placements_by_suffix = HashMap::new();
             for placement in ctx.admit_iter(placements, "f3d sketch projection placements scan")? {
                 let (Some(scope), Ok(owner)) = (
-                    crate::ids::native_stream_charged(ctx, &placement.id, "resolve F3D sketch projection stream")?,
+                    crate::ids::native_stream_charged(
+                        ctx,
+                        &placement.id,
+                        "resolve F3D sketch projection stream",
+                    )?,
                     u32::try_from(placement.entity_id.suffix()),
                 ) else {
                     continue;
@@ -619,9 +662,14 @@ pub(crate) fn project_spatial_sketch_design(
             }
             let mut spatial_owners = spatial_geometry_owners(ctx, points, curves)?;
             for surface in ctx.admit_iter(surfaces, "f3d sketch projection surfaces scan")? {
-                let (Some(scope), Some(owner)) =
-                    (crate::ids::native_stream_charged(ctx, &surface.id, "resolve F3D sketch projection stream")?, surface.owner_reference)
-                else {
+                let (Some(scope), Some(owner)) = (
+                    crate::ids::native_stream_charged(
+                        ctx,
+                        &surface.id,
+                        "resolve F3D sketch projection stream",
+                    )?,
+                    surface.owner_reference,
+                ) else {
                     continue;
                 };
                 ctx.insert_hash_set(
@@ -634,7 +682,12 @@ pub(crate) fn project_spatial_sketch_design(
             let curves_by_record = curve_storage.with_storage(|| -> Result<_, CodecError> {
                 let mut curves_by_record = HashMap::new();
                 for curve in ctx.admit_iter(curves, "f3d sketch projection curves scan")? {
-                    let Some(scope) = crate::ids::native_stream_charged(ctx, &curve.id, "resolve F3D sketch projection stream")? else {
+                    let Some(scope) = crate::ids::native_stream_charged(
+                        ctx,
+                        &curve.id,
+                        "resolve F3D sketch projection stream",
+                    )?
+                    else {
                         continue;
                     };
                     ctx.insert_hash_map(
@@ -665,7 +718,12 @@ pub(crate) fn project_spatial_sketch_design(
                 {
                     continue;
                 }
-                let Some(scope) = crate::ids::native_stream_charged(ctx, &relation.id, "resolve F3D sketch projection stream")? else {
+                let Some(scope) = crate::ids::native_stream_charged(
+                    ctx,
+                    &relation.id,
+                    "resolve F3D sketch projection stream",
+                )?
+                else {
                     continue;
                 };
                 let Some(curve) = (match members.last() {
@@ -777,7 +835,12 @@ pub(crate) fn project_spatial_sketch_design(
 
     let mut entities = Vec::new();
     for curve in ctx.admit_iter(curves, "f3d sketch projection curves scan")? {
-        let Some(scope) = crate::ids::native_stream_charged(ctx, &curve.id, "resolve F3D sketch projection stream")? else {
+        let Some(scope) = crate::ids::native_stream_charged(
+            ctx,
+            &curve.id,
+            "resolve F3D sketch projection stream",
+        )?
+        else {
             continue;
         };
         let Some(owner) = curve.owner_reference else {
@@ -927,7 +990,12 @@ pub(crate) fn project_spatial_sketch_design(
         )?;
     }
     for point in ctx.admit_iter(points, "f3d sketch projection points scan")? {
-        let Some(scope) = crate::ids::native_stream_charged(ctx, &point.id, "resolve F3D sketch projection stream")? else {
+        let Some(scope) = crate::ids::native_stream_charged(
+            ctx,
+            &point.id,
+            "resolve F3D sketch projection stream",
+        )?
+        else {
             continue;
         };
         let Some(owner) = point.owner_reference else {
@@ -989,7 +1057,12 @@ pub(crate) fn project_spatial_sketch_design(
         )?;
     }
     for surface in ctx.admit_iter(surfaces, "f3d sketch projection surfaces scan")? {
-        let Some(scope) = crate::ids::native_stream_charged(ctx, &surface.id, "resolve F3D sketch projection stream")? else {
+        let Some(scope) = crate::ids::native_stream_charged(
+            ctx,
+            &surface.id,
+            "resolve F3D sketch projection stream",
+        )?
+        else {
             continue;
         };
         let Some(owner) = surface.owner_reference else {
@@ -1094,9 +1167,10 @@ pub(crate) fn project_spatial_sketch_design(
     })?;
     let mut sketches = Vec::new();
     for placement in ctx.admit_iter(placements, "f3d sketch projection placements scan")? {
-        let (id, candidate_storage) = ctx.with_scoped_storage("f3d spatial sketch candidate identity storage", || {
-            crate::design::identity::neutral_spatial_sketch_id(ctx, placement)
-        })?;
+        let (id, candidate_storage) = ctx
+            .with_scoped_storage("f3d spatial sketch candidate identity storage", || {
+                crate::design::identity::neutral_spatial_sketch_id(ctx, placement)
+            })?;
         if !ctx.contains_hash_set(&spatial_ids, &id, "f3d spatial sketch id membership")? {
             continue;
         }
@@ -1169,15 +1243,22 @@ pub(crate) fn project_spatial_sketch_constraints(
                 let id = identity_storage.with_storage(|| {
                     crate::design::identity::neutral_spatial_sketch_id(ctx, placement)
                 })?;
-                let Some(sketch) = ctx.get_hash_set(
-                    &admitted,
-                    &id,
-                    "f3d spatial constraint sketch membership work",
-                )?.copied() else {
+                let Some(sketch) = ctx
+                    .get_hash_set(
+                        &admitted,
+                        &id,
+                        "f3d spatial constraint sketch membership work",
+                    )?
+                    .copied()
+                else {
                     continue;
                 };
                 let (Some(scope), Ok(owner)) = (
-                    crate::ids::native_stream_charged(ctx, &placement.id, "f3d spatial constraint native stream")?,
+                    crate::ids::native_stream_charged(
+                        ctx,
+                        &placement.id,
+                        "f3d spatial constraint native stream",
+                    )?,
                     u32::try_from(placement.entity_id.suffix()),
                 ) else {
                     continue;
@@ -1224,7 +1305,12 @@ pub(crate) fn project_spatial_sketch_constraints(
             let Some(native_ref) = entity.native_ref.as_deref() else {
                 continue;
             };
-            let Some(scope) = crate::ids::native_stream_charged(ctx, native_ref, "f3d spatial constraint native stream")? else {
+            let Some(scope) = crate::ids::native_stream_charged(
+                ctx,
+                native_ref,
+                "f3d spatial constraint native stream",
+            )?
+            else {
                 continue;
             };
             let Some(record) = ctx.get_hash_map(
@@ -1255,7 +1341,12 @@ pub(crate) fn project_spatial_sketch_constraints(
                 else {
                     return Ok(None);
                 };
-                let Some(scope) = crate::ids::native_stream_charged(ctx, &relation.id, "f3d spatial constraint native stream")? else {
+                let Some(scope) = crate::ids::native_stream_charged(
+                    ctx,
+                    &relation.id,
+                    "f3d spatial constraint native stream",
+                )?
+                else {
                     return Ok(None);
                 };
                 let Some((sketch, placement)) = ctx.get_hash_map(
