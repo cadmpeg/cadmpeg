@@ -396,9 +396,9 @@ fn geometries(
         ctx.charge_work(1, "Rhino history cursor traversal")?;
         let start = nested.position();
         let wrapper = chunk_at(nested.backing_bytes(), start, nested.end(), archive, false)?;
-        let mut geometry_warnings = Diagnostics::new();
         let mut diagnostic_storage =
             ctx.reserve_scoped(0, "Rhino history embedded geometry diagnostics")?;
+        let mut geometry_warnings = Diagnostics::new();
         let mut userdata = Vec::new();
         let class = scan_class_wrapper(
             ctx,
@@ -1693,7 +1693,7 @@ fn extended_geometry_json(
         }
     } else if crate::extrusion::supported_class(value.class_id) {
         let mut budget = crate::mesh::MeshBudget::new();
-        let (extrusion, _extrusion_storage) = optional_geometry(
+        let (extrusion_buffer, _extrusion_storage) = optional_geometry(
             geometry_workspace.with_storage(|| {
                 crate::extrusion::decode(
                     expand,
@@ -1710,6 +1710,7 @@ fn extended_geometry_json(
             }),
             refusal,
         )?;
+        let extrusion = extrusion_buffer;
         embedded_json(expand.ctx(), &ExtrusionJson(&extrusion), refusal)
     } else if value.class_id == crate::cage::CLASS {
         let cage = optional_geometry(
@@ -1764,7 +1765,7 @@ fn extended_geometry_json(
             refusal,
         )?;
         let crate::hatch::HatchUserdataInstall {
-            errors: userdata_errors,
+            errors: userdata_errors_buffer,
             _error_storage: _userdata_error_storage,
             _gradient_storage: install_storage,
         } = match geometry_workspace.with_storage(|| {
@@ -1783,6 +1784,7 @@ fn extended_geometry_json(
                 return None;
             }
         };
+        let userdata_errors = userdata_errors_buffer;
         _gradient_storage = install_storage;
         if !userdata_errors.is_empty() {
             let mut errors = userdata_errors.iter();

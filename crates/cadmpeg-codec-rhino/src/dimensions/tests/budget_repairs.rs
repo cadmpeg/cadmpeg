@@ -212,3 +212,54 @@ fn dimension_semantic_json_retains_only_the_output_text() {
         matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit)
     );
 }
+
+#[test]
+fn discarded_annotation_override_diagnostics_release_their_storage() {
+    use crate::test_support::test_dump::{long_chunk, short_chunk};
+    const SCRATCH_BYTES: u64 = 1 << 20;
+    let archive = ArchiveVersion::V5;
+    let mut class_uuid = crc_chunk(archive, 0x0002_fffb, &[7; 16]);
+    *class_uuid.last_mut().unwrap() ^= 1;
+    let mut wrapper = class_uuid;
+    wrapper.extend(crc_chunk(archive, 0x0002_fffc, &[]));
+    wrapper.extend(short_chunk(archive, 0x8002_7fff, 0));
+    let wrapper = long_chunk(archive, 0x0002_7ffa, &wrapper);
+    let mut overrides = vec![1];
+    overrides.extend(wrapper);
+    let overrides = anonymous(1, &overrides);
+
+    let mut text = utf16_bytes("text");
+    text.extend(plane());
+    text.extend(0.0_f64.to_le_bytes());
+    text.extend(0.0_f64.to_le_bytes());
+    text.extend(0_i32.to_le_bytes());
+    text.extend(0_i32.to_le_bytes());
+    text.extend(1.0_f64.to_le_bytes());
+    text.push(0);
+    let mut annotation = anonymous(0, &text);
+    annotation.extend([0_u8; 16]);
+    annotation.extend(plane());
+    annotation.extend(0_i32.to_le_bytes());
+    annotation.extend(overrides);
+    annotation.extend(1.0_f64.to_le_bytes());
+    annotation.extend(0.0_f64.to_le_bytes());
+    annotation.push(1);
+    let bytes = anonymous(4, &annotation);
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from("text".len()).unwrap();
+    policy.limits.max_materialized_bytes = SCRATCH_BYTES;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
+    let annotation = super::super::annotation(&ctx, &bytes, &mut reader, archive)
+        .expect("unused diagnostics consume no retained bytes");
+    assert_eq!(annotation.rich_text, "text");
+    assert!(annotation.override_present);
+    assert!(annotation.allow_text_scaling);
+    assert_eq!(reader.position(), bytes.len());
+    let reusable = ctx.reserve_scoped(SCRATCH_BYTES, "next annotation overrides")
+        .expect("unused diagnostics released while annotation text remains live");
+    drop(reusable);
+    ctx.finish_session().unwrap();
+}

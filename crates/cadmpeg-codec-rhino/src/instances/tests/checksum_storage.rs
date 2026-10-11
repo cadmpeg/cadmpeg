@@ -199,3 +199,100 @@ fn reference_checksum_storage_releases_arrays_and_parent_buffer() {
     drop(field_storage);
     ctx.finish_session().unwrap();
 }
+
+fn check_v5_path_storage(
+    minor: u8,
+    linked: bool,
+    path: &str,
+    relative: bool,
+    retained_path_bytes: usize,
+    check_link: impl FnOnce(&LinkSource),
+) {
+    const SCRATCH_BYTES: u64 = 1 << 20;
+    const TEXT_BYTES: usize =
+        "v5 definition".len() + "description".len() + "https://example.test".len() + "tag".len();
+    let data = crate::test_support::test_dump::v5_definition_payload_with_paths(
+        ArchiveVersion::V5, minor, [7; 16], &[], linked, path, relative,
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = SCRATCH_BYTES;
+    policy.limits.max_retained_bytes = u64::try_from(TEXT_BYTES + retained_path_bytes).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
+    let mut warnings = Diagnostics::new();
+    let definition = crate::instances::parse_v5(
+        &ctx, &data, 0..data.len(), 0..data.len(), ArchiveVersion::V5,
+        &mut |code, message| warnings.push_coded_admitted(&ctx, code, message),
+    ).unwrap();
+    assert_eq!(definition.name, "v5 definition");
+    assert_eq!(definition.description, "description");
+    assert_eq!(definition.url, "https://example.test");
+    assert_eq!(definition.url_tag, "tag");
+    assert!(warnings.is_empty());
+    check_link(&definition.link);
+    let reusable = ctx.reserve_scoped(SCRATCH_BYTES, "next V5 definition path")
+        .expect("candidate link path storage released or transferred to retained output");
+    drop(reusable);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn static_v5_definitions_release_cleared_legacy_paths() {
+    for length in [1, 4096] {
+        for relative in [false, true] {
+            check_v5_path_storage(6, false, &"p".repeat(length), relative, 0, |link| {
+                assert!(matches!(link, LinkSource::None));
+            });
+        }
+    }
+}
+
+#[test]
+fn structured_v5_links_release_replaced_legacy_paths() {
+    for length in [1, 4096] {
+        for relative in [false, true] {
+            check_v5_path_storage(7, true, &"p".repeat(length), relative,
+                "/full/source.3dm".len() + "source.3dm".len(), |link| {
+                    let LinkSource::Structured(reference) = link else {
+                        panic!("structured link replaces legacy path");
+                    };
+                    assert_eq!(reference.full_path, "/full/source.3dm");
+                    assert_eq!(reference.relative_path, "source.3dm");
+                });
+        }
+    }
+}
+
+#[test]
+fn blank_v5_legacy_links_release_unselected_text() {
+    for length in [1, 4096] {
+        for relative in [false, true] {
+            check_v5_path_storage(6, true, &" ".repeat(length), relative, 0, |link| {
+                assert!(matches!(link, LinkSource::None));
+            });
+        }
+    }
+}
+
+#[test]
+fn selected_v5_legacy_paths_transfer_their_exact_text() {
+    for length in [1, 4096] {
+        let path = "p".repeat(length);
+        for relative in [false, true] {
+            check_v5_path_storage(6, true, &path, relative, path.len(), |link| {
+                if relative {
+                    let LinkSource::LegacyRelative { relative_path, full_path } = link else {
+                        panic!("selected relative path");
+                    };
+                    assert_eq!(relative_path.as_str(), path);
+                    assert!(full_path.is_none());
+                } else {
+                    let LinkSource::LegacyFull(full_path) = link else {
+                        panic!("selected full path");
+                    };
+                    assert_eq!(full_path.as_str(), path);
+                }
+            });
+        }
+    }
+}
