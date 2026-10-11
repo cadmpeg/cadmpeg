@@ -49,20 +49,29 @@ fn assert_saved_line_boundary(has_previous: bool) {
         match super::super::saved_section_line_geometry(&ctx, &definition, &segment) {
             Err(CodecError::ResourceLimit(original)) => {
                 assert_eq!(
-                    (original.dimension, original.used, original.additional, original.limit),
+                    (
+                        original.dimension,
+                        original.used,
+                        original.additional,
+                        original.limit
+                    ),
                     (ResourceDimension::WorkUnits, cap, 1, cap),
                 );
-                assert_eq!(original.operation, if cap < 1 + u64::from(has_previous) {
-                    "creo saved line segment position rows"
-                } else {
-                    "creo saved line previous segment rows"
-                });
+                assert_eq!(
+                    original.operation,
+                    if cap < 1 + u64::from(has_previous) {
+                        "creo saved line segment position rows"
+                    } else {
+                        "creo saved line previous segment rows"
+                    }
+                );
                 Err(original.into())
             }
             Err(error) => panic!("unexpected line refusal: {error:?}"),
             Ok(value) => {
                 assert_eq!(value, None);
-                let refusal = ctx.charge_work_limit(1, "after saved line boundary")
+                let refusal = ctx
+                    .charge_work_limit(1, "after saved line boundary")
                     .expect_err("exact work");
                 assert_eq!((refusal.used, refusal.additional), (visits, 1));
                 Ok(())
@@ -119,16 +128,28 @@ fn assert_saved_arc_record_visits(
             match run(&ctx, &definition, &segment) {
                 Err(CodecError::ResourceLimit(refusal)) => {
                     assert_eq!(
-                        (refusal.dimension, refusal.operation, refusal.used,
-                            refusal.additional, refusal.limit),
-                        (ResourceDimension::WorkUnits, "creo saved section entities", cap, 1, cap),
+                        (
+                            refusal.dimension,
+                            refusal.operation,
+                            refusal.used,
+                            refusal.additional,
+                            refusal.limit
+                        ),
+                        (
+                            ResourceDimension::WorkUnits,
+                            "creo saved section entities",
+                            cap,
+                            1,
+                            cap
+                        ),
                     );
                     Err(refusal.into())
                 }
                 Err(error) => panic!("unexpected arc refusal: {error:?}"),
                 Ok(value) => {
                     assert!(value);
-                    let refusal = ctx.charge_work_limit(1, "after saved arc record projection")
+                    let refusal = ctx
+                        .charge_work_limit(1, "after saved arc record projection")
                         .expect_err("exact source work used");
                     assert_eq!(refusal.used, visits);
                     Ok(())

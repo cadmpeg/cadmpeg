@@ -5,7 +5,9 @@ use super::super::{
     saved_section_segment_point_coordinates, section_arc_geometry, section_line_geometry,
     section_point_geometry, section_reference_line_geometry,
 };
-use crate::feature::definitions::{FeatureCircleSegment, FeatureReferenceLineSegment, FeatureSegmentKind};
+use crate::feature::definitions::{
+    FeatureCircleSegment, FeatureReferenceLineSegment, FeatureSegmentKind,
+};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometry, SketchGeometryDefinition, SketchId};
@@ -48,8 +50,11 @@ fn absent_section_arc_orientation_is_free() {
 #[test]
 fn absent_section_reference_endpoints_are_free() {
     let segment = FeatureReferenceLineSegment {
-        directions: [None; 3], point_ids: [None; 2], vertical_horizontal: None,
-        external_id: 7, offset: 0,
+        directions: [None; 3],
+        point_ids: [None; 2],
+        vertical_horizontal: None,
+        external_id: 7,
+        offset: 0,
     };
     assert_free_recovery(|ctx| section_reference_line_geometry(ctx, &BTreeMap::new(), &segment));
 }
@@ -72,7 +77,10 @@ fn saved_point_coordinate_recovery_is_free() {
 fn absent_saved_circle_segments_are_free() {
     let (definition, _) = super::saved_arc_carrier_definition([None; 3], None);
     let segment = FeatureCircleSegment {
-        center_id: 1, radius_ref: 2, external_id: 3, offset: 0,
+        center_id: 1,
+        radius_ref: 2,
+        external_id: 3,
+        offset: 0,
     };
     assert_free_recovery(|ctx| saved_section_circle_values(ctx, &definition, &segment));
 }
@@ -94,13 +102,15 @@ fn saved_profile_endpoint_candidates_admit_only_present_rows() {
                 )
             })
             .collect();
-        let expected: Vec<_> = (0..count).flat_map(|row| {
-            (0..2).flat_map(move |endpoint| {
-                (0..count).map(move |candidate| {
-                    3 * count + 2 * count * row + count * endpoint + candidate
+        let expected: Vec<_> = (0..count)
+            .flat_map(|row| {
+                (0..2).flat_map(move |endpoint| {
+                    (0..count).map(move |candidate| {
+                        3 * count + 2 * count * row + count * endpoint + candidate
+                    })
                 })
             })
-        }).collect();
+            .collect();
         let observed = std::cell::RefCell::new(Vec::new());
         let profiles =
             crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &[], |cap| {
@@ -175,17 +185,17 @@ fn saved_profile_chain_transfer_keeps_only_surviving_use_backing() {
         let result = saved_profile_chains(&ctx, &sketch, &geometries);
         match result {
             Err(CodecError::ResourceLimit(original)) => {
-            assert_eq!(original.dimension, ResourceDimension::RetainedBytes);
+                assert_eq!(original.dimension, ResourceDimension::RetainedBytes);
 
                 Err(original.into())
             }
             Err(error) => panic!("unexpected route refusal: {error:?}"),
             Ok(value) => {
-            assert_profile_identity(&value);
-            let original = ctx
-                .charge_retained_limit(1, "after retained profile")
-                .expect_err("all retained backing consumed");
-            assert_eq!((original.used, original.additional), (bytes, 1));
+                assert_profile_identity(&value);
+                let original = ctx
+                    .charge_retained_limit(1, "after retained profile")
+                    .expect_err("all retained backing consumed");
+                assert_eq!((original.used, original.additional), (bytes, 1));
 
                 Ok(())
             }

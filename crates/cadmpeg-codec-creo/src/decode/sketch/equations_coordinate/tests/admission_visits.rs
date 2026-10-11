@@ -40,34 +40,32 @@ fn zero_variable_pivot_columns_charge_only_present_rows() {
             }];
             let result = super::super::uniquely_solved_linear_variables(&ctx, &mut matrix, 0);
             match result {
-Err(CodecError::ResourceLimit(original)) => {
-                assert_eq!(
-                    (
-                        original.dimension,
-                        original.used,
-                        original.additional,
-                        original.limit
-                    ),
-                    (ResourceDimension::WorkUnits, cap, 1, cap)
-                );
-                assert_eq!(
-                    original.operation,
-                    if cap == 0 {
-                        "creo linear solver matrix scale rows"
-                    } else {
-                        "creo section residual matrix rows"
-                    }
-                );
-                Err(original.into())
-
-}
-Err(error) => panic!("unexpected route refusal: {error:?}"),
-Ok(value) => {
-                assert_eq!(value, None);
-                Ok(())
-
-}
-}
+                Err(CodecError::ResourceLimit(original)) => {
+                    assert_eq!(
+                        (
+                            original.dimension,
+                            original.used,
+                            original.additional,
+                            original.limit
+                        ),
+                        (ResourceDimension::WorkUnits, cap, 1, cap)
+                    );
+                    assert_eq!(
+                        original.operation,
+                        if cap == 0 {
+                            "creo linear solver matrix scale rows"
+                        } else {
+                            "creo section residual matrix rows"
+                        }
+                    );
+                    Err(original.into())
+                }
+                Err(error) => panic!("unexpected route refusal: {error:?}"),
+                Ok(value) => {
+                    assert_eq!(value, None);
+                    Ok(())
+                }
+            }
         },
     );
 }
@@ -88,9 +86,8 @@ fn with_zero_resources<T>(run: impl FnOnce(DecodeContext<'_>) -> T) -> T {
 #[test]
 fn coordinate_solver_without_equations_is_free() {
     with_zero_resources(|ctx| {
-        let values = super::super::solve_section_coordinate_equations(
-            &ctx, &[], &BTreeMap::new(),
-        ).expect("no equation components");
+        let values = super::super::solve_section_coordinate_equations(&ctx, &[], &BTreeMap::new())
+            .expect("no equation components");
         assert!(values.is_empty());
     });
 }

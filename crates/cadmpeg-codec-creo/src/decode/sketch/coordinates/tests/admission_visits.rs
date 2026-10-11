@@ -19,9 +19,11 @@ fn dimension_last_segment_reaches_axis_recovery_without_an_empty_visit() {
         .expect("line")
         .clone();
     // An empty parity map admits three node passes before its first slot.
-    let alignment = align_of::<u32>().max(align_of::<bool>()).max(align_of::<usize>());
-    let node_bytes = 11 * (size_of::<u32>() + size_of::<bool>())
-        + 16 * size_of::<usize>() + 2 * alignment;
+    let alignment = align_of::<u32>()
+        .max(align_of::<bool>())
+        .max(align_of::<usize>());
+    let node_bytes =
+        11 * (size_of::<u32>() + size_of::<bool>()) + 16 * size_of::<usize>() + 2 * alignment;
     let seed_work = u64::try_from(3 * node_bytes).expect("parity seed node bound");
     let cap = crate::test_support::allocation_limit_at(
         ResourceDimension::WorkUnits,
@@ -33,14 +35,14 @@ fn dimension_last_segment_reaches_axis_recovery_without_an_empty_visit() {
             policy.limits.max_collection_items = 0;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             let result = super::super::section_linear_distance_coordinate(
-                    &ctx,
-                    &definition,
-                    &[&segment],
-                    [1, 2],
-                    &BTreeMap::new(),
-                    &[],
-                    &BTreeSet::new(),
-                );
+                &ctx,
+                &definition,
+                &[&segment],
+                [1, 2],
+                &BTreeMap::new(),
+                &[],
+                &BTreeSet::new(),
+            );
             if let Err(CodecError::ResourceLimit(original)) = &result {
                 assert_eq!(original.dimension, ResourceDimension::WorkUnits);
                 match original.operation {
@@ -57,7 +59,10 @@ fn dimension_last_segment_reaches_axis_recovery_without_an_empty_visit() {
             result
         },
     );
-    assert_eq!(cap, seed_work, "one unit below the source row plus parity seed");
+    assert_eq!(
+        cap, seed_work,
+        "one unit below the source row plus parity seed"
+    );
 }
 
 #[test]
@@ -86,14 +91,14 @@ fn dimension_duplicate_segment_is_admitted_before_rejection() {
             policy.limits.max_collection_items = 0;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             let result = super::super::section_linear_distance_coordinate(
-                    &ctx,
-                    &definition,
-                    &[segment, segment],
-                    [1, 2],
-                    &BTreeMap::new(),
-                    &[],
-                    &BTreeSet::new(),
-                );
+                &ctx,
+                &definition,
+                &[segment, segment],
+                [1, 2],
+                &BTreeMap::new(),
+                &[],
+                &BTreeSet::new(),
+            );
             let original = match &result {
                 Err(CodecError::ResourceLimit(original)) => *original,
                 Ok(value) => {
