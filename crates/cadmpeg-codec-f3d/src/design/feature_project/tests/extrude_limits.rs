@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::decode::parameters::parse_design_parameter_record;
-use crate::design::feature_project::project_extrude;
+use crate::design::feature_project::extrude::project_extrude;
 use crate::design::test_support::parameter_record;
 use crate::records::feature::extrude::{
     DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
