@@ -91,24 +91,55 @@ fn copy_configuration_edge_features<'features>(
     states: &BTreeMap<FeatureId, cadmpeg_ir::features::ConfigurationFeatureState>,
     selected: &HashSet<&str>,
     identity_consumers: &HashSet<&str>,
-) -> Result<(Vec<cadmpeg_ir::features::Feature>, Vec<&'features FeatureId>), cadmpeg_core::CodecError> {
+) -> Result<
+    (
+        Vec<cadmpeg_ir::features::Feature>,
+        Vec<&'features FeatureId>,
+    ),
+    cadmpeg_core::CodecError,
+> {
     const OPERATION: &str = "retain SLDPRT configuration features";
     let mut copied = Vec::new();
     let mut source_ids = Vec::new();
     for feature in ctx.admit_iter(features, "scan SLDPRT configuration edge features")? {
-        let Some(native) = feature.native_ref.as_deref() else { continue; };
-        let selected_feature = ctx.contains_hash_set(selected, native, "select SLDPRT configuration edge consumers")?;
+        let Some(native) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        let selected_feature = ctx.contains_hash_set(
+            selected,
+            native,
+            "select SLDPRT configuration edge consumers",
+        )?;
         let state = if selected_feature {
             ctx.get_btree_map(states, &feature.id, "look up SLDPRT ordered key")?
         } else {
             None
         };
-        let applicable = state.is_some_and(|state| matches!(&state.definition, FeatureDefinition::Operation(FeatureOperation::Fillet { .. } | FeatureOperation::Chamfer { .. })));
-        let identity_consumer = !applicable && !identity_consumers.is_empty() && ctx.contains_hash_set(identity_consumers, native, "select SLDPRT configuration edge identities")?;
-        if !applicable && !identity_consumer { continue; }
+        let applicable = state.is_some_and(|state| {
+            matches!(
+                &state.definition,
+                FeatureDefinition::Operation(
+                    FeatureOperation::Fillet { .. } | FeatureOperation::Chamfer { .. }
+                )
+            )
+        });
+        let identity_consumer = !applicable
+            && !identity_consumers.is_empty()
+            && ctx.contains_hash_set(
+                identity_consumers,
+                native,
+                "select SLDPRT configuration edge identities",
+            )?;
+        if !applicable && !identity_consumer {
+            continue;
+        }
         let source_id = &feature.id;
         let state = if applicable {
-            state.map(|state| state.try_clone_for_decode(ctx, "retain SLDPRT configuration feature state")).transpose()?
+            state
+                .map(|state| {
+                    state.try_clone_for_decode(ctx, "retain SLDPRT configuration feature state")
+                })
+                .transpose()?
         } else {
             None
         };
@@ -641,81 +672,221 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
         let Some(configuration_index) = slots.configuration(ctx, slot_index)? else {
             continue;
         };
-        let states = ctx.get_btree_map(&staged, &configuration_index, STAGING)?
-            .map_or(&ir.model.configurations[configuration_index].feature_states, |configuration| &configuration.states);
-        if !ctx.any_by(&ir.model.features, |feature| {
-            if feature.native_ref.is_none() { return Ok(false); }
-            Ok(ctx.get_btree_map(states, &feature.id, "look up SLDPRT ordered key")?.is_some_and(|state| matches!(&state.definition, FeatureDefinition::Operation(FeatureOperation::Fillet { .. } | FeatureOperation::Chamfer { .. }))))
-        }, "find SLDPRT configuration edge operations")? {
+        let states = ctx
+            .get_btree_map(&staged, &configuration_index, STAGING)?
+            .map_or(
+                &ir.model.configurations[configuration_index].feature_states,
+                |configuration| &configuration.states,
+            );
+        if !ctx.any_by(
+            &ir.model.features,
+            |feature| {
+                if feature.native_ref.is_none() {
+                    return Ok(false);
+                }
+                Ok(ctx
+                    .get_btree_map(states, &feature.id, "look up SLDPRT ordered key")?
+                    .is_some_and(|state| {
+                        matches!(
+                            &state.definition,
+                            FeatureDefinition::Operation(
+                                FeatureOperation::Fillet { .. } | FeatureOperation::Chamfer { .. }
+                            )
+                        )
+                    }))
+            },
+            "find SLDPRT configuration edge operations",
+        )? {
             continue;
         }
-        let mut selected_storage = ctx.reserve_scoped(0, "select SLDPRT configuration edge consumers")?;
+        let mut selected_storage =
+            ctx.reserve_scoped(0, "select SLDPRT configuration edge consumers")?;
         let mut selected = HashSet::new();
-        for selection in ctx.admit_iter(&lane.edge_selections, "select SLDPRT configuration edge consumers")? {
-            selected_storage.with_storage(|| ctx.insert_hash_set(&mut selected, selection.feature_ref.as_str(), "select SLDPRT configuration edge consumers"))?;
+        for selection in ctx.admit_iter(
+            &lane.edge_selections,
+            "select SLDPRT configuration edge consumers",
+        )? {
+            selected_storage.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut selected,
+                    selection.feature_ref.as_str(),
+                    "select SLDPRT configuration edge consumers",
+                )
+            })?;
         }
-        let mut consumer_storage = ctx.reserve_scoped(0, "select SLDPRT configuration edge consumers")?;
+        let mut consumer_storage =
+            ctx.reserve_scoped(0, "select SLDPRT configuration edge consumers")?;
         let mut consumers = HashSet::new();
-        for feature in ctx.admit_iter(&ir.model.features, "select SLDPRT configuration edge consumers")? {
-            let Some(native) = feature.native_ref.as_deref() else { continue; };
-            if !ctx.contains_hash_set(&selected, native, "select SLDPRT configuration edge consumers")? { continue; }
-            let Some(state) = ctx.get_btree_map(states, &feature.id, "look up SLDPRT ordered key")? else { continue; };
-            if matches!(&state.definition, FeatureDefinition::Operation(FeatureOperation::Fillet { .. } | FeatureOperation::Chamfer { .. })) {
-                consumer_storage.with_storage(|| ctx.insert_hash_set(&mut consumers, native, "select SLDPRT configuration edge consumers"))?;
+        for feature in ctx.admit_iter(
+            &ir.model.features,
+            "select SLDPRT configuration edge consumers",
+        )? {
+            let Some(native) = feature.native_ref.as_deref() else {
+                continue;
+            };
+            if !ctx.contains_hash_set(
+                &selected,
+                native,
+                "select SLDPRT configuration edge consumers",
+            )? {
+                continue;
+            }
+            let Some(state) =
+                ctx.get_btree_map(states, &feature.id, "look up SLDPRT ordered key")?
+            else {
+                continue;
+            };
+            if matches!(
+                &state.definition,
+                FeatureDefinition::Operation(
+                    FeatureOperation::Fillet { .. } | FeatureOperation::Chamfer { .. }
+                )
+            ) {
+                consumer_storage.with_storage(|| {
+                    ctx.insert_hash_set(
+                        &mut consumers,
+                        native,
+                        "select SLDPRT configuration edge consumers",
+                    )
+                })?;
             }
         }
-        if consumers.is_empty() { continue; }
+        if consumers.is_empty() {
+            continue;
+        }
         drop((selected, selected_storage));
         let mut identity_consumers = HashSet::new();
-        for selection in ctx.admit_iter(&lane.edge_selections, "select SLDPRT configuration edge identities")? {
-            if !ctx.contains_hash_set(&consumers, selection.feature_ref.as_str(), "select SLDPRT configuration edge consumers")? { continue; }
-            if let Some(terminal) = selection.terminal_feature_ref.as_deref() {
-                consumer_storage.with_storage(|| ctx.insert_hash_set(&mut identity_consumers, terminal, "select SLDPRT configuration edge identities"))?;
+        for selection in ctx.admit_iter(
+            &lane.edge_selections,
+            "select SLDPRT configuration edge identities",
+        )? {
+            if !ctx.contains_hash_set(
+                &consumers,
+                selection.feature_ref.as_str(),
+                "select SLDPRT configuration edge consumers",
+            )? {
+                continue;
             }
-            for producer in ctx.admit_iter(&selection.producer_feature_refs, "select SLDPRT configuration edge identities")? {
-                consumer_storage.with_storage(|| ctx.insert_hash_set(&mut identity_consumers, producer.as_str(), "select SLDPRT configuration edge identities"))?;
+            if let Some(terminal) = selection.terminal_feature_ref.as_deref() {
+                consumer_storage.with_storage(|| {
+                    ctx.insert_hash_set(
+                        &mut identity_consumers,
+                        terminal,
+                        "select SLDPRT configuration edge identities",
+                    )
+                })?;
+            }
+            for producer in ctx.admit_iter(
+                &selection.producer_feature_refs,
+                "select SLDPRT configuration edge identities",
+            )? {
+                consumer_storage.with_storage(|| {
+                    ctx.insert_hash_set(
+                        &mut identity_consumers,
+                        producer.as_str(),
+                        "select SLDPRT configuration edge identities",
+                    )
+                })?;
             }
         }
-        let configuration = staging_storage.with_storage(|| ctx.entry_btree_map(&mut staged, configuration_index, STAGING))?;
+        let configuration = staging_storage
+            .with_storage(|| ctx.entry_btree_map(&mut staged, configuration_index, STAGING))?;
         let configuration = match configuration {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => {
                 let storage = ctx.reserve_scoped(0, STAGING)?;
                 entry.insert(SupplementalConfiguration {
-                    states: std::mem::take(&mut ir.model.configurations[configuration_index].feature_states),
+                    states: std::mem::take(
+                        &mut ir.model.configurations[configuration_index].feature_states,
+                    ),
                     leases: BTreeMap::new(),
                     storage,
                 })
             }
         };
-        let ((features, source_ids), feature_storage) = ctx.with_scoped_storage("SLDPRT supplemental configuration features", || {
-            let (mut features, source_ids) = copy_configuration_edge_features(ctx, &ir.model.features, &configuration.states, &consumers, &identity_consumers)?;
-            crate::resolved_features::projections::project_compact_edge_selections(ctx, &mut features, &[], std::slice::from_ref(lane))?;
-            Ok::<_, cadmpeg_core::CodecError>((features, source_ids))
-        })?;
+        let ((features, source_ids), feature_storage) =
+            ctx.with_scoped_storage("SLDPRT supplemental configuration features", || {
+                let (mut features, source_ids) = copy_configuration_edge_features(
+                    ctx,
+                    &ir.model.features,
+                    &configuration.states,
+                    &consumers,
+                    &identity_consumers,
+                )?;
+                crate::resolved_features::projections::project_compact_edge_selections(
+                    ctx,
+                    &mut features,
+                    &[],
+                    std::slice::from_ref(lane),
+                )?;
+                Ok::<_, cadmpeg_core::CodecError>((features, source_ids))
+            })?;
         drop((consumers, identity_consumers, consumer_storage));
-        for (feature_index, feature) in ctx.admit_iter(&features, "scan SLDPRT supplemental configuration lanes")?.enumerate() {
-            if !matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Fillet { .. } | FeatureOperation::Chamfer { .. })) {
+        for (feature_index, feature) in ctx
+            .admit_iter(&features, "scan SLDPRT supplemental configuration lanes")?
+            .enumerate()
+        {
+            if !matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(
+                    FeatureOperation::Fillet { .. } | FeatureOperation::Chamfer { .. }
+                )
+            ) {
                 continue;
             }
-            let Some(state) = ctx.get_mut_btree_map(&mut configuration.states, &feature.id, "look up mutable SLDPRT ordered key")? else { continue; };
+            let Some(state) = ctx.get_mut_btree_map(
+                &mut configuration.states,
+                &feature.id,
+                "look up mutable SLDPRT ordered key",
+            )?
+            else {
+                continue;
+            };
             let dependencies_equal = feature.dependencies.len() == state.dependencies.len()
-                && ctx.all_by(feature.dependencies.as_slice().iter().zip(state.dependencies.as_slice()),
-                    |(left, right)| ctx.equal_bytes(left.as_str().as_bytes(), right.as_str().as_bytes(), DEPENDENCIES),
-                    DEPENDENCIES)?;
-            let definition_equal = ctx.equal(feature.evaluation.definition(), &state.definition, COMPARE)?;
+                && ctx.all_by(
+                    feature
+                        .dependencies
+                        .as_slice()
+                        .iter()
+                        .zip(state.dependencies.as_slice()),
+                    |(left, right)| {
+                        ctx.equal_bytes(
+                            left.as_str().as_bytes(),
+                            right.as_str().as_bytes(),
+                            DEPENDENCIES,
+                        )
+                    },
+                    DEPENDENCIES,
+                )?;
+            let definition_equal =
+                ctx.equal(feature.evaluation.definition(), &state.definition, COMPARE)?;
             if dependencies_equal && definition_equal {
                 continue;
             }
-            let leases = configuration.storage.with_storage(|| ctx.entry_btree_map(&mut configuration.leases, source_ids[feature_index], STAGING))?.or_default();
+            let leases = configuration
+                .storage
+                .with_storage(|| {
+                    ctx.entry_btree_map(
+                        &mut configuration.leases,
+                        source_ids[feature_index],
+                        STAGING,
+                    )
+                })?
+                .or_default();
             if !dependencies_equal {
                 let mut storage = ctx.provisional_retained(RETAIN)?;
                 let dependencies = storage.with_storage(|| {
                     let mut dependencies = Vec::new();
                     for dependency in ctx.admit_iter(feature.dependencies.as_slice(), RETAIN)? {
-                        ctx.push_vec(&mut dependencies, dependency.try_clone_for_decode(ctx, RETAIN)?, RETAIN)?;
+                        ctx.push_vec(
+                            &mut dependencies,
+                            dependency.try_clone_for_decode(ctx, RETAIN)?,
+                            RETAIN,
+                        )?;
                     }
-                    Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::features::DistinctMembers::try_from(dependencies, ctx)?)
+                    Ok::<_, cadmpeg_core::CodecError>(
+                        cadmpeg_ir::features::DistinctMembers::try_from(dependencies, ctx)?,
+                    )
                 })?;
                 state.dependencies = dependencies;
                 drop(leases.dependencies.take());
@@ -723,7 +894,12 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
             }
             if !definition_equal {
                 let mut storage = ctx.provisional_retained(RETAIN)?;
-                let definition = storage.with_storage(|| feature.evaluation.definition().try_clone_for_decode(ctx, RETAIN))?;
+                let definition = storage.with_storage(|| {
+                    feature
+                        .evaluation
+                        .definition()
+                        .try_clone_for_decode(ctx, RETAIN)
+                })?;
                 state.definition = definition;
                 drop(leases.definition.take());
                 leases.definition = Some(storage);
@@ -733,9 +909,16 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
     }
     drop(slots);
     for (configuration_index, mut configuration) in ctx.admit_iter(staged, STAGING)? {
-        for leases in ctx.admit_iter(&mut configuration.leases, STAGING)?.map(|(_, leases)| leases) {
-            if let Some(storage) = leases.dependencies.take() { storage.commit()?; }
-            if let Some(storage) = leases.definition.take() { storage.commit()?; }
+        for leases in ctx
+            .admit_iter(&mut configuration.leases, STAGING)?
+            .map(|(_, leases)| leases)
+        {
+            if let Some(storage) = leases.dependencies.take() {
+                storage.commit()?;
+            }
+            if let Some(storage) = leases.definition.take() {
+                storage.commit()?;
+            }
         }
         ir.model.configurations[configuration_index].feature_states = configuration.states;
     }

@@ -90,7 +90,7 @@ pub(crate) fn apply_feature_name_changes(
     let mut live_owners = 0usize;
     if ctx.any_by(
         &*parameters,
-        |parameter| Ok(!parameter.dependencies.is_empty()),
+        |parameter| Ok(!parameter.dependencies.is_empty() && !parameter.expression.is_empty()),
         OPERATION,
     )? {
         for parameter in ctx.admit_iter(&*parameters, OPERATION)? {
@@ -134,11 +134,18 @@ pub(crate) fn apply_feature_name_changes(
                 }
             }
         }
-        if live_owners == 0 || !ctx.any_by(
-            parameter.dependencies.as_slice(),
-            |dependency| Ok(ctx.get_hash_map(&owners, dependency, OPERATION)?.is_some_and(Option::is_some)),
-            OPERATION,
-        )? {
+        if parameter.expression.is_empty()
+            || live_owners == 0
+            || !ctx.any_by(
+                parameter.dependencies.as_slice(),
+                |dependency| {
+                    Ok(ctx
+                        .get_hash_map(&owners, dependency, OPERATION)?
+                        .is_some_and(Option::is_some))
+                },
+                OPERATION,
+            )?
+        {
             continue;
         }
         let (tokens, token_storage) = expression_identifier_tokens(&ctx, &parameter.expression)?;
