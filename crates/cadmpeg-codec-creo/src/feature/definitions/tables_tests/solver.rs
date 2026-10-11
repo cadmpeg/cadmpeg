@@ -895,3 +895,44 @@ fn positional_triples_do_not_count_a_truncated_nullable_integer() {
     assert_eq!((rows[0].relation_id, rows[0].equation_id, rows[0].skamp_id),
         (Some(1), Some(2), None));
 }
+
+#[test]
+fn positional_triples_do_not_use_row_boundaries_as_null_fields() {
+    let header = b"\xf8\x01\xf7\x58\xfb\xe2\xf7\x59";
+    for row in [&[0xe2][..], &[1, 0xe2][..], &[1, 2, 0xe2][..],
+        &[0xe2, 2, 3][..], &[1, 0xe2, 3][..]] {
+        let mut payload = header.to_vec();
+        payload.extend_from_slice(row);
+        payload.extend_from_slice(b"\xe0\0next_table\0");
+        assert!(positional_relation_triples(&payload, 0, payload.len(), 88).is_empty());
+    }
+    let mut payload = header.to_vec();
+    payload.extend_from_slice(&[1, 2, 0xf6]);
+    let rows = positional_relation_triples(&payload, 0, payload.len(), 88);
+    assert_eq!(rows.len(), 1);
+    assert_eq!((rows[0].relation_id, rows[0].equation_id, rows[0].skamp_id),
+        (Some(1), Some(2), None));
+}
+
+#[test]
+fn named_triples_do_not_use_row_boundaries_as_null_fields() {
+    let prototype = b"triples_ptr\0\xf8\x02\xf7\x58\xfb\xe2\
+        \xe0\x01rel_id\0\x01\xe0\x01eqn_id\0\x02\xe0\x01skamp_id\0\x03\
+        \xf1\xf7\x58\xe2";
+    for row in [&[0xe2][..], &[1, 0xe2][..], &[1, 2, 0xe2][..],
+        &[0xe2, 2, 3][..], &[1, 0xe2, 3][..]] {
+        let mut payload = prototype.to_vec();
+        payload.extend_from_slice(row);
+        payload.extend_from_slice(b"\xe0\0next_table\0");
+        let rows = feature_relation_triples(&payload, 0, payload.len());
+        assert_eq!(rows.len(), 1);
+        assert_eq!((rows[0].relation_id, rows[0].equation_id, rows[0].skamp_id),
+            (Some(1), Some(2), Some(3)));
+    }
+    let mut payload = prototype.to_vec();
+    payload.extend_from_slice(&[1, 2, 0xf6, 0xe2]);
+    let rows = feature_relation_triples(&payload, 0, payload.len());
+    assert_eq!(rows.len(), 2);
+    assert_eq!((rows[1].relation_id, rows[1].equation_id, rows[1].skamp_id),
+        (Some(1), Some(2), None));
+}

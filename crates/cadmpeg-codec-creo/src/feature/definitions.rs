@@ -3222,6 +3222,14 @@ fn next_bounded_compact_int(payload: &[u8], offset: usize) -> Option<(u32, usize
     (next > offset).then_some((value, next))
 }
 
+fn next_nullable_solver_int(payload: &[u8], offset: &mut usize) -> Result<Option<u32>, ()> {
+    if payload.get(*offset) == Some(&0xf6) {
+        *offset += 1;
+        return Ok(None);
+    }
+    next_solver_int(payload, offset).map(Some).ok_or(())
+}
+
 fn next_nullable_segment_int(payload: &[u8], offset: &mut usize) -> Result<Option<u32>, ()> {
     if payload.get(*offset) == Some(&0xf6) {
         *offset += 1;
@@ -6207,9 +6215,15 @@ fn feature_relation_triples(
             "creo feature relation triples cursor traversal",
         )?;
         let row_offset = cursor;
-        let relation_id = next_solver_int(payload, &mut cursor);
-        let equation_id = next_solver_int(payload, &mut cursor);
-        let skamp_id = next_solver_int(payload, &mut cursor);
+        let Ok(relation_id) = next_nullable_solver_int(payload, &mut cursor) else {
+            break;
+        };
+        let Ok(equation_id) = next_nullable_solver_int(payload, &mut cursor) else {
+            break;
+        };
+        let Ok(skamp_id) = next_nullable_solver_int(payload, &mut cursor) else {
+            break;
+        };
         let terminal_named_boundary = rows.len() + 1 == index_from_u32(declared_count)
             && payload.get(cursor).is_some_and(|byte| *byte >= 0xe0);
         if payload.get(cursor) != Some(&0xe2) && !terminal_named_boundary {
@@ -6269,21 +6283,15 @@ fn positional_relation_triples(
             "creo positional relation triples cursor traversal",
         )?;
         let offset = cursor;
-        let before_relation = cursor;
-        let relation_id = next_solver_int(payload, &mut cursor);
-        if cursor <= before_relation {
+        let Ok(relation_id) = next_nullable_solver_int(payload, &mut cursor) else {
             break;
-        }
-        let before_equation = cursor;
-        let equation_id = next_solver_int(payload, &mut cursor);
-        if cursor <= before_equation {
+        };
+        let Ok(equation_id) = next_nullable_solver_int(payload, &mut cursor) else {
             break;
-        }
-        let before_skamp = cursor;
-        let skamp_id = next_solver_int(payload, &mut cursor);
-        if cursor <= before_skamp {
+        };
+        let Ok(skamp_id) = next_nullable_solver_int(payload, &mut cursor) else {
             break;
-        }
+        };
         let row = FeatureRelationTriple {
             relation_id,
             equation_id,
