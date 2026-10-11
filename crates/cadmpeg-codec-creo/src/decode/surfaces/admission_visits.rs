@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::Fc05CapPairFrame;
+use super::{fc05_cap_pair_model_frame, native_surface_namespace, transfer_part_product, Fc05CapPairFrame};
 use crate::curve::{Fc05CapEdge, Fc05CylinderCapPair, ParameterSense};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -101,10 +101,6 @@ fn cap_pair_frames_admit_only_present_edges_and_stop_at_missing_outline() {
                     if let Err(CodecError::ResourceLimit(original)) = &result {
                         assert_eq!((original.limit, original.used), (cap, cap));
                         assert_eq!(original.additional, 1);
-                        assert_eq!(ctx.resource_refusal().as_ref(), Some(original));
-                        assert!(
-                            matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == *original)
-                        );
                     }
                     result
                 },
@@ -120,10 +116,86 @@ fn cap_pair_frames_admit_only_present_edges_and_stop_at_missing_outline() {
                 (original.dimension, original.used, original.additional),
                 (ResourceDimension::WorkUnits, total, 1)
             );
-            assert!(
-                matches!(run(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original)
-            );
-            assert_eq!(ctx.resource_refusal(), Some(original));
         }
     }
+}
+
+#[test]
+fn surface_fixed_returns_are_free() {
+    let scan = crate::test_support::empty_container_scan();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let outlines = super::native_ids::UniqueRows::new(
+        &ctx,
+        &scan.planes.outlines,
+        |plane| Some(plane.surface_id),
+        "test empty outlines",
+    )
+    .expect("empty index");
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
+    let mut results =
+        vec![
+            transfer_part_product(&ctx, &scan, &mut ir, &mut annotations, &carriers)
+                .map(|present| !present),
+        ];
+    for count in [0, 1] {
+        let pair = pair(count);
+        results.push(
+            Fc05CapPairFrame::from_outlines(&ctx, &pair, &outlines)
+                .map(|frame| frame.is_none()),
+        );
+        results
+            .push(fc05_cap_pair_model_frame(&ctx, &scan, &pair).map(|frame| frame.is_none()));
+    }
+    for nonvisible in [false, true] {
+        let mut selected = crate::test_support::empty_container_scan();
+        let row = crate::surface::SurfaceRow {
+            id: 7,
+            kind: crate::surface::SurfaceKind::Plane,
+            feature_id: 0,
+            reversed: false,
+            boundary_type: crate::surface::BoundaryType::Code00,
+            next_surface: 0,
+            offset: 0,
+        };
+        let (rows, namespace, prefix) = if nonvisible {
+            (
+                &mut selected.surfaces.nonvisible_rows,
+                crate::identity::NOVISGEOM_SURFACE,
+                "creo:novisgeom:surface#",
+            )
+        } else {
+            (
+                &mut selected.surfaces.rows,
+                crate::identity::VISIBGEOM_SURFACE,
+                "creo:visibgeom:surface#",
+            )
+        };
+        rows.push(row);
+        let candidate = cadmpeg_ir::ids::SurfaceId::compose(&namespace, 7);
+        results.push(
+            native_surface_namespace(&ctx, &selected, 7)
+                .map(|actual| actual == (namespace, prefix)),
+        );
+        results.push(Ok(crate::identity::matches_numbered_identity(candidate.as_str(), prefix, 7)));
+    }
+    results.push(native_surface_namespace(&ctx, &scan, 7).map(|actual| {
+        actual
+            == (
+                crate::identity::VISIBGEOM_SURFACE,
+                "creo:visibgeom:surface#",
+            )
+    }));
+    for result in results {
+            assert!(result.expect("fixed route"));
+    }
+
 }

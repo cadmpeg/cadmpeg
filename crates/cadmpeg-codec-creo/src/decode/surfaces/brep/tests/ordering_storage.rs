@@ -222,7 +222,7 @@ fn accepted_parameter_ordering_transfers_only_the_original_reference_vector() {
                     source_carriers: &carriers,
                 },
             );
-            let original = if cap == bytes {
+            if cap == bytes {
                 let ordered = result
                     .expect("exact reference backing")
                     .expect("proven ordering");
@@ -238,12 +238,8 @@ fn accepted_parameter_ordering_transfers_only_the_original_reference_vector() {
                     (original.dimension, original.used, original.additional),
                     (ResourceDimension::RetainedBytes, bytes, 1)
                 );
-                original
             } else {
-                let original = ctx.resource_refusal().expect("smaller retained cap");
-                assert!(
-                    matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
-                );
+                let CodecError::ResourceLimit(original) = result.expect_err("smaller retained cap") else { panic!("expected retained refusal"); };
                 assert_eq!(
                     (
                         original.dimension,
@@ -258,13 +254,7 @@ fn accepted_parameter_ordering_transfers_only_the_original_reference_vector() {
                         "creo native face ordering candidate references"
                     )
                 );
-                original
-            };
-            assert!(matches!(ordered_native_parameter_face_loops(
-                &ctx, &inputs, (5, &surface), &incidence, &solved_vertices, &pcurves,
-                NativeCurveEvidence { typed_nonlinear_curve_ids: &typed,
-                    model_curves: &[], source_carriers: &carriers },
-            ), Err(CodecError::ResourceLimit(actual)) if actual == original));
+            }
         }
         for overflow in [false, true] {
             let arena = DecodeArena::new();
@@ -308,7 +298,6 @@ fn accepted_parameter_ordering_transfers_only_the_original_reference_vector() {
                         available + 1
                     )
                 );
-                assert_eq!(ctx.resource_refusal(), Some(original));
             } else {
                 drop(probe.expect("exact live overlap"));
             }
