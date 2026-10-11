@@ -6999,7 +6999,7 @@ fn stage_brep(
                 _storage: _pcurve_id_storage,
                 ids: c2,
                 values: pcurves,
-                warnings: mut pcurve_warnings,
+                warnings: pcurve_warnings,
             } = decode_pcurves(
                 (expand.ctx(), &mut *arena_storage),
                 data,
@@ -7009,8 +7009,13 @@ fn stage_brep(
                 key.as_str(),
                 &surfaces,
             )?;
-            metadata_storage
-                .with_storage(|| staged.warnings.append_admitted(ctx, &mut pcurve_warnings))?;
+            metadata_storage.with_storage(|| {
+                staged.warnings.append_scoped_admitted(
+                    ctx,
+                    pcurve_warnings,
+                    "Rhino Brep pcurve diagnostic promotion",
+                )
+            })?;
             staged.draft.model_mut().pcurves = pcurves;
             let body_id = cadmpeg_ir::ids::BodyId::compose(
                 &cadmpeg_ir::identity_namespace!("rhino", "object", "body"),
@@ -8237,7 +8242,7 @@ fn stage_curve_tree(
 struct DecodedPcurves<'a> {
     ids: HashMap<usize, cadmpeg_ir::ids::PcurveId>,
     values: Vec<Pcurve>,
-    warnings: Diagnostics,
+    warnings: ScratchDiagnostics<'a>,
     _storage: cadmpeg_core::decode::ScopedReservation<'a>,
 }
 
@@ -8257,7 +8262,6 @@ fn decode_pcurves<'a>(
     let mut id_storage = ctx.reserve_scoped(0, "Rhino Brep pcurve identity scratch")?;
     let mut ids = HashMap::new();
     let mut values = Vec::new();
-    let mut warnings = Diagnostics::new();
     let mut scratch_warnings =
         ScratchDiagnostics::new(ctx, "Rhino temporary Brep pcurve diagnostics")?;
     let key = match IdentityKey::try_new(key.to_owned()) {
@@ -8268,18 +8272,11 @@ fn decode_pcurves<'a>(
                 None,
                 format_args!("Brep pcurve identity key is invalid: {error}"),
             )?;
-            id_storage.with_storage(|| {
-                warnings.append_scoped_admitted(
-                    ctx,
-                    scratch_warnings,
-                    "Rhino Brep pcurve diagnostic promotion",
-                )
-            })?;
             return Ok(DecodedPcurves {
                 _storage: id_storage,
                 ids,
                 values,
-                warnings,
+                warnings: scratch_warnings,
             });
         }
     };
@@ -8512,18 +8509,11 @@ fn decode_pcurves<'a>(
             .with_storage(|| ctx.insert_hash_map(&mut ids, index, id, "Rhino Brep pcurve IDs"))?;
         values.push(pcurve_storage.commit_value(pcurve)?);
     }
-    id_storage.with_storage(|| {
-        warnings.append_scoped_admitted(
-            ctx,
-            scratch_warnings,
-            "Rhino Brep pcurve diagnostic promotion",
-        )
-    })?;
     Ok(DecodedPcurves {
         _storage: id_storage,
         ids,
         values,
-        warnings,
+        warnings: scratch_warnings,
     })
 }
 
