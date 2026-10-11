@@ -345,6 +345,7 @@ fn checksum_warning(
 ) -> Result<Option<String>, CodecError> {
     let chunk = chunk_at(data, offset, parent_end, archive, false)
         .or_else(|error| Err(framing_error(ctx, error)?))?;
+    let mut child_storage = ctx.reserve_scoped(0, "Rhino checksum child workspace")?;
     let status = if typecode & TCODE_TABLE != 0
         || matches!(
             typecode,
@@ -390,8 +391,7 @@ fn checksum_warning(
         typecode,
         TCODE_RENDER_MESH_SETTINGS | TCODE_ANALYSIS_MESH_SETTINGS
     ) {
-        let (children, _storage) = match ctx
-            .with_scoped_storage("Rhino checksum child workspace", || {
+        let children = match child_storage.with_storage(|| {
                 mesh_checksum_children(ctx, data, &chunk, archive)
             }) {
             Ok(children) => children,
@@ -406,8 +406,7 @@ fn checksum_warning(
             .or_else(|error| Err(framing_error(ctx, error)?))?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_RENDER_SETTINGS {
-        let (children, _storage) = match ctx
-            .with_scoped_storage("Rhino checksum child workspace", || {
+        let children = match child_storage.with_storage(|| {
                 render_settings_checksum_children(ctx, data, &chunk, archive)
             }) {
             Ok(children) => children,
@@ -422,8 +421,7 @@ fn checksum_warning(
             .or_else(|error| Err(framing_error(ctx, error)?))?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_SETTINGS_ATTRIBUTES {
-        let (children, _storage) = match ctx
-            .with_scoped_storage("Rhino checksum child workspace", || {
+        let children = match child_storage.with_storage(|| {
                 settings_attributes_checksum_children(ctx, data, &chunk, archive)
             }) {
             Ok(children) => children,
@@ -438,8 +436,7 @@ fn checksum_warning(
             .or_else(|error| Err(framing_error(ctx, error)?))?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_PLUGIN_LIST {
-        let (children, _storage) = match ctx
-            .with_scoped_storage("Rhino checksum child workspace", || {
+        let children = match child_storage.with_storage(|| {
                 plugin_list_checksum_children(ctx, data, &chunk, archive)
             }) {
             Ok(children) => children,
@@ -454,8 +451,8 @@ fn checksum_warning(
             .or_else(|error| Err(framing_error(ctx, error)?))?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_RENDER_USERDATA {
-        let (children, _storage) =
-            match ctx.with_scoped_storage("Rhino checksum child workspace", || {
+        let children =
+            match child_storage.with_storage(|| {
                 checksum_children_through_class_end(
                     ctx,
                     data,
@@ -476,8 +473,7 @@ fn checksum_warning(
             .or_else(|error| Err(framing_error(ctx, error)?))?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_COMPRESSED_PREVIEW {
-        let (children, _storage) = match ctx
-            .with_scoped_storage("Rhino checksum child workspace", || {
+        let children = match child_storage.with_storage(|| {
                 compressed_preview_checksum_children(ctx, data, &chunk, archive)
             }) {
             Ok(children) => children,
@@ -492,8 +488,7 @@ fn checksum_warning(
             .or_else(|error| Err(framing_error(ctx, error)?))?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_USER_TABLE_UUID {
-        let (children, _storage) = match ctx
-            .with_scoped_storage("Rhino checksum child workspace", || {
+        let children = match child_storage.with_storage(|| {
                 user_table_uuid_checksum_children(ctx, data, &chunk, archive)
             }) {
             Ok(children) => children,

@@ -529,3 +529,36 @@ fn rejected_v1_curves_do_not_restore_quadratic_brep_index_work() {
         "doubling records must remain below quadratic growth: {small} -> {large}"
     );
 }
+
+#[test]
+fn joined_v1_curve_error_storage_lives_until_diagnostic_copy() {
+    let data = super::legacy_line([f64::NAN, 0.0, 0.0], [1.0, 0.0, 0.0], 3);
+    let chunk = chunk_at(&data, 0, data.len(), ArchiveVersion::V1, false).unwrap();
+    for keep_error in [false, true] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 4096;
+        let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
+        let mut storage = ctx.reserve_scoped(0, "joined curve result").unwrap();
+        let error = super::super::legacy_curve(
+            &ctx, &mut storage, &data, chunk.body(),
+            super::super::MillimeterScale::IDENTITY,
+        ).unwrap_err();
+        let cadmpeg_core::CodecError::Malformed(message) = error else {
+            panic!("nonfinite pole is malformed");
+        };
+        assert!(message.contains("finite"));
+        let message_len = u64::try_from(message.len()).unwrap();
+        if !keep_error {
+            drop(message);
+            drop(storage);
+        }
+        let probe = ctx.reserve_scoped(4096, "joined error storage probe");
+        if keep_error {
+            assert!(matches!(probe, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::MaterializedBytes && limit.used >= message_len));
+        } else {
+            drop(probe.expect("dropping the error and its owner releases every scratch byte"));
+        }
+    }
+}
