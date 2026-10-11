@@ -256,7 +256,9 @@ pub(crate) fn decode_configurations(
 ) -> Result<Vec<DesignConfiguration>, CodecError> {
     let mut configurations = Vec::new();
     let mut entries = scan.entries.iter();
-    while let Some(entry) = ctx.next_charged(&mut entries, "scan F3D Design config asset entries")? {
+    while let Some(entry) =
+        ctx.next_charged(&mut entries, "scan F3D Design config asset entries")?
+    {
         if !scan.is_design_asset_entry(ctx, entry, ContainerRole::DesignConfig)? {
             continue;
         }

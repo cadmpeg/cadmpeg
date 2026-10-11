@@ -864,8 +864,18 @@ fn draft_historical_face_group_id_refuses_retained_limit() {
         face_slot: 158,
     }];
     let error = crate::test_support::resource_refusal_at(
-        ResourceDimension::RetainedBytes, "f3d Draft historical face group id", 0,
-        |ctx| super::super::selected_historical_face_selection(ctx, &scope, &group, std::slice::from_ref(&selection), &[]),
+        ResourceDimension::RetainedBytes,
+        "f3d Draft historical face group id",
+        0,
+        |ctx| {
+            super::super::selected_historical_face_selection(
+                ctx,
+                &scope,
+                &group,
+                std::slice::from_ref(&selection),
+                &[],
+            )
+        },
     );
     assert!(
         matches!(error, CodecError::ResourceLimit(ref failure)

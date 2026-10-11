@@ -280,16 +280,25 @@ fn merged_edge_lifetime_direct_first_mismatch_does_not_compare_text_suffix() {
     let mut policy = DecodePolicy::service();
     let short_first = "f3d:brep:edge#a";
     let short_second = "g3d:brep:edge#a";
-    let short = [EdgeSelection::Edges(vec![EdgeId::mint(short_first).unwrap(), EdgeId::mint(short_second).unwrap()])];
+    let short = [EdgeSelection::Edges(vec![
+        EdgeId::mint(short_first).unwrap(),
+        EdgeId::mint(short_second).unwrap(),
+    ])];
     let CodecError::ResourceLimit(boundary) = crate::test_support::resource_refusal_at(
-        ResourceDimension::WorkUnits, "f3d merged direct native id", 0,
+        ResourceDimension::WorkUnits,
+        "f3d merged direct native id",
+        0,
         |ctx| super::super::merge_edge_selections(ctx, &scope, &short),
-    ) else { panic!("merged direct native-copy boundary"); };
+    ) else {
+        panic!("merged direct native-copy boundary");
+    };
     // The longer identities add their full copy cost. Their comparison still
     // stops at the same first differing byte as the short route.
-    let before_native = boundary.used + u64::try_from(
-        first_text.len() - short_first.len() + second_text.len() - short_second.len()
-    ).unwrap();
+    let before_native = boundary.used
+        + u64::try_from(
+            first_text.len() - short_first.len() + second_text.len() - short_second.len(),
+        )
+        .unwrap();
     let work = before_native + boundary.additional;
     policy.limits.max_work_units = work;
     crate::test_support::with_decode_policy(&policy, |ctx| {

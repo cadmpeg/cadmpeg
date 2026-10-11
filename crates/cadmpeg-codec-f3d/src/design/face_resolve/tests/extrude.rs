@@ -30,7 +30,10 @@ fn extrude_start_plane_geometry_fallback_requires_complete_nested_recipe() {
                 &group,
                 std::slice::from_ref(&operand),
                 &faces,
-            ).map(|found| found.map(|faces| faces.iter().map(|face| face.id.clone()).collect::<Vec<_>>()))
+            )
+            .map(|found| {
+                found.map(|faces| faces.iter().map(|face| face.id.clone()).collect::<Vec<_>>())
+            })
         })
         .unwrap(),
         Some(vec![face(10)])
@@ -208,7 +211,9 @@ fn assert_start_binder_refusal(
         })
     ));
     let error = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| run(ctx).0);
-    assert!(matches!(error, CodecError::ResourceLimit(failure) if failure.dimension == dimension && failure.operation == operation));
+    assert!(
+        matches!(error, CodecError::ResourceLimit(failure) if failure.dimension == dimension && failure.operation == operation)
+    );
 }
 
 #[test]
@@ -608,11 +613,16 @@ fn target_plane_face_id_refuses_retained_limit() {
     }];
     let groups = [target_face_group()];
     let error = crate::test_support::resource_refusal_at(
-        ResourceDimension::RetainedBytes, "f3d target plane face ID", 0,
+        ResourceDimension::RetainedBytes,
+        "f3d target plane face ID",
+        0,
         |ctx| {
             let mut operands = [target_plane_operand(&[1])];
             let mut resolution = ExtrudeFaceResolution {
-                faces: &faces, surfaces: &surfaces, groups: &groups, operands: &mut operands,
+                faces: &faces,
+                surfaces: &surfaces,
+                groups: &groups,
+                operands: &mut operands,
                 linear_tolerance: EPS_FACE_TEST_TARGET_LINEAR_E9,
                 angular_tolerance: EPS_FACE_TEST_TARGET_ANGULAR_E9,
             };
@@ -620,8 +630,13 @@ fn target_plane_face_id_refuses_retained_limit() {
                 face: cadmpeg_ir::features::FaceSelection::Native(groups[0].id.clone()),
                 offset: None,
             };
-            crate::design::face_resolve::bind_extrude_target_face(ctx, &mut termination,
-                Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0), &mut resolution)
+            crate::design::face_resolve::bind_extrude_target_face(
+                ctx,
+                &mut termination,
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                &mut resolution,
+            )
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(failure)
@@ -690,7 +705,10 @@ fn assert_extrude_root_collection_limit(operation: &'static str) {
         [100]
     );
     let error = crate::test_support::resource_refusal_at(
-        ResourceDimension::CollectionItems, operation, 0, |ctx| crate::design::face_resolve::extrude_profile_group_roots(ctx, &scope, &groups),
+        ResourceDimension::CollectionItems,
+        operation,
+        0,
+        |ctx| crate::design::face_resolve::extrude_profile_group_roots(ctx, &scope, &groups),
     );
     assert!(matches!(error, CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::CollectionItems && failure.operation == operation));
@@ -822,7 +840,14 @@ fn assert_extrude_leaf_collection_limit(operation: &'static str) {
         [0]
     );
     let error = crate::test_support::resource_refusal_at(
-        ResourceDimension::CollectionItems, operation, 0, |ctx| crate::design::face_resolve::extrude_profile_group_operand_indices(ctx, &root, &groups, &operands),
+        ResourceDimension::CollectionItems,
+        operation,
+        0,
+        |ctx| {
+            crate::design::face_resolve::extrude_profile_group_operand_indices(
+                ctx, &root, &groups, &operands,
+            )
+        },
     );
     assert!(matches!(error, CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::CollectionItems && failure.operation == operation));
@@ -926,8 +951,17 @@ fn extrude_active_face_refuses_collection_limit() {
     use cadmpeg_core::CodecError;
 
     let (_, _, operands) = extrude_leaf_fixture();
-    let error = crate::test_support::resource_refusal_at(ResourceDimension::CollectionItems, "f3d Extrude active face", 0, |ctx| crate::design::face_resolve::resolved_extrude_profile_active_faces(ctx, &[0], &operands));
-    assert!(matches!(error, CodecError::ResourceLimit(failure) if failure.dimension == ResourceDimension::CollectionItems && failure.operation == "f3d Extrude active face"));
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::CollectionItems,
+        "f3d Extrude active face",
+        0,
+        |ctx| {
+            crate::design::face_resolve::resolved_extrude_profile_active_faces(ctx, &[0], &operands)
+        },
+    );
+    assert!(
+        matches!(error, CodecError::ResourceLimit(failure) if failure.dimension == ResourceDimension::CollectionItems && failure.operation == "f3d Extrude active face")
+    );
 }
 
 #[test]
@@ -951,17 +985,30 @@ fn target_plane_query_refuses_before_carrier_visit_and_preserves_native_source()
     }];
     let before = serde_json::to_value(&operand).unwrap();
     let error = crate::test_support::resource_refusal_at(
-        ResourceDimension::WorkUnits, "visit F3D plane face", 0,
+        ResourceDimension::WorkUnits,
+        "visit F3D plane face",
+        0,
         |ctx| {
             let mut operands = [operand.clone()];
             let resolution = ExtrudeFaceResolution {
-                faces: &faces, surfaces: &surfaces, groups: &[], operands: &mut operands,
+                faces: &faces,
+                surfaces: &surfaces,
+                groups: &[],
+                operands: &mut operands,
                 linear_tolerance: EPS_FACE_TEST_TARGET_LINEAR_E9,
                 angular_tolerance: EPS_FACE_TEST_TARGET_ANGULAR_E9,
             };
-            let result = extrude_target_plane_candidate(ctx, &group, &resolution,
-                Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0));
-            assert_eq!(serde_json::to_value(&resolution.operands[0]).unwrap(), before);
+            let result = extrude_target_plane_candidate(
+                ctx,
+                &group,
+                &resolution,
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            );
+            assert_eq!(
+                serde_json::to_value(&resolution.operands[0]).unwrap(),
+                before
+            );
             result
         },
     );

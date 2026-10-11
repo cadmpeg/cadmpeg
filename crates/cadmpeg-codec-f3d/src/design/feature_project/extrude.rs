@@ -2,15 +2,29 @@
 //! Extrude profile, side, and termination projection.
 
 use super::{design_length, feature_stream_matches};
-use crate::design::face_resolve::{design_angle, extrude_omits_zero_side_one_offset,
-    extrude_profile_group_roots, resolved_extrude_profile_face_group, resolved_historical_face_group,
-    resolved_face_group, resolved_body_recipe_shape};
+use crate::design::face_resolve::{
+    design_angle, extrude_omits_zero_side_one_offset, extrude_profile_group_roots,
+    resolved_body_recipe_shape, resolved_extrude_profile_face_group, resolved_face_group,
+    resolved_historical_face_group,
+};
 use crate::ids;
-use crate::records::{feature::{extrude::{DesignExtrudeExtent, DesignExtrudeOperation,
-    DesignExtrudePrologue, DesignExtrudeStart}, fixed_parameters::DesignFixedExtrudeDistance,
-    scope::DesignParameterScope}, parameters::DesignParameter, sketch_placement::DesignSketchPlacement,
-    topology::{body_recipe::DesignBodyRecipeOperand, construction::DesignConstructionOperandGroup,
-    extrude_selection::{DesignExtrudeFaceRole,DesignExtrudeOperandRole,DesignOperandRole},face::DesignFaceOperand}};
+use crate::records::{
+    feature::{
+        extrude::{
+            DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
+        },
+        fixed_parameters::DesignFixedExtrudeDistance,
+        scope::DesignParameterScope,
+    },
+    parameters::DesignParameter,
+    sketch_placement::DesignSketchPlacement,
+    topology::{
+        body_recipe::DesignBodyRecipeOperand,
+        construction::DesignConstructionOperandGroup,
+        extrude_selection::{DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignOperandRole},
+        face::DesignFaceOperand,
+    },
+};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
@@ -60,15 +74,25 @@ pub(super) fn project_extrude(
                 | "Side2TaperAngle"
         )
     };
-    if ctx.any_by(parameters, |(_, parameter)| Ok(!supported_parameter(parameter.source_kind())), "f3d Extrude parameter kind source")?
-    {
+    if ctx.any_by(
+        parameters,
+        |(_, parameter)| Ok(!supported_parameter(parameter.source_kind())),
+        "f3d Extrude parameter kind source",
+    )? {
         return Ok(None);
     }
     let scope_stream = ids::native_stream_charged(ctx, &scope.id, "f3d Extrude scope stream")?;
     let mut scope_groups = Vec::new();
     for group in ctx.admit_iter(construction_groups, "f3d project_extrude group source")? {
-        if !feature_stream_matches(ctx, &group.id, scope_stream, "f3d project_extrude group stream")?
-            || group.scope_record_index != scope.record_index { continue; }
+        if !feature_stream_matches(
+            ctx,
+            &group.id,
+            scope_stream,
+            "f3d project_extrude group stream",
+        )? || group.scope_record_index != scope.record_index
+        {
+            continue;
+        }
         scratch_storage
             .with_storage(|| ctx.push_vec(&mut scope_groups, group, "f3d Extrude scope group"))?;
     }
@@ -80,10 +104,18 @@ pub(super) fn project_extrude(
     let prologue = or_none!(scope.extrude_prologue());
     let profile_ref = match scope.extrude_profile() {
         Some(profile) => {
-            let placement = or_none!(ctx.find_by(placements, |placement| {
-                Ok(feature_stream_matches(ctx, &placement.id, scope_stream, "f3d Extrude placement stream")?
-                    && placement.entity_id == profile.entity_id)
-            }, "f3d Extrude placement source")?);
+            let placement = or_none!(ctx.find_by(
+                placements,
+                |placement| {
+                    Ok(feature_stream_matches(
+                        ctx,
+                        &placement.id,
+                        scope_stream,
+                        "f3d Extrude placement stream",
+                    )? && placement.entity_id == profile.entity_id)
+                },
+                "f3d Extrude placement source"
+            )?);
             ProfileRef::Planar(PlanarProfileRef::Sketch(
                 crate::design::identity::neutral_sketch_id(ctx, placement)?,
             ))
@@ -111,7 +143,9 @@ pub(super) fn project_extrude(
                 let mut native = Vec::new();
                 let mut complete = true;
                 let mut profiles = profile_groups.iter();
-                while let Some(group) = ctx.next_charged(&mut profiles, "f3d Extrude selected profile source")? {
+                while let Some(group) =
+                    ctx.next_charged(&mut profiles, "f3d Extrude selected profile source")?
+                {
                     let Some(selection) = resolved_extrude_profile_face_group(
                         ctx,
                         scope,
@@ -133,7 +167,11 @@ pub(super) fn project_extrude(
                         break;
                     };
                     if match state.as_ref() {
-                        Some(state) => !ctx.equal(state, &selected_state, "f3d Extrude profile historical state comparison")?,
+                        Some(state) => !ctx.equal(
+                            state,
+                            &selected_state,
+                            "f3d Extrude profile historical state comparison",
+                        )?,
                         None => false,
                     } {
                         complete = false;
@@ -141,7 +179,10 @@ pub(super) fn project_extrude(
                     }
                     state = Some(selected_state);
                     let mut selected_faces = selected_faces.into_iter();
-                    while let Some(face) = ctx.next_charged(&mut selected_faces, "f3d Extrude selected historical face source")? {
+                    while let Some(face) = ctx.next_charged(
+                        &mut selected_faces,
+                        "f3d Extrude selected historical face source",
+                    )? {
                         if faces.is_empty()
                             || !ctx.any_by(
                                 &faces,
@@ -159,7 +200,9 @@ pub(super) fn project_extrude(
                         }
                     }
                     let mut selected_native = selected_native.into_iter();
-                    while let Some(id) = ctx.next_charged(&mut selected_native, "f3d Extrude selected native source")? {
+                    while let Some(id) = ctx
+                        .next_charged(&mut selected_native, "f3d Extrude selected native source")?
+                    {
                         ctx.push_vec(&mut native, id, "f3d Extrude profile historical native id")?;
                     }
                 }
@@ -180,7 +223,8 @@ pub(super) fn project_extrude(
         }
     };
     let mut face_groups = Vec::new();
-    for group in ctx.admit_iter(&scope_groups, "f3d Extrude group partition source")?
+    for group in ctx
+        .admit_iter(&scope_groups, "f3d Extrude group partition source")?
         .filter(|group| {
             group
                 .extrude_role()
@@ -193,8 +237,13 @@ pub(super) fn project_extrude(
     }
     let unique = |source_kind: &str| -> Result<Option<Option<&DesignParameter>>, CodecError> {
         let mut source = parameters.iter().map(|(_, parameter)| *parameter);
-        let mut matching = || ctx.find_by(&mut source, |parameter| Ok(parameter.source_kind() == source_kind),
-            "f3d Extrude parameter source");
+        let mut matching = || {
+            ctx.find_by(
+                &mut source,
+                |parameter| Ok(parameter.source_kind() == source_kind),
+                "f3d Extrude parameter source",
+            )
+        };
         let first = matching()?;
         Ok(matching()?.is_none().then_some(first))
     };
@@ -272,7 +321,8 @@ pub(super) fn project_extrude(
         None => None,
     };
     let mut start_groups = Vec::new();
-    for group in ctx.admit_iter(&face_groups, "f3d Extrude face partition source")?
+    for group in ctx
+        .admit_iter(&face_groups, "f3d Extrude face partition source")?
         .filter(|group| group.extrude_face_role() == Some(DesignExtrudeFaceRole::Start))
         .copied()
     {
@@ -280,7 +330,8 @@ pub(super) fn project_extrude(
             .with_storage(|| ctx.push_vec(&mut start_groups, group, "f3d Extrude start group"))?;
     }
     let mut termination_groups = Vec::new();
-    for group in ctx.admit_iter(&face_groups, "f3d Extrude face partition source")?
+    for group in ctx
+        .admit_iter(&face_groups, "f3d Extrude face partition source")?
         .filter(|group| group.extrude_face_role() == Some(DesignExtrudeFaceRole::Termination))
         .copied()
     {
@@ -302,7 +353,8 @@ pub(super) fn project_extrude(
         | DesignExtrudePrologue::LegacyShifted { .. } => None,
     };
     let mut target_shape_groups = Vec::new();
-    for group in ctx.admit_iter(&scope_groups, "f3d Extrude group partition source")?
+    for group in ctx
+        .admit_iter(&scope_groups, "f3d Extrude group partition source")?
         .filter(|group| {
             group.role() == DesignOperandRole::ROLE_0X5
                 && group.extrude_role().is_none()
@@ -594,7 +646,11 @@ pub(super) fn project_extrude(
             },
         },
     };
-    let has_body_operands = ctx.any_by(&scope_groups, |group| Ok(group.extrude_role() == Some(DesignExtrudeOperandRole::Bodies)), "f3d Extrude body role source")?;
+    let has_body_operands = ctx.any_by(
+        &scope_groups,
+        |group| Ok(group.extrude_role() == Some(DesignExtrudeOperandRole::Bodies)),
+        "f3d Extrude body role source",
+    )?;
     let op = match (prologue.operation(), has_body_operands) {
         (DesignExtrudeOperation::Join, true) => BooleanOp::Join,
         (DesignExtrudeOperation::Cut, true) => BooleanOp::Cut,
@@ -617,7 +673,6 @@ pub(super) fn project_extrude(
         },
     )))
 }
-
 
 #[cfg(test)]
 pub(super) mod test_support;

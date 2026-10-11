@@ -41,7 +41,12 @@ fn selection(ctx: &DecodeContext<'_>) -> Result<cadmpeg_ir::features::EdgeSelect
 #[test]
 fn edge_transition_recipe_member_refuses_before_storage() {
     let operation = "f3d transition recipe member";
-    let error = crate::test_support::resource_refusal_at(ResourceDimension::CollectionItems, operation, 0, selection);
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::CollectionItems,
+        operation,
+        0,
+        selection,
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation));
 }
@@ -49,7 +54,12 @@ fn edge_transition_recipe_member_refuses_before_storage() {
 #[test]
 fn edge_transition_historical_output_refuses_before_storage() {
     let operation = "f3d group identity historical edge";
-    let error = crate::test_support::resource_refusal_at(ResourceDimension::CollectionItems, operation, 0, selection);
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::CollectionItems,
+        operation,
+        0,
+        selection,
+    );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation));
 }

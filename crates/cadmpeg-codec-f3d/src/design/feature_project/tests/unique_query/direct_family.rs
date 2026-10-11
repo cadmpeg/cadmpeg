@@ -72,13 +72,25 @@ fn direct_unique_thread_duplicate_skips_unvisited_suffix_and_all_output_storage(
     let groups = [first.clone(), first, tail];
     let original = groups.clone();
     let CodecError::ResourceLimit(boundary) = crate::test_support::resource_refusal_at(
-        ResourceDimension::WorkUnits, "observe Thread reached work", 0,
+        ResourceDimension::WorkUnits,
+        "observe Thread reached work",
+        0,
         |ctx| {
-            assert_eq!(super::super::super::project_thread_face_selection(
-                ctx, &scope, &[100], &groups[..2], &[])?, FaceSelection::Unresolved);
+            assert_eq!(
+                super::super::super::project_thread_face_selection(
+                    ctx,
+                    &scope,
+                    &[100],
+                    &groups[..2],
+                    &[]
+                )?,
+                FaceSelection::Unresolved
+            );
             ctx.charge_work(1, "observe Thread reached work")
         },
-    ) else { panic!("Thread reached-work boundary"); };
+    ) else {
+        panic!("Thread reached-work boundary");
+    };
     let reached = boundary.used;
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = reached;

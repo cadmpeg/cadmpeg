@@ -6,12 +6,12 @@ use crate::design::feature_project::{ScopeHistoryGraph, ScopeHistoryPredecessor}
 use cadmpeg_core::decode::DecodePolicy;
 use cadmpeg_core::CodecError;
 
-
 #[test]
 fn predecessor_visitor_ordinary_error_preserves_first_scope_and_unread_chain() {
     let scopes = predecessor_chain();
     crate::test_support::with_decode_policy(&DecodePolicy::service(), |ctx| {
-        let (graph, _graph_storage) = ScopeHistoryGraph::new(ctx, &scopes, &[], &[], &[], &[]).unwrap();
+        let (graph, _graph_storage) =
+            ScopeHistoryGraph::new(ctx, &scopes, &[], &[], &[], &[]).unwrap();
         let visits = std::cell::Cell::new(0);
         let result = graph.predecessor(ctx, &scopes[7], |candidate| {
             visits.set(visits.get() + 1);
@@ -31,7 +31,8 @@ fn predecessor_visitor_preserves_actual_selected_scope_and_chain_order() {
     let scopes = predecessor_chain();
     let original_scopes = scopes.clone();
     crate::test_support::with_decode_policy(&DecodePolicy::service(), |ctx| {
-        let (graph, _graph_storage) = ScopeHistoryGraph::new(ctx, &scopes, &[], &[], &[], &[]).unwrap();
+        let (graph, _graph_storage) =
+            ScopeHistoryGraph::new(ctx, &scopes, &[], &[], &[], &[]).unwrap();
         let visited = std::cell::RefCell::new(Vec::new());
         let result = graph
             .predecessor(ctx, &scopes[7], |candidate| {

@@ -2,15 +2,18 @@
 
 use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::feature_project::extrude::project_extrude;
-use crate::design::feature_project::extrude::test_support::{profile_group,scope,scope_with_extent};
+use crate::design::feature_project::extrude::test_support::{
+    profile_group, scope, scope_with_extent,
+};
 use crate::design::test_support::parameter_record;
 use crate::records::feature::extrude::DesignExtrudeExtent;
 
-use crate::records::topology::construction::{DesignConstructionOperandGroup,DesignConstructionOperandRole};
+use crate::records::topology::construction::{
+    DesignConstructionOperandGroup, DesignConstructionOperandRole,
+};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef};
-
 
 fn parameters() -> [crate::records::parameters::DesignParameter; 2] {
     [

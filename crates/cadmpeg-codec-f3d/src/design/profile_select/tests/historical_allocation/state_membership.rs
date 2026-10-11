@@ -370,4 +370,3 @@ fn historical_profile_first_matching_state_skips_suffix_and_absent_state_rejects
         assert_eq!(ctx.resource_refusal(), None);
     });
 }
-

@@ -75,7 +75,11 @@ fn terminal_resolution_stops_at_second_distinct_common_edge() {
     let short = terminal_operand(&[17, 18], &[17, 18], &[17, 18]);
     let reference_work = crate::test_support::with_decode_context(|ctx| {
         assert_eq!(resolved_edge_operand(&short, ctx).unwrap(), None);
-        let Err(CodecError::ResourceLimit(usage)) = ctx.charge_work(u64::MAX, "terminal completed work") else { panic!("completed work observer"); };
+        let Err(CodecError::ResourceLimit(usage)) =
+            ctx.charge_work(u64::MAX, "terminal completed work")
+        else {
+            panic!("completed work observer");
+        };
         usage.used
     });
     policy.limits.max_work_units = reference_work;

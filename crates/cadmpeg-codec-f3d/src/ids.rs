@@ -202,7 +202,11 @@ fn identity_character_needs_escape(character: char) -> bool {
 impl std::fmt::Display for EscapedIdentityComponent<'_> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for character in self.0.chars() {
-            let character = if self.1 { character.to_ascii_lowercase() } else { character };
+            let character = if self.1 {
+                character.to_ascii_lowercase()
+            } else {
+                character
+            };
             if identity_character_needs_escape(character) {
                 let mut bytes = [0; 4];
                 for byte in character.encode_utf8(&mut bytes).as_bytes() {
@@ -270,7 +274,10 @@ fn identity_key_component_charged(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     value: &str,
 ) -> Result<String, cadmpeg_core::CodecError> {
-    ctx.format_retained(format_args!("{}", EscapedIdentityComponent(value, false)), "retain F3D Combine identity component")
+    ctx.format_retained(
+        format_args!("{}", EscapedIdentityComponent(value, false)),
+        "retain F3D Combine identity component",
+    )
 }
 
 /// Reverse [`identity_key_component`] for a complete encoded component.
@@ -376,7 +383,11 @@ pub(crate) fn neutral_assembly_joint_id(
     impl std::fmt::Display for JointKey<'_> {
         fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(formatter, "{}:", self.encoded_len)?;
-            write!(formatter, "{}", EscapedIdentityComponent(self.stream, false))?;
+            write!(
+                formatter,
+                "{}",
+                EscapedIdentityComponent(self.stream, false)
+            )?;
             write!(formatter, "{}", self.record_index)
         }
     }
@@ -423,7 +434,11 @@ pub(crate) fn configuration_entry_id_charged(
     scope: &cadmpeg_ir::ids::IdentityComponent,
 ) -> Result<String, cadmpeg_core::CodecError> {
     ctx.format_retained(
-        format_args!("f3d:{}:entry#{}", scope.as_str(), EscapedIdentityComponent(entry_name, false)),
+        format_args!(
+            "f3d:{}:entry#{}",
+            scope.as_str(),
+            EscapedIdentityComponent(entry_name, false)
+        ),
         "retain F3D configuration entry ID",
     )
 }
@@ -618,7 +633,11 @@ struct EncodedParameterKey<'a> {
 impl std::fmt::Display for EncodedParameterKey<'_> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(formatter, "{}:", self.encoded_len)?;
-        write!(formatter, "{}", EscapedIdentityComponent(self.stream, false))?;
+        write!(
+            formatter,
+            "{}",
+            EscapedIdentityComponent(self.stream, false)
+        )?;
         write!(formatter, "{}", self.record_index)
     }
 }
@@ -691,7 +710,11 @@ struct EncodedSketchKey<'a> {
 
 impl std::fmt::Display for EncodedSketchKey<'_> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "{}", EscapedIdentityComponent(self.stream, false))?;
+        write!(
+            formatter,
+            "{}",
+            EscapedIdentityComponent(self.stream, false)
+        )?;
         write!(formatter, "@{}", self.suffix)
     }
 }
@@ -1239,7 +1262,11 @@ fn push_escaped_scope(
     scope: &str,
     operation: &'static str,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.append_formatted_retained(id, format_args!("{}", EscapedIdentityComponent(scope, false)), operation)
+    ctx.append_formatted_retained(
+        id,
+        format_args!("{}", EscapedIdentityComponent(scope, false)),
+        operation,
+    )
 }
 
 /// Macro defining one `f3d:{scope}:{kind}#{offset}` native-record builder.

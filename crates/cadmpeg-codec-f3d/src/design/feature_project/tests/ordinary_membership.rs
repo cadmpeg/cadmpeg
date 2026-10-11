@@ -8,7 +8,17 @@ mod faces;
 mod fixed;
 mod fixtures;
 
-fn assert_original_refusal<T>(operation: &'static str, project: impl Fn(&DecodeContext<'_>) -> Result<T, CodecError>) {
-    let error = crate::test_support::resource_refusal_at(ResourceDimension::WorkUnits, operation, 0, project);
-    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.operation == operation && limit.dimension == ResourceDimension::WorkUnits));
+fn assert_original_refusal<T>(
+    operation: &'static str,
+    project: impl Fn(&DecodeContext<'_>) -> Result<T, CodecError>,
+) {
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        0,
+        project,
+    );
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.operation == operation && limit.dimension == ResourceDimension::WorkUnits)
+    );
 }

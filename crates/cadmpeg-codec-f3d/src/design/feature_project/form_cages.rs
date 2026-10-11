@@ -164,10 +164,13 @@ pub(crate) fn bind_form_cages(
         if scope.kind() != crate::records::feature::scope::DesignFeatureKind::Form {
             continue;
         }
-        let Some(stream) = native_stream_charged(ctx, &scope.id, "f3d form cage native stream")? else {
+        let Some(stream) = native_stream_charged(ctx, &scope.id, "f3d form cage native stream")?
+        else {
             continue;
         };
-        let Some(stream) = ctx.strip_prefix(stream, ids::SCHEME_PREFIX, "f3d form cage stream prefix")? else {
+        let Some(stream) =
+            ctx.strip_prefix(stream, ids::SCHEME_PREFIX, "f3d form cage stream prefix")?
+        else {
             continue;
         };
         if !ctx.contains_key_hash_map(&streams, stream, "f3d form stream cache query")? {

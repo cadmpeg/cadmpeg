@@ -435,7 +435,10 @@ fn historical_missing_vertex_and_edge_skip_the_point_index() {
     let topology = triangle_topology();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = u64::MAX;
-    for kind in [AsmHistoricalEntityKind::Vertex, AsmHistoricalEntityKind::Edge] {
+    for kind in [
+        AsmHistoricalEntityKind::Vertex,
+        AsmHistoricalEntityKind::Edge,
+    ] {
         crate::test_support::with_decode_policy(&policy, |ctx| {
             let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
                 cadmpeg_core::decode::ResourceDimension::WorkUnits,

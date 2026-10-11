@@ -196,7 +196,6 @@ fn assert_refusal(operation: &'static str) {
         assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
         assert_eq!(refusal.additional, 1);
         assert_eq!(ctx.resource_refusal(), Some(refusal));
-        
     });
     assert_eq!(groups, original);
 }

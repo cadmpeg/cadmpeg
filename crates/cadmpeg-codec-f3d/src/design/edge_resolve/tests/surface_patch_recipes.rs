@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{group, recipe_reference, recipe_edge_operand};
-use crate::design::edge_resolve::{resolved_surface_patch_edge_group,surface_patch_grouped_recipe_edges,SurfacePatchRecipeEdges};
+use super::{group, recipe_edge_operand, recipe_reference};
+use crate::design::edge_resolve::{
+    resolved_surface_patch_edge_group, surface_patch_grouped_recipe_edges, SurfacePatchRecipeEdges,
+};
 use cadmpeg_ir::ids::EdgeId;
 
 #[test]

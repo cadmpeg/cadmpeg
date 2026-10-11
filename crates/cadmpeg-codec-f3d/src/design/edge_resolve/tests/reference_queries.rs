@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::recipe_edge_operand;
+use crate::design::edge_references::edge_operand_reference_edge_sets;
 use crate::design::edge_resolve::{
     edge_assignment_candidates, edge_group_assignment_candidates,
     transition_chain_is_supported_by_recipe, EdgeAssignmentCandidates,
 };
-use crate::design::edge_references::edge_operand_reference_edge_sets;
 use crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext;
 use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;

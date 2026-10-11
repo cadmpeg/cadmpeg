@@ -98,7 +98,6 @@ fn entity_membership_first_match_keeps_duplicate_presence_and_unread_tails() {
         assert_eq!(original.operation, "match F3D group entity operand stream");
         assert_eq!((original.used, original.additional), (reached - 1, 1));
         assert_eq!(ctx.resource_refusal(), Some(original));
-        
     });
     assert_eq!(operands, original);
     assert_eq!(group.members().len(), 4097);
@@ -170,7 +169,6 @@ fn entity_membership_each_actual_phase_keeps_original_refusal_and_native_inputs(
             assert_eq!(refusal.operation, operation);
             assert_eq!(refusal.additional, 1);
             assert_eq!(ctx.resource_refusal(), Some(refusal));
-            
         });
     }
     assert_eq!(operands, original);

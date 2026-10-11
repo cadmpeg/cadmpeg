@@ -851,7 +851,9 @@ fn assert_radial_extension_refusal(operation: &'static str, dimension: ResourceD
     inputs.groups = std::slice::from_ref(&group);
     let dimension = if dimension == ResourceDimension::RetainedBytes {
         ResourceDimension::MaterializedBytes
-    } else { dimension };
+    } else {
+        dimension
+    };
     let error = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
         project_dimension_constraints(ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR)
     });
@@ -981,8 +983,6 @@ fn radial_group_locus_entity_refuses_collection_limit() {
         ResourceDimension::CollectionItems,
     );
 }
-
-
 
 #[test]
 fn pair_exact_parameter_refuses_retained_limit() {

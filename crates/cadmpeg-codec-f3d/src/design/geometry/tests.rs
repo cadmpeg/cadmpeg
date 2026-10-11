@@ -782,39 +782,25 @@ fn sketch_arrangement_faces_propagates_session_work_refusal() {
     assert!(budget.exhausted());
 }
 
-
-fn arrangement_refusal_with_collection_limit(maximum: u64) -> cadmpeg_core::CodecError {
-    let (sketch, entities, _, _) = coincident_circle_arc_arrangement();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = maximum;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let budget = local_arrangement_budget();
-    sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &budget, &ctx)
-        .err()
-        .expect("arrangement exceeds the selected collection limit")
-}
-
 fn arrangement_refusal_at_operation(
     operation: &'static str,
-    mut maximum: u64,
-) -> (cadmpeg_core::decode::ResourceLimit, u64) {
-    for _ in 0..10_000 {
-        let error = arrangement_refusal_with_collection_limit(maximum);
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            panic!("arrangement refused for a reason other than resource use");
-        };
-        if limit.operation == operation {
-            return (limit, maximum);
-        }
-        maximum = limit.used.checked_add(limit.additional).unwrap();
-    }
-    panic!("arrangement did not reach the requested resource operation");
+) -> cadmpeg_core::decode::ResourceLimit {
+    let (sketch, entities, _, _) = coincident_circle_arc_arrangement();
+    let error = crate::test_support::resource_refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        0,
+        |ctx| {
+            let budget = local_arrangement_budget();
+            sketch_arrangement_faces(&sketch, &entities, EPS_ARRANGEMENT_SESSION, &budget, ctx)
+                .map(|_| ())
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("arrangement refused for a reason other than resource use");
+    };
+    limit
 }
-
-
-
-
 
 #[test]
 fn analytic_arrangement_intersections_include_hidden_second_crossing() {
@@ -1582,12 +1568,6 @@ fn an_arc_shorter_than_twice_the_tolerance_has_no_strict_interior() {
     assert!(!angle_strictly_inside_arc(0.0, 0.0, PI, 1.0, 0.0));
 }
 
-
-
-
-
-
-
 const LARGE_LINE_TOLERANCE: f64 = 1e-6;
 
 mod arrangement_allocation;
@@ -1602,8 +1582,6 @@ mod containment_limits;
 mod sort_limits;
 
 mod profile_limits;
-
-
 
 #[test]
 fn sketch_arrangement_faces_propagates_local_work_refusal() {
@@ -1620,7 +1598,6 @@ fn sketch_arrangement_faces_propagates_local_work_refusal() {
         );
     });
 }
-
 
 mod ordered_profiles;
 

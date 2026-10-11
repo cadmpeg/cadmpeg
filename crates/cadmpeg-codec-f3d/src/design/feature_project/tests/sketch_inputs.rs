@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_ir::features::{Feature,FeatureId,FeatureDefinition,FeatureOperation,ProfileRef};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation, ProfileRef};
 use cadmpeg_ir::sketches::SketchId;
 use std::collections::BTreeMap;
 

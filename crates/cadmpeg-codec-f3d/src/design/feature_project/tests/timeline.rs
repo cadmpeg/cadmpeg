@@ -105,8 +105,11 @@ fn history_state_predecessors_are_component_qualified() {
     ];
     let graph_arena = cadmpeg_core::decode::DecodeArena::new();
     let graph_policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (graph_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &graph_arena, &graph_policy).unwrap();
-    let (graph, _graph_storage) = ScopeHistoryGraph::new(&graph_ctx, &scopes, &[], &[], &naming_spaces, &[]).unwrap();
+    let (graph_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &graph_arena, &graph_policy)
+            .unwrap();
+    let (graph, _graph_storage) =
+        ScopeHistoryGraph::new(&graph_ctx, &scopes, &[], &[], &naming_spaces, &[]).unwrap();
 
     let predecessor = crate::test_support::with_decode_context(|decode_ctx| {
         graph.predecessor(decode_ctx, &second, |_| Ok(true))
@@ -1252,8 +1255,6 @@ fn assert_history_graph_refusal(operation: &'static str, retained: bool) {
     }
 }
 
-
-
 #[test]
 fn component_history_namespace_refuses_collection_limit() {
     assert_history_graph_refusal("f3d component history namespace", false);
@@ -1281,8 +1282,11 @@ fn history_lookup_stream_refuses_retained_limit() {
     let scopes = history_graph_limit_fixture();
     let graph_arena = cadmpeg_core::decode::DecodeArena::new();
     let graph_policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (graph_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &graph_arena, &graph_policy).unwrap();
-    let (graph, _graph_storage) = ScopeHistoryGraph::new(&graph_ctx, &scopes, &[], &[], &[], &[]).unwrap();
+    let (graph_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &graph_arena, &graph_policy)
+            .unwrap();
+    let (graph, _graph_storage) =
+        ScopeHistoryGraph::new(&graph_ctx, &scopes, &[], &[], &[], &[]).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
@@ -1300,8 +1304,11 @@ fn predecessor_stream_refuses_retained_limit() {
     let scopes = history_graph_limit_fixture();
     let graph_arena = cadmpeg_core::decode::DecodeArena::new();
     let graph_policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (graph_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &graph_arena, &graph_policy).unwrap();
-    let (graph, _graph_storage) = ScopeHistoryGraph::new(&graph_ctx, &scopes, &[], &[], &[], &[]).unwrap();
+    let (graph_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &graph_arena, &graph_policy)
+            .unwrap();
+    let (graph, _graph_storage) =
+        ScopeHistoryGraph::new(&graph_ctx, &scopes, &[], &[], &[], &[]).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_materialized_bytes = 0;
@@ -1321,8 +1328,11 @@ fn predecessor_visited_scope_refuses_collection_limit() {
     let scopes = history_graph_limit_fixture();
     let graph_arena = cadmpeg_core::decode::DecodeArena::new();
     let graph_policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (graph_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &graph_arena, &graph_policy).unwrap();
-    let (graph, _graph_storage) = ScopeHistoryGraph::new(&graph_ctx, &scopes, &[], &[], &[], &[]).unwrap();
+    let (graph_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &graph_arena, &graph_policy)
+            .unwrap();
+    let (graph, _graph_storage) =
+        ScopeHistoryGraph::new(&graph_ctx, &scopes, &[], &[], &[], &[]).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
@@ -1817,8 +1827,11 @@ fn predecessor_predicate_preserves_resource_refusal() {
     let scopes = history_graph_limit_fixture();
     let graph_arena = cadmpeg_core::decode::DecodeArena::new();
     let graph_policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (graph_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &graph_arena, &graph_policy).unwrap();
-    let (graph, _graph_storage) = ScopeHistoryGraph::new(&graph_ctx, &scopes, &[], &[], &[], &[]).unwrap();
+    let (graph_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &graph_arena, &graph_policy)
+            .unwrap();
+    let (graph, _graph_storage) =
+        ScopeHistoryGraph::new(&graph_ctx, &scopes, &[], &[], &[], &[]).unwrap();
     let projected = std::collections::HashSet::from([scopes[0].id.as_str()]);
     let operation = "find F3D projected predecessor test scope";
     let error = crate::test_support::resource_refusal_at(

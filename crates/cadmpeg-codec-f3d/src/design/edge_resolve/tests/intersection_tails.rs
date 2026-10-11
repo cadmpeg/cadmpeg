@@ -13,12 +13,20 @@ use cadmpeg_core::CodecError;
 fn disjoint_references_leave_the_remaining_source_unvisited() {
     let tail_visited = std::cell::Cell::new(false);
     let references = [&[17, 18][..], &[19][..], &[17][..]];
-    let source = references.into_iter().enumerate().map(|(index, reference)| {
-        if index == 2 { tail_visited.set(true); }
-        reference
-    });
+    let source = references
+        .into_iter()
+        .enumerate()
+        .map(|(index, reference)| {
+            if index == 2 {
+                tail_visited.set(true);
+            }
+            reference
+        });
     crate::test_support::with_decode_context(|ctx| {
-        assert_eq!(resolved_edge_candidate_intersection(ctx, &[], source).unwrap(), None);
+        assert_eq!(
+            resolved_edge_candidate_intersection(ctx, &[], source).unwrap(),
+            None
+        );
     });
     assert!(!tail_visited.get());
 }
@@ -27,7 +35,10 @@ fn common_selector(edges: &[i64]) -> DesignEdgeRecipeSelectorContext {
     let triplet = DesignTopologyRecipeTriplet {
         outer: std::num::NonZeroU32::new(3).unwrap(),
         middle: 2,
-        incident: Some(DesignTopologyIncident { ordinal: 1, side: DesignTopologyIncidentSide::Preceding }),
+        incident: Some(DesignTopologyIncident {
+            ordinal: 1,
+            side: DesignTopologyIncidentSide::Preceding,
+        }),
     };
     DesignEdgeRecipeSelectorContext {
         selector: 0,
@@ -46,8 +57,21 @@ fn common_selector(edges: &[i64]) -> DesignEdgeRecipeSelectorContext {
 
 fn contradiction_work(selectors: &[DesignEdgeRecipeSelectorContext]) -> u64 {
     crate::test_support::with_decode_context(|ctx| {
-        assert_eq!(corroborated_triplet_intersection(ctx, selectors, &std::iter::empty(), TripletProof::Common).unwrap(), None);
-        let Err(CodecError::ResourceLimit(usage)) = ctx.charge_work(u64::MAX, "completed triplet work") else { panic!("completed work observer"); };
+        assert_eq!(
+            corroborated_triplet_intersection(
+                ctx,
+                selectors,
+                &std::iter::empty(),
+                TripletProof::Common
+            )
+            .unwrap(),
+            None
+        );
+        let Err(CodecError::ResourceLimit(usage)) =
+            ctx.charge_work(u64::MAX, "completed triplet work")
+        else {
+            panic!("completed work observer");
+        };
         usage.used
     })
 }
@@ -66,6 +90,15 @@ fn disjoint_pairs_do_not_constrain_a_later_common_triplet() {
     disjoint.clauses[0].as_mut().unwrap().triplet_edge_slots[1] = vec![18];
     let selectors = [disjoint, common_selector(&[19, 19])];
     crate::test_support::with_decode_context(|ctx| {
-        assert_eq!(corroborated_triplet_intersection(ctx, &selectors, &std::iter::empty(), TripletProof::Common).unwrap(), Some(19));
+        assert_eq!(
+            corroborated_triplet_intersection(
+                ctx,
+                &selectors,
+                &std::iter::empty(),
+                TripletProof::Common
+            )
+            .unwrap(),
+            Some(19)
+        );
     });
 }

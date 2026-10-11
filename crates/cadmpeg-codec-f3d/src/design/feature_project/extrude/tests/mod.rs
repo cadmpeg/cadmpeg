@@ -6,5 +6,5 @@
     clippy::uninlined_format_args
 )]
 
-mod projection;
 mod limits;
+mod projection;

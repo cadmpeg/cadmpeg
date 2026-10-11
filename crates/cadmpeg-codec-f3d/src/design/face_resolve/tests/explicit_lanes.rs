@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use super::borrowed_candidates::explicit_bounded_face_candidates;
 use super::{face, reference, stable_bounded_face_operand};
-use crate::design::face_resolve::explicit_bounded_face_candidates;
 use crate::records::topology::face::DesignFaceOperand;
 use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;

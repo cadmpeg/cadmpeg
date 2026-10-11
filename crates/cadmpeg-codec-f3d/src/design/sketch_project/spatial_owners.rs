@@ -71,7 +71,9 @@ pub(super) fn spatial_geometry_owners<'a>(
             let Some(owner) = point.owner_reference else {
                 continue;
             };
-            if point.depth().abs().partial_cmp(&EPS_SPATIAL_OWNER_DEPTH) != Some(std::cmp::Ordering::Greater) {
+            if point.depth().abs().partial_cmp(&EPS_SPATIAL_OWNER_DEPTH)
+                != Some(std::cmp::Ordering::Greater)
+            {
                 continue;
             }
             let Some(scope) =

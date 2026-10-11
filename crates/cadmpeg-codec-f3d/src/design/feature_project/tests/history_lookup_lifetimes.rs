@@ -204,8 +204,18 @@ fn history_lookup_lifetime_predecessor_releases_each_consumed_key() {
     let scopes = predecessor_chain();
     let graph_arena = cadmpeg_core::decode::DecodeArena::new();
     let graph_policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (graph_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &graph_arena, &graph_policy).unwrap();
-    let (graph, _graph_storage) = crate::design::feature_project::ScopeHistoryGraph::new(&graph_ctx, &scopes, &[], &[], &[], &[]).unwrap();
+    let (graph_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &graph_arena, &graph_policy)
+            .unwrap();
+    let (graph, _graph_storage) = crate::design::feature_project::ScopeHistoryGraph::new(
+        &graph_ctx,
+        &scopes,
+        &[],
+        &[],
+        &[],
+        &[],
+    )
+    .unwrap();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = LOOKUP_SCRATCH;
     crate::test_support::with_decode_policy(&policy, |ctx| {
@@ -234,8 +244,18 @@ fn history_lookup_lifetime_predecessor_key_one_below_keeps_original_refusal() {
     let scopes = predecessor_chain();
     let graph_arena = cadmpeg_core::decode::DecodeArena::new();
     let graph_policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (graph_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &graph_arena, &graph_policy).unwrap();
-    let (graph, _graph_storage) = crate::design::feature_project::ScopeHistoryGraph::new(&graph_ctx, &scopes, &[], &[], &[], &[]).unwrap();
+    let (graph_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &graph_arena, &graph_policy)
+            .unwrap();
+    let (graph, _graph_storage) = crate::design::feature_project::ScopeHistoryGraph::new(
+        &graph_ctx,
+        &scopes,
+        &[],
+        &[],
+        &[],
+        &[],
+    )
+    .unwrap();
     let bytes = u64::try_from(crate::ids::native_stream(&scopes[7].id).unwrap().len()).unwrap();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = bytes - 1;

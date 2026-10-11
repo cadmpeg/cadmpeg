@@ -62,9 +62,13 @@ fn edge_assignment_temporary_unique_native_order_retains_only_actual_selected_sl
 fn edge_assignment_temporary_selected_handoff_one_below_keeps_original_retained_refusal() {
     let selected_bytes = u64::try_from(2 * std::mem::size_of::<i64>()).unwrap();
     let CodecError::ResourceLimit(original) = crate::test_support::resource_refusal_at(
-        ResourceDimension::RetainedBytes, "f3d edge assignment", 0,
+        ResourceDimension::RetainedBytes,
+        "f3d edge assignment",
+        0,
         |ctx| unique_bipartite_assignment(&[vec![17], vec![18]], ctx),
-    ) else { panic!("selected handoff refusal"); };
+    ) else {
+        panic!("selected handoff refusal");
+    };
     assert_eq!(
         (
             original.dimension,
@@ -80,5 +84,3 @@ fn edge_assignment_temporary_selected_handoff_one_below_keeps_original_retained_
         )
     );
 }
-
-

@@ -75,9 +75,11 @@ fn incidence_current_membership_refuses_work_limit() {
 fn incidence_ignores_repeated_edges_and_equivalent_reference_sets() {
     crate::test_support::with_decode_context(|ctx| {
         assert_eq!(
-            unique_incidence_edge_shared_by_reference_faces(ctx, 
+            unique_incidence_edge_shared_by_reference_faces(
+                ctx,
                 &[selector(vec![11, 11])],
-                [&[10, 11, 11][..], &[11, 10][..], &[11, 12][..]])
+                [&[10, 11, 11][..], &[11, 10][..], &[11, 12][..]]
+            )
             .unwrap(),
             Some(11)
         );
@@ -88,9 +90,11 @@ fn incidence_ignores_repeated_edges_and_equivalent_reference_sets() {
 fn incidence_rejects_two_distinct_qualifying_edges() {
     crate::test_support::with_decode_context(|ctx| {
         assert_eq!(
-            unique_incidence_edge_shared_by_reference_faces(ctx, 
+            unique_incidence_edge_shared_by_reference_faces(
+                ctx,
                 &[selector(vec![11, 12])],
-                [&[10, 11][..], &[11, 12][..], &[12, 13][..]])
+                [&[10, 11][..], &[11, 12][..], &[12, 13][..]]
+            )
             .unwrap(),
             None
         );
@@ -104,9 +108,11 @@ fn incidence_proof_uses_only_borrowed_storage() {
     policy.limits.max_materialized_bytes = 0;
     crate::test_support::with_decode_policy(&policy, |ctx| {
         assert_eq!(
-            unique_incidence_edge_shared_by_reference_faces(ctx, 
+            unique_incidence_edge_shared_by_reference_faces(
+                ctx,
                 &[selector(vec![11])],
-                [&[10, 11][..], &[11, 12][..]])
+                [&[10, 11][..], &[11, 12][..]]
+            )
             .unwrap(),
             Some(11)
         );
@@ -146,9 +152,11 @@ fn empty_incidence_selector_leaves_references_unvisited() {
     policy.limits.max_materialized_bytes = 0;
     crate::test_support::with_decode_policy(&policy, |ctx| {
         assert_eq!(
-            unique_incidence_edge_shared_by_reference_faces(ctx, 
+            unique_incidence_edge_shared_by_reference_faces(
+                ctx,
                 &[selector(Vec::new())],
-                references)
+                references
+            )
             .unwrap(),
             None
         );
