@@ -848,50 +848,53 @@ fn mesh_source_association_is_constructed_after_payload_decode() {
     });
 }
 
-fn hatch_placement_failure_scan(count: usize, curve: Option<([u8; 16], Vec<u8>)>) -> crate::container::Scan<'static> {
+fn hatch_placement_failure_scan(
+    count: usize,
+    curve: Option<([u8; 16], Vec<u8>)>,
+) -> crate::container::Scan<'static> {
     use crate::test_support::{test_archive as curves, test_dump as bytes};
-        let archive = ArchiveVersion::V5;
-        let mut payload = vec![0x10];
-        for value in [
-            0.0,
-            0.0,
-            0.0, // origin
-            f64::MAX,
-            0.0,
-            0.0, // x axis
-            0.0,
-            1.0,
-            0.0, // y axis
-            0.0,
-            0.0,
-            1.0, // z axis
-            0.0,
-            0.0,
-            1.0,
-            0.0, // equation
-            1.0,
-            0.0, // pattern scale and rotation
-        ] {
-            bytes::push_f64(&mut payload, value);
-        }
+    let archive = ArchiveVersion::V5;
+    let mut payload = vec![0x10];
+    for value in [
+        0.0,
+        0.0,
+        0.0, // origin
+        f64::MAX,
+        0.0,
+        0.0, // x axis
+        0.0,
+        1.0,
+        0.0, // y axis
+        0.0,
+        0.0,
+        1.0, // z axis
+        0.0,
+        0.0,
+        1.0,
+        0.0, // equation
+        1.0,
+        0.0, // pattern scale and rotation
+    ] {
+        bytes::push_f64(&mut payload, value);
+    }
+    bytes::push_i32(&mut payload, 0);
+    bytes::push_i32(&mut payload, i32::try_from(count).unwrap());
+    let mut line = curves::line_payload([2.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0]);
+    line.truncate(line.len() - std::mem::size_of::<i32>());
+    bytes::push_i32(&mut line, 2);
+    let (class, child_payload) = curve.unwrap_or((curves::LINE_CLASS, line));
+    let child = bytes::class_wrapper(archive, class, &child_payload);
+    for _ in 0..count {
+        payload.push(0x10);
         bytes::push_i32(&mut payload, 0);
-        bytes::push_i32(&mut payload, i32::try_from(count).unwrap());
-        let mut line = curves::line_payload([2.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0]);
-        line.truncate(line.len() - std::mem::size_of::<i32>());
-        bytes::push_i32(&mut line, 2);
-        let (class, child_payload) = curve.unwrap_or((curves::LINE_CLASS, line));
-        let child = bytes::class_wrapper(archive, class, &child_payload);
-        for _ in 0..count {
-            payload.push(0x10);
-            bytes::push_i32(&mut payload, 0);
-            payload.extend_from_slice(&child);
-        }
-        scan_with_objects(&[bytes::object_record_with_payload(
-            archive,
-            0x1_0000,
-            crate::hatch::CLASS.to_wire(),
-            &payload,
-        )])
+        payload.extend_from_slice(&child);
+    }
+    scan_with_objects(&[bytes::object_record_with_payload(
+        archive,
+        0x1_0000,
+        crate::hatch::CLASS.to_wire(),
+        &payload,
+    )])
 }
 
 #[test]
@@ -912,14 +915,23 @@ fn hatch_placement_rejection_charges_only_the_first_loop() {
             let object = scan.objects[0].framed().expect("framed hatch");
             let mut storage = ctx.reserve_scoped(0, "hatch parser setup")?;
             let mut hatch = crate::hatch::decode(
-                expand, &mut storage, object.class_data_range.clone(),
-                crate::settings::MillimeterScale::IDENTITY, archive,
-            ).map_err(|error| match error {
+                expand,
+                &mut storage,
+                object.class_data_range.clone(),
+                crate::settings::MillimeterScale::IDENTITY,
+                archive,
+            )
+            .map_err(|error| match error {
                 crate::curves::GeometryError::Codec(error) => error,
                 error => panic!("valid hatch parser setup: {error}"),
             })?;
             let install = crate::hatch::apply_userdata(
-                &ctx, scan.data, &object.userdata, crate::settings::MillimeterScale::IDENTITY, archive, &mut hatch,
+                &ctx,
+                scan.data,
+                &object.userdata,
+                crate::settings::MillimeterScale::IDENTITY,
+                archive,
+                &mut hatch,
             )?;
             assert!(install.errors.is_empty());
             ctx.next_charged(&mut std::iter::once(()), "prefix setup completed")?;
@@ -1170,14 +1182,16 @@ fn assert_prefix_work(
     let mut first_cost = None;
     for count in [1, 128] {
         let setup = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits, "prefix setup completed",
+            ResourceDimension::WorkUnits,
+            "prefix setup completed",
             |cap| run(count, cap, PrefixProbe::Setup),
         );
         let cadmpeg_core::CodecError::ResourceLimit(setup) = setup else {
             panic!("setup refusal");
         };
         let start = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits, operation,
+            ResourceDimension::WorkUnits,
+            operation,
             |cap| run(count, cap, PrefixProbe::None),
         );
         let cadmpeg_core::CodecError::ResourceLimit(start) = start else {
@@ -1185,19 +1199,31 @@ fn assert_prefix_work(
         };
         assert_eq!(start.additional, 1);
         let end = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits, "prefix completed",
+            ResourceDimension::WorkUnits,
+            "prefix completed",
             |cap| run(count, cap, PrefixProbe::Complete),
         );
         let cadmpeg_core::CodecError::ResourceLimit(end) = end else {
             panic!("completed prefix refusal");
         };
-        let entry_cost = start.used.checked_sub(setup.used)
+        let entry_cost = start
+            .used
+            .checked_sub(setup.used)
             .expect("first visit follows independent setup");
-        let completed_cost = end.used.checked_sub(setup.used)
+        let completed_cost = end
+            .used
+            .checked_sub(setup.used)
             .expect("completion follows independent setup");
-        let (expected_entry, expected_completed) = *first_cost.get_or_insert((entry_cost, completed_cost));
-        assert_eq!(entry_cost, expected_entry, "unused suffix adds no previsit work");
-        assert_eq!(completed_cost, expected_completed, "unused suffix adds no work");
+        let (expected_entry, expected_completed) =
+            *first_cost.get_or_insert((entry_cost, completed_cost));
+        assert_eq!(
+            entry_cost, expected_entry,
+            "unused suffix adds no previsit work"
+        );
+        assert_eq!(
+            completed_cost, expected_completed,
+            "unused suffix adds no work"
+        );
         run(count, setup.used + expected_completed, PrefixProbe::None)
             .expect("independently measured completed-prefix budget suffices");
     }
@@ -1216,7 +1242,10 @@ fn prefix_oracle_rejects_previsit_bulk_charge() {
             ctx.next_charged(&mut std::iter::once(()), "prefix setup completed")?;
             return Ok(());
         }
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), "injected suffix precharge")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(count),
+            "injected suffix precharge",
+        )?;
         ctx.next_charged(&mut std::iter::once(()), "injected first visit")?;
         if probe == PrefixProbe::Complete {
             ctx.next_charged(&mut std::iter::once(()), "prefix completed")?;
@@ -1234,26 +1263,39 @@ fn rejected_hatch_placement_releases_unvisited_loop_fields() {
         let scan = hatch_placement_failure_scan(count, None);
         let used = |decode| {
             let error = cadmpeg_test_support::refusal::resource_limit_at(
-                ResourceDimension::RetainedBytes, "hatch field lifetime checkpoint", |cap| {
+                ResourceDimension::RetainedBytes,
+                "hatch field lifetime checkpoint",
+                |cap| {
                     let arena = DecodeArena::new();
                     let mut policy = DecodePolicy::service();
                     policy.limits.max_retained_bytes = cap;
-                    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
-                    let mut transaction = DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root))?;
+                    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                        scan.data, &arena, &policy,
+                    )?;
+                    let mut transaction =
+                        DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root))?;
                     if decode {
                         transaction.decode_geometry()?;
                         assert!(transaction.session.document().model.curves.is_empty());
-                        assert!(transaction.report.phase_warnings.iter().any(|warning| warning.contains("hatch loop placement failed")));
+                        assert!(transaction
+                            .report
+                            .phase_warnings
+                            .iter()
+                            .any(|warning| warning.contains("hatch loop placement failed")));
                     }
                     ctx.copy_retained_text("x", "hatch field lifetime checkpoint")?;
                     Ok(())
                 },
             );
-            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("checkpoint refusal"); };
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+                panic!("checkpoint refusal");
+            };
             limit.used
         };
         let cost = used(true) - used(false);
-        if let Some(previous) = expected { assert_eq!(cost, previous, "unvisited parsed loops retain no fields"); }
+        if let Some(previous) = expected {
+            assert_eq!(cost, previous, "unvisited parsed loops retain no fields");
+        }
         expected = Some(cost);
     }
 }
@@ -1261,7 +1303,9 @@ fn rejected_hatch_placement_releases_unvisited_loop_fields() {
 #[test]
 fn rejected_hatch_placement_releases_analytic_conversion_fields() {
     use crate::test_support::test_archive as bytes;
-    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, DecodeArena, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{
+        refusal_probe::RefusalProbe, DecodeArena, DecodePolicy, ResourceDimension,
+    };
     let angle = [0.0, std::f64::consts::TAU];
     let mut arc = bytes::arc_payload(angle, angle);
     arc.truncate(arc.len() - std::mem::size_of::<i32>());
@@ -1270,8 +1314,10 @@ fn rejected_hatch_placement_releases_analytic_conversion_fields() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::MAX;
-    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy).unwrap();
-    let mut transaction = DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root)).unwrap();
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy).unwrap();
+    let mut transaction =
+        DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root)).unwrap();
     {
         let _probe = RefusalProbe::arm(ResourceDimension::RetainedBytes, "Rhino arc knots", None);
         transaction.decode_geometry().unwrap();
