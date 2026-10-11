@@ -877,9 +877,6 @@ fn scan_surface_descriptors(
     Ok(out)
 }
 
-/// Distinct knots and their multiplicities, of one declared length.
-type KnotLanes<'a> = (&'a [f64], &'a [u16]);
-
 fn surface_multiplicity_lane<'a>(
     ctx: &DecodeContext<'_>,
     physical_count: usize,
@@ -900,16 +897,6 @@ fn surface_multiplicity_lane<'a>(
         "scan Parasolid trailing knot multiplicities",
     )?)
     .then_some(declared))
-}
-
-fn surface_knot_arrays<'a>(
-    ctx: &DecodeContext<'_>,
-    unique: &'a [f64],
-    multiplicities: &'a [u16],
-    declared_count: usize,
-) -> Result<Option<KnotLanes<'a>>, cadmpeg_core::CodecError> {
-    Ok(surface_multiplicity_lane(ctx, unique.len(), multiplicities, declared_count)?
-        .map(|lane| (unique.split_at(declared_count).0, lane)))
 }
 
 struct SurfaceKnotValues {
