@@ -6,10 +6,12 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::unique_index::UniqueIndex;
 
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     NativeOperandField, SketchConstraint, SketchConstraintId, SketchEntity, SketchEntityId,
-    SketchGeometry, SketchId, SketchNativeOperand,
+    SketchGeometry, SketchGeometryDefinition, SketchId, SketchNativeOperand,
 };
+use cadmpeg_ir::units::FinitePoint2;
 
 use crate::design_feature::DesignFeatureTransfer;
 use crate::ids::neutral_history_id;
@@ -20,14 +22,15 @@ use crate::native::{
 };
 
 /// Transfer sketch member records whose source identity is complete but whose
-/// coordinate grammar is not yet typed.
+/// coordinates are bound by their exact owner entity.
 ///
 /// The initial counted list of a Sketch owner record selects child
-/// design-object owner records in source order. A child contributes one native
-/// sketch entity only when that exact owner record resolves to one child
-/// design object and that child has exactly one admitted geometry field.
-/// The field remains native geometry; this lane
-/// does not infer coordinates, construction state, profiles, or constraints.
+/// design-object owner records in source order. An exact owner record must
+/// resolve to one child design object. Each admitted point field contributes
+/// one sketch entity and retains its distinct identity.
+/// A complete finite pair on the paired owner entity gives ordered local
+/// millimetre coordinates; other fields retain native geometry. Construction
+/// state, profiles, and constraints are separate relations.
 /// The returned object-record identities are the exact fields represented by
 /// the emitted native entities and are used to close design-record accounting.
 pub(crate) fn transfer_native_sketch_entities(
@@ -116,57 +119,80 @@ pub(crate) fn transfer_native_sketch_entities(
                 &object_records,
                 &entity_records,
             )?;
-            let [geometry_field] = geometry_fields.as_slice() else {
-                continue;
-            };
-            if !ctx.insert_hash_set(
-                &mut seen_fields,
-                geometry_field.id.as_str(),
-                "catia_sketch_entity_seen_fields",
-            )? {
-                continue;
-            }
+            let coordinates = (|| {
+                let owner = object_records.get(child_object.owner_record.as_deref()?)?;
+                let entity = entity_records.get(owner.entity_record()?)?;
+                if entity.object_graph != child_object.parent
+                    || entity.object_record != owner.id
+                    || entity.entity_id != child_object.owner_entity_id
+                    || owner.entity_id() != Some(entity.entity_id)
+                {
+                    return None;
+                }
+                let [crate::entity_table::NumericPairSlot::Binary64 { bits: u, .. }, crate::entity_table::NumericPairSlot::Binary64 { bits: v, .. }] =
+                    entity.numeric_pair()?.slots
+                else {
+                    return None;
+                };
+                FinitePoint2::new(Point2::new(f64::from_bits(u), f64::from_bits(v)))
+            })();
+            for geometry_field in geometry_fields {
+                if !ctx.insert_hash_set(
+                    &mut seen_fields,
+                    geometry_field.id.as_str(),
+                    "catia_sketch_entity_seen_fields",
+                )? {
+                    continue;
+                }
 
-            let entity_id = match neutral_history_id(
-                ctx,
-                &geometry_field.id,
-                &cadmpeg_ir::identity_component!("sketch-entity"),
-            )
-            .map(SketchEntityId::from)
-            {
-                Ok(id) => id,
-                Err(cadmpeg_core::CodecError::Malformed(_)) => continue,
-                Err(error) => return Err(error),
-            };
-            if ir.model.sketch_entities.iter().any(|entity| {
-                entity.id() == &entity_id
-                    || (entity.sketch == sketch_id
-                        && entity.native_ref.as_deref() == Some(geometry_field.id.as_str()))
-            }) {
-                continue;
-            }
-            ctx.charge_entities(1, "admit CATIA sketch entity")?;
-            let sketch_copy =
-                sketch_id.try_clone_for_decode(ctx, "catia_sketch_entity_owner_id")?;
-            let field_copy =
-                ctx.copy_retained_text(&geometry_field.id, "catia_sketch_entity_native_ref")?;
-            ctx.push_vec(
-                &mut ir.model.sketch_entities,
-                SketchEntity::new(
-                    entity_id,
-                    sketch_copy,
-                    SketchGeometry::native(cadmpeg_core::nonblank_literal!("2DPoint")),
+                let entity_id = match neutral_history_id(
+                    ctx,
+                    &geometry_field.id,
+                    &cadmpeg_ir::identity_component!("sketch-entity"),
                 )
-                .with_native_ref(Some(field_copy)),
-                "catia_sketch_entities",
-            )?;
-            let transferred_id =
-                ctx.copy_retained_text(&geometry_field.id, "catia_sketch_entity_transferred_id")?;
-            ctx.insert_hash_set(
-                &mut transferred,
-                transferred_id,
-                "catia_sketch_entity_transferred",
-            )?;
+                .map(SketchEntityId::from)
+                {
+                    Ok(id) => id,
+                    Err(cadmpeg_core::CodecError::Malformed(_)) => continue,
+                    Err(error) => return Err(error),
+                };
+                if ir.model.sketch_entities.iter().any(|entity| {
+                    entity.id() == &entity_id
+                        || (entity.sketch == sketch_id
+                            && entity.native_ref.as_deref() == Some(geometry_field.id.as_str()))
+                }) {
+                    continue;
+                }
+                ctx.charge_entities(1, "admit CATIA sketch entity")?;
+                let sketch_copy =
+                    sketch_id.try_clone_for_decode(ctx, "catia_sketch_entity_owner_id")?;
+                let field_copy =
+                    ctx.copy_retained_text(&geometry_field.id, "catia_sketch_entity_native_ref")?;
+                ctx.push_vec(
+                    &mut ir.model.sketch_entities,
+                    SketchEntity::new(
+                        entity_id,
+                        sketch_copy,
+                        coordinates.map_or_else(
+                            || SketchGeometry::native(cadmpeg_core::nonblank_literal!("2DPoint")),
+                            |position| {
+                                SketchGeometry::from_admitted_definition(
+                                    SketchGeometryDefinition::Point { position },
+                                )
+                            },
+                        ),
+                    )
+                    .with_native_ref(Some(field_copy)),
+                    "catia_sketch_entities",
+                )?;
+                let transferred_id = ctx
+                    .copy_retained_text(&geometry_field.id, "catia_sketch_entity_transferred_id")?;
+                ctx.insert_hash_set(
+                    &mut transferred,
+                    transferred_id,
+                    "catia_sketch_entity_transferred",
+                )?;
+            }
         }
     }
 
@@ -1911,8 +1937,89 @@ mod tests {
         assert!(admitted.is_empty());
     }
 
+    fn coordinate_owner_record(slots: Vec<u8>) -> CatiaEntityRecord {
+        let mut owner = entity_record("child-owner-entity", "child-owner-record", 3);
+        owner.body = CatiaEntityRecordBody::Nested {
+            definition_prefix: Vec::new(),
+            definition_suffix: Vec::new(),
+            value_payload: [
+                vec![0x91, 0x85, 0xe8, 0xe4, 0x07, 0x37, 0x83, 0x81],
+                slots,
+                vec![0xfe, 0xfe],
+            ]
+            .concat(),
+            record_suffix: Vec::new(),
+        };
+        owner
+    }
+
     #[test]
-    fn refuses_an_ambiguous_native_sketch_geometry_group() {
+    fn incomplete_or_nonfinite_coordinate_pairs_remain_native() {
+        for slots in [
+            [vec![0xe8, 0xe6], 12.64_f64.to_le_bytes().to_vec()].concat(),
+            [vec![0xe6], 5.75_f64.to_le_bytes().to_vec(), vec![0xe8]].concat(),
+            [
+                vec![0xe6],
+                f64::NAN.to_le_bytes().to_vec(),
+                vec![0xe6],
+                12.64_f64.to_le_bytes().to_vec(),
+            ]
+            .concat(),
+            [
+                vec![0xe6],
+                5.75_f64.to_le_bytes().to_vec(),
+                vec![0xe6],
+                f64::INFINITY.to_le_bytes().to_vec(),
+            ]
+            .concat(),
+        ] {
+            let (mut ir, mut native, transfer, graph_scope) = native_sketch_fixture("2DPoint");
+            native.entity_records.push(coordinate_owner_record(slots));
+            crate::test_support::with_service_context(|ctx| {
+                transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
+            })
+            .expect("service profile admits native point");
+            assert_eq!(ir.model.sketch_entities.len(), 1);
+            assert!(matches!(
+                ir.model.sketch_entities[0].geometry.definition(),
+                cadmpeg_ir::sketches::SketchGeometryDefinition::Native { .. }
+            ));
+        }
+    }
+
+    #[test]
+    fn coordinate_owner_requires_the_exact_paired_entity() {
+        for mismatch in 0..3 {
+            let (mut ir, mut native, transfer, graph_scope) = native_sketch_fixture("2DPoint");
+            let mut owner = coordinate_owner_record(
+                [
+                    vec![0xe6],
+                    5.75_f64.to_le_bytes().to_vec(),
+                    vec![0xe6],
+                    12.64_f64.to_le_bytes().to_vec(),
+                ]
+                .concat(),
+            );
+            match mismatch {
+                0 => owner.object_graph = "other-graph".to_string(),
+                1 => owner.object_record = "other-owner".to_string(),
+                _ => owner.entity_id = 30,
+            }
+            native.entity_records.push(owner);
+            crate::test_support::with_service_context(|ctx| {
+                transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
+            })
+            .expect("service profile admits native point");
+            assert_eq!(ir.model.sketch_entities.len(), 1);
+            assert!(matches!(
+                ir.model.sketch_entities[0].geometry.definition(),
+                cadmpeg_ir::sketches::SketchGeometryDefinition::Native { .. }
+            ));
+        }
+    }
+
+    #[test]
+    fn preserves_distinct_point_fields_with_a_shared_coordinate_owner() {
         let (mut ir, mut native, transfer, graph_scope) = native_sketch_fixture("2DPoint");
         let second_field_id = "catia:outer:object-record#second-geometry-field";
         let second_entity_id = "catia:outer:entity-record#second-geometry-field";
@@ -1936,18 +2043,33 @@ mod tests {
             .fields
             .push(second_field_id.to_string());
 
-        assert!(
-            crate::test_support::with_service_context(|ctx| transfer_native_sketch_entities(
-                ctx,
-                &mut ir,
-                &native,
-                &transfer,
-                &graph_scope
-            )
-            .expect("service profile admits sketch transfer"))
-            .is_empty()
+        native.entity_records.push(coordinate_owner_record(
+            [
+                vec![0xe6],
+                5.75_f64.to_le_bytes().to_vec(),
+                vec![0xe6],
+                12.64_f64.to_le_bytes().to_vec(),
+            ]
+            .concat(),
+        ));
+        let transferred = crate::test_support::with_service_context(|ctx| {
+            transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
+        })
+        .expect("service profile admits sketch transfer");
+        assert_eq!(transferred.len(), 2);
+        assert_eq!(ir.model.sketch_entities.len(), 2);
+        assert_ne!(
+            ir.model.sketch_entities[0].id(),
+            ir.model.sketch_entities[1].id()
         );
-        assert!(ir.model.sketch_entities.is_empty());
+        for entity in &ir.model.sketch_entities {
+            let cadmpeg_ir::sketches::SketchGeometryDefinition::Point { position } =
+                entity.geometry.definition()
+            else {
+                panic!("expected owner-bound local point");
+            };
+            assert_eq!(position.get(), cadmpeg_ir::math::Point2::new(5.75, 12.64));
+        }
     }
 
     #[test]

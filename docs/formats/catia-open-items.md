@@ -108,14 +108,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must identify the document design-configuration production before we can transfer configuration identities or active state.
 
-### DI-16. Sketch coordinate semantics
-
-**Question.** Which numeric tuple components give the coordinates of a `2DPoint`?
-
-**Known.** The decoder retains complete two-scalar numeric values and their selected field schemas. `catia.md` §7.3 "The initial count-framed reference list" separates the roster-selected child identity from the containing field group. Numeric pairs in that group do not establish a coordinate incidence to the child’s `2DPoint` field.
-
-**Need.** We must establish the pair-to-point incidence, component order, and units to transfer sketch points.
-
 ### DI-17. `PRTSketch` and `Sketch` payload roles
 
 **Question.** What does each atom, list, and reference in a `PRTSketch` or `Sketch` field represent?
