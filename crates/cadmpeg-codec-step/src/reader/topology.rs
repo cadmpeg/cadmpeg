@@ -942,6 +942,10 @@ pub(super) fn decode<'ctx>(
     let mut admission_storage = ctx.reserve_scoped(0, "STEP document admission scratch")?;
     let mut admissions: Vec<PcurveAdmission> = Vec::new();
     let mut face_cache = FaceAttributeCache::new(ctx)?;
+    let mut face_ancestor_storage = ctx.reserve_scoped(0, "STEP committed face ancestry")?;
+    let mut claimed_face_ancestors = BTreeSet::new();
+    let mut shell_ancestor_storage = ctx.reserve_scoped(0, "STEP committed shell ancestry")?;
+    let mut claimed_shell_ancestors = BTreeSet::new();
     for entity in exchange.entities_any(ctx, &topology_root_types)? {
         let (id, record) = entity?;
         let (key, mut root_key_storage) = ctx
@@ -1055,6 +1059,23 @@ pub(super) fn decode<'ctx>(
                 )?;
             } else {
                 built.payload.commit()?;
+                ctx.fold(&built.shell_ancestors, (), |(), &reference| {
+                    claim_shell_ancestors(
+                        reference,
+                        &shells,
+                        (&mut result.claims, &mut claim_storage),
+                        (&mut claimed_shell_ancestors, &mut shell_ancestor_storage),
+                        ctx,
+                    )
+                }, "STEP committed shell ancestor seeds")?;
+                ctx.fold(&built.face_ancestors, (), |(), &parent| {
+                    claim_face_ancestors(
+                        Some(parent),
+                        &face_cache,
+                        (&mut result.claims, &mut claim_storage),
+                        (&mut claimed_face_ancestors, &mut face_ancestor_storage),
+                    )
+                }, "STEP committed face ancestor seeds")?;
                 for shell in ctx.admit_iter(&built.shell_sources, "STEP decode traversal")? {
                     topology_storage.with_storage(|| {
                         insert_topology_body_group(
@@ -1778,10 +1799,12 @@ fn build_wire_set<'ctx>(
     let mut built_edges = Vec::new();
     let mut source_steps = used_edges.iter();
 
-    for _ in 0..source_steps.len() {
-        let source_value = ctx
+    while source_steps.len() != 0 {
+        let Some(source_value) = ctx
             .next_charged(&mut source_steps, "STEP topology reference traversal")?
-            .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
+        else {
+            break;
+        };
         let Some(edge_id) = source_value.reference() else {
             continue;
         };
@@ -1854,10 +1877,12 @@ fn build_wire_set<'ctx>(
     {
         let mut source_steps = used_vertices.into_iter();
 
-        for _ in 0..source_steps.len() {
-            let vertex_id = ctx
+        while source_steps.len() != 0 {
+            let Some(vertex_id) = ctx
                 .next_charged(&mut source_steps, "STEP topology collection traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
+            else {
+                break;
+            };
             let Some(vertex) =
                 ctx.get_btree_map(vdefs, &vertex_id, "STEP topology vdefs lookup")?
             else {
@@ -2068,10 +2093,12 @@ fn build_shell_wire_set<'ctx>(
         };
         let mut source_steps = loop_ids.iter();
 
-        for _ in 0..source_steps.len() {
-            let source_value = ctx
+        while source_steps.len() != 0 {
+            let Some(source_value) = ctx
                 .next_charged(&mut source_steps, "STEP topology reference traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
+            else {
+                break;
+            };
             let Some(loop_id) = source_value.reference() else {
                 continue;
             };
@@ -2087,10 +2114,12 @@ fn build_shell_wire_set<'ctx>(
                 };
                 let mut source_steps = oriented_ids.iter();
 
-                for _ in 0..source_steps.len() {
-                    let source_value = ctx
+                while source_steps.len() != 0 {
+                    let Some(source_value) = ctx
                         .next_charged(&mut source_steps, "STEP topology reference traversal")?
-                        .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
+                    else {
+                        break;
+                    };
                     let Some(oriented_id) = source_value.reference() else {
                         continue;
                     };
@@ -2208,10 +2237,12 @@ fn build_shell_wire_set<'ctx>(
     {
         let mut source_steps = edge_uses.into_iter().enumerate();
 
-        for _ in 0..source_steps.len() {
-            let (index, (edge_id, oriented_id, forward)) = ctx
+        while source_steps.len() != 0 {
+            let Some((index, (edge_id, oriented_id, forward))) = ctx
                 .next_charged(&mut source_steps, "STEP wire edge use traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
+            else {
+                break;
+            };
             let Some(edge) = ctx.get_btree_map(edefs, &edge_id, "STEP topology edefs lookup")?
             else {
                 return Ok(None);
@@ -2266,10 +2297,12 @@ fn build_shell_wire_set<'ctx>(
     {
         let mut source_steps = used_vertices.into_iter();
 
-        for _ in 0..source_steps.len() {
-            let vertex_id = ctx
+        while source_steps.len() != 0 {
+            let Some(vertex_id) = ctx
                 .next_charged(&mut source_steps, "STEP topology collection traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
+            else {
+                break;
+            };
             let Some(vertex) =
                 ctx.get_btree_map(vdefs, &vertex_id, "STEP topology vdefs lookup")?
             else {
@@ -3235,6 +3268,8 @@ struct Built<'ctx> {
     /// Pcurve relations that the finite witness admitted while this body was
     /// staged. They are located source facts; the document report formats them.
     pcurve_admissions: Vec<PcurveAdmission>,
+    face_ancestors: Vec<u64>,
+    shell_ancestors: Vec<u64>,
     storage: ScopedReservation<'ctx>,
     // Declared after the draft so rejection drops the payload before its lease.
     payload: ProvisionalReservation<'ctx>,
@@ -3318,50 +3353,60 @@ fn staged_topology<'ctx>(
     {
 
         let mut source_steps = (vertices).into_iter();
-        for _ in 0..source_steps.len() {
-            let vertex = ctx
+        while source_steps.len() != 0 {
+            let Some(vertex) = ctx
                 .next_charged(&mut source_steps, "STEP topology collection traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
+            else {
+                break;
+            };
             draft.insert(vertex, ctx)?;
         }
     }
     {
 
         let mut source_steps = (edges).into_iter();
-        for _ in 0..source_steps.len() {
-            let edge = ctx
+        while source_steps.len() != 0 {
+            let Some(edge) = ctx
                 .next_charged(&mut source_steps, "STEP topology collection traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
+            else {
+                break;
+            };
             draft.insert(edge, ctx)?;
         }
     }
     {
 
         let mut source_steps = (coedges).into_iter();
-        for _ in 0..source_steps.len() {
-            let coedge = ctx
+        while source_steps.len() != 0 {
+            let Some(coedge) = ctx
                 .next_charged(&mut source_steps, "STEP topology collection traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
+            else {
+                break;
+            };
             draft.insert(coedge, ctx)?;
         }
     }
     {
 
         let mut source_steps = (loops).into_iter();
-        for _ in 0..source_steps.len() {
-            let loop_ = ctx
+        while source_steps.len() != 0 {
+            let Some(loop_) = ctx
                 .next_charged(&mut source_steps, "STEP topology collection traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
+            else {
+                break;
+            };
             draft.insert(loop_, ctx)?;
         }
     }
     {
 
         let mut source_steps = (faces).into_iter();
-        for _ in 0..source_steps.len() {
-            let face = ctx
+        while source_steps.len() != 0 {
+            let Some(face) = ctx
                 .next_charged(&mut source_steps, "STEP topology collection traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
+            else {
+                break;
+            };
             draft.insert(face, ctx)?;
         }
     }
@@ -3369,10 +3414,12 @@ fn staged_topology<'ctx>(
     {
 
         let mut source_steps = (surfaces).into_iter();
-        for _ in 0..source_steps.len() {
-            let surface = ctx
+        while source_steps.len() != 0 {
+            let Some(surface) = ctx
                 .next_charged(&mut source_steps, "STEP topology collection traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
+            else {
+                break;
+            };
             if !ctx.contains_btree_set(
                 &surface_ids,
                 surface.id.as_str(),
@@ -3391,10 +3438,12 @@ fn staged_topology<'ctx>(
     {
 
         let mut source_steps = (shells).into_iter();
-        for _ in 0..source_steps.len() {
-            let shell = ctx
+        while source_steps.len() != 0 {
+            let Some(shell) = ctx
                 .next_charged(&mut source_steps, "STEP topology collection traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
+            else {
+                break;
+            };
             draft.insert(shell, ctx)?;
         }
     }
@@ -3411,6 +3460,8 @@ fn staged_topology<'ctx>(
         body_id,
         shell_sources: BTreeSet::new(),
         pcurve_admissions: Vec::new(),
+        face_ancestors: Vec::new(),
+        shell_ancestors: Vec::new(),
         payload,
     })
 }
@@ -3468,10 +3519,12 @@ fn root_shell_steps(
         };
         let mut values = values.iter();
 
-        for _ in 0..values.len() {
-            let value = ctx
+        while values.len() != 0 {
+            let Some(value) = ctx
                 .next_charged(&mut values, "STEP topology reference traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
+            else {
+                break;
+            };
             let Some(set_step) = value.reference() else {
                 continue;
             };
@@ -3578,8 +3631,9 @@ fn root_key(
     let Some(shell_steps) = shell_steps else {
         return Ok(None);
     };
+    let face_based = root.partial(ctx, "FACE_BASED_SURFACE_MODEL")?.is_some();
     for shell in ctx.admit_iter(shell_steps, "STEP topology collection traversal")? {
-        let key = if root.partial(ctx, "FACE_BASED_SURFACE_MODEL")?.is_some() {
+        let key = if face_based {
             (shell, Some(true))
         } else {
             ctx.get_btree_map(
@@ -3634,6 +3688,9 @@ struct BuildRoot<'a> {
     shell_steps: &'a [u64],
     bid: BodyId,
     rid: &'a RegionId,
+    solid: bool,
+    voids: bool,
+    face_based: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -3675,21 +3732,25 @@ fn build<'ctx, 'records, 'arena>(
         failure: None,
         selection_index: None,
     };
+    let voids = root.partial(ctx, "BREP_WITH_VOIDS")?.is_some();
     let solid = root.partial(ctx, "MANIFOLD_SOLID_BREP")?.is_some()
-        || root.partial(ctx, "BREP_WITH_VOIDS")?.is_some()
+        || voids
         || root.partial(ctx, "FACETED_BREP")?.is_some();
+    let face_based = root.partial(ctx, "FACE_BASED_SURFACE_MODEL")?.is_some();
     if solid {
         let body = BodyId::from(ids::data(kind!("body"), id));
         let region = RegionId::from(ids::data(kind!("region"), id));
         let scope_shell_carriers = shell_steps.len() > 1 || scope_root;
         let built = build_one(
             id,
-            root,
             sources,
             BuildRoot {
                 shell_steps: &shell_steps,
                 bid: body,
                 rid: &region,
+                solid,
+                voids,
+                face_based,
             },
             BuildScope {
                 faces: scope_shell_carriers,
@@ -3712,7 +3773,7 @@ fn build<'ctx, 'records, 'arena>(
     let mut outcome = BuildOutcome::new(ctx)?;
     for shell_reference in ctx.admit_iter(shell_steps, "STEP topology collection traversal")? {
         state.failure = None;
-        let shell_step = if root.partial(ctx, "FACE_BASED_SURFACE_MODEL")?.is_some() {
+        let shell_step = if face_based {
             shell_reference
         } else {
             match ctx.get_btree_map(
@@ -3747,12 +3808,14 @@ fn build<'ctx, 'records, 'arena>(
         ));
         match build_one(
             id,
-            root,
             sources,
             BuildRoot {
                 shell_steps: &[shell_reference],
                 bid: body,
                 rid: &region,
+                solid,
+                voids,
+                face_based,
             },
             BuildScope {
                 faces: scoped || scope_root,
@@ -3789,7 +3852,6 @@ impl From<CodecError> for BuildError {
 
 fn build_one<'ctx, 'ir, 'records, 'arena>(
     id: u64,
-    root: &RawRecord,
     sources: BuildSources<'records, 'ir, 'ctx, 'arena>,
     root_parts: BuildRoot<'_>,
     scope: BuildScope,
@@ -3820,15 +3882,15 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
         shell_steps,
         bid,
         rid,
+        solid,
+        voids,
+        face_based,
     } = root_parts;
     let BuildScope {
         faces: scope_faces,
         edges: scope_edges,
         root: scope_root,
     } = scope;
-    let solid = root.partial(ctx, "MANIFOLD_SOLID_BREP")?.is_some()
-        || root.partial(ctx, "BREP_WITH_VOIDS")?.is_some()
-        || root.partial(ctx, "FACETED_BREP")?.is_some();
     let mut payload = ctx.provisional_retained("STEP topology candidate payload")?;
     let mut typed = BTreeSet::new();
     built_storage.with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_brep_typed"))?;
@@ -3870,9 +3932,8 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
     let mut used_v = BTreeSet::<(u64, u64)>::new();
     let mut used_e = BTreeSet::<(u64, u64)>::new();
     let mut used_shells = BTreeSet::new();
-    let mut ancestor_storage = ctx.reserve_scoped(0, "STEP shell ancestor scratch")?;
-    let mut claimed_shell_ancestors = BTreeSet::new();
-    let mut claimed_face_ancestors = BTreeSet::new();
+    let mut shell_ancestors = Vec::new();
+    let mut face_ancestors = Vec::new();
     let mut used_faces = BTreeSet::new();
     let mut radial = BTreeMap::<EdgeId, Vec<usize>>::new();
     let mut poly_edges = BTreeMap::<(u64, EdgeId), (u64, u64)>::new();
@@ -3883,34 +3944,36 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
     let mut admissions = Vec::new();
     let mut source_steps = shell_steps.iter();
 
-    for _ in 0..source_steps.len() {
-        let &shell_reference = ctx
+    while source_steps.len() != 0 {
+        let Some(&shell_reference) = ctx
             .next_charged(&mut source_steps, "STEP body topology traversal")?
-            .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
+        else {
+            break;
+        };
         let (shell_step, shell_forward) =
-            if root.partial(ctx, "FACE_BASED_SURFACE_MODEL")?.is_some() {
+            if face_based {
                 built_storage.with_storage(|| {
                     ctx.insert_btree_set(&mut typed, shell_reference, "step_brep_typed")
                 })?;
                 (shell_reference, true)
             } else {
                 require_carrier(
-                    built_storage.with_storage(|| {
-                        shell_def_for(
-                            shell_reference,
-                            shell_definitions,
-                            &mut typed,
-                            &mut claimed_shell_ancestors,
-                            &mut ancestor_storage,
-                            ctx,
-                        )
-                    })?,
+                    ctx.get_btree_map(shell_definitions, &shell_reference, "STEP topology shells lookup")?
+                        .map(|definition| (definition.base, definition.forward)),
                     failure,
                     shell_reference,
                     CarrierKind::ShellCarrier,
                 )
                 .ok_or(BuildError::Absent)?
             };
+        if !face_based {
+            ctx.push_scoped_vec(
+                &mut built_storage,
+                &mut shell_ancestors,
+                shell_reference,
+                "step_brep_shell_ancestor_seeds",
+            )?;
+        }
         if ctx.contains_btree_set(
             &used_shells,
             &shell_step,
@@ -3932,7 +3995,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
             CarrierKind::ShellRecord,
         )
         .ok_or(BuildError::Absent)?;
-        let (shell_type, face_steps) = if root.partial(ctx, "FACE_BASED_SURFACE_MODEL")?.is_some() {
+        let (shell_type, face_steps) = if face_based {
             let set_type = require_carrier(
                 connected_face_set_type(ctx, sr)?,
                 failure,
@@ -3991,10 +4054,12 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
         let mut face_ids = vec![];
         let mut source_steps = face_steps.iter();
 
-        for _ in 0..source_steps.len() {
-            let source_value = ctx
+        while source_steps.len() != 0 {
+            let Some(source_value) = ctx
                 .next_charged(&mut source_steps, "STEP body topology traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
+            else {
+                break;
+            };
             let Some(face_step) = source_value.reference() else {
                 continue;
             };
@@ -4088,12 +4153,14 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
                 note_failure(failure, face_step, CarrierKind::FaceWithMultipleOuterBounds);
                 return Err(BuildError::Absent);
             }
-            claim_face_ancestors(
-                face_info.parent,
-                face_cache,
-                (&mut typed, &mut built_storage),
-                (&mut claimed_face_ancestors, &mut ancestor_storage),
-            )?;
+            if let Some(parent) = face_info.parent {
+                ctx.push_scoped_vec(
+                    &mut built_storage,
+                    &mut face_ancestors,
+                    parent,
+                    "step_brep_face_ancestor_seeds",
+                )?;
+            }
             let face_suffix = if scope_faces {
                 if scope_root {
                     IdentityKeyTail::empty()
@@ -4196,10 +4263,12 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
             {
                 let mut source_steps = face_bounds.into_iter();
 
-                for _ in 0..source_steps.len() {
-                    let bound_step = ctx
+                while source_steps.len() != 0 {
+                    let Some(bound_step) = ctx
                         .next_charged(&mut source_steps, "STEP topology collection traversal")?
-                        .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
+                    else {
+                        break;
+                    };
                     let mut bound_scratch = ctx.reserve_scoped(0, "STEP bound scratch")?;
                     let br = require_carrier(
                         ctx.get_btree_map(
@@ -4551,15 +4620,15 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
                     {
                         let mut source_steps = uses.into_iter();
 
-                        for _ in 0..source_steps.len() {
-                            let use_step = ctx
+                        while source_steps.len() != 0 {
+                            let Some(use_step) = ctx
                                 .next_charged(
                                     &mut source_steps,
                                     "STEP topology collection traversal",
                                 )?
-                                .ok_or_else(|| {
-                                    CodecError::malformed("STEP topology source ended early")
-                                })?;
+                            else {
+                                break;
+                            };
                             let mut pcurve_scratch =
                                 ctx.reserve_scoped(0, "STEP edge pcurve scratch")?;
                             let o = require_carrier(
@@ -4994,11 +5063,13 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
         {
             let mut source_steps = components.into_iter().enumerate();
 
-            for _ in 0..source_steps.len() {
-                let (component_index, component) = ctx
+            while source_steps.len() != 0 {
+                let Some((component_index, component)) = ctx
                     .next_charged(&mut source_steps, "STEP shell component traversal")?
-                    .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
-                if root.partial(ctx, "BREP_WITH_VOIDS")?.is_some()
+                else {
+                    break;
+                };
+                if voids
                     && shell_steps.first().copied() == Some(shell_reference)
                     && component_index > 0
                 {
@@ -5078,10 +5149,12 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
     {
         let mut source_steps = used_e.into_iter();
 
-        for _ in 0..source_steps.len() {
-            let (shell_step, edge_id) = ctx
+        while source_steps.len() != 0 {
+            let Some((shell_step, edge_id)) = ctx
                 .next_charged(&mut source_steps, "STEP topology collection traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
+            else {
+                break;
+            };
             let e = require_carrier(
                 ctx.get_btree_map(edefs, &edge_id, "STEP topology edefs lookup")?,
                 failure,
@@ -5129,10 +5202,12 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
     {
         let mut source_steps = used_v.into_iter();
 
-        for _ in 0..source_steps.len() {
-            let (shell_step, vertex_id) = ctx
+        while source_steps.len() != 0 {
+            let Some((shell_step, vertex_id)) = ctx
                 .next_charged(&mut source_steps, "STEP topology collection traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
+            else {
+                break;
+            };
             let v = require_carrier(
                 ctx.get_btree_map(vdefs, &vertex_id, "STEP topology vdefs lookup")?,
                 failure,
@@ -5164,10 +5239,12 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
     {
         let mut source_steps = poly_points.into_iter();
 
-        for _ in 0..source_steps.len() {
-            let (shell_step, point_id) = ctx
+        while source_steps.len() != 0 {
+            let Some((shell_step, point_id)) = ctx
                 .next_charged(&mut source_steps, "STEP topology collection traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
+            else {
+                break;
+            };
             require_carrier(
                 point_positions.get(point_id, ctx)?.copied(),
                 failure,
@@ -5222,20 +5299,24 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
     }
     let mut source_steps = loops.iter();
 
-    for _ in 0..source_steps.len() {
-        let loop_ = ctx
+    while source_steps.len() != 0 {
+        let Some(loop_) = ctx
             .next_charged(&mut source_steps, "STEP body topology traversal")?
-            .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
+        else {
+            break;
+        };
         if loop_.coedges().is_empty() {
             continue;
         }
         let loop_source = source_numeric_id(ctx, loop_.id.as_str(), "loop")?.unwrap_or(0);
         let mut source_steps = loop_.coedges().iter().enumerate();
 
-        for _ in 0..source_steps.len() {
-            let (index, current_id) = ctx
+        while source_steps.len() != 0 {
+            let Some((index, current_id)) = ctx
                 .next_charged(&mut source_steps, "STEP body topology traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
+            else {
+                break;
+            };
             let next_id = &loop_.coedges()[(index + 1) % loop_.coedges().len()];
             let current = require_carrier(
                 ctx.get_btree_map(
@@ -5320,13 +5401,17 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
         Err(StageError::Resource(error)) => return Err(BuildError::Resource(error)),
     };
     built.pcurve_admissions = admissions;
+    built.face_ancestors = face_ancestors;
+    built.shell_ancestors = shell_ancestors;
 
     let mut source_steps = (shell_steps).iter();
-    for _ in 0..source_steps.len() {
-        let &shell_reference = ctx
+    while source_steps.len() != 0 {
+        let Some(&shell_reference) = ctx
             .next_charged(&mut source_steps, "STEP body topology traversal")?
-            .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
-        let shell_step = if root.partial(ctx, "FACE_BASED_SURFACE_MODEL")?.is_some() {
+        else {
+            break;
+        };
+        let shell_step = if face_based {
             shell_reference
         } else {
             require_carrier(
@@ -5705,10 +5790,12 @@ fn implicit_face_points(
     let mut loops = Vec::new();
     let mut source_steps = bounds.iter();
 
-    for _ in 0..source_steps.len() {
-        let &bound_step = ctx
+    while source_steps.len() != 0 {
+        let Some(&bound_step) = ctx
             .next_charged(&mut source_steps, "STEP implicit face points traversal")?
-            .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
+        else {
+            break;
+        };
         let Some(bound) = ctx.get_btree_map(
             exchange.records(),
             &bound_step,
@@ -5773,10 +5860,12 @@ fn implicit_face_points(
         {
             let mut source_steps = point_steps.into_iter();
 
-            for _ in 0..source_steps.len() {
-                let point_step = ctx
+            while source_steps.len() != 0 {
+                let Some(point_step) = ctx
                     .next_charged(&mut source_steps, "STEP topology collection traversal")?
-                    .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
+                else {
+                    break;
+                };
                 let point_step = ctx
                     .get_btree_map(vdefs, &point_step, "STEP topology vdefs lookup")?
                     .map_or(point_step, |vertex| vertex.point);
@@ -5875,10 +5964,12 @@ fn implicit_face_plane(
     let mut loop_normals = Vec::new();
     let mut source_steps = loops.iter();
 
-    for _ in 0..source_steps.len() {
-        let loop_points = ctx
+    while source_steps.len() != 0 {
+        let Some(loop_points) = ctx
             .next_charged(&mut source_steps, "STEP implicit face normal traversal")?
-            .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
+        else {
+            break;
+        };
         let Some(loop_count) = cadmpeg_core::convert::f64_from_index(loop_points.len()) else {
             return Ok(None);
         };
@@ -7438,18 +7529,15 @@ fn shell_def_cached(
     Ok(result)
 }
 
-fn shell_def_for(
+fn claim_shell_ancestors(
     reference: u64,
     shells: &BTreeMap<u64, ShellDef>,
-    typed: &mut BTreeSet<u64>,
-    seen: &mut BTreeSet<u64>,
-    storage: &mut ScopedReservation<'_>,
+    claims: (&mut BTreeSet<u64>, &mut ScopedReservation<'_>),
+    seen: (&mut BTreeSet<u64>, &mut ScopedReservation<'_>),
     ctx: &DecodeContext<'_>,
-) -> Result<Option<(u64, bool)>, CodecError> {
-    let Some(definition) = ctx.get_btree_map(shells, &reference, "STEP topology shells lookup")?
-    else {
-        return Ok(None);
-    };
+) -> Result<(), CodecError> {
+    let (typed, typed_storage) = claims;
+    let (seen, seen_storage) = seen;
     let mut current = reference;
     loop {
         ctx.charge_work(1, "STEP shell ancestor traversal")?;
@@ -7459,15 +7547,17 @@ fn shell_def_for(
         else {
             break;
         };
-        if !storage.with_storage(|| {
+        if !seen_storage.with_storage(|| {
             ctx.insert_btree_set(seen, current, "STEP shell ancestor membership")
         })? {
             break;
         }
-        ctx.insert_btree_set(typed, current, "step_shell_definition_claims")?;
+        typed_storage.with_storage(|| {
+            ctx.insert_btree_set(typed, current, "step_shell_definition_claims")
+        })?;
         current = parent;
     }
-    Ok(Some((definition.base, definition.forward)))
+    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -7504,7 +7594,7 @@ impl<'ctx, 'arena> FaceAttributeCache<'ctx, '_, 'arena> {
     }
 }
 
-/// Claim each successful ancestor once in this staged body.
+/// Claim each successful ancestor once across committed bodies.
 fn claim_face_ancestors(
     mut parent: Option<u64>,
     cache: &FaceAttributeCache<'_, '_, '_>,

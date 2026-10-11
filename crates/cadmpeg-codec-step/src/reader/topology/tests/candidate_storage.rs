@@ -154,10 +154,8 @@ fn late_shell_rejection_retains_invalid_face_name_warning() {
     rejected_named_face(r"\X2\ZZZZ\X0\", true);
 }
 
-#[test]
-fn installed_topology_keeps_decoded_face_name_retained() {
-    let name = "A".repeat(16_384);
-    let source = sheet_source(&name, false);
+fn installed_name_storage(name: &str) -> u64 {
+    let source = sheet_source(name, false);
     let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
         .expect("named sheet parses");
     let setup = cadmpeg_test_support::service_decode_context();
@@ -167,7 +165,15 @@ fn installed_topology_keeps_decoded_face_name_retained() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let outcome = super::super::decode(&exchange, &mut ir, &carriers, &ctx).expect("topology installed");
     assert_eq!(ir.model.faces.len(), 1);
-    assert_eq!(ir.model.faces[0].name.as_deref(), Some(name.as_str()));
+    assert_eq!(ir.model.faces[0].name.as_deref(), (!name.is_empty()).then_some(name));
     drop(outcome);
-    assert!(retained_bytes(&ctx) >= u64::try_from(name.len()).expect("name bytes fit"));
+    retained_bytes(&ctx)
+}
+
+#[test]
+fn installed_topology_keeps_decoded_face_name_retained() {
+    let baseline = installed_name_storage("");
+    let name = "A".repeat(16_384);
+    let named = installed_name_storage(&name);
+    assert_eq!(named - baseline, u64::try_from(name.len()).expect("name bytes fit"));
 }
