@@ -914,7 +914,7 @@ fn native_state_slot_extent_and_storage_transfer_refuse_at_their_boundaries() {
         composed_feature_history_payload_with_operation_state_statuses(),
     )]);
     let container =
-        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file)).unwrap();
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, &file)).unwrap();
     let lanes = crate::test_support::with_decode_context(|ctx| {
         operation_state_slot_lanes(
             ctx,
