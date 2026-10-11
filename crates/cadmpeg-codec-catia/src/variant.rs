@@ -9,13 +9,11 @@
 /// Recognized `CATPart` storage families and fallback classifications.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Variant {
-    /// Nested `V5_CFV2` with a `30 04 04 ff` FBB spine followed by the standard
-    /// `10 24 04 ff ff 00 00 00` edge-table delimiter. The standard route
-    /// decodes its geometry.
+    /// Nested `V5_CFV2` with a complete standard FBB edge/vertex walk.
     StandardNested,
-    /// Nested `V5_CFV2` with an FBB spine and `05 08 01` vertices but no standard
-    /// edge-table delimiter (its post-FBB edge rows use width-selected handles
-    /// `W∈{1,2,3}` as `u8`/`u16be`/`u24be`).
+    /// Nested `V5_CFV2` with a complete two-table FBB-only walk, or positive
+    /// coordinate evidence and no standard delimiter. Complete post-FBB edge
+    /// rows use width-selected handles `W∈{1,2,3}` as `u8`/`u16be`/`u24be`.
     FbbOnly,
     /// No nested `V5_CFV2`; the outer preamble carries `a9 03` record families.
     ZeroEntity,
@@ -36,12 +34,12 @@ impl Variant {
     pub(crate) fn description(self) -> &'static str {
         match self {
             Variant::StandardNested => {
-                "standard nested V5_CFV2 (FBB spine + standard edge-table delimiter): geometry \
+                "standard nested V5_CFV2 (complete FBB edge/vertex walk): geometry \
                  decode supported"
             }
             Variant::FbbOnly => {
-                "FBB-only partial spine (width-selected W∈{1,2,3} edge handles, no standard \
-                 delimiter): vertex and analytic carrier decode supported"
+                "FBB-only partial spine (complete width-selected edge walk or positive \
+                 coordinate fallback): vertex and analytic carrier decode supported"
             }
             Variant::ZeroEntity => {
                 "zero-entity a9 03 (no nested container): analytic carriers decoded"

@@ -1551,28 +1551,13 @@ fn parse_body_root(
 }
 
 fn records(bytes: &[u8]) -> impl Iterator<Item = Record<'_>> + '_ {
-    let mut position = 0;
-    std::iter::from_fn(move || loop {
-        if position + 13 > bytes.len() {
-            return None;
-        }
-        let relative = bytes[position..]
-            .windows(3)
-            .position(|value| value == [0xe5, 0x0d, 0x03])?;
-        let start = position + relative;
-        let id = View::u32_le_at(bytes, start + 9)?;
-        let size = View::u16_le_at(bytes, start + 5).map(usize::from)?;
-        let end = start.checked_add(13 + size)?;
-        if end > bytes.len() {
-            position = start + 1;
-            continue;
-        }
-        position = end;
-        return Some(Record {
+    crate::container::all_e5_record_spans(bytes).filter_map(|span| {
+        let start = span.start;
+        Some(Record {
             class: bytes[start + 3],
-            id,
-            payload: &bytes[start + 13..end],
-        });
+            id: View::u32_le_at(bytes, start + 9)?,
+            payload: &bytes[start + 13..span.end],
+        })
     })
 }
 

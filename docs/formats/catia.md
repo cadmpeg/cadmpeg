@@ -1239,6 +1239,31 @@ The two tables end at the vertex table. Their combined row count equals the `0x6
 
 Each FBB-only edge-row handle is a same-width trim-mesh boundary-vertex handle. Each row matches a contiguous forward or reversed recovered trim-boundary run, and its analytic curve comes from the positionally bound `0x60` row. A row with `n` handles covers `n−1` trim segments. If a row is unmatched during boundary recovery, the same `n−1` span remains fixed while the row is assigned to an uncovered run; only its start, direction, and face placement remain unresolved. Endpoint-port to logical-vertex collapse remains separate.
 
+### 10.1 Route precedence
+
+For an FBB-bearing nested body, a complete standard edge/vertex walk selects the standard route. Otherwise a complete two-table FBB-only walk establishes a provisional route. A partial spine also establishes that provisional route when its scoped standard-delimiter count is zero and its coordinate-row population is positive. A coherent independently bounded E5 stream then selects E5; otherwise the provisional route is FBB-only. An incomplete delimiter-bearing spine or a vertexless spine leaves the family unresolved. With no FBB-bearing body, coherent E5 can select its route directly. Selection applies to the container's governing logical stream.
+
+The delimiter high nibble identifies a consistent table-delimiter family. Geometry route selection uses the complete structural relations above and the independently bounded E5 witness from §3.3.
+
+### 10.2 Subordinate E5 topology populations
+
+An E5-selected container can carry these source-closed populations in its nested stream:
+
+```text
+D(F) := 10 <(F<<4)|4> 04 ff ff 00 00 00
+subordinate_two_table :=
+    edge_table(kind=0x01,W=1) D(1)
+    edge_table(kind=0x02,W=1) D(1)
+    vertex_table D(1)
+subordinate_kind2_only :=
+    edge_table(kind=0x02,W=2) D(1)
+    vertex_table D(1)
+```
+
+Counts use one byte, or `ff u32le`. Each edge row has arity at least two. A vertex table is `01 06 count(vertices)` followed by exactly that many `05 08 01 f32le[3]` rows with finite coordinates. Every delimiter in one population is identical. The final delimiter ends the population after its eight bytes. The kind-2-only form carries one serialized table.
+
+These productions describe subordinate boundaries under independently selected E5 ownership. The strict two-table width/delimiter grammar continues to govern FBB-only route admission. E5 geometry belongs to its selected preamble or FINJPL bound. Its complete record inventory includes every declared-size `E5 0D 03` frame in that bound, including frames outside the longest coherent route witness. At an exact frame end, a complete `E5 0D 13` or `E5 0D 83` frame has the same `payload_size+13` boundary; its payload remains inside that frame. Geometry inventory and route-witness searches resume at its declared end.
+
 ---
 
 ## 11. Float-packed inner-no-FBB variant

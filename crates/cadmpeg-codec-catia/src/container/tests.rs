@@ -577,18 +577,20 @@ fn unadmitted_fbb_region_is_unknown_even_with_delimiter_markers() {
         fbb_runs: 1,
         ..Census::default()
     };
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| identify_variant(
-            ctx,
-            Some(&inner),
-            Some(&no_vertex_brep),
-            Some(&no_vertex_brep),
-            &no_vertex_census,
-            false,
-        ))
-        .expect("service resource budget"),
-        Variant::Unknown
-    );
+    for coherent_e5 in [false, true] {
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| identify_variant(
+                ctx,
+                Some(&inner),
+                Some(&no_vertex_brep),
+                Some(&no_vertex_brep),
+                &no_vertex_census,
+                coherent_e5,
+            ))
+            .expect("service resource budget"),
+            Variant::Unknown
+        );
+    }
 }
 
 #[test]
@@ -710,9 +712,39 @@ fn e5_stream_and_finjpl_inventory_exclude_the_trailing_directory() {
 fn all_e5_record_spans_cross_other_framed_records() {
     let mut body = Vec::new();
     append_e5_test_record(&mut body, 1);
-    body.extend_from_slice(&[0xe5, 0x0d, 0x13, 0xf4, 0x01, 0x09, 0, 0, 0]);
+    let interstitial = body.len();
+    append_e5_record(&mut body, 0xf4, 44, &[0; 9]);
+    body[interstitial + 2] = 0x13;
     append_e5_test_record(&mut body, 2);
     assert_eq!(super::all_e5_record_spans(&body).count(), 2);
+}
+
+#[test]
+fn interstitial_e5_payload_markers_do_not_enter_geometry_inventory() {
+    let mut body = Vec::new();
+    append_e5_test_record(&mut body, 1);
+    let mut nested = Vec::new();
+    for id in 999..1009 {
+        append_e5_test_record(&mut nested, id);
+    }
+    for flag in [0x13, 0x83] {
+        let mut interstitial = Vec::new();
+        append_e5_record(&mut interstitial, 0xf4, 100, &nested);
+        interstitial[2] = flag;
+        body.extend_from_slice(&interstitial);
+    }
+    append_e5_test_record(&mut body, 2);
+    let ids: Vec<_> = super::all_e5_record_spans(&body)
+        .map(|span| cadmpeg_core::decode::View::u32_le_at(&body, span.start + 9))
+        .collect();
+    assert_eq!(ids, [Some(1), Some(2)]);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            super::coherent_e5_record_count(ctx, &body)
+        })
+        .expect("service work"),
+        1
+    );
 }
 
 #[test]

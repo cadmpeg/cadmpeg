@@ -675,6 +675,11 @@ fn coherent_e5_record_count(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<usiz
     let mut best = 0;
     let mut search = 0;
     while search < data.len() {
+        if let Some(end) = e5_frame_end(data, search).filter(|_| data[search + 2] != 0x03) {
+            ctx.charge_work(u64_from_index(end - search), "catia_e5_marker_scan")?;
+            search = end;
+            continue;
+        }
         let mut relative = None;
         for (offset, window) in data[search..].windows(E5_MARKER.len()).enumerate() {
             ctx.charge_work(1, "catia_e5_marker_scan")?;
@@ -706,11 +711,17 @@ pub(crate) fn all_e5_record_spans(data: &[u8]) -> impl Iterator<Item = Range<usi
         if search >= data.len() {
             return None;
         }
+        // Interstitial frames begin at the previous record's exact end.
+        // Their payloads cannot contribute geometry records.
+        if let Some(end) = e5_frame_end(data, search).filter(|_| data[search + 2] != 0x03) {
+            search = end;
+            continue;
+        }
         let relative = data[search..]
             .windows(E5_MARKER.len())
             .position(|bytes| bytes == E5_MARKER)?;
         let start = search + relative;
-        let Some(end) = e5_record_end(data, start) else {
+        let Some(end) = e5_frame_end(data, start) else {
             search = start + 1;
             continue;
         };
@@ -729,7 +740,10 @@ fn e5_record_walk_count(
     let mut consumed = start;
     loop {
         ctx.charge_work(1, "catia_e5_stride_walk")?;
-        let Some(end) = e5_record_end(data, position) else {
+        if !e5_marker_at(data, position) {
+            break;
+        }
+        let Some(end) = e5_frame_end(data, position) else {
             break;
         };
         count += 1;
@@ -759,11 +773,11 @@ fn e5_record_walk_count(
     Ok((count, consumed))
 }
 
-fn e5_record_end(data: &[u8], position: usize) -> Option<usize> {
-    if !e5_marker_at(data, position) {
+fn e5_frame_end(data: &[u8], position: usize) -> Option<usize> {
+    let header = data.get(position..position.checked_add(13)?)?;
+    if header[..2] != [0xe5, 0x0d] || !matches!(header[2], 0x03 | 0x13 | 0x83) {
         return None;
     }
-    let header = data.get(position..position.checked_add(7)?)?;
     let size = usize::from(View::u16_le_at(header, 5)?);
     let end = position.checked_add(size.checked_add(13)?)?;
     (end <= data.len()).then_some(end)
@@ -2295,16 +2309,17 @@ pub(crate) fn notes(
     }
 
     if scan.brep.is_some() {
-        let note =
-            ctx.format_retained(
-                format_args!(
-                "reconstructed BREP stream from MainDataStream + SurfacicReps: {} FBB group(s) \
+        let note = ctx.format_retained(
+            format_args!(
+                "MainDataStream census: {} FBB group(s) \
                  containing {} face row(s), {} vertex record(s), {} edge-table delimiter(s)",
-                scan.census.fbb_runs, scan.census.fbb_face_rows,
-                scan.census.vertex_markers, scan.census.edge_delimiters,
+                scan.census.fbb_runs,
+                scan.census.fbb_face_rows,
+                scan.census.vertex_markers,
+                scan.census.edge_delimiters,
             ),
-                "catia_container_note",
-            )?;
+            "catia_container_note",
+        )?;
         ctx.push_vec(&mut notes, note, "catia_container_notes")?;
     }
     if scan.census.a9_records > 0 || scan.census.e5_markers > 0 {

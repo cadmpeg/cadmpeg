@@ -528,30 +528,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 7. FBB-only and float-packed variants
 
-### FV-01. `u24be` endpoint quotient binding
-
-**Question.** How do native identities bind the logical quotient of `u24be` endpoints to the counted coordinate rows?
-
-**Known.** `catia.md` §9 "E5 `05 08 01` coordinate rows occupy" defines the endpoint values and coordinate-row population. The topology solver can form the abstract endpoint quotient independently.
-
-**Need.** We must know the native binding for byte-faithful vertex assignment.
-
-### FV-02. Partial-spine family discriminator
-
-**Question.** Which record discriminates the geometry family when an FBB-like run lacks a required edge or vertex population?
-
-**Known.** `catia.md` §10 "A nested-`V5_CFV2` file with a valid FBB face group" defines the complete FBB-only partial-spine variant. An incomplete population does not satisfy that grammar.
-
-**Need.** We must know the discriminator to select the correct decoder.
-
-### FV-03. Partial-spine following-byte grammar
-
-**Question.** What grammar follows the family discriminator of an incomplete FBB-like run?
-
-**Known.** The complete-spine grammar does not assign these bytes.
-
-**Need.** We must know the grammar to find record boundaries and geometry populations.
-
 ### FV-04. Variant loop-node payloads
 
 **Question.** What payload grammar do loop nodes use outside the length-framed `b5 03 62` and `a8 03 62` forms?
