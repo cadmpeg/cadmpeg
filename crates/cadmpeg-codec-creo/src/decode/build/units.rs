@@ -92,9 +92,6 @@ pub(in crate::decode) fn scale_length(
     length: &mut Length,
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     *length = Length::new(length.get() * scale.get())
         .ok_or_else(|| malformed_refusal(ctx, "Creo scaled length must be finite"))?;
     Ok(())
@@ -215,9 +212,6 @@ fn scale_feature_operation(
     definition: &mut FeatureOperation,
     scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     match definition {
         FeatureOperation::CosmeticThread {
             diameter, extent, ..
@@ -856,10 +850,6 @@ fn scale_sheet_metal_flange_width(
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::SheetMetalFlangeWidth;
 
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
-
     match width {
         SheetMetalFlangeWidth::Symmetric { width } => scale_positive_length(ctx, width, scale)?,
         SheetMetalFlangeWidth::TwoSides { first, second } => {
@@ -1136,9 +1126,6 @@ pub(in crate::decode) fn scale_surface_geometry(
     geometry: &mut SolvedSurfaceGeometry,
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let owned = std::mem::replace(geometry, SolvedSurfaceGeometry::Unknown { record: None });
     *geometry = owned
         .scaled_owned(ctx, scale)?
@@ -1151,9 +1138,6 @@ pub(in crate::decode) fn scale_curve_geometry(
     geometry: &mut SolvedCurveGeometry,
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let owned = std::mem::replace(geometry, SolvedCurveGeometry::Unknown { record: None });
     *geometry = owned
         .scaled_owned(ctx, scale)?
@@ -1300,9 +1284,6 @@ pub(in crate::decode) fn scale_procedural_surface(
     procedural: &mut cadmpeg_ir::geometry::ProceduralSurface,
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     procedural
         .edit_definition(|definition| definition.scale_lengths(scale))
         .map_err(|error| not_implemented_refusal(ctx, error))?;
@@ -1317,9 +1298,6 @@ pub(in crate::decode) fn scale_procedural_curve(
     procedural: &mut cadmpeg_ir::geometry::ProceduralCurve,
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     procedural
         .edit_definition(|definition| definition.scale_lengths(scale))
         .map_err(|error| not_implemented_refusal(ctx, error))?;
@@ -2959,80 +2937,6 @@ mod tests {
     }
 
     #[test]
-    fn empty_unit_scaling_member_lists_are_free_and_keep_original_refusal() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-        use cadmpeg_ir::features::holes::{HoleConstruction, HoleKind, HoleShape};
-        let mut definitions = [
-            FeatureDefinition::Operation(FeatureOperation::Sweep {
-                shape: cadmpeg_ir::features::SweepShape::Solid {
-                    op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
-                    section: cadmpeg_ir::features::SweepSection::Unresolved(None),
-                    sections: Vec::new(),
-                },
-                path: None,
-                orientation: None,
-                transition: None,
-                transformation: None,
-                path_tangent: false,
-                linearize: false,
-                twist: None,
-                path_extent: None,
-                guide_rail: None,
-                taper: None,
-                scale: None,
-                allow_multi_profile_faces: None,
-            }),
-            FeatureDefinition::Operation(FeatureOperation::Loft {
-                sections: Vec::new(),
-                guidance: cadmpeg_ir::features::LoftGuidance::default(),
-                op: cadmpeg_ir::features::BooleanOp::Join,
-                closed: false,
-                solid: true,
-                ruled: false,
-                linearize: false,
-                max_degree: None,
-                allow_multi_profile_faces: None,
-            }),
-            FeatureDefinition::Operation(FeatureOperation::Hole {
-                profile: None,
-                profile_filter: None,
-                face: None,
-                direction: None,
-                placements: Some(Vec::new()),
-                shape: HoleShape::new(HoleConstruction::form(HoleKind::Simple), None, None)
-                    .expect("simple hole shape"),
-                extent: None,
-                bottom: None,
-                taper_angle: None,
-                allow_multi_profile_faces: None,
-            }),
-        ];
-        let originals = definitions.clone();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        for definition in &mut definitions {
-            scale_feature_definition(&ctx, definition, positive(2.0)).expect("no member");
-        }
-        assert_eq!(definitions, originals);
-        let original = ctx
-            .charge_work_limit(1, "seed empty scaled members refusal")
-            .expect_err("zero work cap");
-        assert_eq!((original.used, original.additional), (0, 1));
-        for definition in &mut definitions {
-            assert!(
-                matches!(scale_feature_definition(&ctx, definition, positive(2.0)),
-                Err(CodecError::ResourceLimit(r)) if r == original)
-            );
-        }
-        assert_eq!(definitions, originals);
-    }
-
-    #[test]
     fn flange_width_scaling_admits_only_present_pairs_and_keeps_original_refusal() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_ir::features::{
@@ -3106,104 +3010,5 @@ mod tests {
                 }
             },
         );
-    }
-
-    #[test]
-    fn unit_scaling_entry_points_keep_original_refusal_before_mutation() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-        let mut length = Length::new(1.0).expect("finite source length");
-        let mut surface = SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                Point3::new(1.0, 2.0, 3.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                4.0,
-            )
-            .expect("source cylinder"),
-        );
-        let surface_before = surface.clone();
-        let mut curve = SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                Point3::new(2.0, 3.0, 4.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                5.0,
-            )
-            .expect("source circle"),
-        );
-        let curve_before = curve.clone();
-        let mut procedural_surface = cadmpeg_ir::geometry::ProceduralSurface::new(
-            cadmpeg_ir::ids::ProceduralSurfaceId::mint("synthetic:units:surface#construction")
-                .expect("surface identity"),
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(
-                cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
-                    cadmpeg_ir::ids::CurveId::mint("synthetic:units:curve#directrix")
-                        .expect("directrix identity"),
-                    None,
-                    Vector3::new(1.0, 2.0, 3.0),
-                    Some(Point3::new(4.0, 5.0, 6.0)),
-                    cadmpeg_ir::geometry::CacheContract::from_form(None),
-                )
-                .expect("source extrusion"),
-            ),
-            None,
-        );
-        let procedural_surface_before = procedural_surface.clone();
-        let mut procedural_curve = cadmpeg_ir::geometry::ProceduralCurve::new(
-            cadmpeg_ir::ids::ProceduralCurveId::mint("synthetic:units:curve#construction")
-                .expect("curve identity"),
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(
-                cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
-                    [0.0, 1.0],
-                    cadmpeg_ir::geometry::HelixFrame {
-                        center: Point3::new(1.0, 2.0, 3.0),
-                        major: Vector3::new(4.0, 5.0, 6.0),
-                        minor: Vector3::new(-5.0, 4.0, 6.0),
-                        pitch: Vector3::new(10.0, 11.0, 12.0),
-                        axis: Vector3::new(0.0, 0.0, 1.0),
-                    },
-                    0.25,
-                    None,
-                )
-                .expect("source helix"),
-            ),
-        );
-        let procedural_curve_before = procedural_curve.clone();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let original = ctx
-            .charge_work_limit(1, "seed unit entry refusal")
-            .expect_err("zero work cap");
-        assert_eq!((original.used, original.additional), (0, 1));
-        assert!(
-            matches!(super::scale_length(&ctx, &mut length, positive(2.0)),
-            Err(CodecError::ResourceLimit(r)) if r == original)
-        );
-        assert_eq!(length.get(), 1.0);
-        assert!(
-            matches!(scale_surface_geometry(&ctx, &mut surface, positive(2.0)),
-            Err(CodecError::ResourceLimit(r)) if r == original)
-        );
-        assert_eq!(surface, surface_before);
-        assert!(
-            matches!(scale_curve_geometry(&ctx, &mut curve, positive(2.0)),
-            Err(CodecError::ResourceLimit(r)) if r == original)
-        );
-        assert_eq!(curve, curve_before);
-        assert!(
-            matches!(super::scale_procedural_surface(&ctx, &mut procedural_surface, positive(2.0)),
-            Err(CodecError::ResourceLimit(r)) if r == original)
-        );
-        assert_eq!(procedural_surface, procedural_surface_before);
-        assert!(
-            matches!(super::scale_procedural_curve(&ctx, &mut procedural_curve, positive(2.0)),
-            Err(CodecError::ResourceLimit(r)) if r == original)
-        );
-        assert_eq!(procedural_curve, procedural_curve_before);
     }
 }

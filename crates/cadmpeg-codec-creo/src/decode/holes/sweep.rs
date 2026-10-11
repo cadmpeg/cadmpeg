@@ -341,26 +341,15 @@ pub(in crate::decode) fn compact_simple_hole_geometry<'a>(
 }
 
 pub(in crate::decode) fn circular_sweep_cylinder_from_cap_outlines(
-    ctx: &DecodeContext<'_>,
     planes: [FeatureOutlinePlane; 2],
     outlines: [Option<CapOutline>; 2],
-) -> Result<Option<CylinderSurface>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal));
-    }
-    let Some((_, axis, _)) = hole_placement(planes) else {
-        return Ok(None);
-    };
-    let Some(aligned_axis) = super::placement::axis_aligned_with(axis, EPS_AXIS_ALIGNMENT) else {
-        return Ok(None);
-    };
+) -> Option<CylinderSurface> {
+    let (_, axis, _) = hole_placement(planes)?;
+    let aligned_axis = super::placement::axis_aligned_with(axis, EPS_AXIS_ALIGNMENT)?;
     let radial = aligned_axis.complement().map(crate::axis::Axis::index);
     let mut outlines = outlines.into_iter().flatten();
-    let Some((center, radius)) = outlines
-        .find_map(|cap| cap_square_center_radius(cap.corners, aligned_axis))
-    else {
-        return Ok(None);
-    };
+    let (center, radius) =
+        outlines.find_map(|cap| cap_square_center_radius(cap.corners, aligned_axis))?;
     let scale = center
         .iter()
         .chain(std::iter::once(&radius))
@@ -370,23 +359,22 @@ pub(in crate::decode) fn circular_sweep_cylinder_from_cap_outlines(
         cap_square_center_radius(cap.corners, aligned_axis).is_some_and(
             |(other_center, other_radius)| {
                 radial.iter().any(|index| {
-                    (center[*index] - other_center[*index]).abs()
-                        > EPS_CENTER_AGREEMENT * scale
+                    (center[*index] - other_center[*index]).abs() > EPS_CENTER_AGREEMENT * scale
                 }) || (radius - other_radius).abs() > EPS_CENTER_AGREEMENT * scale
             },
         )
     }) {
-        return Ok(None);
+        return None;
     }
     let mut ref_direction = [0.0; 3];
     ref_direction[radial[0]] = 1.0;
-    Ok(CylinderSurface::try_new(
+    CylinderSurface::try_new(
         Point3::from(center),
         Vector3::from(axis),
         Vector3::from(ref_direction),
         radius,
     )
-    .ok())
+    .ok()
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -490,12 +478,10 @@ pub(in crate::decode) fn single_cap_circular_sweep_geometry<'a>(
         return Ok(None);
     };
     let Some((extent, direction)) = single_plane_extrusion_extent_and_direction(
-        ctx,
         transform.origin(),
         transform.normal(),
         (plane.1, plane.2),
-    )?
-    else {
+    ) else {
         return Ok(None);
     };
     let Some(geometry) = cylinder_from_single_cap_outline(cap) else {
@@ -623,12 +609,7 @@ pub(in crate::decode) fn two_cap_circular_sweep_geometry<'a>(
         cap_outline(ctx, scan, first)?,
         cap_outline(ctx, scan, second)?,
     ];
-    let Some(geometry) = circular_sweep_cylinder_from_cap_outlines(
-        ctx,
-        [first, second],
-        caps,
-    )?
-    else {
+    let Some(geometry) = circular_sweep_cylinder_from_cap_outlines([first, second], caps) else {
         return Ok(None);
     };
     Ok(Some(CircularSweepGeometry {
@@ -646,9 +627,6 @@ pub(in crate::decode) fn extrusion_span(
     direction: [f64; 3],
     planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])>,
 ) -> Result<Option<ExtrusionSpan>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal));
-    }
     let Some(direction) = normalized_span_direction(direction) else {
         return Ok(None);
     };
@@ -750,20 +728,12 @@ fn projected_plane_offset(
 }
 
 fn single_plane_extrusion_extent_and_direction(
-    ctx: &DecodeContext<'_>,
     profile_origin: [f64; 3],
     direction: [f64; 3],
     plane: ([f64; 3], [f64; 3]),
-) -> Result<Option<(ExtrudeExtent, [f64; 3])>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal));
-    }
-    let Some(axis) = normalized_span_direction(direction) else {
-        return Ok(None);
-    };
-    let Some(offset) = projected_plane_offset(profile_origin, axis, plane.0, plane.1) else {
-        return Ok(None);
-    };
+) -> Option<(ExtrudeExtent, [f64; 3])> {
+    let axis = normalized_span_direction(direction)?;
+    let offset = projected_plane_offset(profile_origin, axis, plane.0, plane.1)?;
     let span = if offset < 0.0 {
         ExtrusionSpan::new(offset, 0.0)
     } else if offset > 0.0 {
@@ -771,7 +741,7 @@ fn single_plane_extrusion_extent_and_direction(
     } else {
         None
     };
-    Ok(span.and_then(|span| extrusion_extent_from_span(span, direction)))
+    span.and_then(|span| extrusion_extent_from_span(span, direction))
 }
 
 fn extrusion_extent_from_span(

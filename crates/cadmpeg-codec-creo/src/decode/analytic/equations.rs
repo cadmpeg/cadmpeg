@@ -280,9 +280,6 @@ pub(in crate::decode) fn solve_planes(
     ctx: &DecodeContext<'_>,
     planes: &[PlaneEquation],
 ) -> Result<Option<[f64; 3]>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal));
-    }
     match planes {
         [] | [_] | [_, _] => return Ok(None),
         [a, b, c] => {
@@ -1393,9 +1390,6 @@ pub(super) fn common_plane_conic_parameters(
     first: PlaneConicEquation,
     second: PlaneConicEquation,
 ) -> Result<Vec<[f64; 2]>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal));
-    }
     let resultant = conic_resultant(first, second)?;
     let mut parameters = Vec::<[f64; 2]>::new();
     let roots = real_polynomial_roots(&resultant);
@@ -1496,9 +1490,6 @@ pub(in crate::decode) fn intersect_two_planes_with_torus(
     second: PlaneEquation,
     torus: TorusEquation,
 ) -> Result<Vec<[f64; 3]>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal));
-    }
     let Some((line_origin, direction)) = plane_intersection_line(first, second) else {
         return Ok(Vec::new());
     };

@@ -31,9 +31,6 @@ fn sketch_geometry_endpoints(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &SketchGeometry,
 ) -> Result<Option<[[f64; 2]; 2]>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let endpoints = match geometry.definition() {
         SketchGeometryDefinition::Line { start, end } => Some([[start.u, start.v], [end.u, end.v]]),
         SketchGeometryDefinition::Arc {
@@ -517,9 +514,6 @@ pub(in super::super) fn extrusion_cap_pcurve(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     match geometry.definition() {
         SketchGeometryDefinition::Arc {
             center,
@@ -619,9 +613,6 @@ pub(in super::super) fn extrusion_profile_signed_area(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     profile: &[ProfileEntity],
 ) -> Result<Option<FiniteReal>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut area_twice = 0.0;
     let mut entities = profile.iter();
     while !entities.as_slice().is_empty() {
@@ -740,9 +731,6 @@ impl ProfileGeometry {
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         Ok(SketchGeometry::try_from(match self {
             Self::Line { start, end } => SketchGeometryDefinition::Line {
                 start: *start,
@@ -1305,9 +1293,6 @@ fn nurbs_profile_point(
     nurbs: &NurbsCurve,
     parameter: f64,
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let parameter = require_some!(cadmpeg_ir::eval::map_nurbs_curve_parameter(
         nurbs,
         require_some!(cadmpeg_ir::scalar::FiniteReal::new(parameter)),
@@ -1441,9 +1426,6 @@ fn nurbs_profile_polyline<'ctx>(
     nurbs: &NurbsCurve,
     tolerance: f64,
 ) -> Result<Option<ProfilePolyline<'ctx>>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(range) = nurbs_intrinsic_parameter_range(nurbs) else {
         return Ok(None);
     };
@@ -1588,9 +1570,6 @@ fn polylines_intersect(
     tolerance: f64,
     contacts: [Option<[f64; 2]>; 2],
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut first_segments = first.windows(2);
     while first_segments.len() > 0 {
         let Some(first_segment) = ctx.next_charged(
@@ -1629,9 +1608,6 @@ pub(in super::super) fn profile_segments_intersect(
     tolerance: f64,
     contacts: [Option<[f64; 2]>; 2],
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let first_nurbs = matches!(first.geometry, ProfileGeometry::Nurbs { .. });
     let second_nurbs = matches!(second.geometry, ProfileGeometry::Nurbs { .. });
     if first_nurbs || second_nurbs {
@@ -1800,9 +1776,6 @@ pub(in super::super) fn ordered_extrusion_profiles(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     profiles: Vec<ExtrusionProfile>,
 ) -> Result<Option<Vec<ValidatedProfile>>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if profiles.is_empty() {
         return Ok(None);
     }

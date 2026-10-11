@@ -255,9 +255,6 @@ impl Section {
         expanded_length: Option<usize>,
         data: &'a [u8],
     ) -> Result<Option<ScannedSection<'a>>, CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let Some(region) = data.get(offset..end) else {
             return Ok(None);
         };
@@ -3684,9 +3681,6 @@ pub(crate) fn scan_bytes<'a>(
     ctx: &DecodeContext<'_>,
     data: impl Into<Cow<'a, [u8]>>,
 ) -> Result<ContainerScan<'a>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let data = data.into();
     if !looks_like_creo(&data) {
         return Err(CodecError::WrongFormat(
@@ -4399,9 +4393,6 @@ fn collect_section_records_result<'a, 'data: 'a, T>(
     relocate: impl Fn(&mut T, usize) -> Result<(), CodecError>,
     offset: impl Fn(&T) -> usize,
 ) -> Result<Vec<T>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut records = Vec::new();
     for section in sections {
         let section = section?;

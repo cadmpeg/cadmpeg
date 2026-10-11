@@ -31,9 +31,6 @@ pub(super) fn source_section_ref<'a>(
     scan: &'a ContainerScan<'_>,
     offset: usize,
 ) -> Result<&'a str, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut sections = scan.framing.sections.iter();
     while sections.len() != 0 {
         let Some(section) = ctx.next_charged(&mut sections, "creo source section search")? else {

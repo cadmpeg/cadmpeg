@@ -1087,8 +1087,6 @@ fn circular_pcurve_refuses_projection_work_before_each_pass() {
                     .expect("quarter circle"),
                 expected
             );
-            ctx.charge_work(0, "projection complete")
-                .expect("allowance admitted");
             assert!(matches!(
                 ctx.charge_work(1, "after projection"),
                 Err(cadmpeg_core::CodecError::ResourceLimit(_))

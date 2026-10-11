@@ -1,29 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::super::arc_z_fields;
 use crate::scalar::ScalarCache;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_core::CodecError;
-
-#[test]
-fn empty_arc_trials_are_free_and_keep_the_original_refusal() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    policy.limits.max_materialized_bytes = 0;
-    policy.limits.max_retained_bytes = 0;
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let cache = ScalarCache::default();
-    assert!(arc_z_fields(&ctx, &[], &cache, 7)
-        .expect("no source offset")
-        .is_none());
-    let original = ctx
-        .charge_work_limit(1, "seed empty arc trial refusal")
-        .expect_err("zero work cap");
-    assert_eq!((original.used, original.additional), (0, 1));
-    assert!(matches!(arc_z_fields(&ctx, &[], &cache, 7),
-        Err(CodecError::ResourceLimit(r)) if r == original));
-}
 
 #[test]
 fn arc_trials_admit_two_present_offset_passes_without_a_terminal_visit() {
@@ -46,43 +23,6 @@ fn arc_trials_admit_two_present_offset_passes_without_a_terminal_visit() {
         } else {
             assert!(circle.is_none());
         }
-    }
-}
-
-#[test]
-fn empty_reference_outputs_are_free_and_keep_original_refusal() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    policy.limits.max_materialized_bytes = 0;
-    policy.limits.max_retained_bytes = 0;
-    policy.limits.max_collection_items = 0;
-    policy.limits.max_recursion_depth = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    for refused in [false, true] {
-        if refused {
-            ctx.charge_work_limit(1, "empty reference seed")
-                .expect_err("zero cap");
-        }
-        let results = [
-            super::super::named_conics(&ctx, &[]).map(|v| v.is_empty()),
-            super::super::positional_conics(&ctx, &[]).map(|v| v.is_empty()),
-            super::super::lines(&ctx, &[]).map(|v| v.is_empty()),
-            super::super::line3d_lines(&ctx, &[]).map(|v| v.is_empty()),
-            super::super::arc_z_circles(&ctx, &[]).map(|v| v.is_empty()),
-            super::super::ellipse_carriers(&ctx, &[]).map(|v| v.is_empty()),
-        ];
-        for result in results {
-            if refused {
-                let original = ctx.resource_refusal().expect("original seed");
-                assert!(
-                    matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
-                );
-            } else {
-                assert!(result.expect("empty output"));
-            }
-        }
-        assert_eq!(ctx.resource_refusal().is_some(), refused);
     }
 }
 

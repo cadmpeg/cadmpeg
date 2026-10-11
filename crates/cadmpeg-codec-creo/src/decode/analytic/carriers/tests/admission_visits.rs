@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::super::{
-    ordered_contained_face_loops, ordered_parameter_face_loops, polygon_strictly_contains,
-    polygon_strictly_contains_polygon, positional_cylinder_carrier,
-};
+use super::super::{polygon_strictly_contains, polygon_strictly_contains_polygon};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
@@ -14,81 +11,6 @@ fn visit_policy(work: u64) -> DecodePolicy {
     policy.limits.max_collection_items = 0;
     policy.limits.max_recursion_depth = 0;
     policy
-}
-
-#[test]
-fn carrier_fixed_preconditions_preserve_original_refusal_without_work() {
-    let scan = crate::test_support::empty_container_scan();
-    let source_carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
-    let plane_row = super::carrier_row(17, crate::surface::SurfaceKind::Plane);
-    let cylinder_row = super::carrier_row(17, crate::surface::SurfaceKind::Cylinder);
-    let lp = crate::test_support::closed_loop(
-        std::num::NonZeroU32::new(5),
-        (10..13)
-            .map(|curve_id| crate::topology::HalfEdgeId {
-                curve_id,
-                side: crate::topology::Side::Zero,
-            })
-            .collect(),
-    );
-    let arena = DecodeArena::new();
-    let policy = visit_policy(0);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let check = |refused| {
-        let results = [
-            positional_cylinder_carrier(
-                &ctx,
-                &scan,
-                &plane_row,
-                &scan.surfaces.parameters,
-                None,
-                &source_carriers,
-            )
-            .map(|carrier| carrier.is_none()),
-            positional_cylinder_carrier(
-                &ctx,
-                &scan,
-                &cylinder_row,
-                &scan.surfaces.parameters,
-                None,
-                &source_carriers,
-            )
-            .map(|carrier| carrier.is_none()),
-            polygon_strictly_contains(&ctx, &[], [1.0, 1.0]).map(|contains| !contains),
-            polygon_strictly_contains(&ctx, &[[0.0, 0.0], [2.0, 0.0]], [1.0, 1.0])
-                .map(|contains| !contains),
-            polygon_strictly_contains_polygon(&ctx, &[], &[]),
-            ordered_contained_face_loops(&ctx, Vec::new(), &[]).map(|ordered| ordered.is_none()),
-            ordered_contained_face_loops(&ctx, vec![&lp], &[]).map(|ordered| ordered.is_none()),
-            ordered_contained_face_loops(&ctx, vec![&lp, &lp], &[])
-                .map(|ordered| ordered.is_none()),
-            ordered_parameter_face_loops(&ctx, vec![&lp], &[]).map(|ordered| {
-                let ordered = ordered.expect("one supplied loop");
-                ordered.len() == 1 && std::ptr::eq(ordered[0], &raw const lp)
-            }),
-        ];
-        for result in results {
-            if refused {
-                let original = ctx.resource_refusal().expect("seeded refusal");
-                assert!(
-                    matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
-                );
-            } else {
-                assert!(result.expect("fixed precondition"));
-            }
-        }
-    };
-    check(false);
-    assert_eq!(ctx.resource_refusal(), None);
-    let original = ctx
-        .charge_work_limit(1, "after carrier fixed preconditions")
-        .expect_err("zero cap");
-    assert_eq!(
-        (original.dimension, original.used, original.additional),
-        (ResourceDimension::WorkUnits, 0, 1)
-    );
-    check(true);
-    assert_eq!(ctx.resource_refusal(), Some(original));
 }
 
 fn assert_visits(
@@ -134,9 +56,11 @@ fn assert_visits(
             );
             original
         };
-        assert!(
-            matches!(query(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original)
-        );
+        if visits != 0 {
+            assert!(
+                matches!(query(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original)
+            );
+        }
         assert_eq!(ctx.resource_refusal(), Some(original));
         if cap == visits {
             Ok(())

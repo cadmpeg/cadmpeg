@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::super::{
-    extrusion_cap_pcurve, extrusion_profile_signed_area, nurbs_profile_point,
-    nurbs_profile_polyline, ordered_extrusion_profiles, polylines_intersect,
-    profile_segments_intersect, sketch_geometry_endpoints, ProfileGeometry,
+    extrusion_profile_signed_area, nurbs_profile_point, nurbs_profile_polyline,
+    ordered_extrusion_profiles, polylines_intersect, sketch_geometry_endpoints,
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -14,79 +13,6 @@ fn work_policy(work: u64) -> DecodePolicy {
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_retained_bytes = 0;
     policy
-}
-
-#[test]
-fn fixed_profile_routes_are_free_and_preserve_original_refusal() {
-    let line = super::profile_line([0.0, 0.0], [1.0, 0.0]);
-    let crossing = super::profile_line([0.5, -1.0], [0.5, 1.0]);
-    let geometry = cadmpeg_ir::sketches::SketchGeometry::try_from(
-        cadmpeg_ir::sketches::SketchGeometryDefinition::Line {
-            start: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-            end: cadmpeg_ir::math::Point2::new(1.0, 0.0),
-        },
-    )
-    .expect("finite line");
-    let expected_pcurve = super::super::line_pcurve([0.0, 0.0], [1.0, 0.0]);
-    let linear = super::linear_profile_curve();
-    let collapsed = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-        &cadmpeg_test_support::service_decode_context(),
-        1,
-        vec![0.0; 4],
-        vec![
-            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
-        ],
-        None,
-        false,
-    )
-    .expect("structural constructor admission")
-    .expect("finite ordered knot and pole lanes");
-    let arena = DecodeArena::new();
-    let policy = work_policy(0);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let mut evaluator = cadmpeg_ir::eval::decode::NurbsPointEvaluator::new(&ctx, &linear)
-        .expect("fixed inline basis");
-    let mut queries = || {
-        let mut refusal = crate::lane_refusal::LaneRefusals::new();
-        [
-            sketch_geometry_endpoints(&ctx, &geometry)
-                .map(|value| value == Some([[0.0, 0.0], [1.0, 0.0]])),
-            line.geometry()
-                .to_sketch(&ctx)
-                .map(|value| value.as_ref() == Some(&geometry)),
-            extrusion_cap_pcurve(
-                &ctx,
-                &geometry,
-                false,
-                [0.0, 0.0],
-                [1.0, 0.0],
-                &"line",
-                &mut refusal,
-            )
-            .map(|value| value == expected_pcurve),
-            extrusion_profile_signed_area(&ctx, &[]).map(|value| value.is_none()),
-            ordered_extrusion_profiles(&ctx, Vec::new()).map(|value| value.is_none()),
-            polylines_intersect(&ctx, &[], &[[0.0; 2]; 2], 0.0, [None, None]).map(|value| !value),
-            polylines_intersect(&ctx, &[[0.0; 2]], &[[0.0; 2]; 2], 0.0, [None, None])
-                .map(|value| !value),
-            profile_segments_intersect(&ctx, &line, &crossing, 0.0, [None, None]),
-            nurbs_profile_point(&ctx, &mut evaluator, &linear, f64::NAN)
-                .map(|value| value.is_none()),
-            nurbs_profile_polyline(&ctx, &collapsed, 0.01).map(|value| value.is_none()),
-        ]
-    };
-    for result in queries() {
-        assert!(result.expect("fixed route"));
-    }
-    let original = ctx
-        .charge_work_limit(1, "seed fixed profile refusal")
-        .expect_err("zero work");
-    for result in queries() {
-        assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
-    }
-    assert_eq!(ctx.resource_refusal(), Some(original));
-    assert!(matches!(line.geometry(), ProfileGeometry::Line { .. }));
 }
 
 #[test]

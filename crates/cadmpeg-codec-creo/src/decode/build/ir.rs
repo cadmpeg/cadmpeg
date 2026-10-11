@@ -118,9 +118,6 @@ pub(super) fn pattern_kind_has_unresolved_operands<
     ctx: &DecodeContext<'_>,
     pattern: &PatternKind<C>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     Ok(match pattern.definition() {
         PatternTransform::Unresolved { .. } => true,
         PatternTransform::Linear { direction, .. }
@@ -545,9 +542,6 @@ fn admitted_display_strips<V>(
     vertices: Vec<V>,
     spans: &[u32],
 ) -> Result<Option<Strips<V>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut remaining = vertices.into_iter();
     let mut strips = Vec::new();
     let mut spans = spans.iter();
@@ -589,9 +583,6 @@ fn transfer_display_tessellations(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let length_scale = scan
         .framing
         .principal_unit
