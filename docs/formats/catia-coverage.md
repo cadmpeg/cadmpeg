@@ -398,16 +398,10 @@ current levels require those matrices and representative fixtures.
   graph. When a wrapper side does not resolve directly, the two radial loop
   occurrences supply the ordered support sides only after endpoint and
   parameter-range agreement.
-- Zero-entity face-local support occurrences with complete lifted endpoint
-  tapes form radial endpoint-pair candidates when two occurrences have one
-  reciprocal unordered model-space endpoint match and the surrounding
-  face-incidence partition is unambiguous. Repeated endpoint pairs additionally
-  require one reciprocal bounded-curve midpoint match. This relation does not
-  assert curve coincidence: distinct curved supports may share the retained
-  witnesses. Candidate endpoint
-  coordinates form geometric endpoint-locus candidates only when each tolerance
-  component is a complete pairwise clique; ambiguous tolerance chains remain
-  unresolved.
+- Zero-entity physical edges, oriented uses, and vertices bind through the
+  complete source allocation graph. Endpoint coordinates validate the bound
+  vertex owners: every contributing coordinate must agree pairwise within
+  `2e-3` mm. Geometric proximity does not establish source identity.
 - Complete consolidated cone-face chart records retain their reference-and-
   control program, angular scale, and cone half-angle before the program's
   higher-level roles resolve. Consolidated parameter-space points retain all
