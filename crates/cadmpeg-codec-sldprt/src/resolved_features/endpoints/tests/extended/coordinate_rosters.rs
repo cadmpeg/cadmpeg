@@ -74,7 +74,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
                 &roster_ctx,
                 &payload,
                 &entities[0],
-                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+            &mut crate::resolved_features::typed_relations::CurveEndpointGeometry::Borrowed(&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
                     &roster_ctx,
                     &markers,
                     crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
@@ -83,7 +83,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
                     )
                     .unwrap(),
                 )
-                .unwrap(),
+                .unwrap()), &[],
             );
             result
         }
@@ -103,7 +103,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
                 &roster_ctx,
                 &payload,
                 &entities[0],
-                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+            &mut crate::resolved_features::typed_relations::CurveEndpointGeometry::Borrowed(&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
                     &roster_ctx,
                     &markers,
                     crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
@@ -112,7 +112,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
                     )
                     .unwrap(),
                 )
-                .unwrap(),
+                .unwrap()), &[],
             );
             result
         }
@@ -138,7 +138,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
             &roster_ctx,
             &payload,
             &entities[0],
-            &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+            &mut crate::resolved_features::typed_relations::CurveEndpointGeometry::Borrowed(&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
                 &roster_ctx,
                 &ambiguous,
                 crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
@@ -147,7 +147,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
                 )
                 .unwrap(),
             )
-            .unwrap(),
+            .unwrap()), &[],
         );
         result
     }
@@ -169,7 +169,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
                 &roster_ctx,
                 &payload,
                 &entities[0],
-                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+            &mut crate::resolved_features::typed_relations::CurveEndpointGeometry::Borrowed(&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
                     &roster_ctx,
                     &markers,
                     crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
@@ -178,7 +178,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
                     )
                     .unwrap(),
                 )
-                .unwrap(),
+                .unwrap()), &[],
             );
             result
         }
@@ -195,7 +195,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
             &roster_ctx,
             &payload,
             &entities[0],
-            &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+            &mut crate::resolved_features::typed_relations::CurveEndpointGeometry::Borrowed(&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
                 &roster_ctx,
                 &markers,
                 crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
@@ -204,7 +204,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
                 )
                 .unwrap(),
             )
-            .unwrap(),
+            .unwrap()), &[],
         );
         result
     }
@@ -224,7 +224,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
                 &roster_ctx,
                 &payload,
                 &entities[0],
-                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+            &mut crate::resolved_features::typed_relations::CurveEndpointGeometry::Borrowed(&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
                     &roster_ctx,
                     &markers,
                     crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
@@ -233,7 +233,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
                     )
                     .unwrap(),
                 )
-                .unwrap(),
+                .unwrap()), &[],
             );
             result
         }
@@ -251,7 +251,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
                 &roster_ctx,
                 &payload,
                 &entities[0],
-                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+            &mut crate::resolved_features::typed_relations::CurveEndpointGeometry::Borrowed(&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
                     &roster_ctx,
                     &markers,
                     crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
@@ -260,7 +260,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
                     )
                     .unwrap(),
                 )
-                .unwrap(),
+                .unwrap()), &[],
             );
             result
         }
@@ -285,7 +285,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
                 &roster_ctx,
                 &payload,
                 &roster_indexed[0],
-                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+            &mut crate::resolved_features::typed_relations::CurveEndpointGeometry::Borrowed(&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
                     &roster_ctx,
                     &markers,
                     crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
@@ -294,7 +294,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
                     )
                     .unwrap(),
                 )
-                .unwrap(),
+                .unwrap()), &[],
             );
             result
         }
@@ -318,7 +318,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
                 &roster_ctx,
                 &payload,
                 &roster_indexed[0],
-                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+            &mut crate::resolved_features::typed_relations::CurveEndpointGeometry::Borrowed(&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
                     &roster_ctx,
                     &markers,
                     crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
@@ -327,7 +327,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
                     )
                     .unwrap(),
                 )
-                .unwrap(),
+                .unwrap()), &[],
             );
             result
         }
@@ -393,7 +393,7 @@ fn extended_geometry_locus_terminal_curve_resolves_point_object_ids() {
                 &roster_ctx,
                 &payload,
                 &entities[0],
-                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+            &mut crate::resolved_features::typed_relations::CurveEndpointGeometry::Borrowed(&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
                     &roster_ctx,
                     &markers,
                     crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
@@ -402,7 +402,7 @@ fn extended_geometry_locus_terminal_curve_resolves_point_object_ids() {
                     )
                     .unwrap(),
                 )
-                .unwrap(),
+                .unwrap()), &[],
             );
             result
         }
@@ -420,7 +420,7 @@ fn extended_geometry_locus_terminal_curve_resolves_point_object_ids() {
                 &roster_ctx,
                 &payload,
                 &entities[0],
-                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+            &mut crate::resolved_features::typed_relations::CurveEndpointGeometry::Borrowed(&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
                     &roster_ctx,
                     &markers,
                     crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
@@ -429,7 +429,7 @@ fn extended_geometry_locus_terminal_curve_resolves_point_object_ids() {
                     )
                     .unwrap(),
                 )
-                .unwrap(),
+                .unwrap()), &[],
             );
             result
         }
@@ -446,7 +446,7 @@ fn extended_geometry_locus_terminal_curve_resolves_point_object_ids() {
             &roster_ctx,
             &payload,
             &entities[0],
-            &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+            &mut crate::resolved_features::typed_relations::CurveEndpointGeometry::Borrowed(&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
                 &roster_ctx,
                 &markers,
                 crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
@@ -455,7 +455,7 @@ fn extended_geometry_locus_terminal_curve_resolves_point_object_ids() {
                 )
                 .unwrap(),
             )
-            .unwrap(),
+            .unwrap()), &[],
         );
         result
     }
