@@ -472,7 +472,7 @@ fn ineligible_knot_demand_caches_source_rejection() {
     let mut sources = Sources::new(&ctx, &bytes, true).unwrap();
     sources.prepare_knots(501, 500, 2).unwrap();
     assert!(sources.knots(501, 500, 2).unwrap().is_none());
-    let operation = "collect Parasolid surface array references";
+    let operation = "collect Parasolid resolved knot lanes";
     let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
     sources.prepare_knots(501, 500, 2).unwrap();
     assert!(sources.knots(501, 500, 2).unwrap().is_none());

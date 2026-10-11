@@ -374,34 +374,21 @@ type CandidateHeaders<'a, 'ctx, T> = (
     u16,
 );
 
-/// Read framed values first, then compact aliases in source order. The count
-/// gate can skip a candidate or stop resolution. A false visitor stops the
-/// source before the candidate suffix is read.
-fn visit_array_candidates<'a, 'ctx, T, State>(
-    ctx: &'ctx DecodeContext<'_>,
+/// Visit bounded framed headers first, then compact aliases in source order.
+/// A false visitor stops before the remaining headers or payloads are read.
+fn visit_array_headers<'a, 'ctx, T>(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     (framed, compact, attr): CandidateHeaders<'a, 'ctx, T>,
-    state: &mut State,
-    mut count_matches: impl FnMut(
-        &mut State,
-        usize,
-    ) -> Result<ControlFlow<(), bool>, cadmpeg_core::CodecError>,
-    read: impl Fn(usize) -> Option<T>,
     mut visit: impl FnMut(
-        &mut State,
-        ArrayCandidate<'a, 'ctx, T>,
+        ArraySpan,
+        Option<&'a FramedArray<'ctx, T>>,
     ) -> Result<bool, cadmpeg_core::CodecError>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     const OPERATION: &str = "collect Parasolid array candidates";
     if let Some(array) = ctx.get_btree_map(framed, &attr, OPERATION)? {
-        match count_matches(state, array.span.count)? {
-            ControlFlow::Break(()) => return Ok(false),
-            ControlFlow::Continue(false) => {}
-            ControlFlow::Continue(true) => {
-                if !visit(state, ArrayCandidate::Borrowed(array.read(ctx, &read)?))? {
-                    return Ok(false);
-                }
-            }
+        if !visit(array.span, Some(array))? {
+            return Ok(false);
         }
     }
     let Some(arrays) = ctx.get_btree_map(compact, &attr, OPERATION)? else {
@@ -414,13 +401,39 @@ fn visit_array_candidates<'a, 'ctx, T, State>(
         else {
             break;
         };
-        let Some(span) = array.span::<T>(bytes) else {
-            continue;
-        };
+        if let Some(span) = array.span::<T>(bytes) {
+            if !visit(span, None)? {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
+}
+
+/// Read complete candidate values after their count gate accepts the header.
+fn visit_array_candidates<'a, 'ctx, T, State>(
+    ctx: &'ctx DecodeContext<'_>,
+    bytes: &[u8],
+    headers: CandidateHeaders<'a, 'ctx, T>,
+    state: &mut State,
+    mut count_matches: impl FnMut(
+        &mut State,
+        usize,
+    ) -> Result<ControlFlow<(), bool>, cadmpeg_core::CodecError>,
+    read: impl Fn(usize) -> Option<T>,
+    mut visit: impl FnMut(
+        &mut State,
+        ArrayCandidate<'a, 'ctx, T>,
+    ) -> Result<bool, cadmpeg_core::CodecError>,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    visit_array_headers(ctx, bytes, headers, |span, framed| {
         match count_matches(state, span.count)? {
             ControlFlow::Break(()) => return Ok(false),
-            ControlFlow::Continue(false) => continue,
+            ControlFlow::Continue(false) => return Ok(true),
             ControlFlow::Continue(true) => {}
+        }
+        if let Some(array) = framed {
+            return visit(state, ArrayCandidate::Borrowed(array.read(ctx, &read)?));
         }
         let mut candidate_storage =
             ctx.reserve_scoped(0, "hold Parasolid compact array candidate")?;
@@ -433,19 +446,16 @@ fn visit_array_candidates<'a, 'ctx, T, State>(
             )
         })?
         else {
-            continue;
+            return Ok(true);
         };
-        if !visit(
+        visit(
             state,
             ArrayCandidate::Owned {
                 values,
                 _storage: candidate_storage,
             },
-        )? {
-            return Ok(false);
-        }
-    }
-    Ok(true)
+        )
+    })
 }
 
 /// Collect distinct candidates for tests that inspect complete source discovery.
@@ -880,29 +890,44 @@ fn scan_surface_descriptors(
     Ok(out)
 }
 
-fn surface_multiplicity_lane<'a>(
-    ctx: &DecodeContext<'_>,
-    physical_count: usize,
-    multiplicities: &'a [u16],
+/// A valid multiplicity prefix. The physical tail is checked but not stored.
+struct SurfaceMultiplicities<'ctx> {
+    values: Vec<u16>,
+    _storage: ScopedReservation<'ctx>,
+}
+
+fn read_surface_multiplicities<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    bytes: &[u8],
+    span: ArraySpan,
     declared_count: usize,
-) -> Result<Option<&'a [u16]>, cadmpeg_core::CodecError> {
-    if declared_count == 0
-        || physical_count != multiplicities.len()
-        || physical_count < declared_count
-    {
+    operation: &'static str,
+) -> Result<Option<SurfaceMultiplicities<'ctx>>, cadmpeg_core::CodecError> {
+    if declared_count == 0 || span.count < declared_count {
         return Ok(None);
     }
-    let (declared, trailing) = multiplicities.split_at(declared_count);
-    Ok((ctx.all_by(
-        declared,
-        |&value| Ok(value != 0),
-        "scan Parasolid declared knot multiplicities",
-    )? && ctx.all_by(
-        trailing,
-        |&value| Ok(value == 0),
-        "scan Parasolid trailing knot multiplicities",
-    )?)
-    .then_some(declared))
+    let (values, storage) =
+        ctx.with_scoped_storage("hold Parasolid surface multiplicity prefix", || {
+            let mut values = Vec::new();
+            let mut indices = 0..span.count;
+            while let Some(index) = ctx.next_charged(&mut indices, operation)? {
+                let Some(value) = View::u16_be_at(bytes, span.start + index * 2) else {
+                    return Ok(None);
+                };
+                if (index < declared_count && value == 0) || (index >= declared_count && value != 0)
+                {
+                    return Ok(None);
+                }
+                if index < declared_count {
+                    ctx.push_vec(&mut values, value, operation)?;
+                }
+            }
+            Ok::<_, cadmpeg_core::CodecError>(Some(values))
+        })?;
+    Ok(values.map(|values| SurfaceMultiplicities {
+        values,
+        _storage: storage,
+    }))
 }
 
 struct SurfaceKnotValues {
@@ -910,14 +935,9 @@ struct SurfaceKnotValues {
     multiplicities: Vec<u16>,
 }
 
-/// Source-backed pair selection and positive or negative multiplicity caches.
-struct KnotCandidates<'a, 'ctx> {
-    multiplicities_by_count: BTreeMap<usize, Option<ArrayCandidate<'a, 'ctx, u16>>>,
-    resolved: Option<(ArrayCandidate<'a, 'ctx, f64>, usize)>,
-}
-
-/// The one distinct-knot and multiplicity pairing an axis names. Header
-/// counts gate both payload lanes. Resolution stops at the first disagreement.
+/// Resolve one axis from equal physical counts and declared prefixes. Invalid
+/// multiplicities stop at their first invalid cell. A valid pair permits the
+/// scalar prefix read; disagreement stops before further multiplicity aliases.
 fn surface_knot_values<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     output: &mut ScopedReservation<'_>,
@@ -926,6 +946,9 @@ fn surface_knot_values<'ctx>(
     (knot_attr, multiplicity_attr, declared_count): (u16, u16, usize),
 ) -> Result<Option<SurfaceKnotValues>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "collect Parasolid knot candidates";
+    if declared_count == 0 {
+        return Ok(None);
+    }
     if ctx
         .get_btree_map(&arrays.f64s, &knot_attr, OPERATION)?
         .is_none()
@@ -945,104 +968,130 @@ fn surface_knot_values<'ctx>(
         return Ok(None);
     }
     let mut cache_storage = ctx.reserve_scoped(0, "hold Parasolid knot multiplicity counts")?;
-    let mut candidates = KnotCandidates {
-        multiplicities_by_count: BTreeMap::new(),
-        resolved: None,
-    };
-    let agreed = visit_array_candidates(
+    let mut multiplicities_by_count = BTreeMap::<usize, Option<SurfaceMultiplicities<'ctx>>>::new();
+    let mut resolved: Option<(ArrayCandidate<'_, 'ctx, f64>, usize)> = None;
+    let agreed = visit_array_headers(
         ctx,
         bytes,
         (&arrays.f64s, &arrays.compact, knot_attr),
-        &mut candidates,
-        |candidates, count| {
-            if declared_count == 0 || count < declared_count {
-                return Ok(ControlFlow::Continue(false));
+        |knot_span, framed| {
+            let count = knot_span.count;
+            if count < declared_count {
+                return Ok(true);
             }
-            let KnotCandidates {
-                multiplicities_by_count,
-                resolved,
-            } = candidates;
-            if let Some(cached) = ctx.get_btree_map(multiplicities_by_count, &count, OPERATION)? {
-                return Ok(ControlFlow::Continue(cached.is_some()));
-            }
-            let mut selected: Option<ArrayCandidate<'_, 'ctx, u16>> = None;
-            let agreed = visit_array_candidates(
-                ctx,
-                bytes,
-                (&arrays.u16s, &arrays.compact, multiplicity_attr),
-                &mut selected,
-                |_, candidate_count| Ok(ControlFlow::Continue(candidate_count == count)),
-                |at| View::u16_be_at(bytes, at),
-                |selected, multiplicities| {
-                    let Some(lane) = surface_multiplicity_lane(
-                        ctx,
-                        count,
-                        multiplicities.as_slice(),
-                        declared_count,
-                    )?
-                    else {
-                        return Ok(true);
-                    };
-                    if let Some(first) = selected.as_ref() {
-                        return ctx.equal(
-                            first.as_slice().split_at(declared_count).0,
-                            lane,
-                            OPERATION,
-                        );
-                    }
-                    if let Some((_, first_count)) = resolved.as_ref() {
-                        let Some(Some(first)) =
-                            ctx.get_btree_map(multiplicities_by_count, first_count, OPERATION)?
+            let mut unique = None;
+            let read_knots = || {
+                if let Some((values, _storage)) = framed.and_then(|array| array.values.get()) {
+                    return Ok(Some(ArrayCandidate::Borrowed(
+                        values.as_slice().split_at(declared_count).0,
+                    )));
+                }
+                let operation =
+                    framed.map_or("decode Parasolid compact values", |array| array.operation);
+                let (values, storage) =
+                    ctx.with_scoped_storage("hold Parasolid surface knot prefix", || {
+                        read_array(ctx, declared_count, operation, |index| {
+                            View::f64_be_at(bytes, knot_span.start + index * 8)
+                        })
+                    })?;
+                Ok::<_, cadmpeg_core::CodecError>(values.map(|values| ArrayCandidate::Owned {
+                    values,
+                    _storage: storage,
+                }))
+            };
+            if let Some(cached) = ctx.get_btree_map(&multiplicities_by_count, &count, OPERATION)? {
+                if cached.is_none() {
+                    return Ok(true);
+                }
+            } else {
+                let mut selected: Option<SurfaceMultiplicities<'ctx>> = None;
+                let agreed = visit_array_headers(
+                    ctx,
+                    bytes,
+                    (&arrays.u16s, &arrays.compact, multiplicity_attr),
+                    |span, framed| {
+                        if span.count != count {
+                            return Ok(true);
+                        }
+                        let operation = framed
+                            .map_or("decode Parasolid compact values", |array| array.operation);
+                        let Some(multiplicities) = read_surface_multiplicities(
+                            ctx,
+                            bytes,
+                            span,
+                            declared_count,
+                            operation,
+                        )?
                         else {
+                            return Ok(true);
+                        };
+                        if let Some(first) = selected.as_ref() {
+                            return ctx.equal(&first.values, &multiplicities.values, OPERATION);
+                        }
+                        if let Some((_, first_count)) = &resolved {
+                            let Some(Some(first)) = ctx.get_btree_map(
+                                &multiplicities_by_count,
+                                first_count,
+                                OPERATION,
+                            )?
+                            else {
+                                return Ok(false);
+                            };
+                            if !ctx.equal(&first.values, &multiplicities.values, OPERATION)? {
+                                return Ok(false);
+                            }
+                        }
+                        let Some(values) = read_knots()? else {
                             return Ok(false);
                         };
-                        if !ctx.equal(
-                            first.as_slice().split_at(declared_count).0,
-                            lane,
-                            OPERATION,
-                        )? {
-                            return Ok(false);
+                        if let Some((first, _)) = &resolved {
+                            if !ctx.equal(first.as_slice(), values.as_slice(), OPERATION)? {
+                                return Ok(false);
+                            }
                         }
-                    }
-                    *selected = Some(multiplicities);
-                    Ok(true)
-                },
-            )?;
-            if !agreed {
-                return Ok(ControlFlow::Break(()));
+                        unique = Some(values);
+                        selected = Some(multiplicities);
+                        Ok(true)
+                    },
+                )?;
+                if !agreed {
+                    return Ok(false);
+                }
+                let present = selected.is_some();
+                cache_storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut multiplicities_by_count,
+                        count,
+                        selected,
+                        "index Parasolid knot multiplicity counts",
+                    )
+                })?;
+                if !present {
+                    return Ok(true);
+                }
             }
-            let present = selected.is_some();
-            cache_storage.with_storage(|| {
-                ctx.insert_btree_map(
-                    multiplicities_by_count,
-                    count,
-                    selected,
-                    "index Parasolid knot multiplicity counts",
-                )
-            })?;
-            Ok(ControlFlow::Continue(present))
-        },
-        |at| View::f64_be_at(bytes, at),
-        |candidates, unique| match candidates.resolved.as_ref() {
-            Some((first, _)) => ctx.equal(
-                first.as_slice().split_at(declared_count).0,
-                unique.as_slice().split_at(declared_count).0,
-                OPERATION,
-            ),
-            None => {
-                let count = unique.as_slice().len();
-                candidates.resolved = Some((unique, count));
-                Ok(true)
+            // Cached physical counts already have a valid multiplicity lane.
+            let compared = unique.is_some();
+            let Some(values) = (match unique {
+                Some(unique) => Some(unique),
+                None => read_knots()?,
+            }) else {
+                return Ok(false);
+            };
+            if let Some((first, _)) = &resolved {
+                // A new count compared its prefix at the first valid pair.
+                if compared || ctx.equal(first.as_slice(), values.as_slice(), OPERATION)? {
+                    return Ok(true);
+                }
+                return Ok(false);
             }
+            resolved = Some((values, count));
+            Ok(true)
         },
     )?;
     if !agreed {
         return Ok(None);
     }
-    let KnotCandidates {
-        multiplicities_by_count,
-        resolved,
-    } = candidates;
     let Some((unique, count)) = resolved else {
         return Ok(None);
     };
@@ -1052,17 +1101,10 @@ fn surface_knot_values<'ctx>(
         return Ok(None);
     };
     Ok(Some(SurfaceKnotValues {
-        unique: output.with_storage(|| {
-            ctx.copy_slice(
-                unique.as_slice().split_at(declared_count).0,
-                "copy Parasolid distinct knots",
-            )
-        })?,
+        unique: output
+            .with_storage(|| ctx.copy_slice(unique.as_slice(), "copy Parasolid distinct knots"))?,
         multiplicities: output.with_storage(|| {
-            ctx.copy_slice(
-                multiplicities.as_slice().split_at(declared_count).0,
-                "copy Parasolid knot multiplicities",
-            )
+            ctx.copy_slice(&multiplicities.values, "copy Parasolid knot multiplicities")
         })?,
     }))
 }
