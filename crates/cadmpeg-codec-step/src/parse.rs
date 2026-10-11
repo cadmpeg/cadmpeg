@@ -6,7 +6,7 @@
 //! producer, represented by its own diagnostic kind, and rejectable by strict
 //! decode policy. Ambiguous records and duplicate names remain parse errors.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::mem::size_of;
 use std::num::NonZeroUsize;
 use std::ops::Range;
@@ -231,7 +231,7 @@ struct AnchorTag {
 }
 
 /// An admitted entity or value occurrence name in a REFERENCE binding.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum ReferenceName {
     Entity(u64),
     Value(u64),
@@ -3203,24 +3203,42 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
     }
 }
 
+// A source alias can travel at most the codec depth ceiling before refusal.
+// A closing path can start on either side of that active prefix.
+const REFERENCE_JUMP_LEVELS: usize = 9;
+
 #[derive(Clone, Copy)]
-enum ReferenceBinding<'a> {
-    Original,
+enum ReferenceLeaf<'a> {
+    Original(ReferenceName),
     Omitted,
-    Anchor(&'a Value),
+    Borrowed(&'a Value),
 }
 
-struct ReferenceResolution {
-    value: Value,
-    nodes: usize,
-    height: usize,
-    stable: bool,
+#[derive(Clone, Copy)]
+enum ReferenceTemplate<'a> {
+    Leaf { value: ReferenceLeaf<'a>, height: usize },
+    Tree {
+        value: &'a Value,
+        root: usize,
+        distance: usize,
+        jumps: [usize; REFERENCE_JUMP_LEVELS],
+    },
+}
+
+#[derive(Clone, Copy)]
+enum ReferenceNode<'a> {
+    Leaf { value: ReferenceLeaf<'a>, height: usize },
+    Tree(&'a Value),
+    Link(ReferenceName, &'a Value),
+    Alias(usize),
+    Pending { next: usize, position: usize },
+    Ready(ReferenceTemplate<'a>),
 }
 
 struct ReferenceResolver<'a, 'ctx, 'arena> {
-    bindings: BTreeMap<ReferenceName, ReferenceBinding<'a>>,
-    active: HashSet<ReferenceName>,
-    memo: BTreeMap<ReferenceName, ReferenceResolution>,
+    bindings: BTreeMap<ReferenceName, usize>,
+    memo: Vec<ReferenceNode<'a>>,
+    active: HashMap<usize, usize>,
     remaining_nodes: usize,
     budget: &'ctx DecodeContext<'arena>,
     storage: ScopedReservation<'ctx>,
@@ -3231,321 +3249,312 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
     const MAX_REFERENCE_DEPTH: usize = 256;
 
     fn new(
-        references: &'a [ReferenceEntry],
+        references: &[ReferenceEntry],
         anchors: &'a BTreeMap<String, Value>,
         budget: &'ctx DecodeContext<'arena>,
     ) -> Result<Self, ResolveError> {
         let mut storage = budget.reserve_scoped(0, "step_reference_binding_storage")?;
         let mut bindings = BTreeMap::new();
-        let mut visited_items = (references).iter();
-        for _ in 0..visited_items.len() {
-            let reference = budget
-                .next_charged(&mut visited_items, "STEP new traversal")?
-                .ok_or_else(|| {
-                    CodecError::malformed("STEP bounded traversal source ended early")
-                })?;
-            let binding = match budget.position_by(
-                reference.uri.as_bytes(),
-                |byte| Ok(*byte == b'#'),
+        let mut memo = Vec::new();
+        let mut references = references.iter();
+        for _ in 0..references.len() {
+            let reference = budget.next_charged(&mut references, "STEP reference template declarations")?
+                .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
+            let source = match budget.position_by(
+                reference.uri.as_bytes(), |byte| Ok(*byte == b'#'),
                 "STEP reference URI fragment split",
             )? {
-                None => ReferenceBinding::Omitted,
-                Some(separator) if separator != 0 => ReferenceBinding::Original,
+                None => ReferenceNode::Leaf { value: ReferenceLeaf::Omitted, height: 1 },
+                Some(separator) if separator != 0 => ReferenceNode::Leaf {
+                    value: ReferenceLeaf::Original(reference.name), height: 1,
+                },
                 Some(separator) => {
                     let fragment = &reference.uri[separator + 1..];
                     match budget.get_btree_map(anchors, fragment, "STEP reference anchor lookup")? {
-                        Some(anchor) => ReferenceBinding::Anchor(anchor),
-                        None if is_uuid_fragment(fragment) => ReferenceBinding::Original,
-                        None => ReferenceBinding::Omitted,
+                        Some(value) => Self::classify_target(reference.name, value, budget)?,
+                        None if is_uuid_fragment(fragment) => ReferenceNode::Leaf {
+                            value: ReferenceLeaf::Original(reference.name), height: 1,
+                        },
+                        None => ReferenceNode::Leaf { value: ReferenceLeaf::Omitted, height: 1 },
                     }
                 }
             };
             storage.with_storage(|| {
-                budget.insert_btree_map(
-                    &mut bindings,
-                    reference.name,
-                    binding,
-                    "step_reference_binding_items",
-                )
+                budget.insert_btree_map(&mut bindings, reference.name, memo.len(), "step_reference_binding_items")?;
+                budget.push_vec(&mut memo, source, "step_reference_memo_entries")
             })?;
         }
+        let mut nodes = memo.iter_mut();
+        for _ in 0..nodes.len() {
+            let node = budget.next_charged(&mut nodes, "STEP reference template links")?
+                .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
+            if let ReferenceNode::Link(name, original) = *node {
+                *node = match budget.get_btree_map(&bindings, &name, "STEP reference template destination")? {
+                    Some(index) => ReferenceNode::Alias(*index),
+                    None => ReferenceNode::Leaf { value: ReferenceLeaf::Borrowed(original), height: 2 },
+                };
+            }
+        }
+        Self::compile_templates(&mut memo, budget)?;
         Ok(Self {
-            storage,
-            bindings,
-            active: HashSet::new(),
-            memo: BTreeMap::new(),
-            remaining_nodes: collection_cap(budget, Self::MAX_MATERIALIZED_NODES),
-            budget,
+            bindings, memo, active: HashMap::new(),
+            remaining_nodes: collection_cap(budget, Self::MAX_MATERIALIZED_NODES), budget, storage,
         })
     }
 
-    fn clone_leaf(&mut self, value: &Value) -> Result<ReferenceResolution, ResolveError> {
-        self.consume_materialized_node()?;
-        Ok(ReferenceResolution {
-            value: try_clone_value(value, self.budget, "step_reference_leaf_copy")?,
-            nodes: 1,
-            height: 1,
-            stable: true,
+    fn classify_target(
+        name: ReferenceName,
+        value: &'a Value,
+        budget: &DecodeContext<'_>,
+    ) -> Result<ReferenceNode<'a>, CodecError> {
+        let target = match value {
+            Value::Reference(id) => Some(ReferenceName::Entity(*id)),
+            Value::ExternalReference(id) => Some(ReferenceName::Value(*id)),
+            _ => None,
+        };
+        if let Some(target) = target {
+            // A cross-class alias always recovers to an omitted node. No
+            // descendant value can satisfy both occurrence classes.
+            return Ok(if std::mem::discriminant(&name) == std::mem::discriminant(&target) {
+                ReferenceNode::Link(target, value)
+            } else {
+                ReferenceNode::Leaf { value: ReferenceLeaf::Omitted, height: 2 }
+            });
+        }
+        if let Value::Resource(uri) = value {
+            let fragment = budget.any_by(uri.as_bytes(), |byte| Ok(*byte == b'#'), "STEP resolved URI fragment containment")?;
+            return Ok(ReferenceNode::Leaf {
+                value: if fragment { ReferenceLeaf::Original(name) } else { ReferenceLeaf::Omitted },
+                height: 2,
+            });
+        }
+        if !reference_target_matches(name, value) {
+            return Ok(ReferenceNode::Leaf { value: ReferenceLeaf::Omitted, height: 2 });
+        }
+        Ok(match value {
+            Value::List(_) | Value::Typed(_, _) => ReferenceNode::Tree(value),
+            _ => ReferenceNode::Leaf { value: ReferenceLeaf::Borrowed(value), height: 2 },
         })
+    }
+
+    fn compile_templates(nodes: &mut [ReferenceNode<'a>], budget: &DecodeContext<'_>) -> Result<(), CodecError> {
+        let mut path_storage = budget.reserve_scoped(0, "STEP reference template path storage")?;
+        let mut path = Vec::new();
+        for root in 0..nodes.len() {
+            budget.charge_work(1, "STEP reference template roots")?;
+            let mut current = root;
+            loop {
+                budget.charge_work(1, "STEP reference template cursor")?;
+                match nodes[current] {
+                    ReferenceNode::Ready(_) => break,
+                    ReferenceNode::Leaf { value, height } => {
+                        nodes[current] = ReferenceNode::Ready(ReferenceTemplate::Leaf { value, height });
+                        break;
+                    }
+                    ReferenceNode::Tree(value) => {
+                        nodes[current] = ReferenceNode::Ready(ReferenceTemplate::Tree {
+                            value, root: current, distance: 0, jumps: [current; REFERENCE_JUMP_LEVELS],
+                        });
+                        break;
+                    }
+                    ReferenceNode::Alias(next) => {
+                        nodes[current] = ReferenceNode::Pending { next, position: path.len() };
+                        budget.push_scoped_vec(&mut path_storage, &mut path, current, "STEP reference template path")?;
+                        current = next;
+                    }
+                    ReferenceNode::Pending { position, .. } => {
+                        let height = path.len() - position + 1;
+                        while path.len() > position {
+                            budget.charge_work(1, "STEP reference alias cycle completion")?;
+                            let Some(index) = path.pop() else { break; };
+                            nodes[index] = ReferenceNode::Ready(ReferenceTemplate::Leaf {
+                                value: ReferenceLeaf::Omitted, height,
+                            });
+                        }
+                        break;
+                    }
+                    ReferenceNode::Link(_, _) => return Err(Self::incomplete_template(budget)?),
+                }
+            }
+            while !path.is_empty() {
+                budget.charge_work(1, "STEP reference template completion")?;
+                let Some(index) = path.pop() else { break; };
+                let ReferenceNode::Pending { next, .. } = nodes[index] else {
+                    return Err(Self::incomplete_template(budget)?);
+                };
+                let compiled = match Self::template(nodes, next, budget)? {
+                    ReferenceTemplate::Leaf { value, height } => ReferenceTemplate::Leaf { value, height: height + 1 },
+                    ReferenceTemplate::Tree { value, root, distance, .. } => {
+                        let mut jumps = [next; REFERENCE_JUMP_LEVELS];
+                        for level in 1..REFERENCE_JUMP_LEVELS {
+                            let ReferenceTemplate::Tree { jumps: parent, .. } = Self::template(nodes, jumps[level - 1], budget)? else {
+                                return Err(Self::incomplete_template(budget)?);
+                            };
+                            jumps[level] = parent[level - 1];
+                        }
+                        ReferenceTemplate::Tree { value, root, distance: distance + 1, jumps }
+                    }
+                };
+                nodes[index] = ReferenceNode::Ready(compiled);
+            }
+        }
+        Ok(())
+    }
+
+    fn incomplete_template(budget: &DecodeContext<'_>) -> Result<CodecError, CodecError> {
+        Ok(CodecError::Malformed(budget.copy_retained_text(
+            "STEP reference template is incomplete", "STEP reference template error",
+        )?))
+    }
+
+    fn template(nodes: &[ReferenceNode<'a>], index: usize, budget: &DecodeContext<'_>) -> Result<ReferenceTemplate<'a>, CodecError> {
+        match nodes[index] {
+            ReferenceNode::Ready(template) => Ok(template),
+            _ => Err(Self::incomplete_template(budget)?),
+        }
+    }
+
+    fn clone_leaf(&mut self, value: &Value) -> Result<Value, ResolveError> {
+        self.consume_materialized_node()?;
+        try_clone_value(value, self.budget, "step_reference_leaf_copy").map_err(Into::into)
     }
 
     fn resolve_value(&mut self, value: &Value, depth: usize) -> Result<Value, ResolveError> {
-        self.resolve_value_inner(value, depth)
-            .map(|resolved| resolved.value)
-    }
-
-    fn resolve_value_inner(
-        &mut self,
-        value: &Value,
-        depth: usize,
-    ) -> Result<ReferenceResolution, ResolveError> {
         let _nested = self.budget.enter_nested("step_reference_expansion")?;
-        self.budget
-            .charge_work(1, "step_reference_materialization")?;
-        if depth >= recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH) {
-            return Err(self
-                .budget
-                .refuse_codec_limit(
-                    "step_reference_depth_limit",
-                    u64_from_index(recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH)),
-                    u64_from_index(depth + 1),
-                )
-                .into());
-        }
+        self.budget.charge_work(1, "step_reference_materialization")?;
+        self.check_depth(depth + 1)?;
         match value {
-            Value::Reference(id) => {
-                self.resolve_occurrence(ReferenceName::Entity(*id), value, depth)
-            }
-            Value::ExternalReference(id) => {
-                self.resolve_occurrence(ReferenceName::Value(*id), value, depth)
-            }
+            Value::Reference(id) => self.resolve_occurrence(ReferenceName::Entity(*id), value, depth),
+            Value::ExternalReference(id) => self.resolve_occurrence(ReferenceName::Value(*id), value, depth),
             Value::List(values) => {
                 self.consume_materialized_node()?;
                 if !self.active.is_empty() && values.len() > self.remaining_nodes {
-                    return Err(self
-                        .budget
-                        .refuse_codec_limit(
-                            "step_reference_output_node_limit",
-                            u64_from_index(self.remaining_nodes),
-                            u64_from_index(values.len()),
-                        )
-                        .into());
+                    return Err(self.budget.refuse_codec_limit(
+                        "step_reference_output_node_limit", u64_from_index(self.remaining_nodes), u64_from_index(values.len()),
+                    ).into());
                 }
-                let mut resolved = self
-                    .budget
-                    .collection_vec(values.len(), "step_reference_list_items")?;
-                let mut nodes = 1usize;
-                let mut height = 1;
-                let mut stable = true;
-                let mut visited_items = values.iter();
-                for _ in 0..visited_items.len() {
-                    let child = self
-                        .budget
-                        .next_charged(&mut visited_items, "STEP resolve value value traversal")?
-                        .ok_or_else(|| {
-                            CodecError::malformed("STEP bounded traversal source ended early")
-                        })?;
-                    let child = self.resolve_value_inner(child, depth + 1)?;
-                    nodes = nodes.checked_add(child.nodes).ok_or_else(|| {
-                        self.budget.refuse_codec_limit(
-                            "step_reference_output_node_limit",
-                            0,
-                            u64::MAX,
-                        )
-                    })?;
-                    height = height.max(child.height + 1);
-                    stable &= child.stable;
-                    resolved.push(child.value);
+                let mut resolved = self.budget.collection_vec(values.len(), "step_reference_list_items")?;
+                let mut values = values.iter();
+                for _ in 0..values.len() {
+                    let value = self.budget.next_charged(&mut values, "STEP resolve value value traversal")?
+                        .ok_or_else(|| CodecError::malformed("STEP bounded traversal source ended early"))?;
+                    resolved.push(self.resolve_value(value, depth + 1)?);
                 }
-                Ok(ReferenceResolution {
-                    value: Value::List(resolved),
-                    nodes,
-                    height,
-                    stable,
-                })
+                Ok(Value::List(resolved))
             }
             Value::Typed(name, value) => {
                 self.consume_materialized_node()?;
-                let child = self.resolve_value_inner(value, depth + 1)?;
-                self.budget
-                    .charge_collection_items(1, "step_reference_typed_value")?;
-                self.budget.charge_retained(
-                    u64_from_index(size_of::<Value>()),
-                    "step_reference_materialization_storage",
-                )?;
-                Ok(ReferenceResolution {
-                    value: Value::Typed(
-                        self.budget
-                            .copy_retained_text(name, "step_reference_typed_name_copy")?,
-                        Box::new(child.value),
-                    ),
-                    nodes: child.nodes.checked_add(1).ok_or_else(|| {
-                        self.budget.refuse_codec_limit(
-                            "step_reference_output_node_limit",
-                            0,
-                            u64::MAX,
-                        )
-                    })?,
-                    height: child.height + 1,
-                    stable: child.stable,
-                })
+                let value = self.resolve_value(value, depth + 1)?;
+                self.budget.charge_collection_items(1, "step_reference_typed_value")?;
+                self.budget.charge_retained(u64_from_index(size_of::<Value>()), "step_reference_materialization_storage")?;
+                Ok(Value::Typed(self.budget.copy_retained_text(name, "step_reference_typed_name_copy")?, Box::new(value)))
             }
             _ => self.clone_leaf(value),
         }
     }
 
-    fn resolve_occurrence(
-        &mut self,
-        key: ReferenceName,
-        original: &Value,
-        depth: usize,
-    ) -> Result<ReferenceResolution, ResolveError> {
-        if let Some(cached) =
-            self.budget
-                .get_btree_map(&self.memo, &key, "STEP reference memo lookup")?
-        {
-            let cap = recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH);
-            if depth + cached.height > cap {
-                return Err(self
-                    .budget
-                    .refuse_codec_limit(
-                        "step_reference_depth_limit",
-                        u64_from_index(cap),
-                        u64_from_index(depth + cached.height),
-                    )
-                    .into());
-            }
-            if cached.height > 1 || !self.active.is_empty() {
-                self.remaining_nodes =
-                    self.remaining_nodes
-                        .checked_sub(cached.nodes)
-                        .ok_or_else(|| {
-                            self.budget.refuse_codec_limit(
-                                "step_reference_output_node_limit",
-                                u64_from_index(collection_cap(
-                                    self.budget,
-                                    Self::MAX_MATERIALIZED_NODES,
-                                )),
-                                u64_from_index(
-                                    collection_cap(self.budget, Self::MAX_MATERIALIZED_NODES) + 1,
-                                ),
-                            )
-                        })?;
-            }
-            return Ok(ReferenceResolution {
-                value: try_clone_value(
-                    &cached.value,
-                    self.budget,
-                    "step_reference_memo_value_copy",
-                )?,
-                nodes: cached.nodes,
-                height: cached.height,
-                stable: true,
-            });
+    fn check_depth(&self, requested: usize) -> Result<(), ResolveError> {
+        let cap = recursion_cap(self.budget, Self::MAX_REFERENCE_DEPTH);
+        if requested > cap {
+            return Err(self.budget.refuse_codec_limit(
+                "step_reference_depth_limit", u64_from_index(cap), u64_from_index(requested),
+            ).into());
         }
-        let Some(binding) = self
-            .budget
-            .get_btree_map(&self.bindings, &key, "STEP reference binding lookup")?
-            .copied()
-        else {
+        Ok(())
+    }
+
+    fn closing_distance(&self, child: usize, start: usize, depth: usize) -> Result<usize, ResolveError> {
+        let ReferenceTemplate::Tree { distance: child_distance, .. } = Self::template(&self.memo, child, self.budget)? else {
+            return Err(Self::incomplete_template(self.budget)?.into());
+        };
+        let ReferenceTemplate::Tree { distance: start_distance, .. } = Self::template(&self.memo, start, self.budget)? else {
+            return Err(Self::incomplete_template(self.budget)?.into());
+        };
+        let lower_bound = child_distance.saturating_sub(start_distance);
+        self.check_depth(depth + lower_bound + 1)?;
+        let mut left = child;
+        let mut right = start;
+        let difference = child_distance.abs_diff(start_distance);
+        // The active start is below the 256-depth ceiling. The admitted
+        // lower bound leaves at most 511 links to the common ancestor.
+        for level in 0..REFERENCE_JUMP_LEVELS {
+            if difference & (1 << level) != 0 {
+                let node = if child_distance > start_distance { &mut left } else { &mut right };
+                let ReferenceTemplate::Tree { jumps, .. } = Self::template(&self.memo, *node, self.budget)? else {
+                    return Err(Self::incomplete_template(self.budget)?.into());
+                };
+                *node = jumps[level];
+            }
+        }
+        if left != right {
+            for level in (0..REFERENCE_JUMP_LEVELS).rev() {
+                let ReferenceTemplate::Tree { jumps: left_jumps, .. } = Self::template(&self.memo, left, self.budget)? else {
+                    return Err(Self::incomplete_template(self.budget)?.into());
+                };
+                let ReferenceTemplate::Tree { jumps: right_jumps, .. } = Self::template(&self.memo, right, self.budget)? else {
+                    return Err(Self::incomplete_template(self.budget)?.into());
+                };
+                if left_jumps[level] != right_jumps[level] {
+                    left = left_jumps[level];
+                    right = right_jumps[level];
+                }
+            }
+            let ReferenceTemplate::Tree { jumps, .. } = Self::template(&self.memo, left, self.budget)? else {
+                return Err(Self::incomplete_template(self.budget)?.into());
+            };
+            left = jumps[0];
+        }
+        let ReferenceTemplate::Tree { distance, .. } = Self::template(&self.memo, left, self.budget)? else {
+            return Err(Self::incomplete_template(self.budget)?.into());
+        };
+        Ok(child_distance - distance)
+    }
+
+    fn resolve_occurrence(&mut self, key: ReferenceName, original: &Value, depth: usize) -> Result<Value, ResolveError> {
+        let Some(index) = self.budget.get_btree_map(&self.bindings, &key, "STEP reference binding lookup")?.copied() else {
             return self.clone_leaf(original);
         };
-        let resolved = (|| -> Result<ReferenceResolution, ResolveError> {
-            let anchor = match binding {
-                ReferenceBinding::Original => return self.clone_leaf(original),
-                ReferenceBinding::Omitted => return self.clone_leaf(&Value::Omitted),
-                ReferenceBinding::Anchor(anchor) => anchor,
-            };
-            if self
-                .budget
-                .contains_hash_set(&self.active, &key, "STEP reference cycle search")?
-            {
-                let mut resolved = self.clone_leaf(&Value::Omitted)?;
-                resolved.stable = false;
-                return Ok(resolved);
+        match Self::template(&self.memo, index, self.budget)? {
+            ReferenceTemplate::Leaf { value, height } => {
+                self.check_depth(depth + height)?;
+                if self.active.is_empty() && height > 1 {
+                    self.consume_expanded_nodes(1)?;
+                }
+                match value {
+                    ReferenceLeaf::Original(ReferenceName::Entity(id)) => self.clone_leaf(&Value::Reference(id)),
+                    ReferenceLeaf::Original(ReferenceName::Value(id)) => self.clone_leaf(&Value::ExternalReference(id)),
+                    ReferenceLeaf::Omitted => self.clone_leaf(&Value::Omitted),
+                    ReferenceLeaf::Borrowed(value) => self.clone_leaf(value),
+                }
             }
-
-            self.storage.with_storage(|| {
-                self.budget
-                    .insert_hash_set(&mut self.active, key, "step_reference_stack")
-            })?;
-            let mut target_storage = self
-                .budget
-                .reserve_scoped(0, "STEP reference target storage")?;
-            let candidate =
-                target_storage.with_storage(|| self.resolve_value_inner(anchor, depth + 1));
-            self.budget.remove_hash_set(
-                &mut self.active,
-                &key,
-                "STEP reference active key removal",
-            )?;
-            let candidate = candidate?;
-            let height = candidate.height + 1;
-            let stable = candidate.stable;
-            let replacement = if let Value::Resource(uri) = &candidate.value {
-                Some(
-                    if self.budget.any_by(
-                        uri.as_bytes(),
-                        |byte| Ok(*byte == b'#'),
-                        "STEP resolved URI fragment containment",
-                    )? {
-                        original
-                    } else {
-                        &Value::Omitted
-                    },
-                )
-            } else if !reference_target_matches(key, &candidate.value) {
-                Some(&Value::Omitted)
-            } else {
-                None
-            };
-            let mut resolved = if let Some(replacement) = replacement {
-                drop(candidate);
-                drop(target_storage);
-                self.clone_leaf(replacement)?
-            } else {
-                target_storage.commit_value(candidate)?
-            };
-            resolved.height = height;
-            resolved.stable = stable;
-            Ok(resolved)
-        })()?;
-        // A recovered cycle depends on the active occurrence path. It does
-        // not invalidate memo entries for independent acyclic bindings.
-        if resolved.stable {
-            self.storage.with_storage(|| {
-                let value = try_clone_value(
-                    &resolved.value,
-                    self.budget,
-                    "step_reference_memo_value_copy",
-                )?;
-                self.budget.insert_btree_map(
-                    &mut self.memo,
-                    key,
-                    ReferenceResolution {
-                        value,
-                        nodes: resolved.nodes,
-                        height: resolved.height,
-                        stable: true,
-                    },
-                    "step_reference_memo_entries",
-                )?;
-                Ok::<(), CodecError>(())
-            })?;
+            ReferenceTemplate::Tree { value, root, distance, .. } => {
+                if let Some(start) = self.budget.get_hash_map(&self.active, &root, "STEP reference cycle search")?.copied() {
+                    let closing = self.closing_distance(index, start, depth)?;
+                    self.check_depth(depth + closing + 1)?;
+                    return self.clone_leaf(&Value::Omitted);
+                }
+                self.check_depth(depth + distance + 2)?;
+                self.storage.with_storage(|| self.budget.insert_hash_map(
+                    &mut self.active, root, index, "step_reference_stack",
+                ))?;
+                let result = self.resolve_value(value, depth + distance + 1);
+                self.budget.remove_hash_map(&mut self.active, &root, "STEP reference active key removal")?;
+                result
+            }
         }
-        Ok(resolved)
+    }
+
+    fn consume_expanded_nodes(&mut self, count: usize) -> Result<(), ResolveError> {
+        self.remaining_nodes = self.remaining_nodes.checked_sub(count).ok_or_else(|| self.budget.refuse_codec_limit(
+            "step_reference_output_node_limit",
+            u64_from_index(collection_cap(self.budget, Self::MAX_MATERIALIZED_NODES)),
+            u64_from_index(collection_cap(self.budget, Self::MAX_MATERIALIZED_NODES) + 1),
+        ))?;
+        Ok(())
     }
 
     fn consume_materialized_node(&mut self) -> Result<(), ResolveError> {
-        if !self.active.is_empty() {
-            self.remaining_nodes = self.remaining_nodes.checked_sub(1).ok_or_else(|| {
-                self.budget.refuse_codec_limit(
-                    "step_reference_output_node_limit",
-                    u64_from_index(collection_cap(self.budget, Self::MAX_MATERIALIZED_NODES)),
-                    u64_from_index(collection_cap(self.budget, Self::MAX_MATERIALIZED_NODES) + 1),
-                )
-            })?;
-        }
+        if !self.active.is_empty() { self.consume_expanded_nodes(1)?; }
         Ok(())
     }
 }
