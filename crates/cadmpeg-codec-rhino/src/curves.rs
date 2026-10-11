@@ -1004,7 +1004,10 @@ fn clamp_endpoint<'ctx>(
             )
         })?;
         let mut indices = (step + 1..=tail).rev();
-        for _ in 0..tail.saturating_sub(step) {
+        let blend_count = tail.checked_sub(step).ok_or_else(|| {
+            ctx.refuse_codec_limit("Rhino endpoint blend count", 0, 1)
+        })?;
+        for _ in 0..blend_count {
             let index = ctx
                 .next_charged(&mut indices, "Rhino knot insertion blends")?
                 .ok_or_else(|| CodecError::malformed("Rhino knot blend source ended early"))?;
@@ -1286,7 +1289,14 @@ fn elevate_to_degree(
         if end == domain[1] {
             break;
         }
-        let first = degree.saturating_sub(multiplicity);
+        let first = if multiplicity > degree {
+            // A full knot break starts a new polygon without a shared pole.
+            0
+        } else {
+            degree.checked_sub(multiplicity).ok_or_else(|| {
+                ctx.refuse_codec_limit("Rhino next Bezier pole index", 0, 1)
+            })?
+        };
         for index in ctx
             .admit_iter(first..=degree, "Rhino next Bezier pole copy")
             .map_err(CodecError::from)?
@@ -2393,6 +2403,7 @@ pub(crate) fn error(offset: usize, message: impl Into<String>) -> GeometryError 
 
 #[cfg(test)]
 mod tests {
+    mod arithmetic;
     mod degenerate;
     mod ownership;
 
