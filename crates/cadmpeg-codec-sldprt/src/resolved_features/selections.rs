@@ -747,7 +747,17 @@ pub(super) fn compact_surface_selections(
     for (index, &(name, feature, _)) in ctx.admit_iter(&objects, OPERATION)?.enumerate() {
         let classified = native_object_class(feature.input_class.as_deref().unwrap_or_default());
         let kind = match classified {
-            NativeClassKind::Unknown if matches!(feature.xml_tag.as_str(), "Extrusion" | "Cut") => {
+            NativeClassKind::Unknown
+                if ctx.equal(
+                    feature.xml_tag.as_str(),
+                    "Extrusion",
+                    "compare SLDPRT surface extrusion XML tag",
+                )? || ctx.equal(
+                    feature.xml_tag.as_str(),
+                    "Cut",
+                    "compare SLDPRT surface cut XML tag",
+                )? =>
+            {
                 NativeClassKind::Extrusion
             }
             NativeClassKind::Unknown => {
@@ -781,6 +791,12 @@ pub(super) fn compact_surface_selections(
             ctx.with_scoped_storage(OPERATION, || -> Result<_, CodecError> {
                 let candidates = match kind {
                     NativeClassKind::Thicken => {
+                        const TOKEN_LOOKUP: &str = "find SLDPRT Thicken surface token";
+                        let Some(scan_end) =
+                            end.checked_sub(105).filter(|scan_end| start < *scan_end)
+                        else {
+                            return Ok(Vec::new());
+                        };
                         let surface_token = match surface_token {
                             Some(token) => token,
                             None => {
@@ -792,13 +808,13 @@ pub(super) fn compact_surface_selections(
                                             if !ctx.equal(
                                                 class.name.as_str(),
                                                 "moCompSurfaceBody_c",
-                                                OPERATION,
+                                                TOKEN_LOOKUP,
                                             )? {
                                                 return Ok(false);
                                             }
                                             Ok(surface_class.replace(class).is_some())
                                         },
-                                        OPERATION,
+                                        TOKEN_LOOKUP,
                                     )? {
                                         surface_class = None;
                                     }
@@ -818,8 +834,7 @@ pub(super) fn compact_surface_selections(
                             }
                         };
                         let mut candidates = Vec::new();
-                        if let (Some(token), Some(scan_end)) = (surface_token, end.checked_sub(105))
-                        {
+                        if let Some(token) = surface_token {
                             for offset in ctx.admit_iter(start..scan_end, OPERATION)? {
                                 if lane.native_payload.get(offset..offset + 2) != Some(token) {
                                     continue;
@@ -963,7 +978,11 @@ pub(super) fn compact_surface_selections(
                         candidates
                     }
                     NativeClassKind::Fillet
-                        if feature.input_class.as_deref() == Some("Fillet_c") =>
+                        if ctx.equal(
+                            feature.input_class.as_deref().unwrap_or_default(),
+                            "Fillet_c",
+                            "compare SLDPRT surface fillet class",
+                        )? =>
                     {
                         fillet_face_selection_candidates(
                             ctx,
@@ -1095,7 +1114,7 @@ pub(super) fn compact_surface_selections(
                 ctx,
                 &components,
                 terminal_feature_ref.as_deref(),
-                history_features,
+                feature_sources,
             )?;
             let id = ctx.format_retained(
                 format_args!("sldprt:feature-input:surface-selection#{lane_key}:{offset}"),
@@ -3740,7 +3759,7 @@ pub(crate) fn variable_fillet_dimension_index_for_feature(
     feature: &crate::records::Feature,
     name: &str,
 ) -> Result<Option<usize>, CodecError> {
-    if name == "D1"
+    if ctx.equal(name, "D1", "compare SLDPRT variable fillet control name")?
         && !ctx.contains_key_btree_map(
             &feature.parameters,
             "D01",
