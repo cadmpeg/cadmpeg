@@ -3,9 +3,8 @@
 
 use crate::design::dimensions::{planar_point, sketch_normal_sign};
 use crate::design::face_resolve::placement_origin_scale;
-use crate::design::feature_project::closed_spatial_sketch_profiles;
+use crate::design::feature_project::spatial_profiles::closed_spatial_sketch_profiles;
 use crate::design::geometry::closed_sketch_profiles;
-use crate::ids::native_stream;
 use crate::records::{
     sketch_geometry::{
         SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchSurface, SketchText,
@@ -34,19 +33,17 @@ fn record_spline_segment<'a>(
     record: u32,
     points: [Point3; 2],
 ) -> Result<(), CodecError> {
-    if !segments.contains_key(&(scope, record)) {
-        {
-            ctx.reserve_map(segments, 1, "f3d spatial sketch spline segment index")?;
+    ctx.entry_hash_map(
+        segments,
+        (scope, record),
+        "f3d spatial sketch spline segment index",
+    )?
+    .and_modify(|existing| {
+        if *existing != Some(points) {
+            *existing = None;
         }
-    }
-    segments
-        .entry((scope, record))
-        .and_modify(|existing| {
-            if *existing != Some(points) {
-                *existing = None;
-            }
-        })
-        .or_insert(Some(points));
+    })
+    .or_insert(Some(points));
     Ok(())
 }
 
@@ -54,18 +51,21 @@ fn distinct_return_member_indices(
     ctx: &DecodeContext<'_>,
     members: &[crate::records::sketch_relations::SketchRelationReturnMember],
 ) -> Result<bool, CodecError> {
-    let mut seen = HashSet::new();
-    for member in members {
-        let index = member.reference.record_index();
-        if seen.contains(&index) {
-            return Ok(false);
-        }
-        {
-            ctx.reserve_set(&mut seen, 1, "f3d spatial spline member index")?;
-        }
-        seen.insert(index);
-    }
-    Ok(true)
+    let mut storage = ctx.reserve_scoped(0, "f3d spatial spline member storage")?;
+    storage.with_storage(|| {
+        let mut seen = HashSet::new();
+        ctx.all_by(
+            members,
+            |member| {
+                ctx.insert_hash_set(
+                    &mut seen,
+                    member.reference.record_index(),
+                    "f3d spatial spline member index",
+                )
+            },
+            "f3d spatial spline member scan",
+        )
+    })
 }
 
 fn sketch_text_horizontal_alignment(
@@ -96,41 +96,60 @@ fn text_frame_curve_records<'a>(
     curves: &'a [SketchCurveIdentity],
     texts: &'a [SketchText],
 ) -> Result<HashSet<(&'a str, u32)>, CodecError> {
-    let mut curve_owners = HashMap::new();
-    for curve in curves {
-        let (Some(scope), Some(owner)) = (native_stream(&curve.id), curve.owner_reference) else {
-            continue;
-        };
-        let key = (scope, curve.record_index);
-        if !curve_owners.contains_key(&key) {
-            {
-                ctx.reserve_map(&mut curve_owners, 1, "f3d text frame curve owner")?;
-            }
+    let mut storage = ctx.reserve_scoped(0, "f3d text frame owner storage")?;
+    let (curve_owners, text_owners) = storage.with_storage(|| -> Result<_, CodecError> {
+        let mut curve_owners = HashMap::new();
+        for curve in ctx.admit_iter(curves, "f3d text frame curve scan")? {
+            let (Some(scope), Some(owner)) = (
+                crate::ids::native_stream_charged(
+                    ctx,
+                    &curve.id,
+                    "resolve F3D sketch projection stream",
+                )?,
+                curve.owner_reference,
+            ) else {
+                continue;
+            };
+            ctx.insert_hash_map(
+                &mut curve_owners,
+                (scope, curve.record_index),
+                owner,
+                "f3d text frame curve owner",
+            )?;
         }
-        curve_owners.insert(key, owner);
-    }
-    let mut text_owners = HashMap::new();
-    for text in texts {
-        let Some(scope) = native_stream(&text.id) else {
-            continue;
-        };
-        let key = (scope, text.record_index);
-        if !text_owners.contains_key(&key) {
-            {
-                ctx.reserve_map(&mut text_owners, 1, "f3d text frame text owner")?;
-            }
+        let mut text_owners = HashMap::new();
+        for text in ctx.admit_iter(texts, "f3d text frame text scan")? {
+            let Some(scope) = crate::ids::native_stream_charged(
+                ctx,
+                &text.id,
+                "resolve F3D sketch projection stream",
+            )?
+            else {
+                continue;
+            };
+            ctx.insert_hash_map(
+                &mut text_owners,
+                (scope, text.record_index),
+                text.owner_reference,
+                "f3d text frame text owner",
+            )?;
         }
-        text_owners.insert(key, text.owner_reference);
-    }
+        Ok((curve_owners, text_owners))
+    })?;
     let mut frame_curves = HashSet::new();
-    for relation in relations {
+    for relation in ctx.admit_iter(relations, "f3d text frame relation scan")? {
         let Some(crate::records::sketch_relations::SketchPatternDefinition::TextFrame {
             text_reference,
         }) = relation.definition.pattern()
         else {
             continue;
         };
-        let Some(scope) = native_stream(&relation.id) else {
+        let Some(scope) = crate::ids::native_stream_charged(
+            ctx,
+            &relation.id,
+            "resolve F3D sketch projection stream",
+        )?
+        else {
             continue;
         };
         if crate::design::relation_kinds::sole_constraint_kind(relation).is_none()
@@ -139,39 +158,48 @@ fn text_frame_curve_records<'a>(
                 .first()
                 .map(|member| member.reference.record_index())
                 != Some(*text_reference)
-            || !relation
-                .auxiliary_references()
-                .values()
-                .copied()
-                .eq([*text_reference])
+            || relation.auxiliary_references().values_array::<1>() != Some([text_reference])
             || relation.members().len() < 2
-            || !relation
-                .return_members()
-                .iter()
-                .map(|member| member.reference.record_index())
-                .eq(relation
-                    .members()
+            || relation.return_members().len() != relation.members().len() - 1
+            || !ctx.all_by(
+                relation
+                    .return_members()
                     .iter()
-                    .skip(1)
-                    .map(|member| member.reference.record_index()))
-            || text_owners.get(&(scope, *text_reference)) != Some(&relation.owner_reference)
+                    .zip(&relation.members()[1..]),
+                |(returned, member)| {
+                    Ok(returned.reference.record_index() == member.reference.record_index())
+                },
+                "f3d text frame member comparison",
+            )?
+            || ctx.get_hash_map(
+                &text_owners,
+                &(scope, *text_reference),
+                "f3d text frame text owner lookup",
+            )? != Some(&relation.owner_reference)
         {
             continue;
         }
-        if !relation.return_members().iter().all(|member| {
-            curve_owners.get(&(scope, member.reference.record_index()))
-                == Some(&relation.owner_reference)
-        }) {
+        if !ctx.all_by(
+            relation.return_members().iter(),
+            |member| {
+                Ok(ctx.get_hash_map(
+                    &curve_owners,
+                    &(scope, member.reference.record_index()),
+                    "f3d text frame curve owner lookup",
+                )? == Some(&relation.owner_reference))
+            },
+            "f3d text frame owner comparison",
+        )? {
             continue;
         }
-        for member in relation.return_members().iter() {
-            let key = (scope, member.reference.record_index());
-            if !frame_curves.contains(&key) {
-                {
-                    ctx.reserve_set(&mut frame_curves, 1, "f3d text frame curve record")?;
-                }
-                frame_curves.insert(key);
-            }
+        for member in
+            ctx.admit_iter(&relation.return_members()[..], "f3d text frame return scan")?
+        {
+            ctx.insert_hash_set(
+                &mut frame_curves,
+                (scope, member.reference.record_index()),
+                "f3d text frame curve record",
+            )?;
         }
     }
     Ok(frame_curves)
@@ -196,31 +224,50 @@ pub(crate) fn project_sketch_design(
     use cadmpeg_ir::scalar::{Angle, Length};
     use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchGeometry, SketchGeometryDefinition};
 
-    let text_frame_curves = text_frame_curve_records(ctx, relations, curves, texts)?;
-    let mut placements_by_suffix = HashMap::new();
-    for placement in placements {
-        let (Some(scope), Ok(owner)) = (
-            native_stream(&placement.id),
-            u32::try_from(placement.entity_id.suffix()),
-        ) else {
-            continue;
-        };
-        ctx.insert_hash_map(
-            &mut placements_by_suffix,
-            (scope, owner),
-            placement,
-            "f3d planar sketch placement index",
-        )
-        .map(|_| ())?;
-    }
-    let spatial_owners = spatial_geometry_owners(ctx, points, curves)?;
+    let mut lookup_storage = ctx.reserve_scoped(0, "f3d planar sketch lookup storage")?;
+    let (text_frame_curves, placements_by_suffix, spatial_owners) =
+        lookup_storage.with_storage(|| -> Result<_, CodecError> {
+            let text_frame_curves = text_frame_curve_records(ctx, relations, curves, texts)?;
+            let mut placements_by_suffix = HashMap::new();
+            for placement in ctx.admit_iter(placements, "f3d sketch projection placements scan")? {
+                let (Some(scope), Ok(owner)) = (
+                    crate::ids::native_stream_charged(
+                        ctx,
+                        &placement.id,
+                        "resolve F3D sketch projection stream",
+                    )?,
+                    u32::try_from(placement.entity_id.suffix()),
+                ) else {
+                    continue;
+                };
+                ctx.insert_hash_map(
+                    &mut placements_by_suffix,
+                    (scope, owner),
+                    placement,
+                    "f3d planar sketch placement index",
+                )
+                .map(|_| ())?;
+            }
+            let spatial_owners = spatial_geometry_owners(ctx, points, curves)?;
+            Ok((text_frame_curves, placements_by_suffix, spatial_owners))
+        })?;
     let mut sketches = Vec::new();
-    for placement in placements {
-        if u32::try_from(placement.entity_id.suffix()).is_ok_and(|owner| {
-            native_stream(&placement.id)
-                .is_some_and(|scope| spatial_owners.contains(&(scope, owner)))
-        }) {
-            continue;
+    for placement in ctx.admit_iter(placements, "f3d sketch projection placements scan")? {
+        if let (Ok(owner), Some(scope)) = (
+            u32::try_from(placement.entity_id.suffix()),
+            crate::ids::native_stream_charged(
+                ctx,
+                &placement.id,
+                "resolve F3D sketch projection stream",
+            )?,
+        ) {
+            if ctx.contains_hash_set(
+                &spatial_owners,
+                &(scope, owner),
+                "f3d planar spatial owner lookup",
+            )? {
+                continue;
+            }
         }
         let Ok(resolved) = cadmpeg_ir::sketches::SketchPlacement::try_resolved(
             Point3::new(
@@ -270,17 +317,31 @@ pub(crate) fn project_sketch_design(
     )?;
 
     let mut entities = Vec::new();
-    for point in points {
+    for point in ctx.admit_iter(points, "f3d sketch projection points scan")? {
         let Some(owner) = point.owner_reference else {
             continue;
         };
-        let Some(scope) = native_stream(&point.id) else {
+        let Some(scope) = crate::ids::native_stream_charged(
+            ctx,
+            &point.id,
+            "resolve F3D sketch projection stream",
+        )?
+        else {
             continue;
         };
-        if spatial_owners.contains(&(scope, owner)) {
+        if ctx.contains_hash_set(
+            &spatial_owners,
+            &(scope, owner),
+            "f3d sketch spatial owner lookup",
+        )? {
             continue;
         }
-        let Some(placement) = placements_by_suffix.get(&(scope, owner)) else {
+        let Some(placement) = ctx.get_hash_map(
+            &placements_by_suffix,
+            &(scope, owner),
+            "f3d sketch placement lookup",
+        )?
+        else {
             continue;
         };
         let sketch = crate::design::identity::neutral_sketch_id(ctx, placement)?;
@@ -317,17 +378,31 @@ pub(crate) fn project_sketch_design(
             "f3d planar sketch point entity",
         )?;
     }
-    for curve in curves {
+    for curve in ctx.admit_iter(curves, "f3d sketch projection curves scan")? {
         let Some(owner) = curve.owner_reference else {
             continue;
         };
-        let Some(scope) = native_stream(&curve.id) else {
+        let Some(scope) = crate::ids::native_stream_charged(
+            ctx,
+            &curve.id,
+            "resolve F3D sketch projection stream",
+        )?
+        else {
             continue;
         };
-        if spatial_owners.contains(&(scope, owner)) {
+        if ctx.contains_hash_set(
+            &spatial_owners,
+            &(scope, owner),
+            "f3d sketch spatial owner lookup",
+        )? {
             continue;
         }
-        let Some(placement) = placements_by_suffix.get(&(scope, owner)) else {
+        let Some(placement) = ctx.get_hash_map(
+            &placements_by_suffix,
+            &(scope, owner),
+            "f3d sketch placement lookup",
+        )?
+        else {
             continue;
         };
         let Some(source) = curve.geometry.as_ref() else {
@@ -437,16 +512,30 @@ pub(crate) fn project_sketch_design(
                 sketch,
                 geometry,
             )
-            .with_construction(text_frame_curves.contains(&(scope, curve.record_index)))
+            .with_construction(ctx.contains_hash_set(
+                &text_frame_curves,
+                &(scope, curve.record_index),
+                "f3d sketch text frame membership",
+            )?)
             .with_native_ref(Some(native_ref)),
             "f3d planar sketch curve entity",
         )?;
     }
-    for text in texts {
-        let Some(scope) = native_stream(&text.id) else {
+    for text in ctx.admit_iter(texts, "f3d sketch projection texts scan")? {
+        let Some(scope) = crate::ids::native_stream_charged(
+            ctx,
+            &text.id,
+            "resolve F3D sketch projection stream",
+        )?
+        else {
             continue;
         };
-        let Some(placement) = placements_by_suffix.get(&(scope, text.owner_reference)) else {
+        let Some(placement) = ctx.get_hash_map(
+            &placements_by_suffix,
+            &(scope, text.owner_reference),
+            "f3d sketch text placement lookup",
+        )?
+        else {
             continue;
         };
         let sketch = crate::design::identity::neutral_sketch_id(ctx, placement)?;
@@ -517,7 +606,7 @@ pub(crate) fn project_sketch_design(
         Ord::cmp,
         "sort f3d design sketch_project 2",
     )?;
-    for sketch in &mut sketches {
+    for sketch in ctx.admit_iter(&mut sketches, "f3d planar sketch profile scan")? {
         let inferred = closed_sketch_profiles(ctx, &sketch.id, &entities, linear_tolerance)?;
         let Ok(profiles) = cadmpeg_ir::sketches::SketchProfiles::try_from(inferred) else {
             continue;
@@ -548,118 +637,171 @@ pub(crate) fn project_spatial_sketch_design(
         SpatialSketch, SpatialSketchEntity, SpatialSketchGeometry, SpatialSketchGeometryDefinition,
     };
 
-    let mut placements_by_suffix = HashMap::new();
-    for placement in placements {
-        let (Some(scope), Ok(owner)) = (
-            native_stream(&placement.id),
-            u32::try_from(placement.entity_id.suffix()),
-        ) else {
-            continue;
-        };
-        ctx.insert_hash_map(
-            &mut placements_by_suffix,
-            (scope, owner),
-            placement,
-            "f3d spatial sketch placement index",
-        )
-        .map(|_| ())?;
-    }
-    let mut spatial_owners = spatial_geometry_owners(ctx, points, curves)?;
-    for surface in surfaces {
-        let (Some(scope), Some(owner)) = (native_stream(&surface.id), surface.owner_reference)
-        else {
-            continue;
-        };
-        ctx.insert_hash_set(
-            &mut spatial_owners,
-            (scope, owner),
-            "f3d spatial surface owner",
-        )?;
-    }
-    let mut curves_by_record = HashMap::new();
-    for curve in curves {
-        let Some(scope) = native_stream(&curve.id) else {
-            continue;
-        };
-        ctx.insert_hash_map(
-            &mut curves_by_record,
-            (scope, curve.record_index),
-            curve,
-            "f3d spatial sketch curve index",
-        )
-        .map(|_| ())?;
-    }
-    let mut spline_segments = HashMap::new();
-    for relation in relations {
-        // Only the second reference run of a relation record is in semantic
-        // order: the control polygon ends with the spline there, and the
-        // interleaved first run orders its members by nothing a reader can use.
-        let members = relation.return_members();
-        if crate::design::relation_kinds::unknown_constraint_bits(relation.definition.state()) != 0
-            || crate::records::sketch_relations::constraint_kinds_iter(relation.definition.state())
-                .ne([SketchConstraintKind::SplineGroup])
-            || members.len() < 2
-            || !distinct_return_member_indices(ctx, members)?
-        {
-            continue;
-        }
-        let Some(scope) = native_stream(&relation.id) else {
-            continue;
-        };
-        let Some(curve) = members
-            .last()
-            .and_then(|member| curves_by_record.get(&(scope, member.reference.record_index())))
-        else {
-            continue;
-        };
-        let Some(SketchCurveGeometry::Nurbs { geometry, .. }) = curve.geometry.as_ref() else {
-            continue;
-        };
-        let poles = geometry.poles();
-        if curve.owner_reference != Some(relation.owner_reference)
-            || poles.point_count() != members.len()
-        {
-            continue;
-        }
-        let mut segments = Vec::new();
-        let mut complete = true;
-        for (member, (first, second)) in members[..members.len() - 1]
-            .iter()
-            .zip(poles.points().zip(poles.points().skip(1)))
-        {
-            let candidate = (|| {
-                let record = member.reference.record_index();
-                let member = curves_by_record.get(&(scope, record))?;
-                if member.owner_reference != Some(relation.owner_reference) {
-                    return None;
+    let mut lookup_storage = ctx.reserve_scoped(0, "f3d spatial sketch lookup storage")?;
+    let (placements_by_suffix, spatial_owners, spline_segments) =
+        lookup_storage.with_storage(|| -> Result<_, CodecError> {
+            let mut placements_by_suffix = HashMap::new();
+            for placement in ctx.admit_iter(placements, "f3d sketch projection placements scan")? {
+                let (Some(scope), Ok(owner)) = (
+                    crate::ids::native_stream_charged(
+                        ctx,
+                        &placement.id,
+                        "resolve F3D sketch projection stream",
+                    )?,
+                    u32::try_from(placement.entity_id.suffix()),
+                ) else {
+                    continue;
+                };
+                ctx.insert_hash_map(
+                    &mut placements_by_suffix,
+                    (scope, owner),
+                    placement,
+                    "f3d spatial sketch placement index",
+                )
+                .map(|_| ())?;
+            }
+            let mut spatial_owners = spatial_geometry_owners(ctx, points, curves)?;
+            for surface in ctx.admit_iter(surfaces, "f3d sketch projection surfaces scan")? {
+                let (Some(scope), Some(owner)) = (
+                    crate::ids::native_stream_charged(
+                        ctx,
+                        &surface.id,
+                        "resolve F3D sketch projection stream",
+                    )?,
+                    surface.owner_reference,
+                ) else {
+                    continue;
+                };
+                ctx.insert_hash_set(
+                    &mut spatial_owners,
+                    (scope, owner),
+                    "f3d spatial surface owner",
+                )?;
+            }
+            let mut curve_storage = ctx.reserve_scoped(0, "f3d spatial spline curve storage")?;
+            let curves_by_record = curve_storage.with_storage(|| -> Result<_, CodecError> {
+                let mut curves_by_record = HashMap::new();
+                for curve in ctx.admit_iter(curves, "f3d sketch projection curves scan")? {
+                    let Some(scope) = crate::ids::native_stream_charged(
+                        ctx,
+                        &curve.id,
+                        "resolve F3D sketch projection stream",
+                    )?
+                    else {
+                        continue;
+                    };
+                    ctx.insert_hash_map(
+                        &mut curves_by_record,
+                        (scope, curve.record_index),
+                        curve,
+                        "f3d spatial sketch curve index",
+                    )
+                    .map(|_| ())?;
                 }
-                match member.geometry.as_ref() {
-                    None => Some((record, [*first, *second])),
-                    Some(SketchCurveGeometry::Line { start, end, .. })
-                        if start.as_raw() == first && end.as_raw() == second =>
-                    {
-                        Some((record, [*first, *second]))
-                    }
-                    _ => None,
+                Ok(curves_by_record)
+            })?;
+            let mut spline_segments = HashMap::new();
+            for relation in ctx.admit_iter(relations, "f3d sketch projection relations scan")? {
+                // Only the second reference run of a relation record is in semantic
+                // order: the control polygon ends with the spline there, and the
+                // interleaved first run orders its members by nothing a reader can use.
+                let members = relation.return_members();
+                if crate::design::relation_kinds::unknown_constraint_bits(
+                    relation.definition.state(),
+                ) != 0
+                    || crate::records::sketch_relations::constraint_kinds_iter(
+                        relation.definition.state(),
+                    )
+                    .ne([SketchConstraintKind::SplineGroup])
+                    || members.len() < 2
+                    || !distinct_return_member_indices(ctx, members)?
+                {
+                    continue;
                 }
-            })();
-            let Some(candidate) = candidate else {
-                complete = false;
-                break;
-            };
-            ctx.push_vec(
-                &mut segments,
-                candidate,
-                "f3d spatial spline segment candidates",
-            )?;
-        }
-        if !complete {
-            continue;
-        }
-        for (record, points) in segments {
-            record_spline_segment(ctx, &mut spline_segments, scope, record, points)?;
-        }
-    }
+                let Some(scope) = crate::ids::native_stream_charged(
+                    ctx,
+                    &relation.id,
+                    "resolve F3D sketch projection stream",
+                )?
+                else {
+                    continue;
+                };
+                let Some(curve) = (match members.last() {
+                    Some(member) => ctx.get_hash_map(
+                        &curves_by_record,
+                        &(scope, member.reference.record_index()),
+                        "f3d spatial spline curve lookup",
+                    )?,
+                    None => None,
+                }) else {
+                    continue;
+                };
+                let Some(SketchCurveGeometry::Nurbs { geometry, .. }) = curve.geometry.as_ref()
+                else {
+                    continue;
+                };
+                let poles = geometry.poles();
+                if curve.owner_reference != Some(relation.owner_reference)
+                    || poles.point_count() != members.len()
+                {
+                    continue;
+                }
+                let mut segment_storage =
+                    ctx.reserve_scoped(0, "f3d spatial spline candidate storage")?;
+                let mut segments = Vec::new();
+                let mut complete = true;
+                let mut candidates = members[..members.len() - 1]
+                    .iter()
+                    .zip(poles.points().zip(poles.points().skip(1)));
+                while let Some((member, (first, second))) =
+                    ctx.next_charged(&mut candidates, "f3d spatial spline candidate scan")?
+                {
+                    let candidate = (|| -> Result<Option<_>, CodecError> {
+                        let record = member.reference.record_index();
+                        let Some(member) = ctx.get_hash_map(
+                            &curves_by_record,
+                            &(scope, record),
+                            "f3d spatial spline member lookup",
+                        )?
+                        else {
+                            return Ok(None);
+                        };
+                        if member.owner_reference != Some(relation.owner_reference) {
+                            return Ok(None);
+                        }
+                        Ok(match member.geometry.as_ref() {
+                            None => Some((record, [*first, *second])),
+                            Some(SketchCurveGeometry::Line { start, end, .. })
+                                if start.as_raw() == first && end.as_raw() == second =>
+                            {
+                                Some((record, [*first, *second]))
+                            }
+                            _ => None,
+                        })
+                    })()?;
+                    let Some(candidate) = candidate else {
+                        complete = false;
+                        break;
+                    };
+                    segment_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut segments,
+                            candidate,
+                            "f3d spatial spline segment candidates",
+                        )
+                    })?;
+                }
+                if !complete {
+                    continue;
+                }
+                for (record, points) in
+                    ctx.admit_iter(segments, "f3d spatial spline accepted scan")?
+                {
+                    record_spline_segment(ctx, &mut spline_segments, scope, record, points)?;
+                }
+            }
+            Ok((placements_by_suffix, spatial_owners, spline_segments))
+        })?;
     let transform_point = |placement: &DesignSketchPlacement, point: &Point3| {
         let origin_scale = placement_origin_scale(placement);
         Point3::new(
@@ -692,22 +834,40 @@ pub(crate) fn project_spatial_sketch_design(
     };
 
     let mut entities = Vec::new();
-    for curve in curves {
-        let Some(scope) = native_stream(&curve.id) else {
+    for curve in ctx.admit_iter(curves, "f3d sketch projection curves scan")? {
+        let Some(scope) = crate::ids::native_stream_charged(
+            ctx,
+            &curve.id,
+            "resolve F3D sketch projection stream",
+        )?
+        else {
             continue;
         };
         let Some(owner) = curve.owner_reference else {
             continue;
         };
-        if !spatial_owners.contains(&(scope, owner)) {
+        if !ctx.contains_hash_set(
+            &spatial_owners,
+            &(scope, owner),
+            "f3d sketch spatial owner lookup",
+        )? {
             continue;
         }
-        let Some(placement) = placements_by_suffix.get(&(scope, owner)) else {
+        let Some(placement) = ctx.get_hash_map(
+            &placements_by_suffix,
+            &(scope, owner),
+            "f3d sketch placement lookup",
+        )?
+        else {
             continue;
         };
         let geometry =
-            if let Some([start, end]) = spline_segments
-                .get(&(scope, curve.record_index))
+            if let Some([start, end]) = ctx
+                .get_hash_map(
+                    &spline_segments,
+                    &(scope, curve.record_index),
+                    "f3d spatial spline segment lookup",
+                )?
                 .copied()
                 .flatten()
             {
@@ -829,17 +989,31 @@ pub(crate) fn project_spatial_sketch_design(
             "f3d spatial sketch curve entity",
         )?;
     }
-    for point in points {
-        let Some(scope) = native_stream(&point.id) else {
+    for point in ctx.admit_iter(points, "f3d sketch projection points scan")? {
+        let Some(scope) = crate::ids::native_stream_charged(
+            ctx,
+            &point.id,
+            "resolve F3D sketch projection stream",
+        )?
+        else {
             continue;
         };
         let Some(owner) = point.owner_reference else {
             continue;
         };
-        if !spatial_owners.contains(&(scope, owner)) {
+        if !ctx.contains_hash_set(
+            &spatial_owners,
+            &(scope, owner),
+            "f3d sketch spatial owner lookup",
+        )? {
             continue;
         }
-        let Some(placement) = placements_by_suffix.get(&(scope, owner)) else {
+        let Some(placement) = ctx.get_hash_map(
+            &placements_by_suffix,
+            &(scope, owner),
+            "f3d sketch placement lookup",
+        )?
+        else {
             continue;
         };
         let sketch = crate::design::identity::neutral_spatial_sketch_id(ctx, placement)?;
@@ -882,14 +1056,24 @@ pub(crate) fn project_spatial_sketch_design(
             "f3d spatial sketch point entity",
         )?;
     }
-    for surface in surfaces {
-        let Some(scope) = native_stream(&surface.id) else {
+    for surface in ctx.admit_iter(surfaces, "f3d sketch projection surfaces scan")? {
+        let Some(scope) = crate::ids::native_stream_charged(
+            ctx,
+            &surface.id,
+            "resolve F3D sketch projection stream",
+        )?
+        else {
             continue;
         };
         let Some(owner) = surface.owner_reference else {
             continue;
         };
-        let Some(placement) = placements_by_suffix.get(&(scope, owner)) else {
+        let Some(placement) = ctx.get_hash_map(
+            &placements_by_suffix,
+            &(scope, owner),
+            "f3d sketch placement lookup",
+        )?
+        else {
             continue;
         };
         let sketch = crate::design::identity::neutral_spatial_sketch_id(ctx, placement)?;
@@ -917,7 +1101,10 @@ pub(crate) fn project_spatial_sketch_design(
             "f3d spatial sketch surface v knots",
         )?;
         let mut control_points = Vec::new();
-        for row in &surface.geometry.control_points {
+        for row in ctx.admit_iter(
+            &surface.geometry.control_points,
+            "f3d spatial surface row scan",
+        )? {
             {
                 ctx.reserve_vec(
                     &mut control_points,
@@ -970,23 +1157,24 @@ pub(crate) fn project_spatial_sketch_design(
         Ord::cmp,
         "sort f3d design sketch_project 3",
     )?;
-    let mut spatial_ids = HashSet::<cadmpeg_ir::sketches::SpatialSketchId>::new();
-    for entity in &entities {
-        if !spatial_ids.contains(&entity.sketch) {
-            {
-                ctx.reserve_set(&mut spatial_ids, 1, "f3d spatial sketch id index")?;
-            }
-            spatial_ids.insert(
-                (entity.sketch).try_clone_for_decode(ctx, "f3d spatial sketch id index copy")?,
-            );
+    let mut id_storage = ctx.reserve_scoped(0, "f3d spatial sketch id storage")?;
+    let spatial_ids = id_storage.with_storage(|| -> Result<_, CodecError> {
+        let mut ids = HashSet::new();
+        for entity in ctx.admit_iter(&entities, "f3d spatial sketch entity scan")? {
+            ctx.insert_hash_set(&mut ids, &entity.sketch, "f3d spatial sketch id index")?;
         }
-    }
+        Ok(ids)
+    })?;
     let mut sketches = Vec::new();
-    for placement in placements {
-        let id = crate::design::identity::neutral_spatial_sketch_id(ctx, placement)?;
-        if !spatial_ids.contains(&id) {
+    for placement in ctx.admit_iter(placements, "f3d sketch projection placements scan")? {
+        let (id, candidate_storage) = ctx
+            .with_scoped_storage("f3d spatial sketch candidate identity storage", || {
+                crate::design::identity::neutral_spatial_sketch_id(ctx, placement)
+            })?;
+        if !ctx.contains_hash_set(&spatial_ids, &id, "f3d spatial sketch id membership")? {
             continue;
         }
+        let id = candidate_storage.commit_value(id)?;
         let profiles = closed_spatial_sketch_profiles(ctx, &id, &entities, linear_tolerance)?;
         let name =
             ctx.copy_retained_text(placement.entity_id.as_str(), "f3d spatial sketch name")?;
@@ -1032,306 +1220,398 @@ pub(crate) fn project_spatial_sketch_constraints(
         SpatialSketchGeometry, SpatialSketchGeometryDefinition,
     };
 
-    let mut sketches = HashMap::new();
-    for placement in placements {
-        let id = crate::design::identity::neutral_spatial_sketch_id(ctx, placement)?;
+    let mut lookup_storage = ctx.reserve_scoped(0, "f3d spatial constraint lookup storage")?;
+    let (sketches, projected) = lookup_storage.with_storage(|| -> Result<_, CodecError> {
+        let mut sketches = HashMap::new();
         {
-            let work = u64::try_from(entities.len()).map_err(|_| {
-                ctx.refuse_codec_limit("f3d spatial constraint sketch membership work", 0, 1)
+            let mut membership_storage =
+                ctx.reserve_scoped(0, "f3d spatial constraint membership storage")?;
+            let admitted = membership_storage.with_storage(|| -> Result<_, CodecError> {
+                let mut admitted = HashSet::new();
+                for entity in ctx.admit_iter(entities, "f3d spatial constraint membership scan")? {
+                    ctx.insert_hash_set(
+                        &mut admitted,
+                        &entity.sketch,
+                        "f3d spatial constraint membership index",
+                    )?;
+                }
+                Ok(admitted)
             })?;
-            ctx.charge_work(work, "f3d spatial constraint sketch membership work")?;
-        }
-        if !entities.iter().any(|entity| entity.sketch == id) {
-            continue;
-        }
-        let Some((key, value)) = (|| {
-            Some((
-                (
-                    native_stream(&placement.id)?,
-                    u32::try_from(placement.entity_id.suffix()).ok()?,
-                ),
-                (id, placement),
-            ))
-        })() else {
-            continue;
-        };
-        ctx.insert_hash_map(
-            &mut sketches,
-            key,
-            value,
-            "f3d spatial constraint sketch index",
-        )
-        .map(|_| ())?;
-    }
-    let mut record_indices = HashMap::new();
-    for (native_ref, record_index) in curves
-        .iter()
-        .map(|curve| (curve.id.as_str(), curve.record_index))
-        .chain(
-            points
-                .iter()
-                .map(|point| (point.id.as_str(), point.record_index)),
-        )
-        .chain(
-            surfaces
-                .iter()
-                .map(|surface| (surface.id.as_str(), surface.record_index)),
-        )
-    {
-        ctx.insert_hash_map(
-            &mut record_indices,
-            native_ref,
-            record_index,
-            "f3d spatial constraint native record index",
-        )
-        .map(|_| ())?;
-    }
-    let mut projected = HashMap::new();
-    for entity in entities {
-        let Some((key, value)) = (|| {
-            let native_ref = entity.native_ref.as_deref()?;
-            Some((
-                (native_stream(native_ref)?, *record_indices.get(native_ref)?),
-                entity,
-            ))
-        })() else {
-            continue;
-        };
-        ctx.insert_hash_map(
-            &mut projected,
-            key,
-            value,
-            "f3d spatial constraint entity index",
-        )
-        .map(|_| ())?;
-    }
-    let mut constraints = Vec::new();
-    for relation in relations {
-        let Some(constraint) = (|| -> Result<Option<SpatialSketchConstraint>, CodecError> {
-            let Some(sole_kind) = crate::design::relation_kinds::sole_constraint_kind(relation)
-            else {
-                return Ok(None);
-            };
-            let Some(scope) = native_stream(&relation.id) else {
-                return Ok(None);
-            };
-            let Some((sketch, placement)) = sketches.get(&(scope, relation.owner_reference)) else {
-                return Ok(None);
-            };
-            // The second relation run is the semantic member order. The first
-            // run interleaves per-member relation ordinals and has no role
-            // order, so it cannot define a neutral spatial constraint.
-            let mut semantic_entities = Vec::new();
-            for member in relation.return_members().iter() {
-                let Some(entity) = projected
-                    .get(&(scope, member.reference.record_index()))
+            for placement in ctx.admit_iter(placements, "f3d spatial constraint placement scan")? {
+                let mut identity_storage =
+                    ctx.reserve_scoped(0, "f3d spatial constraint query identity storage")?;
+                let id = identity_storage.with_storage(|| {
+                    crate::design::identity::neutral_spatial_sketch_id(ctx, placement)
+                })?;
+                let Some(sketch) = ctx
+                    .get_hash_set(
+                        &admitted,
+                        &id,
+                        "f3d spatial constraint sketch membership work",
+                    )?
                     .copied()
                 else {
-                    return Ok(None);
+                    continue;
                 };
-                ctx.push_vec(
-                    &mut semantic_entities,
-                    entity,
-                    "f3d spatial constraint semantic entity",
+                let (Some(scope), Ok(owner)) = (
+                    crate::ids::native_stream_charged(
+                        ctx,
+                        &placement.id,
+                        "f3d spatial constraint native stream",
+                    )?,
+                    u32::try_from(placement.entity_id.suffix()),
+                ) else {
+                    continue;
+                };
+                ctx.insert_hash_map(
+                    &mut sketches,
+                    (scope, owner),
+                    (sketch, placement),
+                    "f3d spatial constraint sketch index",
                 )?;
             }
-            let mut members = Vec::new();
-            for entity in &semantic_entities {
-                let id =
-                    (entity.id()).try_clone_for_decode(ctx, "f3d spatial constraint member id")?;
-                ctx.push_vec(&mut members, id, "f3d spatial constraint member")?;
-            }
-            let mut distinct = HashSet::new();
-            for member in &members {
-                ctx.insert_hash_set(
-                    &mut distinct,
-                    member,
-                    "f3d spatial constraint distinct member",
+        }
+        let mut record_storage = ctx.reserve_scoped(0, "f3d spatial constraint record storage")?;
+        let record_indices = record_storage.with_storage(|| -> Result<_, CodecError> {
+            let mut record_indices = HashMap::new();
+            let mut records = curves
+                .iter()
+                .map(|curve| (curve.id.as_str(), curve.record_index))
+                .chain(
+                    points
+                        .iter()
+                        .map(|point| (point.id.as_str(), point.record_index)),
+                )
+                .chain(
+                    surfaces
+                        .iter()
+                        .map(|surface| (surface.id.as_str(), surface.record_index)),
+                );
+            while let Some((native_ref, record_index)) =
+                ctx.next_charged(&mut records, "f3d spatial constraint record scan")?
+            {
+                ctx.insert_hash_map(
+                    &mut record_indices,
+                    native_ref,
+                    record_index,
+                    "f3d spatial constraint native record index",
                 )
                 .map(|_| ())?;
             }
-            if distinct.len() != members.len() {
-                return Ok(None);
-            }
-            let definition = match sole_kind {
-                SketchConstraintKind::Coincident => {
-                    let [first, second] = semantic_entities.as_slice() else {
-                        return Ok(None);
-                    };
-                    let point_on_surface =
-                        match (first.geometry.definition(), second.geometry.definition()) {
-                            (
-                                SpatialSketchGeometryDefinition::Point { .. },
-                                SpatialSketchGeometryDefinition::NurbsSurface { .. },
-                            ) => Some((first, second)),
-                            (
-                                SpatialSketchGeometryDefinition::NurbsSurface { .. },
-                                SpatialSketchGeometryDefinition::Point { .. },
-                            ) => Some((second, first)),
-                            _ => None,
-                        };
-                    if let Some((point, surface)) = point_on_surface {
-                        Definition::PointOnSurface {
-                            point: (point.id())
-                                .try_clone_for_decode(ctx, "f3d spatial constraint operand id")?,
-                            surface: (surface.id())
-                                .try_clone_for_decode(ctx, "f3d spatial constraint operand id")?,
-                        }
-                    } else {
-                        let (
-                            SpatialSketchGeometryDefinition::Point {
-                                position: first_position,
-                            },
-                            SpatialSketchGeometryDefinition::Point {
-                                position: second_position,
-                            },
-                        ) = (first.geometry.definition(), second.geometry.definition())
-                        else {
-                            return Ok(None);
-                        };
-                        let scale = 1.0
-                            + first_position
-                                .x
-                                .abs()
-                                .max(first_position.y.abs())
-                                .max(first_position.z.abs())
-                                .max(second_position.x.abs())
-                                .max(second_position.y.abs())
-                                .max(second_position.z.abs());
-                        if (first_position.x - second_position.x).abs()
-                            > scale * EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9
-                            || (first_position.y - second_position.y).abs()
-                                > scale * EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9
-                            || (first_position.z - second_position.z).abs()
-                                > scale * EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9
+            Ok(record_indices)
+        })?;
+        let mut projected = HashMap::new();
+        for entity in ctx.admit_iter(entities, "f3d spatial constraint entity scan")? {
+            let Some(native_ref) = entity.native_ref.as_deref() else {
+                continue;
+            };
+            let Some(scope) = crate::ids::native_stream_charged(
+                ctx,
+                native_ref,
+                "f3d spatial constraint native stream",
+            )?
+            else {
+                continue;
+            };
+            let Some(record) = ctx.get_hash_map(
+                &record_indices,
+                native_ref,
+                "f3d spatial constraint native record lookup",
+            )?
+            else {
+                continue;
+            };
+            let (key, value) = ((scope, *record), entity);
+            ctx.insert_hash_map(
+                &mut projected,
+                key,
+                value,
+                "f3d spatial constraint entity index",
+            )
+            .map(|_| ())?;
+        }
+        Ok((sketches, projected))
+    })?;
+    let mut constraints = Vec::new();
+    for relation in ctx.admit_iter(relations, "f3d sketch projection relations scan")? {
+        let mut output_storage = ctx.reserve_scoped(0, "f3d spatial constraint output storage")?;
+        let Some(constraint) = output_storage.with_storage(
+            || -> Result<Option<SpatialSketchConstraint>, CodecError> {
+                let Some(sole_kind) = crate::design::relation_kinds::sole_constraint_kind(relation)
+                else {
+                    return Ok(None);
+                };
+                let Some(scope) = crate::ids::native_stream_charged(
+                    ctx,
+                    &relation.id,
+                    "f3d spatial constraint native stream",
+                )?
+                else {
+                    return Ok(None);
+                };
+                let Some((sketch, placement)) = ctx.get_hash_map(
+                    &sketches,
+                    &(scope, relation.owner_reference),
+                    "f3d spatial constraint sketch lookup",
+                )?
+                else {
+                    return Ok(None);
+                };
+                // The second relation run is the semantic member order. The first
+                // run interleaves per-member relation ordinals and has no role
+                // order, so it cannot define a neutral spatial constraint.
+                let mut entity_storage =
+                    ctx.reserve_scoped(0, "f3d spatial constraint member storage")?;
+                let semantic_entities =
+                    entity_storage.with_storage(|| -> Result<_, CodecError> {
+                        let mut semantic_entities = Vec::new();
+                        let mut returns = relation.return_members().iter();
+                        while let Some(member) =
+                            ctx.next_charged(&mut returns, "f3d spatial constraint return scan")?
                         {
+                            let Some(entity) = ctx
+                                .get_hash_map(
+                                    &projected,
+                                    &(scope, member.reference.record_index()),
+                                    "f3d spatial constraint entity lookup",
+                                )?
+                                .copied()
+                            else {
+                                return Ok(None);
+                            };
+                            ctx.push_vec(
+                                &mut semantic_entities,
+                                entity,
+                                "f3d spatial constraint semantic entity",
+                            )?;
+                        }
+                        Ok(Some(semantic_entities))
+                    })?;
+                let Some(semantic_entities) = semantic_entities else {
+                    return Ok(None);
+                };
+                let mut distinct_storage =
+                    ctx.reserve_scoped(0, "f3d spatial constraint distinct storage")?;
+                let unique = distinct_storage.with_storage(|| {
+                    let mut distinct = HashSet::new();
+                    ctx.all_by(
+                        &semantic_entities,
+                        |entity| {
+                            ctx.insert_hash_set(
+                                &mut distinct,
+                                entity.id(),
+                                "f3d spatial constraint distinct member",
+                            )
+                        },
+                        "f3d spatial constraint distinct scan",
+                    )
+                })?;
+                if !unique {
+                    return Ok(None);
+                }
+                let definition = match sole_kind {
+                    SketchConstraintKind::Coincident => {
+                        let [first, second] = semantic_entities.as_slice() else {
+                            return Ok(None);
+                        };
+                        let point_on_surface =
+                            match (first.geometry.definition(), second.geometry.definition()) {
+                                (
+                                    SpatialSketchGeometryDefinition::Point { .. },
+                                    SpatialSketchGeometryDefinition::NurbsSurface { .. },
+                                ) => Some((first, second)),
+                                (
+                                    SpatialSketchGeometryDefinition::NurbsSurface { .. },
+                                    SpatialSketchGeometryDefinition::Point { .. },
+                                ) => Some((second, first)),
+                                _ => None,
+                            };
+                        if let Some((point, surface)) = point_on_surface {
+                            Definition::PointOnSurface {
+                                point: (point.id()).try_clone_for_decode(
+                                    ctx,
+                                    "f3d spatial constraint operand id",
+                                )?,
+                                surface: (surface.id()).try_clone_for_decode(
+                                    ctx,
+                                    "f3d spatial constraint operand id",
+                                )?,
+                            }
+                        } else {
+                            let (
+                                SpatialSketchGeometryDefinition::Point {
+                                    position: first_position,
+                                },
+                                SpatialSketchGeometryDefinition::Point {
+                                    position: second_position,
+                                },
+                            ) = (first.geometry.definition(), second.geometry.definition())
+                            else {
+                                return Ok(None);
+                            };
+                            let scale = 1.0
+                                + first_position
+                                    .x
+                                    .abs()
+                                    .max(first_position.y.abs())
+                                    .max(first_position.z.abs())
+                                    .max(second_position.x.abs())
+                                    .max(second_position.y.abs())
+                                    .max(second_position.z.abs());
+                            if (first_position.x - second_position.x).abs()
+                                > scale * EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9
+                                || (first_position.y - second_position.y).abs()
+                                    > scale
+                                        * EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9
+                                || (first_position.z - second_position.z).abs()
+                                    > scale
+                                        * EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9
+                            {
+                                return Ok(None);
+                            }
+                            Definition::Coincident {
+                                first: (first.id()).try_clone_for_decode(
+                                    ctx,
+                                    "f3d spatial constraint operand id",
+                                )?,
+                                second: (second.id()).try_clone_for_decode(
+                                    ctx,
+                                    "f3d spatial constraint operand id",
+                                )?,
+                            }
+                        }
+                    }
+                    SketchConstraintKind::SplineGroup if semantic_entities.len() >= 2 => {
+                        let mut members = Vec::new();
+                        for entity in ctx
+                            .admit_iter(&semantic_entities, "f3d spatial constraint member scan")?
+                        {
+                            let id = entity
+                                .id()
+                                .try_clone_for_decode(ctx, "f3d spatial constraint member id")?;
+                            ctx.push_vec(&mut members, id, "f3d spatial constraint member")?;
+                        }
+                        Definition::SplineGroup { entities: members }
+                    }
+                    SketchConstraintKind::Tangent => {
+                        let [first, second] = semantic_entities.as_slice() else {
+                            return Ok(None);
+                        };
+                        let curve = |geometry: &SpatialSketchGeometry| {
+                            matches!(
+                                (geometry).definition(),
+                                SpatialSketchGeometryDefinition::Line { .. }
+                                    | SpatialSketchGeometryDefinition::Circle { .. }
+                                    | SpatialSketchGeometryDefinition::Arc { .. }
+                                    | SpatialSketchGeometryDefinition::Nurbs { .. }
+                            )
+                        };
+                        if !curve(&first.geometry) || !curve(&second.geometry) {
                             return Ok(None);
                         }
-                        Definition::Coincident {
+                        Definition::Tangent {
                             first: (first.id())
                                 .try_clone_for_decode(ctx, "f3d spatial constraint operand id")?,
                             second: (second.id())
                                 .try_clone_for_decode(ctx, "f3d spatial constraint operand id")?,
                         }
                     }
-                }
-                SketchConstraintKind::SplineGroup if members.len() >= 2 => {
-                    Definition::SplineGroup { entities: members }
-                }
-                SketchConstraintKind::Tangent => {
-                    let [first, second] = semantic_entities.as_slice() else {
-                        return Ok(None);
-                    };
-                    let curve = |geometry: &SpatialSketchGeometry| {
-                        matches!(
-                            (geometry).definition(),
-                            SpatialSketchGeometryDefinition::Line { .. }
-                                | SpatialSketchGeometryDefinition::Circle { .. }
-                                | SpatialSketchGeometryDefinition::Arc { .. }
-                                | SpatialSketchGeometryDefinition::Nurbs { .. }
-                        )
-                    };
-                    if !curve(&first.geometry) || !curve(&second.geometry) {
-                        return Ok(None);
-                    }
-                    Definition::Tangent {
-                        first: (first.id())
-                            .try_clone_for_decode(ctx, "f3d spatial constraint operand id")?,
-                        second: (second.id())
-                            .try_clone_for_decode(ctx, "f3d spatial constraint operand id")?,
-                    }
-                }
-                SketchConstraintKind::Midpoint => {
-                    let [first, second] = semantic_entities.as_slice() else {
-                        return Ok(None);
-                    };
-                    let (point, line, position, start, end) =
-                        match (first.geometry.definition(), second.geometry.definition()) {
-                            (
-                                SpatialSketchGeometryDefinition::Point { position },
-                                SpatialSketchGeometryDefinition::Line { start, end },
-                            ) => (first, second, position, start, end),
-                            (
-                                SpatialSketchGeometryDefinition::Line { start, end },
-                                SpatialSketchGeometryDefinition::Point { position },
-                            ) => (second, first, position, start, end),
-                            _ => return Ok(None),
+                    SketchConstraintKind::Midpoint => {
+                        let [first, second] = semantic_entities.as_slice() else {
+                            return Ok(None);
                         };
-                    let midpoint = Point3::new(
-                        (start.x + end.x) * 0.5,
-                        (start.y + end.y) * 0.5,
-                        (start.z + end.z) * 0.5,
-                    );
-                    let scale = 1.0 + midpoint.x.abs().max(midpoint.y.abs()).max(midpoint.z.abs());
-                    if (position.x - midpoint.x).abs()
-                        > scale * EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9
-                        || (position.y - midpoint.y).abs()
+                        let (point, line, position, start, end) =
+                            match (first.geometry.definition(), second.geometry.definition()) {
+                                (
+                                    SpatialSketchGeometryDefinition::Point { position },
+                                    SpatialSketchGeometryDefinition::Line { start, end },
+                                ) => (first, second, position, start, end),
+                                (
+                                    SpatialSketchGeometryDefinition::Line { start, end },
+                                    SpatialSketchGeometryDefinition::Point { position },
+                                ) => (second, first, position, start, end),
+                                _ => return Ok(None),
+                            };
+                        let midpoint = Point3::new(
+                            (start.x + end.x) * 0.5,
+                            (start.y + end.y) * 0.5,
+                            (start.z + end.z) * 0.5,
+                        );
+                        let scale =
+                            1.0 + midpoint.x.abs().max(midpoint.y.abs()).max(midpoint.z.abs());
+                        if (position.x - midpoint.x).abs()
                             > scale * EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9
-                        || (position.z - midpoint.z).abs()
-                            > scale * EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9
-                    {
-                        return Ok(None);
+                            || (position.y - midpoint.y).abs()
+                                > scale * EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9
+                            || (position.z - midpoint.z).abs()
+                                > scale * EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9
+                        {
+                            return Ok(None);
+                        }
+                        Definition::Midpoint {
+                            point: (point.id())
+                                .try_clone_for_decode(ctx, "f3d spatial constraint operand id")?,
+                            entity: (line.id())
+                                .try_clone_for_decode(ctx, "f3d spatial constraint operand id")?,
+                        }
                     }
-                    Definition::Midpoint {
-                        point: (point.id())
-                            .try_clone_for_decode(ctx, "f3d spatial constraint operand id")?,
-                        entity: (line.id())
-                            .try_clone_for_decode(ctx, "f3d spatial constraint operand id")?,
+                    kind @ (SketchConstraintKind::Horizontal | SketchConstraintKind::Vertical) => {
+                        let [entity] = semantic_entities.as_slice() else {
+                            return Ok(None);
+                        };
+                        let SpatialSketchGeometryDefinition::Line { start, end } =
+                            *entity.geometry.definition()
+                        else {
+                            return Ok(None);
+                        };
+                        let column = usize::from(kind == SketchConstraintKind::Vertical);
+                        let direction = Vector3::new(
+                            placement.transform()[0][column],
+                            placement.transform()[1][column],
+                            placement.transform()[2][column],
+                        );
+                        let line = end.vector_from(start.get());
+                        let cross = line.cross(direction);
+                        if line.norm() <= EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E12
+                            || cross.norm()
+                                > EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9
+                                    * line.norm()
+                        {
+                            return Ok(None);
+                        }
+                        Definition::ParallelToDirection {
+                            entity: (entity.id())
+                                .try_clone_for_decode(ctx, "f3d spatial constraint operand id")?,
+                            direction,
+                        }
                     }
-                }
-                kind @ (SketchConstraintKind::Horizontal | SketchConstraintKind::Vertical) => {
-                    let [entity] = semantic_entities.as_slice() else {
-                        return Ok(None);
-                    };
-                    let SpatialSketchGeometryDefinition::Line { start, end } =
-                        *entity.geometry.definition()
-                    else {
-                        return Ok(None);
-                    };
-                    let column = usize::from(kind == SketchConstraintKind::Vertical);
-                    let direction = Vector3::new(
-                        placement.transform()[0][column],
-                        placement.transform()[1][column],
-                        placement.transform()[2][column],
-                    );
-                    let line = end.vector_from(start.get());
-                    let cross = line.cross(direction);
-                    if line.norm() <= EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E12
-                        || cross.norm()
-                            > EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9 * line.norm()
-                    {
-                        return Ok(None);
-                    }
-                    Definition::ParallelToDirection {
-                        entity: (entity.id())
-                            .try_clone_for_decode(ctx, "f3d spatial constraint operand id")?,
-                        direction,
-                    }
-                }
-                _ => return Ok(None),
-            };
-            let Ok(definition) =
-                cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(definition)
-            else {
-                return Ok(None);
-            };
-            let sketch = (sketch).try_clone_for_decode(ctx, "f3d spatial constraint sketch id")?;
-            let native_ref =
-                ctx.copy_retained_text(&relation.id, "f3d spatial constraint native reference")?;
-            Ok(Some(SpatialSketchConstraint {
-                id: crate::design::identity::neutral_sketch_constraint_id(
-                    ctx,
-                    &relation.id,
-                    relation.record_index,
-                )?,
-                sketch,
-                definition,
-                native_ref: Some(native_ref),
-            }))
-        })()?
+                    _ => return Ok(None),
+                };
+                let Ok(definition) =
+                    cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(definition)
+                else {
+                    return Ok(None);
+                };
+                let sketch =
+                    (sketch).try_clone_for_decode(ctx, "f3d spatial constraint sketch id")?;
+                let native_ref = ctx
+                    .copy_retained_text(&relation.id, "f3d spatial constraint native reference")?;
+                Ok(Some(SpatialSketchConstraint {
+                    id: crate::design::identity::neutral_sketch_constraint_id(
+                        ctx,
+                        &relation.id,
+                        relation.record_index,
+                    )?,
+                    sketch,
+                    definition,
+                    native_ref: Some(native_ref),
+                }))
+            },
+        )?
         else {
             continue;
         };
+        output_storage.commit()?;
         ctx.push_vec(
             &mut constraints,
             constraint,

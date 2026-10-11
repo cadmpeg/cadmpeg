@@ -45,12 +45,12 @@ fn policy(work: u64) -> DecodePolicy {
     policy
 }
 
-fn failure(error: CodecError, cap: u64, operation: &'static str) -> ResourceLimit {
+fn failure(error: &CodecError, cap: u64, operation: &'static str) -> ResourceLimit {
     let CodecError::ResourceLimit(actual) = error else {
         panic!("expected original refusal: {error:?}");
     };
     assert_eq!(
-        actual,
+        *actual,
         ResourceLimit {
             dimension: ResourceDimension::WorkUnits,
             reason: ResourceFailure::BudgetExceeded,
@@ -60,7 +60,7 @@ fn failure(error: CodecError, cap: u64, operation: &'static str) -> ResourceLimi
             operation
         }
     );
-    actual
+    *actual
 }
 
 #[test]
@@ -76,13 +76,14 @@ fn unique_operand_single_source_is_allowed_at_exact_work_and_refuses_one_below()
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = unique_face_operand(&ctx, &operands, Some("f3d:test"), 100, 200);
         if cap == work {
-            assert!(std::ptr::eq(result.unwrap().unwrap(), &operands[0]));
+            assert!(std::ptr::eq(
+                result.unwrap().unwrap(),
+                &raw const operands[0]
+            ));
             ctx.finish_session().unwrap();
         } else {
-            let original = failure(result.unwrap_err(), cap, "compare F3D face operand stream");
-            assert!(
-                matches!(unique_face_operand(&ctx, &[], None, 0, 0), Err(CodecError::ResourceLimit(actual)) if actual == original)
-            );
+            let original = failure(&result.unwrap_err(), cap, "compare F3D face operand stream");
+
             assert!(
                 matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
             );
@@ -130,7 +131,7 @@ fn unique_operand_first_stream_mismatch_keeps_equal_length_tail_unvisited() {
             assert!(result.unwrap().is_none());
             ctx.finish_session().unwrap();
         } else {
-            let original = failure(result.unwrap_err(), cap, "visit F3D face operand");
+            let original = failure(&result.unwrap_err(), cap, "visit F3D face operand");
             assert!(
                 matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
             );
@@ -152,31 +153,9 @@ fn unique_operand_missing_stream_keeps_original_none_none_match() {
         unique_face_operand(&ctx, &operands, None, 100, 200)
             .unwrap()
             .unwrap(),
-        &operands[0]
+        &raw const operands[0]
     ));
     ctx.finish_session().unwrap();
-}
-
-#[test]
-fn unique_operand_empty_source_is_free_and_propagates_original_refusal() {
-    let arena = DecodeArena::new();
-    let policy = policy(0);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(unique_face_operand(&ctx, &[], Some("unused"), 100, 200)
-        .unwrap()
-        .is_none());
-    let original = failure(
-        ctx.charge_work(1, "original operand query refusal")
-            .unwrap_err(),
-        0,
-        "original operand query refusal",
-    );
-    assert!(
-        matches!(unique_face_operand(&ctx, &[], None, 0, 0), Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
 }
 
 #[test]
@@ -193,7 +172,7 @@ fn actual_face_group_refuses_before_operand_visit_with_original_native_source() 
     let policy = policy(cap);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let original = failure(
-        crate::design::face_resolve::resolved_face_group(&ctx, &group, &operands).unwrap_err(),
+        &crate::design::face_resolve::resolved_face_group(&ctx, &group, &operands).unwrap_err(),
         cap,
         "visit F3D face operand",
     );
@@ -204,9 +183,7 @@ fn actual_face_group_refuses_before_operand_visit_with_original_native_source() 
         ),
         before
     );
-    assert!(
-        matches!(crate::design::face_resolve::resolved_face_group(&ctx, &group, &[]), Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
+
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
     );

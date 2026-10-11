@@ -9,7 +9,7 @@ use crate::design::dimensions::{
 };
 use crate::design::face_resolve::design_angle;
 use crate::design::feature_project::design_length;
-use crate::ids::native_stream;
+use crate::ids::native_stream_charged;
 use crate::records::{
     parameters::DesignParameter,
     sketch_geometry::{SketchCurveIdentity, SketchPoint, SketchText},
@@ -20,7 +20,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::pcurve::{PcurveNurbs, PcurveNurbsPoles};
 use cadmpeg_ir::math::Point2;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 const EPS_CONSTRAINTS_EXACT_RECTANGULAR_PATTERN_E9: f64 = 1.0e-9;
 const EPS_CONSTRAINTS_SCALAR_CLOSE_E9: f64 = 1.0e-9;
@@ -40,131 +40,222 @@ pub(crate) fn project_sketch_constraints(
         SketchNativeOperand,
     };
 
-    let mut sketches = HashMap::new();
-    for placement in placements {
-        let id = crate::design::identity::neutral_sketch_id(ctx, placement)?;
-        {
-            let work = u64::try_from(entities.len())
-                .map_err(|_| ctx.refuse_codec_limit("f3d planar sketch admission scan", 0, 1))?;
-            ctx.charge_work(work, "f3d planar sketch admission scan")?;
-        }
-        if !entities.iter().any(|entity| entity.sketch == id) {
-            continue;
-        }
-        let (Some(scope), Ok(entity_id)) = (
-            native_stream(&placement.id),
-            u32::try_from(placement.entity_id.suffix()),
-        ) else {
-            continue;
-        };
-        ctx.insert_hash_map(
-            &mut sketches,
-            (scope, entity_id),
-            id,
-            "f3d sketch constraint placement index",
-        )
-        .map(|_| ())?;
-    }
-    let mut record_keys_by_native_ref = HashMap::new();
-    for point in points {
-        if let Some(scope) = native_stream(&point.id) {
-            ctx.insert_hash_map(
-                &mut record_keys_by_native_ref,
-                point.id.as_str(),
-                (scope, point.record_index),
-                "f3d sketch constraint native record key",
-            )
-            .map(|_| ())?;
-        }
-    }
-    for curve in curves {
-        if let Some(scope) = native_stream(&curve.id) {
-            ctx.insert_hash_map(
-                &mut record_keys_by_native_ref,
-                curve.id.as_str(),
-                (scope, curve.record_index),
-                "f3d sketch constraint native record key",
-            )
-            .map(|_| ())?;
-        }
-    }
-    for text in texts {
-        if let Some(scope) = native_stream(&text.id) {
-            ctx.insert_hash_map(
-                &mut record_keys_by_native_ref,
-                text.id.as_str(),
-                (scope, text.record_index),
-                "f3d sketch constraint native record key",
-            )
-            .map(|_| ())?;
-        }
-    }
-    let mut projected = HashMap::new();
-    for entity in entities {
-        if let Some(key) = entity
-            .native_ref
-            .as_deref()
-            .and_then(|native_ref| record_keys_by_native_ref.get(native_ref).copied())
-        {
-            ctx.insert_hash_map(
-                &mut projected,
-                key,
-                entity,
-                "f3d sketch constraint projected entity index",
-            )
-            .map(|_| ())?;
-        }
-    }
-    let mut point_native_refs = HashMap::new();
-    for point in points {
-        if let Some(scope) = native_stream(&point.id) {
-            ctx.insert_hash_map(
-                &mut point_native_refs,
-                (scope, point.record_index),
-                point.id.as_str(),
-                "f3d sketch constraint point reference index",
-            )
-            .map(|_| ())?;
-        }
-    }
-    let mut curve_native_refs = HashMap::new();
-    for curve in curves {
-        if let Some(scope) = native_stream(&curve.id) {
-            ctx.insert_hash_map(
-                &mut curve_native_refs,
-                (scope, curve.record_index),
-                curve.id.as_str(),
-                "f3d sketch constraint curve reference index",
-            )
-            .map(|_| ())?;
-        }
-    }
-    let mut text_native_refs = HashMap::new();
-    for text in texts {
-        if let Some(scope) = native_stream(&text.id) {
-            ctx.insert_hash_map(
-                &mut text_native_refs,
-                (scope, text.record_index),
-                text.id.as_str(),
-                "f3d sketch constraint text reference index",
-            )
-            .map(|_| ())?;
-        }
-    }
+    let mut lookup_storage = ctx.reserve_scoped(0, "f3d sketch constraint lookup storage")?;
+    let (sketches, projected, point_native_refs, curve_native_refs, text_native_refs) =
+        lookup_storage.with_storage(|| -> Result<_, CodecError> {
+            let sketches = {
+                let mut membership_storage =
+                    ctx.reserve_scoped(0, "f3d planar sketch membership storage")?;
+                let admitted_sketches =
+                    membership_storage.with_storage(|| -> Result<_, CodecError> {
+                        let mut admitted = HashSet::new();
+                        for entity in
+                            ctx.admit_iter(entities, "f3d planar sketch admission scan")?
+                        {
+                            ctx.insert_hash_set(
+                                &mut admitted,
+                                &entity.sketch,
+                                "f3d planar sketch admission index",
+                            )?;
+                        }
+                        Ok(admitted)
+                    })?;
+                let mut sketches = HashMap::new();
+                for placement in
+                    ctx.admit_iter(placements, "f3d sketch constraint placement scan")?
+                {
+                    let mut identity_storage =
+                        ctx.reserve_scoped(0, "f3d planar admission identity storage")?;
+                    let id = identity_storage.with_storage(|| {
+                        crate::design::identity::neutral_sketch_id(ctx, placement)
+                    })?;
+                    let Some(admitted) = ctx
+                        .get_hash_set(
+                            &admitted_sketches,
+                            &id,
+                            "f3d planar sketch admission lookup",
+                        )?
+                        .copied()
+                    else {
+                        continue;
+                    };
+                    let (Some(scope), Ok(entity_id)) = (
+                        native_stream_charged(ctx, &placement.id, "f3d constraint native stream")?,
+                        u32::try_from(placement.entity_id.suffix()),
+                    ) else {
+                        continue;
+                    };
+                    ctx.insert_hash_map(
+                        &mut sketches,
+                        (scope, entity_id),
+                        admitted,
+                        "f3d sketch constraint placement index",
+                    )?;
+                }
+                sketches
+            };
+            let mut record_storage = ctx.reserve_scoped(0, "f3d planar native record storage")?;
+            let record_keys_by_native_ref =
+                record_storage.with_storage(|| -> Result<_, CodecError> {
+                    let mut record_keys_by_native_ref = HashMap::new();
+                    for point in ctx.admit_iter(points, "f3d sketch constraint points scan")? {
+                        if let Some(scope) =
+                            native_stream_charged(ctx, &point.id, "f3d constraint native stream")?
+                        {
+                            ctx.insert_hash_map(
+                                &mut record_keys_by_native_ref,
+                                point.id.as_str(),
+                                (scope, point.record_index),
+                                "f3d sketch constraint native record key",
+                            )
+                            .map(|_| ())?;
+                        }
+                    }
+                    for curve in ctx.admit_iter(curves, "f3d sketch constraint curves scan")? {
+                        if let Some(scope) =
+                            native_stream_charged(ctx, &curve.id, "f3d constraint native stream")?
+                        {
+                            ctx.insert_hash_map(
+                                &mut record_keys_by_native_ref,
+                                curve.id.as_str(),
+                                (scope, curve.record_index),
+                                "f3d sketch constraint native record key",
+                            )
+                            .map(|_| ())?;
+                        }
+                    }
+                    for text in ctx.admit_iter(texts, "f3d sketch constraint texts scan")? {
+                        if let Some(scope) =
+                            native_stream_charged(ctx, &text.id, "f3d constraint native stream")?
+                        {
+                            ctx.insert_hash_map(
+                                &mut record_keys_by_native_ref,
+                                text.id.as_str(),
+                                (scope, text.record_index),
+                                "f3d sketch constraint native record key",
+                            )
+                            .map(|_| ())?;
+                        }
+                    }
+                    Ok(record_keys_by_native_ref)
+                })?;
+            let mut projected = HashMap::new();
+            for entity in ctx.admit_iter(entities, "f3d sketch constraint entities scan")? {
+                let key = match entity.native_ref.as_deref() {
+                    Some(native_ref) => ctx
+                        .get_hash_map(
+                            &record_keys_by_native_ref,
+                            native_ref,
+                            "f3d sketch constraint native record lookup",
+                        )?
+                        .copied(),
+                    None => None,
+                };
+                if let Some(key) = key {
+                    ctx.insert_hash_map(
+                        &mut projected,
+                        key,
+                        entity,
+                        "f3d sketch constraint projected entity index",
+                    )
+                    .map(|_| ())?;
+                }
+            }
+            drop(record_keys_by_native_ref);
+            drop(record_storage);
+            let mut point_native_refs = HashMap::new();
+            for point in ctx.admit_iter(points, "f3d sketch constraint points scan")? {
+                if let Some(scope) =
+                    native_stream_charged(ctx, &point.id, "f3d constraint native stream")?
+                {
+                    ctx.insert_hash_map(
+                        &mut point_native_refs,
+                        (scope, point.record_index),
+                        point.id.as_str(),
+                        "f3d sketch constraint point reference index",
+                    )
+                    .map(|_| ())?;
+                }
+            }
+            let mut curve_native_refs = HashMap::new();
+            for curve in ctx.admit_iter(curves, "f3d sketch constraint curves scan")? {
+                if let Some(scope) =
+                    native_stream_charged(ctx, &curve.id, "f3d constraint native stream")?
+                {
+                    ctx.insert_hash_map(
+                        &mut curve_native_refs,
+                        (scope, curve.record_index),
+                        curve.id.as_str(),
+                        "f3d sketch constraint curve reference index",
+                    )
+                    .map(|_| ())?;
+                }
+            }
+            let mut text_native_refs = HashMap::new();
+            for text in ctx.admit_iter(texts, "f3d sketch constraint texts scan")? {
+                if let Some(scope) =
+                    native_stream_charged(ctx, &text.id, "f3d constraint native stream")?
+                {
+                    ctx.insert_hash_map(
+                        &mut text_native_refs,
+                        (scope, text.record_index),
+                        text.id.as_str(),
+                        "f3d sketch constraint text reference index",
+                    )
+                    .map(|_| ())?;
+                }
+            }
+            Ok((
+                sketches,
+                projected,
+                point_native_refs,
+                curve_native_refs,
+                text_native_refs,
+            ))
+        })?;
     let native_operand = |scope: &str,
                           field: cadmpeg_core::text::NonBlankString,
                           record_index: u32|
      -> Result<SketchNativeOperand, CodecError> {
-        let (family, native_ref) = if let Some(native_ref) =
-            point_native_refs.get(&(scope, record_index)).copied()
+        let (family, native_ref) = if let Some(native_ref) = ctx
+            .get_hash_map(
+                &point_native_refs,
+                &(scope, record_index),
+                "f3d sketch constraint operand reference lookup",
+            )?
+            .copied()
         {
             (cadmpeg_core::nonblank_literal!("point"), Some(native_ref))
-        } else if let Some(native_ref) = curve_native_refs.get(&(scope, record_index)).copied() {
+        } else if let Some(native_ref) = ctx
+            .get_hash_map(
+                &curve_native_refs,
+                &(scope, record_index),
+                "f3d sketch constraint operand reference lookup",
+            )?
+            .copied()
+        {
             (cadmpeg_core::nonblank_literal!("curve"), Some(native_ref))
-        } else if let Some(native_ref) = text_native_refs.get(&(scope, record_index)).copied() {
+        } else if let Some(native_ref) = ctx
+            .get_hash_map(
+                &text_native_refs,
+                &(scope, record_index),
+                "f3d sketch constraint operand reference lookup",
+            )?
+            .copied()
+        {
             (cadmpeg_core::nonblank_literal!("text"), Some(native_ref))
         } else {
             (cadmpeg_core::nonblank_literal!("record"), None)
+        };
+        let native_ref = if native_ref.is_some()
+            && ctx.contains_key_hash_map(
+                &projected,
+                &(scope, record_index),
+                "f3d sketch constraint operand entity lookup",
+            )? {
+            None
+        } else {
+            native_ref
         };
         Ok(SketchNativeOperand {
             native_kind: family,
@@ -174,7 +265,6 @@ pub(crate) fn project_sketch_constraints(
             }),
             object_index: Some(record_index),
             native_ref: native_ref
-                .filter(|_| !projected.contains_key(&(scope, record_index)))
                 .map(|value| {
                     ctx.copy_retained_text(value, "f3d sketch constraint operand native reference")
                 })
@@ -182,39 +272,66 @@ pub(crate) fn project_sketch_constraints(
         })
     };
 
-    let project_relation =
+    let mut pattern_parameters = PatternParameters::new(ctx, parameters);
+    let mut project_relation =
         |relation: &SketchRelation| -> Result<Option<SketchConstraint>, CodecError> {
-            let Some(scope) = native_stream(&relation.id) else {
+            let Some(scope) =
+                native_stream_charged(ctx, &relation.id, "f3d constraint native stream")?
+            else {
                 return Ok(None);
             };
-            let Some(sketch) = sketches.get(&(scope, relation.owner_reference)) else {
+            let Some(sketch) = ctx.get_hash_map(
+                &sketches,
+                &(scope, relation.owner_reference),
+                "f3d sketch constraint owner lookup",
+            )?
+            else {
                 return Ok(None);
             };
             let sketch = (sketch).try_clone_for_decode(ctx, "f3d sketch constraint sketch id")?;
-            let mut input_entities = Vec::new();
-            for member in relation.members().iter() {
-                if let Some(entity) = projected.get(&(scope, member.reference.record_index())) {
-                    ctx.push_vec(
-                        &mut input_entities,
-                        *entity,
-                        "f3d sketch constraint input entity",
-                    )?;
-                }
-            }
-            // The second reference run is the relation's semantic member order.
-            // The interleaved first run is retained separately because
-            // circular-pattern decoding verifies both reference sets before using
-            // the semantic order.
-            let mut semantic_entities = Vec::new();
-            for member in relation.return_members().iter() {
-                if let Some(entity) = projected.get(&(scope, member.reference.record_index())) {
-                    ctx.push_vec(
-                        &mut semantic_entities,
-                        *entity,
-                        "f3d sketch constraint semantic entity",
-                    )?;
-                }
-            }
+            let mut entity_storage =
+                ctx.reserve_scoped(0, "f3d sketch constraint member storage")?;
+            let (input_entities, semantic_entities) =
+                entity_storage.with_storage(|| -> Result<_, CodecError> {
+                    let mut input_entities = Vec::new();
+                    for member in ctx
+                        .admit_iter(&relation.members()[..], "f3d sketch constraint member scan")?
+                    {
+                        if let Some(entity) = ctx.get_hash_map(
+                            &projected,
+                            &(scope, member.reference.record_index()),
+                            "f3d sketch constraint member lookup",
+                        )? {
+                            ctx.push_vec(
+                                &mut input_entities,
+                                *entity,
+                                "f3d sketch constraint input entity",
+                            )?;
+                        }
+                    }
+                    // The second reference run is the relation's semantic member order.
+                    // The interleaved first run is retained separately because
+                    // circular-pattern decoding verifies both reference sets before using
+                    // the semantic order.
+                    let mut semantic_entities = Vec::new();
+                    for member in ctx.admit_iter(
+                        &relation.return_members()[..],
+                        "f3d sketch constraint return scan",
+                    )? {
+                        if let Some(entity) = ctx.get_hash_map(
+                            &projected,
+                            &(scope, member.reference.record_index()),
+                            "f3d sketch constraint member lookup",
+                        )? {
+                            ctx.push_vec(
+                                &mut semantic_entities,
+                                *entity,
+                                "f3d sketch constraint semantic entity",
+                            )?;
+                        }
+                    }
+                    Ok((input_entities, semantic_entities))
+                })?;
             let sole_kind = crate::design::relation_kinds::sole_constraint_kind(relation)
                 .filter(|_| semantic_entities.len() == relation.return_members().len());
             let mut definition = if let Some(kind) = sole_kind {
@@ -234,7 +351,7 @@ pub(crate) fn project_sketch_constraints(
                 definition = exact_rectangular_pattern(
                     relation,
                     scope,
-                    parameters,
+                    &mut pattern_parameters,
                     &semantic_entities,
                     ctx,
                 )?;
@@ -243,7 +360,7 @@ pub(crate) fn project_sketch_constraints(
                 definition = exact_circular_pattern(
                     relation,
                     scope,
-                    parameters,
+                    &mut pattern_parameters,
                     &input_entities,
                     &semantic_entities,
                     ctx,
@@ -279,11 +396,18 @@ pub(crate) fn project_sketch_constraints(
                     .iter()
                     .map(|member| member.reference.record_index());
                 let mut native_entities = Vec::new();
-                for record_index in member_indices
+                let mut record_indices = member_indices
                     .chain(auxiliary_indices)
-                    .chain(return_indices)
-                {
-                    if let Some(entity) = projected.get(&(scope, record_index)) {
+                    .chain(return_indices);
+                while let Some(record_index) = ctx.next_charged(
+                    &mut record_indices,
+                    "f3d sketch constraint native entity scan",
+                )? {
+                    if let Some(entity) = ctx.get_hash_map(
+                        &projected,
+                        &(scope, record_index),
+                        "f3d sketch constraint native entity lookup",
+                    )? {
                         let id = (entity.id())
                             .try_clone_for_decode(ctx, "f3d sketch constraint native entity id")?;
                         ctx.push_vec(
@@ -294,7 +418,9 @@ pub(crate) fn project_sketch_constraints(
                     }
                 }
                 let mut operands = Vec::new();
-                for member in relation.members().iter() {
+                for member in
+                    ctx.admit_iter(&relation.members()[..], "f3d sketch constraint member scan")?
+                {
                     let operand = native_operand(
                         scope,
                         cadmpeg_core::nonblank_literal!("member"),
@@ -306,7 +432,10 @@ pub(crate) fn project_sketch_constraints(
                         "f3d sketch constraint native operand",
                     )?;
                 }
-                for record_index in relation.auxiliary_references().values() {
+                let mut auxiliary = relation.auxiliary_references().values();
+                while let Some(record_index) =
+                    ctx.next_charged(&mut auxiliary, "f3d sketch constraint auxiliary scan")?
+                {
                     let operand = native_operand(
                         scope,
                         cadmpeg_core::nonblank_literal!("auxiliary"),
@@ -318,7 +447,10 @@ pub(crate) fn project_sketch_constraints(
                         "f3d sketch constraint native operand",
                     )?;
                 }
-                for member in relation.return_members().iter() {
+                for member in ctx.admit_iter(
+                    &relation.return_members()[..],
+                    "f3d sketch constraint return scan",
+                )? {
                     let operand = native_operand(
                         scope,
                         cadmpeg_core::nonblank_literal!("return"),
@@ -368,7 +500,7 @@ pub(crate) fn project_sketch_constraints(
             }))
         };
     let mut constraints = Vec::new();
-    for relation in relations {
+    for relation in ctx.admit_iter(relations, "f3d sketch constraint relations scan")? {
         if let Some(constraint) = project_relation(relation)? {
             ctx.push_vec(
                 &mut constraints,
@@ -386,12 +518,76 @@ pub(crate) fn project_sketch_constraints(
     Ok(constraints)
 }
 
-struct RectangularPatternSourceDirection {
+struct PatternParameters<'a, 'ctx> {
+    source: &'a [DesignParameter],
+    ctx: &'ctx DecodeContext<'ctx>,
+    index: Option<IndexedPatternParameters<'a, 'ctx>>,
+}
+
+struct IndexedPatternParameters<'a, 'ctx> {
+    values: HashMap<(&'a str, u32), &'a DesignParameter>,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl<'a, 'ctx> PatternParameters<'a, 'ctx> {
+    fn new(ctx: &'ctx DecodeContext<'ctx>, source: &'a [DesignParameter]) -> Self {
+        Self {
+            source,
+            ctx,
+            index: None,
+        }
+    }
+
+    fn get(&mut self, scope: &str, record: u32) -> Result<Option<&'a DesignParameter>, CodecError> {
+        let ctx = self.ctx;
+        let index = match &mut self.index {
+            Some(index) => index,
+            vacant @ None => {
+                let mut storage = ctx.reserve_scoped(0, "f3d pattern parameter storage")?;
+                let values = storage.with_storage(|| -> Result<_, CodecError> {
+                    let mut index = HashMap::new();
+                    for parameter in ctx.admit_iter(self.source, "f3d pattern parameter scan")? {
+                        let (Some(stream), Some(owner)) = (
+                            native_stream_charged(
+                                ctx,
+                                &parameter.id,
+                                "f3d constraint native stream",
+                            )?,
+                            parameter.owner_record_index(),
+                        ) else {
+                            continue;
+                        };
+                        ctx.entry_hash_map(
+                            &mut index,
+                            (stream, owner),
+                            "f3d pattern parameter index",
+                        )?
+                        .or_insert(parameter);
+                    }
+                    Ok(index)
+                })?;
+                vacant.insert(IndexedPatternParameters {
+                    values,
+                    _storage: storage,
+                })
+            }
+        };
+        Ok(ctx
+            .get_hash_map(
+                &index.values,
+                &(scope, record),
+                "f3d pattern parameter lookup",
+            )?
+            .copied())
+    }
+}
+
+struct RectangularPatternSourceDirection<'a> {
     direction: [f64; 2],
     count: u32,
     distance: cadmpeg_ir::scalar::NonNegativeLength,
-    distance_parameter: Option<cadmpeg_ir::features::ParameterId>,
-    count_parameter: Option<cadmpeg_ir::features::ParameterId>,
+    distance_parameter: Option<&'a DesignParameter>,
+    count_parameter: Option<&'a DesignParameter>,
 }
 
 #[derive(Clone, Copy)]
@@ -403,7 +599,7 @@ enum RectangularPatternDistanceForm {
 fn exact_rectangular_pattern(
     relation: &SketchRelation,
     scope: &str,
-    parameters: &[DesignParameter],
+    parameters: &mut PatternParameters<'_, '_>,
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput>, CodecError> {
@@ -426,19 +622,13 @@ fn exact_rectangular_pattern(
     let Some(SketchPatternDefinition::Rectangular { directions }) = pattern else {
         return Ok(None);
     };
-    let project_direction = |direction: &crate::records::sketch_relations::SketchPatternDirection| -> Result<Option<_>, CodecError> {
+    let mut project_direction = |direction: &crate::records::sketch_relations::SketchPatternDirection| -> Result<Option<_>, CodecError> {
             let source_direction = direction.direction.get();
             if source_direction[2].abs() > EPS_CONSTRAINTS_EXACT_RECTANGULAR_PATTERN_E9 {
                 return Ok(None);
             }
-            let count_parameter = parameters.iter().find(|parameter| {
-                native_stream(&parameter.id) == Some(scope)
-                    && parameter.owner_record_index() == Some(direction.count_parameter)
-            });
-            let distance_parameter = parameters.iter().find(|parameter| {
-                native_stream(&parameter.id) == Some(scope)
-                    && parameter.owner_record_index() == Some(direction.distance_parameter)
-            });
+            let count_parameter = parameters.get(scope, direction.count_parameter)?;
+            let distance_parameter = parameters.get(scope, direction.distance_parameter)?;
             let count = direction.evaluated_count.get();
             if count_parameter.is_some_and(|parameter| {
                 !scalar_close(parameter.evaluated_value().get(), f64::from(count))
@@ -461,8 +651,8 @@ fn exact_rectangular_pattern(
                 direction: [source_direction[0], source_direction[1]],
                 count,
                 distance,
-                distance_parameter: distance_parameter.map(|parameter| crate::design::identity::neutral_parameter_id(ctx, parameter)).transpose()?,
-                count_parameter: count_parameter.map(|parameter| crate::design::identity::neutral_parameter_id(ctx, parameter)).transpose()?,
+                distance_parameter,
+                count_parameter,
             }))
     };
     let Some(first) = project_direction(&directions[0])? else {
@@ -483,45 +673,39 @@ fn exact_rectangular_pattern(
     if dot.abs() > EPS_CONSTRAINTS_EXACT_RECTANGULAR_PATTERN_E9 {
         return Ok(None);
     }
-    let Some(directions) = rectangular_pattern_directions(&source, distance_form, ctx)? else {
+    let make = |source: &RectangularPatternSourceDirection<'_>| {
+        let spacing = match distance_form {
+            RectangularPatternDistanceForm::AdjacentSpacing => source.distance.get(),
+            RectangularPatternDistanceForm::SeedToFinalSpan if source.count > 1 => {
+                source.distance.get() / f64::from(source.count - 1)
+            }
+            RectangularPatternDistanceForm::SeedToFinalSpan => 0.0,
+        };
+        cadmpeg_ir::sketches::SketchPatternDirection::new(
+            source.direction,
+            cadmpeg_ir::scalar::Length::new(spacing)?,
+            None,
+            None,
+        )
+    };
+    let (Some(first), Some(second)) = (make(&source[0]), make(&source[1])) else {
         return Ok(None);
     };
+    let mut directions = [first, second];
     let counts = source.each_ref().map(|direction| direction.count);
     let Some(rows) = exact_rectangular_pattern_instances(&directions, counts, entities, ctx)?
     else {
         return Ok(None);
     };
-    Ok(
-        cadmpeg_ir::sketches::SketchRectangularPattern::new(directions, rows)
-            .map(|pattern| Definition::RectangularPattern { pattern }),
-    )
-}
-
-fn rectangular_pattern_directions(
-    source: &[RectangularPatternSourceDirection; 2],
-    distance_form: RectangularPatternDistanceForm,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<[cadmpeg_ir::sketches::SketchPatternDirection; 2]>, CodecError> {
-    let make = |source: &RectangularPatternSourceDirection| -> Result<Option<_>, CodecError> {
-        let spacing = match distance_form {
-            RectangularPatternDistanceForm::AdjacentSpacing => source.distance.get(),
-            RectangularPatternDistanceForm::SeedToFinalSpan => {
-                if source.count > 1 {
-                    source.distance.get() / f64::from(source.count - 1)
-                } else {
-                    0.0
-                }
-            }
-        };
-        if !spacing.is_finite() || spacing < 0.0 {
-            return Ok(None);
-        }
-        let distance = source
+    for (direction, source) in directions.iter_mut().zip(&source) {
+        direction.distance = source
             .distance_parameter
-            .as_ref()
             .map(|parameter| {
-                (parameter)
-                    .try_clone_for_decode(ctx, "f3d rectangular pattern distance parameter id")
+                crate::design::identity::neutral_parameter_id_with_operation(
+                    ctx,
+                    parameter,
+                    "f3d rectangular pattern distance parameter id",
+                )
             })
             .transpose()?
             .map(|parameter| match distance_form {
@@ -532,30 +716,21 @@ fn rectangular_pattern_directions(
                     cadmpeg_ir::sketches::SketchPatternDistance::Span { parameter }
                 }
             });
-        let count_parameter = source
+        direction.count_parameter = source
             .count_parameter
-            .as_ref()
             .map(|parameter| {
-                (parameter).try_clone_for_decode(ctx, "f3d rectangular pattern count parameter id")
+                crate::design::identity::neutral_parameter_id_with_operation(
+                    ctx,
+                    parameter,
+                    "f3d rectangular pattern count parameter id",
+                )
             })
             .transpose()?;
-        Ok(cadmpeg_ir::sketches::SketchPatternDirection::new(
-            source.direction,
-            match cadmpeg_ir::scalar::Length::new(spacing) {
-                Some(value) => value,
-                None => return Ok(None),
-            },
-            distance,
-            count_parameter,
-        ))
-    };
-    let Some(first) = make(&source[0])? else {
-        return Ok(None);
-    };
-    let Some(second) = make(&source[1])? else {
-        return Ok(None);
-    };
-    Ok(Some([first, second]))
+    }
+    Ok(
+        cadmpeg_ir::sketches::SketchRectangularPattern::new(directions, rows)
+            .map(|pattern| Definition::RectangularPattern { pattern }),
+    )
 }
 
 fn exact_rectangular_pattern_instances(
@@ -585,8 +760,10 @@ fn exact_rectangular_pattern_instances(
     let Ok(column_count) = usize::try_from(counts[1]) else {
         return Ok(None);
     };
-    let mut rows = Vec::new();
-    for (position, instance) in entities.chunks_exact(entity_count).enumerate() {
+    let mut instances = entities.chunks_exact(entity_count).enumerate();
+    while let Some((position, instance)) =
+        ctx.next_charged(&mut instances, "f3d rectangular pattern instance scan")?
+    {
         let expected = [
             match u32::try_from(position / column_count) {
                 Ok(value) => value,
@@ -598,45 +775,55 @@ fn exact_rectangular_pattern_instances(
             },
         ];
         let mut matched = false;
-        for first in 0..counts[0] {
-            for second in 0..counts[1] {
-                {
-                    ctx.charge_work(1, "f3d rectangular pattern candidate match")?;
-                }
-                let indices = [first, second];
-                let translation = Point2::new(
-                    f64::from(indices[0])
-                        * directions[0].spacing().get()
-                        * directions[0].direction().get()[0]
-                        + f64::from(indices[1])
-                            * directions[1].spacing().get()
-                            * directions[1].direction().get()[0],
-                    f64::from(indices[0])
-                        * directions[0].spacing().get()
-                        * directions[0].direction().get()[1]
-                        + f64::from(indices[1])
-                            * directions[1].spacing().get()
-                            * directions[1].direction().get()[1],
-                );
-                if seed.iter().zip(instance).all(|(source, result)| {
+        let mut candidates =
+            (0..counts[0]).flat_map(|first| (0..counts[1]).map(move |second| (first, second)));
+        while let Some((first, second)) =
+            ctx.next_charged(&mut candidates, "f3d rectangular pattern candidate match")?
+        {
+            let indices = [first, second];
+            let translation = Point2::new(
+                f64::from(indices[0])
+                    * directions[0].spacing().get()
+                    * directions[0].direction().get()[0]
+                    + f64::from(indices[1])
+                        * directions[1].spacing().get()
+                        * directions[1].direction().get()[0],
+                f64::from(indices[0])
+                    * directions[0].spacing().get()
+                    * directions[0].direction().get()[1]
+                    + f64::from(indices[1])
+                        * directions[1].spacing().get()
+                        * directions[1].direction().get()[1],
+            );
+            if ctx.all_by(
+                seed.iter().zip(instance),
+                |(source, result)| {
                     translated_sketch_geometry_matches(
+                        ctx,
                         &source.geometry,
                         &result.geometry,
                         translation,
                     )
-                }) {
-                    if matched || indices != expected {
-                        return Ok(None);
-                    }
-                    matched = true;
+                },
+                "f3d rectangular pattern geometry scan",
+            )? {
+                if matched || indices != expected {
+                    return Ok(None);
                 }
+                matched = true;
             }
         }
         if !matched {
             return Ok(None);
         }
+    }
+    let mut rows = Vec::new();
+    let mut instances = entities.chunks_exact(entity_count).enumerate();
+    while let Some((position, instance)) =
+        ctx.next_charged(&mut instances, "f3d rectangular selected instance scan")?
+    {
         let mut entity_ids = Vec::new();
-        for entity in instance {
+        for entity in ctx.admit_iter(instance, "f3d pattern instance entity scan")? {
             let id = (entity.id())
                 .try_clone_for_decode(ctx, "f3d rectangular pattern instance entity id")?;
             ctx.push_vec(
@@ -685,22 +872,26 @@ fn exact_text_relation(
                 .first()
                 .map(|member| member.reference.record_index())
                 == Some(*text_reference)
-                && relation
-                    .auxiliary_references()
-                    .values()
-                    .copied()
-                    .eq([*text_reference])
-                && relation
-                    .return_members()
-                    .iter()
-                    .map(|member| member.reference.record_index())
-                    .eq(relation
-                        .members()
+                && relation.auxiliary_references().values_array::<1>()
+                    == Some([text_reference])
+                && relation.return_members().len() == relation.members().len() - 1
+                && ctx.all_by(
+                    relation
+                        .return_members()
                         .iter()
-                        .skip(1)
-                        .map(|member| member.reference.record_index())) =>
+                        .zip(&relation.members()[1..]),
+                    |(returned, member)| {
+                        Ok(returned.reference.record_index() == member.reference.record_index())
+                    },
+                    "f3d text frame member comparison",
+                )? =>
         {
-            let Some(text) = projected.get(&(scope, *text_reference)) else {
+            let Some(text) = ctx.get_hash_map(
+                projected,
+                &(scope, *text_reference),
+                "f3d sketch text relation entity lookup",
+            )?
+            else {
                 return Ok(None);
             };
             if !matches!(
@@ -709,30 +900,47 @@ fn exact_text_relation(
             ) {
                 return Ok(None);
             }
+            let mut frame_storage = ctx.reserve_scoped(0, "f3d text frame reference storage")?;
             let mut frame = Vec::new();
-            for member in relation.return_members().iter() {
-                let Some(entity) = projected.get(&(scope, member.reference.record_index())) else {
+            let mut returned = relation.return_members().iter();
+            while let Some(member) =
+                ctx.next_charged(&mut returned, "f3d sketch text frame scan")?
+            {
+                let Some(entity) = ctx.get_hash_map(
+                    projected,
+                    &(scope, member.reference.record_index()),
+                    "f3d sketch text relation entity lookup",
+                )?
+                else {
                     return Ok(None);
                 };
-                if entity.id() == text.id()
-                    || matches!(
-                        *entity.geometry.definition(),
-                        SketchGeometryDefinition::Text { .. }
-                    )
-                {
+                if ctx.equal(
+                    entity.id(),
+                    text.id(),
+                    "f3d sketch text frame id comparison",
+                )? || matches!(
+                    *entity.geometry.definition(),
+                    SketchGeometryDefinition::Text { .. }
+                ) {
                     return Ok(None);
                 }
-                let id = (entity.id())
-                    .try_clone_for_decode(ctx, "f3d sketch constraint text frame entity id")?;
-                ctx.push_vec(&mut frame, id, "f3d sketch constraint text frame entity")?;
+                frame_storage.with_storage(|| {
+                    ctx.push_vec(&mut frame, entity.id(), "f3d text frame admitted entity")
+                })?;
             }
             if frame.is_empty() {
                 return Ok(None);
             }
+            let mut retained = Vec::new();
+            for entity in ctx.admit_iter(frame, "f3d text frame selected scan")? {
+                let id = entity
+                    .try_clone_for_decode(ctx, "f3d sketch constraint text frame entity id")?;
+                ctx.push_vec(&mut retained, id, "f3d sketch constraint text frame entity")?;
+            }
             Some(Definition::TextFrame {
                 text: (text.id())
                     .try_clone_for_decode(ctx, "f3d sketch constraint text frame text id")?,
-                frame,
+                frame: retained,
             })
         }
         Some(SketchPatternDefinition::TextPath {
@@ -740,26 +948,28 @@ fn exact_text_relation(
             glyph_transforms,
         }) if relation.members().len() == 2
             && relation.members()[1].reference.record_index() == *text_reference
-            && relation
-                .auxiliary_references()
-                .values()
-                .copied()
-                .eq([*text_reference])
-            && relation
-                .return_members()
-                .iter()
-                .map(|member| member.reference.record_index())
-                .eq([relation.members()[0].reference.record_index()]) =>
+            && relation.auxiliary_references().values_array::<1>() == Some([text_reference])
+            && relation.return_members().len() == 1
+            && relation.return_members()[0].reference.record_index()
+                == relation.members()[0].reference.record_index() =>
         {
-            let Some(path) =
-                projected.get(&(scope, relation.members()[0].reference.record_index()))
+            let Some(path) = ctx.get_hash_map(
+                projected,
+                &(scope, relation.members()[0].reference.record_index()),
+                "f3d sketch text relation entity lookup",
+            )?
             else {
                 return Ok(None);
             };
-            let Some(text) = projected.get(&(scope, *text_reference)) else {
+            let Some(text) = ctx.get_hash_map(
+                projected,
+                &(scope, *text_reference),
+                "f3d sketch text relation entity lookup",
+            )?
+            else {
                 return Ok(None);
             };
-            if path.id() == text.id()
+            if ctx.equal(path.id(), text.id(), "f3d sketch text path id comparison")?
                 || matches!(
                     *path.geometry.definition(),
                     SketchGeometryDefinition::Point { .. } | SketchGeometryDefinition::Text { .. }
@@ -772,8 +982,12 @@ fn exact_text_relation(
             {
                 return Ok(None);
             }
+            let mut glyph_storage = ctx.reserve_scoped(0, "f3d text glyph storage")?;
             let mut glyphs = Vec::new();
-            for source in glyph_transforms {
+            let mut transforms = glyph_transforms.iter();
+            while let Some(source) =
+                ctx.next_charged(&mut transforms, "f3d sketch text glyph scan")?
+            {
                 let source = source.rows();
                 if source[3] != [0.0, 0.0, 0.0, 1.0] {
                     return Ok(None);
@@ -785,12 +999,15 @@ fn exact_text_relation(
                 let Some(glyph) = Transform::affine(rows) else {
                     return Ok(None);
                 };
-                ctx.push_vec(
-                    &mut glyphs,
-                    glyph,
-                    "f3d sketch constraint text glyph transform",
-                )?;
+                glyph_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut glyphs,
+                        glyph,
+                        "f3d sketch constraint text glyph transform",
+                    )
+                })?;
             }
+            glyph_storage.commit()?;
             Some(Definition::TextPath {
                 text: (text.id())
                     .try_clone_for_decode(ctx, "f3d sketch constraint text path text id")?,
@@ -803,10 +1020,20 @@ fn exact_text_relation(
     })
 }
 
+struct CircularPatternCandidate<'a, 'ctx> {
+    center: &'a cadmpeg_ir::sketches::SketchEntityId,
+    seed: Vec<&'a cadmpeg_ir::sketches::SketchEntityId>,
+    instances: Vec<(
+        cadmpeg_ir::scalar::NonZeroAngle,
+        Vec<&'a cadmpeg_ir::sketches::SketchEntityId>,
+    )>,
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
 fn exact_circular_pattern(
     relation: &SketchRelation,
     scope: &str,
-    parameters: &[DesignParameter],
+    parameters: &mut PatternParameters<'_, '_>,
     members: &[&cadmpeg_ir::sketches::SketchEntity],
     returned: &[&cadmpeg_ir::sketches::SketchEntity],
     ctx: &DecodeContext<'_>,
@@ -833,14 +1060,8 @@ fn exact_circular_pattern(
     else {
         return Ok(None);
     };
-    let angle_parameter = parameters.iter().find(|parameter| {
-        native_stream(&parameter.id) == Some(scope)
-            && parameter.owner_record_index() == Some(*angle_parameter)
-    });
-    let count_parameter = parameters.iter().find(|parameter| {
-        native_stream(&parameter.id) == Some(scope)
-            && parameter.owner_record_index() == Some(*count_parameter)
-    });
+    let angle_parameter = parameters.get(scope, *angle_parameter)?;
+    let count_parameter = parameters.get(scope, *count_parameter)?;
     let angle = cadmpeg_ir::scalar::Angle::from_assigned_real(*evaluated_angle);
     if angle_parameter.is_some_and(|parameter| {
         design_angle(parameter).is_none_or(|value| !scalar_close(value.get(), angle.get()))
@@ -854,32 +1075,52 @@ fn exact_circular_pattern(
     }
     // Relation ordinals do not classify center/seed/generated; partition by
     // geometry when the member and returned id sets match.
-    let mut member_ids = HashSet::new();
-    for entity in members {
-        ctx.insert_hash_set(
-            &mut member_ids,
-            entity.id(),
-            "f3d circular pattern member id",
-        )
-        .map(|_| ())?;
-    }
-    let mut returned_ids = HashSet::new();
-    for entity in returned {
-        ctx.insert_hash_set(
-            &mut returned_ids,
-            entity.id(),
-            "f3d circular pattern returned id",
-        )
-        .map(|_| ())?;
-    }
-    if member_ids.len() != members.len()
-        || returned_ids.len() != returned.len()
-        || member_ids != returned_ids
-    {
+    let mut reference_storage = ctx.reserve_scoped(0, "f3d circular pattern reference storage")?;
+    let matching_references = reference_storage.with_storage(|| -> Result<_, CodecError> {
+        let mut member_ids = BTreeSet::new();
+        for entity in ctx.admit_iter(members, "f3d circular pattern member scan")? {
+            ctx.insert_btree_set(
+                &mut member_ids,
+                entity.id(),
+                "f3d circular pattern member id",
+            )
+            .map(|_| ())?;
+        }
+        let mut returned_ids = BTreeSet::new();
+        for entity in ctx.admit_iter(returned, "f3d circular pattern return scan")? {
+            ctx.insert_btree_set(
+                &mut returned_ids,
+                entity.id(),
+                "f3d circular pattern returned id",
+            )
+            .map(|_| ())?;
+        }
+        if member_ids.len() != members.len()
+            || returned_ids.len() != returned.len()
+            || !ctx.all_by(
+                member_ids.iter().zip(&returned_ids),
+                |(first, second)| {
+                    ctx.equal(
+                        *first,
+                        *second,
+                        "f3d circular pattern reference id comparison",
+                    )
+                },
+                "f3d circular pattern reference set comparison",
+            )?
+        {
+            return Ok(false);
+        }
+        Ok(true)
+    })?;
+    if !matching_references {
         return Ok(None);
     }
+    drop(reference_storage);
+    let mut candidate_storage = ctx.reserve_scoped(0, "f3d circular pattern candidate storage")?;
     let mut candidates = Vec::new();
-    for center in members.iter().copied() {
+    let mut centers = members.iter().copied();
+    while let Some(center) = ctx.next_charged(&mut centers, "f3d circular pattern center scan")? {
         let SketchGeometryDefinition::Point {
             position: center_position,
         } = *center.geometry.definition()
@@ -887,14 +1128,20 @@ fn exact_circular_pattern(
             continue;
         };
         let center_position = center_position.get();
-        let mut patterned = Vec::new();
-        for entity in returned
-            .iter()
-            .copied()
-            .filter(|entity| entity.id() != center.id())
-        {
-            ctx.push_vec(&mut patterned, entity, "f3d circular pattern entity")?;
-        }
+        let mut entity_storage = ctx.reserve_scoped(0, "f3d circular pattern entity storage")?;
+        let patterned = entity_storage.with_storage(|| -> Result<_, CodecError> {
+            let mut patterned = Vec::new();
+            for entity in ctx.admit_iter(returned, "f3d circular pattern returned entity scan")? {
+                if !ctx.equal(
+                    entity.id(),
+                    center.id(),
+                    "f3d circular pattern center comparison",
+                )? {
+                    ctx.push_vec(&mut patterned, *entity, "f3d circular pattern entity")?;
+                }
+            }
+            Ok(patterned)
+        })?;
         let Ok(count) = usize::try_from(evaluated_count.get()) else {
             return Ok(None);
         };
@@ -913,21 +1160,31 @@ fn exact_circular_pattern(
         for divisor in [Some(first_divisor), second_divisor].into_iter().flatten() {
             // The seed is the first chunk; it is not an instance, and the
             // instances carry only their nonzero rotations.
+            let mut instance_storage =
+                ctx.reserve_scoped(0, "f3d circular pattern instance storage")?;
             let mut instances = Vec::new();
             let mut valid = true;
-            for (index, instance) in patterned.chunks_exact(arity).enumerate().skip(1) {
+            let mut chunks = patterned.chunks_exact(arity).enumerate().skip(1);
+            while let Some((index, instance)) =
+                ctx.next_charged(&mut chunks, "f3d circular pattern instance scan")?
+            {
                 let Some(index) = f64_from_index(index) else {
                     return Ok(None);
                 };
                 let rotation = evaluated_angle.get() * index / divisor;
-                if !seed.iter().zip(instance).all(|(source, result)| {
-                    rotated_sketch_geometry_matches(
-                        &source.geometry,
-                        &result.geometry,
-                        center_position,
-                        rotation,
-                    )
-                }) {
+                if !ctx.all_by(
+                    seed.iter().zip(instance),
+                    |(source, result)| {
+                        rotated_sketch_geometry_matches(
+                            ctx,
+                            &source.geometry,
+                            &result.geometry,
+                            center_position,
+                            rotation,
+                        )
+                    },
+                    "f3d circular pattern geometry scan",
+                )? {
                     valid = false;
                     break;
                 }
@@ -935,53 +1192,116 @@ fn exact_circular_pattern(
                     valid = false;
                     break;
                 };
-                let mut entity_ids = Vec::new();
-                for entity in instance {
-                    let id = (entity.id())
-                        .try_clone_for_decode(ctx, "f3d circular pattern instance entity id")?;
-                    ctx.push_vec(&mut entity_ids, id, "f3d circular pattern instance entity")?;
-                }
-                ctx.push_vec(
-                    &mut instances,
-                    SketchCircularPatternInstance {
-                        angle,
-                        entities: entity_ids,
-                    },
-                    "f3d circular pattern instance",
-                )?;
+                let entity_ids = instance_storage.with_storage(|| {
+                    ctx.collect_vec(
+                        instance.iter().map(|entity| entity.id()),
+                        "f3d circular pattern instance entity",
+                    )
+                })?;
+                instance_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut instances,
+                        (angle, entity_ids),
+                        "f3d circular pattern instance",
+                    )
+                })?;
             }
             if valid {
-                let mut seed_entities = Vec::new();
-                for entity in seed {
-                    let id = (entity.id())
-                        .try_clone_for_decode(ctx, "f3d circular pattern seed entity id")?;
-                    ctx.push_vec(&mut seed_entities, id, "f3d circular pattern seed entity")?;
-                }
-                let center =
-                    (center.id()).try_clone_for_decode(ctx, "f3d circular pattern center id")?;
-                ctx.push_vec(
-                    &mut candidates,
-                    (center, seed_entities, instances),
-                    "f3d circular pattern candidate",
-                )?;
+                let seed_entities = instance_storage.with_storage(|| {
+                    ctx.collect_vec(
+                        seed.iter().map(|entity| entity.id()),
+                        "f3d circular pattern seed entity",
+                    )
+                })?;
+                candidate_storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut candidates,
+                        CircularPatternCandidate {
+                            center: center.id(),
+                            seed: seed_entities,
+                            instances,
+                            _storage: instance_storage,
+                        },
+                        "f3d circular pattern candidate",
+                    )
+                })?;
             }
         }
     }
-    candidates.dedup();
+    ctx.dedup_by(
+        &mut candidates,
+        |first, second| {
+            Ok(ctx.equal(
+                first.center,
+                second.center,
+                "f3d circular candidate center comparison",
+            )? && ctx.equal(
+                &first.seed,
+                &second.seed,
+                "f3d circular candidate seed comparison",
+            )? && ctx.equal(
+                &first.instances,
+                &second.instances,
+                "f3d circular candidate instance comparison",
+            )?)
+        },
+        "f3d constraints candidates dedup",
+    )?;
     if candidates.len() != 1 {
         return Ok(None);
     }
-    let Some((center, seed_entities, instances)) = candidates.pop() else {
+    let Some(selected) = candidates.pop() else {
         return Ok(None);
     };
+    if selected.instances.is_empty() {
+        return Ok(None);
+    }
+    let mut instances = Vec::new();
+    for (angle, entities) in
+        ctx.admit_iter(&selected.instances, "f3d circular selected instance scan")?
+    {
+        let mut entity_ids = Vec::new();
+        for entity in ctx.admit_iter(entities, "f3d circular selected member scan")? {
+            let id = entity.try_clone_for_decode(ctx, "f3d circular pattern instance entity id")?;
+            ctx.push_vec(&mut entity_ids, id, "f3d circular pattern instance entity")?;
+        }
+        ctx.push_vec(
+            &mut instances,
+            SketchCircularPatternInstance {
+                angle: *angle,
+                entities: entity_ids,
+            },
+            "f3d circular pattern instance",
+        )?;
+    }
+    let mut seed_entities = Vec::new();
+    for entity in ctx.admit_iter(&selected.seed, "f3d circular selected seed scan")? {
+        let id = entity.try_clone_for_decode(ctx, "f3d circular pattern seed entity id")?;
+        ctx.push_vec(&mut seed_entities, id, "f3d circular pattern seed entity")?;
+    }
+    let center = selected
+        .center
+        .try_clone_for_decode(ctx, "f3d circular pattern center id")?;
     let pattern = SketchCircularPattern::new(
         center,
         angle,
         angle_parameter
-            .map(|parameter| crate::design::identity::neutral_parameter_id(ctx, parameter))
+            .map(|parameter| {
+                crate::design::identity::neutral_parameter_id_with_operation(
+                    ctx,
+                    parameter,
+                    "f3d parameter identifier",
+                )
+            })
             .transpose()?,
         count_parameter
-            .map(|parameter| crate::design::identity::neutral_parameter_id(ctx, parameter))
+            .map(|parameter| {
+                crate::design::identity::neutral_parameter_id_with_operation(
+                    ctx,
+                    parameter,
+                    "f3d parameter identifier",
+                )
+            })
             .transpose()?,
         seed_entities,
         instances,
@@ -990,11 +1310,12 @@ fn exact_circular_pattern(
 }
 
 fn rotated_sketch_geometry_matches(
+    ctx: &DecodeContext<'_>,
     source: &cadmpeg_ir::sketches::SketchGeometry,
     result: &cadmpeg_ir::sketches::SketchGeometry,
     center: Point2,
     angle: f64,
-) -> bool {
+) -> Result<bool, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let rotate = |point: Point2| {
@@ -1011,7 +1332,7 @@ fn rotated_sketch_geometry_matches(
         let delta = (first + angle - second).rem_euclid(std::f64::consts::TAU);
         scalar_close(delta, 0.0) || scalar_close(delta, std::f64::consts::TAU)
     };
-    match (source.definition(), result.definition()) {
+    Ok(match (source.definition(), result.definition()) {
         (
             SketchGeometryDefinition::Point { position: first },
             SketchGeometryDefinition::Point { position: second },
@@ -1075,11 +1396,11 @@ fn rotated_sketch_geometry_matches(
         ) => {
             first.degree() == second.degree()
                 && first.periodic() == second.periodic()
-                && equal_scalars(first.knots(), second.knots())
-                && nurbs_poles_match(first, second, point_matches)
+                && equal_scalars(ctx, first.knots(), second.knots())?
+                && nurbs_poles_match(ctx, first, second, point_matches)?
         }
         _ => false,
-    }
+    })
 }
 
 pub(super) fn scalar_close(first: f64, second: f64) -> bool {
@@ -1090,17 +1411,18 @@ pub(super) fn scalar_close(first: f64, second: f64) -> bool {
 }
 
 fn translated_sketch_geometry_matches(
+    ctx: &DecodeContext<'_>,
     source: &cadmpeg_ir::sketches::SketchGeometry,
     result: &cadmpeg_ir::sketches::SketchGeometry,
     translation: Point2,
-) -> bool {
+) -> Result<bool, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let point_matches = |first: Point2, second: Point2| {
         scalar_close(first.u + translation.u, second.u)
             && scalar_close(first.v + translation.v, second.v)
     };
-    match (source.definition(), result.definition()) {
+    Ok(match (source.definition(), result.definition()) {
         (
             SketchGeometryDefinition::Point { position: first },
             SketchGeometryDefinition::Point { position: second },
@@ -1176,11 +1498,11 @@ fn translated_sketch_geometry_matches(
         ) => {
             first.degree() == second.degree()
                 && first.periodic() == second.periodic()
-                && equal_scalars(first.knots(), second.knots())
-                && nurbs_poles_match(first, second, point_matches)
+                && equal_scalars(ctx, first.knots(), second.knots())?
+                && nurbs_poles_match(ctx, first, second, point_matches)?
         }
         _ => false,
-    }
+    })
 }
 
 fn optional_angle_bounds_match(
@@ -1197,42 +1519,53 @@ fn optional_angle_bounds_match(
     }
 }
 
-fn equal_scalars(first: &[f64], second: &[f64]) -> bool {
-    first.len() == second.len()
-        && first
-            .iter()
-            .zip(second)
-            .all(|(first, second)| scalar_close(*first, *second))
+fn equal_scalars(
+    ctx: &DecodeContext<'_>,
+    first: &[f64],
+    second: &[f64],
+) -> Result<bool, CodecError> {
+    Ok(first.len() == second.len()
+        && ctx.all_by(
+            first.iter().zip(second),
+            |(first, second)| Ok(scalar_close(*first, *second)),
+            "f3d pattern knot scan",
+        )?)
 }
 
 fn nurbs_poles_match(
+    ctx: &DecodeContext<'_>,
     first: &PcurveNurbs,
     second: &PcurveNurbs,
     point_matches: impl Fn(Point2, Point2) -> bool,
-) -> bool {
-    match (first.pole_rows(), second.pole_rows()) {
+) -> Result<bool, CodecError> {
+    Ok(match (first.pole_rows(), second.pole_rows()) {
         (
             PcurveNurbsPoles::Polynomial { points: first },
             PcurveNurbsPoles::Polynomial { points: second },
         ) => {
             first.len() == second.len()
-                && first
-                    .iter()
-                    .zip(second)
-                    .all(|(a, b)| point_matches(a.get(), b.get()))
+                && ctx.all_by(
+                    first.iter().zip(second),
+                    |(a, b)| Ok(point_matches(a.get(), b.get())),
+                    "f3d pattern polynomial pole scan",
+                )?
         }
         (
             PcurveNurbsPoles::Rational { points: first },
             PcurveNurbsPoles::Rational { points: second },
         ) => {
             first.len() == second.len()
-                && first.iter().zip(second).all(|(a, b)| {
-                    point_matches(a.point.get(), b.point.get())
-                        && scalar_close(a.weight.get(), b.weight.get())
-                })
+                && ctx.all_by(
+                    first.iter().zip(second),
+                    |(a, b)| {
+                        Ok(point_matches(a.point.get(), b.point.get())
+                            && scalar_close(a.weight.get(), b.weight.get()))
+                    },
+                    "f3d pattern rational pole scan",
+                )?
         }
         _ => false,
-    }
+    })
 }
 
 #[cfg(test)]

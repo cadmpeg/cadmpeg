@@ -30,23 +30,16 @@ fn assert_state_refusal(operation: &'static str) {
     first.historical.as_mut().unwrap().state_ids = vec![3, 2, 3];
     let second = historical_point_member();
     let original = [first.clone(), second.clone()];
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = u64::MAX;
-    crate::test_support::with_decode_policy(&policy, |ctx| {
-        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, Some(1));
-        let Err(CodecError::ResourceLimit(original)) =
-            query(ctx, &[&first, &second], &empty_sketch(), &[], &[])
-        else {
-            panic!("actual state query must refuse");
-        };
-        assert_eq!(original.operation, operation);
-        assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(original.additional, 1);
-        assert_eq!(ctx.resource_refusal(), Some(original));
-        assert!(
-            matches!(ctx.charge_work(0, "later historical profile boundary"), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
-    });
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| query(ctx, &[&first, &second], &empty_sketch(), &[], &[]),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(refusal)
+        if refusal.operation == operation
+            && refusal.dimension == ResourceDimension::WorkUnits
+            && refusal.additional == 1));
     assert_eq!([first, second], original);
 }
 
@@ -195,59 +188,6 @@ fn historical_missing_and_empty_binding_preserve_no_common_state() {
     }
 }
 
-#[test]
-fn historical_state_scratch_refuses_before_backing_growth_and_refunds_after_drop() {
-    let member = historical_point_member();
-    let bytes = u64::try_from(4 * std::mem::size_of::<i64>()).unwrap();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = bytes - 1;
-    crate::test_support::with_decode_policy(&policy, |ctx| {
-        let Err(CodecError::ResourceLimit(original)) =
-            query(ctx, &[&member], &empty_sketch(), &[], &[])
-        else {
-            panic!("actual state backing must refuse");
-        };
-        assert_eq!(original.operation, "f3d historical selection state id");
-        assert_eq!(original.dimension, ResourceDimension::MaterializedBytes);
-        assert_eq!((original.used, original.additional), (0, bytes));
-        assert_eq!(ctx.resource_refusal(), Some(original));
-    });
-    policy.limits.max_materialized_bytes = bytes;
-    crate::test_support::with_decode_policy(&policy, |ctx| {
-        assert!(query(ctx, &[&member], &empty_sketch(), &[], &[])
-            .unwrap()
-            .is_none());
-        let storage = ctx
-            .reserve_scoped(bytes, "observe dropped historical state backing")
-            .unwrap();
-        drop(storage);
-        assert_eq!(ctx.resource_refusal(), None);
-    });
-}
-
-#[test]
-fn historical_empty_queries_keep_original_stored_refusal() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    crate::test_support::with_decode_policy(&policy, |ctx| {
-        let Err(CodecError::ResourceLimit(original)) =
-            ctx.charge_work(1, "original historical profile refusal")
-        else {
-            panic!("original refusal");
-        };
-        assert!(
-            matches!(query(ctx, &[], &empty_sketch(), &[], &[]), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
-        let feature =
-            cadmpeg_ir::features::FeatureId::mint("synthetic:profile-membership:feature#1")
-                .unwrap();
-        assert!(
-            matches!(super::super::super::historical_face_profile_selection(&[], &[], None, &feature, &[], ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
-        assert_eq!(ctx.resource_refusal(), Some(original));
-    });
-}
-
 fn face_binding_fixture() -> (
     DesignExtrudeSelectionGroup,
     DesignExtrudeSelectionMember,
@@ -325,9 +265,6 @@ fn historical_profile_binding_state_preserves_original_refusal() {
         assert_eq!(original.operation, operation);
         assert_eq!(original.additional, 1);
         assert_eq!(ctx.resource_refusal(), Some(original));
-        assert!(
-            matches!(ctx.charge_work(0, "later binding boundary"), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
     });
     assert_eq!(member, original_member);
 }

@@ -449,3 +449,39 @@ fn history_input_vertex_id_refuses_before_allocation_and_preserves_bytes() {
 mod singlepass;
 
 mod native_stream;
+
+#[test]
+fn encoded_length_refuses_before_scanning_input() {
+    let operation = "f3d encoded length scan";
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        0,
+        |ctx| crate::ids::escaped_scope_len(ctx, "a:#% \u{2003}ç", operation),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.operation == operation && limit.used == 0));
+}
+
+#[test]
+fn encoded_length_counts_utf8_and_escaped_bytes() {
+    crate::test_support::with_decode_context(|ctx| {
+        assert_eq!(
+            crate::ids::escaped_scope_len(ctx, "a:#% \u{2003}ç", "encoded length").unwrap(),
+            1 + 4 * 3 + 3 * 3 + 2
+        );
+    });
+}
+
+#[test]
+fn configuration_identity_preserves_bytes_without_scratch_storage() {
+    const EXPECTED: &str = "f3d:configuration:variant#1:A1:B";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = u64::try_from(EXPECTED.len()).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let id = neutral_configuration_id(&ctx, "A", "B").unwrap();
+    assert_eq!(id.as_str(), EXPECTED);
+    assert!(ctx.resource_refusal().is_none());
+}

@@ -202,9 +202,19 @@ fn predecessor_chain() -> Vec<DesignParameterScope> {
 #[test]
 fn history_lookup_lifetime_predecessor_releases_each_consumed_key() {
     let scopes = predecessor_chain();
-    let graph = crate::test_support::with_decode_context(|ctx| {
-        crate::design::feature_project::ScopeHistoryGraph::new(ctx, &scopes, &[], &[], &[], &[])
-    })
+    let graph_arena = cadmpeg_core::decode::DecodeArena::new();
+    let graph_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (graph_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &graph_arena, &graph_policy)
+            .unwrap();
+    let (graph, _graph_storage) = crate::design::feature_project::ScopeHistoryGraph::new(
+        &graph_ctx,
+        &scopes,
+        &[],
+        &[],
+        &[],
+        &[],
+    )
     .unwrap();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = LOOKUP_SCRATCH;
@@ -217,7 +227,7 @@ fn history_lookup_lifetime_predecessor_releases_each_consumed_key() {
             else {
                 panic!("chain reaches its sole selected predecessor");
             };
-            assert!(std::ptr::eq(selected, &scopes[0]));
+            assert!(std::ptr::eq(selected, &raw const scopes[0]));
             assert_eq!(selected.id, scopes[0].id);
             drop(
                 ctx.reserve_scoped(LOOKUP_SCRATCH, "reuse complete predecessor query scratch")
@@ -232,9 +242,19 @@ fn history_lookup_lifetime_predecessor_releases_each_consumed_key() {
 fn history_lookup_lifetime_predecessor_key_one_below_keeps_original_refusal() {
     use cadmpeg_core::CodecError;
     let scopes = predecessor_chain();
-    let graph = crate::test_support::with_decode_context(|ctx| {
-        crate::design::feature_project::ScopeHistoryGraph::new(ctx, &scopes, &[], &[], &[], &[])
-    })
+    let graph_arena = cadmpeg_core::decode::DecodeArena::new();
+    let graph_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (graph_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &graph_arena, &graph_policy)
+            .unwrap();
+    let (graph, _graph_storage) = crate::design::feature_project::ScopeHistoryGraph::new(
+        &graph_ctx,
+        &scopes,
+        &[],
+        &[],
+        &[],
+        &[],
+    )
     .unwrap();
     let bytes = u64::try_from(crate::ids::native_stream(&scopes[7].id).unwrap().len()).unwrap();
     let mut policy = DecodePolicy::service();
@@ -248,7 +268,7 @@ fn history_lookup_lifetime_predecessor_key_one_below_keeps_original_refusal() {
         assert_eq!(original.dimension, ResourceDimension::MaterializedBytes);
         assert_eq!(original.operation, "f3d predecessor stream");
         assert_eq!((original.used, original.additional), (0, bytes));
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
+        assert_eq!(ctx.resource_refusal(), Some(original));
         assert!(
             matches!(graph.predecessor(ctx, &scopes[7], |_| Ok(true)), Err(CodecError::ResourceLimit(later)) if later == original)
         );

@@ -192,21 +192,32 @@ pub(crate) fn assignment_appearance_binding_id(
     })
 }
 
-fn write_escaped_identity_component(
-    formatter: &mut std::fmt::Formatter<'_>,
-    source: &str,
-) -> std::fmt::Result {
-    for character in source.chars() {
-        if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
-            let mut bytes = [0; 4];
-            for byte in character.encode_utf8(&mut bytes).as_bytes() {
-                write!(formatter, "%{byte:02X}")?;
+/// Borrowed identity text. Formatting is admitted by the caller's formatter.
+pub(crate) struct EscapedIdentityComponent<'a>(pub(crate) &'a str, pub(crate) bool);
+
+fn identity_character_needs_escape(character: char) -> bool {
+    matches!(character, ':' | '#' | '%') || character.is_whitespace()
+}
+
+impl std::fmt::Display for EscapedIdentityComponent<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for character in self.0.chars() {
+            let character = if self.1 {
+                character.to_ascii_lowercase()
+            } else {
+                character
+            };
+            if identity_character_needs_escape(character) {
+                let mut bytes = [0; 4];
+                for byte in character.encode_utf8(&mut bytes).as_bytes() {
+                    write!(formatter, "%{byte:02X}")?;
+                }
+            } else {
+                write!(formatter, "{character}")?;
             }
-        } else {
-            write!(formatter, "{character}")?;
         }
+        Ok(())
     }
-    Ok(())
 }
 
 struct FaceBindingKey<'a> {
@@ -223,7 +234,7 @@ impl std::fmt::Display for FaceBindingKey<'_> {
             "{}:{}:{}:",
             self.face_guid, self.visual_guid, self.escaped_face_len
         )?;
-        write_escaped_identity_component(formatter, self.face)
+        write!(formatter, "{}", EscapedIdentityComponent(self.face, false))
     }
 }
 
@@ -256,51 +267,17 @@ pub(crate) fn face_appearance_binding_id(
 
 /// Percent-encode identity separators, the escape byte, and whitespace.
 pub(crate) fn identity_key_component(value: &str) -> String {
-    cadmpeg_ir::ids::IdentityKeyTail::percent_encode(value)
-        .as_str()
-        .to_owned()
+    EscapedIdentityComponent(value, false).to_string()
 }
 
 fn identity_key_component_charged(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     value: &str,
 ) -> Result<String, cadmpeg_core::CodecError> {
-    let operation = "retain F3D Combine identity component";
-    let mut length = 0usize;
-    for character in ctx.admit_iter(value, operation)? {
-        let width = if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
-            character.len_utf8().checked_mul(3)
-        } else {
-            Some(character.len_utf8())
-        };
-        length = length
-            .checked_add(width.ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?)
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    }
-    let mut encoded = ctx.retained_string(length, operation)?;
-    for character in ctx.admit_iter(value, operation)? {
-        if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
-            let mut scalar = [0; 4];
-            let bytes = character.encode_utf8(&mut scalar).as_bytes();
-            for byte in ctx.admit_iter(bytes, operation)? {
-                const HEX: &[u8; 16] = b"0123456789ABCDEF";
-                ctx.push_retained_char(&mut encoded, '%', operation)?;
-                ctx.push_retained_char(
-                    &mut encoded,
-                    char::from(HEX[usize::from(byte >> 4)]),
-                    operation,
-                )?;
-                ctx.push_retained_char(
-                    &mut encoded,
-                    char::from(HEX[usize::from(byte & 0x0f)]),
-                    operation,
-                )?;
-            }
-        } else {
-            ctx.push_retained_char(&mut encoded, character, operation)?;
-        }
-    }
-    Ok(encoded)
+    ctx.format_retained(
+        format_args!("{}", EscapedIdentityComponent(value, false)),
+        "retain F3D Combine identity component",
+    )
 }
 
 /// Reverse [`identity_key_component`] for a complete encoded component.
@@ -406,7 +383,11 @@ pub(crate) fn neutral_assembly_joint_id(
     impl std::fmt::Display for JointKey<'_> {
         fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(formatter, "{}:", self.encoded_len)?;
-            write_escaped_identity_component(formatter, self.stream)?;
+            write!(
+                formatter,
+                "{}",
+                EscapedIdentityComponent(self.stream, false)
+            )?;
             write!(formatter, "{}", self.record_index)
         }
     }
@@ -452,14 +433,12 @@ pub(crate) fn configuration_entry_id_charged(
     entry_name: &str,
     scope: &cadmpeg_ir::ids::IdentityComponent,
 ) -> Result<String, cadmpeg_core::CodecError> {
-    struct EscapedEntry<'a>(&'a str);
-    impl std::fmt::Display for EscapedEntry<'_> {
-        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write_escaped_identity_component(formatter, self.0)
-        }
-    }
     ctx.format_retained(
-        format_args!("f3d:{}:entry#{}", scope.as_str(), EscapedEntry(entry_name)),
+        format_args!(
+            "f3d:{}:entry#{}",
+            scope.as_str(),
+            EscapedIdentityComponent(entry_name, false)
+        ),
         "retain F3D configuration entry ID",
     )
 }
@@ -654,7 +633,11 @@ struct EncodedParameterKey<'a> {
 impl std::fmt::Display for EncodedParameterKey<'_> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(formatter, "{}:", self.encoded_len)?;
-        write_escaped_identity_component(formatter, self.stream)?;
+        write!(
+            formatter,
+            "{}",
+            EscapedIdentityComponent(self.stream, false)
+        )?;
         write!(formatter, "{}", self.record_index)
     }
 }
@@ -727,7 +710,11 @@ struct EncodedSketchKey<'a> {
 
 impl std::fmt::Display for EncodedSketchKey<'_> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write_escaped_identity_component(formatter, self.stream)?;
+        write!(
+            formatter,
+            "{}",
+            EscapedIdentityComponent(self.stream, false)
+        )?;
         write!(formatter, "@{}", self.suffix)
     }
 }
@@ -1162,7 +1149,7 @@ pub(crate) fn encoded_identity_key_component_matches(encoded: &str, source: &str
     for character in source.chars() {
         let mut buffer = [0; 4];
         let bytes = character.encode_utf8(&mut buffer).as_bytes();
-        if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+        if identity_character_needs_escape(character) {
             for &byte in bytes {
                 for expected in [
                     b'%',
@@ -1189,7 +1176,7 @@ pub(crate) fn encoded_identity_key_component_matches(encoded: &str, source: &str
 pub(crate) fn native_scope_matches(stream: &str, entry: &str) -> bool {
     fn encoded_len(source: &str) -> Option<usize> {
         source.chars().try_fold(0usize, |length, character| {
-            let width = if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+            let width = if identity_character_needs_escape(character) {
                 character.len_utf8().checked_mul(3)?
             } else {
                 character.len_utf8()
@@ -1249,14 +1236,14 @@ pub(crate) fn native_scoped_id(
     Ok(id)
 }
 
-fn escaped_scope_len(
+pub(crate) fn escaped_scope_len(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scope: &str,
     operation: &'static str,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut escaped_len = 0usize;
-    for character in ctx.admit_iter(scope, "measure F3D native scope")? {
-        let width = if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+    for character in ctx.admit_iter(scope, operation)? {
+        let width = if identity_character_needs_escape(character) {
             character.len_utf8().checked_mul(3)
         } else {
             Some(character.len_utf8())
@@ -1275,19 +1262,11 @@ fn push_escaped_scope(
     scope: &str,
     operation: &'static str,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    for character in ctx.admit_iter(scope, "escape F3D native scope")? {
-        if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
-            let mut encoded = [0; 4];
-            let bytes = character.encode_utf8(&mut encoded).as_bytes();
-            for byte in ctx.admit_iter(bytes, "escape F3D native scope")? {
-                ctx.append_formatted_retained(id, format_args!("%{:02X}", *byte), operation)?;
-            }
-        } else {
-            let mut encoded = [0; 4];
-            ctx.append_retained(id, character.encode_utf8(&mut encoded), operation)?;
-        }
-    }
-    Ok(())
+    ctx.append_formatted_retained(
+        id,
+        format_args!("{}", EscapedIdentityComponent(scope, false)),
+        operation,
+    )
 }
 
 /// Macro defining one `f3d:{scope}:{kind}#{offset}` native-record builder.
@@ -1451,17 +1430,17 @@ mod tests {
     }
 
     #[test]
-    fn charged_identity_component_uses_utf8_grammar_and_refuses_append_work() {
+    fn charged_identity_component_uses_utf8_grammar_and_refuses_format_work() {
         let actual = crate::test_support::with_decode_context(|ctx| {
             super::identity_key_component_charged(ctx, "A:#%\u{2003}é").unwrap()
         });
         assert_eq!(actual, "A%3A%23%25%E2%80%83é");
 
-        for (source, preceding_requests) in [("a", 2), ("#", 3)] {
+        for source in ["a", "#"] {
             let error = crate::test_support::resource_refusal_at(
                 cadmpeg_core::decode::ResourceDimension::WorkUnits,
                 "retain F3D Combine identity component",
-                preceding_requests,
+                0,
                 |ctx| super::identity_key_component_charged(ctx, source).map(|_| ()),
             );
             assert!(matches!(

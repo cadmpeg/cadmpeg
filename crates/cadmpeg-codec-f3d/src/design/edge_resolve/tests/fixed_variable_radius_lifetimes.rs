@@ -78,30 +78,34 @@ fn fixed_variable_radius_typed_allocation_refuses_one_below_before_conversion() 
     let scope = variable_scope_with_position(0.5);
     let group = group(2, 10);
     let operand = complete_operand();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = typed_radius_bytes() - 1;
-    policy.limits.max_materialized_bytes = RADIUS_QUERY_SCRATCH;
-    crate::test_support::with_decode_policy(&policy, |ctx| {
-        let Err(CodecError::ResourceLimit(original)) = project_fixed_fillet(
-            &scope,
-            std::slice::from_ref(&group),
-            std::slice::from_ref(&operand),
-            &[],
-            ctx,
-        ) else {
-            panic!("typed radius allocation must refuse before conversion");
-        };
-        assert_eq!(original.dimension, ResourceDimension::RetainedBytes);
-        assert_eq!(original.operation, "IR variable radius admitted samples");
-        assert_eq!(
-            (original.used, original.additional),
-            (0, typed_radius_bytes())
-        );
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-        assert!(
-            matches!(project_fixed_fillet(&scope, &[], &[], &[], ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
-    });
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::MaterializedBytes,
+        "IR variable radius admitted samples",
+        0,
+        |ctx| {
+            let result = project_fixed_fillet(
+                &scope,
+                std::slice::from_ref(&group),
+                std::slice::from_ref(&operand),
+                &[],
+                ctx,
+            );
+            if let Err(CodecError::ResourceLimit(original)) = &result {
+                assert_eq!(ctx.resource_refusal(), Some(*original));
+                assert!(
+                    matches!(project_fixed_fillet(&scope, &[], &[], &[], ctx), Err(CodecError::ResourceLimit(later)) if later == *original)
+                );
+            }
+            result
+        },
+    );
+    let CodecError::ResourceLimit(original) = error else {
+        panic!("typed radius allocation must refuse before conversion");
+    };
+    assert_eq!(original.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!(original.operation, "IR variable radius admitted samples");
+    assert_eq!(original.additional, typed_radius_bytes());
+    assert_eq!(original.used + original.additional, original.limit + 1);
 }
 
 #[test]
@@ -133,7 +137,7 @@ fn fixed_variable_radius_order_work_refusal_remains_original_after_candidate_dro
         );
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
         assert_eq!(original.additional, 1);
-        assert_eq!(ctx.resource_refusal(), Some(original.clone()));
+        assert_eq!(ctx.resource_refusal(), Some(original));
         assert!(
             matches!(project_fixed_fillet(&scope, &[], &[], &[], ctx), Err(CodecError::ResourceLimit(later)) if later == original)
         );

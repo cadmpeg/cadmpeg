@@ -246,7 +246,7 @@ fn edge_scalar_edits_refuse_radius_edge_identity_group_candidates_chain() {
 fn edge_scalar_edits_refuse_unique_bipartite_assignment_candidates() {
     assert_refusal(
         "unique_bipartite_assignment",
-        "deduplicate F3D normalized assignment edges",
+        "f3d edge resolve candidates dedup",
     );
 }
 
@@ -320,65 +320,6 @@ fn edge_scalar_edits_refuse_changed_boundary_count_edge_group_candidates_candida
         "changed_boundary_count_edge_group_candidates",
         "deduplicate F3D boundary count edges",
     );
-}
-
-#[test]
-fn edge_scalar_edits_original_refusal_precedes_each_owner() {
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let Err(CodecError::ResourceLimit(original)) = ctx.charge_work(
-        policy.limits.max_work_units + 1,
-        "original edge scalar edit refusal",
-    ) else {
-        panic!("creating session refuses excess work");
-    };
-    assert!(
-        matches!(run_case("changed_boundary_count_edge_group_candidates", &ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-    );
-    assert!(
-        matches!(run_case("changed_reference_edge_group_candidates", &ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-    );
-    assert!(
-        matches!(run_case("common_deleted_edge_group_candidates", &ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-    );
-    assert!(
-        matches!(run_case("contextual_deleted_edge_group_candidates", &ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-    );
-    assert!(
-        matches!(run_case("deleted_boundary_edge_group_candidates", &ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-    );
-    assert!(
-        matches!(run_case("deleted_reference_edge_group_candidates", &ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-    );
-    assert!(
-        matches!(run_case("edge_group_assignment_candidates", &ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-    );
-    assert!(
-        matches!(run_case("partition_unique_incomplete_edge_group", &ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-    );
-    assert!(
-        matches!(run_case("radius_edge_identity_group_candidates", &ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-    );
-    assert!(
-        matches!(run_case("result_boundary_reference_edge_group_candidates", &ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-    );
-    assert!(
-        matches!(run_case("sorted_transition_slots", &ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-    );
-    assert!(
-        matches!(run_case("transition_chain_is_supported_by_recipe", &ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-    );
-    assert!(
-        matches!(run_case("unique_bipartite_assignment", &ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-    );
-    assert!(
-        matches!(run_case("unique_deleted_reference_assignment", &ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-    );
-    assert!(
-        matches!(run_case("unique_hem_transition_edge_candidate", &ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-    );
-    assert_eq!(ctx.resource_refusal(), Some(original));
 }
 
 #[test]

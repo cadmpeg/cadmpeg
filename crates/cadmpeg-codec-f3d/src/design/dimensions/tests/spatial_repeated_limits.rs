@@ -150,3 +150,23 @@ fn owner_scoped_spatial_repeated_profile_line_distance_parameter_id_refuses_reta
         ResourceDimension::RetainedBytes,
     );
 }
+
+#[test]
+fn spatial_repeated_queries_refuse_actual_source_work() {
+    for operation in [
+        "f3d spatial repeated entity source",
+        "f3d spatial repeated sketch identity",
+        "f3d spatial repeated sketch search",
+        "f3d spatial repeated profile source",
+        "f3d spatial repeated boundary source",
+        "f3d spatial repeated pair order",
+        "f3d spatial repeated pair lookup",
+        "f3d spatial repeated first entity lookup",
+        "f3d spatial repeated second entity lookup",
+        "f3d spatial repeated first member lookup",
+        "f3d spatial repeated second member lookup",
+        "f3d spatial repeated output source",
+    ] {
+        fixture(operation, ResourceDimension::WorkUnits);
+    }
+}

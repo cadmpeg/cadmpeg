@@ -161,3 +161,17 @@ fn concentric_repeated_parameter_id_refuses_retained_limit() {
         ResourceDimension::RetainedBytes,
     );
 }
+
+#[test]
+fn concentric_circle_queries_refuse_actual_source_work() {
+    for operation in [
+        "f3d concentric circle source",
+        "f3d concentric circle sketch identity",
+        "f3d concentric circle pair source",
+        "f3d concentric first member lookup",
+        "f3d concentric second member lookup",
+        "f3d concentric output pair source",
+    ] {
+        fixture(operation, ResourceDimension::WorkUnits);
+    }
+}

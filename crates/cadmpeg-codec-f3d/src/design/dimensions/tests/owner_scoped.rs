@@ -28,7 +28,7 @@ use cadmpeg_ir::sketches::SketchGeometry;
 use cadmpeg_ir::sketches::SketchGeometryDefinition;
 use cadmpeg_ir::sketches::SketchId;
 use cadmpeg_ir::sketches::SketchLocus;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 #[test]
 fn spatial_dimension_matchers_refuse_infinite_measured_distances() {
@@ -179,12 +179,12 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
         cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#radius")
             .expect("identity grammar");
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| radial_dimension_definition(decode_ctx, &entity, "Radius Dimension-2", 0.5, radius_parameter.clone())).transpose().unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| radial_dimension_definition(decode_ctx, &entity, "Radius Dimension-2", 0.5, (&radius_parameter, "f3d radial parameter id"))).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::Radius { entity: ref actual, parameter: ref p })
             if actual == entity.id() && p == &radius_parameter
     ));
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| radial_dimension_definition(decode_ctx, &entity, "Radial Dimension-3", 0.5, radius_parameter.clone())).transpose().unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| radial_dimension_definition(decode_ctx, &entity, "Radial Dimension-3", 0.5, (&radius_parameter, "f3d radial parameter id"))).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::Radius { entity: ref actual, .. })
             if actual == entity.id()
     ));
@@ -192,7 +192,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
         cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#diameter")
             .expect("identity grammar");
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| radial_dimension_definition(decode_ctx, &entity, "Diameter Dimension-2", 1.0, diameter_parameter.clone())).transpose().unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| radial_dimension_definition(decode_ctx, &entity, "Diameter Dimension-2", 1.0, (&diameter_parameter, "f3d radial parameter id"))).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::Diameter { entity: ref actual, parameter: ref p })
             if actual == entity.id() && p == &diameter_parameter
     ));
@@ -202,7 +202,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
             &entity,
             "Diameter Dimension-2",
             0.5,
-            diameter_parameter.clone()
+            (&diameter_parameter, "f3d radial parameter id")
         ))
         .transpose()
         .unwrap()
@@ -288,7 +288,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
             &entity,
             "Diameter Dimension",
             1.0,
-            diameter_parameter
+            (&diameter_parameter, "f3d radial parameter id")
         ))
         .transpose()
         .unwrap()
@@ -310,7 +310,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
             &entity,
             "Radius Dimension-2",
             0.5,
-            radius_parameter
+            (&radius_parameter, "f3d radial parameter id")
         ))
         .transpose()
         .unwrap()
@@ -487,7 +487,7 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         entity(12, std::f64::consts::FRAC_PI_2),
         entity(13, -std::f64::consts::FRAC_PI_4),
     ];
-    let projected = HashMap::from([
+    let projected = BTreeMap::from([
         ((stream, 10), &entities[0]),
         ((stream, 11), &entities[1]),
         ((stream, 12), &entities[2]),

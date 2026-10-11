@@ -1806,7 +1806,7 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
                 "scan F3D design parameter scopes",
             )? {
                 let stream = design_stream(ctx.decode, &scope.id)?;
-                let Some(position) = ctx.decode.get_hash_map(
+                let Some(position) = ctx.decode.get_btree_map(
                     &authored,
                     &(stream, scope.record_index),
                     "find F3D authored scope ordinal",
@@ -1844,17 +1844,14 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
     }
 
     let (scope_history, _scope_history_storage) =
-        ctx.decode
-            .with_scoped_storage("hold F3D timeline scope history", || {
-                crate::design::feature_project::ScopeHistoryGraph::new(
-                    ctx.decode,
-                    &native.design_parameter_scopes,
-                    &native.design_body_bindings,
-                    &native.design_body_recipe_operands,
-                    &native.design_component_naming_spaces,
-                    &native.asm_histories,
-                )
-            })?;
+        crate::design::feature_project::ScopeHistoryGraph::new(
+            ctx.decode,
+            &native.design_parameter_scopes,
+            &native.design_body_bindings,
+            &native.design_body_recipe_operands,
+            &native.design_component_naming_spaces,
+            &native.asm_histories,
+        )?;
     for scope in ctx.decode.admit_iter(
         &native.design_parameter_scopes,
         "scan F3D design parameter scopes",

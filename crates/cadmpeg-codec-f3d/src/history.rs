@@ -4563,7 +4563,7 @@ fn vertex_recipe_input_states<'s>(
         let stream = crate::ids::native_stream_charged(ctx, &scope.id, "split F3D native stream")?
             .unwrap_or(crate::ids::DEFAULT_STREAM);
         Ok::<_, cadmpeg_core::CodecError>(
-            ctx.get_hash_map(
+            ctx.get_btree_map(
                 &source_ordinals,
                 &(stream, scope.record_index),
                 "find F3D vertex recipe scope ordinal",
@@ -6807,8 +6807,8 @@ pub(crate) fn bind_face_operand_history_candidates(
             // An unresolved lane must not fall back to construction context.
             let resolved =
                 match crate::design::face_resolve::resolve_face_operand_history_candidate_from(
-                    operand, candidates,
-                ) {
+                    decode, operand, candidates,
+                )? {
                     Some(face) => Some(face),
                     None => resolve_thread_face_by_transition(
                         decode,
@@ -6836,8 +6836,8 @@ pub(crate) fn bind_face_operand_history_candidates(
             operand.resolved_face_slots = {
                 let selected =
                     crate::design::face_resolve::resolve_face_operand_history_candidate_from(
-                        operand, candidates,
-                    );
+                        decode, operand, candidates,
+                    )?;
                 let mut slots = decode.collection_vec(
                     usize::from(selected.is_some()),
                     "collect F3D resolved face slots",
@@ -6884,8 +6884,8 @@ pub(crate) fn bind_face_operand_history_candidates(
                         {
                             let selected =
                             crate::design::face_resolve::resolve_face_operand_history_candidates(
-                                operand,
-                            );
+                                decode, operand,
+                            )?;
                             let mut slots = decode.collection_vec(
                                 usize::from(selected.is_some()),
                                 "collect F3D resolved face slots",
@@ -6902,8 +6902,8 @@ pub(crate) fn bind_face_operand_history_candidates(
                 _ => {
                     let direct =
                         crate::design::face_resolve::resolve_face_operand_history_candidates(
-                            operand,
-                        );
+                            decode, operand,
+                        )?;
                     if let Some(direct) = direct {
                         let mut slots =
                             decode.collection_vec(1, "collect F3D resolved face slots")?;

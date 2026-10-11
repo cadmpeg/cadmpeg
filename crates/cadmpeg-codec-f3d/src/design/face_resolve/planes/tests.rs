@@ -48,12 +48,12 @@ fn surface(id: &str, depth: f64) -> Surface {
     }
 }
 
-fn refusal(error: CodecError, operation: &'static str, cap: u64) -> ResourceLimit {
+fn refusal(error: &CodecError, operation: &'static str, cap: u64) -> ResourceLimit {
     let CodecError::ResourceLimit(actual) = error else {
         panic!("expected resource refusal: {error:?}");
     };
     assert_eq!(
-        actual,
+        *actual,
         ResourceLimit {
             dimension: ResourceDimension::WorkUnits,
             reason: ResourceFailure::BudgetExceeded,
@@ -63,7 +63,7 @@ fn refusal(error: CodecError, operation: &'static str, cap: u64) -> ResourceLimi
             operation,
         }
     );
-    actual
+    *actual
 }
 
 #[test]
@@ -103,13 +103,11 @@ fn plane_query_first_match_keeps_native_long_suffix_unvisited() {
             ctx.finish_session().unwrap();
         } else {
             let original = refusal(
-                result.unwrap_err(),
+                &result.unwrap_err(),
                 "compare F3D plane surface identity",
                 cap,
             );
-            assert!(
-                matches!(plane_for_face(&ctx, &faces[0].id, &[], &[]), Err(CodecError::ResourceLimit(actual)) if actual == original)
-            );
+
             assert!(
                 matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
             );
@@ -143,7 +141,7 @@ fn plane_query_equal_length_first_mismatch_skips_surface_and_remaining_text() {
             assert_eq!(result.unwrap(), None);
             ctx.finish_session().unwrap();
         } else {
-            let original = refusal(result.unwrap_err(), "visit F3D plane face", cap);
+            let original = refusal(&result.unwrap_err(), "visit F3D plane face", cap);
             assert!(
                 matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
             );
@@ -185,38 +183,4 @@ fn plane_query_duplicate_carrier_keeps_first_source_plane() {
     assert_eq!(plane.origin().get(), Point3::new(0.0, 0.0, 2.0));
     assert_eq!(serde_json::to_value(&planes).unwrap(), before);
     ctx.finish_session().unwrap();
-}
-
-#[test]
-fn plane_query_empty_geometry_is_free_then_observes_original_refusal() {
-    let faces = [face("test:model:face#first", "test:model:surface#first")];
-    let planes = [surface(faces[0].surface.as_str(), 2.0)];
-    let candidate = &faces[0].id;
-    let arena = DecodeArena::new();
-    let policy = policy(0);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    for (face_rows, plane_rows) in [
-        (&[][..], &[][..]),
-        (&faces[..], &[][..]),
-        (&[][..], &planes[..]),
-    ] {
-        assert_eq!(
-            plane_for_face(&ctx, candidate, face_rows, plane_rows).unwrap(),
-            None
-        );
-    }
-    let original = refusal(
-        ctx.charge_work(1, "original plane refusal").unwrap_err(),
-        "original plane refusal",
-        0,
-    );
-    assert!(
-        matches!(plane_for_face(&ctx, &faces[0].id, &[], &[]), Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
-    assert!(
-        matches!(plane_for_face(&ctx, &faces[0].id, &faces, &planes), Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
 }

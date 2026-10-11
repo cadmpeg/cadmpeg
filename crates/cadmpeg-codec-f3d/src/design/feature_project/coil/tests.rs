@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::feature_project::project_coil;
+use crate::design::feature_project::coil::project_coil;
 use crate::records::{
     feature::{
         coil::{

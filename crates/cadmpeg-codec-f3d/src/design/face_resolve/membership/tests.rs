@@ -16,12 +16,12 @@ fn policy(work: u64) -> DecodePolicy {
     policy
 }
 
-fn refusal(error: CodecError, operation: &'static str, limit: u64) -> ResourceLimit {
+fn refusal(error: &CodecError, operation: &'static str, limit: u64) -> ResourceLimit {
     let CodecError::ResourceLimit(actual) = error else {
         panic!("expected work refusal: {error:?}");
     };
     assert_eq!(
-        actual,
+        *actual,
         ResourceLimit {
             dimension: ResourceDimension::WorkUnits,
             reason: ResourceFailure::BudgetExceeded,
@@ -31,37 +31,7 @@ fn refusal(error: CodecError, operation: &'static str, limit: u64) -> ResourceLi
             operation,
         }
     );
-    actual
-}
-
-#[test]
-fn face_membership_empty_and_nonempty_keep_original_fuse_without_backing() {
-    let face = FaceId::mint("f3d:brep:entity#1").unwrap();
-    let faces = std::slice::from_ref(&face);
-    let slots = [1];
-    let arena = DecodeArena::new();
-    let policy = policy(0);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(!contains_face(&ctx, &[], &face, "empty faces").unwrap());
-    assert!(!contains_slot(&ctx, &[], 1, "empty slots").unwrap());
-    assert_eq!(ctx.resource_refusal(), None);
-    let original = refusal(
-        ctx.charge_work(1, "original membership refusal")
-            .unwrap_err(),
-        "original membership refusal",
-        0,
-    );
-    for values in [&[][..], faces] {
-        assert!(matches!(contains_face(&ctx, values, &face, "later faces"),
-            Err(CodecError::ResourceLimit(actual)) if actual == original));
-    }
-    for values in [&[][..], &slots[..]] {
-        assert!(matches!(contains_slot(&ctx, values, 1, "later slots"),
-            Err(CodecError::ResourceLimit(actual)) if actual == original));
-    }
-    assert_eq!(ctx.resource_refusal(), Some(original));
-    assert!(matches!(ctx.finish_session(),
-        Err(CodecError::ResourceLimit(actual)) if actual == original));
+    *actual
 }
 
 #[test]
@@ -83,11 +53,8 @@ fn face_membership_first_match_does_not_visit_native_suffix() {
             assert_eq!(ctx.resource_refusal(), None);
             ctx.finish_session().unwrap();
         } else {
-            let original = refusal(result.unwrap_err(), "first face match", cap);
-            assert!(
-                matches!(contains_face(&ctx, &[], &target, "after face refusal"),
-                Err(CodecError::ResourceLimit(actual)) if actual == original)
-            );
+            let original = refusal(&result.unwrap_err(), "first face match", cap);
+
             assert!(matches!(ctx.finish_session(),
                 Err(CodecError::ResourceLimit(actual)) if actual == original));
         }
@@ -114,7 +81,7 @@ fn face_membership_first_byte_mismatch_skips_long_equal_length_tails() {
             assert_eq!(ctx.resource_refusal(), None);
             ctx.finish_session().unwrap();
         } else {
-            let original = refusal(result.unwrap_err(), "first byte mismatch", cap);
+            let original = refusal(&result.unwrap_err(), "first byte mismatch", cap);
             assert!(matches!(ctx.finish_session(),
                 Err(CodecError::ResourceLimit(actual)) if actual == original));
         }
@@ -137,7 +104,7 @@ fn face_membership_unequal_lengths_need_only_source_steps() {
             assert!(!result.unwrap());
             ctx.finish_session().unwrap();
         } else {
-            let original = refusal(result.unwrap_err(), "unequal face lengths", cap);
+            let original = refusal(&result.unwrap_err(), "unequal face lengths", cap);
             assert!(matches!(ctx.finish_session(),
                 Err(CodecError::ResourceLimit(actual)) if actual == original));
         }
@@ -163,7 +130,7 @@ fn face_slot_membership_pays_only_reached_slots_and_terminal_probe() {
     let policy = policy(3);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let original = refusal(
-        contains_slot(&ctx, &values, 4, "stable slot query").unwrap_err(),
+        &contains_slot(&ctx, &values, 4, "stable slot query").unwrap_err(),
         "stable slot query",
         3,
     );

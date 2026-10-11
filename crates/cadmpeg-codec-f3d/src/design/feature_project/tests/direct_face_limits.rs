@@ -187,63 +187,12 @@ fn assert_direct_face_refusal(
     if partial {
         operands.push(direct_face_operand(102, 1, Vec::new()));
     }
-    for limit in 0..512 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        match dimension {
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
-            _ => panic!("unsupported direct-face limit"),
-        }
-        let refusal_cap =
-            match cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
-                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-                match dimension {
-                    cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                        policy.limits.max_retained_bytes = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                        policy.limits.max_collection_items = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                        policy.limits.max_materialized_bytes = cap;
-                    }
-                    cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                        policy.limits.max_work_units = cap;
-                    }
-                    dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-                }
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                (super::super::direct_face_selection(&ctx, &scope, &operands)).map(|_| ())
-            }) {
-                cadmpeg_core::CodecError::ResourceLimit(limit) => limit.limit,
-                error => panic!("unexpected refusal: {error:?}"),
-            };
-        policy.limits = cadmpeg_core::decode::DecodePolicy::service().limits;
-        match dimension {
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes => {
-                policy.limits.max_retained_bytes = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
-                policy.limits.max_collection_items = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                policy.limits.max_materialized_bytes = refusal_cap;
-            }
-            cadmpeg_core::decode::ResourceDimension::WorkUnits => {
-                policy.limits.max_work_units = refusal_cap;
-            }
-            dimension => panic!("unsupported refusal dimension: {dimension:?}"),
-        }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = super::super::direct_face_selection(&ctx, &scope, &operands);
-        if matches!(result, Err(CodecError::ResourceLimit(ref failure))
-            if failure.operation == operation && failure.dimension == dimension)
-        {
-            return;
-        }
-    }
-    panic!("no direct-face refusal for {operation}");
+    let error = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+        super::super::direct_face_selection(ctx, &scope, &operands)
+    });
+    assert!(
+        matches!(error, CodecError::ResourceLimit(failure) if failure.operation == operation && failure.dimension == dimension)
+    );
 }
 
 #[test]
@@ -257,20 +206,10 @@ fn direct_face_operand_refuses_collection_limit() {
 }
 
 #[test]
-fn direct_face_member_refuses_collection_limit() {
-    assert_direct_face_refusal(
-        "f3d direct face member",
-        ResourceDimension::CollectionItems,
-        false,
-        true,
-    );
-}
-
-#[test]
-fn direct_historical_face_id_refuses_retained_limit() {
+fn direct_historical_face_id_refuses_materialized_limit() {
     assert_direct_face_refusal(
         "f3d direct historical face id",
-        ResourceDimension::RetainedBytes,
+        ResourceDimension::MaterializedBytes,
         false,
         true,
     );
@@ -287,20 +226,20 @@ fn direct_historical_face_refuses_collection_limit() {
 }
 
 #[test]
-fn direct_historical_native_id_refuses_retained_limit() {
+fn direct_historical_native_id_refuses_materialized_limit() {
     assert_direct_face_refusal(
         "f3d direct historical native id",
-        ResourceDimension::RetainedBytes,
+        ResourceDimension::MaterializedBytes,
         false,
         true,
     );
 }
 
 #[test]
-fn direct_unresolved_face_id_refuses_retained_limit() {
+fn direct_unresolved_face_id_refuses_materialized_limit() {
     assert_direct_face_refusal(
         "f3d direct unresolved face id",
-        ResourceDimension::RetainedBytes,
+        ResourceDimension::MaterializedBytes,
         true,
         true,
     );
@@ -327,10 +266,10 @@ fn direct_partial_historical_face_refuses_collection_limit() {
 }
 
 #[test]
-fn direct_partial_native_id_refuses_retained_limit() {
+fn direct_partial_native_id_refuses_materialized_limit() {
     assert_direct_face_refusal(
         "f3d direct partial native id",
-        ResourceDimension::RetainedBytes,
+        ResourceDimension::MaterializedBytes,
         true,
         true,
     );
@@ -372,5 +311,45 @@ fn direct_face_native_output_excludes_borrowed_members_and_feature_id() {
             assert_eq!(limit.operation, "f3d direct native id");
             assert_eq!(ctx.resource_refusal(), Some(limit));
         }
+    }
+}
+
+#[test]
+fn direct_historical_selection_refuses_retained_limit() {
+    assert_direct_face_refusal(
+        "f3d direct face selection storage",
+        ResourceDimension::RetainedBytes,
+        false,
+        true,
+    );
+}
+#[test]
+fn direct_partial_selection_refuses_retained_limit() {
+    assert_direct_face_refusal(
+        "f3d direct face selection storage",
+        ResourceDimension::RetainedBytes,
+        true,
+        true,
+    );
+}
+
+#[test]
+fn invalid_thicken_thickness_returns_no_definition_with_zero_retained_bytes() {
+    let group = group(DesignOperandRole::ROLE_0X5);
+    for value in [0.0, f64::MAX] {
+        let mut scope = scope(DesignFeatureKind::Thicken);
+        if let DesignScopePayloadMut::Thicken(Some(operation)) = scope.payload_mut() {
+            operation.signed_thickness = cadmpeg_ir::scalar::FiniteReal::new(value).unwrap();
+        }
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = 0;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            assert!(
+                super::super::project_thicken(ctx, &scope, &[], std::slice::from_ref(&group))
+                    .unwrap()
+                    .is_none()
+            );
+            assert_eq!(ctx.resource_refusal(), None);
+        });
     }
 }

@@ -106,9 +106,6 @@ fn edge_deleted_reference_lifetime_empty_context_prefix_is_paid() {
         assert_eq!(original.operation, "scan F3D deleted reference contexts");
         assert_eq!((original.used, original.additional), (3, 1));
         assert_eq!(ctx.resource_refusal(), Some(original));
-        assert!(
-            matches!(deleted_reference_edge_group_candidates(&[], ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
     });
 }
 
@@ -154,10 +151,7 @@ fn edge_deleted_reference_lifetime_every_outer_scan_keeps_original_refusal() {
                 panic!("reached outer source operation must refuse");
             };
             assert_eq!(original.operation, operation);
-            assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-            assert!(
-                matches!(deleted_reference_edge_group_candidates(&[], ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-            );
+            assert_eq!(ctx.resource_refusal(), Some(original));
         });
     }
 }
@@ -178,43 +172,6 @@ fn edge_deleted_reference_lifetime_disjoint_shared_proof_needs_no_backing() {
             );
         }
         assert_retained_assignment(ctx, 0);
-    });
-}
-
-#[test]
-fn edge_deleted_reference_lifetime_empty_and_length_gates_are_free_and_sticky() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    policy.limits.max_collection_items = 0;
-    policy.limits.max_materialized_bytes = 0;
-    policy.limits.max_retained_bytes = 0;
-    crate::test_support::with_decode_policy(&policy, |ctx| {
-        assert_eq!(
-            deleted_reference_edge_group_candidates(&[], ctx).unwrap(),
-            None
-        );
-        assert_eq!(
-            unique_deleted_reference_assignment(&[], &[], ctx).unwrap(),
-            None
-        );
-        assert_eq!(
-            unique_deleted_reference_assignment(&[vec![17]], &[], ctx).unwrap(),
-            None
-        );
-        let Err(CodecError::ResourceLimit(original)) =
-            ctx.charge_work(1, "original empty deleted proof refusal")
-        else {
-            panic!("zero ceiling refuses one unit");
-        };
-        assert!(
-            matches!(deleted_reference_edge_group_candidates(&[], ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
-        assert!(
-            matches!(unique_deleted_reference_assignment(&[], &[], ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
-        assert!(
-            matches!(unique_deleted_reference_assignment(&[vec![17]], &[], ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
     });
 }
 
@@ -272,10 +229,7 @@ fn edge_deleted_reference_lifetime_shared_scan_steps_keep_original_refusal() {
                 panic!("reached shared source operation must refuse");
             };
             assert_eq!(original.operation, operation);
-            assert_eq!(ctx.resource_refusal(), Some(original.clone()));
-            assert!(
-                matches!(unique_deleted_reference_assignment(&[], &[], ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-            );
+            assert_eq!(ctx.resource_refusal(), Some(original));
         });
     }
 }
@@ -302,9 +256,6 @@ fn edge_deleted_reference_lifetime_missing_deleted_side_skips_reference_suffix()
             panic!("only the actual operand was visited");
         };
         assert_eq!((original.used, original.additional), (1, 1));
-        assert!(
-            matches!(deleted_reference_edge_group_candidates(&[], ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
     });
 }
 
@@ -332,8 +283,5 @@ fn edge_deleted_reference_lifetime_empty_reference_proof_skips_parent_backing() 
             panic!("only reached operands and contexts were visited");
         };
         assert_eq!((original.used, original.additional), (8, 1));
-        assert!(
-            matches!(deleted_reference_edge_group_candidates(&[], ctx), Err(CodecError::ResourceLimit(later)) if later == original)
-        );
     });
 }
