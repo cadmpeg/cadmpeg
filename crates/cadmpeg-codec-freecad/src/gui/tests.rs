@@ -3,7 +3,15 @@
 
 #![allow(clippy::doc_markdown)]
 
+mod admission_paths;
+mod body_demand;
+mod decode_budget;
+mod material_archive;
+mod native_storage;
+mod numeric_text;
+mod primitive_index;
 mod resource_admission;
+mod streaming_lists;
 
 use cadmpeg_test_support::wire;
 
@@ -30,15 +38,17 @@ fn assert_untransferred_primitive_size_reports_loss(style: super::PrimitiveStyle
         end: vertex,
         tolerance: None,
     });
-    let mut plan = super::AppearancePlan::default();
     let mut losses = Vec::new();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
+    let mut plan = super::AppearancePlan::new(&ctx).expect("plan storage");
+    let prefixes = [String::new()];
+    let index = super::PrimitiveIndex::new(&ctx, &ir, style, &prefixes).expect("primitive index");
     super::transfer_primitive_appearance(
         &ctx,
-        &ir,
+        &index,
         &mut plan,
         &mut losses,
         super::PrimitiveAppearanceSource {
@@ -46,7 +56,7 @@ fn assert_untransferred_primitive_size_reports_loss(style: super::PrimitiveStyle
             object_id: "fcstd:object#Model",
             packed_color: 0xff00_00ff,
             style,
-            payload_prefixes: &[String::new()],
+            payload_prefixes: &prefixes,
             provenance: cadmpeg_ir::SourceProvenance::in_stream(
                 "fcstd",
                 cadmpeg_ir::stream_name!("GuiDocument.xml"),
@@ -91,11 +101,18 @@ fn a_negative_point_size_records_an_appearance_loss() {
 #[test]
 fn a_nonfinite_line_width_records_an_appearance_loss() {
     assert!(matches!(
-        super::PrimitiveSize::from_source(Some("not a number")),
+        crate::test_support::with_service_context(&[], |ctx| super::PrimitiveSize::from_source(
+            ctx,
+            Some("not a number")
+        ))
+        .expect("primitive size"),
         super::PrimitiveSize::Absent
     ));
     assert_untransferred_primitive_size_reports_loss(super::PrimitiveStyle::Line(
-        super::PrimitiveSize::from_source(Some("NaN")),
+        crate::test_support::with_service_context(&[], |ctx| {
+            super::PrimitiveSize::from_source(ctx, Some("NaN"))
+        })
+        .expect("primitive size"),
     ));
 }
 
@@ -128,20 +145,22 @@ fn negative_primitive_sizes_keep_native_values_and_report_neutral_losses() {
         end: vertex_id,
         tolerance: None,
     });
-    let mut plan = super::AppearancePlan::default();
     let mut losses = Vec::new();
     let prefixes = [String::from("shape:")];
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
+    let mut plan = super::AppearancePlan::new(&ctx).expect("plan storage");
     for style in [
         super::PrimitiveStyle::Line(super::PrimitiveSize::Admitted(FiniteReal::ONE.negated())),
         super::PrimitiveStyle::Point(super::PrimitiveSize::Admitted(FiniteReal::ONE.negated())),
     ] {
+        let index =
+            super::PrimitiveIndex::new(&ctx, &ir, style, &prefixes).expect("primitive index");
         super::transfer_primitive_appearance(
             &ctx,
-            &ir,
+            &index,
             &mut plan,
             &mut losses,
             super::PrimitiveAppearanceSource {

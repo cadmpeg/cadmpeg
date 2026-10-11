@@ -1,5 +1,7 @@
 //! Tests for the `parameters` module.
 
+mod admission;
+
 use super::{
     enrich_history_parameters, native_scalar_matches_discrete_parameter,
     scalar_unit_from_feature_parameter, sync_changed_feature_scalars, ScalarUnit,
@@ -95,8 +97,26 @@ fn parameter_limit_error(
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy)
             .expect("empty lane fits root input limit");
-    enrich_history_parameters(&ctx, &mut histories, [&lane], true)
+    enrich_history_parameters(&ctx, &mut histories, std::slice::from_ref(&lane), true)
         .expect_err("parameter projection must refuse the selected limit")
+}
+
+#[test]
+fn scalar_role_selection_preserves_priority_and_ambiguity() {
+    use super::single_scalar_candidate;
+
+    use FeatureInputScalarRole::{Display, Driving, Native};
+    assert_eq!(
+        single_scalar_candidate([(Native, 1), (Driving, 2), (Display, 3)]),
+        Some(2)
+    );
+    assert_eq!(
+        single_scalar_candidate([(Native, 1), (Driving, 2), (Driving, 3)]),
+        None
+    );
+    assert_eq!(single_scalar_candidate([(Native, 1)]), Some(1));
+    assert_eq!(single_scalar_candidate([(Native, 1), (Native, 2)]), None);
+    assert_eq!(single_scalar_candidate([(Display, 1)]), None);
 }
 
 #[test]
@@ -136,15 +156,19 @@ fn native_scalar_must_match_an_existing_discrete_parameter() {
         text: None,
         content: Vec::new(),
     };
-    assert!(native_scalar_matches_discrete_parameter(
-        &feature, "D1", "15", 15.0
-    ));
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert!(
+        native_scalar_matches_discrete_parameter(&ctx, &feature, "D1", "15", 15.0)
+            .expect("discrete parameter comparison succeeds")
+    );
     assert!(!native_scalar_matches_discrete_parameter(
+        &ctx,
         &feature,
         "D1",
         "15",
         8.371_160_993_642_741e298
-    ));
+    )
+    .expect("discrete parameter comparison succeeds"));
 }
 
 #[test]
@@ -166,19 +190,24 @@ fn fillet_display_placeholder_establishes_length_unit() {
         text: None,
         content: Vec::new(),
     };
+    let ctx = cadmpeg_test_support::service_decode_context();
     assert_eq!(
-        scalar_unit_from_feature_parameter(&feature, "D1"),
+        scalar_unit_from_feature_parameter(&ctx, &feature, "D1").expect("unit inference succeeds"),
         Some(super::ScalarUnit::Length)
     );
     assert_eq!(
-        scalar_unit_from_feature_parameter(&feature, "missing"),
+        scalar_unit_from_feature_parameter(&ctx, &feature, "missing")
+            .expect("unit inference succeeds"),
         None
     );
     let mut numeric = feature;
     numeric
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("D1"), "0".into());
-    assert_eq!(scalar_unit_from_feature_parameter(&numeric, "D1"), None);
+    assert_eq!(
+        scalar_unit_from_feature_parameter(&ctx, &numeric, "D1").expect("unit inference succeeds"),
+        None
+    );
 
     let mut cosmetic_thread = numeric.clone();
     cosmetic_thread.kind = "CosmeticThread".into();
@@ -188,7 +217,8 @@ fn fillet_display_placeholder_establishes_length_unit() {
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("D2"), "<MOD-DIAM>6".into());
     assert_eq!(
-        scalar_unit_from_feature_parameter(&cosmetic_thread, "D2"),
+        scalar_unit_from_feature_parameter(&ctx, &cosmetic_thread, "D2")
+            .expect("unit inference succeeds"),
         None
     );
 
@@ -202,14 +232,18 @@ fn fillet_display_placeholder_establishes_length_unit() {
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("D01"), "R0".into());
     assert_eq!(
-        scalar_unit_from_feature_parameter(&variable, "D0"),
+        scalar_unit_from_feature_parameter(&ctx, &variable, "D0").expect("unit inference succeeds"),
         Some(super::ScalarUnit::Length)
     );
     assert_eq!(
-        scalar_unit_from_feature_parameter(&variable, "D01"),
+        scalar_unit_from_feature_parameter(&ctx, &variable, "D01")
+            .expect("unit inference succeeds"),
         Some(super::ScalarUnit::Length)
     );
-    assert_eq!(scalar_unit_from_feature_parameter(&variable, "D1"), None);
+    assert_eq!(
+        scalar_unit_from_feature_parameter(&ctx, &variable, "D1").expect("unit inference succeeds"),
+        None
+    );
 }
 
 #[test]
@@ -236,13 +270,18 @@ fn thin_cut_native_dimensions_are_lengths() {
         content: Vec::new(),
     };
 
+    let ctx = cadmpeg_test_support::service_decode_context();
     for name in ["D5", "D6", "D7"] {
         assert_eq!(
-            scalar_unit_from_feature_parameter(&feature, name),
+            scalar_unit_from_feature_parameter(&ctx, &feature, name)
+                .expect("unit inference succeeds"),
             Some(ScalarUnit::Length)
         );
     }
-    assert_eq!(scalar_unit_from_feature_parameter(&feature, "D8"), None);
+    assert_eq!(
+        scalar_unit_from_feature_parameter(&ctx, &feature, "D8").expect("unit inference succeeds"),
+        None
+    );
 }
 
 #[test]
@@ -272,16 +311,20 @@ fn sketch_source_dimension_establishes_scalar_unit() {
         ],
     };
 
+    let ctx = cadmpeg_test_support::service_decode_context();
     assert_eq!(
-        scalar_unit_from_feature_parameter(&feature, "depth"),
+        scalar_unit_from_feature_parameter(&ctx, &feature, "depth")
+            .expect("unit inference succeeds"),
         Some(ScalarUnit::Length)
     );
     assert_eq!(
-        scalar_unit_from_feature_parameter(&feature, "angle"),
+        scalar_unit_from_feature_parameter(&ctx, &feature, "angle")
+            .expect("unit inference succeeds"),
         Some(ScalarUnit::Angle)
     );
     assert_eq!(
-        scalar_unit_from_feature_parameter(&feature, "unowned"),
+        scalar_unit_from_feature_parameter(&ctx, &feature, "unowned")
+            .expect("unit inference succeeds"),
         None
     );
 }
@@ -381,7 +424,7 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("parameter lane fits service policy");
-    enrich_history_parameters(&ctx, &mut histories, [&lane], true)
+    enrich_history_parameters(&ctx, &mut histories, std::slice::from_ref(&lane), true)
         .expect("parameter enrichment succeeds");
     assert_eq!(
         histories[0].features[0].parameters["D1"],
@@ -399,4 +442,205 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
     .expect("explicit scalar owner is writable");
     assert_eq!(lane.scalars[0].value.get(), 0.008);
     assert_eq!(&lane.native_payload[128..136], &0.008f64.to_le_bytes());
+}
+
+#[test]
+fn scalar_synchronization_skips_unchanged_parameters() {
+    let (histories, mut lane) = parameter_limit_fixture();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    sync_changed_feature_scalars(
+        &ctx,
+        &histories,
+        std::slice::from_mut(&mut lane),
+        &HashSet::new(),
+    )
+    .unwrap();
+}
+
+#[test]
+fn scalar_synchronization_uses_scoped_workspace() {
+    let (mut histories, mut lane) = parameter_limit_fixture();
+    histories[0].features[0]
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "8.0".into());
+    lane.native_payload.resize(28, 0);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    sync_changed_feature_scalars(
+        &ctx,
+        &histories,
+        std::slice::from_mut(&mut lane),
+        &HashSet::from([("feature".into(), cadmpeg_core::nonblank_literal!("D1"))]),
+    )
+    .unwrap();
+    assert_eq!(lane.scalars[0].value.get(), 8.0);
+    assert_eq!(&lane.native_payload[20..28], &8.0f64.to_le_bytes());
+}
+
+#[test]
+fn scalar_synchronization_keeps_named_owners_and_strict_offset_ranges() {
+    let (mut histories, mut lane) = parameter_limit_fixture();
+    let parameter = cadmpeg_core::nonblank_literal!("D1");
+    histories[0].features[0]
+        .parameters
+        .insert(parameter.clone(), "8.0".into());
+    for (ordinal, id, name, value) in [
+        (1, "second", "Second", "9.0"),
+        (2, "third", "Third", "10.0"),
+    ] {
+        let mut feature = histories[0].features[0].clone();
+        feature.id = id.into();
+        feature.ordinal = ordinal;
+        feature.name = name.into();
+        feature.parameters.insert(parameter.clone(), value.into());
+        histories[0].features.push(feature);
+        let mut feature_name = lane.names[0].clone();
+        feature_name.id = format!("{id}-name");
+        feature_name.ordinal = ordinal + 1;
+        feature_name.offset = u64::from(ordinal) * 100;
+        feature_name.value = name.into();
+        lane.names.push(feature_name);
+    }
+    let original = lane.scalars[0].clone();
+    lane.scalars = [
+        (120, None, FeatureInputScalarRole::Native),
+        (220, None, FeatureInputScalarRole::Driving),
+        (40, None, FeatureInputScalarRole::Driving),
+        (100, None, FeatureInputScalarRole::Driving),
+        (20, Some("second"), FeatureInputScalarRole::Driving),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(ordinal, (offset, owner, role))| {
+        let mut scalar = original.clone();
+        scalar.id = format!("scalar-{ordinal}");
+        scalar.ordinal = u32::try_from(ordinal).unwrap();
+        scalar.offset = offset;
+        scalar.feature_ref = owner.map(str::to_owned);
+        scalar.role = role;
+        scalar
+    })
+    .collect();
+    lane.native_payload.resize(228, 0);
+    let input = lane.clone();
+    let changed = ["feature", "second", "third"]
+        .into_iter()
+        .map(|id| (id.to_owned(), parameter.clone()))
+        .collect::<HashSet<_>>();
+    sync_changed_feature_scalars(
+        &cadmpeg_test_support::service_decode_context(),
+        &histories,
+        std::slice::from_mut(&mut lane),
+        &changed,
+    )
+    .unwrap();
+    for (index, expected) in [0.5, 10.0, 8.0, 0.5, 9.0].into_iter().enumerate() {
+        assert_eq!(lane.scalars[index].value.get(), expected);
+    }
+    for (offset, expected) in [(220, 10.0_f64), (40, 8.0), (20, 9.0)] {
+        assert_eq!(
+            &lane.native_payload[offset..offset + 8],
+            &expected.to_le_bytes()
+        );
+    }
+    assert_eq!(&lane.native_payload[100..108], &[0; 8]);
+    crate::test_support::work_refusal_at("sort SLDPRT unowned scalar updates", |ctx| {
+        sync_changed_feature_scalars(ctx, &histories, &mut [input.clone()], &changed)
+    });
+}
+
+#[test]
+fn scalar_update_returns_malformed_for_max_addressable_offset() {
+    let (mut histories, mut lane) = parameter_limit_fixture();
+    let parameter = cadmpeg_core::nonblank_literal!("D1");
+    histories[0].features[0]
+        .parameters
+        .insert(parameter.clone(), "8.0".into());
+    lane.scalars[0].offset = u64::try_from(usize::MAX).unwrap();
+    lane.scalars[0].id = "forged-max-offset".into();
+    let changed = HashSet::from([("feature".into(), parameter)]);
+
+    let error = sync_changed_feature_scalars(
+        &cadmpeg_test_support::service_decode_context(),
+        &histories,
+        std::slice::from_mut(&mut lane),
+        &changed,
+    )
+    .expect_err("max-addressable scalar offset lies outside the payload");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::Malformed(message)
+            if message == "SLDPRT scalar forged-max-offset lies outside its payload"
+    ));
+}
+
+#[test]
+fn scalar_update_error_text_refusal_is_named_and_sticky() {
+    use cadmpeg_core::decode::ResourceDimension;
+    const OPERATION: &str = "format SLDPRT scalar update error";
+
+    let (mut histories, lane) = parameter_limit_fixture();
+    let parameter = cadmpeg_core::nonblank_literal!("D1");
+    histories[0].features[0]
+        .parameters
+        .insert(parameter.clone(), "8.0".into());
+    let scalar_id = "unbounded-scalar-id-".repeat(8);
+    let mut lane = lane;
+    lane.scalars[0].offset = u64::try_from(usize::MAX).unwrap();
+    lane.scalars[0].id = scalar_id.clone();
+    let changed = HashSet::from([("feature".into(), parameter)]);
+
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        OPERATION,
+        |cap| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &lane.native_payload,
+                &arena,
+                &policy,
+            )
+            .unwrap();
+            let mut input = lane.clone();
+            let refusal = sync_changed_feature_scalars(
+                &ctx,
+                &histories,
+                std::slice::from_mut(&mut input),
+                &changed,
+            )
+            .expect_err("formatting the out-of-range scalar identity must be admitted");
+            let cadmpeg_core::CodecError::ResourceLimit(first) = refusal else {
+                panic!("expected retained-byte refusal: {refusal:?}");
+            };
+            assert_eq!(first.operation, OPERATION);
+            let cadmpeg_core::CodecError::ResourceLimit(repeated) = ctx
+                .finish_session()
+                .expect_err("the formatting refusal must fuse the session")
+            else {
+                panic!("expected sticky refusal");
+            };
+            assert_eq!(first, repeated);
+            Err::<(), _>(cadmpeg_core::CodecError::ResourceLimit(first))
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("expected named scalar error formatting refusal: {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.operation, OPERATION);
+    assert_eq!(
+        limit.additional,
+        u64::try_from(format!("SLDPRT scalar {scalar_id} lies outside its payload").len()).unwrap()
+    );
 }

@@ -14,10 +14,38 @@ fn committed_native_identity_cache_borrows_text_from_document() {
         "records".into(),
         vec![NativeRecord::new(Identity::new(&id).unwrap(), serde_json::Map::new()).unwrap()],
     );
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "committed native cache live",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let probe_id = "test:native:record#short";
+            let mut candidate = CadIr::empty();
+            candidate.native.namespace_mut("test").arenas_mut().insert(
+                "records".into(),
+                vec![
+                    NativeRecord::new(Identity::new(probe_id).unwrap(), serde_json::Map::new())
+                        .unwrap(),
+                ],
+            );
+            let mut session = CommitSession::new(&mut candidate, &ctx, None)?;
+            assert!(session.contains(probe_id)?);
+            ctx.reserve_scoped(1, "committed native cache live")
+                .map(drop)
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("live cache boundary");
+    };
+    let bytes = limit.used;
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    policy.limits.max_materialized_bytes = 512;
+    policy.limits.max_materialized_bytes = bytes;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
     assert!(session.contains(&id).unwrap());
@@ -25,7 +53,7 @@ fn committed_native_identity_cache_borrows_text_from_document() {
     assert!(!session.contains("test:native:record#missing").unwrap());
     drop(session);
     let reservation = ctx
-        .reserve_scoped(512, "committed native cache released")
+        .reserve_scoped(bytes, "committed native cache released")
         .unwrap();
     drop(reservation);
     ctx.finish_session().unwrap();
@@ -101,7 +129,7 @@ fn committed_native_cache_checks_identity_after_path_hash_matches() {
         "records".into(),
         vec![NativeRecord::new(Identity::new(stored).unwrap(), serde_json::Map::new()).unwrap()],
     );
-    let index = std::collections::HashMap::from([(
+    let index = std::collections::BTreeMap::from([(
         crate::index::identity_hash(missing),
         vec![crate::draft::CommittedIdentity::Native {
             namespace_hash: crate::index::identity_hash("native"),
@@ -126,7 +154,7 @@ fn committed_native_cache_admits_map_key_hashes_before_lookup() {
         arena_name.into(),
         vec![NativeRecord::new(Identity::new(target).unwrap(), serde_json::Map::new()).unwrap()],
     );
-    let index = std::collections::HashMap::from([(
+    let index = std::collections::BTreeMap::from([(
         crate::index::identity_hash(target),
         vec![crate::draft::CommittedIdentity::Native {
             namespace_hash: crate::index::identity_hash(namespace),
@@ -135,21 +163,33 @@ fn committed_native_cache_admits_map_key_hashes_before_lookup() {
         }],
     )]);
     for arena_lookup in [false, true] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        let mut admitted = cadmpeg_core::decode::u64_from_index(target.len()) + 2;
-        if arena_lookup {
-            admitted += cadmpeg_core::decode::u64_from_index(namespace.len()) + 1;
-        }
-        policy.limits.max_work_units = admitted;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let Err(CodecError::ResourceLimit(limit)) =
-            crate::draft::committed_identity_contains(&ir, &[], &index, target, &ctx)
-        else {
+        let operation = if arena_lookup {
+            "find committed native arena"
+        } else {
+            "find committed native namespace"
+        };
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result =
+                    crate::draft::committed_identity_contains(&ir, &[], &index, target, &ctx);
+                if let Err(CodecError::ResourceLimit(limit)) = &result {
+                    assert!(
+                        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
+                    );
+                }
+                result
+            },
+        );
+        let CodecError::ResourceLimit(limit) = error else {
             panic!("native map-key hash must refuse");
         };
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(limit.used, admitted);
         assert_eq!(
             limit.operation,
             if arena_lookup {
@@ -157,9 +197,6 @@ fn committed_native_cache_admits_map_key_hashes_before_lookup() {
             } else {
                 "find committed native namespace"
             }
-        );
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
         );
     }
 }

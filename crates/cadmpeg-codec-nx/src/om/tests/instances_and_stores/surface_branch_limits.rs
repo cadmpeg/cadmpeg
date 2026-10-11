@@ -14,7 +14,9 @@ fn surface_branch_refusal(
         |ctx| {
             let record =
                 crate::om::operation_record::OperationPayload::new(PAYLOAD, 0, "SKIN").unwrap();
-            crate::om::surface_branches::surface_feature_payload_branches(ctx, record).unwrap_err()
+            crate::om::surface_branches::surface_feature_payload_branches(ctx, record)
+                .map(|(value, _storage)| value)
+                .unwrap_err()
         },
     )
 }

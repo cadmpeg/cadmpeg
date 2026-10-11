@@ -45,10 +45,9 @@ macro_rules! clone_copy_for_decode {
         impl crate::features::decode_clone::CloneForDecode for $type {
             fn try_clone_for_decode(
                 &self,
-                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-                operation: &'static str,
+                _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                _operation: &'static str,
             ) -> Result<Self, cadmpeg_core::CodecError> {
-                ctx.charge_work(1, operation)?;
                 Ok(*self)
             }
         }
@@ -98,7 +97,6 @@ macro_rules! clone_enum_for_decode {
                 ctx: &cadmpeg_core::decode::DecodeContext<'_>,
                 clone_operation: &'static str,
             ) -> Result<Self, cadmpeg_core::CodecError> {
-                ctx.charge_work(1, clone_operation)?;
                 match self {
                     $(Self::$variant $(($($tuple),*))? $({$($field),*})? => Ok(Self::$variant
                         $(($(crate::features::decode_clone::CloneForDecode::try_clone_for_decode($tuple, ctx, clone_operation)?),*))?
@@ -2003,7 +2001,6 @@ impl FeatureResultMembers {
         self,
         admission: &S,
     ) -> Result<Result<Self, FeatureResultMemberError>, S::Error> {
-        admission.work(0)?;
         if self.bodies.is_empty()
             && self.faces.is_empty()
             && self.edges.is_empty()
@@ -2144,13 +2141,36 @@ impl FeatureContent {
         operation: &'static str,
     ) -> Result<(), FeatureCollectionError> {
         if !matches!(value, FeatureSourceContent::Text(_)) {
-            for member in &self.0 {
-                ctx.charge_work_limit(1, operation)?;
-                if member == &value {
-                    return Err(FeatureCollectionError::Invalid(
-                        "source_content repeats a parameter or child-feature reference",
-                    ));
-                }
+            let distinct = ctx.all_by_limit(
+                &self.0,
+                |member| {
+                    let equal = match (member, &value) {
+                        (
+                            FeatureSourceContent::Parameter(left),
+                            FeatureSourceContent::Parameter(right),
+                        ) => ctx.equal_bytes_limit(
+                            left.as_str().as_bytes(),
+                            right.as_str().as_bytes(),
+                            operation,
+                        )?,
+                        (
+                            FeatureSourceContent::Feature(left),
+                            FeatureSourceContent::Feature(right),
+                        ) => ctx.equal_bytes_limit(
+                            left.as_str().as_bytes(),
+                            right.as_str().as_bytes(),
+                            operation,
+                        )?,
+                        _ => false,
+                    };
+                    Ok(!equal)
+                },
+                operation,
+            )?;
+            if !distinct {
+                return Err(FeatureCollectionError::Invalid(
+                    "source_content repeats a parameter or child-feature reference",
+                ));
             }
         }
         ctx.reserve_vec_limit(&mut self.0, 1, operation)?;
@@ -2550,7 +2570,6 @@ macro_rules! selection_operands {
                 $first: $selection,
                 $second: $selection,
             ) -> Result<Result<Self, &'static str>, S::Error> {
-                admission.work(0)?;
                 if !($arity)(&$first)
                     || selection_overlap::$overlap(admission, &$first, &$second)?
                 {
@@ -2715,7 +2734,6 @@ impl TreeChildren {
         children: Vec<FeatureId>,
         active_child: Option<FeatureId>,
     ) -> Result<Result<Self, &'static str>, S::Error> {
-        active_admission.work(0)?;
         if let Some(active) = &active_child {
             let mut present = false;
             for child in &children {
@@ -4877,53 +4895,151 @@ pub enum PartialRevolveConstruction {
     },
 }
 impl_feature_decode_cost_enum!(PartialRevolveConstruction; { Profile { axis, extent, solid, face_maker, fuse_order, allow_multi_profile_faces }, Axis { profile, extent, solid, face_maker, fuse_order, allow_multi_profile_faces }, Extent { profile, axis, solid, face_maker, fuse_order, allow_multi_profile_faces }, });
-/// The four optional selections a revolution carries in every resolution state.
-struct RevolveSelections {
+/// Owned revolution inputs during a required-operand replacement.
+struct RevolveInputs {
+    profile: Option<PlanarProfileRef>,
+    axis: Option<RevolutionAxis>,
+    extent: Option<RevolveExtent>,
     solid: Option<bool>,
     face_maker: Option<FaceMaker>,
     fuse_order: Option<RevolutionFuseOrder>,
     allow_multi_profile_faces: Option<bool>,
 }
 
-impl RevolveConstruction {
-    fn selections(&self) -> RevolveSelections {
-        let (solid, face_maker, fuse_order, allow_multi_profile_faces) = match self {
-            Self::Resolved {
+impl RevolveInputs {
+    fn into_construction(self) -> RevolveConstruction {
+        let Self {
+            profile,
+            axis,
+            extent,
+            solid,
+            face_maker,
+            fuse_order,
+            allow_multi_profile_faces,
+        } = self;
+        match (profile, axis, extent) {
+            (None, axis, extent) => {
+                RevolveConstruction::Unresolved(PartialRevolveConstruction::Profile {
+                    axis,
+                    extent,
+                    solid,
+                    face_maker,
+                    fuse_order,
+                    allow_multi_profile_faces,
+                })
+            }
+            (Some(profile), None, extent) => {
+                RevolveConstruction::Unresolved(PartialRevolveConstruction::Axis {
+                    profile,
+                    extent,
+                    solid,
+                    face_maker,
+                    fuse_order,
+                    allow_multi_profile_faces,
+                })
+            }
+            (Some(profile), Some(axis), None) => {
+                RevolveConstruction::Unresolved(PartialRevolveConstruction::Extent {
+                    profile,
+                    axis,
+                    solid,
+                    face_maker,
+                    fuse_order,
+                    allow_multi_profile_faces,
+                })
+            }
+            (Some(profile), Some(axis), Some(extent)) => RevolveConstruction::Resolved {
+                profile,
+                axis,
+                extent,
                 solid,
                 face_maker,
                 fuse_order,
                 allow_multi_profile_faces,
-                ..
-            }
-            | Self::Unresolved(
-                PartialRevolveConstruction::Profile {
-                    solid,
-                    face_maker,
-                    fuse_order,
-                    allow_multi_profile_faces,
-                    ..
-                }
-                | PartialRevolveConstruction::Axis {
-                    solid,
-                    face_maker,
-                    fuse_order,
-                    allow_multi_profile_faces,
-                    ..
-                }
-                | PartialRevolveConstruction::Extent {
-                    solid,
-                    face_maker,
-                    fuse_order,
-                    allow_multi_profile_faces,
-                    ..
-                },
-            ) => (solid, face_maker, fuse_order, allow_multi_profile_faces),
-        };
-        RevolveSelections {
-            solid: *solid,
-            face_maker: face_maker.clone(),
-            fuse_order: *fuse_order,
-            allow_multi_profile_faces: *allow_multi_profile_faces,
+            },
+        }
+    }
+}
+
+impl RevolveConstruction {
+    fn take_inputs(&mut self) -> RevolveInputs {
+        let old = std::mem::replace(
+            self,
+            Self::Unresolved(PartialRevolveConstruction::Profile {
+                axis: None,
+                extent: None,
+                solid: None,
+                face_maker: None,
+                fuse_order: None,
+                allow_multi_profile_faces: None,
+            }),
+        );
+        match old {
+            Self::Unresolved(PartialRevolveConstruction::Profile {
+                axis,
+                extent,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+            }) => RevolveInputs {
+                profile: None,
+                axis,
+                extent,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+            },
+            Self::Unresolved(PartialRevolveConstruction::Axis {
+                profile,
+                extent,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+            }) => RevolveInputs {
+                profile: Some(profile),
+                axis: None,
+                extent,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+            },
+            Self::Unresolved(PartialRevolveConstruction::Extent {
+                profile,
+                axis,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+            }) => RevolveInputs {
+                profile: Some(profile),
+                axis: Some(axis),
+                extent: None,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+            },
+            Self::Resolved {
+                profile,
+                axis,
+                extent,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+            } => RevolveInputs {
+                profile: Some(profile),
+                axis: Some(axis),
+                extent: Some(extent),
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+            },
         }
     }
 
@@ -4959,51 +5075,9 @@ impl RevolveConstruction {
     /// Replaces the decoded profile, naming the resolution state the new
     /// operand set produces.
     pub fn set_profile(&mut self, profile: Option<PlanarProfileRef>) {
-        let RevolveSelections {
-            solid,
-            face_maker,
-            fuse_order,
-            allow_multi_profile_faces,
-        } = self.selections();
-        let axis = self.axis().cloned();
-        let extent = self.extent().cloned();
-        *self = match (profile, axis, extent) {
-            (None, axis, extent) => Self::Unresolved(PartialRevolveConstruction::Profile {
-                axis,
-                extent,
-                solid,
-                face_maker,
-                fuse_order,
-                allow_multi_profile_faces,
-            }),
-            (Some(profile), None, extent) => Self::Unresolved(PartialRevolveConstruction::Axis {
-                profile,
-                extent,
-                solid,
-                face_maker,
-                fuse_order,
-                allow_multi_profile_faces,
-            }),
-            (Some(profile), Some(axis), None) => {
-                Self::Unresolved(PartialRevolveConstruction::Extent {
-                    profile,
-                    axis,
-                    solid,
-                    face_maker,
-                    fuse_order,
-                    allow_multi_profile_faces,
-                })
-            }
-            (Some(profile), Some(axis), Some(extent)) => Self::Resolved {
-                profile,
-                axis,
-                extent,
-                solid,
-                face_maker,
-                fuse_order,
-                allow_multi_profile_faces,
-            },
-        };
+        let mut inputs = self.take_inputs();
+        inputs.profile = profile;
+        *self = inputs.into_construction();
     }
 
     /// Returns the placed axis, when decoded.
@@ -5043,118 +5117,9 @@ impl RevolveConstruction {
     /// Replaces the placed axis, naming the resolution state the new operand
     /// set produces.
     pub fn set_axis(&mut self, axis: Option<RevolutionAxis>) {
-        let old = std::mem::replace(
-            self,
-            Self::Unresolved(PartialRevolveConstruction::Profile {
-                axis: None,
-                extent: None,
-                solid: None,
-                face_maker: None,
-                fuse_order: None,
-                allow_multi_profile_faces: None,
-            }),
-        );
-        let (profile, extent, solid, face_maker, fuse_order, allow_multi_profile_faces) = match old
-        {
-            Self::Unresolved(PartialRevolveConstruction::Profile {
-                extent,
-                solid,
-                face_maker,
-                fuse_order,
-                allow_multi_profile_faces,
-                ..
-            }) => (
-                None,
-                extent,
-                solid,
-                face_maker,
-                fuse_order,
-                allow_multi_profile_faces,
-            ),
-            Self::Unresolved(PartialRevolveConstruction::Axis {
-                profile,
-                extent,
-                solid,
-                face_maker,
-                fuse_order,
-                allow_multi_profile_faces,
-            }) => (
-                Some(profile),
-                extent,
-                solid,
-                face_maker,
-                fuse_order,
-                allow_multi_profile_faces,
-            ),
-            Self::Unresolved(PartialRevolveConstruction::Extent {
-                profile,
-                solid,
-                face_maker,
-                fuse_order,
-                allow_multi_profile_faces,
-                ..
-            }) => (
-                Some(profile),
-                None,
-                solid,
-                face_maker,
-                fuse_order,
-                allow_multi_profile_faces,
-            ),
-            Self::Resolved {
-                profile,
-                extent,
-                solid,
-                face_maker,
-                fuse_order,
-                allow_multi_profile_faces,
-                ..
-            } => (
-                Some(profile),
-                Some(extent),
-                solid,
-                face_maker,
-                fuse_order,
-                allow_multi_profile_faces,
-            ),
-        };
-        *self = match (profile, axis, extent) {
-            (None, axis, extent) => Self::Unresolved(PartialRevolveConstruction::Profile {
-                axis,
-                extent,
-                solid,
-                face_maker,
-                fuse_order,
-                allow_multi_profile_faces,
-            }),
-            (Some(profile), None, extent) => Self::Unresolved(PartialRevolveConstruction::Axis {
-                profile,
-                extent,
-                solid,
-                face_maker,
-                fuse_order,
-                allow_multi_profile_faces,
-            }),
-            (Some(profile), Some(axis), None) => {
-                Self::Unresolved(PartialRevolveConstruction::Extent {
-                    profile,
-                    axis,
-                    solid,
-                    face_maker,
-                    fuse_order,
-                    allow_multi_profile_faces,
-                })
-            }
-            (Some(profile), Some(axis), Some(extent)) => Self::Resolved {
-                profile,
-                axis,
-                extent,
-                solid,
-                face_maker,
-                fuse_order,
-                allow_multi_profile_faces,
-            },
-        };
+        let mut inputs = self.take_inputs();
+        inputs.axis = axis;
+        *self = inputs.into_construction();
     }
 
     /// Returns the angular extent, when decoded.
@@ -6470,7 +6435,6 @@ impl EdgeSelection {
         native: String,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        ctx.charge_work_limit(0, "validate persistent selection reference")?;
         let edges = match edges.try_into() {
             Ok(members) => members,
             Err(error) => return Ok(Err(error)),
@@ -6548,7 +6512,6 @@ impl FaceSelection {
         native: String,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        ctx.charge_work_limit(0, "validate persistent selection reference")?;
         let faces = match faces.try_into() {
             Ok(members) => members,
             Err(error) => return Ok(Err(error)),
@@ -6594,15 +6557,16 @@ impl GeneratedVertexRef {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
-pub struct SelectionReference(String);
+pub struct SelectionReference(
+    #[cfg_attr(feature = "schema", schemars(with = "String"))] NonBlankString,
+);
 impl_feature_decode_cost_record!(SelectionReference; (0));
 impl TryFrom<String> for SelectionReference {
     type Error = BodySelectionError;
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        if value.trim().is_empty() {
-            return Err(BodySelectionError::BlankNativeMember);
-        }
-        Ok(Self(value))
+        NonBlankString::try_from(value)
+            .map(Self)
+            .map_err(|_| BodySelectionError::BlankNativeMember)
     }
 }
 
@@ -6612,23 +6576,22 @@ impl SelectionReference {
         value: String,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        ctx.charge_work_limit(
-            cadmpeg_core::decode::u64_from_index(value.len()),
-            "validate persistent selection reference",
-        )?;
-        Ok(Self::try_from(value))
+        const OPERATION: &str = "validate persistent selection reference";
+        Ok(NonBlankString::for_decode(ctx, value, OPERATION)?
+            .map(Self)
+            .ok_or(BodySelectionError::BlankNativeMember))
     }
 
     /// The retained reference text.
     pub fn as_str(&self) -> &str {
-        &self.0
+        self.0.as_str()
     }
 }
 
 impl std::ops::Deref for SelectionReference {
     type Target = str;
     fn deref(&self) -> &str {
-        &self.0
+        self.as_str()
     }
 }
 
@@ -6728,8 +6691,8 @@ impl<T: PartialEq + DecodeCost> DistinctMembers<T> {
         values: impl IntoIterator<Item = T>,
         operation: &'static str,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.charge_work_limit(0, operation)?;
-        for value in values {
+        let mut values = values.into_iter();
+        while let Some(value) = ctx.next_charged(&mut values, operation)? {
             self.insert(ctx, value, operation)?;
         }
         Ok(())
@@ -6846,7 +6809,6 @@ impl<T: Eq + std::hash::Hash> SelectionMembers<T> {
         admission: &S,
         value: Vec<T>,
     ) -> Result<Result<Self, BodySelectionError>, S::Error> {
-        admission.work(0)?;
         if value.is_empty() {
             return Ok(Err(BodySelectionError::Empty));
         }
@@ -6922,7 +6884,6 @@ impl NativeSelections {
         admission: &S,
         value: Vec<String>,
     ) -> Result<Result<Self, BodySelectionError>, S::Error> {
-        admission.work(0)?;
         if value.is_empty() {
             return Ok(Err(BodySelectionError::Empty));
         }
@@ -7108,7 +7069,6 @@ impl<B> BodyMembers<B> {
     where
         B: Eq + std::hash::Hash,
     {
-        admission.work(0)?;
         if rows.is_empty() {
             return Ok(Err(BodySelectionError::Empty));
         }
@@ -8409,11 +8369,12 @@ impl SketchProfileLoops {
             Err(FeatureCollectionError::Resource(limit)) => return Err(limit),
             Err(FeatureCollectionError::Invalid(_)) => return Ok(Err("holes must be distinct")),
         };
-        for hole in holes.as_slice() {
-            ctx.charge_work_limit(1, "validate sketch profile outer loop")?;
-            if hole == &outer {
-                return Ok(Err("holes must not contain outer"));
-            }
+        if !ctx.all_by_limit(
+            holes.as_slice(),
+            |hole| Ok(hole != &outer),
+            "validate sketch profile outer loop",
+        )? {
+            return Ok(Err("holes must not contain outer"));
         }
         Ok(Ok(Self { outer, holes }))
     }
@@ -9216,7 +9177,6 @@ impl PlanarProfileRef {
         native: String,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::decode::ResourceLimit> {
-        ctx.charge_work_limit(0, "validate persistent selection reference")?;
         let curves = match curves.try_into() {
             Ok(members) => members,
             Err(error) => return Ok(Err(error)),
@@ -9359,7 +9319,6 @@ impl ThreePointSelection {
         admission: &S,
         points: Box<[VertexSelection; 3]>,
     ) -> Result<Result<Self, &'static str>, S::Error> {
-        admission.work(0)?;
         for (first, second) in [(0, 1), (0, 2), (1, 2)] {
             if selection_overlap::vertex_targets_equal(admission, &points[first], &points[second])?
             {

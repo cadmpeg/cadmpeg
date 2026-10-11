@@ -6,11 +6,43 @@ pub(crate) struct PayloadText<S>(S);
 
 impl<S: crate::immutable_text::ImmutableText> PayloadText<S> {
     pub(crate) fn new(value: S) -> Result<Self, &'static str> {
-        let text = value.as_ref();
-        if text.is_empty() || text.chars().any(char::is_control) {
-            return Err("value: must be nonempty text without control characters");
+        match Self::validate(value.as_ref(), |chars| {
+            Ok::<_, std::convert::Infallible>(chars.next())
+        }) {
+            Ok(valid) => valid?,
+            Err(error) => match error {},
         }
         Ok(Self(value))
+    }
+
+    pub(crate) fn from_wire(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        value: S,
+    ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
+        Ok(Self::validate(value.as_ref(), |chars| {
+            ctx.next_charged(chars, "NX payload text syntax")
+        })?
+        .map(|()| Self(value)))
+    }
+
+    fn validate<E>(
+        text: &str,
+        mut next: impl FnMut(&mut std::str::Chars<'_>) -> Result<Option<char>, E>,
+    ) -> Result<Result<(), &'static str>, E> {
+        if text.is_empty() {
+            return Ok(Err(
+                "value: must be nonempty text without control characters",
+            ));
+        }
+        let mut chars = text.chars();
+        while let Some(ch) = next(&mut chars)? {
+            if ch.is_control() {
+                return Ok(Err(
+                    "value: must be nonempty text without control characters",
+                ));
+            }
+        }
+        Ok(Ok(()))
     }
 
     pub(crate) fn as_str(&self) -> &str {
@@ -80,5 +112,34 @@ mod tests {
                 serde_json::to_string(text).unwrap()
             );
         }
+    }
+
+    #[test]
+    fn payload_text_iteration_refusal_propagates() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+        for text in ["Name", "Name\n"] {
+            let error = crate::test_support::resource_refusal_at(
+                &[],
+                ResourceDimension::WorkUnits,
+                "NX payload text syntax",
+                |ctx| PayloadText::from_wire(ctx, text).map(|value| value.is_ok()),
+            );
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "NX payload text syntax"));
+        }
+    }
+
+    #[test]
+    fn validation_stops_before_an_unread_suffix() {
+        let text = format!("\n{}", "a".repeat(4096));
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 1,
+            |ctx| {
+                assert!(PayloadText::from_wire(ctx, text.as_str()).unwrap().is_err());
+                assert!(PayloadText::new(text.as_str()).is_err());
+            },
+        );
     }
 }

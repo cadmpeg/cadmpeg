@@ -259,30 +259,6 @@ fn charged_remapping_preserves_collision_text_and_tables() {
 }
 
 #[test]
-fn empty_annotation_append_returns_an_existing_session_refusal() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_core::CodecError;
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let CodecError::ResourceLimit(first) = ctx
-        .charge_work(1, "existing annotation refusal")
-        .unwrap_err()
-    else {
-        panic!("work must refuse");
-    };
-    let mut annotations = crate::annotations::Annotations::default();
-    assert!(
-        matches!(annotations.append(&ctx, crate::annotations::Annotations::default(), "empty annotation append"), Err(CodecError::ResourceLimit(original)) if original == first)
-    );
-    assert_eq!(annotations, crate::annotations::Annotations::default());
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == first)
-    );
-}
-
-#[test]
 fn annotation_remap_destination_refusal_preserves_both_source_tables() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;

@@ -750,14 +750,14 @@ fn decode_tracks_fully_extended_geometry_header_shift() {
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
             .unwrap();
     assert!(matches!(
-        graph
-            .get(NodeKind::Plane, 6)
+        crate::test_support::with_decode_context(|ctx| graph.get(ctx, NodeKind::Plane, 6))
+            .unwrap()
             .and_then(crate::topology::Node::surface_geometry),
         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)))
     ));
     assert!(matches!(
-        graph
-            .get(NodeKind::Line, 9)
+        crate::test_support::with_decode_context(|ctx| graph.get(ctx, NodeKind::Line, 9))
+            .unwrap()
             .and_then(crate::topology::Node::curve_geometry),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_)))
     ));

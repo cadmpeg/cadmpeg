@@ -234,8 +234,13 @@ impl InventorLossCode {
 
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     pub(crate) fn kind(self, ctx: &DecodeContext<'_>) -> Result<LossKind, CodecError> {
-        let code = ctx.copy_retained_text(self.code(), "retain Inventor loss code")?;
-        let namespace = ctx.copy_retained_text("inventor", "retain Inventor loss namespace")?;
+        let code_text = self.code();
+        let mut code = ctx.retained_string(code_text.len(), "retain Inventor loss code")?;
+        code.push_str(code_text);
+        let namespace_text = "inventor";
+        let mut namespace =
+            ctx.retained_string(namespace_text.len(), "retain Inventor loss namespace")?;
+        namespace.push_str(namespace_text);
         let kind = cadmpeg_ir::report::loss::NamespacedLossKind::new_owned(
             namespace,
             code,

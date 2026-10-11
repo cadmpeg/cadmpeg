@@ -2,6 +2,8 @@
 //! Literals used by the NX object-model decoder.
 
 use crate::om::ExpressionUnit;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
 /// Root OM entity marker.
 pub(crate) const ROOT_MARKER: &[u8] = b"\x04\x01\x0eNX ";
@@ -13,17 +15,27 @@ pub(crate) const CLASS_NAME_PREFIX: &[u8] = b"UGS::";
 pub(crate) const NUMBER_PREFIX: &[u8] = b"(Number [";
 
 /// Resolve a numeric-expression unit token.
-#[must_use]
-pub(crate) fn unit_for(token: &str) -> Option<ExpressionUnit> {
-    if token.is_empty() || !token.bytes().all(|byte| byte.is_ascii_graphic()) {
-        return None;
+pub(crate) fn unit_for(
+    ctx: &DecodeContext<'_>,
+    token: &str,
+) -> Result<Option<ExpressionUnit>, CodecError> {
+    if token.is_empty()
+        || !ctx.all_by(
+            token.bytes(),
+            |byte| Ok(byte.is_ascii_graphic()),
+            "NX expression unit syntax",
+        )?
+    {
+        return Ok(None);
     }
-    Some(match token {
+    Ok(Some(match token {
         "mm" => ExpressionUnit::Millimeter,
         "in" => ExpressionUnit::Inch,
         "degrees" => ExpressionUnit::Degree,
-        token => ExpressionUnit::Native(token.to_string()),
-    })
+        token => {
+            ExpressionUnit::Native(ctx.copy_retained_text(token, "NX native expression unit")?)
+        }
+    }))
 }
 
 #[cfg(test)]
@@ -33,14 +45,46 @@ mod tests {
 
     #[test]
     fn resolves_known_and_native_units() {
-        assert_eq!(unit_for("mm"), Some(ExpressionUnit::Millimeter));
-        assert_eq!(unit_for("in"), Some(ExpressionUnit::Inch));
-        assert_eq!(unit_for("degrees"), Some(ExpressionUnit::Degree));
-        assert_eq!(
-            unit_for("custom/unit"),
-            Some(ExpressionUnit::Native("custom/unit".into()))
+        crate::test_support::with_decode_context(|ctx| {
+            assert_eq!(
+                unit_for(ctx, "mm").unwrap(),
+                Some(ExpressionUnit::Millimeter)
+            );
+            assert_eq!(unit_for(ctx, "in").unwrap(), Some(ExpressionUnit::Inch));
+            assert_eq!(
+                unit_for(ctx, "degrees").unwrap(),
+                Some(ExpressionUnit::Degree)
+            );
+            assert_eq!(
+                unit_for(ctx, "custom/unit").unwrap(),
+                Some(ExpressionUnit::Native("custom/unit".into()))
+            );
+            assert_eq!(unit_for(ctx, "").unwrap(), None);
+            assert_eq!(unit_for(ctx, "custom unit").unwrap(), None);
+        });
+    }
+
+    fn native_unit_format_refusal(dimension: cadmpeg_core::decode::ResourceDimension) {
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            dimension,
+            "NX native expression unit",
+            |ctx| unit_for(ctx, "custom/unit"),
         );
-        assert_eq!(unit_for(""), None);
-        assert_eq!(unit_for("custom unit"), None);
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("native unit formatting must propagate refusal");
+        };
+        assert_eq!(limit.operation, "NX native expression unit");
+        assert_eq!(limit.dimension, dimension);
+    }
+
+    #[test]
+    fn native_unit_format_refuses_work() {
+        native_unit_format_refusal(cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    }
+
+    #[test]
+    fn native_unit_format_refuses_retained_bytes() {
+        native_unit_format_refusal(cadmpeg_core::decode::ResourceDimension::RetainedBytes);
     }
 }

@@ -12,106 +12,97 @@ use crate::report::{
     Severity,
 };
 
-fn curve_dependencies<'a>(
-    ctx: &DecodeContext<'_>,
-    definition: &'a ProceduralCurveDefinition,
-) -> Result<Vec<&'a str>, CodecError> {
-    Ok(match definition {
-        ProceduralCurveDefinition::Replica { source, .. } => {
-            ctx.collect_vec([source.as_str()], "cycle dependencies")?
-        }
-        ProceduralCurveDefinition::Subset(payload) => {
-            ctx.collect_vec([payload.source().as_str()], "cycle dependencies")?
-        }
+fn curve_dependencies(definition: &ProceduralCurveDefinition) -> [Option<&str>; 3] {
+    match definition {
+        ProceduralCurveDefinition::Replica { source, .. } => [Some(source.as_str()), None, None],
+        ProceduralCurveDefinition::Subset(payload) => [Some(payload.source().as_str()), None, None],
         ProceduralCurveDefinition::TolerantIntersection {
             construction,
             parameterization: Some(_),
             ..
-        } => ctx.collect_vec(
-            construction
-                .supports()
-                .iter()
-                .map(crate::ids::SurfaceId::as_str),
-            "cycle dependencies",
-        )?,
-        _ => Vec::new(),
-    })
+        } => [
+            Some(construction.supports()[0].as_str()),
+            Some(construction.supports()[1].as_str()),
+            None,
+        ],
+        _ => [None; 3],
+    }
 }
 
-fn surface_dependencies<'a>(
-    ctx: &DecodeContext<'_>,
-    definition: &'a ProceduralSurfaceDefinition,
-) -> Result<Vec<&'a str>, CodecError> {
-    Ok(match definition {
+fn surface_dependencies(definition: &ProceduralSurfaceDefinition) -> [Option<&str>; 3] {
+    match definition {
         ProceduralSurfaceDefinition::AxisRevolution(payload) => {
-            ctx.collect_vec([payload.directrix().as_str()], "cycle dependencies")?
+            [Some(payload.directrix().as_str()), None, None]
         }
         ProceduralSurfaceDefinition::Extrusion(payload) => {
-            ctx.collect_vec([payload.directrix().as_str()], "cycle dependencies")?
+            [Some(payload.directrix().as_str()), None, None]
         }
         ProceduralSurfaceDefinition::LinearSweep(payload) => {
-            ctx.collect_vec([payload.directrix().as_str()], "cycle dependencies")?
+            [Some(payload.directrix().as_str()), None, None]
         }
         ProceduralSurfaceDefinition::Revolution(payload) => {
-            ctx.collect_vec([payload.directrix().as_str()], "cycle dependencies")?
+            [Some(payload.directrix().as_str()), None, None]
         }
         ProceduralSurfaceDefinition::Ruled { first, second, .. } => {
-            ctx.collect_vec([first.as_str(), second.as_str()], "cycle dependencies")?
+            [Some(first.as_str()), Some(second.as_str()), None]
         }
-        ProceduralSurfaceDefinition::Sum(payload) => ctx.collect_vec(
-            [payload.first().as_str(), payload.second().as_str()],
-            "cycle dependencies",
-        )?,
-        ProceduralSurfaceDefinition::Sweep(payload) if payload.native().is_some() => ctx
-            .collect_vec(
-                [payload.profile().as_str(), payload.spine().as_str()],
-                "cycle dependencies",
-            )?,
+        ProceduralSurfaceDefinition::Sum(payload) => [
+            Some(payload.first().as_str()),
+            Some(payload.second().as_str()),
+            None,
+        ],
+        ProceduralSurfaceDefinition::Sweep(payload) if payload.native().is_some() => [
+            Some(payload.profile().as_str()),
+            Some(payload.spine().as_str()),
+            None,
+        ],
         ProceduralSurfaceDefinition::Blend(payload) => {
             if let Some(native) = payload.native() {
-                let sides = ctx.admit_iter(&native.sides, "cycle dependency scan")?;
-                ctx.collect_vec(
-                    sides
-                        .filter_map(|side| {
-                            side.surface
-                                .as_ref()
-                                .map(|support| support.surface.as_str())
-                        })
-                        .chain(std::iter::once(native.slice.as_str())),
-                    "cycle dependencies",
-                )?
+                let [first, second] = &native.sides;
+                [
+                    first
+                        .surface
+                        .as_ref()
+                        .map(|support| support.surface.as_str()),
+                    second
+                        .surface
+                        .as_ref()
+                        .map(|support| support.surface.as_str()),
+                    Some(native.slice.as_str()),
+                ]
             } else {
-                Vec::new()
+                [None; 3]
             }
         }
         ProceduralSurfaceDefinition::VariableBlend(payload) => {
-            let sides = ctx.admit_iter(&payload.construction().sides, "cycle dependency scan")?;
-            ctx.collect_vec(
-                sides.filter_map(|side| {
-                    side.surface
-                        .as_ref()
-                        .map(|support| support.surface.as_str())
-                }),
-                "cycle dependencies",
-            )?
+            let [first, second] = &payload.construction().sides;
+            [
+                first
+                    .surface
+                    .as_ref()
+                    .map(|support| support.surface.as_str()),
+                second
+                    .surface
+                    .as_ref()
+                    .map(|support| support.surface.as_str()),
+                None,
+            ]
         }
         ProceduralSurfaceDefinition::CurveBounded { support, .. } => {
-            ctx.collect_vec([support.as_str()], "cycle dependencies")?
+            [Some(support.as_str()), None, None]
         }
-        ProceduralSurfaceDefinition::Replica { source, .. } => {
-            ctx.collect_vec([source.as_str()], "cycle dependencies")?
-        }
+        ProceduralSurfaceDefinition::Replica { source, .. } => [Some(source.as_str()), None, None],
         ProceduralSurfaceDefinition::Subset(payload) => {
-            ctx.collect_vec([payload.support().as_str()], "cycle dependencies")?
+            [Some(payload.support().as_str()), None, None]
         }
         ProceduralSurfaceDefinition::ParallelOffset(payload) => {
-            ctx.collect_vec([payload.support().as_str()], "cycle dependencies")?
+            [Some(payload.support().as_str()), None, None]
         }
         ProceduralSurfaceDefinition::Offset(payload) => {
-            ctx.collect_vec([payload.support().as_str()], "cycle dependencies")?
+            [Some(payload.support().as_str()), None, None]
         }
-        _ => Vec::new(),
-    })
+        _ => [None; 3],
+    }
 }
 
 struct Frame<'a, 'session> {
@@ -128,7 +119,7 @@ enum Visit {
 }
 
 struct Node<'ir> {
-    dependencies: Vec<&'ir str>,
+    dependencies: [Option<&'ir str>; 3],
     visit: Visit,
 }
 
@@ -148,8 +139,8 @@ fn walk_cycles(
                     .procedural_curves_for_curve(curve.id.as_str(), ctx)?
                     .and_then(|rows| rows.first().copied())
                 {
-                    let dependencies = curve_dependencies(ctx, procedural.definition())?;
-                    if !dependencies.is_empty() {
+                    let dependencies = curve_dependencies(procedural.definition());
+                    if dependencies.iter().any(Option::is_some) {
                         add(
                             curve.id.as_str(),
                             Node {
@@ -165,8 +156,8 @@ fn walk_cycles(
                 if let Some(procedural) =
                     index.procedural_surface_for_surface(surface.id.as_str(), ctx)?
                 {
-                    let dependencies = surface_dependencies(ctx, procedural.definition())?;
-                    if !dependencies.is_empty() {
+                    let dependencies = surface_dependencies(procedural.definition());
+                    if dependencies.iter().any(Option::is_some) {
                         add(
                             surface.id.as_str(),
                             Node {
@@ -180,8 +171,13 @@ fn walk_cycles(
             Ok(())
         })
     })?;
-    let mut starts = graph_storage
-        .with_storage(|| ctx.collect_vec(graph.identities(), "cycle start identities"))?;
+    let mut starts = Vec::new();
+    graph_storage.with_storage(|| {
+        for identity in graph.identities("cycle start identities")? {
+            ctx.push_vec(&mut starts, identity, "cycle start identities")?;
+        }
+        Ok::<_, CodecError>(())
+    })?;
     ctx.stable_sort_by(&mut starts, |id| *id, Ord::cmp, "cycle start order")?;
     let mut stack = Vec::new();
     for start in starts {
@@ -209,7 +205,7 @@ fn walk_cycles(
             ctx.charge_work(1, "cycle traversal")?;
             let child = graph
                 .get(ctx, frame.node)?
-                .and_then(|node| node.dependencies.get(frame.next_child))
+                .and_then(|node| node.dependencies.iter().flatten().nth(frame.next_child))
                 .copied();
             let Some(child) = child else {
                 if let Some(finished) = stack.pop() {
