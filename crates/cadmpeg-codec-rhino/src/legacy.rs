@@ -906,8 +906,9 @@ fn legacy_curve_segments<'ctx>(
             "V1 curve segment count exceeds the remaining bytes".to_string(),
         ));
     }
+    let mut backing_storage = ctx.reserve_scoped(0, "Rhino V1 curve segments")?;
     let mut segments = Vec::new();
-    ctx.reserve_scoped_vec(workspace, &mut segments, count, "Rhino V1 curve segments")?;
+    ctx.reserve_scoped_vec(&mut backing_storage, &mut segments, count, "Rhino V1 curve segments")?;
     for _ in 0..count {
         ctx.charge_work(1, "Rhino V1 counted record traversal")?;
         let spline = chunk_at(
@@ -944,6 +945,7 @@ fn legacy_curve_segments<'ctx>(
             .skip(spline.next_offset() - reader.position())
             .or_else(|error| Err(malformed(ctx, &error)?))?;
     }
+    workspace.absorb(&mut backing_storage)?;
     Ok(segments)
 }
 
@@ -963,8 +965,9 @@ fn legacy_curve(
             return Err(error);
         }
     };
-    let (mut segments, mut segment_storage) =
+    let (segments_buffer, mut segment_storage) =
         ctx.temporary_vec(sources.len(), "Rhino V1 joined curve lanes")?;
+    let mut segments = segments_buffer;
     for (segment, mut storage) in ctx.admit_iter(sources, "Rhino V1 joined curve lanes")? {
         segment_storage.absorb(&mut storage)?;
         segments.push(segment);
@@ -3631,8 +3634,8 @@ pub(crate) fn decode_v1_with_header(
                 &mut retained_bytes,
             )?;
         } else if chunk.typecode == TCODE_RH_POINT && !chunk.short() {
-            let mut model = Model::default();
             let mut model_storage = ctx.reserve_scoped(0, "Rhino V1 point candidate backing")?;
+            let mut model = Model::default();
             let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)
                 .or_else(|error| Err(malformed(ctx, &error)?))?;
             let Some(position) = FinitePoint3::new(Point3::new(
@@ -3842,8 +3845,8 @@ pub(crate) fn decode_v1_with_header(
                             .ok_or_else(|| {
                                 CodecError::malformed("V1 curve segment source ended early")
                             })?;
-                        let mut model = Model::default();
                         let mut model_storage = ctx.reserve_scoped(0, "Rhino V1 curve candidate backing")?;
+                        let mut model = Model::default();
                         ctx.charge_entities(9, "Rhino V1 curve topology")?;
                         ctx.reserve_scoped_vec(
                             &mut model_storage,
@@ -4161,8 +4164,8 @@ pub(crate) fn decode_v1_with_header(
                 )
             }) {
                 Ok(mesh) => {
-                    let mut model = Model::default();
                     let mut model_storage = ctx.reserve_scoped(0, "Rhino V1 mesh candidate backing")?;
+                    let mut model = Model::default();
                     ctx.charge_entities(1, "Rhino V1 mesh")?;
                     ctx.reserve_scoped_vec(&mut model_storage, &mut model.tessellations, 1, "Rhino V1 mesh storage")?;
                     model.tessellations
