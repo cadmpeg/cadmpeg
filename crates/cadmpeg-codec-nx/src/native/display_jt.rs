@@ -31,11 +31,12 @@ use version::JtVersionField;
 
 use cadmpeg_container::compression::inflate_zlib_member_owned;
 use cadmpeg_core::bytes::{assemble_f32_le, assemble_u32_le, assemble_u64_le};
+use cadmpeg_core::decode::admission::{Admission, StandardAdmission};
 use cadmpeg_core::decode::{DecodeContext, ProvisionalReservation, ScopedReservation, View};
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{FiniteBinary32, UnitBinary32};
-use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
+use cadmpeg_ir::tessellation::{ShadedVertex, Tessellation, TessellationChannel, TessellationMesh};
 use cadmpeg_ir::units::UnitVector3;
 use cadmpeg_ir::{topology::Color, SourceObjectAssociation};
 
@@ -86,10 +87,19 @@ fn retain_jt_tessellation_id(
             format_args!("nx:display-jt:tessellation#{offset}-{object_id}-path-{path}"),
             operation,
         )?,
-        None => ctx.format_retained(
-            format_args!("nx:display-jt:tessellation#{offset}-{object_id}"),
-            operation,
-        )?,
+        None => {
+            use std::fmt::Write;
+            let key_length =
+                offset.checked_ilog10().unwrap_or(0) + object_id.checked_ilog10().unwrap_or(0) + 3;
+            let key_length = usize::try_from(key_length)
+                .map_err(|_| CodecError::malformed("display-jt identity length exceeds usize"))?;
+            let length = "nx:display-jt:tessellation#".len() + key_length;
+            let mut id = ctx.retained_string(length, operation)?;
+            write!(id, "nx:display-jt:tessellation#{offset}-{object_id}").map_err(|_| {
+                CodecError::malformed("display-jt tessellation identity formatting")
+            })?;
+            id
+        }
     };
     cadmpeg_ir::tessellation::TessellationId::mint(id)
         .map_err(|error| CodecError::malformed(format_args!("display-jt tessellation: {error}")))
@@ -1109,52 +1119,20 @@ impl Serialize for JtRangeLimits {
     }
 }
 
-/// Traversal admission for the range-limit check that serde and decode share.
-trait JtRangeLimitAdmission {
-    type Error;
-    fn next<'a>(
-        &self,
-        values: &mut std::slice::Iter<'a, FiniteBinary32>,
-    ) -> Result<Option<&'a FiniteBinary32>, Self::Error>;
-}
-
-struct ContextFreeJtRangeLimitAdmission;
-
-impl JtRangeLimitAdmission for ContextFreeJtRangeLimitAdmission {
-    type Error = Infallible;
-    fn next<'a>(
-        &self,
-        values: &mut std::slice::Iter<'a, FiniteBinary32>,
-    ) -> Result<Option<&'a FiniteBinary32>, Self::Error> {
-        Ok(values.next())
-    }
-}
-
-struct DecodeJtRangeLimitAdmission<'ctx, 'decode> {
-    ctx: &'ctx DecodeContext<'decode>,
-}
-
-impl JtRangeLimitAdmission for DecodeJtRangeLimitAdmission<'_, '_> {
-    type Error = CodecError;
-    fn next<'a>(
-        &self,
-        values: &mut std::slice::Iter<'a, FiniteBinary32>,
-    ) -> Result<Option<&'a FiniteBinary32>, Self::Error> {
-        self.ctx
-            .next_charged(values, "validate DisplayJT range limits")
-    }
-}
-
 impl JtRangeLimits {
     /// Accepts strictly increasing distances whose first value is nonnegative,
     /// so every later value is nonnegative too.
-    fn from_finite<A: JtRangeLimitAdmission>(
+    fn from_finite<A: Admission>(
         values: Vec<FiniteBinary32>,
         admission: &A,
     ) -> Result<Result<Self, &'static str>, A::Error> {
         let mut previous = None;
         let mut visits = values.iter();
-        while let Some(value) = admission.next(&mut visits)? {
+        loop {
+            admission.charge_work(1, "validate DisplayJT range limits")?;
+            let Some(value) = visits.next() else {
+                break;
+            };
             let value = value.get();
             if previous.map_or(value < 0.0, |previous| previous >= value) {
                 return Ok(Err(
@@ -1178,7 +1156,7 @@ impl TryFrom<Vec<f32>> for JtRangeLimits {
                 )
             })
             .collect::<Result<Vec<_>, _>>()?;
-        match Self::from_finite(values, &ContextFreeJtRangeLimitAdmission) {
+        match Self::from_finite(values, &StandardAdmission) {
             Ok(limits) => limits,
             Err(error) => match error {},
         }
@@ -2911,9 +2889,7 @@ fn parse_jt9_range_lod_node_body(
         let Some(range_limits) = parse_jt_f32_vector(ctx, &mut view)? else {
             return Ok(None);
         };
-        let Ok(range_limits) =
-            JtRangeLimits::from_finite(range_limits, &DecodeJtRangeLimitAdmission { ctx })?
-        else {
+        let Ok(range_limits) = JtRangeLimits::from_finite(range_limits, ctx)? else {
             return Ok(None);
         };
         let (Some(x), Some(y), Some(z)) = (
@@ -6520,13 +6496,11 @@ fn transform_jt_normal(matrix: [[f64; 4]; 4], normal: [f32; 3]) -> Option<UnitVe
 
 /// Every Display-JT tessellation the shape graph states.
 ///
-/// A record the graph does not shape as a mesh yields no tessellation and is
-/// not an error; a mesh whose lanes do not pair is.
+/// A record the graph does not shape as a mesh yields no tessellation.
 ///
 /// # Errors
 ///
-/// Refuses a vertex-normal lane that does not cover the vertex lane, and a
-/// tessellation the IR will not admit.
+/// Refuses a resource request or a tessellation the IR will not admit.
 pub(super) fn display_jt_tessellations(
     ctx: &DecodeContext<'_>,
     inputs: &DisplayJtTessellationInputs<'_>,
@@ -6634,498 +6608,483 @@ fn display_jt_tessellation_rows(
     inputs: &DisplayJtTessellationInputs<'_>,
 ) -> Result<Option<Vec<(Tessellation, u64)>>, CodecError> {
     let mut storage = ctx.provisional_retained("DisplayJT tessellation candidates")?;
-    let result =
-        storage.with_storage(|| -> Result<_, CodecError> {
-            macro_rules! required {
-                ($value:expr) => {
-                    match $value {
-                        Some(value) => value,
-                        None => return Ok(None),
-                    }
-                };
-            }
-            let DisplayJtTessellationInputs {
-                meshes,
-                coordinates,
-                normals,
-                colors,
-                texture_coordinates,
-                ..
-            } = *inputs;
-            if meshes.is_empty() {
-                return Ok(Some(Vec::new()));
-            }
-            let scene_index = JtTessellationIndex::new(ctx, inputs)?;
-            let mesh_index = JtMeshIndex::new(ctx, inputs, &scene_index)?;
-            let vertex_arrays = JtVertexArrayIndex::new(
-                ctx,
-                &[],
-                coordinates,
-                normals,
-                colors,
-                texture_coordinates,
-            )?;
-            let mut scenes = BTreeMap::<&str, Option<JtSceneGraph<'_, '_>>>::new();
-            let mut scene_storage = ctx.reserve_scoped(0, "nx JT scene graphs")?;
-            let mut tessellations = Vec::new();
-            let mut visits = meshes.iter();
-            while let Some(mesh) = ctx.next_charged(&mut visits, "nx JT tessellation meshes")? {
-                let coordinate_header = required!(ctx
-                    .get_hash_map(
-                        &mesh_index.coordinate_headers,
-                        mesh.coordinate_header.as_str(),
-                        "match JT mesh coordinate headers",
-                    )?
-                    .copied()
-                    .flatten());
-                let coordinates = required!(ctx
-                    .get_hash_map(
-                        &vertex_arrays.coordinates,
-                        coordinate_header.id.as_str(),
-                        "match DisplayJT vertex coordinates",
-                    )?
-                    .copied()
-                    .flatten());
-                let shape_element = required!(ctx
-                    .get_hash_map(
-                        &mesh_index.shape_elements,
-                        coordinate_header.element.as_str(),
-                        "match JT mesh shape elements",
-                    )?
-                    .copied()
-                    .flatten());
-                let binding = required!(ctx
-                    .get_hash_map(
-                        &mesh_index.bindings,
-                        &(shape_element.segment.as_str(), shape_element.object_id),
-                        "match JT mesh bindings",
-                    )?
-                    .copied()
-                    .flatten());
-                let shape_node = required!(ctx
-                    .get_hash_map(
-                        &mesh_index.shape_nodes,
-                        &(binding.shape_node_object_id, binding.scene_segment.as_str()),
-                        "match JT mesh shape nodes",
-                    )?
-                    .copied()
-                    .flatten());
-                if ctx
-                    .get_btree_map(
-                        &scenes,
+    let result = storage.with_storage(|| -> Result<_, CodecError> {
+        macro_rules! required {
+            ($value:expr) => {
+                match $value {
+                    Some(value) => value,
+                    None => return Ok(None),
+                }
+            };
+        }
+        let DisplayJtTessellationInputs {
+            meshes,
+            coordinates,
+            normals,
+            colors,
+            texture_coordinates,
+            ..
+        } = *inputs;
+        if meshes.is_empty() {
+            return Ok(Some(Vec::new()));
+        }
+        let scene_index = JtTessellationIndex::new(ctx, inputs)?;
+        let mesh_index = JtMeshIndex::new(ctx, inputs, &scene_index)?;
+        let vertex_arrays =
+            JtVertexArrayIndex::new(ctx, &[], coordinates, normals, colors, texture_coordinates)?;
+        let mut scenes = BTreeMap::<&str, Option<JtSceneGraph<'_, '_>>>::new();
+        let mut scene_storage = ctx.reserve_scoped(0, "nx JT scene graphs")?;
+        let mut tessellations = Vec::new();
+        let mut visits = meshes.iter();
+        while let Some(mesh) = ctx.next_charged(&mut visits, "nx JT tessellation meshes")? {
+            let coordinate_header = required!(ctx
+                .get_hash_map(
+                    &mesh_index.coordinate_headers,
+                    mesh.coordinate_header.as_str(),
+                    "match JT mesh coordinate headers",
+                )?
+                .copied()
+                .flatten());
+            let coordinates = required!(ctx
+                .get_hash_map(
+                    &vertex_arrays.coordinates,
+                    coordinate_header.id.as_str(),
+                    "match DisplayJT vertex coordinates",
+                )?
+                .copied()
+                .flatten());
+            let shape_element = required!(ctx
+                .get_hash_map(
+                    &mesh_index.shape_elements,
+                    coordinate_header.element.as_str(),
+                    "match JT mesh shape elements",
+                )?
+                .copied()
+                .flatten());
+            let binding = required!(ctx
+                .get_hash_map(
+                    &mesh_index.bindings,
+                    &(shape_element.segment.as_str(), shape_element.object_id),
+                    "match JT mesh bindings",
+                )?
+                .copied()
+                .flatten());
+            let shape_node = required!(ctx
+                .get_hash_map(
+                    &mesh_index.shape_nodes,
+                    &(binding.shape_node_object_id, binding.scene_segment.as_str()),
+                    "match JT mesh shape nodes",
+                )?
+                .copied()
+                .flatten());
+            if ctx
+                .get_btree_map(
+                    &scenes,
+                    binding.scene_segment.as_str(),
+                    "nx JT scene graphs",
+                )?
+                .is_none()
+            {
+                let graph = JtSceneGraph::new(ctx, &binding.scene_segment, inputs, &scene_index)?;
+                scene_storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut scenes,
                         binding.scene_segment.as_str(),
+                        graph,
                         "nx JT scene graphs",
-                    )?
-                    .is_none()
-                {
-                    let graph =
-                        JtSceneGraph::new(ctx, &binding.scene_segment, inputs, &scene_index)?;
-                    scene_storage.with_storage(|| {
-                        ctx.insert_btree_map(
-                            &mut scenes,
-                            binding.scene_segment.as_str(),
-                            graph,
-                            "nx JT scene graphs",
-                        )
-                    })?;
+                    )
+                })?;
+            }
+            let graph = required!(ctx
+                .get_btree_map(
+                    &scenes,
+                    binding.scene_segment.as_str(),
+                    "nx JT scene graphs"
+                )?
+                .and_then(Option::as_ref));
+            let (paths, _paths_storage) = required!(graph.node_paths(ctx, shape_node.object_id)?);
+            let mut render_storage = ctx.reserve_scoped(0, "nx JT rendered triangles")?;
+            let mut rendered = Vec::new();
+            let mut visits = mesh.polygons.iter();
+            while let Some(polygon) = ctx.next_charged(&mut visits, "nx JT rendered triangles")? {
+                if polygon.group < 0 {
+                    continue;
                 }
-                let graph = required!(ctx
-                    .get_btree_map(
-                        &scenes,
-                        binding.scene_segment.as_str(),
-                        "nx JT scene graphs"
-                    )?
-                    .and_then(Option::as_ref));
-                let (paths, _paths_storage) =
-                    required!(graph.node_paths(ctx, shape_node.object_id)?);
-                let mut render_storage = ctx.reserve_scoped(0, "nx JT rendered triangles")?;
-                let mut rendered = Vec::new();
-                let mut visits = mesh.polygons.iter();
-                while let Some(polygon) =
-                    ctx.next_charged(&mut visits, "nx JT rendered triangles")?
-                {
-                    if polygon.group < 0 {
-                        continue;
-                    }
-                    let corners: &[(u32, Option<u32>); 3] =
-                        required!(polygon.corners.as_slice().try_into().ok());
-                    let triangle = corners.map(|(vertex, _)| vertex);
-                    let attributes = corners.map(|(_, attribute)| attribute);
-                    ctx.reserve_scoped_vec(
-                        &mut render_storage,
-                        &mut rendered,
-                        1,
-                        "nx JT rendered triangles",
-                    )?;
-                    rendered.push((triangle, attributes));
+                let corners: &[(u32, Option<u32>); 3] =
+                    required!(polygon.corners.as_slice().try_into().ok());
+                let triangle = corners.map(|(vertex, _)| vertex);
+                let attributes = corners.map(|(_, attribute)| attribute);
+                ctx.reserve_scoped_vec(
+                    &mut render_storage,
+                    &mut rendered,
+                    1,
+                    "nx JT rendered triangles",
+                )?;
+                rendered.push((triangle, attributes));
+            }
+            if rendered.is_empty() {
+                return Ok(None);
+            }
+            let vertex_header = required!(ctx
+                .get_hash_map(
+                    &mesh_index.vertex_headers,
+                    shape_element.id.as_str(),
+                    "match JT mesh vertex headers",
+                )?
+                .copied()
+                .flatten());
+            let normal_array = if vertex_header.vertex_bindings & 0x8 != 0 {
+                Some(required!(vertex_arrays.normals(ctx, vertex_header)?))
+            } else {
+                None
+            };
+            let color_array = if vertex_header.vertex_bindings & 0x30 != 0 {
+                Some(required!(vertex_arrays.colors(ctx, vertex_header)?))
+            } else {
+                None
+            };
+            let mut texture_arrays = Vec::new();
+            let mut texture_array_storage =
+                ctx.reserve_scoped(0, "nx JT texture array references")?;
+            for channel in 0..8_u8 {
+                if !jt_texture_channel_bound(vertex_header.vertex_bindings, channel) {
+                    continue;
                 }
-                if rendered.is_empty() {
-                    return Ok(None);
-                }
-                let vertex_header = required!(ctx
+                let array =
+                    required!(vertex_arrays.texture_coordinates(ctx, vertex_header, channel)?);
+                ctx.reserve_scoped_vec(
+                    &mut texture_array_storage,
+                    &mut texture_arrays,
+                    1,
+                    "nx JT texture array references",
+                )?;
+                texture_arrays.push(array);
+            }
+            let vertex_flag_array = if vertex_header.vertex_bindings & 0x40 != 0 {
+                Some(required!(ctx
                     .get_hash_map(
-                        &mesh_index.vertex_headers,
-                        shape_element.id.as_str(),
-                        "match JT mesh vertex headers",
+                        &mesh_index.vertex_flags,
+                        vertex_header.id.as_str(),
+                        "match JT mesh vertex flags",
                     )?
                     .copied()
-                    .flatten());
-                let normal_array = if vertex_header.vertex_bindings & 0x8 != 0 {
-                    Some(required!(vertex_arrays.normals(ctx, vertex_header)?))
+                    .flatten()))
+            } else {
+                None
+            };
+            let mut visits = paths.into_iter();
+            while let Some(path) = ctx.next_charged(&mut visits, "nx JT tessellation paths")? {
+                let transform = path.matrix;
+                let color = if color_array.is_none() || path.override_vertex_colors == Some(true) {
+                    display_jt_path_color(&path)
                 } else {
                     None
                 };
-                let color_array = if vertex_header.vertex_bindings & 0x30 != 0 {
-                    Some(required!(vertex_arrays.colors(ctx, vertex_header)?))
-                } else {
+                let instance_path = path.instance_path;
+                let mut node_path_storage = ctx.reserve_scoped(0, "nx JT rendered node path")?;
+                let node_path = if path.node_path.len() == 1 {
                     None
-                };
-                let mut texture_arrays = Vec::new();
-                let mut texture_array_storage =
-                    ctx.reserve_scoped(0, "nx JT texture array references")?;
-                for channel in 0..8_u8 {
-                    if !jt_texture_channel_bound(vertex_header.vertex_bindings, channel) {
-                        continue;
-                    }
-                    let array = required!(vertex_arrays.texture_coordinates(
-                        ctx,
-                        vertex_header,
-                        channel
-                    )?);
-                    ctx.reserve_scoped_vec(
-                        &mut texture_array_storage,
-                        &mut texture_arrays,
-                        1,
-                        "nx JT texture array references",
-                    )?;
-                    texture_arrays.push(array);
-                }
-                let vertex_flag_array = if vertex_header.vertex_bindings & 0x40 != 0 {
-                    Some(required!(ctx
-                        .get_hash_map(
-                            &mesh_index.vertex_flags,
-                            vertex_header.id.as_str(),
-                            "match JT mesh vertex flags",
-                        )?
-                        .copied()
-                        .flatten()))
                 } else {
-                    None
-                };
-                let mut visits = paths.into_iter();
-                while let Some(path) = ctx.next_charged(&mut visits, "nx JT tessellation paths")? {
-                    let transform = path.matrix;
-                    let color =
-                        if color_array.is_none() || path.override_vertex_colors == Some(true) {
-                            display_jt_path_color(&path)
-                        } else {
-                            None
-                        };
-                    let instance_path = path.instance_path;
-                    let mut node_path_storage =
-                        ctx.reserve_scoped(0, "nx JT rendered node path")?;
-                    let node_path = node_path_storage.with_storage(|| {
+                    Some(node_path_storage.with_storage(|| {
                         ctx.join_display_retained(
                             path.node_path.iter(),
                             "-",
                             "nx JT rendered node path",
                         )
-                    })?;
-                    let convert_point = |index: u32| {
-                        let point = coordinates.points_m.get(usize::try_from(index).ok()?)?;
-                        transform_jt_point(transform, point.map(FiniteBinary32::get))
-                    };
-                    let has_vertex_attributes = normal_array.is_some()
-                        || color_array.is_some()
-                        || !texture_arrays.is_empty()
-                        || vertex_flag_array.is_some();
-                    let (vertices, triangles, normal_vectors, channels) = if has_vertex_attributes {
-                        let triangle_vertex_count = required!(rendered.len().checked_mul(3));
-                        let mut vertices = ctx
-                            .vector_storage(triangle_vertex_count, "nx JT tessellation vertices")?;
-                        let mut triangles =
-                            ctx.vector_storage(rendered.len(), "nx JT tessellation triangles")?;
-                        // An unshaded mesh is stated by absence: no normal record, no
-                        // normal lane.
-                        let mut normal_vectors = match normal_array {
-                            Some(_) => Some(ctx.vector_storage(
-                                triangle_vertex_count,
-                                "nx JT tessellation normals",
-                            )?),
-                            None => None,
-                        };
-                        let mut color_data = match color_array {
-                            Some(_) => ctx.vector_storage(
-                                required!(triangle_vertex_count.checked_mul(16)),
-                                "nx JT tessellation colors",
-                            )?,
-                            None => Vec::new(),
-                        };
-                        let (mut texture_component_counts, mut texture_count_storage) = ctx
-                            .scoped_vector_storage(
-                                texture_arrays.len(),
-                                "nx JT texture component counts",
-                            )?;
-                        for array in &texture_arrays {
-                            let count = required!(array.values.first()).len();
-                            if !(1..=4).contains(&count)
-                                || !ctx.all_by(
-                                    &array.values,
-                                    |value| Ok(value.len() == count),
-                                    "nx JT texture component validation",
-                                )?
-                            {
-                                return Ok(None);
-                            }
-                            ctx.reserve_scoped_vec(
-                                &mut texture_count_storage,
-                                &mut texture_component_counts,
-                                1,
-                                "nx JT texture component counts",
-                            )?;
-                            texture_component_counts.push(count);
-                        }
-                        let (mut texture_data, mut texture_data_storage) = ctx
-                            .scoped_vector_storage(
-                                texture_component_counts.len(),
-                                "nx JT tessellation texture buffers",
-                            )?;
-                        for &component_count in &texture_component_counts {
-                            let byte_count = required!(triangle_vertex_count
-                                .checked_mul(component_count)
-                                .and_then(|count| count.checked_mul(4)));
-                            let data =
-                                ctx.vector_storage(byte_count, "nx JT tessellation texture bytes")?;
-                            ctx.reserve_scoped_vec(
-                                &mut texture_data_storage,
-                                &mut texture_data,
-                                1,
-                                "nx JT tessellation texture buffers",
-                            )?;
-                            texture_data.push(data);
-                        }
-                        let mut vertex_flag_data = match vertex_flag_array {
-                            Some(_) => ctx.vector_storage(
-                                required!(triangle_vertex_count.checked_mul(4)),
-                                "nx JT tessellation flag bytes",
-                            )?,
-                            None => Vec::new(),
-                        };
-                        let mut visits = rendered.iter().copied();
-                        while let Some((triangle, attributes)) =
-                            ctx.next_charged(&mut visits, "nx JT tessellation triangles")?
-                        {
-                            let base = required!(u32::try_from(vertices.len()).ok());
-                            for (coordinate, attribute) in triangle.into_iter().zip(attributes) {
-                                ctx.reserve_vec(&mut vertices, 1, "nx JT tessellation vertices")?;
-                                vertices.push(required!(convert_point(coordinate)));
-                                let attribute =
-                                    required!(usize::try_from(required!(attribute)).ok());
-                                if let (Some(normal_array), Some(normal_vectors)) =
-                                    (normal_array, normal_vectors.as_mut())
-                                {
-                                    let normal = required!(normal_array.normals.get(attribute));
-                                    ctx.reserve_vec(
-                                        normal_vectors,
-                                        1,
-                                        "nx JT tessellation normals",
-                                    )?;
-                                    normal_vectors.push(FiniteVector3::from(required!(
-                                        transform_jt_normal(
-                                            transform,
-                                            normal.map(FiniteBinary32::get),
-                                        )
-                                    )));
-                                }
-                                if let Some(color_array) = color_array {
-                                    for component in required!(color_array.colors.get(attribute)) {
-                                        ctx.reserve_vec(
-                                            &mut color_data,
-                                            4,
-                                            "nx JT tessellation colors",
-                                        )?;
-                                        color_data
-                                            .extend_from_slice(&component.get().to_le_bytes());
-                                    }
-                                }
-                                for (index, array) in texture_arrays.iter().enumerate() {
-                                    let data = required!(texture_data.get_mut(index));
-                                    for component in required!(array.values.get(attribute)) {
-                                        ctx.reserve_vec(
-                                            data,
-                                            4,
-                                            "nx JT tessellation texture bytes",
-                                        )?;
-                                        data.extend_from_slice(&component.get().to_le_bytes());
-                                    }
-                                }
-                                if let Some(array) = vertex_flag_array {
-                                    let value = required!(array.values.get(attribute));
-                                    ctx.reserve_vec(
-                                        &mut vertex_flag_data,
-                                        4,
-                                        "nx JT tessellation flag bytes",
-                                    )?;
-                                    vertex_flag_data.extend_from_slice(&value.to_le_bytes());
-                                }
-                            }
-                            ctx.reserve_vec(&mut triangles, 1, "nx JT tessellation triangles")?;
-                            triangles.push([
-                                base,
-                                required!(base.checked_add(1)),
-                                required!(base.checked_add(2)),
-                            ]);
-                        }
-                        let channel_count = required!(usize::from(color_array.is_some())
-                            .checked_add(texture_arrays.len())
-                            .and_then(
-                                |count| count.checked_add(usize::from(vertex_flag_array.is_some()))
-                            ));
-                        let mut channels =
-                            ctx.vector_storage(channel_count, "nx JT tessellation channels")?;
-                        if color_array.is_some() {
-                            ctx.push_vec(
-                                &mut channels,
-                                required!(TessellationChannel::new(
-                                    cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
-                                    16,
-                                    DISPLAY_JT_COLOR_CHANNEL,
-                                    required!(u32::try_from(
-                                        (vertex_header.vertex_bindings >> 4) & 0x3
-                                    )
-                                    .ok()),
-                                    color_data,
-                                )
-                                .ok()),
-                                "nx JT tessellation channels",
-                            )?;
-                        }
-                        let mut component_counts = texture_component_counts.into_iter();
-                        let mut data_buffers = texture_data.into_iter();
-                        for (array, ordinal) in texture_arrays.iter().zip(0_u32..) {
-                            let (Some(component_count), Some(data)) =
-                                (component_counts.next(), data_buffers.next())
-                            else {
-                                break;
-                            };
-                            ctx.push_vec(
-                                &mut channels,
-                                required!(TessellationChannel::new(
-                                    cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
-                                    required!(u32::try_from(required!(
-                                        component_count.checked_mul(4)
-                                    ))
-                                    .ok()),
-                                    required!(DISPLAY_JT_TEXTURE_CHANNEL_BASE.checked_add(ordinal)),
-                                    u32::from(array.channel)
-                                        | required!(u32::try_from(
-                                            (vertex_header.vertex_bindings
-                                                >> (8 + 4 * array.channel))
-                                                & 0xf
-                                        )
-                                        .ok())
-                                            << 8,
-                                    data,
-                                )
-                                .ok()),
-                                "nx JT tessellation channels",
-                            )?;
-                        }
-                        if vertex_flag_array.is_some() {
-                            ctx.push_vec(
-                                &mut channels,
-                                required!(TessellationChannel::new(
-                                    cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
-                                    4,
-                                    DISPLAY_JT_VERTEX_FLAG_CHANNEL,
-                                    0,
-                                    vertex_flag_data,
-                                )
-                                .ok()),
-                                "nx JT tessellation channels",
-                            )?;
-                        }
-                        (vertices, triangles, normal_vectors, channels)
+                    })?)
+                };
+                let convert_point = |index: u32| {
+                    let point = coordinates.points_m.get(usize::try_from(index).ok()?)?;
+                    transform_jt_point(transform, point.map(FiniteBinary32::get))
+                };
+                let has_vertex_attributes = normal_array.is_some()
+                    || color_array.is_some()
+                    || !texture_arrays.is_empty()
+                    || vertex_flag_array.is_some();
+                let (mesh, channels) = if has_vertex_attributes {
+                    let triangle_vertex_count = required!(rendered.len().checked_mul(3));
+                    let mut vertices = if normal_array.is_none() {
+                        ctx.vector_storage(triangle_vertex_count, "nx JT tessellation vertices")?
                     } else {
-                        let mut vertices = ctx.vector_storage(
-                            coordinates.points_m.len(),
-                            "nx JT tessellation vertices",
-                        )?;
-                        let mut visits = 0..coordinates.points_m.len();
-                        while let Some(index) =
-                            ctx.next_charged(&mut visits, "nx JT tessellation vertices")?
-                        {
-                            ctx.reserve_vec(&mut vertices, 1, "nx JT tessellation vertices")?;
-                            vertices
-                                .push(required!(convert_point(required!(
-                                    u32::try_from(index).ok()
-                                ))));
-                        }
-                        let mut triangles =
-                            ctx.vector_storage(rendered.len(), "nx JT tessellation triangles")?;
-                        let mut visits = rendered.iter();
-                        while let Some((triangle, _)) =
-                            ctx.next_charged(&mut visits, "nx JT tessellation triangles")?
-                        {
-                            ctx.reserve_vec(&mut triangles, 1, "nx JT tessellation triangles")?;
-                            triangles.push(*triangle);
-                        }
-                        (vertices, triangles, None, Vec::new())
+                        Vec::new()
                     };
-                    ctx.charge_entities(1, "nx JT tessellations")?;
-                    let tessellation_id = (retain_jt_tessellation_id(
-                        ctx,
-                        shape_element.source_offset,
-                        shape_element.object_id,
-                        (path.node_path.len() != 1).then_some(node_path.as_str()),
-                    ))?;
-                    let mesh =
-                        match cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
+                    let mut triangles =
+                        ctx.vector_storage(rendered.len(), "nx JT tessellation triangles")?;
+                    let mut shaded_vertices = match normal_array {
+                        Some(_) => Some(ctx.vector_storage(
+                            triangle_vertex_count,
+                            "nx JT tessellation shaded vertices",
+                        )?),
+                        None => None,
+                    };
+                    let mut color_data = match color_array {
+                        Some(_) => ctx.vector_storage(
+                            required!(triangle_vertex_count.checked_mul(16)),
+                            "nx JT tessellation colors",
+                        )?,
+                        None => Vec::new(),
+                    };
+                    let (mut texture_component_counts, mut texture_count_storage) = ctx
+                        .scoped_vector_storage(
+                            texture_arrays.len(),
+                            "nx JT texture component counts",
+                        )?;
+                    for array in &texture_arrays {
+                        let count = required!(array.values.first()).len();
+                        if !(1..=4).contains(&count)
+                            || !ctx.all_by(
+                                &array.values,
+                                |value| Ok(value.len() == count),
+                                "nx JT texture component validation",
+                            )?
+                        {
+                            return Ok(None);
+                        }
+                        ctx.reserve_scoped_vec(
+                            &mut texture_count_storage,
+                            &mut texture_component_counts,
+                            1,
+                            "nx JT texture component counts",
+                        )?;
+                        texture_component_counts.push(count);
+                    }
+                    let (mut texture_data, mut texture_data_storage) = ctx.scoped_vector_storage(
+                        texture_component_counts.len(),
+                        "nx JT tessellation texture buffers",
+                    )?;
+                    for &component_count in &texture_component_counts {
+                        let byte_count = required!(triangle_vertex_count
+                            .checked_mul(component_count)
+                            .and_then(|count| count.checked_mul(4)));
+                        let data =
+                            ctx.vector_storage(byte_count, "nx JT tessellation texture bytes")?;
+                        ctx.reserve_scoped_vec(
+                            &mut texture_data_storage,
+                            &mut texture_data,
+                            1,
+                            "nx JT tessellation texture buffers",
+                        )?;
+                        texture_data.push(data);
+                    }
+                    let mut vertex_flag_data = match vertex_flag_array {
+                        Some(_) => ctx.vector_storage(
+                            required!(triangle_vertex_count.checked_mul(4)),
+                            "nx JT tessellation flag bytes",
+                        )?,
+                        None => Vec::new(),
+                    };
+                    let mut visits = rendered.iter().copied();
+                    while let Some((triangle, attributes)) =
+                        ctx.next_charged(&mut visits, "nx JT tessellation triangles")?
+                    {
+                        let vertex_count =
+                            shaded_vertices.as_ref().map_or(vertices.len(), Vec::len);
+                        let base = required!(u32::try_from(vertex_count).ok());
+                        for (coordinate, attribute) in triangle.into_iter().zip(attributes) {
+                            let position = required!(convert_point(coordinate));
+                            let attribute = required!(usize::try_from(required!(attribute)).ok());
+                            if let (Some(normal_array), Some(shaded_vertices)) =
+                                (normal_array, shaded_vertices.as_mut())
+                            {
+                                let normal = required!(normal_array.normals.get(attribute));
+                                let normal = FiniteVector3::from(required!(transform_jt_normal(
+                                    transform,
+                                    normal.map(FiniteBinary32::get),
+                                )));
+                                ctx.push_vec(
+                                    shaded_vertices,
+                                    ShadedVertex { position, normal },
+                                    "nx JT tessellation shaded vertices",
+                                )?;
+                            } else {
+                                ctx.push_vec(
+                                    &mut vertices,
+                                    position,
+                                    "nx JT tessellation vertices",
+                                )?;
+                            }
+                            if let Some(color_array) = color_array {
+                                for component in required!(color_array.colors.get(attribute)) {
+                                    ctx.reserve_vec(
+                                        &mut color_data,
+                                        4,
+                                        "nx JT tessellation colors",
+                                    )?;
+                                    color_data.extend_from_slice(&component.get().to_le_bytes());
+                                }
+                            }
+                            for (index, array) in texture_arrays.iter().enumerate() {
+                                let data = required!(texture_data.get_mut(index));
+                                for component in required!(array.values.get(attribute)) {
+                                    ctx.reserve_vec(data, 4, "nx JT tessellation texture bytes")?;
+                                    data.extend_from_slice(&component.get().to_le_bytes());
+                                }
+                            }
+                            if let Some(array) = vertex_flag_array {
+                                let value = required!(array.values.get(attribute));
+                                ctx.reserve_vec(
+                                    &mut vertex_flag_data,
+                                    4,
+                                    "nx JT tessellation flag bytes",
+                                )?;
+                                vertex_flag_data.extend_from_slice(&value.to_le_bytes());
+                            }
+                        }
+                        ctx.reserve_vec(&mut triangles, 1, "nx JT tessellation triangles")?;
+                        triangles.push([
+                            base,
+                            required!(base.checked_add(1)),
+                            required!(base.checked_add(2)),
+                        ]);
+                    }
+                    let channel_count = required!(usize::from(color_array.is_some())
+                        .checked_add(texture_arrays.len())
+                        .and_then(
+                            |count| count.checked_add(usize::from(vertex_flag_array.is_some()))
+                        ));
+                    let mut channels =
+                        ctx.vector_storage(channel_count, "nx JT tessellation channels")?;
+                    if color_array.is_some() {
+                        ctx.push_vec(
+                            &mut channels,
+                            required!(TessellationChannel::new(
+                                cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
+                                16,
+                                DISPLAY_JT_COLOR_CHANNEL,
+                                required!(u32::try_from(
+                                    (vertex_header.vertex_bindings >> 4) & 0x3
+                                )
+                                .ok()),
+                                color_data,
+                            )
+                            .ok()),
+                            "nx JT tessellation channels",
+                        )?;
+                    }
+                    let mut component_counts = texture_component_counts.into_iter();
+                    let mut data_buffers = texture_data.into_iter();
+                    for (array, ordinal) in texture_arrays.iter().zip(0_u32..) {
+                        let (Some(component_count), Some(data)) =
+                            (component_counts.next(), data_buffers.next())
+                        else {
+                            break;
+                        };
+                        ctx.push_vec(
+                            &mut channels,
+                            required!(TessellationChannel::new(
+                                cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
+                                required!(
+                                    u32::try_from(required!(component_count.checked_mul(4))).ok()
+                                ),
+                                required!(DISPLAY_JT_TEXTURE_CHANNEL_BASE.checked_add(ordinal)),
+                                u32::from(array.channel)
+                                    | required!(u32::try_from(
+                                        (vertex_header.vertex_bindings >> (8 + 4 * array.channel))
+                                            & 0xf
+                                    )
+                                    .ok())
+                                        << 8,
+                                data,
+                            )
+                            .ok()),
+                            "nx JT tessellation channels",
+                        )?;
+                    }
+                    if vertex_flag_array.is_some() {
+                        ctx.push_vec(
+                            &mut channels,
+                            required!(TessellationChannel::new(
+                                cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
+                                4,
+                                DISPLAY_JT_VERTEX_FLAG_CHANNEL,
+                                0,
+                                vertex_flag_data,
+                            )
+                            .ok()),
+                            "nx JT tessellation channels",
+                        )?;
+                    }
+                    let mesh = match shaded_vertices {
+                        Some(vertices) => TessellationMesh::ShadedList {
                             vertices,
                             triangles,
-                            normal_vectors,
-                        ) {
-                            Ok(mesh) => mesh,
-                            Err(error) => {
-                                return Err(CodecError::malformed(format_args!(
-                                    "display-jt tessellation: {error}"
-                                )));
-                            }
-                        };
-                    let tessellation = (Tessellation::from_parts(tessellation_id, mesh, channels)
-                        .map_err(|error| {
-                            CodecError::malformed(format_args!("display-jt tessellation: {error}"))
-                        }))?;
-                    ctx.push_vec(
-                        &mut tessellations,
-                        (
-                            tessellation.with_source_object(Some(SourceObjectAssociation {
-                                format: cadmpeg_ir::CodecFormat::Nx,
-                                object_id: required!(
-                                    cadmpeg_core::text::NonBlankString::for_decode(
-                                        ctx,
-                                        (ctx.join_retained(
-                                            &[&shape_node.id],
-                                            "",
-                                            "nx JT tessellation source identity"
-                                        ))?,
-                                        "validate nonblank text"
-                                    )?
-                                ),
-                                name: None,
-                                color,
-                                visible: None,
-                                layer: None,
-                                instance_path: path.instance_storage.commit_value(instance_path)?,
-                            })),
-                            shape_node.source_offset,
-                        ),
-                        "nx JT tessellations",
+                        },
+                        None => TessellationMesh::List {
+                            vertices,
+                            triangles,
+                        },
+                    };
+                    (mesh, channels)
+                } else {
+                    let mut vertices = ctx.vector_storage(
+                        coordinates.points_m.len(),
+                        "nx JT tessellation vertices",
                     )?;
-                }
+                    let mut visits = 0..coordinates.points_m.len();
+                    while let Some(index) =
+                        ctx.next_charged(&mut visits, "nx JT tessellation vertices")?
+                    {
+                        ctx.reserve_vec(&mut vertices, 1, "nx JT tessellation vertices")?;
+                        vertices.push(required!(convert_point(required!(
+                            u32::try_from(index).ok()
+                        ))));
+                    }
+                    let mut triangles =
+                        ctx.vector_storage(rendered.len(), "nx JT tessellation triangles")?;
+                    let mut visits = rendered.iter();
+                    while let Some((triangle, _)) =
+                        ctx.next_charged(&mut visits, "nx JT tessellation triangles")?
+                    {
+                        ctx.reserve_vec(&mut triangles, 1, "nx JT tessellation triangles")?;
+                        triangles.push(*triangle);
+                    }
+                    (
+                        TessellationMesh::List {
+                            vertices,
+                            triangles,
+                        },
+                        Vec::new(),
+                    )
+                };
+                ctx.charge_entities(1, "nx JT tessellations")?;
+                let tessellation_id = retain_jt_tessellation_id(
+                    ctx,
+                    shape_element.source_offset,
+                    shape_element.object_id,
+                    node_path.as_deref(),
+                )?;
+                let tessellation = Tessellation::from_parts(tessellation_id, mesh, channels)
+                    .map_err(|error| {
+                        CodecError::malformed(format_args!("display-jt tessellation: {error}"))
+                    })?;
+                ctx.push_vec(
+                    &mut tessellations,
+                    (
+                        tessellation.with_source_object(Some(SourceObjectAssociation {
+                            format: cadmpeg_ir::CodecFormat::Nx,
+                            object_id: required!(cadmpeg_core::text::NonBlankString::for_decode(
+                                ctx,
+                                (ctx.join_retained(
+                                    &[&shape_node.id],
+                                    "",
+                                    "nx JT tessellation source identity"
+                                ))?,
+                                "validate nonblank text"
+                            )?),
+                            name: None,
+                            color,
+                            visible: None,
+                            layer: None,
+                            instance_path: path.instance_storage.commit_value(instance_path)?,
+                        })),
+                        shape_node.source_offset,
+                    ),
+                    "nx JT tessellations",
+                )?;
             }
-            Ok(Some(tessellations))
-        })?;
+        }
+        Ok(Some(tessellations))
+    })?;
     let Some(result) = result else {
         return Ok(None);
     };

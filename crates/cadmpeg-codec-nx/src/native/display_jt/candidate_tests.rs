@@ -256,9 +256,9 @@ fn index_candidate_releases_valid_row_after_nonascending_offset() {
 
 #[test]
 fn document_candidate_releases_valid_document_before_invalid_second_header() {
-    let mut bytes = super::document_admission_tests::one_document_bytes();
+    let mut data = super::document_admission_tests::one_document_bytes();
+    let container = super::document_admission_tests::one_document(&data);
     let mut indices = crate::test_support::with_decode_context(|ctx| {
-        let container = super::document_admission_tests::one_document(&bytes);
         display_jt_indices(ctx, &container).unwrap()
     });
     let first = indices[0].rows.first().clone();
@@ -267,8 +267,8 @@ fn document_candidate_releases_valid_document_before_invalid_second_header() {
     second.ordinal = 1;
     second.header_offset = 189;
     indices[0] = DisplayJtIndex::new(indices[0].id.clone(), 9, vec![first, second], 0).unwrap();
-    bytes.extend_from_slice(b"Version ");
-    let container = super::document_admission_tests::one_document(&bytes);
+    data.extend_from_slice(b"Version ");
+    let container = super::document_admission_tests::one_document(&data);
     assert_released(|ctx| {
         assert!(display_jt_documents(ctx, &container, &indices)?.is_empty());
         Ok(())
@@ -322,8 +322,8 @@ fn shape_element_candidate_releases_valid_element_before_wrong_base_type() {
 
 #[test]
 fn tri_strip_header_candidate_releases_valid_header_before_invalid_element() {
-    let (bytes, elements) = shape_fixture(&tri_strip_body(&[]));
-    let container = container(&bytes);
+    let (container_bytes, elements) = shape_fixture(&tri_strip_body(&[]));
+    let container = container(&container_bytes);
     crate::test_support::with_decode_context(|ctx| {
         assert_eq!(
             display_jt_tri_strip_lod_headers(ctx, &container, &elements[..1])
@@ -340,8 +340,8 @@ fn tri_strip_header_candidate_releases_valid_header_before_invalid_element() {
 
 #[test]
 fn face_degree_candidate_releases_valid_record_before_invalid_element() {
-    let (bytes, elements) = shape_fixture(&tri_strip_body(&zero_packet()));
-    let container = container(&bytes);
+    let (container_bytes, elements) = shape_fixture(&tri_strip_body(&zero_packet()));
+    let container = container(&container_bytes);
     crate::test_support::with_decode_context(|ctx| {
         assert_eq!(
             display_jt_initial_face_degree_symbols(ctx, &container, &elements[..1]).unwrap()[0]
@@ -360,8 +360,8 @@ fn topology_candidate_releases_valid_packets_before_invalid_element() {
     let mut representation = vec![0; 24 * 4];
     representation.extend_from_slice(&0x1234_5678_u32.to_le_bytes());
     representation.extend_from_slice(&[0; 16]);
-    let (bytes, elements) = shape_fixture(&tri_strip_body(&representation));
-    let container = container(&bytes);
+    let (container_bytes, elements) = shape_fixture(&tri_strip_body(&representation));
+    let container = container(&container_bytes);
     crate::test_support::with_decode_context(|ctx| {
         assert_eq!(
             display_jt_topology_packet_sequences(ctx, &container, &elements[..1])
@@ -664,8 +664,8 @@ fn string_property_candidate_releases_atom_before_wrong_type() {
     let mut expanded = framed_element(STRING_TYPE, 5, &string_body("x"));
     let mut valid = expanded.clone();
     end_marker(&mut valid);
-    let (valid_bytes, valid_segment) = compressed_fixture(&valid, 31);
-    let valid_container = container(&valid_bytes);
+    let (valid_container_bytes, valid_segment) = compressed_fixture(&valid, 31);
+    let valid_container = container(&valid_container_bytes);
     crate::test_support::with_decode_context(|ctx| {
         assert_eq!(
             display_jt_string_property_atoms(ctx, &valid_container, &[valid_segment])
@@ -676,8 +676,8 @@ fn string_property_candidate_releases_atom_before_wrong_type() {
     });
     expanded.extend_from_slice(&framed_element([0; 16], 5, &string_body("y")));
     end_marker(&mut expanded);
-    let (bytes, segment) = compressed_fixture(&expanded, 31);
-    let container = container(&bytes);
+    let (container_bytes, segment) = compressed_fixture(&expanded, 31);
+    let container = container(&container_bytes);
     assert_released(|ctx| {
         assert!(
             display_jt_string_property_atoms(ctx, &container, std::slice::from_ref(&segment))?
@@ -792,8 +792,8 @@ fn binding_candidate_releases_valid_binding_before_trailing_property_bytes() {
         segment_id: [9; 16],
         ..segment(&[], 7, None)
     };
-    let (valid_bytes, valid_segment) = compressed_fixture(&expanded, 1);
-    let valid_container = container(&valid_bytes);
+    let (valid_container_bytes, valid_segment) = compressed_fixture(&expanded, 1);
+    let valid_container = container(&valid_container_bytes);
     crate::test_support::with_decode_context(|ctx| {
         assert_eq!(
             display_jt_shape_lod_bindings(ctx, &valid_container, &[valid_segment, target.clone()])
@@ -803,8 +803,8 @@ fn binding_candidate_releases_valid_binding_before_trailing_property_bytes() {
         );
     });
     expanded.push(1);
-    let (bytes, source) = compressed_fixture(&expanded, 1);
-    let container = container(&bytes);
+    let (container_bytes, source) = compressed_fixture(&expanded, 1);
+    let container = container(&container_bytes);
     assert_released(|ctx| {
         assert!(
             display_jt_shape_lod_bindings(ctx, &container, &[source.clone(), target.clone()])?
@@ -824,8 +824,8 @@ fn scene_family_candidate_releases_prefix_when_its_next_member_fails() {
     let mut expanded = framed_element([0; 16], 1, &group);
     let mut valid = expanded.clone();
     end_marker(&mut valid);
-    let (valid_bytes, valid_segment) = compressed_fixture(&valid, 1);
-    let valid_container = container(&valid_bytes);
+    let (valid_container_bytes, valid_segment) = compressed_fixture(&valid, 1);
+    let valid_container = container(&valid_container_bytes);
     let document = DisplayJtDocument {
         id: "document".into(),
         index_row: "row".into(),
@@ -851,8 +851,8 @@ fn scene_family_candidate_releases_prefix_when_its_next_member_fails() {
     });
     expanded.extend_from_slice(&framed_element([0; 16], 1, &[]));
     end_marker(&mut expanded);
-    let (bytes, segment) = compressed_fixture(&expanded, 1);
-    let container = container(&bytes);
+    let (container_bytes, segment) = compressed_fixture(&expanded, 1);
+    let container = container(&container_bytes);
     assert_released(|ctx| {
         let result = display_jt_scene_nodes(
             ctx,
@@ -870,8 +870,8 @@ fn scene_family_candidate_releases_prefix_when_its_next_member_fails() {
 fn null_predictor_keeps_the_packet_without_copying_its_collection() {
     let mut packet = zero_packet();
     packet[..4].copy_from_slice(&2_u32.to_le_bytes());
-    let (bytes, elements) = shape_fixture(&tri_strip_body(&packet));
-    let container = container(&bytes);
+    let (container_bytes, elements) = shape_fixture(&tri_strip_body(&packet));
+    let container = container(&container_bytes);
     crate::test_support::with_decode_context_over(
         &[],
         |policy| policy.limits.max_collection_items = 3,
@@ -920,10 +920,7 @@ fn negative_range_limit_rejection_does_not_visit_the_remaining_values() {
     let mut values = vec![FiniteBinary32::new(-1.).unwrap()];
     values.extend([FiniteBinary32::ZERO; 128]);
     assert_first_visit_only("validate DisplayJT range limits", |ctx| {
-        assert!(
-            JtRangeLimits::from_finite(values.clone(), &DecodeJtRangeLimitAdmission { ctx })?
-                .is_err()
-        );
+        assert!(JtRangeLimits::from_finite(values.clone(), ctx)?.is_err());
         Ok(())
     });
 }
@@ -943,8 +940,8 @@ fn invalid_first_index_row_does_not_visit_the_remaining_rows() {
 #[test]
 fn invalid_first_toc_extent_does_not_visit_the_remaining_entries() {
     let mut data = super::document_admission_tests::one_document_bytes();
+    let container = super::document_admission_tests::one_document(&data);
     let indices = crate::test_support::with_decode_context(|ctx| {
-        let container = super::document_admission_tests::one_document(&data);
         display_jt_indices(ctx, &container).unwrap()
     });
     data[133..137].copy_from_slice(&129_u32.to_le_bytes());
@@ -972,8 +969,8 @@ fn topology_predictor_scratch_is_released_while_values_remain_retained() {
     }
     representation.extend_from_slice(&0x1234_5678_u32.to_le_bytes());
     representation.extend_from_slice(&[0; 16]);
-    let (bytes, elements) = shape_fixture(&tri_strip_body(&representation));
-    let container = container(&bytes);
+    let (container_bytes, elements) = shape_fixture(&tri_strip_body(&representation));
+    let container = container(&container_bytes);
     crate::test_support::with_decode_context_over(
         &[],
         |policy| policy.limits.max_retained_bytes = ALLOWANCE,
@@ -1056,4 +1053,28 @@ fn sequence_arena_literal_retains_storage_without_work_admission() {
         "display_jt_compressed_element_sequences",
         "retain native arena error name",
     );
+}
+
+#[test]
+fn range_limit_admissions_share_strict_order_validation() {
+    for (raw, valid) in [
+        (vec![], true),
+        (vec![0.], true),
+        (vec![0., 1., 2.], true),
+        (vec![-1., 0.], false),
+        (vec![0., 0.], false),
+        (vec![1., 0.], false),
+    ] {
+        assert_eq!(JtRangeLimits::try_from(raw.clone()).is_ok(), valid);
+        crate::test_support::with_decode_context(|ctx| {
+            let values = raw
+                .into_iter()
+                .map(|value| FiniteBinary32::new(value).unwrap())
+                .collect();
+            assert_eq!(
+                JtRangeLimits::from_finite(values, ctx).unwrap().is_ok(),
+                valid
+            );
+        });
+    }
 }

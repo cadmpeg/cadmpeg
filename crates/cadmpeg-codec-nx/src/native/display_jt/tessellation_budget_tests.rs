@@ -550,3 +550,131 @@ fn tessellation_texture_component_width_does_not_charge_bounded_work() {
     // same input-sized records; only bounded scalar work and output size differ.
     assert_eq!(measure(1), measure(4));
 }
+
+#[test]
+fn tessellation_fixed_identity_retains_exact_storage_without_work() {
+    for (offset, object_id) in [(0, 0), (9, 10), (u64::MAX, u32::MAX)] {
+        let expected = format!("nx:display-jt:tessellation#{offset}-{object_id}");
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_work_units = 0;
+                policy.limits.max_retained_bytes =
+                    cadmpeg_core::decode::u64_from_index(expected.len());
+            },
+            |ctx| {
+                let id = retain_jt_tessellation_id(ctx, offset, object_id, None).unwrap();
+                assert_eq!(id.as_str(), expected);
+                assert!(ctx.resource_refusal().is_none());
+            },
+        );
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "nx JT tessellation identity",
+            |ctx| retain_jt_tessellation_id(ctx, offset, object_id, None),
+        );
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("identity storage refusal");
+        };
+        assert_eq!(limit.used, 0);
+        assert_eq!(
+            limit.additional,
+            cadmpeg_core::decode::u64_from_index(expected.len())
+        );
+    }
+}
+
+#[test]
+fn tessellation_shaded_rows_are_retained_and_admitted_directly() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let mut fixture = Fixture::new();
+    fixture.vertex_headers[0].vertex_bindings = 0x8;
+    for corner in &mut fixture.meshes[0].polygons[0].corners {
+        corner.1 = Some(0);
+    }
+    let normals = [DisplayJtVertexNormals {
+        id: "normals".into(),
+        vertex_records_header: "vertex-header".into(),
+        normals: vec![[
+            FiniteBinary32::ZERO,
+            FiniteBinary32::ZERO,
+            FiniteBinary32::ONE,
+        ]],
+        normal_hash: 0,
+        byte_len: 0,
+        source_offset: 0,
+    }];
+    let decode = |ctx: &DecodeContext<'_>| {
+        let mut inputs = fixture.inputs();
+        inputs.normals = &normals;
+        display_jt_tessellations(ctx, &inputs)
+    };
+    crate::test_support::with_decode_context(|ctx| {
+        let tessellations = decode(ctx).unwrap();
+        assert_eq!(tessellations.len(), 1);
+        let TessellationMesh::ShadedList {
+            vertices,
+            triangles,
+        } = tessellations[0].0.mesh()
+        else {
+            panic!("shaded triangle-list mesh");
+        };
+        assert_eq!(triangles, &[[0, 1, 2]]);
+        assert_eq!(vertices.len(), 3);
+        for vertex in vertices {
+            assert_eq!(vertex.position.get(), Point3::new(0., 0., 0.));
+            assert_eq!(vertex.normal.get(), Vector3::new(0., 0., 1.));
+        }
+        assert!(tessellations[0].0.channels().is_empty());
+    });
+    for (dimension, additional) in [
+        (
+            ResourceDimension::RetainedBytes,
+            cadmpeg_core::decode::u64_from_index(
+                3 * std::mem::size_of::<ShadedVertex<FinitePoint3, FiniteVector3>>(),
+            ),
+        ),
+        (ResourceDimension::CollectionItems, 1),
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            dimension,
+            "nx JT tessellation shaded vertices",
+            decode,
+        );
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("shaded vertex refusal");
+        };
+        assert_eq!(limit.additional, additional);
+    }
+}
+
+#[test]
+fn tessellation_shaded_candidate_releases_rows_before_invalid_normal() {
+    let mut fixture = Fixture::new();
+    fixture.vertex_headers[0].vertex_bindings = 0x8;
+    fixture.vertex_headers[0].vertex_attribute_count = 2;
+    fixture.meshes[0].polygons[0].corners = vec![(0, Some(0)), (0, Some(1)), (0, Some(0))];
+    let normals = [DisplayJtVertexNormals {
+        id: "normals".into(),
+        vertex_records_header: "vertex-header".into(),
+        normals: vec![
+            [
+                FiniteBinary32::ZERO,
+                FiniteBinary32::ZERO,
+                FiniteBinary32::ONE,
+            ],
+            [FiniteBinary32::ZERO; 3],
+        ],
+        normal_hash: 0,
+        byte_len: 0,
+        source_offset: 0,
+    }];
+    assert_released(|ctx| {
+        let mut inputs = fixture.inputs();
+        inputs.normals = &normals;
+        assert!(display_jt_tessellations(ctx, &inputs)?.is_empty());
+        Ok(())
+    });
+}
