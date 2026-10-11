@@ -796,7 +796,7 @@ fn semantic_decode_barrier_rejects_invalid_cadir() {
         tolerance: None,
     });
 
-    let error = crate::reader::reject_invalid_semantic_ir(&ir).unwrap_err();
+    let error = crate::reader::reject_invalid_semantic_ir(&cadmpeg_test_support::service_decode_context(), &ir).unwrap_err();
 
     assert!(error.to_string().contains("referential_integrity"));
     assert!(error.to_string().contains("iges:model:vertex#invalid"));
@@ -807,10 +807,10 @@ fn semantic_decode_barrier_rejects_invalid_cadir() {
 #[test]
 fn phase5_freeze_shared_admissibility_fixtures() {
     let accepted = cadmpeg_test_support::admissibility::accepted_empty();
-    assert!(crate::reader::reject_invalid_semantic_ir(&accepted).is_ok());
+    assert!(crate::reader::reject_invalid_semantic_ir(&cadmpeg_test_support::service_decode_context(), &accepted).is_ok());
     let rejected = cadmpeg_test_support::admissibility::rejected_missing_point("iges:model")
         .expect("fixture identities are valid");
-    let error = crate::reader::reject_invalid_semantic_ir(&rejected).unwrap_err();
+    let error = crate::reader::reject_invalid_semantic_ir(&cadmpeg_test_support::service_decode_context(), &rejected).unwrap_err();
     assert!(error.to_string().contains("referential_integrity"));
 }
 
@@ -1057,4 +1057,107 @@ fn decode_quarantine_index_does_not_retain_temporary_nodes() {
     drop(probe);
     assert!(result.ir().model.points.is_empty());
     assert!(!result.report().losses.is_empty());
+}
+
+
+#[test]
+fn semantic_decode_barrier_charges_the_live_session() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let ir = CadIr::empty();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "IR neutral validation",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::reject_invalid_semantic_ir(&ctx, &ir)
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else { panic!("expected validation refusal"); };
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn decode_transfer_verification_charges_the_live_session() {
+    let bytes = point_file();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "decode transfer verification",
+        |cap| {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+            policy.limits.max_work_units = cap;
+            cadmpeg_test_support::decode::full(&IgesCodec, &bytes, &policy)
+                .map_err(|failure| match failure {
+                    cadmpeg_ir::DecodeFailure::Codec(error) => error,
+                    other => panic!("unexpected decode refusal: {other:?}"),
+                })
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else { panic!("expected ledger refusal"); };
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn semantic_decode_barrier_keeps_every_full_validation_check() {
+    use cadmpeg_ir::report::check::{Check, Finding, ValidationReport};
+    use cadmpeg_ir::report::Severity;
+    // Each serialized variant has the same full-validation admission rule.
+    let variants: Vec<Check> = [
+        "identity", "pmi", "presentation", "arena_order", "referential_integrity",
+        "coedge_pairing", "wire_topology", "shell_topology", "carrier_reachability",
+        "annotations", "native_links", "parameter_domain", "tolerances",
+        "payload_integrity", "tessellation", "geometric_consistency", "counts",
+    ].into_iter().map(|name| serde_json::from_value(serde_json::json!(name)).unwrap()).collect();
+    let report = ValidationReport {
+        entity_counts: Default::default(),
+        findings: variants.into_iter().map(|check| Finding {
+            check, severity: Severity::Error, message: "invalid".into(), entity: None,
+        }).collect(),
+        losses: Vec::new(),
+    };
+    let expected = report.findings.clone();
+    let filtered = cadmpeg_ir::validate::admit::filter_checks(
+        &cadmpeg_test_support::service_decode_context(), report, super::IGES_SEMANTIC_CHECKS,
+    ).unwrap();
+    assert_eq!(filtered.findings, expected);
+    assert_eq!(super::IGES_SEMANTIC_CHECKS.len(), expected.len());
+}
+
+
+#[test]
+fn semantic_decode_barrier_preserves_full_noncore_findings() {
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::report::check::Check;
+    use cadmpeg_ir::report::Severity;
+    use cadmpeg_ir::topology::Point;
+    let mut unsorted = CadIr::empty();
+    for key in ["z", "a"] {
+        unsorted.model.points.push(Point::new(
+            PointId::mint(format!("iges:model:point#{key}")).unwrap(),
+            FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(), None,
+        ));
+    }
+    let full = cadmpeg_ir::validate_neutral(&unsorted, Vec::new()).unwrap();
+    let first = full.findings.iter().find(|finding| finding.severity >= Severity::Error).unwrap();
+    assert_eq!(first.check, Check::ArenaOrder);
+    let entity = first.entity.as_deref().map_or(String::new(), |id| format!(" for {id}"));
+    let expected = CodecError::malformed(format_args!(
+        "IGES semantic projection produced invalid CADIR: {}{entity}: {}", first.check, first.message,
+    ));
+    let actual = super::reject_invalid_semantic_ir(
+        &cadmpeg_test_support::service_decode_context(), &unsorted,
+    ).unwrap_err();
+    assert_eq!(actual.to_string(), expected.to_string());
+
+    let mut warned = CadIr::empty();
+    warned.tolerances.linear = cadmpeg_ir::scalar::PositiveLength::new(2_000_000.0).unwrap();
+    let full = cadmpeg_ir::validate_neutral(&warned, Vec::new()).unwrap();
+    assert!(full.findings.iter().any(|finding| finding.check == Check::Tolerances));
+    assert!(full.is_ok());
+    super::reject_invalid_semantic_ir(
+        &cadmpeg_test_support::service_decode_context(), &warned,
+    ).unwrap();
 }
