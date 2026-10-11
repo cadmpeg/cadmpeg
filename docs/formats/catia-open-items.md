@@ -44,13 +44,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the selected role to assign field semantics.
 
-### DI-03. `CATFeatCont` and `CATPrtCont` relationship
+### DI-03. Part-container object-graph ownership
 
-**Question.** How does a `CATFeatCont` object graph relate to the design history in `CATPrtCont`?
+**Question.** How does an outer `Data` declaration's 16-byte identifier select the physical stream containing the part's design-history object graph?
 
-**Known.** `catia.md` §7.3 "An object graph is preceded by" defines object-graph framing, entity identity, structural owner groups, and source-schema selection. Container class names and owner groups are independent incidences.
+**Known.** `catia.md` §3.1 "The outer logical stream named `Data`" defines concrete/base class declarations and their identifiers. `CATFeatCont` names a base class of `CATPrtCont`, directly or through `CATProdCont`. This class ancestry does not join object graphs. `catia.md` §7.3 "An object graph is preceded by" defines object-graph framing, entity identity, structural owner groups, and source-schema selection. Class names, structural owner groups, and physical stream ownership are distinct incidences.
 
-**Need.** We must know the relationship to combine feature records into one design history.
+**Need.** We must know the identifier-to-stream mapping across directory name forms and establish unique complete graph-extent containment before assigning the part's modeling scope.
 
 ### DI-04. Inline `7C09` reference roles
 
