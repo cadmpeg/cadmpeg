@@ -161,10 +161,14 @@ fn face_only_outputs_do_not_index_body_modifier_ordinals() {
     let mut feature = ordering_feature();
     feature.native_ref = Some("native".into());
     let mut features = [feature];
+    for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::WorkUnits] {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = u64::MAX;
+    policy.limits.max_work_units = u64::MAX;
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-        ResourceDimension::MaterializedBytes,
+        dimension,
         "index SLDPRT body modifier ordinals",
         None,
     );
@@ -186,6 +190,7 @@ fn face_only_outputs_do_not_index_body_modifier_ordinals() {
         std::slice::from_ref(&model.bodies[0].id)
     );
     ctx.finish_session().unwrap();
+    }
 }
 
 #[test]

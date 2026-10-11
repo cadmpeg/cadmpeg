@@ -1156,7 +1156,7 @@ fn expression_rewrite_refuses_admitted_output_storage() {
     ] {
         let error = cadmpeg_test_support::refusal::resource_limit_at(
             dimension,
-            "rewrite SLDPRT parameter expression",
+            "retain SLDPRT rewritten expression",
             |cap| {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::service();
@@ -1175,7 +1175,7 @@ fn expression_rewrite_refuses_admitted_output_storage() {
             },
         );
         assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension)
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension && limit.operation == "retain SLDPRT rewritten expression")
         );
     }
 }

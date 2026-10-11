@@ -728,13 +728,20 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
     ir: &mut cadmpeg_ir::CadIr,
     lanes: &[crate::records::FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let slots = ConfigurationSlots::new(ctx, &ir.model.configurations)?;
+    let mut slots = None;
     for lane in ctx
         .admit_iter(lanes, "scan SLDPRT supplemental configuration lanes")?
         .filter(|lane| crate::resolved_features::assembly::is_supplemental_config_lane(lane))
     {
+        if lane.edge_selections.is_empty() {
+            continue;
+        }
         let Some(slot_index) = lane_slot(ctx, lane)? else {
             continue;
+        };
+        let slots = match &mut slots {
+            Some(slots) => slots,
+            slot @ None => slot.insert(ConfigurationSlots::new(ctx, &ir.model.configurations)?),
         };
         let Some(configuration_index) = slots.configuration(ctx, slot_index)? else {
             continue;
@@ -762,6 +769,8 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
             else {
                 continue;
             };
+            const COMPARE: &str = "compare SLDPRT supplemental configuration state";
+            if !ctx.equal(&feature.dependencies, &state.dependencies, COMPARE)? {
             let mut dependencies = Vec::new();
             for dependency in ctx.admit_iter(
                 feature.dependencies.as_slice(),
@@ -778,10 +787,13 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
             }
             state.dependencies =
                 cadmpeg_ir::features::DistinctMembers::try_from(dependencies, ctx)?;
+            }
+            if !ctx.equal(feature.evaluation.definition(), &state.definition, COMPARE)? {
             state.definition = feature
                 .evaluation
                 .definition()
                 .try_clone_for_decode(ctx, "retain SLDPRT supplemental configuration state")?;
+            }
         }
         drop((features, feature_storage));
     }
@@ -1644,20 +1656,8 @@ fn inherit_configuration_reference_plane_definition(
     dependencies: &mut cadmpeg_ir::features::DistinctMembers<FeatureId>,
     base: &ConfigurationDefinitions<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let state_frame = match &*definition {
-        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-            reference: None,
-            ..
-        }) => None,
-        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::ResolvedPlane { frame }),
-            ..
-        }) if valid_plane_frame(frame.normal().get(), frame.u_axis().get()) => Some((
-            frame.origin().get(),
-            frame.normal().get(),
-            frame.u_axis().get(),
-        )),
-        _ => return Ok(()),
+    let Some(state_frame) = configuration_plane_inheritance_frame(definition) else {
+        return Ok(());
     };
     let Some(FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
         reference: Some(base_reference),
@@ -1677,8 +1677,13 @@ fn inherit_configuration_reference_plane_definition(
     let Some(base_frame) = base_frame else {
         return Ok(());
     };
-    if state_frame.is_some_and(|frame| !configuration_plane_frame_matches(frame, base_frame)) {
-        return Ok(());
+    if let ConfigurationPlaneInheritance::Resolved(frame) = state_frame {
+        if !configuration_plane_frame_matches(
+            (frame.origin().get(), frame.normal().get(), frame.u_axis().get()),
+            base_frame,
+        ) {
+            return Ok(());
+        }
     }
     let replacement = copy_configuration_plane_reference(ctx, base_reference)?;
     if let DatumPlaneReference::Feature { feature } = &replacement {
@@ -1692,17 +1697,25 @@ fn inherit_configuration_reference_plane_definition(
     Ok(())
 }
 
-fn configuration_plane_can_inherit(definition: &FeatureDefinition) -> bool {
+enum ConfigurationPlaneInheritance {
+    Omitted,
+    Resolved(cadmpeg_ir::features::FeatureSupportPlaneFrame),
+}
+
+/// Select an eligible reference frame; an omitted reference has no frame to match.
+fn configuration_plane_inheritance_frame(
+    definition: &FeatureDefinition,
+) -> Option<ConfigurationPlaneInheritance> {
     match definition {
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: None,
             ..
-        }) => true,
+        }) => Some(ConfigurationPlaneInheritance::Omitted),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::ResolvedPlane { frame }),
             ..
-        }) => valid_plane_frame(frame.normal().get(), frame.u_axis().get()),
-        _ => false,
+        }) if valid_plane_frame(frame.normal().get(), frame.u_axis().get()) => Some(ConfigurationPlaneInheritance::Resolved(*frame)),
+        _ => None,
     }
 }
 
@@ -1715,9 +1728,9 @@ fn inherit_configuration_reference_plane_semantics(
     if !ctx.any_by(
         &*features,
         |feature| {
-            Ok(configuration_plane_can_inherit(
+            Ok(configuration_plane_inheritance_frame(
                 feature.evaluation.definition(),
-            ))
+            ).is_some())
         },
         "find SLDPRT configuration datum consumers",
     )? {
@@ -1762,7 +1775,7 @@ pub(crate) fn inherit_configuration_reference_plane_states(
             else {
                 continue;
             };
-            if !configuration_plane_can_inherit(&state.definition) {
+            if configuration_plane_inheritance_frame(&state.definition).is_none() {
                 continue;
             }
             if base.is_none() {
