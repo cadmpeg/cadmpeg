@@ -84,7 +84,6 @@ fn direct_text_exact_work_has_no_terminal_charge() {
             }).expect("exact actual span and character work");
             assert_eq!(output, expected);
             assert_eq!(ctx.resource_refusal(), None);
-            ctx.charge_work(0, "test completed direct-text route").expect("no terminal refusal");
         });
     }
 }

@@ -161,7 +161,6 @@ fn decode_chars(
                         ),
                     };
                     let mut characters = text.chars();
-                    ctx.charge_work(0, "STEP decode chars traversal")?;
                     while !characters.as_str().is_empty() {
                         let character = ctx
                             .next_charged(&mut characters, "STEP decode chars traversal")?
@@ -170,7 +169,6 @@ fn decode_chars(
                     }
                 } else {
                     let mut bytes = direct.iter();
-                    ctx.charge_work(0, "STEP decode chars view traversal")?;
                     for _ in 0..bytes.len() {
                         let byte = ctx
                             .next_charged(&mut bytes, "STEP decode chars view traversal")?

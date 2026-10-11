@@ -18,20 +18,6 @@ fn empty_lexer_has_no_input_visit() {
     ctx.finish_session().unwrap();
 }
 
-#[test]
-fn empty_lexer_preserves_the_original_refusal() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-    let CodecError::ResourceLimit(original) = ctx.charge_work(1, "original lexer refusal").unwrap_err() else {
-        panic!("original work refusal");
-    };
-    let mut lexer = Lexer::new(b"", &ctx);
-    assert!(matches!(lexer.next_token().unwrap_err().into_resource_error(), Some(CodecError::ResourceLimit(limit)) if limit == original));
-    drop(lexer);
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original));
-}
 
 #[test]
 fn lexer_admits_actual_semicolon_and_no_exhaustion_visit() {

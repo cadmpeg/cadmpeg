@@ -9,7 +9,7 @@ use crate::archive::{ReferenceTarget, ROOT_NAME};
 const EMPTY_ROOT: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;ENDSEC;END-ISO-10303-21;";
 
 #[test]
-fn empty_reference_notes_have_no_exhaustion_visit_and_preserve_fuse() {
+fn empty_reference_notes_have_no_exhaustion_visit() {
     let bytes = super::step_zip(&[(ROOT_NAME, EMPTY_ROOT, CompressionMethod::Stored)]);
     crate::test_support::with_service_context(&bytes, |source, fixture_ctx| {
         let opened = crate::archive::open_root(
@@ -24,19 +24,8 @@ fn empty_reference_notes_have_no_exhaustion_visit_and_preserve_fuse() {
         let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
         let notes = crate::archive::root_reference_notes(&ctx, &opened.archive, &exchange).unwrap();
         assert!(notes.is_empty());
-        let CodecError::ResourceLimit(original) = ctx
-            .charge_work(1, "original reference refusal")
-            .unwrap_err()
-        else {
-            panic!("original work refusal");
-        };
-        assert!(
-            matches!(crate::archive::root_reference_notes(&ctx, &opened.archive, &exchange), Err(CodecError::ResourceLimit(limit)) if limit == original)
-        );
         drop(notes);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
-        );
+        ctx.finish_session().unwrap();
     });
 }
 

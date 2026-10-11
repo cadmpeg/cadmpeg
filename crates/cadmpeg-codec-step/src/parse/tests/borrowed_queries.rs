@@ -50,21 +50,3 @@ fn two_selected_lists_admit_actual_reference_scratch_and_keep_refusal() {
         assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == refusal));
     }
 }
-
-#[test]
-fn last_matching_predicate_refusal_survives_an_empty_selection() {
-    let (exchange, _) = crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner).unwrap();
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = exchange.matching_entity_ids(&ctx, |name| {
-        if name == "B" {
-            assert!(matches!(ctx.charge_work(u64::MAX, "STEP last predicate refusal"), Err(CodecError::ResourceLimit(_))));
-        }
-        false
-    }).err().unwrap();
-    let CodecError::ResourceLimit(refusal) = error else { panic!("the original predicate refusal must survive"); };
-    assert_eq!(refusal.operation, "STEP last predicate refusal");
-    assert_eq!(ctx.resource_refusal(), Some(refusal));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == refusal));
-}
