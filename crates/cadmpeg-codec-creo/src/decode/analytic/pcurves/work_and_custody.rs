@@ -20,8 +20,8 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::units::FinitePoint2;
 use std::collections::{BTreeMap, HashSet};
-use std::num::NonZeroU32;
 use std::mem::size_of;
+use std::num::NonZeroU32;
 
 const EMPTY_ROOT_MATERIALIZED_BYTES: u64 = 16 * 1024 * 1024;
 const PARENT_BYTES: u64 = 37;
@@ -177,10 +177,8 @@ fn assert_projection_work(rational: bool) {
         |ctx| projection(ctx, &source),
     );
     assert_projection(&value, rational);
-    let limit = crate::test_support::allocation_limit_at(
-        ResourceDimension::WorkUnits,
-        None,
-        |cap| {
+    let limit =
+        crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
@@ -192,8 +190,7 @@ fn assert_projection_work(rational: bool) {
                 }
                 result => result,
             }
-        },
-    );
+        });
     // Two extent poles, two projected poles, and four copied knots.
     assert_eq!(limit, 8);
 }
@@ -464,7 +461,7 @@ fn modern_pcurve_surface_filter_needs_no_work() {
     with_zero_limits(|ctx| {
         assert_eq!(
             topology_ignored_surface_ids(ctx, &crate::container::Layout::Nd, &[])
-            .expect("fixed route"),
+                .expect("fixed route"),
             HashSet::new()
         );
     });
@@ -477,7 +474,7 @@ fn absent_pcurve_faces_need_no_work() {
     with_zero_limits(|ctx| {
         assert_eq!(
             canonicalized_pcurve_endpoints(ctx, &scan, [None; 2], endpoints[0], endpoints[1])
-            .expect("fixed route"),
+                .expect("fixed route"),
             endpoints
         );
     });
@@ -494,7 +491,7 @@ fn empty_two_chart_mapping_needs_no_work() {
         assert!(
             map_two_chart_endpoint_sets(ctx, &scan, &ir, &pcurve, &carriers, &index)
                 .map(|result| matches!(result, TwoChartMapping::NoSamples))
-            .expect("fixed route")
+                .expect("fixed route")
         );
     });
 }
@@ -508,7 +505,7 @@ fn empty_two_chart_endpoints_need_no_work() {
     with_zero_limits(|ctx| {
         assert_eq!(
             mapped_two_chart_endpoint_sets(ctx, &scan, &ir, &pcurve, &carriers)
-            .expect("fixed route"),
+                .expect("fixed route"),
             None
         );
     });
@@ -534,12 +531,12 @@ fn unsupported_pcurve_plane_pair_needs_no_work() {
     with_zero_limits(|ctx| {
         assert_eq!(
             pcurve_plane_carrier_status(
-                    ctx,
-                    &primitive_plane(),
-                    plane_carrier,
-                    cone_carrier,
-                    [[0.0, 0.0], [1.0, 0.0]],
-                )
+                ctx,
+                &primitive_plane(),
+                plane_carrier,
+                cone_carrier,
+                [[0.0, 0.0], [1.0, 0.0]],
+            )
             .expect("fixed route"),
             PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::UnsupportedPair)
         );
@@ -555,12 +552,12 @@ fn parallel_pcurve_plane_pair_needs_no_work() {
     with_zero_limits(|ctx| {
         assert_eq!(
             pcurve_plane_carrier_status(
-                    ctx,
-                    &primitive_plane(),
-                    carrier,
-                    carrier,
-                    [[0.0, 0.0], [1.0, 0.0]],
-                )
+                ctx,
+                &primitive_plane(),
+                carrier,
+                carrier,
+                [[0.0, 0.0], [1.0, 0.0]],
+            )
             .expect("fixed route"),
             PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::ParallelPlanePair)
         );
@@ -580,12 +577,12 @@ fn nonplane_pcurve_carrier_path_needs_no_work() {
     with_zero_limits(|ctx| {
         assert_eq!(
             pcurve_plane_carrier_status(
-                    ctx,
-                    &cylinder(),
-                    carrier,
-                    crossing,
-                    [[0.0, 0.0], [1.0, 0.0]],
-                )
+                ctx,
+                &cylinder(),
+                carrier,
+                crossing,
+                [[0.0, 0.0], [1.0, 0.0]],
+            )
             .expect("fixed route"),
             PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::UnsupportedPath)
         );
@@ -601,14 +598,14 @@ fn missing_pcurve_path_surface_needs_no_work() {
         let index = SurfaceIndex::new(ctx, &ir.model.surfaces).expect("empty index");
         assert_eq!(
             pcurve_path_carrier_status(
-                    ctx,
-                    &ir,
-                    &carriers,
-                    ([NonZeroU32::new(1), None], 0),
-                    [[0.0, 0.0], [1.0, 0.0]],
-                    &source,
-                    &index,
-                )
+                ctx,
+                &ir,
+                &carriers,
+                ([NonZeroU32::new(1), None], 0),
+                [[0.0, 0.0], [1.0, 0.0]],
+                &source,
+                &index,
+            )
             .expect("fixed route"),
             PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::MissingSurface)
         );
@@ -624,14 +621,14 @@ fn missing_pcurve_endpoint_surface_needs_no_work() {
         let index = SurfaceIndex::new(ctx, &ir.model.surfaces).expect("empty index");
         assert_eq!(
             pcurve_endpoint_carrier_status(
-                    ctx,
-                    &ir,
-                    &carriers,
-                    ([NonZeroU32::new(1), None], 0),
-                    [[0.0, 0.0], [1.0, 0.0]],
-                    &source,
-                    &index,
-                )
+                ctx,
+                &ir,
+                &carriers,
+                ([NonZeroU32::new(1), None], 0),
+                [[0.0, 0.0], [1.0, 0.0]],
+                &source,
+                &index,
+            )
             .expect("fixed route"),
             PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::MissingSurface)
         );
@@ -643,12 +640,12 @@ fn absent_support_cone_face_needs_no_work() {
     with_zero_limits(|ctx| {
         let mut witnesses = BTreeMap::new();
         collect_support_cone_plane_witness(
-                ctx,
-                &mut witnesses,
-                &BTreeMap::new(),
-                [NonZeroU32::new(1), None],
-                [None; 2],
-            )
+            ctx,
+            &mut witnesses,
+            &BTreeMap::new(),
+            [NonZeroU32::new(1), None],
+            [None; 2],
+        )
         .expect("fixed route");
         assert!(witnesses.is_empty());
     });
@@ -659,12 +656,12 @@ fn absent_support_cone_endpoints_need_no_work() {
     with_zero_limits(|ctx| {
         let mut witnesses = BTreeMap::new();
         collect_support_cone_plane_witness(
-                ctx,
-                &mut witnesses,
-                &BTreeMap::new(),
-                [NonZeroU32::new(1), NonZeroU32::new(2)],
-                [None; 2],
-            )
+            ctx,
+            &mut witnesses,
+            &BTreeMap::new(),
+            [NonZeroU32::new(1), NonZeroU32::new(2)],
+            [None; 2],
+        )
         .expect("fixed route");
         assert!(witnesses.is_empty());
     });
@@ -696,8 +693,7 @@ fn single_path_pcurve_mismatch_needs_no_work() {
 fn equal_linear_pcurve_endpoints_need_no_work() {
     with_zero_limits(|ctx| {
         assert_eq!(
-            linear_pcurve_carrier(ctx, &primitive_plane(), [[0.0; 2]; 2])
-            .expect("fixed route"),
+            linear_pcurve_carrier(ctx, &primitive_plane(), [[0.0; 2]; 2]).expect("fixed route"),
             None
         );
     });
@@ -707,8 +703,7 @@ fn equal_linear_pcurve_endpoints_need_no_work() {
 fn unsupported_linear_pcurve_path_needs_no_work() {
     with_zero_limits(|ctx| {
         assert_eq!(
-            linear_pcurve_carrier(ctx, &cylinder(), [[0.0, 0.0], [1.0, 1.0]])
-            .expect("fixed route"),
+            linear_pcurve_carrier(ctx, &cylinder(), [[0.0, 0.0], [1.0, 1.0]]).expect("fixed route"),
             None
         );
     });
@@ -716,8 +711,8 @@ fn unsupported_linear_pcurve_path_needs_no_work() {
 
 fn assert_fixed_carrier(surface: &SurfaceGeometry, endpoints: [[f64; 2]; 2], expected: &str) {
     with_zero_limits(|ctx| {
-        assert!(
-            linear_pcurve_carrier(ctx, surface, endpoints).map(|geometry| {
+        assert!(linear_pcurve_carrier(ctx, surface, endpoints)
+            .map(|geometry| {
                 matches!(
                     (expected, geometry),
                     (
@@ -732,8 +727,7 @@ fn assert_fixed_carrier(surface: &SurfaceGeometry, endpoints: [[f64; 2]; 2], exp
                     )
                 )
             })
-            .expect("fixed route")
-        );
+            .expect("fixed route"));
     });
 }
 
@@ -787,17 +781,15 @@ fn primitive_planar_projection_needs_no_work() {
         .expect("line"),
     ));
     with_zero_limits(|ctx| {
-        assert!(
-            planar_curve_pcurve(
-                ctx,
-                &primitive_plane(),
-                &line,
-                &"line",
-                &mut crate::lane_refusal::LaneRefusals::new(),
-            )
-            .map(|result| matches!(result, Some(PcurveGeometry::Line(_))))
-            .expect("fixed route")
-        );
+        assert!(planar_curve_pcurve(
+            ctx,
+            &primitive_plane(),
+            &line,
+            &"line",
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        )
+        .map(|result| matches!(result, Some(PcurveGeometry::Line(_))))
+        .expect("fixed route"));
     });
 }
 
