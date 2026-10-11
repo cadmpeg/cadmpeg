@@ -384,11 +384,14 @@ fn scalar_conflict_losses_preserve_both_targets() {
 
 #[test]
 fn scalar_conflict_losses_follow_first_physical_style_encounter() {
-    let base = String::from_utf8_lossy(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21"))
-        .lines()
-        .filter(|line| !line.starts_with("#47=") && !line.starts_with("#67=") && !line.starts_with("#68="))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let base =
+        String::from_utf8_lossy(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21"))
+            .lines()
+            .filter(|line| {
+                !line.starts_with("#47=") && !line.starts_with("#67=") && !line.starts_with("#68=")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
     for (styles, expected) in [
         (
             "#900=STYLED_ITEM('',(#46),#31);\n#100=STYLED_ITEM('',(#46),#29);\n#101=STYLED_ITEM('',(#66),#29);\n#901=STYLED_ITEM('',(#66),#31);\n",
@@ -424,11 +427,14 @@ fn scalar_conflict_losses_follow_first_physical_style_encounter() {
 
 #[test]
 fn scalar_conflict_losses_merge_style_and_target_conflicts_in_source_order() {
-    let base = String::from_utf8_lossy(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21"))
-        .lines()
-        .filter(|line| !line.starts_with("#47=") && !line.starts_with("#67=") && !line.starts_with("#68="))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let base =
+        String::from_utf8_lossy(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21"))
+            .lines()
+            .filter(|line| {
+                !line.starts_with("#47=") && !line.starts_with("#67=") && !line.starts_with("#68=")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
     for (styles, expected) in [
         (
             "#900=STYLED_ITEM('',(#46),#31);\n#901=STYLED_ITEM('',(#66),#31);\n#100=STYLED_ITEM('',(#46,#66),#29);\n#99=STYLED_ITEM('',(#999),#29);\n#101=STYLED_ITEM('',(#998),#29);\n",

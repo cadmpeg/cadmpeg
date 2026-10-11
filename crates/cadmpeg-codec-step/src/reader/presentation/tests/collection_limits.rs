@@ -581,7 +581,13 @@ fn presentation_null_style_visited_refuses_collection_limit() {
             super::super::contains_null_style(
                 &crate::parse::Value::Reference(5),
                 exchange,
-                (&mut BTreeSet::new(), &mut std::collections::BTreeMap::new(), &mut ctx.reserve_scoped(0, "test null completions").expect("scope")),
+                (
+                    &mut BTreeSet::new(),
+                    &mut std::collections::BTreeMap::new(),
+                    &mut ctx
+                        .reserve_scoped(0, "test null completions")
+                        .expect("scope"),
+                ),
                 0,
                 ctx,
             )
@@ -599,7 +605,13 @@ fn presentation_null_style_walk_refuses_depth_limit() {
             super::super::contains_null_style(
                 &crate::parse::Value::Reference(5),
                 exchange,
-                (&mut BTreeSet::new(), &mut std::collections::BTreeMap::new(), &mut ctx.reserve_scoped(0, "test null completions").expect("scope")),
+                (
+                    &mut BTreeSet::new(),
+                    &mut std::collections::BTreeMap::new(),
+                    &mut ctx
+                        .reserve_scoped(0, "test null completions")
+                        .expect("scope"),
+                ),
                 0,
                 ctx,
             )
