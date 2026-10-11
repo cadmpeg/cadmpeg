@@ -397,3 +397,5 @@ pub(super) fn cyclic_parameter_components(
     Ok(cycles)
 }
 
+#[cfg(test)]
+mod tests;
