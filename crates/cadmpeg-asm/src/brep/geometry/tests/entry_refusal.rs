@@ -2,7 +2,7 @@
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
-use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::{Point3, Vector3};
 
 fn rational_arc_storage_boundary(degree: usize, last_underflow: bool, exact: bool) {
     use cadmpeg_core::decode::{
@@ -101,4 +101,26 @@ fn asm_rational_arc_last_weight_underflow_recovers_and_releases_storage() {
     for degree in [2, 64] {
         rational_arc_storage_boundary(degree, true, true);
     }
+}
+
+#[test]
+fn asm_line_reversal_negates_direction_without_allocation() {
+    use cadmpeg_ir::geometry::analytic::LineCurve;
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+    let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+        LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
+            .expect("line fixture"),
+    ));
+    let reversed = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+        LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(-1.0, 0.0, 0.0))
+            .expect("reversed line fixture"),
+    ));
+    crate::test_support::with_zero_context(|ctx| {
+        let mut geometry = line.clone();
+        let result = super::super::reverse_curve_geometry(ctx, &mut geometry);
+        
+                result.expect("fixed line reversal is free");
+                assert_eq!(geometry, reversed);
+            
+    });
 }

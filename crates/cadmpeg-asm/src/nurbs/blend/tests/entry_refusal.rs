@@ -168,3 +168,48 @@ fn inline_rolling_ball_curve_rejects_missing_bounds_without_retaining_storage() 
     drop(storage);
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn rolling_ball_all_null_side_keeps_location_extension_and_cursor() {
+    let tokens = [Token::Str("blend_support_surface".into()),
+        Token::Ident("null_surface".into()), Token::Ident("null_curve".into()),
+        Token::Ident("nullbs".into()), Token::Position([1.0, 2.0, 3.0]),
+        Token::Ident("nullbs".into()), Token::Long(7), Token::Ident("nullbs".into())];
+    crate::test_support::with_zero_context(|ctx| {
+        let mut cur = Cur::at(&tokens, 0);
+        let result = super::super::rolling_ball_side(ctx, &mut cur, None);
+        
+            let side = result.unwrap().unwrap();
+            assert!(side.surface.is_none() && side.curve.is_none() && side.pcurve.is_none());
+            assert!(side.secondary_pcurve.is_none());
+            assert_eq!(side.location, cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0));
+            let extension = side.extension.unwrap();
+            assert_eq!(extension.value, 7);
+            assert!(extension.pcurve.is_none());
+            assert_eq!(cur.pos(), tokens.len());
+        
+    });
+}
+
+#[test]
+fn vertex_blend_degenerate_boundary_keeps_values_and_cursor() {
+    let tokens = [Token::Str("deg".into()), Token::False,
+        Token::Position([0.0, 0.0, 1.0]), Token::True, Token::False, Token::Double(0.5),
+        Token::Position([1.0, 2.0, 3.0]), Token::Vector3([1.0, 0.0, 0.0]), Token::Vector3([0.0, 1.0, 0.0])];
+    crate::test_support::with_zero_context(|ctx| {
+        let mut cur = Cur::at(&tokens, 0);
+        let result = super::super::vertex_blend_boundary(ctx, &mut cur);
+        
+            let boundary = result.unwrap().unwrap();
+            assert!(!boundary.boundary_type && boundary.u_smoothing && !boundary.v_smoothing);
+            assert_eq!(boundary.fullness, 0.5);
+            assert_eq!(boundary.magic, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
+            let crate::nurbs::proc_surface::EmbeddedVertexBlendBoundaryGeometry::Degenerate { location, normals } = boundary.geometry else {
+                panic!("degenerate boundary grammar");
+            };
+            assert_eq!(location, cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0));
+            assert_eq!(normals, [cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0), cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)]);
+            assert_eq!(cur.pos(), tokens.len());
+        
+    });
+}

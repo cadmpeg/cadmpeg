@@ -86,3 +86,19 @@ pub(crate) fn with_entry_context(
         }
     }
 }
+
+/// Run 64 fixed-work routes in a fresh context with zero resource allowances.
+#[cfg(test)]
+pub(crate) fn with_zero_context(mut run: impl FnMut(&DecodeContext<'_>)) {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_entities = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    for _ in 0..64 { run(&ctx); }
+    ctx.finish_session().unwrap();
+}

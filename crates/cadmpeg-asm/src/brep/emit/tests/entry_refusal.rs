@@ -5,6 +5,7 @@ use cadmpeg_core::decode::{
     DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ScopedReservation,
 };
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::math::Point3;
 
 fn index_source_refusal(mut out: AsmBrep, records: &[crate::sab::Record], operation: &'static str) {
     let arena = DecodeArena::new();
@@ -138,4 +139,93 @@ fn asm_record_reference_indices_keep_transform_and_intcurve_membership() {
     );
     ctx.finish_session()
         .expect("successful reference classification");
+}
+
+#[test]
+fn asm_absent_loft_member_keeps_support_type_one() {
+
+    use crate::nurbs::proc_surface::LoftProfileData;
+    use cadmpeg_ir::geometry::{LoftMemberForm, LoftSubdata};
+    crate::test_support::with_zero_context(|ctx| {
+        let mut out = AsmBrep::default();
+        let subdata = LoftSubdata::Type211 {
+            dimensions: [0, 0],
+            row: [0.0, 1.0],
+        };
+        let data = LoftProfileData::RevisionSupport {
+                endpoints: [None; 2],
+                type_code: std::num::NonZeroI64::new(1).expect("nonzero support discriminator"),
+                surface: None,
+                support_bounds: [None; 4],
+                pcurve: None,
+                first_flag: false,
+                asm_extension: None,
+                subdata,
+                direction: None,
+            };
+        let result = super::super::emit_loft_member_form(ctx, &mut out, data, || {
+            panic!("absent or refused support executes no identity factory")
+        });
+        assert!(matches!(
+                result,
+                Ok(LoftMemberForm::Support {
+                    type_code: 1,
+                    surface: None,
+                    pcurve: None,
+                    ..
+                })
+            ));
+        assert!(out.surfaces.is_empty() && out.curves.is_empty());
+    });
+
+}
+
+#[test]
+fn asm_absent_rolling_ball_side_keeps_zero_curve_kind() {
+    use cadmpeg_ir::geometry::{RollingBallSide, VariableBlendSupportKind};
+    crate::test_support::with_zero_context(|ctx| {
+        let mut out = AsmBrep::default();
+        let side = RollingBallSide {
+            support_kind: VariableBlendSupportKind::ZeroCurve,
+            surface: None,
+            curve: None,
+            pcurve: None,
+            location: Point3::new(0.0, 0.0, 0.0),
+            secondary_pcurve: None,
+            extension: None,
+        };
+        let result = super::super::emit_rolling_ball_side(
+            ctx,
+            &mut out,
+            crate::asm_format!("sat"),
+            || panic!("absent or refused rolling side skips identity"),
+            side,
+        );
+        
+                let side = result.expect("absent side is free");
+                assert!(side.surface.is_none() && side.curve.is_none() && side.pcurve.is_none());
+                assert_eq!(side.support_kind, VariableBlendSupportKind::ZeroCurve);
+            
+        assert!(out.surfaces.is_empty() && out.curves.is_empty());
+    });
+}
+
+#[test]
+fn asm_spring_support_keeps_exact_ranges() {
+    let ranges = [[0.0, 1.0], [0.0, 1.0]];
+    crate::test_support::with_zero_context(|ctx| {
+        let mut out = AsmBrep::default();
+        let result = super::super::emit_spring_support(
+            ctx,
+            &mut out,
+            7,
+            crate::asm_format!("sat"),
+            0,
+            crate::nurbs::proc_curve::EmbeddedSpringSupport::Ranges(ranges),
+        );
+        assert!(
+                matches!(result, Ok(cadmpeg_ir::geometry::SpringSupport::Ranges(value)) if value == ranges)
+            );
+        assert!(out.surfaces.is_empty() && out.curves.is_empty());
+    });
 }
