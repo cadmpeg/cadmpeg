@@ -51,10 +51,8 @@ fn binary_start_primitives_refuse_the_first_or_last_real_value_and_replay_exactl
         assert_eq!(first.dimension, ResourceDimension::WorkUnits);
         assert_eq!(first.operation, "iges binary start primitives");
         assert_eq!((first.used, first.additional, first.limit), (work, 1, work));
-        for replay in [&bytes[..], &[]] {
-            assert!(matches!(normalize_start(replay, lengths(), &ctx),
-                Err(CodecError::ResourceLimit(last)) if last == first));
-        }
+        assert!(matches!(normalize_start(&bytes, lengths(), &ctx),
+            Err(CodecError::ResourceLimit(last)) if last == first));
         assert!(matches!(ctx.finish_session(),
             Err(CodecError::ResourceLimit(last)) if last == first));
     }

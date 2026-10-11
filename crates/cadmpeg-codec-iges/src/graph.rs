@@ -470,7 +470,7 @@ impl<'directory, 'ctx, 'arena> ParameterResolver<'directory, 'ctx, 'arena> {
     ) -> Result<ScopedReservation<'ctx>, CodecError> {
         let mut storage = self.storage.into_inner();
         let mut sources = self.edges.into_inner().into_iter();
-        while sources.len() != 0 || self.ctx.resource_refusal().is_some() {
+        while sources.len() != 0 {
             let Some((source, result)) = self
                 .ctx
                 .next_charged(&mut sources, "iges parameter resolver graph sources")?
@@ -660,7 +660,7 @@ fn cyclic_transform_nodes(
     let mut index_storage = ctx.reserve_scoped(0, "IGES transform cycle indices")?;
     let mut next = BTreeMap::new();
     let mut sources = edges.iter();
-    while sources.len() != 0 || ctx.resource_refusal().is_some() {
+    while sources.len() != 0 {
         let Some((source, values)) =
             ctx.next_charged(&mut sources, "iges transform cycle sources")?
         else {
@@ -684,7 +684,7 @@ fn cyclic_transform_nodes(
     let mut cyclic = BTreeSet::new();
     let mut completed = BTreeSet::new();
     let mut starts = next.iter();
-    while starts.len() != 0 || ctx.resource_refusal().is_some() {
+    while starts.len() != 0 {
         let Some((start, _)) = ctx.next_charged(&mut starts, "iges transform cycle starts")? else {
             break;
         };
@@ -703,7 +703,7 @@ fn cyclic_transform_nodes(
                 .copied()
             {
                 let mut nodes = path[position..].iter();
-                while nodes.len() != 0 || ctx.resource_refusal().is_some() {
+                while nodes.len() != 0 {
                     let Some(node) = ctx.next_charged(&mut nodes, "iges cyclic transform nodes")?
                     else {
                         break;
@@ -732,7 +732,7 @@ fn cyclic_transform_nodes(
                 .copied();
         }
         let mut nodes = path.into_iter();
-        while nodes.len() != 0 || ctx.resource_refusal().is_some() {
+        while nodes.len() != 0 {
             let Some(node) = ctx.next_charged(&mut nodes, "iges completed transform path")? else {
                 break;
             };
@@ -752,7 +752,7 @@ pub(crate) fn build<'ctx>(
     ctx.with_scoped_storage("IGES Directory reference graph", || {
         let mut graph = BTreeMap::new();
         let mut sources = directory.iter();
-        while sources.len() != 0 || ctx.resource_refusal().is_some() {
+        while sources.len() != 0 {
             let Some(entry) = ctx.next_charged(&mut sources, "iges directory reference sources")?
             else {
                 break;
@@ -791,7 +791,7 @@ pub(crate) fn build<'ctx>(
             })?;
         _cycle_storage = result_cycle_storage;
         let mut sources = cyclic.into_iter();
-        while sources.len() != 0 || ctx.resource_refusal().is_some() {
+        while sources.len() != 0 {
             let Some(source) = ctx.next_charged(&mut sources, "iges cyclic transform sources")?
             else {
                 break;
@@ -839,7 +839,7 @@ pub(crate) fn summary_notes<'ctx>(
 ) -> Result<(Vec<String>, ScopedReservation<'ctx>), CodecError> {
     let mut counts = [0_usize; 6];
     let mut sources = graph.iter();
-    while sources.len() != 0 || ctx.resource_refusal().is_some() {
+    while sources.len() != 0 {
         let Some((_, edges)) = ctx.next_charged(&mut sources, "iges reference summary sources")?
         else {
             break;
@@ -896,14 +896,14 @@ pub(crate) fn losses<'ctx>(
     let mut loss_storage = ctx.reserve_scoped(0, "iges graph loss notes")?;
     let mut losses = Vec::new();
     let mut sources = graph.iter();
-    while sources.len() != 0 || ctx.resource_refusal().is_some() {
+    while sources.len() != 0 {
         let Some((source, edges)) = ctx.next_charged(&mut sources, "iges graph loss sources")?
         else {
             break;
         };
         let mut parameter_record = None;
         let mut edges = edges.iter();
-        while edges.len() != 0 || ctx.resource_refusal().is_some() {
+        while edges.len() != 0 {
             let Some(edge) = ctx.next_charged(&mut edges, "iges graph loss edge scan")? else {
                 break;
             };
