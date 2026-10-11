@@ -1659,7 +1659,8 @@ pub(super) fn decode<'ctx>(
         if ctx.contains_btree_set(&pcurve_geometry_records, &id, "step_geometry_lookup")? {
             continue;
         }
-        deferred_storage.with_storage(|| ctx.push_vec(&mut deferred_ids, id, "step_deferred_curve_ids"))?;
+        deferred_storage
+            .with_storage(|| ctx.push_vec(&mut deferred_ids, id, "step_deferred_curve_ids"))?;
     }
     let mut waiting_on = DeferredCurves::new(deferred_ids);
     let mut line_scale_index = LineParameterScaleIndex::new(exchange, ctx)?;
@@ -1794,9 +1795,7 @@ pub(super) fn decode<'ctx>(
             claim_storage.with_storage(|| {
                 ctx.insert_btree_set(&mut typed, operator_step, "step_geometry_typed_ids")
             })?;
-            deferred_storage.with_storage(|| {
-                waiting_on.complete(id, ctx)
-            })?;
+            deferred_storage.with_storage(|| waiting_on.complete(id, ctx))?;
             continue;
         }
         if let Some(parameters) = entity_parameters(ctx, record, "TRIMMED_CURVE")? {
@@ -1946,9 +1945,7 @@ pub(super) fn decode<'ctx>(
             }
             claim_storage
                 .with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_geometry_typed_ids"))?;
-            deferred_storage.with_storage(|| {
-                waiting_on.complete(id, ctx)
-            })?;
+            deferred_storage.with_storage(|| waiting_on.complete(id, ctx))?;
             continue;
         }
         if composite_curve_parameters(ctx, record)?.is_some() {
@@ -2050,9 +2047,7 @@ pub(super) fn decode<'ctx>(
             })?;
             claim_storage
                 .with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_geometry_typed_ids"))?;
-            deferred_storage.with_storage(|| {
-                waiting_on.complete(id, ctx)
-            })?;
+            deferred_storage.with_storage(|| waiting_on.complete(id, ctx))?;
             continue;
         }
         let Some(parameters) = entity_parameters(ctx, record, "OFFSET_CURVE_3D")? else {
@@ -2177,9 +2172,7 @@ pub(super) fn decode<'ctx>(
         }
         claim_storage
             .with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_geometry_typed_ids"))?;
-        deferred_storage.with_storage(|| {
-            waiting_on.complete(id, ctx)
-        })?;
+        deferred_storage.with_storage(|| waiting_on.complete(id, ctx))?;
     }
     drop(line_scale_index);
     drop(waiting_on);
@@ -2633,6 +2626,7 @@ pub(super) fn decode<'ctx>(
         .with_scoped_storage("step carrier index storage", || {
             CarrierIndex::from_ir(ir, ctx)
         })?;
+    let mut surface_storage = ctx.reserve_scoped(0, "step deferred surface storage")?;
     let mut deferred_surface_ids = Vec::new();
     for entity in exchange.entities_any(
         ctx,
@@ -2644,12 +2638,12 @@ pub(super) fn decode<'ctx>(
         ],
     )? {
         let (id, _) = entity?;
-        scratch.with_storage(|| {
+        surface_storage.with_storage(|| {
             ctx.push_vec(&mut deferred_surface_ids, id, "step_deferred_surface_ids")
         })?;
     }
     let mut deferred_surface_queue = VecDeque::from(deferred_surface_ids);
-    let mut surface_waiting_on = DeferredDependencies::default();
+    let mut surface_waiting_on = HashMap::new();
     let mut worklist_scale_index = SurfaceScaleIndex::build(ir, ctx)?;
     let mut surface_start = ir.model.surfaces.len();
     let mut procedural_start = ir.model.procedural_surfaces.len();
@@ -2741,9 +2735,9 @@ pub(super) fn decode<'ctx>(
                 .and_then(|index| ir.model.surfaces.get(index.0))
                 .map(|surface| &surface.geometry)
             else {
-                scratch.with_storage(|| {
-                    surface_waiting_on.register(
-                        ctx,
+                surface_storage.with_storage(|| {
+                    ctx.push_hash_group(
+                        &mut surface_waiting_on,
                         support_step,
                         id,
                         "step_deferred_surface_groups",
@@ -2888,9 +2882,9 @@ pub(super) fn decode<'ctx>(
                 )?
                 .copied()
             else {
-                scratch.with_storage(|| {
-                    surface_waiting_on.register(
-                        ctx,
+                surface_storage.with_storage(|| {
+                    ctx.push_hash_group(
+                        &mut surface_waiting_on,
                         support_step,
                         id,
                         "step_deferred_surface_groups",
@@ -3061,9 +3055,9 @@ pub(super) fn decode<'ctx>(
                 &support_step,
                 "step_geometry_lookup",
             )? {
-                scratch.with_storage(|| {
-                    surface_waiting_on.register(
-                        ctx,
+                surface_storage.with_storage(|| {
+                    ctx.push_hash_group(
+                        &mut surface_waiting_on,
                         support_step,
                         id,
                         "step_deferred_surface_groups",
@@ -3136,9 +3130,9 @@ pub(super) fn decode<'ctx>(
                 )?
                 .copied()
             else {
-                scratch.with_storage(|| {
-                    surface_waiting_on.register(
-                        ctx,
+                surface_storage.with_storage(|| {
+                    ctx.push_hash_group(
+                        &mut surface_waiting_on,
                         parent_step,
                         id,
                         "step_deferred_surface_groups",
@@ -3228,10 +3222,10 @@ pub(super) fn decode<'ctx>(
             false
         };
         if resolved {
-            scratch.with_storage(|| {
+            surface_storage.with_storage(|| {
                 wake_deferred_dependents(
                     id,
-                    &mut surface_waiting_on,
+                    &surface_waiting_on,
                     &mut deferred_surface_queue,
                     ctx,
                     "step_deferred_surface_queue",
@@ -3240,6 +3234,9 @@ pub(super) fn decode<'ctx>(
         }
     }
     drop(worklist_scale_index);
+    drop(deferred_surface_queue);
+    drop(surface_waiting_on);
+    drop(surface_storage);
     for indexed_entity in exchange.entities(ctx, "SURFACE_REPLICA")? {
         let (id, _) = indexed_entity?;
         if !ctx.contains_key_hash_map(&carrier_index.surfaces, &id, "step_geometry_lookup")? {
@@ -5682,8 +5679,7 @@ fn context_unit_scales(
                 if let Some(scale) = scalar(UnitScaleKind::Length, unit)? {
                     ctx.push_vec(&mut length_values, scale, "step_context_length_scales")?;
                 }
-                if let Some(scale) = scalar(UnitScaleKind::Angle, unit)?
-                {
+                if let Some(scale) = scalar(UnitScaleKind::Angle, unit)? {
                     ctx.push_vec(&mut angle_values, scale, "step_context_angle_scales")?;
                 }
 
@@ -6790,83 +6786,22 @@ fn curve_parameter_at_point(
 
 type CompositeCurveData = (Vec<(u64, CompositeCurveSegment)>, Option<bool>);
 
-/// Each missing edge is registered once; producer wakes retain their queue order.
-#[derive(Default)]
-struct DeferredDependencies {
-    waiting_on: HashMap<u64, Vec<u64>>,
-    remaining: HashMap<u64, usize>,
-}
-
-impl DeferredDependencies {
-    fn register(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-        dependency: u64,
-        dependent: u64,
-        group_operation: &'static str,
-        member_operation: &'static str,
-    ) -> Result<(), CodecError> {
-        if let Some(remaining) = ctx.get_mut_hash_map(
-            &mut self.remaining,
-            &dependent,
-            "step deferred dependency count",
-        )? {
-            *remaining += 1;
-        } else {
-            ctx.insert_hash_map(
-                &mut self.remaining,
-                dependent,
-                1,
-                "step deferred dependency count",
-            )?;
-        }
-        ctx.push_hash_group(
-            &mut self.waiting_on,
-            dependency,
-            dependent,
-            group_operation,
-            member_operation,
-        )
-    }
-}
-
+/// Copy each surface producer's wake list in registration order. Keep its
+/// backing with the worklist owner until surface resolution has finished.
 fn wake_deferred_dependents(
     id: u64,
-    waiting_on: &mut DeferredDependencies,
+    waiting_on: &HashMap<u64, Vec<u64>>,
     queue: &mut VecDeque<u64>,
     ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    if let Some(dependents) =
-        ctx.remove_hash_map(&mut waiting_on.waiting_on, &id, "step_geometry_remove")?
-    {
-        {
-            let mut geometry_source = (dependents).into_iter();
-            for _ in 0..geometry_source.len() {
-                let dependent = ctx
-                    .next_charged(&mut geometry_source, "step deferred dependent traversal")?
-                    .ok_or_else(|| {
-                        CodecError::malformed("STEP geometry traversal source ended early")
-                    })?;
-                let Some(remaining) = ctx.get_mut_hash_map(
-                    &mut waiting_on.remaining,
-                    &dependent,
-                    "step deferred dependency count",
-                )?
-                else {
-                    continue;
-                };
-                *remaining -= 1;
-                if *remaining == 0 {
-                    ctx.remove_hash_map(
-                        &mut waiting_on.remaining,
-                        &dependent,
-                        "step deferred dependency count",
-                    )?;
-                }
-                ctx.push_back(queue, dependent, operation)?;
-            }
-        }
+    if let Some(dependents) = ctx.get_hash_map(waiting_on, &id, "step deferred producer lookup")? {
+        ctx.fold(
+            dependents,
+            (),
+            |(), &dependent| ctx.push_back(queue, dependent, operation),
+            "step deferred dependent traversal",
+        )?;
     }
     Ok(())
 }
