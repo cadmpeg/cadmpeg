@@ -5,7 +5,7 @@ use crate::test_support::test_om::composed_feature_history_payload_over_sort_scr
 use crate::test_support::test_prt::prt_with_named_payloads;
 
 fn datum_csys_refusal(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    dimension: cadmpeg_core::decode::ResourceDimension,
 ) -> cadmpeg_core::CodecError {
     let mut frame = vec![
         0x13, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
@@ -25,34 +25,49 @@ fn datum_csys_refusal(
         crate::container::scan_bytes(ctx, &source_bytes_1)
     })
     .expect("synthetic datum CSYS container");
-    let admitted = crate::test_support::with_decode_context(|ctx| {
-        let history = crate::native::features::FeatureHistory::new(ctx, &container)?;
-        let inputs = crate::native::features::feature_input_blocks(ctx, &history)?;
-        feature_datum_csys_constructions(ctx, &history, &inputs)
-    })
-    .expect("admitted datum CSYS constructions");
-    assert_eq!(admitted.len(), 1);
-    assert_eq!(admitted[0].frame.members().len(), 8);
-
     crate::test_support::with_decode_context_over(
-        &[],
+        container.data.as_ref(),
         |policy| {
-            configure(policy);
+            policy.limits.max_work_units = u64::MAX;
+            policy.limits.max_collection_items = u64::MAX;
+            policy.limits.max_retained_bytes = u64::MAX;
+            policy.limits.max_materialized_bytes = u64::MAX;
         },
-        |ctx| {
-            crate::native::features::FeatureHistory::new(ctx, &container)
-                .and_then(|history| {
-                    let inputs = crate::native::features::feature_input_blocks(ctx, &history)?;
-                    feature_datum_csys_constructions(ctx, &history, &inputs)
-                })
-                .expect_err("datum CSYS construction resource limit")
+        |history_ctx| {
+            let history = crate::native::features::FeatureHistory::new(history_ctx, &container)?;
+            let inputs = crate::native::features::feature_input_blocks(history_ctx, &history)?;
+
+            let admitted = crate::test_support::with_decode_context(|ctx| {
+                let inputs = crate::native::features::feature_input_blocks(ctx, &history)?;
+                feature_datum_csys_constructions(ctx, &history, &inputs)
+            })
+            .expect("admitted datum CSYS constructions");
+            assert_eq!(admitted.len(), 1);
+            assert_eq!(admitted[0].frame.members().len(), 8);
+
+            let operation = match dimension {
+                cadmpeg_core::decode::ResourceDimension::WorkUnits => {
+                    "resolve NX datum CSYS input prefix"
+                }
+                cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                    "NX feature input operation index"
+                }
+                _ => "NX datum CSYS constructions",
+            };
+            Ok::<_, cadmpeg_core::CodecError>(crate::test_support::resource_refusal_at(
+                container.data.as_ref(),
+                dimension,
+                operation,
+                |ctx| feature_datum_csys_constructions(ctx, &history, &inputs),
+            ))
         },
     )
+    .expect("prepared feature history")
 }
 
 #[test]
 fn datum_csys_construction_refuses_collection_limit() {
-    let error = datum_csys_refusal(|policy| policy.limits.max_collection_items = 0);
+    let error = datum_csys_refusal(cadmpeg_core::decode::ResourceDimension::CollectionItems);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
@@ -61,7 +76,7 @@ fn datum_csys_construction_refuses_collection_limit() {
 
 #[test]
 fn datum_csys_construction_refuses_retained_limit() {
-    let error = datum_csys_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    let error = datum_csys_refusal(cadmpeg_core::decode::ResourceDimension::RetainedBytes);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
@@ -70,7 +85,7 @@ fn datum_csys_construction_refuses_retained_limit() {
 
 #[test]
 fn datum_csys_construction_refuses_scoped_limit() {
-    let error = datum_csys_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    let error = datum_csys_refusal(cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
@@ -79,7 +94,7 @@ fn datum_csys_construction_refuses_scoped_limit() {
 
 #[test]
 fn datum_csys_construction_refuses_work_limit() {
-    let error = datum_csys_refusal(|policy| policy.limits.max_work_units = 0);
+    let error = datum_csys_refusal(cadmpeg_core::decode::ResourceDimension::WorkUnits);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
