@@ -55,7 +55,8 @@ fn absent_rdk_instance_attribute_preserves_the_structural_error_without_a_visit(
     let xml = "<xml><render-content-manager-data><material/></render-content-manager-data></xml>";
     let bytes = super::legacy_rdk_payload(xml, false, &[]);
     let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "Rhino RDK instance attribute search", None);
     let error = crate::presentation::classify_rdk_material_payload(&ctx, &bytes, 0..bytes.len()).unwrap_err();
@@ -74,7 +75,8 @@ fn light_without_attribute_userdata_executes_no_search_visit() {
     bytes.extend(short_chunk(archive, crate::presentation::LIGHT_RECORD_END, 0));
     let record = crate::container::Record::long(0x2000_8060, 0..bytes.len(), 0..bytes.len());
     let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "Rhino parse light record attributes traversal", None);
     let mut losses = Vec::new();
@@ -103,7 +105,8 @@ fn mapping_primitive_without_userdata_executes_no_cache_search_visit() {
     payload.extend(class_wrapper(ArchiveVersion::V8, MESH_CLASS, &[]));
     let bytes = super::anonymous(0, &payload);
     let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "Rhino parse texture mapping traversal", None);
     let mapping = crate::presentation::parse_texture_mapping(
@@ -134,7 +137,8 @@ fn assert_empty_install_search(table_type: u32, record_type: u32, class_uuid: Uu
         name: name.to_owned(), url: String::new(), details: String::new(),
     });
     let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(scan.data, &arena, &policy).unwrap();
     let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
     let mut ir = cadmpeg_ir::CadIr::empty();

@@ -359,12 +359,9 @@ fn image_reference<'a>(
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
-    warnings: &mut Diagnostics,
+    warnings: &mut impl FnMut(Option<crate::loss::RhinoLossCode>, std::fmt::Arguments<'_>) -> Result<(), CodecError>,
 ) -> Result<(ImageReference, std::ops::Range<usize>), FramingError> {
-    let value =
-        crate::instances::file_reference(ctx, data, reader, archive, &mut |code, message| {
-            warnings.push_coded_admitted(ctx, code, message)
-        })?;
+    let value = crate::instances::file_reference(ctx, data, reader, archive, warnings)?;
     let source_range = value.source_range.clone();
     Ok((
         ImageReference {
@@ -416,9 +413,13 @@ fn parse_trace_image(
     let filtered = minor >= 3 && reader.bool()?;
     let (file_reference, file_reference_range) = if minor >= 4 {
         let source_offset = reader.position();
+        let mut diagnostics_storage = ctx.reserve_scoped(0, "Rhino image file-reference diagnostics")?;
         let mut warnings = Diagnostics::new();
-        let parsed = staging
-            .with_storage(|| image_reference(ctx, data, &mut reader, archive, &mut warnings));
+        let parsed = staging.with_storage(|| {
+            image_reference(ctx, data, &mut reader, archive, &mut |code, message| {
+                diagnostics_storage.with_storage(|| warnings.push_coded_admitted(ctx, code, message))
+            })
+        });
         append_file_reference_diagnostics(
             ctx,
             losses,
@@ -474,9 +475,13 @@ fn parse_wallpaper(
     let hidden = minor >= 1 && reader.bool()?;
     let (file_reference, file_reference_range) = if minor >= 2 {
         let source_offset = reader.position();
+        let mut diagnostics_storage = ctx.reserve_scoped(0, "Rhino image file-reference diagnostics")?;
         let mut warnings = Diagnostics::new();
-        let parsed = staging
-            .with_storage(|| image_reference(ctx, data, &mut reader, archive, &mut warnings));
+        let parsed = staging.with_storage(|| {
+            image_reference(ctx, data, &mut reader, archive, &mut |code, message| {
+                diagnostics_storage.with_storage(|| warnings.push_coded_admitted(ctx, code, message))
+            })
+        });
         append_file_reference_diagnostics(
             ctx,
             losses,
@@ -2029,6 +2034,7 @@ mod tests {
     mod budget_repairs;
     mod fallible_prefix;
     mod image_limits;
+    mod file_reference_storage;
     mod resource_limits;
     mod terminal_work;
 
@@ -3748,24 +3754,27 @@ mod tests {
         let archive = ArchiveVersion::V6;
         let bytes = file_reference(archive, "", "");
         let error = with_retained_limit(&bytes, 40, |ctx| {
+            let mut warnings = crate::loss::Diagnostics::new();
             super::image_reference(
                 ctx,
                 &bytes,
                 &mut crate::chunks::BoundedReader::new(&bytes, 0, bytes.len())
                     .expect("reference bounds"),
                 archive,
-                &mut crate::loss::Diagnostics::new(),
+                &mut |code, message| warnings.push_coded_admitted(ctx, code, message),
             )
             .expect_err("embedded-file UUID exceeds retained limit")
         });
         assert_resource(&error, "Rhino image embedded-file UUID");
+        let context = cadmpeg_test_support::service_decode_context();
+        let mut warnings = crate::loss::Diagnostics::new();
         let admitted = super::image_reference(
-            &cadmpeg_test_support::service_decode_context(),
+            &context,
             &bytes,
             &mut crate::chunks::BoundedReader::new(&bytes, 0, bytes.len())
                 .expect("reference bounds"),
             archive,
-            &mut crate::loss::Diagnostics::new(),
+            &mut |code, message| warnings.push_coded_admitted(&context, code, message),
         )
         .expect("embedded-file UUID fits service profile");
         assert!(admitted.0.embedded_file_uuid.is_some());

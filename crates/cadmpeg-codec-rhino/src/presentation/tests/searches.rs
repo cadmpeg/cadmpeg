@@ -88,6 +88,7 @@ fn group_memberships_without_a_unique_group_do_not_format_output_links() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = u64::MAX;
+        policy.limits.max_materialized_bytes = u64::MAX;
         let (ctx, _) = DecodeContext::from_root_bytes(scan.data, &arena, &policy).unwrap();
         // Group-link text is temporary staging while a copied link is produced
         // only for a uniquely indexed group.
