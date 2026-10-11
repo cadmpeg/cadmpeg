@@ -921,10 +921,6 @@ fn decode_with_occurrence_limits(
             global_table,
             &mut attribution_storage,
         )?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
-            "iges_semantic_validation",
-        )?;
         reject_invalid_semantic_ir(ctx, &ir)?;
         attributed
     };

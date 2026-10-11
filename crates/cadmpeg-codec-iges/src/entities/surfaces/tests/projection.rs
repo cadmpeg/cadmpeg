@@ -702,3 +702,5 @@ fn numerical_followup_ruled_rails_align_across_overflowing_knot_domains() {
         }
     });
 }
+
+mod batch_attachment;
