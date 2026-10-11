@@ -469,12 +469,6 @@ impl std::ops::Deref for RhinoDiagnostic {
 
 /// Diagnostic destination shared by retained and scratch parser paths.
 pub(crate) trait DiagnosticSink {
-    fn push_admitted(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        message: std::fmt::Arguments<'_>,
-    ) -> Result<(), cadmpeg_core::CodecError>;
-
     fn push_coded_admitted(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -484,14 +478,6 @@ pub(crate) trait DiagnosticSink {
 }
 
 impl DiagnosticSink for Diagnostics {
-    fn push_admitted(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        message: std::fmt::Arguments<'_>,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        Diagnostics::push_admitted(self, ctx, message)
-    }
-
     fn push_coded_admitted(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -503,14 +489,6 @@ impl DiagnosticSink for Diagnostics {
 }
 
 impl DiagnosticSink for ScratchDiagnostics<'_> {
-    fn push_admitted(
-        &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        message: std::fmt::Arguments<'_>,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        ScratchDiagnostics::push_coded_admitted(self, ctx, None, message)
-    }
-
     fn push_coded_admitted(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,

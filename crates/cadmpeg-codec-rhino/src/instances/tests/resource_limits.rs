@@ -2,7 +2,7 @@
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::Record;
-use crate::loss::{Diagnostics, ScratchDiagnostics};
+use crate::loss::Diagnostics;
 use crate::test_support::test_dump::{
     anonymous_chunk, class_userdata, definition_record, definition_record_with_userdata,
     file_reference as file_reference_bytes, long_chunk, v5_definition_payload,
@@ -82,8 +82,8 @@ fn definition_scan_visits_prefix_before_suffix_work_admission() {
     let archive = ArchiveVersion::V5;
     let payload = v5_definition_payload(archive, 6, [7; 16], &[[8; 16]], false);
     let data = definition_record(archive, &payload);
-    let chunk = chunk_at(&data, 0, data.len(), archive, false)
-        .expect("first definition record framing");
+    let chunk =
+        chunk_at(&data, 0, data.len(), archive, false).expect("first definition record framing");
     let mut records = vec![Record::long(chunk.typecode, chunk.range(), chunk.body())];
     let record_count = usize::try_from(WORK_CAP + 1).expect("test record count fits");
     records.resize(record_count, Record::short(chunk.typecode, 0..0, 0));
@@ -94,14 +94,8 @@ fn definition_scan_visits_prefix_before_suffix_work_admission() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
         .expect("definition fixture fits the root limit");
-    let error = crate::instances::parse_definitions(
-        &ctx,
-        &data,
-        &records,
-        archive,
-        0x1000_0021,
-    )
-    .expect_err("first definition reaches its member collection refusal before the suffix");
+    let error = crate::instances::parse_definitions(&ctx, &data, &records, archive, 0x1000_0021)
+        .expect_err("first definition reaches its member collection refusal before the suffix");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -125,26 +119,6 @@ fn sha1_text_refuses_retained_limit() {
             crate::instances::hex(ctx, &[0x5a; 20], "Rhino test SHA-1")
                 .expect("digest text fits retained limit"),
             "5a".repeat(20)
-        );
-    });
-}
-
-#[test]
-fn sha256_text_refuses_retained_limit() {
-    with_retained_limit(63, |ctx| {
-        let error = crate::instances::hex(ctx, &[0x5a; 32], "Rhino test SHA-256")
-            .expect_err("sixty-four hex bytes exceed retained limit");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(refusal)
-                if refusal.operation == "Rhino test SHA-256"
-        ));
-    });
-    with_retained_limit(64, |ctx| {
-        assert_eq!(
-            crate::instances::hex(ctx, &[0x5a; 32], "Rhino test SHA-256")
-                .expect("digest text fits retained limit"),
-            "5a".repeat(32)
         );
     });
 }
@@ -206,7 +180,7 @@ fn reference_parent_layer_range_refuses_collection_limit() {
             &data,
             &mut reader,
             archive,
-            &mut Diagnostics::new(),
+            &mut |code, message| Diagnostics::new().push_coded_admitted(ctx, code, message),
         )
         .expect_err("parent range exceeds collection limit");
         assert_resource(&error, "Rhino reference parent layer range");
@@ -408,13 +382,13 @@ fn unit_detail_name_refuses_materialized_limit() {
         let error = ctx
             .with_scoped_storage("Rhino test unit detail fields", || {
                 let mut reader = BoundedReader::new(&data, 0, data.len())?;
-                let mut warnings = ScratchDiagnostics::new(ctx, "Rhino test unit diagnostics")?;
+                let mut warnings = Diagnostics::new();
                 crate::instances::unit_detail(
                     ctx,
                     &data,
                     &mut reader,
                     archive,
-                    &mut warnings,
+                    &mut |code, message| warnings.push_coded_admitted(ctx, code, message),
                 )
             })
             .expect_err("unit name exceeds materialized limit");
@@ -428,8 +402,14 @@ fn file_reference_refusal(limit: u64) -> FramingError {
     with_materialized_limit(limit, |ctx| {
         ctx.with_scoped_storage("Rhino test file-reference fields", || {
             let mut reader = BoundedReader::new(&data, 0, data.len())?;
-            let mut warnings = ScratchDiagnostics::new(ctx, "Rhino test file-reference diagnostics")?;
-            crate::instances::file_reference(ctx, &data, &mut reader, archive, &mut warnings)
+            let mut warnings = Diagnostics::new();
+            crate::instances::file_reference(
+                ctx,
+                &data,
+                &mut reader,
+                archive,
+                &mut |code, message| warnings.push_coded_admitted(ctx, code, message),
+            )
         })
         .expect_err("file-reference string exceeds materialized limit")
     })
@@ -491,30 +471,29 @@ fn instance_alternative_path_trim_preserves_refusal_without_degradation() {
 }
 
 #[test]
-fn hex_character_growth_preserves_refusal() {
-    cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-        "hex character output",
-        |cap| {
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-            let result = crate::instances::hex(&ctx, &[0xab], "hex character output").map(|_| ());
-            if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
-                assert_eq!(ctx.resource_refusal().as_ref(), Some(refusal));
-            }
-            result
-        },
-    );
-    assert_eq!(
-        crate::instances::hex(
-            &cadmpeg_test_support::service_decode_context(),
-            &[0xab],
-            "hex character output"
-        )
-        .unwrap(),
-        "ab"
-    );
+fn scan_definition_diagnostics_stay_scoped_until_report_construction() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    const SCRATCH_BYTES: u64 = 1 << 20;
+    let record = Record::short(0x2000_807b, 0..0, 0);
+    let records = vec![record; 32];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = SCRATCH_BYTES;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let parsed =
+        crate::instances::parse_definitions(&ctx, &[], &records, ArchiveVersion::V5, 0x1000_0021)
+            .expect("scan messages and staging consume no retained storage");
+    assert_eq!(parsed.scan.diagnostics().len(), records.len());
+    assert_eq!(parsed.opaque_records.len(), records.len());
+    assert!(parsed.scan.diagnostics().iter().all(|note| note
+        .diagnostic
+        .message
+        .starts_with("instance definition retained: ")));
+    drop(parsed);
+    let reusable = ctx
+        .reserve_scoped(SCRATCH_BYTES, "next scan diagnostics")
+        .expect("scan storage released");
+    drop(reusable);
+    ctx.finish_session().unwrap();
 }

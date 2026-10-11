@@ -1017,8 +1017,12 @@ fn read_mesh_cache<'ctx>(
         item_reader.skip(16)?;
         let wrapper_start = item_reader.position();
         let wrapper = chunk_at(data, wrapper_start, item_reader.end(), archive, false)?;
+        let mut userdata_storage = expand
+            .ctx()
+            .reserve_scoped(0, "Rhino extrusion class userdata")?;
         let (class, userdata) = parse_class_wrapper_with_scoped_userdata(
             expand.ctx(),
+            &mut userdata_storage,
             data,
             wrapper.range(),
             archive,
@@ -1127,8 +1131,12 @@ fn read_v5_mesh_cache<'ctx>(
         .reserve_scoped(0, "Rhino V5 extrusion mesh-cache payloads")?;
     for index in 0..3_usize {
         let wrapper = chunk_at(data, offset, cache.payload_range.end, archive, false)?;
+        let mut userdata_storage = expand
+            .ctx()
+            .reserve_scoped(0, "Rhino extrusion nested userdata")?;
         let (class, nested_userdata) = parse_class_wrapper_with_scoped_userdata(
             expand.ctx(),
+            &mut userdata_storage,
             data,
             wrapper.range(),
             archive,

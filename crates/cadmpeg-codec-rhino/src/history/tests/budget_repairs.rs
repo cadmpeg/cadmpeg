@@ -34,7 +34,9 @@ fn subd_orientation_rejection_pays_only_for_visited_prefix() {
                     0,
                     bytes.len(),
                     ArchiveVersion::V8,
-                    &mut Diagnostics::new(),
+                    &mut |code, message| {
+                        Diagnostics::new().push_coded_admitted(&ctx, code, message)
+                    },
                 )
                 .map_err(|error| match error {
                     crate::chunks::FramingError::Resource(limit) => {
@@ -57,7 +59,7 @@ fn subd_orientation_rejection_pays_only_for_visited_prefix() {
             crate::chunks::chunk_at(&bytes, 0, bytes.len(), ArchiveVersion::V8, false).unwrap();
         let expected_offset = chunk.body().start + 8 + orientation_offset + invalid_index;
         assert!(
-            matches!(super::super::subd_edge_chain(&ctx, &bytes, 0, bytes.len(), ArchiveVersion::V8, &mut Diagnostics::new()),
+            matches!(super::super::subd_edge_chain(&ctx, &bytes, 0, bytes.len(), ArchiveVersion::V8, &mut |code, message| Diagnostics::new().push_coded_admitted(&ctx, code, message)),
             Err(crate::chunks::FramingError::Structural { offset, message })
                 if offset == expected_offset && message == "invalid history SubD edge orientation")
         );
