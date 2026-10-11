@@ -20,9 +20,8 @@ fn object_candidate_index_visits_first_source_before_large_suffix() {
     let (ctx, root) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)
             .expect("source bytes fit the root policy");
-    let error = match DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root)) {
-        Err(error) => error,
-        Ok(_) => panic!("the first candidate map slot must refuse"),
+    let Err(error) = DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root)) else {
+        panic!("the first candidate map slot must refuse");
     };
     let CodecError::ResourceLimit(refusal) = error else {
         panic!("candidate admission must preserve its resource refusal");
