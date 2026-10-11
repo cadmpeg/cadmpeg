@@ -799,11 +799,27 @@ fn swift_disagreement_scans_do_not_admit_unused_reference_tails() {
             .extend((0..tail).map(|index| reference(&format!("unused-{index}"), "Leaf")));
         let low = marker(1.0);
         let high = marker(2.0);
-        let index = BTreeMap::from([("low", &low), ("high", &high)]);
+        let unused = marker(3.0);
+        let mut index = BTreeMap::from([("low", &low), ("high", &high)]);
+        for reference in annotation.features.references.iter().skip(2) {
+            index.insert(reference.id.as_str(), &unused);
+        }
         for operation in [
             "scan SWIFT applied measurement features",
             "scan SWIFT direct measurement features",
         ] {
+            assert_work_refusal_at(operation, |ctx| {
+                if operation == "scan SWIFT applied measurement features" {
+                    crate::swift::measurement_from_applied_geometry(ctx, &annotation, |id| {
+                        assert!(id == "low" || id == "high");
+                        Ok(crate::swift::PositiveReal::new(if id == "low" { 1.0 } else { 2.0 }))
+                    }).map(|_| ())
+                } else {
+                    crate::swift::measurement_from_direct_features(ctx, &annotation, &index, "Leaf", |feature| {
+                        Ok(feature.doubles.get("value").copied().and_then(crate::swift::PositiveReal::new))
+                    }).map(|_| ())
+                }
+            });
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = u64::MAX;
@@ -829,6 +845,7 @@ fn swift_disagreement_scans_do_not_admit_unused_reference_tails() {
                     &index,
                     "Leaf",
                     |feature| {
+                        assert!(std::ptr::eq(feature, &low) || std::ptr::eq(feature, &high));
                         Ok(feature
                             .doubles
                             .get("value")

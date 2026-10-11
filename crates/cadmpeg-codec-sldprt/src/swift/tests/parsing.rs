@@ -172,40 +172,6 @@ fn parse_root_with_service(payload: &[u8]) -> Option<Entity> {
     parse_unique_root(&ctx, payload).expect("SWIFT root fits service budget")
 }
 
-#[test]
-fn swift_annotations_refuse_scoped_stream_limit() {
-    let root = Entity {
-        class: crate::swift::ROOT_CLASS.into(),
-        ..Entity::default()
-    };
-    let mut payload = Vec::new();
-    encode_entity(&root, &mut payload);
-    let mut source = crate::test_support::container::synthetic_sldprt();
-    source.extend(crate::test_support::container::make_block(
-        0x40,
-        "SWIFT/Schema",
-        &payload,
-    ));
-    let scan = crate::test_support::container::scan(&source);
-    let arena = DecodeArena::new();
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::MaterializedBytes,
-        "copy SWIFT source stream name",
-        |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_materialized_bytes = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)?;
-            let mut annotations = cadmpeg_ir::annotations::Annotations::default();
-            crate::swift::annotations(&ctx, &scan, &mut annotations, None)
-        },
-    );
-    let CodecError::ResourceLimit(limit) = error else {
-        panic!("expected scoped refusal");
-    };
-    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
-    assert_eq!(limit.operation, "copy SWIFT source stream name");
-}
-
 fn swift_rendered_annotation_limit_error(
     set_limit: impl FnOnce(&mut cadmpeg_core::decode::ResourceLimits),
 ) -> CodecError {
@@ -1341,7 +1307,7 @@ fn swift_suppressed_roster_skips_populated_feature_index() {
         None,
     );
     let projection =
-        crate::swift::project_with_topology(&ctx, &root, None, &[], None, None).unwrap();
+        crate::swift::project_with_topology(&ctx, &root, None, &crate::swift::RenderedDimensions::Borrowed(&[]), None, None).unwrap();
     assert!(projection.annotations.is_empty());
     assert!(projection.unsupported.is_empty());
     drop(projection);
@@ -1439,7 +1405,7 @@ fn swift_rejected_annotation_gates_skip_populated_feature_index() {
             None,
         );
         {
-            let result = crate::swift::project_with_topology(&ctx, &root, None, &[], None, None);
+            let result = crate::swift::project_with_topology(&ctx, &root, None, &crate::swift::RenderedDimensions::Borrowed(&[]), None, None);
             if class == "GdtDatum" {
                 let Err(CodecError::Malformed(message)) = result else {
                     panic!("missing datum identifier is malformed");
@@ -1597,13 +1563,205 @@ fn swift_dimension_reuses_its_admitted_pmi_identity() {
     let features = BTreeMap::new();
     let annotation = crate::swift::project_dimension(
         &ctx,
-        crate::swift::DimensionSource { counterbores: &counterbores, id, entity: &entity },
+        id,
+        &counterbores,
+        &entity,
         || Ok(&features),
         &geometry,
-        &[],
+        &crate::swift::RenderedDimensions::Borrowed(&[]),
     ).unwrap().unwrap();
     assert_eq!(annotation.id, crate::swift::pmi_id("A10").unwrap());
     assert_eq!(dimension_nominal(&[annotation], "A10"), length(4.0));
     drop((geometry, counterbores));
     ctx.finish_session().unwrap();
+}
+
+fn append_rendered_literal(payload: &mut Vec<u8>, text: &str) {
+    payload.extend_from_slice(&[0xff, 0xfe, 0xff]);
+    payload.push(u8::try_from(text.encode_utf16().count()).unwrap());
+    payload.extend(text.encode_utf16().flat_map(u16::to_le_bytes));
+}
+
+#[test]
+fn swift_root_ambiguity_does_not_prepay_marker_free_tails() {
+    let root = Entity { class: crate::swift::ROOT_CLASS.into(), ..Entity::default() };
+    let mut prefix = Vec::new();
+    encode_entity(&root, &mut prefix);
+    encode_entity(&root, &mut prefix);
+    let mut prefix_work = None;
+    for tail in [32, 16_384] {
+        let mut payload = prefix.clone();
+        payload.extend(vec![0; tail]);
+        crate::test_support::work_refusal_at("scan SWIFT entity roots", |ctx| {
+            parse_unique_root(ctx, &payload).map(|_| ())
+        });
+        let error = crate::test_support::work_refusal_at("measure SWIFT root scan work", |ctx| {
+            assert!(parse_unique_root(ctx, &payload)?.is_none());
+            ctx.copy_retained_text("x", "measure SWIFT root scan work")
+        });
+        let CodecError::ResourceLimit(limit) = error else { panic!("root scan measurement"); };
+        if let Some(expected) = prefix_work {
+            assert_eq!(limit.used, expected, "marker-free bytes after ambiguity are unvisited");
+        } else {
+            prefix_work = Some(limit.used);
+        }
+    }
+}
+
+#[test]
+fn swift_unqueried_rendered_literals_are_not_decoded() {
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+    for roster in ["empty", "suppressed", "explicit"] {
+        let mut root = Entity { class: crate::swift::ROOT_CLASS.into(), ..Entity::default() };
+        if roster != "empty" {
+            let mut annotation = super::entity("GdtDiameter");
+            annotation.doubles.insert("Nominal".into(), 4.0);
+            if roster == "suppressed" {
+                annotation.integers.insert("IsSuppressed".into(), 1);
+            }
+            root.annotations.references.push(super::reference("A10", "GdtDiameter"));
+            root.annotations.entities.push(annotation);
+        }
+        let mut payload = Vec::new();
+        encode_entity(&root, &mut payload);
+        for _ in 0..64 { append_rendered_literal(&mut payload, "<MOD-DIAM> 4.000"); }
+        let mut source = crate::test_support::container::synthetic_sldprt();
+        source.extend(crate::test_support::container::make_block(0x40, "SWIFT/Schema", &payload));
+        let scan = crate::test_support::container::scan(&source);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "scan SWIFT rendered literals", None);
+        let result = annotations(&ctx, &scan, &mut cadmpeg_ir::annotations::Annotations::default(), None).unwrap();
+        if roster == "explicit" {
+            assert_eq!(result.annotations.len(), 1);
+            assert_eq!(dimension_nominal(&result.annotations, "A10"), length(4.0));
+        } else {
+            assert!(result.annotations.is_empty());
+        }
+        assert!(result.unsupported_loss.is_none());
+        ctx.finish_session().unwrap();
+    }
+}
+
+#[test]
+fn swift_ambiguous_stream_roots_skip_rendered_literals_and_name_copies() {
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+    let root = Entity { class: crate::swift::ROOT_CLASS.into(), ..Entity::default() };
+    let mut payload = Vec::new();
+    encode_entity(&root, &mut payload);
+    for _ in 0..64 { append_rendered_literal(&mut payload, "<MOD-DIAM> 4.000"); }
+    let mut source = crate::test_support::container::synthetic_sldprt();
+    for (tag, name) in [(0x40, "SWIFT/Schema"), (0x41, "SWIFT/OtherSchema")] {
+        source.extend(crate::test_support::container::make_block(tag, name, &payload));
+    }
+    let scan = crate::test_support::container::scan(&source);
+    for operation in ["scan SWIFT rendered literals", "copy SWIFT source stream name"] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+        assert!(crate::swift::scan_root(&ctx, &scan).unwrap().is_none());
+        ctx.finish_session().unwrap();
+    }
+}
+
+#[test]
+fn swift_rendered_dimension_cache_is_built_at_first_query_and_reused() {
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+    let mut payload = Vec::new();
+    append_rendered_literal(&mut payload, "<MOD-DIAM> 4.000");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 1024 * 1024;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let cache = crate::swift::RenderedDimensions::Stream { payload: &payload, values: std::cell::OnceCell::new() };
+    assert_eq!(cache.get(&ctx).unwrap().len(), 1);
+    let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "scan SWIFT rendered literals", None);
+    assert_eq!(cache.get(&ctx).unwrap().first().unwrap().value.get(), 4.0);
+    drop(cache);
+    let reuse = ctx.reserve_scoped(policy.limits.max_materialized_bytes, "reuse rendered cache storage").unwrap();
+    drop(reuse);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn swift_rendered_literals_hold_only_surviving_vector_storage() {
+    let mut payload = Vec::new();
+    for _ in 0..64 { append_rendered_literal(&mut payload, "<MOD-DIAM> 4.000"); }
+    let live_storage = |decode| {
+        let arena = DecodeArena::new();
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::MaterializedBytes, "measure rendered dimension storage", |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_materialized_bytes = cap;
+                policy.limits.max_retained_bytes = 0;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                let (values, storage) = ctx.with_scoped_storage("rendered dimension test output", || {
+                    if decode {
+                        crate::swift::rendered_dimensions(&ctx, &payload)
+                    } else {
+                        let mut values = Vec::new();
+                        for _ in 0..64 {
+                            ctx.push_vec(&mut values, crate::swift::RenderedDimension {
+                                kind: crate::swift::RenderedDimensionKind::Diameter,
+                                value: crate::swift::PositiveReal::new(4.0).unwrap(), decimal_places: 3,
+                            }, "expected rendered dimensions")?;
+                        }
+                        Ok(values)
+                    }
+                })?;
+                assert_eq!(values.len(), 64);
+                assert!(values.iter().all(|value| value.value.get() == 4.0 && value.decimal_places == 3));
+                let measurement = ctx.reserve_scoped(u64::MAX / 2, "measure rendered dimension storage")?;
+                drop((measurement, values, storage));
+                Ok(())
+            });
+        let CodecError::ResourceLimit(limit) = error else { panic!("rendered storage measurement"); };
+        limit.used
+    };
+    assert_eq!(live_storage(true), live_storage(false));
+}
+
+#[test]
+fn swift_unsupported_annotations_release_their_admitted_identity() {
+    let mut root = Entity { class: crate::swift::ROOT_CLASS.into(), ..Entity::default() };
+    root.annotations.references.push(super::reference("A10", "GdtUnrecognized"));
+    root.annotations.entities.push(super::entity("GdtUnrecognized"));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 1024 * 1024;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = crate::swift::project_with_topology(&ctx, &root, None,
+        &crate::swift::RenderedDimensions::Borrowed(&[]), None, None).unwrap();
+    assert!(result.annotations.is_empty());
+    assert_eq!(result.unsupported.get("GdtUnrecognized"), Some(&1));
+    drop(result);
+    let reuse = ctx.reserve_scoped(policy.limits.max_materialized_bytes, "reuse unsupported identity storage").unwrap();
+    drop(reuse);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn swift_lower_tier_identity_retains_only_its_final_text() {
+    let reference = super::reference("A10", "GdtSurfaceProfile");
+    let mut entity = super::entity("GdtSurfaceProfile");
+    entity.doubles.insert("ToleranceLowerTier".into(), 0.25);
+    let arena = DecodeArena::new();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes, "format SWIFT lower-tier ID", |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let geometry = crate::swift::ProjectionGeometry::new(&ctx, None, None, None);
+            project_lower_profile_tier(&ctx, &reference, &entity, &BTreeMap::new(), &geometry)
+        });
+    let CodecError::ResourceLimit(limit) = error else { panic!("lower-tier retained boundary"); };
+    assert_eq!(limit.used, 0, "the validation identity is temporary");
 }
