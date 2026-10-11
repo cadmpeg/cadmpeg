@@ -5,6 +5,7 @@ use crate::feature::definitions::{
     DefinitionIdentity, DimensionValue, FeatureDefinition, FeatureDimension, FeatureDimensionTable,
     FeatureRelation, FeatureRelationTable,
 };
+use crate::feature::segment_rows::SegmentRows;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput, SketchId};
@@ -387,26 +388,52 @@ fn rejected_inactive_incidence_locus_pair_releases_partial_identities() {
 
 #[test]
 fn unmatched_radius_equations_keep_only_one_live_parameter_identity() {
-    use crate::feature::definitions::{FeatureSegmentTable, FeatureVariableRow, FeatureVariableTable, ScalarLane, VariableType};
+    use crate::feature::definitions::{
+        FeatureSegmentTable, FeatureVariableRow, FeatureVariableTable, ScalarLane, VariableType,
+    };
     let mut definition = definition();
     definition.relations = None;
-    definition.dimensions.as_mut().expect("dimensions").rows[0].value = DimensionValue::Resolved(5.0);
+    definition.dimensions.as_mut().expect("dimensions").rows[0].value =
+        DimensionValue::Resolved(5.0);
     definition.segments = Some(FeatureSegmentTable {
-        declared_count: 0, has_elided_prototype: false, entity_ref: None, rows: Default::default(), offset: 0,
+        declared_count: 0,
+        has_elided_prototype: false,
+        entity_ref: None,
+        rows: SegmentRows::default(),
+        offset: 0,
     });
     let variable = |variable_type, key, value| FeatureVariableRow {
-        variable_type: VariableType::from(variable_type), key, value, value_body: Vec::new(),
-        guess: value, guess_body: Vec::new(), known: Some(0), homogeneity: Some(1), uvar_id: None, offset: 0,
+        variable_type: VariableType::from(variable_type),
+        key,
+        value,
+        value_body: Vec::new(),
+        guess: value,
+        guess_body: Vec::new(),
+        known: Some(0),
+        homogeneity: Some(1),
+        uvar_id: None,
+        offset: 0,
     };
     definition.variables = Some(FeatureVariableTable {
-        declared_count: 2, entity_ref: None,
-        rows: vec![variable(3, 42, ScalarLane::DimensionDriven), variable(0, 0, ScalarLane::Value(5.0))], offset: 0,
+        declared_count: 2,
+        entity_ref: None,
+        rows: vec![
+            variable(3, 42, ScalarLane::DimensionDriven),
+            variable(0, 0, ScalarLane::Value(5.0)),
+        ],
+        offset: 0,
     });
-    definition.body = b"eqtn_arr\0\xf2\xf8\x11\xf7\x80\x9f\xfb\xe2\xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2".to_vec();
+    definition.body =
+        b"eqtn_arr\0\xf2\xf8\x11\xf7\x80\x9f\xfb\xe2\xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2".to_vec();
     for id in 1..=16 {
-        definition.body.extend_from_slice(&[id, 2, 0xf8, 2, 0, 1, 0xf6, 0xe2]);
+        definition
+            .body
+            .extend_from_slice(&[id, 2, 0xf8, 2, 0, 1, 0xf6, 0xe2]);
     }
-    let equations = crate::decode::with_test_decode_ctx(|ctx| super::super::section_equation_radius_dimensions(ctx, &definition)).expect("radius equations");
+    let equations = crate::decode::with_test_decode_ctx(|ctx| {
+        super::super::section_equation_radius_dimensions(ctx, &definition)
+    })
+    .expect("radius equations");
     assert_eq!(equations.len(), 16);
     let short_sketch = SketchId::mint("creo:model:sketch#1").expect("short sketch");
     let scope = "x".repeat(8192);
@@ -418,13 +445,18 @@ fn unmatched_radius_equations_keep_only_one_live_parameter_identity() {
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_entities = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let (rows, slots) = super::super::section_equation_radius_dimension_candidates(&ctx, &definition, sketch)?;
+        let (rows, slots) =
+            super::super::section_equation_radius_dimension_candidates(&ctx, &definition, sketch)?;
         assert!(rows.is_empty());
         drop(rows);
         drop(slots);
         ctx.finish_session()
     };
-    let baseline = crate::test_support::allocation_limit_at(ResourceDimension::MaterializedBytes, None, |cap| run(&short_sketch, cap));
+    let baseline = crate::test_support::allocation_limit_at(
+        ResourceDimension::MaterializedBytes,
+        None,
+        |cap| run(&short_sketch, cap),
+    );
     // The equation table is unchanged. A single live parameter and its formatting
     // backing fit within four scope lengths, independently of equation count.
     let cap = baseline + 4 * u64::try_from(scope.len()).expect("scope length");

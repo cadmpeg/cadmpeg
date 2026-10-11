@@ -5,10 +5,8 @@ use crate::feature::definitions::{
     DefinitionIdentity, FeatureDefinition, FeatureOpaqueSegment, FeatureRelationTable,
     FeatureSegmentTable, FeatureSkamp, FeatureSolverTableHeader, SolverSubtable,
 };
-use crate::feature::segment_rows::SegmentRow;
-use cadmpeg_core::decode::{
-    DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
-};
+use crate::feature::segment_rows::{SegmentRow, SegmentRows};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::sketches::SketchId;
 use std::ops::ControlFlow;
@@ -128,7 +126,7 @@ fn point_locus_visits_only_present_opaque_rows() {
                         assert_eq!(probe.used, u64::from(count));
                     }
                     Err(error) => panic!("unexpected locus error: {error:?}"),
-                };
+                }
                 result
             })
         });
@@ -173,7 +171,7 @@ fn skamp_walk(all_rows: bool) {
                         assert_eq!(probe.used, u64::from(count));
                     }
                     Err(error) => panic!("unexpected SKAMP error: {error:?}"),
-                };
+                }
                 assert_eq!(&seen[..called], &[1, 2, 3][..called]);
                 result.map(|_| ())
             })
@@ -231,7 +229,8 @@ fn inactive_skamps_still_consume_their_present_row_visit() {
                     assert_eq!(called.checked_add(1).expect("visited rows fit"), visited);
                 }
                 if result.is_ok() {
-                    let probe = ctx.charge_work_limit(u64::MAX, "test completed inactive SKAMP visits")
+                    let probe = ctx
+                        .charge_work_limit(u64::MAX, "test completed inactive SKAMP visits")
                         .expect_err("work probe");
                     assert_eq!(probe.used, 3);
                 }
@@ -279,7 +278,7 @@ fn skamp_callback_break_stops_before_remaining_rows() {
                             assert_eq!(probe.used, 1);
                         }
                         Err(error) => panic!("unexpected callback error: {error:?}"),
-                    };
+                    }
                     result.map(|_| ())
                 })
             },
@@ -291,22 +290,51 @@ fn skamp_callback_break_stops_before_remaining_rows() {
 fn missing_empty_and_incomplete_locus_routes_are_free() {
     let sketch = SketchId::mint("creo:model:sketch#1").expect("fixture identity");
     let mut incomplete = skamp_definition(0);
-    incomplete.relations.as_mut().expect("relations").skamps.as_mut()
-        .expect("SKAMP table").header_mut().expect("header").declared_count = 1;
+    incomplete
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps
+        .as_mut()
+        .expect("SKAMP table")
+        .header_mut()
+        .expect("header")
+        .declared_count = 1;
     let mut empty_segments = definition();
     empty_segments.segments = Some(FeatureSegmentTable {
-        declared_count: 0, has_elided_prototype: false, entity_ref: None,
-        rows: Default::default(), offset: 0,
+        declared_count: 0,
+        has_elided_prototype: false,
+        entity_ref: None,
+        rows: SegmentRows::default(),
+        offset: 0,
     });
     let mut absent_skamps = skamp_definition(0);
     absent_skamps.relations.as_mut().expect("relations").skamps = None;
-    for definition in [definition(), empty_segments, absent_skamps, skamp_definition(0), incomplete] {
+    for definition in [
+        definition(),
+        empty_segments,
+        absent_skamps,
+        skamp_definition(0),
+        incomplete,
+    ] {
         with_work(0, |ctx| {
-            assert!(section_point_locus(&ctx, &definition, &sketch, 7).expect("empty locus").is_none());
-            assert_eq!(visit_section_skamps::<()>(&ctx, &definition, true,
-                |_| panic!("empty SKAMP callback")).expect("empty active SKAMP route"), ControlFlow::Continue(()));
-            assert_eq!(visit_all_section_skamps::<()>(&ctx, &definition,
-                |_| panic!("empty SKAMP callback")).expect("empty all-SKAMP route"), ControlFlow::Continue(()));
+            assert!(section_point_locus(&ctx, &definition, &sketch, 7)
+                .expect("empty locus")
+                .is_none());
+            assert_eq!(
+                visit_section_skamps::<()>(&ctx, &definition, true, |_| panic!(
+                    "empty SKAMP callback"
+                ))
+                .expect("empty active SKAMP route"),
+                ControlFlow::Continue(())
+            );
+            assert_eq!(
+                visit_all_section_skamps::<()>(&ctx, &definition, |_| panic!(
+                    "empty SKAMP callback"
+                ))
+                .expect("empty all-SKAMP route"),
+                ControlFlow::Continue(())
+            );
             ctx.finish_session().expect("active free route");
         });
     }

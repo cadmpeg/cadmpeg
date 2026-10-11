@@ -72,7 +72,7 @@ fn assert_record_visits(
                 );
             }
             Err(error) => panic!("unexpected lookup error: {error:?}"),
-        };
+        }
         result.map(|_| ())
     });
 }
