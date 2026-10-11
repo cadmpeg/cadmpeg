@@ -4867,7 +4867,7 @@ pub(super) fn emit_pcurves(
             )
         })?;
         if kept_pcurves.contains(&i) {
-            if let Some(geometry) = pcurve_geo.remove(&super::PcurveRecordIndex(i)) {
+            if let Some((geometry, storage)) = pcurve_geo.remove(&super::PcurveRecordIndex(i)) {
                 let wrapper_reversed = match r.chunk(4) {
                     Some(Token::True) if matches!(r.chunk(3), Some(Token::Long(0))) => Some(true),
                     Some(Token::False) if matches!(r.chunk(3), Some(Token::Long(0))) => Some(false),
@@ -4921,15 +4921,16 @@ pub(super) fn emit_pcurves(
                         PcurveMetadata::general(wrapper_reversed, parameter_range, fit_tolerance)
                     }
                 };
-                charged_push!(
-                    ctx,
-                    out.pcurves,
-                    Pcurve {
-                        id: <PcurveId>::from(id(format, i)),
-                        geometry,
-                        metadata,
-                    }
-                );
+                ctx.reserve_vec(&mut out.pcurves, 1, "out.pcurves")?;
+                let geometry = match storage {
+                    Some(storage) => storage.commit_value(geometry)?,
+                    None => geometry,
+                };
+                out.pcurves.push(Pcurve {
+                    id: <PcurveId>::from(id(format, i)),
+                    geometry,
+                    metadata,
+                });
             }
         }
     }

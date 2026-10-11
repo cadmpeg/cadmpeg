@@ -162,7 +162,7 @@ fn shared_pcurve_keeps_the_last_faces_support_chart() {
         )
         .unwrap();
         let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } =
-            &carriers.pcurve_geo[&crate::brep::PcurveRecordIndex(8)]
+            &carriers.pcurve_geo[&crate::brep::PcurveRecordIndex(8)].0
         else {
             panic!("decoded pcurve");
         };
@@ -250,4 +250,82 @@ fn shared_pcurve_caches_an_unavailable_decode() {
     drop((carriers, reach));
     drop(storage);
     ctx.finish_session().unwrap();
+}
+
+#[test]
+fn shared_pcurve_retains_one_geometry_for_any_coedge_count() {
+    let mut retained = None;
+    for count in [1, 2, 64] {
+        let mut records = shared_records();
+        records[4] = ref_record(
+            4, "coedge", &[-1, -1, -1, if count == 1 { 4 } else { 9 }, -1, -1, 6, -1, -1, 8],
+        );
+        for ordinal in 1..count {
+            let index = 8 + ordinal;
+            let next = if ordinal + 1 == count { 4 } else { index + 1 };
+            records.push(ref_record(index, "coedge", &[-1, -1, -1, i64::try_from(next).unwrap(), -1, -1, 6, -1, -1, 8]));
+        }
+        let by_index = indexed_records(&records);
+        let table = nurbs::toks::SubtypeTable::from_records(
+            &cadmpeg_test_support::service_decode_context(), &records,
+        ).unwrap();
+        let refusal = crate::test_support::resource_limit_at(
+            &[], ResourceDimension::RetainedBytes, "test shared pcurve retained total", |ctx| {
+                let mut storage = ctx.reserve_scoped(0, "test pcurve carriers")?;
+                let mut out = AsmBrep::default();
+                let mut carriers = Carriers::default();
+                let mut reach = Reachable { faces: [0].into(), ..Reachable::default() };
+                walk_reachable_topology(TopologyContext {
+                    ctx, by_index: &by_index, token_table: &table,
+                    purpose: DecodePurpose::Model, format: crate::asm_format!("sat"),
+                }, &mut out, &records, &mut carriers, &mut reach, &mut storage)?;
+                assert_eq!(reach.coedges.len(), count);
+                assert_eq!(carriers.pcurve_geo.len(), 1);
+                crate::brep::emit::emit_pcurves(ctx, &mut out, &records, &mut carriers, &reach, crate::asm_format!("sat"))?;
+                assert_eq!(out.pcurves.len(), 1);
+                assert!(carriers.pcurve_geo.is_empty());
+                let geometry = out.pcurves[0].geometry.clone();
+                let result = ctx.charge_retained(1, "test shared pcurve retained total");
+                assert_eq!(out.pcurves.len(), 1);
+                assert_eq!(out.pcurves[0].geometry, geometry);
+                result
+            },
+        );
+        assert_eq!(refusal.operation, "test shared pcurve retained total");
+        assert_eq!(refusal.additional, 1);
+        assert_eq!(refusal.limit + 1, refusal.used + refusal.additional);
+        assert_eq!(*retained.get_or_insert(refusal.used), refusal.used);
+    }
+}
+
+#[test]
+fn pcurve_output_slot_refusal_precedes_candidate_retention() {
+    let mut records = shared_records();
+    records[4] = ref_record(4, "coedge", &[-1, -1, -1, 4, -1, -1, -1, -1, -1, 8]);
+    let by_index = indexed_records(&records);
+    let table = nurbs::toks::SubtypeTable::from_records(
+        &cadmpeg_test_support::service_decode_context(), &records,
+    ).unwrap();
+    let refusal = crate::test_support::resource_limit_at(
+        &[], ResourceDimension::RetainedBytes, "out.pcurves", |ctx| {
+            let mut storage = ctx.reserve_scoped(0, "test pcurve carriers")?;
+            let mut out = AsmBrep::default();
+            let mut carriers = Carriers::default();
+            let mut reach = Reachable { faces: [0].into(), ..Reachable::default() };
+            walk_reachable_topology(TopologyContext {
+                ctx, by_index: &by_index, token_table: &table,
+                purpose: DecodePurpose::Model, format: crate::asm_format!("sat"),
+            }, &mut out, &records, &mut carriers, &mut reach, &mut storage)?;
+            assert_eq!(carriers.pcurve_geo.len(), 1);
+            let result = crate::brep::emit::emit_pcurves(ctx, &mut out, &records, &mut carriers, &reach, crate::asm_format!("sat"));
+            assert!(out.pcurves.is_empty());
+            result
+        },
+    );
+    let size = std::mem::size_of::<cadmpeg_ir::geometry::pcurve::Pcurve>();
+    let slots = if size <= 1024 { 4 } else { 1 };
+    assert_eq!(refusal.operation, "out.pcurves");
+    assert_eq!(refusal.used, 0);
+    assert_eq!(refusal.additional, u64::try_from(size * slots).unwrap());
+    assert_eq!(refusal.limit + 1, refusal.additional);
 }
