@@ -252,7 +252,7 @@ fn delete_construction_payload_from_field(
     if shared_block_store(ctx, &data_blocks, "validate NX DELETE source block owners")?.is_none() {
         return Ok(None);
     }
-    let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, blocks)? else {
+    let Some(content) = FeaturePayloadContent::from_source_array(ctx, data_blocks, blocks)? else {
         return Ok(None);
     };
     let Some(operation_key) = field

@@ -666,15 +666,13 @@ fn symbolic_thread_text_frames<'a>(
     if record.name() != "SYMBOLIC_THREAD" {
         return Ok(None);
     }
-    let frames = crate::om::operation_payload_text_frames(ctx, record)?;
-    let mut text_frames = Vec::new();
-    for frame in ctx.admit_iter(frames, "select NX symbolic-thread text frames")? {
-        if frame.marker == crate::om::OperationTextMarker::Text {
-            ctx.reserve_vec(&mut text_frames, 1, "NX symbolic-thread text frames")?;
-            text_frames.push(frame);
-        }
-    }
-    Ok((text_frames.len() >= 2).then_some(text_frames))
+    let mut frames = crate::om::operation_payload_text_frames(ctx, record)?;
+    ctx.retain_vec(
+        &mut frames,
+        |frame| Ok(frame.marker == crate::om::OperationTextMarker::Text),
+        "select NX symbolic-thread text frames",
+    )?;
+    Ok((frames.len() >= 2).then_some(frames))
 }
 
 fn owned_symbolic_thread(
@@ -753,7 +751,10 @@ pub(in crate::native) fn feature_symbolic_threads(
             &history_section.records,
             "visit NX feature operation records",
         )? {
-            let Some(frames) = symbolic_thread_text_frames(ctx, record.payload_view())? else {
+            let mut frame_storage = ctx.reserve_scoped(0, "NX symbolic-thread parser frames")?;
+            let Some(frames) = frame_storage
+                .with_storage(|| symbolic_thread_text_frames(ctx, record.payload_view()))?
+            else {
                 continue;
             };
             let thread = owned_symbolic_thread(
@@ -1685,3 +1686,6 @@ cadmpeg_core::named_optional_field!(
     [u8; 8],
     "second_reference_prefix"
 );
+
+#[cfg(test)]
+mod text_storage_tests;
