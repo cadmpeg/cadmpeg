@@ -243,29 +243,28 @@ impl<'a> Index<'a> {
             }
         }
 
+        let mut typed_field_names = HashMap::new();
         let mut integers_by_parent_name = BTreeMap::new();
-        legacy::value_index(
+        value_indexes(
             ctx,
             &persistence.integer_values.rows,
             &mut integers_by_parent_name,
+            &mut typed_field_names,
         )?;
         let mut reals_by_parent_name = BTreeMap::new();
-        legacy::value_index(
+        value_indexes(
             ctx,
             &persistence.real_values.rows,
             &mut reals_by_parent_name,
+            &mut typed_field_names,
         )?;
         let mut strings_by_parent_name = BTreeMap::new();
-        legacy::value_index(ctx, &persistence.string_values, &mut strings_by_parent_name)?;
-
-        let mut typed_field_names = HashMap::new();
-        add_typed_field_names(
+        value_indexes(
             ctx,
+            &persistence.string_values,
+            &mut strings_by_parent_name,
             &mut typed_field_names,
-            &persistence.integer_values.rows,
         )?;
-        add_typed_field_names(ctx, &mut typed_field_names, &persistence.real_values.rows)?;
-        add_typed_field_names(ctx, &mut typed_field_names, &persistence.string_values)?;
         add_typed_field_names(ctx, &mut typed_field_names, &persistence.type_3_values.rows)?;
         add_typed_field_names(ctx, &mut typed_field_names, &persistence.type_4_values.rows)?;
         add_typed_field_names(ctx, &mut typed_field_names, &persistence.type_5_values.rows)?;
@@ -289,23 +288,45 @@ impl<'a> Index<'a> {
     }
 }
 
+fn value_indexes<'a, K: legacy::LegacyCode>(
+    ctx: &DecodeContext<'_>,
+    records: &'a [legacy::ValueRecord<K>],
+    values: &mut BTreeMap<(usize, &'a str), Vec<&'a legacy::ValueRecord<K>>>,
+    typed_field_names: &mut HashMap<usize, Option<&'a str>>,
+) -> Result<(), CodecError> {
+    for record in ctx.admit_iter(records, "creo legacy family value index traversal")? {
+        legacy::index_value(ctx, record, values)?;
+        add_typed_field_name(ctx, typed_field_names, record)?;
+    }
+    Ok(())
+}
+
 fn add_typed_field_names<'a, K: legacy::LegacyCode>(
     ctx: &DecodeContext<'_>,
     index: &mut HashMap<usize, Option<&'a str>>,
     records: &'a [legacy::ValueRecord<K>],
 ) -> Result<(), CodecError> {
     for record in ctx.admit_iter(records, "creo legacy family typed field traversal")? {
-        if !record.name.starts_with("value(") {
-            continue;
-        }
-        if let Some(parent) = record.parent {
-            match ctx.entry_hash_map(index, parent, "creo legacy family typed-name nodes")? {
-                std::collections::hash_map::Entry::Vacant(entry) => {
-                    entry.insert(Some(record.name.as_str()));
-                }
-                std::collections::hash_map::Entry::Occupied(mut entry) => {
-                    entry.insert(None);
-                }
+        add_typed_field_name(ctx, index, record)?;
+    }
+    Ok(())
+}
+
+fn add_typed_field_name<'a, K: legacy::LegacyCode>(
+    ctx: &DecodeContext<'_>,
+    index: &mut HashMap<usize, Option<&'a str>>,
+    record: &'a legacy::ValueRecord<K>,
+) -> Result<(), CodecError> {
+    if !record.name.starts_with("value(") {
+        return Ok(());
+    }
+    if let Some(parent) = record.parent {
+        match ctx.entry_hash_map(index, parent, "creo legacy family typed-name nodes")? {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(Some(record.name.as_str()));
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                entry.insert(None);
             }
         }
     }
@@ -949,6 +970,45 @@ mod tests {
             },
             offset,
         }
+    }
+
+    #[test]
+    fn family_value_indexes_share_one_source_pass() {
+        let mut persistence = Persistence::default();
+        persistence.integer_values.rows.push(integer("solid", VALUE_INTEGER, 1, 10));
+        persistence.real_values.rows.push(real("root", VALUE_REAL, 2.0, 11));
+        persistence.string_values.push(string("item", VALUE_STRING, "value", 12));
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let index = super::Index::build(&ctx, &persistence).expect("value indexes").expect("unique offsets");
+        assert_eq!(index.integers_by_parent_name[&(fixture_offset("solid"), VALUE_INTEGER)], [&persistence.integer_values.rows[0]]);
+        assert_eq!(index.reals_by_parent_name[&(fixture_offset("root"), VALUE_REAL)], [&persistence.real_values.rows[0]]);
+        assert_eq!(index.strings_by_parent_name[&(fixture_offset("item"), VALUE_STRING)], [&persistence.string_values[0]]);
+        assert_eq!(index.typed_field_names.len(), 3);
+        assert_eq!(index.typed_field_names[&fixture_offset("solid")], Some(VALUE_INTEGER));
+        assert_eq!(index.typed_field_names[&fixture_offset("root")], Some(VALUE_REAL));
+        assert_eq!(index.typed_field_names[&fixture_offset("item")], Some(VALUE_STRING));
+
+        persistence.integer_values.rows[0].parent = None;
+        persistence.real_values.rows[0].parent = None;
+        persistence.string_values[0].parent = None;
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 3;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let index = super::Index::build(&ctx, &persistence).expect("one visit per parentless row").expect("unique offsets");
+        assert!(index.integers_by_parent_name.is_empty());
+        assert!(index.reals_by_parent_name.is_empty());
+        assert!(index.strings_by_parent_name.is_empty());
+        assert!(index.typed_field_names.is_empty());
+        let refusal = ctx.charge_work_limit(1, "after family index work").expect_err("three row visits exhaust the cap");
+        assert_eq!((refusal.dimension, refusal.used, refusal.additional), (ResourceDimension::WorkUnits, 3, 1));
+        crate::test_support::assert_work_boundaries(&["creo legacy family value index traversal"], |ctx| {
+            super::Index::build(ctx, &persistence).map(|index| index.is_some())
+        });
     }
 
     fn complete_table() -> Persistence {
