@@ -4514,6 +4514,7 @@ fn section_3d(
         placement_end,
         "find Creo feature definition field",
     )? {
+        let payload = &payload[..placement_end];
         let mut cursor = references + b"\xe0\x00ref_planes\0".len();
         if payload.get(cursor) == Some(&psb::token::ARRAY_OPEN) {
             let (count, next) = psb::compact_int(payload, cursor + 1);
@@ -6586,6 +6587,9 @@ fn saved_section_scalar(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> (Option<f64>, usize) {
+    let Some(payload) = payload.get(..end).filter(|_| offset <= end) else {
+        return (None, offset);
+    };
     let Some(&prefix) = payload.get(offset).filter(|_| offset < end) else {
         return (None, offset);
     };
@@ -6952,6 +6956,9 @@ fn saved_named_scalars<const N: usize>(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<[Option<f64>; N]>, CodecError> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(None);
+    };
     let Some(window) = payload.get(start..end) else {
         return Ok(None);
     };
@@ -7008,6 +7015,9 @@ fn saved_arc_scalar(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> (Option<f64>, usize) {
+    let Some(payload) = payload.get(..end).filter(|_| offset <= end) else {
+        return (None, offset);
+    };
     if payload.get(offset) == Some(&0x18)
         && payload.get(offset + 1).is_some_and(|next| {
             matches!(
@@ -7102,6 +7112,9 @@ fn saved_positional_generated_entities(
     else {
         return Ok(());
     };
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(());
+    };
     let mut generated_storage = ctx.reserve_scoped(0, "Creo saved generated lookup storage")?;
     let mut starts = Vec::new();
     for separator in ctx.admit_iter(start..end, "creo saved generated start traversal")? {
@@ -7146,6 +7159,7 @@ fn saved_positional_generated_entities(
             .get(index + 1)
             .and_then(|next| next.checked_sub(1))
             .unwrap_or(end);
+        let payload = &payload[..row_end];
         let (Some(entity_id), after_id) = segment_int(payload, row_start) else {
             continue;
         };
@@ -7547,6 +7561,9 @@ fn saved_spline_entities(
     cache: &scalar::ScalarCache,
     entities: &mut Vec<FeatureSavedEntity>,
 ) -> Result<(), CodecError> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(());
+    };
     const LABEL: &[u8] = b"\xe0\x00save_entity_ptr(spline)\0";
     const POINTS_LABEL: &[u8] = b"\xe0\x02i_pnts\0";
     const POINTS: &[u8] = b"\xe0\x02i_pnts\0\xf9";
@@ -7570,6 +7587,7 @@ fn saved_spline_entities(
                 "find Creo feature definition field",
             )?
             .unwrap_or(end);
+        let payload = &payload[..body_end];
         let points_label = ctx.find_bytes_in(
             payload,
             POINTS,
@@ -7701,6 +7719,9 @@ fn saved_spline_parameters(
     point_count: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<DecodedField<Vec<f64>>>, CodecError> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(None);
+    };
     const PARAMETERS_LABEL: &[u8] = b"\xe0\x02params\0";
     const PARAMETERS: &[u8] = b"\xe0\x02params\0\xf8";
     let Some(label) = ctx.find_bytes_in(
