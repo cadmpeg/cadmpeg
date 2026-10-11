@@ -2943,7 +2943,8 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                 const AFFECTED: &str = "catia_coordinate_closure_affected_roots";
                 let mut affected = Vec::new();
                 for &edge in ctx.admit_iter(&root_edges[root], AFFECTED)? {
-                    ctx.extend_from_slice(&mut affected, &edges[edge], AFFECTED)?;
+                    ctx.reserve_vec(&mut affected, 2, AFFECTED)?;
+                    affected.extend_from_slice(&edges[edge]);
                     let Some(incidence) = incidence else {
                         continue;
                     };
@@ -3084,27 +3085,32 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
             // A probe owns only the degrees it changes. Unchanged rows stay borrowed.
             let mut probe = BTreeMap::<(usize, usize), usize>::new();
             let within_degree = storage.with_storage(|| {
-                for &key in ctx.admit_iter(&increments, "catia_coordinate_closure_probe_degrees")? {
-                    let base = ctx
-                        .get_btree_map(
-                            &base_degrees[key.0],
-                            &key.1,
-                            "catia_coordinate_closure_probe_degrees",
-                        )?
-                        .copied()
-                        .unwrap_or(0);
-                    let degree = ctx
-                        .entry_btree_map(&mut probe, key, "catia_coordinate_closure_probe_degrees")?
-                        .or_insert(base);
-                    let Some(next) = degree.checked_add(1) else {
-                        return Ok(false);
-                    };
-                    *degree = next;
-                    if next > 2 {
-                        return Ok(false);
-                    }
-                }
-                Ok::<_, CodecError>(true)
+                ctx.all_by(
+                    &increments,
+                    |&key| {
+                        let base = ctx
+                            .get_btree_map(
+                                &base_degrees[key.0],
+                                &key.1,
+                                "catia_coordinate_closure_probe_degrees",
+                            )?
+                            .copied()
+                            .unwrap_or(0);
+                        let degree = ctx
+                            .entry_btree_map(
+                                &mut probe,
+                                key,
+                                "catia_coordinate_closure_probe_degrees",
+                            )?
+                            .or_insert(base);
+                        let Some(next) = degree.checked_add(1) else {
+                            return Ok(false);
+                        };
+                        *degree = next;
+                        Ok(next <= 2)
+                    },
+                    "catia_coordinate_closure_probe_degrees",
+                )
             })?;
             if !within_degree {
                 return Ok(false);
@@ -3131,66 +3137,69 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                 }
                 Ok::<_, CodecError>(points)
             })?;
-            for &(face, point) in
-                ctx.admit_iter(&affected_points, "catia_coordinate_closure_degree_support")?
-            {
-                let degree = match ctx.get_btree_map(
-                    &probe,
-                    &(face, point),
-                    "catia_coordinate_closure_degree_support",
-                )? {
-                    Some(degree) => *degree,
-                    None => ctx
-                        .get_btree_map(
-                            &base_degrees[face],
-                            &point,
-                            "catia_coordinate_closure_degree_support",
-                        )?
-                        .copied()
-                        .unwrap_or(0),
-                };
-                if degree != 1 {
-                    continue;
-                }
-                let Some(support) = ctx.get_btree_map(
-                    &incidence.point_supports[face],
-                    &point,
-                    "catia_coordinate_closure_degree_support",
-                )?
-                else {
-                    return Ok(false);
-                };
-                let supported = ctx.any_by(
-                    &support.edges,
-                    |&edge| {
-                        if work_budget.is_some_and(|budget| !budget.charge()) {
-                            return Ok(false);
-                        }
-                        let [left, right] = edges[edge];
-                        if value(left).is_some() && value(right).is_some() {
-                            return Ok(false);
-                        }
-                        for endpoint in [left, right] {
-                            let supports = match value(endpoint) {
-                                Some(value) => value == point,
-                                None => domain_contains(
-                                    ctx,
-                                    &domains[endpoint],
-                                    point,
-                                    "catia_coordinate_closure_degree_support",
-                                )?,
-                            };
-                            if supports {
-                                return Ok(true);
+            let supported = ctx.all_by(
+                &affected_points,
+                |&(face, point)| {
+                    let degree = match ctx.get_btree_map(
+                        &probe,
+                        &(face, point),
+                        "catia_coordinate_closure_degree_support",
+                    )? {
+                        Some(degree) => *degree,
+                        None => ctx
+                            .get_btree_map(
+                                &base_degrees[face],
+                                &point,
+                                "catia_coordinate_closure_degree_support",
+                            )?
+                            .copied()
+                            .unwrap_or(0),
+                    };
+                    if degree != 1 {
+                        return Ok(true);
+                    }
+                    let Some(support) = ctx.get_btree_map(
+                        &incidence.point_supports[face],
+                        &point,
+                        "catia_coordinate_closure_degree_support",
+                    )?
+                    else {
+                        return Ok(false);
+                    };
+                    let supported = ctx.any_by(
+                        &support.edges,
+                        |&edge| {
+                            if work_budget.is_some_and(|budget| !budget.charge()) {
+                                return Ok(false);
                             }
-                        }
-                        Ok(false)
-                    },
-                    "catia_coordinate_closure_degree_support",
-                )?;
-                if !supported {
-                    return Ok(false);
-                }
+                            let [left, right] = edges[edge];
+                            if value(left).is_some() && value(right).is_some() {
+                                return Ok(false);
+                            }
+                            for endpoint in [left, right] {
+                                let supports = match value(endpoint) {
+                                    Some(value) => value == point,
+                                    None => domain_contains(
+                                        ctx,
+                                        &domains[endpoint],
+                                        point,
+                                        "catia_coordinate_closure_degree_support",
+                                    )?,
+                                };
+                                if supports {
+                                    return Ok(true);
+                                }
+                            }
+                            Ok(false)
+                        },
+                        "catia_coordinate_closure_degree_support",
+                    )?;
+                    Ok(supported)
+                },
+                "catia_coordinate_closure_degree_support",
+            )?;
+            if !supported {
+                return Ok(false);
             }
             if let Some(ordered) = ordered {
                 ordered
