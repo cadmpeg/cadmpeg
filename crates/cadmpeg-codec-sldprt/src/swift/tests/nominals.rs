@@ -1592,7 +1592,7 @@ fn rendered_nominal_ambiguity_skips_unvisited_values() {
     use cadmpeg_ir::scalar::PositiveReal;
     assert!(approximately_equal(39_999_999.97, 40_000_000.0));
     assert!(approximately_equal(40_000_000.03, 40_000_000.0));
-    assert!(!approximately_equal(3.999999997, 4.000000003));
+    assert!(!approximately_equal(3.999_999_997, 4.000_000_003));
     let value = |value| RenderedDimension {
         kind: RenderedDimensionKind::Diameter,
         value: PositiveReal::new(value).unwrap(),
