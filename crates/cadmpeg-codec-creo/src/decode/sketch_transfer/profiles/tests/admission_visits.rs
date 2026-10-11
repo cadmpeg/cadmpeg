@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::{profile_chains, resolved_profile_chains, resolved_segment_profile_chains,
-    solver_only_section_entity_family, solver_only_section_entity_offset, ProfileEdge, ProfileTopology};
+use super::super::{
+    profile_chains, resolved_profile_chains, resolved_segment_profile_chains,
+    solver_only_section_entity_family, solver_only_section_entity_offset, ProfileEdge,
+    ProfileTopology,
+};
+use crate::feature::segment_rows::SegmentRows;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::sketches::SketchId;
@@ -48,7 +52,6 @@ fn rejected_open_profile_has_one_frontier_visit_and_no_empty_suffix_search() {
                         assert_eq!((original.used, original.additional), (0, 1));
                         assert_eq!(original.operation, "creo profile incidence sources");
                     }
-
                 }
                 Ok(rows) => {
                     assert!(rows.is_empty());
@@ -74,18 +77,18 @@ fn empty_profile_and_absent_or_incomplete_segment_routes_are_free() {
             definition.segments = None;
         } else {
             let table = definition.segments.as_mut().expect("segments");
-            table.rows = Default::default();
-            table.declared_count = if variant == 1 { 0 } else { 1 };
+            table.rows = SegmentRows::default();
+            table.declared_count = u32::from(variant != 1);
         }
         let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    policy.limits.max_retained_bytes = 0;
-    policy.limits.max_materialized_bytes = 0;
-    policy.limits.max_collection_items = 0;
-    policy.limits.max_entities = 0;
-    policy.limits.max_recursion_depth = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_entities = 0;
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         for result in [
             profile_chains(&ctx, &[], &sketch, ProfileTopology::ClosedSegments),
             resolved_segment_profile_chains(&ctx, &definition, &sketch, &emitted),
@@ -108,7 +111,13 @@ fn existing_segment_solver_recovery_is_free() {
     policy.limits.max_entities = 0;
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert_eq!(solver_only_section_entity_offset(&ctx, &definition, 7).expect("existing segment offset"), None);
-    assert_eq!(solver_only_section_entity_family(&ctx, &definition, 7).expect("existing segment family"), None);
+    assert_eq!(
+        solver_only_section_entity_offset(&ctx, &definition, 7).expect("existing segment offset"),
+        None
+    );
+    assert_eq!(
+        solver_only_section_entity_family(&ctx, &definition, 7).expect("existing segment family"),
+        None
+    );
     ctx.finish_session().expect("active session");
 }
