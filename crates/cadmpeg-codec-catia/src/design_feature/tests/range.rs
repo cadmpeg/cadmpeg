@@ -50,6 +50,7 @@ fn transfers_exact_range_fields_as_unresolved_operation_properties() {
         }),
         incoming_references: Vec::new(),
         incoming_storage_references: Vec::new(),
+        project_target: None,
     });
     let mut range_record = object_record(
         "range-record",

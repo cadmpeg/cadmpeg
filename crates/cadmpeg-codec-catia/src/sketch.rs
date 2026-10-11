@@ -2501,6 +2501,7 @@ mod tests {
             }),
             incoming_references: Vec::new(),
             incoming_storage_references: Vec::new(),
+            project_target: None,
         });
 
         crate::test_support::with_service_context(|ctx| {

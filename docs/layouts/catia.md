@@ -472,6 +472,33 @@ Parsed by:
 | 6 | 1 | `green` | `u8` | little | spec | `marker[4] A B G R` |
 | 7 | 1 | `red` | `u8` | little | spec | `marker[4] A B G R` |
 
+## `gsmproject_range_frame_program`
+
+Spec §7.3 · layout: byte offsets · size: 19 B
+
+Complete R-selected frame program; the two compact context atoms do not assign coordinates.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `initial_terminator` | `u8` | little | spec | 19 bytes, with canonical one-byte atoms at offsets one and ten. · value `254` |
+| 1 | 1 | `first_context_atom` | `u8` | little | spec | 19 bytes, with canonical one-byte atoms at offsets one and ten. |
+| 2 | 8 | `first_program` | `bytes[8]` | little | spec | DC 72 E8 D4 08 37 82 FE |
+| 10 | 1 | `second_context_atom` | `u8` | little | spec | 19 bytes, with canonical one-byte atoms at offsets one and ten. |
+| 11 | 8 | `second_program` | `bytes[8]` | little | spec | E2 E5 E8 C0 1C 37 82 FE |
+
+## `gsmproject_range_frame_references`
+
+Spec §7.3 · layout: byte offsets · size: 86 B
+
+14 ordered fixed-width reference fields, followed by the exact terminal pair.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 18 | `origin_references` | `bytes[18]` | little | spec | The first three identities supply the frame origin in millimetres |
+| 18 | 54 | `matrix_references` | `bytes[54]` | little | spec | the next nine supply a row-major orthonormal matrix |
+| 72 | 12 | `support_references` | `bytes[12]` | little | spec | The final two identities retain support incidences. |
+| 84 | 2 | `terminal_pair` | `bytes[2]` | little | spec | 86 bytes, with 14 distinct source-ordered identities. |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

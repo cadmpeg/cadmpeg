@@ -253,7 +253,7 @@ fn finish_decode(
         "admit CATIA route entities",
     )?;
     let consolidated_record_sources = container::consolidated_record_sources(ctx, scan)?;
-    let native = CatiaNative::decode_with_record_sources(
+    let mut native = CatiaNative::decode_with_record_sources(
         ctx,
         &scan.data,
         &consolidated_record_sources,
@@ -268,6 +268,7 @@ fn finish_decode(
         !scan.outer_container_declarations.is_empty(),
         &native.object_graphs,
     )?;
+    crate::native::project_range::bind(ctx, &mut native, &ir.model, &modeling_graph_scope)?;
     let modeling_object_records = ctx.collect_string_set(
         native
             .object_graphs

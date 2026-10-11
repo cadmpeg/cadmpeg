@@ -43,6 +43,7 @@ use entity_record::{
     CatiaEntityValueProduction,
 };
 
+pub(crate) mod project_range;
 pub(crate) mod schema_configuration_chain;
 use schema_configuration_chain::{
     derive_schema_configuration_row_chains, CatiaSchemaConfigurationRowChain,
@@ -2617,6 +2618,9 @@ pub(crate) struct CatiaRangeInterval {
     /// Exact same-graph object-head storage selectors selecting this interval.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) incoming_storage_references: Vec<CatiaEntityIncomingStorageReference>,
+    /// Complete same-storage `GSMProject` frame and cylinder-face incidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) project_target: Option<project_range::ProjectRangeTarget>,
 }
 
 /// Exact scalar-suffix dialect associating a nominal with a `Range` interval.
@@ -5621,6 +5625,7 @@ fn range_interval(
         nominal: range_nominal(suffix_value),
         incoming_references,
         incoming_storage_references,
+        project_target: None,
     }))
 }
 

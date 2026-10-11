@@ -221,6 +221,7 @@ mod tests {
                 }),
                 incoming_references: Vec::new(),
                 incoming_storage_references: Vec::new(),
+                project_target: None,
             }),
             value_production: Some(
                 crate::native::entity_record::CatiaEntityValueProduction::ConstraintRange(

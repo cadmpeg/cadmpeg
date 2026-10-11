@@ -1217,6 +1217,87 @@ source = "spec"
 anchor = "`marker[4] A B G R`"
 
 
+[[record]]
+name = "gsmproject_range_frame_program"
+kind = "byte"
+section = "7.3"
+anchor = "The complete selected R program is `FE <a:atom8> DC 72 E8 D4 08 37 82 FE <b:atom8> E2 E5 E8 C0 1C 37 82 FE`"
+size = 19
+note = "Complete R-selected frame program; the two compact context atoms do not assign coordinates."
+
+[[record.field]]
+name = "initial_terminator"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "19 bytes, with canonical one-byte atoms at offsets one and ten."
+value = 254
+
+[[record.field]]
+name = "first_context_atom"
+offset = 1
+type = "u8"
+source = "spec"
+anchor = "19 bytes, with canonical one-byte atoms at offsets one and ten."
+
+[[record.field]]
+name = "first_program"
+offset = 2
+type = "bytes[8]"
+source = "spec"
+anchor = "DC 72 E8 D4 08 37 82 FE"
+
+[[record.field]]
+name = "second_context_atom"
+offset = 10
+type = "u8"
+source = "spec"
+anchor = "19 bytes, with canonical one-byte atoms at offsets one and ten."
+
+[[record.field]]
+name = "second_program"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "E2 E5 E8 C0 1C 37 82 FE"
+
+[[record]]
+name = "gsmproject_range_frame_references"
+kind = "byte"
+section = "7.3"
+anchor = "The frame object's terminal payload production is `<81 80 id:u32le>{14} 81 FE`"
+size = 86
+note = "14 ordered fixed-width reference fields, followed by the exact terminal pair."
+
+[[record.field]]
+name = "origin_references"
+offset = 0
+type = "bytes[18]"
+source = "spec"
+anchor = "The first three identities supply the frame origin in millimetres"
+
+[[record.field]]
+name = "matrix_references"
+offset = 18
+type = "bytes[54]"
+source = "spec"
+anchor = "the next nine supply a row-major orthonormal matrix"
+
+[[record.field]]
+name = "support_references"
+offset = 72
+type = "bytes[12]"
+source = "spec"
+anchor = "The final two identities retain support incidences."
+
+[[record.field]]
+name = "terminal_pair"
+offset = 84
+type = "bytes[2]"
+source = "spec"
+anchor = "86 bytes, with 14 distinct source-ordered identities."
+
+
 # --- Not tabulated -----------------------------------------------------------
 
 [[not_applicable]]
