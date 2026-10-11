@@ -10,7 +10,7 @@ use cadmpeg_ir::topology::Body;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::history::classify::{
-    feature_tree_node_role, is_custom_property, principal_plane_in_history,
+    feature_tree_node_role, is_custom_property, principal_plane_in_history, HistoryIndex,
 };
 use crate::history::configuration::enrich_history_parameters_semantic;
 use crate::history::parameters::apply_evaluated_parameters;
@@ -54,9 +54,9 @@ fn synchronize_feature_input_names(
                 return None;
             }
             Some((
-                record.name.clone(),
-                new_name.to_string(),
-                record.input_class.clone()?,
+                record.name.as_str(),
+                new_name,
+                record.input_class.as_deref()?,
             ))
         })
         .collect::<Vec<_>>();
@@ -286,30 +286,21 @@ pub(in crate::history) fn sync_neutral_features(
         .collect::<HashMap<_, _>>();
     let desired_record_ids = record_ids
         .values()
-        .cloned()
         .collect::<std::collections::HashSet<_>>();
     for history in &mut native.feature_histories {
         history.features.retain(|feature| {
             is_custom_property(feature) || desired_record_ids.contains(&feature.id)
         });
     }
-    let principal_planes_by_record = native
-        .feature_histories
-        .iter()
-        .flat_map(|history| {
-            let by_source = history
-                .features
-                .iter()
-                .filter_map(|feature| Some((feature.source_id?, feature)))
-                .collect::<HashMap<_, _>>();
-            history.features.iter().filter_map(move |feature| {
-                Some((
-                    feature.id.clone(),
-                    principal_plane_in_history(feature, &by_source, &history.features)?,
-                ))
-            })
-        })
-        .collect::<HashMap<_, _>>();
+    let mut principal_planes_by_record = HashMap::new();
+    for history in &native.feature_histories {
+        let index = HistoryIndex::new(&ctx, &history.features)?;
+        for feature in &history.features {
+            if let Some(plane) = principal_plane_in_history(&ctx, feature, &index)? {
+                principal_planes_by_record.insert(feature.id.clone(), plane);
+            }
+        }
+    }
     let record_sources = native
         .feature_histories
         .iter()
@@ -320,18 +311,15 @@ pub(in crate::history) fn sync_neutral_features(
                 .map(|source| (feature.id.clone(), String::from(source)))
         })
         .collect::<HashMap<_, _>>();
-    let retained_tree_node_roles = native
-        .feature_histories
-        .iter()
-        .flat_map(|history| {
-            history.features.iter().filter_map(|feature| {
-                Some((
-                    feature.id.clone(),
-                    feature_tree_node_role(feature, &history.features)?,
-                ))
-            })
-        })
-        .collect::<HashMap<_, _>>();
+    let mut retained_tree_node_roles = HashMap::new();
+    for history in &native.feature_histories {
+        let index = HistoryIndex::new(&ctx, &history.features)?;
+        for feature in &history.features {
+            if let Some(role) = feature_tree_node_role(&ctx, feature, &index)? {
+                retained_tree_node_roles.insert(feature.id.clone(), role);
+            }
+        }
+    }
     let feature_sources = features
         .iter()
         .filter_map(|feature| {
@@ -354,13 +342,15 @@ pub(in crate::history) fn sync_neutral_features(
         .collect::<HashMap<_, _>>();
     let body_sources = bodies
         .iter()
-        .map(|body| (body.id.clone(), body.id.as_str().to_owned()))
+        .map(|body| (&body.id, body.id.as_str()))
         .collect::<HashMap<_, _>>();
     for feature in features {
         if feature
             .source_tag
             .as_deref()
-            .is_some_and(|tag| !valid_xml_name(tag))
+            .map(|tag| valid_xml_name(&ctx, tag).map(|valid| !valid))
+            .transpose()?
+            .unwrap_or(false)
         {
             return Err(CodecError::malformed(format_args!(
                 "SLDPRT feature {} has an invalid source tag",
@@ -399,11 +389,12 @@ pub(in crate::history) fn sync_neutral_features(
         .encode()?;
         if let Some(record) = existing.as_deref() {
             restore_equivalent_parameter_expressions(
+                &ctx,
                 record,
                 &original_parameters,
                 &evaluated_parameters,
                 &mut parameters,
-            );
+            )?;
         }
         if feature.evaluation.outputs().is_empty() {
             if existing.is_none() {
@@ -414,7 +405,7 @@ pub(in crate::history) fn sync_neutral_features(
                 .evaluation
                 .outputs()
                 .iter()
-                .map(|body| body_sources.get(body).cloned())
+                .map(|body| body_sources.get(body).copied())
                 .collect::<Option<Vec<_>>>()
                 .ok_or_else(|| {
                     CodecError::malformed(format_args!(
@@ -465,7 +456,7 @@ pub(in crate::history) fn sync_neutral_features(
             history.features.push(Feature {
                 id: record_ids[&feature.id].clone(),
                 parent: history.id.clone(),
-                xml_tag: feature_xml_tag(feature),
+                xml_tag: feature_xml_tag(&ctx, feature)?,
                 tree_parent,
                 source_id: generated_sources.get(&feature.id).copied(),
                 ordinal,
@@ -609,13 +600,13 @@ pub(super) fn synchronize_history_content_order(native: &mut crate::native::Sldp
         let configurations = history
             .configurations
             .iter()
-            .map(|configuration| (configuration.ordinal, configuration.id.clone()))
+            .map(|configuration| (configuration.ordinal, &configuration.id))
             .collect::<Vec<_>>();
         let mut features = history
             .features
             .iter()
             .filter(|feature| feature.tree_parent.is_none())
-            .map(|feature| (feature.ordinal, feature.id.clone()))
+            .map(|feature| (feature.ordinal, &feature.id))
             .collect::<Vec<_>>();
         let mut configurations = configurations;
         configurations.sort();
@@ -627,13 +618,13 @@ pub(super) fn synchronize_history_content_order(native: &mut crate::native::Sldp
                 HistoryContent::Configuration(id) => {
                     *id = configurations
                         .get(configuration_index)
-                        .map_or_else(String::new, |(_, id)| id.clone());
+                        .map_or_else(String::new, |(_, id)| (*id).clone());
                     configuration_index += 1;
                 }
                 HistoryContent::Feature(id) => {
                     *id = features
                         .get(feature_index)
-                        .map_or_else(String::new, |(_, id)| id.clone());
+                        .map_or_else(String::new, |(_, id)| (*id).clone());
                     feature_index += 1;
                 }
                 HistoryContent::Text(_) => {}
@@ -646,13 +637,13 @@ pub(super) fn synchronize_history_content_order(native: &mut crate::native::Sldp
             configurations
                 .iter()
                 .skip(configuration_index)
-                .map(|(_, id)| HistoryContent::Configuration(id.clone())),
+                .map(|(_, id)| HistoryContent::Configuration((*id).clone())),
         );
         history.content.extend(
             features
                 .iter()
                 .skip(feature_index)
-                .map(|(_, id)| HistoryContent::Feature(id.clone())),
+                .map(|(_, id)| HistoryContent::Feature((*id).clone())),
         );
     }
 }

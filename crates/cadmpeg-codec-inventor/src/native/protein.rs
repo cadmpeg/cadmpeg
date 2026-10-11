@@ -123,13 +123,10 @@ impl ProteinRecord {
         let wire = match <[_; 1]>::try_from(records) {
             Ok([wire]) => wire,
             Err(records) => {
-                let detail = ctx.format_retained(
-                    format_args!(
-                        "Inventor native data has {} Protein state records",
-                        records.len()
-                    ),
-                    "retain Inventor Protein cardinality issue",
-                )?;
+                let detail = format!(
+                    "Inventor native data has {} Protein state records",
+                    records.len()
+                );
                 return Err(NativeConvertError::ConversionMessage(detail));
             }
         };
@@ -248,21 +245,16 @@ pub(crate) struct ProteinAssetRecordWire {
 impl ProteinAssetRecordWire {
     pub(crate) fn into_record(
         self,
-        ctx: &DecodeContext<'_>,
+        _ctx: &DecodeContext<'_>,
     ) -> Result<ProteinAssetRecord, CodecError> {
         if self.ordinal != self.asset.ordinal {
-            return Err(CodecError::Malformed(ctx.copy_retained_text(
+            return Err(CodecError::malformed(
                 "ordinal disagrees with asset.ordinal",
-                "retain Inventor Protein asset conversion issue",
-            )?));
+            ));
         }
         Ok(ProteinAssetRecord {
             id: self.id,
-            entry_name: InstancePropertiesEntry::try_new(
-                ctx,
-                self.entry_name,
-                "retain Inventor Protein asset conversion issue",
-            )?,
+            entry_name: InstancePropertiesEntry::try_new(self.entry_name)?,
             asset: self.asset,
         })
     }
@@ -306,18 +298,11 @@ impl ProteinRejectionRecordWire {
         self,
         ctx: &DecodeContext<'_>,
     ) -> Result<ProteinRejectionRecord, CodecError> {
-        let entry_name = InstancePropertiesEntry::try_new(
-            ctx,
-            self.entry_name,
-            "retain Inventor Protein rejection conversion issue",
-        )?;
+        let entry_name = InstancePropertiesEntry::try_new(self.entry_name)?;
         let detail =
             NonBlankString::for_decode(ctx, self.detail, "validate Protein rejection detail")?;
         let Some(detail) = detail else {
-            return Err(CodecError::Malformed(ctx.copy_retained_text(
-                "detail must not be empty",
-                "retain Inventor Protein rejection conversion issue",
-            )?));
+            return Err(CodecError::malformed("detail must not be empty"));
         };
         Ok(ProteinRejectionRecord {
             id: self.id,
@@ -338,20 +323,11 @@ impl Serialize for InstancePropertiesEntry {
 }
 
 impl InstancePropertiesEntry {
-    fn try_new(
-        ctx: &DecodeContext<'_>,
-        value: String,
-        issue_operation: &'static str,
-    ) -> Result<Self, CodecError> {
-        if !ctx.ends_with(
-            &value,
-            "InstanceProperties.bin",
-            "validate Inventor Protein archive entry name",
-        )? {
-            return Err(CodecError::Malformed(ctx.copy_retained_text(
+    fn try_new(value: String) -> Result<Self, CodecError> {
+        if !value.ends_with("InstanceProperties.bin") {
+            return Err(CodecError::malformed(
                 "entry_name must end with InstanceProperties.bin",
-                issue_operation,
-            )?));
+            ));
         }
         Ok(Self(value))
     }
@@ -385,6 +361,150 @@ mod tests {
             .map_err(|error| error.to_string())?;
         wire.into_record(&crate::native::test_ctx())
             .map_err(|error| error.to_string())
+    }
+
+    #[test]
+    fn protein_cardinality_error_uses_no_retained_bytes() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        assert!(
+            matches!(ProteinRecord::read(&ctx, &NativeNamespace::default()),
+            Err(cadmpeg_ir::native::NativeConvertError::ConversionMessage(detail))
+                if detail == "Inventor native data has 0 Protein state records")
+        );
+    }
+
+    #[test]
+    fn protein_typed_read_precedes_cardinality_and_refusal_is_sticky() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        use cadmpeg_ir::native::NativeConvertError;
+
+        let first_id = format!("inventor:protein:state#{}", "a".repeat(4_096));
+        let second_id = format!("inventor:protein:state#{}", "b".repeat(4_096));
+        let first_detail = "first detail ".repeat(1_024);
+        let second_detail = "second detail ".repeat(1_024);
+        let state_records = [
+            serde_json::json!({
+                "id": first_id,
+                "state": "malformed",
+                "directory_id": 3,
+                "declared_len": null,
+                "entry_count": 0,
+                "detail": first_detail,
+            }),
+            serde_json::json!({
+                "id": second_id,
+                "state": "malformed",
+                "directory_id": 4,
+                "declared_len": null,
+                "entry_count": 0,
+                "detail": second_detail,
+            }),
+        ];
+        let mut namespace = NativeNamespace::default();
+        namespace
+            .set_arena(&crate::native::test_ctx(), "protein", &state_records)
+            .expect("two valid state wires");
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let storage_refusal = match ProteinRecord::read(&ctx, &namespace) {
+            Err(NativeConvertError::Resource(CodecError::ResourceLimit(limit))) => limit,
+            other => panic!("typed storage must precede cardinality: {other:?}"),
+        };
+        // An empty typed vector grows to four slots before the first wire copy.
+        assert_eq!(storage_refusal.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(storage_refusal.operation, "load typed native record");
+        assert_eq!(storage_refusal.used, 0);
+        assert_eq!(
+            storage_refusal.additional,
+            cadmpeg_core::decode::u64_from_index(
+                4 * std::mem::size_of::<super::ProteinRecordWire>()
+            )
+        );
+        assert_eq!(ctx.resource_refusal(), Some(storage_refusal));
+
+        assert!(
+            matches!(ProteinRecord::read(&crate::native::test_ctx(), &namespace),
+            Err(NativeConvertError::ConversionMessage(detail))
+                if detail == "Inventor native data has 2 Protein state records")
+        );
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let first_refusal = match ProteinRecord::read(&ctx, &namespace) {
+            Err(NativeConvertError::Resource(CodecError::ResourceLimit(limit))) => limit,
+            other => panic!("typed native copy should refuse work: {other:?}"),
+        };
+        assert_eq!(first_refusal.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(first_refusal.operation, "select typed native arena");
+        assert_eq!(ctx.resource_refusal(), Some(first_refusal));
+    }
+
+    #[test]
+    fn protein_invalid_first_record_precedes_cardinality() {
+        let records = [
+            serde_json::json!({"id": "inventor:protein:state#0", "state": "absent"}),
+            serde_json::json!({"id": "inventor:protein:state#1", "state": "absent", "entry_count": 0}),
+        ];
+        let ctx = crate::native::test_ctx();
+        let mut namespace = NativeNamespace::default();
+        namespace
+            .set_arena(&ctx, "protein", &records)
+            .expect("raw Protein records");
+        assert_eq!(ProteinRecord::read(&ctx, &namespace)
+            .expect_err("the invalid first Protein wire is checked before cardinality")
+            .to_string(),
+            "native arena protein: native record inventor:protein:state#0: missing field `entry_count`");
+    }
+
+    #[test]
+    fn protein_asset_fixed_validation_uses_no_decode_budget() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        use cadmpeg_core::CodecError;
+        let valid = serde_json::json!({
+            "id": "asset", "entry_name": "InstanceProperties.bin", "ordinal": 3,
+            "asset": { "ordinal": 3, "logical_offset": 0, "schema": "GenericSchema",
+                "guid": "asset-guid", "base": "", "asset_lib_id": "", "properties": {} }
+        });
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Ordinals and the 22-byte suffix are fixed; existing field storage moves.
+        policy.limits.max_work_units = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let wire: ProteinAssetRecordWire = serde_json::from_value(valid.clone()).expect("wire");
+        assert_eq!(
+            wire.into_record(&ctx).expect("fixed validation").ordinal(),
+            3
+        );
+        for (field, value, message) in [
+            (
+                "ordinal",
+                serde_json::json!(4),
+                "ordinal disagrees with asset.ordinal",
+            ),
+            (
+                "entry_name",
+                serde_json::json!("wrong.bin"),
+                "entry_name must end with InstanceProperties.bin",
+            ),
+        ] {
+            let mut value_wire = valid.clone();
+            value_wire[field] = value;
+            let wire: ProteinAssetRecordWire = serde_json::from_value(value_wire).expect("wire");
+            assert!(
+                matches!(wire.into_record(&ctx), Err(CodecError::Malformed(detail)) if detail == message)
+            );
+        }
     }
 
     #[test]

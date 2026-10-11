@@ -12,6 +12,8 @@ use cadmpeg_core::CodecError;
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Extrude32Frame<B> {
     origin: u64,
+    second_position: u64,
+    terminal_position: u64,
     scalar: ShiftedBinary64,
     atoms: BranchItems<(WrappedCompactIndex, B)>,
     first: BranchItems<(CompactIndexAtom, B)>,
@@ -28,22 +30,98 @@ impl<B> Extrude32Frame<B> {
         second: BranchItems<(CompactIndexAtom, B)>,
         terminal: FeatureReferenceToken,
     ) -> Result<Self, &'static str> {
-        let frame = Self {
+        let (second_position, terminal_position) = match Self::extent(
             origin,
+            atoms.len(),
+            first.as_slice(),
+            second.as_slice(),
+            terminal,
+            |tokens| Ok::<_, std::convert::Infallible>(tokens.iter()),
+        ) {
+            Ok(positions) => positions?,
+            Err(error) => match error {},
+        };
+        Ok(Self {
+            origin,
+            second_position,
+            terminal_position,
             scalar,
             atoms,
             first,
             second,
             terminal,
+        })
+    }
+
+    fn from_wire(
+        ctx: &DecodeContext<'_>,
+        origin: u64,
+        scalar: ShiftedBinary64,
+        atoms: BranchItems<(WrappedCompactIndex, B)>,
+        first: BranchItems<(CompactIndexAtom, B)>,
+        second: BranchItems<(CompactIndexAtom, B)>,
+        terminal: FeatureReferenceToken,
+    ) -> Result<Result<Self, &'static str>, CodecError> {
+        Ok(Self::extent(
+            origin,
+            atoms.len(),
+            first.as_slice(),
+            second.as_slice(),
+            terminal,
+            |tokens| ctx.admit_iter(tokens, "NX extrusion branch token widths"),
+        )?
+        .map(|(second_position, terminal_position)| Self {
+            origin,
+            second_position,
+            terminal_position,
+            scalar,
+            atoms,
+            first,
+            second,
+            terminal,
+        }))
+    }
+
+    fn extent<'a, E, I: Iterator<Item = &'a (CompactIndexAtom, B)>>(
+        origin: u64,
+        atom_count: usize,
+        first: &'a [(CompactIndexAtom, B)],
+        second: &'a [(CompactIndexAtom, B)],
+        terminal: FeatureReferenceToken,
+        mut admit: impl FnMut(&'a [(CompactIndexAtom, B)]) -> Result<I, E>,
+    ) -> Result<Result<(u64, u64), &'static str>, E>
+    where
+        B: 'a,
+    {
+        let Some(start) = u64_from_index(atom_count)
+            .checked_mul(4)
+            .and_then(|width| width.checked_add(15))
+        else {
+            return Ok(Err("source_offset: extrusion branch end overflows"));
         };
-        origin
-            .checked_add(
-                frame.terminal_position()
-                    + cadmpeg_core::decode::u64_from_index(frame.terminal.raw().len())
-                    + 2,
-            )
-            .ok_or("source_offset: extrusion branch end overflows")?;
-        Ok(frame)
+        let Some(second_position) = admit(first)?
+            .try_fold(start, |at, (token, _)| {
+                at.checked_add(u64_from_index(token.raw().len()))
+            })
+            .and_then(|at| at.checked_add(2))
+        else {
+            return Ok(Err("source_offset: extrusion branch end overflows"));
+        };
+        let Some(terminal_position) = admit(second)?
+            .try_fold(second_position, |at, (token, _)| {
+                at.checked_add(u64_from_index(token.raw().len()))
+            })
+            .and_then(|at| at.checked_add(2))
+        else {
+            return Ok(Err("source_offset: extrusion branch end overflows"));
+        };
+        let valid = origin
+            .checked_add(terminal_position)
+            .and_then(|at| at.checked_add(u64_from_index(terminal.raw().len())))
+            .and_then(|at| at.checked_add(2));
+        Ok(valid
+            .map(|_| (second_position, terminal_position))
+            .ok_or("source_offset: extrusion branch end overflows"))
     }
     pub(crate) fn origin(&self) -> u64 {
         self.origin
@@ -71,24 +149,10 @@ impl<B> Extrude32Frame<B> {
         15 + 4 * cadmpeg_core::decode::u64_from_index(self.atoms.len())
     }
     fn second_position(&self) -> u64 {
-        self.first_position()
-            + self
-                .first
-                .as_slice()
-                .iter()
-                .map(|(token, _)| cadmpeg_core::decode::u64_from_index(token.raw().len()))
-                .sum::<u64>()
-            + 2
+        self.second_position
     }
     fn terminal_position(&self) -> u64 {
-        self.second_position()
-            + self
-                .second
-                .as_slice()
-                .iter()
-                .map(|(token, _)| cadmpeg_core::decode::u64_from_index(token.raw().len()))
-                .sum::<u64>()
-            + 2
+        self.terminal_position
     }
 
     pub(crate) fn atoms(&self) -> impl Iterator<Item = (WrappedCompactIndex, &B, u64)> + Clone {
@@ -114,17 +178,16 @@ impl<B> Extrude32Frame<B> {
     ) -> impl Iterator<Item = (CompactIndexAtom, &B, u64)> + Clone {
         compact_positions(&self.second, self.origin + self.second_position())
     }
-    pub(crate) fn relocate(self, base: u64) -> Option<Self> {
-        Self::new(
-            base.checked_add(self.origin)?,
-            self.scalar,
-            self.atoms,
-            self.first,
-            self.second,
-            self.terminal,
-        )
-        .ok()
+    pub(crate) fn relocate(mut self, base: u64) -> Option<Self> {
+        let origin = base.checked_add(self.origin)?;
+        origin
+            .checked_add(self.terminal_position)?
+            .checked_add(u64_from_index(self.terminal.raw().len()))?
+            .checked_add(2)?;
+        self.origin = origin;
+        Some(self)
     }
+
     pub(crate) fn map_bindings<C>(
         self,
         ctx: &DecodeContext<'_>,
@@ -132,6 +195,8 @@ impl<B> Extrude32Frame<B> {
     ) -> Result<Extrude32Frame<C>, CodecError> {
         Ok(Extrude32Frame {
             origin: self.origin,
+            second_position: self.second_position,
+            terminal_position: self.terminal_position,
             scalar: self.scalar,
             atoms: self
                 .atoms
@@ -164,18 +229,29 @@ fn compact_positions<B>(
     })
 }
 
-pub(crate) fn extrude_payload_32_branch(
+pub(crate) fn extrude_payload_32_branch<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    record: OperationBodyInput<'_>,
+) -> Result<
+    (
+        Option<Extrude32Frame<()>>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
+    let mut storage = ctx.reserve_scoped(0, "NX extrusion candidate storage")?;
+    let candidate = storage.with_storage(|| read_extrude_payload_32_branch(ctx, record))?;
+    Ok((candidate, storage))
+}
+
+fn read_extrude_payload_32_branch(
     ctx: &DecodeContext<'_>,
     record: OperationBodyInput<'_>,
 ) -> Result<Option<Extrude32Frame<()>>, CodecError> {
-    ctx.charge_work(
-        u64_from_index(record.bytes().len()),
-        "scan NX extrude 32 branch",
-    )?;
     if record.name() != "EXTRUDE" {
         return Ok(None);
     }
-    let Some(reference) = super::operation_body_reference(record) else {
+    let Some(reference) = super::operation_body_reference(ctx, record)? else {
         return Ok(None);
     };
     let end = reference.offset - record.offset() + reference.object_index.raw().len();
@@ -222,14 +298,15 @@ pub(crate) fn extrude_payload_32_branch(
     {
         return Ok(None);
     }
-    Ok(Extrude32Frame::new(
+    Ok(Extrude32Frame::from_wire(
+        ctx,
         cadmpeg_core::decode::u64_from_index(record.offset() + end + 1),
         scalar,
         atoms,
         first,
         second,
         terminal,
-    )
+    )?
     .ok())
 }
 
@@ -252,7 +329,11 @@ fn counted_lane<T>(
     let len = usize::from(count - 1);
     let operation = "NX extrude 32 counted lane";
     let mut values = ctx.collection_vec(len, operation)?;
-    for _ in 1..count {
+    let mut rows = 1..count;
+    while ctx
+        .next_charged(&mut rows, "NX counted lane range traversal")?
+        .is_some()
+    {
         let Some((token, width)) = bytes.get(*at..).and_then(&mut read) else {
             return Ok(None);
         };
@@ -270,43 +351,78 @@ mod tests {
     use super::super::reference_index::FeatureReferenceToken;
     use super::super::scalar::ShiftedBinary64;
     use super::Extrude32Frame;
-    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
 
-    fn refusal(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
+    fn refusal(dimension: cadmpeg_core::decode::ResourceDimension, operation: &str) -> CodecError {
         let bytes = b"\x01\x02\x10\x73\xff\x32\x00\x00\x30\x77\x7e\x14\x7a\xe1\x47\xb3\x01\x03\x3d\x82\x56\x00\x3d\x82\x57\x00\x01\x04\x80\x2b\x80\x2d\x80\x2c\x01\x03\x80\x2e\x80\x77\x00\x01\x73\x00\x00";
 
+        crate::test_support::resource_refusal_at(bytes, dimension, operation, |ctx| {
+            let record = super::OperationBodyInput::new(bytes, 100, 0, "EXTRUDE").unwrap();
+            super::extrude_payload_32_branch(ctx, record).map(|(value, _storage)| value)
+        })
+    }
+
+    #[test]
+    fn extrude_32_partial_candidate_uses_only_scoped_storage() {
+        let bytes = b"\x01\x02\x10\x73\xff\x32\x00\x00\x30\x77\x7e\x14\x7a\xe1\x47\xb3\x01\x03\x3d\x82\x56\x00\x3d\x82\x57\x00\x01\x04\x80\x2b\x80\x2d\x80\x2c\x01\x03\x80\x2e\x80\x77\x00\x01\x73\x00\x00";
+        let mut malformed = bytes.to_vec();
+        malformed.pop();
         crate::test_support::with_decode_context_over(
-            bytes,
-            |policy| {
-                configure(policy);
-            },
+            &[],
+            |policy| policy.limits.max_retained_bytes = 0,
             |ctx| {
-                let record = super::OperationBodyInput::new(bytes, 100, 0, "EXTRUDE").unwrap();
-                super::extrude_payload_32_branch(ctx, record).unwrap_err()
+                assert!(super::extrude_payload_32_branch(
+                    ctx,
+                    super::OperationBodyInput::new(&malformed, 100, 0, "EXTRUDE").unwrap()
+                )
+                .map(|(value, _storage)| value)
+                .unwrap()
+                .is_none());
             },
-        )
+        );
+        crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::MaterializedBytes,
+            "NX extrude 32 counted lane",
+            |ctx| {
+                super::extrude_payload_32_branch(
+                    ctx,
+                    super::OperationBodyInput::new(bytes, 100, 0, "EXTRUDE").unwrap(),
+                )
+                .map(|(value, _storage)| value)
+            },
+        );
     }
 
     #[test]
     fn extrude_32_branch_refuses_collection_limit() {
-        let error = refusal(|policy| policy.limits.max_collection_items = 0);
+        let error = refusal(
+            ResourceDimension::CollectionItems,
+            "NX extrude 32 counted lane",
+        );
         assert!(
             matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
         );
     }
 
     #[test]
-    fn extrude_32_branch_refuses_retained_limit() {
-        let error = refusal(|policy| policy.limits.max_retained_bytes = 0);
+    fn extrude_32_branch_refuses_scoped_limit() {
+        let error = refusal(
+            ResourceDimension::MaterializedBytes,
+            "NX extrude 32 counted lane",
+        );
         assert!(
-            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes)
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes)
         );
     }
 
     #[test]
     fn extrude_32_branch_refuses_work_limit() {
-        let error = refusal(|policy| policy.limits.max_work_units = 0);
+        let error = refusal(
+            ResourceDimension::WorkUnits,
+            "NX counted lane range traversal",
+        );
         assert!(
             matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits)
         );

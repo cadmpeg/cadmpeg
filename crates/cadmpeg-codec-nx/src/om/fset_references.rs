@@ -2,7 +2,7 @@
 //! Fixed word-reference groups inside a byte-framed FSET graph.
 
 use super::operation_record::OperationPayload;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,16 +20,12 @@ impl<B> FsetReferences<B> {
         first: [(u16, B); 2],
         second: [(u16, B); 3],
     ) -> Result<Self, &'static str> {
-        if !(1..=247).contains(&selector.len())
-            || !selector
-                .bytes()
-                .all(|byte| byte.is_ascii_graphic() && byte != b'>')
-        {
-            return Err("selector: requires 1 through 247 graphic ASCII bytes excluding >");
+        match Self::validate(offset, &selector, |selector, predicate| {
+            Ok::<_, std::convert::Infallible>(selector.chars().all(predicate))
+        }) {
+            Ok(valid) => valid?,
+            Err(error) => match error {},
         }
-        offset
-            .checked_add(cadmpeg_core::decode::u64_from_index(selector.len()) + 22)
-            .ok_or("source_offset: FSET frame overflows")?;
         Ok(Self {
             offset,
             selector,
@@ -38,6 +34,23 @@ impl<B> FsetReferences<B> {
         })
     }
 
+    fn validate<'a, E>(
+        offset: u64,
+        selector: &'a str,
+        admit: impl FnOnce(&'a str, fn(char) -> bool) -> Result<bool, E>,
+    ) -> Result<Result<(), &'static str>, E> {
+        if !(1..=247).contains(&selector.len())
+            || !admit(selector, |ch| ch.is_ascii_graphic() && ch != '>')?
+        {
+            return Ok(Err(
+                "selector: requires 1 through 247 graphic ASCII bytes excluding >",
+            ));
+        }
+        Ok(offset
+            .checked_add(cadmpeg_core::decode::u64_from_index(selector.len()) + 22)
+            .map(|_| ())
+            .ok_or("source_offset: FSET frame overflows"))
+    }
     pub(crate) fn offset(&self) -> u64 {
         self.offset
     }
@@ -66,9 +79,12 @@ pub(crate) fn word_reference_bytes(index: u16) -> [u8; 3] {
 }
 
 impl FsetReferences<()> {
-    pub(crate) fn read(record: OperationPayload<'_>) -> Option<Self> {
+    pub(crate) fn read(
+        ctx: &DecodeContext<'_>,
+        record: OperationPayload<'_>,
+    ) -> Result<Option<Self>, CodecError> {
         if record.name() != "FSET" {
-            return None;
+            return Ok(None);
         }
         let bytes = record.payload();
         let read_word = |at: &mut usize| {
@@ -79,48 +95,97 @@ impl FsetReferences<()> {
             *at += 3;
             Some((index, ()))
         };
-        let decode = |start: usize| {
+        let decode = |start: usize| -> Result<Option<_>, CodecError> {
             if bytes.get(start) != Some(&1) {
-                return None;
+                return Ok(None);
             }
-            let len = usize::from(*bytes.get(start + 1)?);
+            let Some(len) = bytes.get(start + 1).copied().map(usize::from) else {
+                return Ok(None);
+            };
             if len < 9 {
-                return None;
+                return Ok(None);
             }
-            let body_start = start.checked_add(2)?;
-            let body_end = body_start.checked_add(len)?;
+            let Some(body_start) = start.checked_add(2) else {
+                return Ok(None);
+            };
+            let Some(body_end) = body_start.checked_add(len) else {
+                return Ok(None);
+            };
             if bytes.get(body_start) != Some(&b'<') || bytes.get(body_end - 1) != Some(&b'>') {
-                return None;
+                return Ok(None);
             }
             let selector_end = body_end - 7;
-            let selector = std::str::from_utf8(bytes.get(body_start + 1..selector_end)?).ok()?;
+            let Some(raw) = bytes.get(body_start + 1..selector_end) else {
+                return Ok(None);
+            };
+            let Ok(selector) = ctx.validate_utf8(raw, "NX FSET selector UTF-8 validation")? else {
+                return Ok(None);
+            };
             let mut at = selector_end;
-            let first = [read_word(&mut at)?, read_word(&mut at)?];
+            let Some(first_head) = read_word(&mut at) else {
+                return Ok(None);
+            };
+            let Some(first_tail) = read_word(&mut at) else {
+                return Ok(None);
+            };
+            let first = [first_head, first_tail];
             at += 1;
-            let second = [
-                read_word(&mut at)?,
-                read_word(&mut at)?,
-                read_word(&mut at)?,
-            ];
-            if bytes.get(at..at.checked_add(3)?) != Some(&[0, 3, 0]) {
-                return None;
+            let Some(second_head) = read_word(&mut at) else {
+                return Ok(None);
+            };
+            let Some(second_middle) = read_word(&mut at) else {
+                return Ok(None);
+            };
+            let Some(second_tail) = read_word(&mut at) else {
+                return Ok(None);
+            };
+            let second = [second_head, second_middle, second_tail];
+            let Some(end) = at.checked_add(3) else {
+                return Ok(None);
+            };
+            if bytes.get(at..end) != Some(&[0, 3, 0]) {
+                return Ok(None);
             }
-            Self::new(
-                cadmpeg_core::decode::u64_from_index(record.payload_offset() + start),
-                selector.to_string(),
-                first,
-                second,
-            )
-            .ok()
+            let offset = cadmpeg_core::decode::u64_from_index(record.payload_offset() + start);
+            if Self::validate(offset, selector, |selector, predicate| {
+                ctx.all_by(
+                    selector.chars(),
+                    |ch| Ok(predicate(ch)),
+                    "NX FSET selector syntax",
+                )
+            })?
+            .is_err()
+            {
+                return Ok(None);
+            }
+            Ok(Some((offset, selector, first, second)))
         };
-        super::unique_candidate(
-            bytes
-                .len()
-                .checked_sub(1)
-                .into_iter()
-                .flat_map(|last| 0..last)
-                .filter_map(decode),
-        )
+        let Some(last) = bytes.len().checked_sub(1) else {
+            return Ok(None);
+        };
+        let mut candidate = None;
+        let mut starts = 0..last;
+        while let Some(start) =
+            ctx.next_charged(&mut starts, "NX FSET reference candidate search")?
+        {
+            let Some(next) = decode(start)? else {
+                continue;
+            };
+            if candidate.is_some() {
+                return Ok(None);
+            }
+            candidate = Some(next);
+        }
+        let Some((offset, selector, first, second)) = candidate else {
+            return Ok(None);
+        };
+        let selector = ctx.copy_retained_text(selector, "NX FSET selector")?;
+        Ok(Some(Self {
+            offset,
+            selector,
+            first,
+            second,
+        }))
     }
 
     pub(crate) fn resolve<B>(
@@ -133,20 +198,26 @@ impl FsetReferences<()> {
         };
         let [(first_head, ()), (first_tail, ())] = self.first;
         let [(second_head, ()), (second_middle, ()), (second_tail, ())] = self.second;
-        Ok(FsetReferences::new(
+        let mapped = FsetReferences {
             offset,
-            self.selector,
-            [
+            selector: self.selector,
+            first: [
                 (first_head, target(first_head)?),
                 (first_tail, target(first_tail)?),
             ],
-            [
+            second: [
                 (second_head, target(second_head)?),
                 (second_middle, target(second_middle)?),
                 (second_tail, target(second_tail)?),
             ],
-        )
-        .ok())
+        };
+        if offset
+            .checked_add(cadmpeg_core::decode::u64_from_index(mapped.selector.len()) + 22)
+            .is_none()
+        {
+            return Ok(None);
+        }
+        Ok(Some(mapped))
     }
 }
 
@@ -155,14 +226,22 @@ mod tests {
     use super::FsetReferences;
     use crate::om::operation_record::OperationPayload;
 
-    fn graph() -> FsetReferences<()> {
-        let payload = [
+    fn graph_payload() -> [u8; 33] {
+        [
             1, 0x13, 0x3c, b'T', b';', b':', b'S', b'5', b'6', b'7', b'R', b'8', b'9', b'3', 0x90,
             0x19, 0x40, 0x90, 0x19, 0x41, 0x3e, 0x90, 0x19, 0x30, 0x90, 0x19, 0x31, 0x90, 0x19,
             0x32, 0, 3, 0,
-        ];
+        ]
+    }
+
+    fn graph() -> FsetReferences<()> {
+        let payload = graph_payload();
         let record = OperationPayload::new(&payload, 100, "FSET").expect("test FSET payload");
-        FsetReferences::read(record).expect("complete FSET graph")
+        crate::test_support::with_decode_context(|ctx| {
+            FsetReferences::read(ctx, record)
+                .unwrap()
+                .expect("complete FSET graph")
+        })
     }
 
     #[test]
@@ -202,5 +281,38 @@ mod tests {
             resolved.second().map(|(index, value)| (index, value)),
             [(6448, Some(6448)), (6449, Some(6449)), (6450, Some(6450))]
         );
+    }
+
+    fn fset_selector_format_refusal(dimension: cadmpeg_core::decode::ResourceDimension) {
+        use cadmpeg_core::decode::ResourceDimension;
+        let payload = graph_payload();
+        let record = OperationPayload::new(&payload, 100, "FSET").unwrap();
+        cadmpeg_test_support::refusal::resource_limit_at(dimension, "NX FSET selector", |cap| {
+            crate::test_support::with_decode_context_over(
+                &[],
+                |policy| match dimension {
+                    ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                    ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+                    _ => panic!("selector formatting uses work and retained bytes"),
+                },
+                |ctx| {
+                    let result = FsetReferences::read(ctx, record);
+                    if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+                        assert_eq!(ctx.resource_refusal(), Some(*limit));
+                    }
+                    result
+                },
+            )
+        });
+    }
+
+    #[test]
+    fn fset_selector_format_refuses_work() {
+        fset_selector_format_refusal(cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    }
+
+    #[test]
+    fn fset_selector_format_refuses_retained_bytes() {
+        fset_selector_format_refusal(cadmpeg_core::decode::ResourceDimension::RetainedBytes);
     }
 }

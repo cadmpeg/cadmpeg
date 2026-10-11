@@ -4,7 +4,10 @@ use super::super::super::selections::coordinate_marker_local_links;
 use super::super::super::{
     CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
 };
-use super::{raw2, raw_link};
+use super::{
+    compact_legacy_profile_vertex, marker_coordinates, marker_local_id, marker_spatial_coordinates,
+    raw2, raw_link,
+};
 use crate::layout::{
     compact_current_spatial_marker_point as compact_spatial,
     wide_spatial_marker_coordinate_prefix as wide_spatial,
@@ -18,12 +21,8 @@ use crate::records::{
 };
 use crate::resolved_features::markers::additional_linked_profile_point_coordinates;
 use crate::resolved_features::markers::admit_sketch_input_entities;
-use crate::resolved_features::markers::compact_legacy_profile_vertex;
 use crate::resolved_features::markers::linked_profile_point;
-use crate::resolved_features::markers::marker_coordinates;
-use crate::resolved_features::markers::marker_local_id;
 use crate::resolved_features::markers::marker_object_index;
-use crate::resolved_features::markers::marker_spatial_coordinates;
 use crate::resolved_features::markers::reference_cells_charged;
 use crate::resolved_features::markers::relation_bindings_charged;
 use crate::resolved_features::markers::relation_bindings_scoped;

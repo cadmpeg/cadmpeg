@@ -43,7 +43,7 @@ pub(crate) fn patch_partition(
     let arena = DecodeArena::new();
     let (ctx, root) = DecodeContext::from_root_bytes(source, &arena, &DecodePolicy::desktop())?;
     let scan = crate::container::scan(&ctx, root)?;
-    let Some(selected) = crate::container::select_active_parasolid_site(&scan) else {
+    let Some(selected) = crate::container::select_active_parasolid_site(&ctx, &scan)? else {
         return Ok(None);
     };
     let crate::container::Section::Block(block) = selected.section else {
@@ -59,21 +59,18 @@ pub(crate) fn patch_partition(
         return Ok(None);
     }
     let site = site_key(block);
-    let mut streams = ctx.collect_vec(
-        scan.blocks
-            .iter()
-            .filter(|candidate| site_key(candidate) == site)
-            .flat_map(|candidate| {
-                candidate.ps_streams.iter().filter_map(move |stream| {
-                    crate::parasolid::is_body_stream(&stream.header).then_some((
-                        candidate,
-                        &stream.payload,
-                        &stream.header,
-                    ))
-                })
-            }),
-        "index SLDPRT patch streams",
-    )?;
+    let mut streams = Vec::new();
+    for candidate in ctx
+        .admit_iter(&scan.blocks, "scan SLDPRT patch stream blocks")?
+        .filter(|candidate| site_key(candidate) == site)
+    {
+        for stream in ctx.admit_iter(&candidate.ps_streams, "scan SLDPRT patch body streams")? {
+            if stream.header.is_body_stream() {
+                ctx.reserve_vec(&mut streams, 1, "index SLDPRT patch streams")?;
+                streams.push((candidate, &stream.payload, &stream.header));
+            }
+        }
+    }
     let mut ordered = Vec::new();
     for (candidate, payload, header) in streams.drain(..) {
         let section = candidate.section.name().unwrap_or("");
@@ -453,7 +450,7 @@ fn patch_surfaces(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(new)),
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(old)),
             ) => {
-                if crate::brep::spline::patch_nurbs_surface(
+                if crate::brep::spline::patch::patch_nurbs_surface(
                     ctx,
                     payload,
                     raw_annotation_offset(annotations, &surface.id)?,
@@ -517,7 +514,7 @@ fn patch_curves(
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(new)),
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(old)),
             ) => {
-                if crate::brep::spline::patch_nurbs_curve(
+                if crate::brep::spline::patch::patch_nurbs_curve(
                     ctx,
                     payload,
                     raw_annotation_offset(annotations, &curve.id)?,
@@ -548,9 +545,9 @@ fn patch_curves(
     Ok(Some(()))
 }
 
+/// Overwrite the trailing scalar run of the compact carrier at `offset`.
 fn patch_compact(payload: &mut [u8], offset: usize, values: &[f64]) -> Option<()> {
-    let carrier = crate::brep::parse_carrier(payload, offset)?;
-    let end = match carrier {
+    let end = match crate::brep::parse_carrier(payload, offset)? {
         crate::brep::Carrier::Curve(carrier) => carrier.end,
         crate::brep::Carrier::Surface(carrier) => carrier.end,
     };

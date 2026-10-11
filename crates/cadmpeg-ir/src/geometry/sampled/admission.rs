@@ -26,7 +26,12 @@ pub(super) fn finish<T>(
 
 pub(super) trait SampledAdmission {
     type Error;
-    fn work(&self, count: u64, operation: &'static str) -> Result<(), Self::Error>;
+    fn all_by<T>(
+        &self,
+        values: &[T],
+        operation: &'static str,
+        predicate: impl FnMut(&T) -> bool,
+    ) -> Result<bool, Self::Error>;
     fn layout(&self, message: &'static str) -> Result<Self::Error, Self::Error>;
     fn collect<I: IntoIterator, T>(
         &self,
@@ -39,8 +44,13 @@ pub(super) trait SampledAdmission {
 pub(super) struct StandardAdmission;
 impl SampledAdmission for StandardAdmission {
     type Error = GeometryLayoutError;
-    fn work(&self, _count: u64, _operation: &'static str) -> Result<(), Self::Error> {
-        Ok(())
+    fn all_by<T>(
+        &self,
+        values: &[T],
+        _operation: &'static str,
+        predicate: impl FnMut(&T) -> bool,
+    ) -> Result<bool, Self::Error> {
+        Ok(values.iter().all(predicate))
     }
     fn layout(&self, message: &'static str) -> Result<Self::Error, Self::Error> {
         Ok(GeometryLayoutError::Layout(message.into()))
@@ -56,8 +66,14 @@ impl SampledAdmission for StandardAdmission {
 }
 impl SampledAdmission for DecodeContext<'_> {
     type Error = ConstructionError;
-    fn work(&self, count: u64, operation: &'static str) -> Result<(), Self::Error> {
-        self.charge_work(count, operation).map_err(Into::into)
+    fn all_by<T>(
+        &self,
+        values: &[T],
+        operation: &'static str,
+        mut predicate: impl FnMut(&T) -> bool,
+    ) -> Result<bool, Self::Error> {
+        self.all_by_limit(values, |value| Ok(predicate(value)), operation)
+            .map_err(|limit| ConstructionError::Resource(limit.into()))
     }
     fn layout(&self, message: &'static str) -> Result<Self::Error, Self::Error> {
         Ok(ConstructionError::Layout(GeometryLayoutError::Layout(

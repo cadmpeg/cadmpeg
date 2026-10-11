@@ -6,7 +6,8 @@ use crate::math::Point3;
 use cadmpeg_core::convert::f64_from_index;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation};
 
-pub(super) struct HomogeneousBezierSplit<'ctx> {
+pub(super) struct HomogeneousBezierSplit<'ctx, 'arena> {
+    ctx: &'ctx DecodeContext<'arena>,
     left: Vec<[f64; 4]>,
     point: [f64; 4],
     right_reversed: Vec<[f64; 4]>,
@@ -14,16 +15,16 @@ pub(super) struct HomogeneousBezierSplit<'ctx> {
     right_storage: ScopedReservation<'ctx>,
 }
 
-impl<'ctx> HomogeneousBezierSplit<'ctx> {
+impl<'ctx> HomogeneousBezierSplit<'ctx, '_> {
     pub(super) fn into_polygons(
         mut self,
-        ctx: &DecodeContext<'_>,
     ) -> Result<[ScopedRows<'ctx, [f64; 4]>; 2], ResourceLimit> {
-        ctx.charge_work_limit(2, "IR Bezier split final points")?;
+        self.ctx
+            .charge_work_limit(2, "IR Bezier split final points")?;
         self.left.push(self.point);
         self.right_reversed.push(self.point);
-        ctx.charge_work_limit(
-            u64_from_index(self.right_reversed.len()),
+        self.ctx.charge_work_limit(
+            u64_from_index(self.right_reversed.len() / 2) * 2,
             "IR Bezier split reverse",
         )?;
         self.right_reversed.reverse();
@@ -34,11 +35,11 @@ impl<'ctx> HomogeneousBezierSplit<'ctx> {
     }
 }
 
-fn split_homogeneous_bezier<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
+fn split_homogeneous_bezier<'ctx, 'arena>(
+    ctx: &'ctx DecodeContext<'arena>,
     controls: &[[f64; 4]],
     parameter: f64,
-) -> Result<Option<HomogeneousBezierSplit<'ctx>>, ResourceLimit> {
+) -> Result<Option<HomogeneousBezierSplit<'ctx, 'arena>>, ResourceLimit> {
     if !parameter.is_finite() || !(0.0..=1.0).contains(&parameter) {
         return Ok(None);
     }
@@ -47,20 +48,20 @@ fn split_homogeneous_bezier<'ctx>(
     })
 }
 
-pub(super) fn split_homogeneous_bezier_midpoint<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
+pub(super) fn split_homogeneous_bezier_midpoint<'ctx, 'arena>(
+    ctx: &'ctx DecodeContext<'arena>,
     controls: &[[f64; 4]],
-) -> Result<Option<HomogeneousBezierSplit<'ctx>>, ResourceLimit> {
+) -> Result<Option<HomogeneousBezierSplit<'ctx, 'arena>>, ResourceLimit> {
     split_homogeneous_bezier_with(ctx, controls, |left, right| {
         std::array::from_fn(|axis| 0.5 * (left[axis] + right[axis]))
     })
 }
 
-fn split_homogeneous_bezier_with<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
+fn split_homogeneous_bezier_with<'ctx, 'arena>(
+    ctx: &'ctx DecodeContext<'arena>,
     controls: &[[f64; 4]],
     blend: impl Fn([f64; 4], [f64; 4]) -> [f64; 4],
-) -> Result<Option<HomogeneousBezierSplit<'ctx>>, ResourceLimit> {
+) -> Result<Option<HomogeneousBezierSplit<'ctx, 'arena>>, ResourceLimit> {
     let Some((&first, input_rest)) = controls.split_first() else {
         return Ok(None);
     };
@@ -68,47 +69,32 @@ fn split_homogeneous_bezier_with<'ctx>(
     let _rest_storage;
     let mut rest;
     (rest, _rest_storage) = ctx.copy_temporary_slice(input_rest, "IR Bezier split controls")?;
-    let (_next_storage, mut next) = {
-        let mut values = Vec::new();
-        let reservation =
-            ctx.reserve_temporary_vec(&mut values, rest.len(), "IR Bezier split level")?;
-        (reservation, values)
-    };
-    ctx.charge_work_limit(u64_from_index(rest.len()), "IR Bezier split level fill")?;
-    next.resize(rest.len(), [0.0; 4]);
     let (left_storage, mut left) = {
         let mut values = Vec::new();
         let reservation =
             ctx.reserve_temporary_vec(&mut values, controls.len(), "IR Bezier split left")?;
         (reservation, values)
     };
-    ctx.charge_work_limit(u64_from_index(rest.len()), "IR Bezier split left fill")?;
-    left.resize(rest.len(), [0.0; 4]);
     let (right_storage, mut right) = {
         let mut values = Vec::new();
         let reservation =
             ctx.reserve_temporary_vec(&mut values, controls.len(), "IR Bezier split right")?;
         (reservation, values)
     };
-    ctx.charge_work_limit(u64_from_index(rest.len()), "IR Bezier split right fill")?;
-    right.resize(rest.len(), [0.0; 4]);
     let mut remaining = rest.len();
-    let mut level = 0;
     while remaining > 0 {
         ctx.charge_work_limit(3, "IR Bezier split boundary copies and blend")?;
         let second = rest[0];
-        left[level] = first;
-        right[level] = rest[remaining - 1];
+        left.push(first);
+        right.push(rest[remaining - 1]);
         first = blend(first, second);
-        for index in 0..remaining - 1 {
-            ctx.charge_work_limit(1, "IR Bezier split interior blend")?;
-            next[index] = blend(rest[index], rest[index + 1]);
+        for index in ctx.admit_iter(0..remaining - 1, "IR Bezier split interior blend")? {
+            rest[index] = blend(rest[index], rest[index + 1]);
         }
-        std::mem::swap(&mut rest, &mut next);
         remaining -= 1;
-        level += 1;
     }
     Ok(Some(HomogeneousBezierSplit {
+        ctx,
         left,
         point: first,
         right_reversed: right,
@@ -140,17 +126,16 @@ pub(super) fn restrict_homogeneous_bezier<'ctx>(
                 )?;
                 (reservation, values)
             };
-            ctx.charge_work_limit(
-                u64_from_index(controls.len()),
-                "IR Bezier collapsed control fill",
-            )?;
-            collapsed.resize(controls.len(), split.point);
+            collapsed.extend(
+                ctx.admit_iter(0..controls.len(), "IR Bezier collapsed control fill")?
+                    .map(|_| split.point),
+            );
             return Ok(Some(ScopedRows::new(collapsed, storage)));
         }
         let Some(split) = split_homogeneous_bezier(ctx, controls, end)? else {
             return Ok(None);
         };
-        let [left, _] = split.into_polygons(ctx)?;
+        let [left, _] = split.into_polygons()?;
         if start == 0.0 {
             return Ok(Some(left));
         }
@@ -158,7 +143,7 @@ pub(super) fn restrict_homogeneous_bezier<'ctx>(
         let Some(split) = split_homogeneous_bezier(ctx, &left, relative_start)? else {
             return Ok(None);
         };
-        let [_, right] = split.into_polygons(ctx)?;
+        let [_, right] = split.into_polygons()?;
         Ok(Some(right))
     })()?;
     let Some(mut result) = result else {
@@ -266,71 +251,168 @@ mod tests {
     #[test]
     fn homogeneous_split_admits_each_work_pass_and_keeps_polygon_storage() {
         let controls = [[0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0]];
-        // One copied row, three filled rows, three boundary copies/blends,
-        // two final points and two reversed rows use eleven units.
-        for cap in 0..11 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_work_units = cap;
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let error = (|| {
-                let split =
-                    split_homogeneous_bezier_midpoint(&ctx, &controls)?.expect("nonempty polygon");
-                split.into_polygons(&ctx)
-            })()
-            .expect_err("every pass needs work");
-            assert_eq!(error.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(error.limit, cap);
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == error)
+        for operation in [
+            "IR Bezier split controls",
+            "IR Bezier split boundary copies and blend",
+            "IR Bezier split final points",
+            "IR Bezier split reverse",
+        ] {
+            cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                operation,
+                |cap| {
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    let arena = DecodeArena::new();
+                    let (ctx, _) =
+                        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                    let result = (|| -> Result<(), cadmpeg_core::decode::ResourceLimit> {
+                        let split = split_homogeneous_bezier_midpoint(&ctx, &controls)?
+                            .expect("nonempty polygon");
+                        let polygons = split.into_polygons()?;
+                        drop(polygons);
+                        Ok(())
+                    })()
+                    .map_err(CodecError::from);
+                    let Err(CodecError::ResourceLimit(limit)) = &result else {
+                        panic!("each named pass needs work");
+                    };
+                    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+                    assert_eq!(limit.operation, operation);
+                    assert!(
+                        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
+                    );
+                    result
+                },
             );
         }
         for dimension in [
             ResourceDimension::MaterializedBytes,
             ResourceDimension::CollectionItems,
         ] {
-            let mut policy = DecodePolicy::service();
-            match dimension {
-                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-                _ => unreachable!("tested allocation dimensions"),
-            }
-            let arena = DecodeArena::new();
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-            let error = split_homogeneous_bezier_midpoint(&ctx, &controls)
-                .err()
-                .expect("allocation admission");
-            assert_eq!(error.dimension, dimension);
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == error)
+            cadmpeg_test_support::refusal::resource_limit_at(
+                dimension,
+                "IR Bezier split controls",
+                |cap| {
+                    let mut policy = DecodePolicy::service();
+                    match dimension {
+                        ResourceDimension::MaterializedBytes => {
+                            policy.limits.max_materialized_bytes = cap;
+                        }
+                        ResourceDimension::CollectionItems => {
+                            policy.limits.max_collection_items = cap;
+                        }
+                        _ => unreachable!("tested allocation dimensions"),
+                    }
+                    let arena = DecodeArena::new();
+                    let (ctx, _) =
+                        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                    let result = split_homogeneous_bezier_midpoint(&ctx, &controls)
+                        .map(drop)
+                        .map_err(CodecError::from);
+                    let Err(CodecError::ResourceLimit(limit)) = &result else {
+                        panic!("allocation admission");
+                    };
+                    assert_eq!(limit.dimension, dimension);
+                    assert!(
+                        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
+                    );
+                    result
+                },
             );
         }
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 11;
-        policy.limits.max_materialized_bytes = 192;
+        // One copied row, three boundary copies/blends, two final points and
+        // two reversed rows use eight units.
+        policy.limits.max_work_units = 8;
+        // One copied row and two output polygons of two rows each need
+        // five collection items and 5 * 4 * 8 = 160 materialized bytes.
+        policy.limits.max_materialized_bytes = 160;
         policy.limits.max_retained_bytes = 0;
-        policy.limits.max_collection_items = 6;
+        policy.limits.max_collection_items = 5;
         policy.limits.max_recursion_depth = 0;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let split = split_homogeneous_bezier_midpoint(&ctx, &controls)
             .expect("exact split work")
             .expect("nonempty");
-        let [left, right] = split.into_polygons(&ctx).expect("exact completion work");
+        let [left, right] = split.into_polygons().expect("exact completion work");
         assert_eq!(&*left, &[[0.0, 0.0, 0.0, 1.0], [0.5, 0.0, 0.0, 1.0]]);
         assert_eq!(&*right, &[[0.5, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0]]);
         let spare = ctx
-            .reserve_scoped_limit(64, "test split working rows released")
+            .reserve_scoped_limit(32, "test split working rows released")
             .expect("only two output polygons remain");
         drop(spare);
         drop(left);
         drop(right);
         let reuse = ctx
-            .reserve_scoped_limit(192, "test split polygons released")
+            .reserve_scoped_limit(160, "test split polygons released")
             .expect("all bytes reusable");
         drop(reuse);
         ctx.finish_session()
             .expect("temporary polygons retain no bytes");
+    }
+
+    #[test]
+    fn quadratic_split_updates_rows_in_place_and_leaves_the_middle_reverse_row() {
+        let controls = [
+            [0.0, 0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0, 1.0],
+            [2.0, 0.0, 0.0, 1.0],
+        ];
+        let run = |cap| {
+            let mut policy = DecodePolicy::service();
+            // Two copied rows, six boundary copies/blends, one interior blend,
+            // two final points and two reversed rows use thirteen units.
+            policy.limits.max_work_units = cap;
+            policy.limits.max_materialized_bytes = 256;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_collection_items = 8;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let result = (|| -> Result<(), cadmpeg_core::decode::ResourceLimit> {
+                let split = split_homogeneous_bezier_midpoint(&ctx, &controls)?.expect("nonempty");
+                let [left, right] = split.into_polygons()?;
+                assert_eq!(
+                    &*left,
+                    &[
+                        [0.0, 0.0, 0.0, 1.0],
+                        [0.5, 0.0, 0.0, 1.0],
+                        [1.0, 0.0, 0.0, 1.0]
+                    ]
+                );
+                assert_eq!(
+                    &*right,
+                    &[
+                        [1.0, 0.0, 0.0, 1.0],
+                        [1.5, 0.0, 0.0, 1.0],
+                        [2.0, 0.0, 0.0, 1.0]
+                    ]
+                );
+                drop(left);
+                drop(right);
+                Ok(())
+            })()
+            .map_err(CodecError::from);
+            match &result {
+                Ok(()) => ctx.finish_session().expect("no retained bytes"),
+                Err(CodecError::ResourceLimit(limit)) => {
+                    assert!(
+                        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit)
+                    );
+                }
+                Err(error) => panic!("unexpected split error: {error}"),
+            }
+            result
+        };
+        run(13).expect("exact split work");
+        for operation in ["IR Bezier split interior blend", "IR Bezier split reverse"] {
+            cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                operation,
+                run,
+            );
+        }
     }
 
     #[test]
@@ -404,5 +486,34 @@ mod tests {
         );
         ctx.finish_session()
             .expect("five visits without allocations");
+    }
+    #[test]
+    fn homogeneous_split_completion_observes_its_original_session_refusal() {
+        let controls = [[0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 1.0]];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // One copied row and three boundary copies/blends construct the split.
+        policy.limits.max_work_units = 4;
+        policy.limits.max_materialized_bytes = 160;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 5;
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let split = split_homogeneous_bezier_midpoint(&ctx, &controls)
+            .expect("exact construction work")
+            .expect("nonempty controls");
+        let original = ctx
+            .charge_work_limit(1, "original split completion refusal")
+            .unwrap_err();
+        let actual = split.into_polygons().expect_err("original session refusal");
+        assert_eq!(actual, original);
+        assert_eq!(actual.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(actual.operation, "original split completion refusal");
+        assert_eq!(actual.used, 4);
+        assert_eq!(actual.additional, 1);
+        assert_eq!(ctx.resource_refusal(), Some(original));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
+        );
     }
 }

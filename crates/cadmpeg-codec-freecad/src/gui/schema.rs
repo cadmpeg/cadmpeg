@@ -6,9 +6,9 @@
 pub(super) enum Admission {
     /// Schema 1 uses the verified GUI vocabulary.
     Schema1,
-    /// Any other declaration is read with the schema-1 vocabulary without a
-    /// verified declaration match.
-    Unverified { declaration: Option<String> },
+    /// Any other declaration, or none, is read with the schema-1 vocabulary
+    /// without a verified declaration match.
+    Unverified,
 }
 
 impl Admission {
@@ -17,7 +17,7 @@ impl Admission {
     pub(super) const fn neutral_schema_version(&self) -> Option<u32> {
         match self {
             Self::Schema1 => Some(1),
-            Self::Unverified { .. } => None,
+            Self::Unverified => None,
         }
     }
 }
@@ -27,12 +27,11 @@ impl Admission {
 /// GUI schema is not an `FCStd` host identity row. The declaration is matched
 /// verbatim because `"01"` does not declare the verified schema-1 vocabulary.
 pub(super) fn classify(schema_version: Option<&str>) -> Admission {
-    match schema_version {
-        Some("1") => Admission::Schema1,
-        Some(value) => Admission::Unverified {
-            declaration: Some(value.to_owned()),
-        },
-        None => Admission::Unverified { declaration: None },
+    // The literal "1" bounds the comparison.
+    if schema_version == Some("1") {
+        Admission::Schema1
+    } else {
+        Admission::Unverified
     }
 }
 
@@ -45,18 +44,10 @@ mod tests {
         let admitted = classify(Some("1"));
         assert_eq!(admitted, Admission::Schema1);
         assert_eq!(admitted.neutral_schema_version(), Some(1));
-        for declaration in ["01", "2", "not-an-integer", "missing"] {
-            let admission = classify(Some(declaration));
-            assert_eq!(
-                admission,
-                Admission::Unverified {
-                    declaration: Some(declaration.to_owned()),
-                }
-            );
+        for declaration in [Some("01"), Some("2"), Some("not-an-integer"), None] {
+            let admission = classify(declaration);
+            assert_eq!(admission, Admission::Unverified);
             assert_eq!(admission.neutral_schema_version(), None);
         }
-        let missing = classify(None);
-        assert_eq!(missing, Admission::Unverified { declaration: None });
-        assert_eq!(missing.neutral_schema_version(), None);
     }
 }

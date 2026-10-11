@@ -3,15 +3,14 @@
 
 use super::super::{
     append_text_curve, append_text_surface, parse_binary_prefix, parse_reference_suffix,
-    parse_shape_kind, parse_shape_use, parse_text, transfer_text_curves, transfer_text_surfaces,
-    CurveTransfer, NestedCurve, NestedSurface, ShapePayload, ShapePayloadRecord, ShapeSet,
-    SurfaceTransfer, TextCurve, TextSurface, TextTShapes, TextTopologyVersion, TokenCursor,
+    parse_shape_kind, parse_shape_use, parse_text, transfer_text_geometry, CurveTransfer,
+    NestedCurve, NestedSurface, ShapePayload, ShapePayloadRecord, ShapeSet, SurfaceTransfer,
+    TextCurve, TextSurface, TextTShapes, TextTopologyVersion, TokenCursor,
 };
 use crate::native::{PropertyBody, PropertyFamily, PropertyRecord, RetainedXml};
 use crate::test_support::assert_retained_refusal_at;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
-use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
@@ -20,10 +19,10 @@ use cadmpeg_ir::SourceObjectAssociation;
 
 #[test]
 fn pcurve_pair_continuity_refuses_at_matching_retained_limit() {
-    let counts = BTreeMap::from([
-        ("Curve2ds".to_owned(), 2),
-        ("Surfaces".to_owned(), 1),
-        ("Locations".to_owned(), 0),
+    let counts = crate::brep::TextSections::from_named_counts(&[
+        ("Curve2ds", 2),
+        ("Surfaces", 1),
+        ("Locations", 0),
     ]);
     assert_retained_refusal_at(&[], "FreeCAD B-rep edge continuity", |ctx| {
         let tokens = ["1", "2", "CONTINUITY", "1", "0", "0", "10"];
@@ -34,7 +33,7 @@ fn pcurve_pair_continuity_refuses_at_matching_retained_limit() {
 
 #[test]
 fn edge_regularity_continuity_refuses_at_matching_retained_limit() {
-    let counts = BTreeMap::from([("Surfaces".to_owned(), 1), ("Locations".to_owned(), 0)]);
+    let counts = crate::brep::TextSections::from_named_counts(&[("Surfaces", 1), ("Locations", 0)]);
     assert_retained_refusal_at(&[], "FreeCAD B-rep edge continuity", |ctx| {
         let tokens = ["CONTINUITY", "1", "0", "1", "0"];
         let mut cursor = TokenCursor::new(ctx, &tokens);
@@ -60,27 +59,9 @@ fn tshape_flags_diagnostic_refuses_at_matching_retained_limit() {
 #[test]
 fn text_brep_token_index_refuses_at_materialized_limit() {
     let bytes = b"CASCADE Topology V1, (c) Matra-Datavision Locations 0 Curve2ds 0 Curves 0 Polygon3D 0 PolygonOnTriangulations 0 Surfaces 0 Triangulations 0 TShapes 0 *";
-    let token_count = bytes
-        .split(u8::is_ascii_whitespace)
-        .filter(|token| !token.is_empty())
-        .count();
-    let required = u64::try_from(token_count * std::mem::size_of::<&str>())
-        .expect("test token index size fits u64");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_materialized_bytes = required - 1;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    assert!(
-        matches!(parse_text(&ctx, bytes), Err(CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::MaterializedBytes
-            && limit.operation == "FreeCAD text B-rep tokens"
-            && limit.additional == required)
-    );
-    policy.limits.max_materialized_bytes = required;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    assert!(parse_text(&ctx, bytes).is_ok());
+    crate::test_support::materialized_refusal_at("FreeCAD text B-rep tokens", |ctx| {
+        parse_text(ctx, bytes)
+    });
 }
 
 #[derive(Clone, Copy)]
@@ -249,7 +230,7 @@ fn binary_triangulation_normals_refuse_at_collection_limit() {
     );
 }
 
-fn shape_property(xml: &str) -> PropertyRecord {
+pub(super) fn shape_property(xml: &str) -> PropertyRecord {
     PropertyRecord {
         id: "fcstd:native:property#Owner:Shape".into(),
         owner: "fcstd:native:object#Owner".into(),
@@ -275,7 +256,7 @@ fn missing_shape_entry_diagnostic_refuses_at_retained_limit() {
 fn shape_property_xml_diagnostic_refuses_at_retained_limit() {
     let property = shape_property("<Property>");
     assert_retained_refusal_at(&[], "FreeCAD shape property XML diagnostic", |ctx| {
-        super::super::direct_shape_entry(ctx, &property)
+        super::super::direct_shape_entry(ctx, &property).map(|_| ())
     });
 }
 
@@ -283,7 +264,7 @@ fn shape_property_xml_diagnostic_refuses_at_retained_limit() {
 fn shape_property_root_diagnostic_refuses_at_retained_limit() {
     let property = shape_property("<Wrong/>");
     assert_retained_refusal_at(&[], "FreeCAD shape property root diagnostic", |ctx| {
-        super::super::direct_shape_entry(ctx, &property)
+        super::super::direct_shape_entry(ctx, &property).map(|_| ())
     });
 }
 
@@ -292,7 +273,7 @@ fn shape_property_carrier_diagnostic_refuses_at_retained_limit() {
     let property =
         shape_property("<Property><Part file=\"a.brp\"/><Part file=\"b.brp\"/></Property>");
     assert_retained_refusal_at(&[], "FreeCAD shape property carrier diagnostic", |ctx| {
-        super::super::direct_shape_entry(ctx, &property)
+        super::super::direct_shape_entry(ctx, &property).map(|_| ())
     });
 }
 
@@ -329,7 +310,11 @@ fn invalid_shape_use_prefix_refuses_before_diagnostic_allocation() {
     let tokens = ["?VeryLongShapeUse"];
     assert_retained_refusal_at(&[], "FreeCAD invalid shape use", |ctx| {
         let mut cursor = TokenCursor::new(ctx, &tokens);
-        parse_shape_use(&mut cursor, 1, &BTreeMap::new())
+        parse_shape_use(
+            &mut cursor,
+            1,
+            &crate::brep::TextSections::from_named_counts(&[]),
+        )
     });
 }
 
@@ -338,7 +323,11 @@ fn invalid_shape_use_index_refuses_before_diagnostic_allocation() {
     let tokens = ["+VeryLongShapeIndex"];
     assert_retained_refusal_at(&[], "FreeCAD invalid shape use", |ctx| {
         let mut cursor = TokenCursor::new(ctx, &tokens);
-        parse_shape_use(&mut cursor, 1, &BTreeMap::new())
+        parse_shape_use(
+            &mut cursor,
+            1,
+            &crate::brep::TextSections::from_named_counts(&[]),
+        )
     });
 }
 
@@ -382,7 +371,7 @@ fn source_association() -> SourceObjectAssociation {
     }
 }
 
-fn shape_payload() -> ShapePayloadRecord {
+pub(super) fn shape_payload() -> ShapePayloadRecord {
     ShapePayloadRecord {
         id: "fcstd:native:shape-payload#Payload".into(),
         property: "fcstd:native:property#Owner:Shape".into(),
@@ -404,7 +393,7 @@ fn shape_payload() -> ShapePayloadRecord {
     }
 }
 
-fn trimmed_curve() -> TextCurve {
+pub(super) fn trimmed_curve() -> TextCurve {
     TextCurve::Trimmed {
         parameter_range: [FiniteReal::ZERO, FiniteReal::ONE],
         basis: NestedCurve::try_new(line_curve()).expect("nested line"),
@@ -420,7 +409,7 @@ fn offset_curve() -> TextCurve {
     }
 }
 
-fn extrusion_surface() -> TextSurface {
+pub(super) fn extrusion_surface() -> TextSurface {
     TextSurface::Extrusion {
         direction: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))
             .expect("finite extrusion direction"),
@@ -437,7 +426,7 @@ fn revolution_surface() -> TextSurface {
     }
 }
 
-fn trimmed_surface() -> TextSurface {
+pub(super) fn trimmed_surface() -> TextSurface {
     TextSurface::Trimmed {
         parameter_ranges: [[FiniteReal::ZERO, FiniteReal::ONE]; 2],
         basis: NestedSurface::try_new(plane_surface()).expect("nested plane"),
@@ -484,7 +473,7 @@ fn assert_surface_identity_refusal(surface: &TextSurface, operation: &str) {
 fn transferred_curve_identity_refuses_at_retained_limit() {
     let payload = shape_payload();
     assert_retained_refusal_at(&[], "FreeCAD transferred curve identity", |ctx| {
-        transfer_text_curves(ctx, std::slice::from_ref(&payload), &[])
+        transfer_text_geometry(ctx, std::slice::from_ref(&payload), &[])
     });
 }
 
@@ -492,12 +481,7 @@ fn transferred_curve_identity_refuses_at_retained_limit() {
 fn transferred_surface_identity_refuses_at_retained_limit() {
     let payload = shape_payload();
     assert_retained_refusal_at(&[], "FreeCAD transferred surface identity", |ctx| {
-        transfer_text_surfaces(
-            ctx,
-            std::slice::from_ref(&payload),
-            &[],
-            &mut CurveTransfer::default(),
-        )
+        transfer_text_geometry(ctx, std::slice::from_ref(&payload), &[])
     });
 }
 
@@ -640,3 +624,57 @@ surface_identity_test!(
     offset_surface(),
     "FreeCAD surface construction identity"
 );
+
+#[test]
+fn shape_lookup_names_use_scratch_storage() {
+    let property = shape_property("<Property><Part file=\"scratch.brp\"/></Property>");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    for _ in 0..128 {
+        let name = super::super::direct_shape_entry(&ctx, &property)
+            .unwrap()
+            .unwrap();
+        let _storage = name.1;
+        let name = name.0;
+        assert_eq!(name, "scratch.brp");
+    }
+    assert_eq!(ctx.resource_refusal(), None);
+}
+
+#[test]
+fn shape_entry_name_copy_requires_materialized_storage() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let CodecError::ResourceLimit(limit) = super::super::shape_entry_name(&ctx, "scratch.brp")
+        .expect_err("filename copy requires storage")
+    else {
+        panic!("materialized refusal");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+    );
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+}
+
+#[test]
+fn shape_entry_name_storage_releases_after_the_name() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 16;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let (name, storage) =
+        super::super::shape_entry_name(&ctx, "scratch.brp").expect("scoped filename");
+    assert_eq!(name, "scratch.brp");
+    drop(name);
+    drop(storage);
+    let _released = ctx
+        .reserve_scoped(16, "released filename storage")
+        .expect("full allowance is available after dropping the name");
+    assert_eq!(ctx.resource_refusal(), None);
+}

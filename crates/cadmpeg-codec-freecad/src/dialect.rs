@@ -157,19 +157,28 @@ impl FcstdDialect {
     ) -> Result<DialectMatch, cadmpeg_core::CodecError> {
         let dialect = Self::from_schema_version(schema_version);
         let mut declared = BTreeMap::new();
-        declared.insert(
+        ctx.insert_btree_map(
+            &mut declared,
             cadmpeg_core::nonblank_const!(DECLARED_SCHEMA_VERSION),
-            schema_version.to_owned(),
-        );
-        declared.insert(
+            ctx.copy_retained_text(schema_version, "FreeCAD dialect schema declaration")?,
+            "FreeCAD dialect declaration entries",
+        )?;
+        ctx.insert_btree_map(
+            &mut declared,
             cadmpeg_core::nonblank_const!(DECLARED_FILE_VERSION),
-            document.file_version.as_str().to_owned(),
-        );
+            ctx.copy_retained_text(
+                document.file_version.as_str(),
+                "FreeCAD dialect file declaration",
+            )?,
+            "FreeCAD dialect declaration entries",
+        )?;
         if let Some(version) = &document.program_version {
-            declared.insert(
+            ctx.insert_btree_map(
+                &mut declared,
                 cadmpeg_core::nonblank_const!(DECLARED_PROGRAM_VERSION),
-                version.clone(),
-            );
+                ctx.copy_retained_text(version, "FreeCAD dialect program declaration")?,
+                "FreeCAD dialect declaration entries",
+            )?;
         }
         Ok(if dialect == Self::Unknown {
             DialectMatch::unverified(
@@ -187,16 +196,34 @@ impl FcstdDialect {
     /// `None` exactly when the completed match reports
     /// [`Admission::Admitted`].
     pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
+        match Self::dialect_loss_with(
+            matched,
+            |declared, key| Ok::<_, std::convert::Infallible>(declared.get(key)),
+            |message| Ok(message.to_string()),
+        ) {
+            Ok(note) => note,
+            Err(never) => match never {},
+        }
+    }
+
+    /// Builds the loss with caller-owned lookup and text formatting operations.
+    pub(crate) fn dialect_loss_with<'matched, E>(
+        matched: &'matched DialectMatch,
+        lookup: impl FnOnce(
+            &'matched BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+            &'static str,
+        ) -> Result<Option<&'matched String>, E>,
+        format: impl FnOnce(std::fmt::Arguments<'_>) -> Result<String, E>,
+    ) -> Result<Option<LossNote>, E> {
         let Admission::Unverified { .. } = matched.admission() else {
-            return None;
+            return Ok(None);
         };
-        let schema_version = matched
-            .declared()
-            .get(DECLARED_SCHEMA_VERSION)
-            .map_or("absent", String::as_str);
-        Some(FreecadLossCode::SourceDialectUnverified.note(format!(
+        let schema_version =
+            lookup(matched.declared(), DECLARED_SCHEMA_VERSION)?.map_or("absent", String::as_str);
+        let message = format(format_args!(
             "FCStd SchemaVersion={schema_version} names no declared persistence layout; this decode scanned the document with the Objects/ObjectData/Object vocabulary declared for schemas 3 and 4"
-        )))
+        ))?;
+        Ok(Some(FreecadLossCode::SourceDialectUnverified.note(message)))
     }
 }
 

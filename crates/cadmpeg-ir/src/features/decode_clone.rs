@@ -700,8 +700,7 @@ impl<T: CloneForDecode> CloneForDecode for Vec<T> {
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         let mut copied = ctx.collection_vec(self.len(), operation)?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.len()), operation)?;
-        for member in self {
+        for member in ctx.admit_iter(self, operation)? {
             copied.push(member.try_clone_for_decode(ctx, operation)?);
         }
         Ok(copied)
@@ -757,24 +756,19 @@ impl<T: CloneForDecode> CloneForDecode for [T; 3] {
     }
 }
 
-impl<K: CloneForDecode + Ord, V: CloneForDecode> CloneForDecode for BTreeMap<K, V> {
+impl<K: CloneForDecode + Ord + cadmpeg_core::decode::cost::DecodeCost, V: CloneForDecode>
+    CloneForDecode for BTreeMap<K, V>
+{
     fn try_clone_for_decode(
         &self,
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         let mut copied = BTreeMap::new();
-        for (key, value) in self {
-            ctx.admit_retained_btree_record::<K, V>(0, operation)?;
+        for (key, value) in ctx.admit_iter(self, operation)? {
             let key = key.try_clone_for_decode(ctx, operation)?;
             let value = value.try_clone_for_decode(ctx, operation)?;
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(copied.len())
-                    .checked_add(1)
-                    .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
-                operation,
-            )?;
-            copied.insert(key, value);
+            ctx.insert_btree_map(&mut copied, key, value, operation)?;
         }
         Ok(copied)
     }
@@ -786,9 +780,7 @@ impl CloneForDecode for cadmpeg_core::text::NonBlankString {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        let text = ctx.copy_retained_text(self.as_str(), operation)?;
-        cadmpeg_core::text::NonBlankString::for_decode(ctx, text, "validate nonblank text")?
-            .ok_or_else(|| CodecError::malformed("admitted feature text is blank"))
+        cadmpeg_core::text::NonBlankString::try_clone_for_decode(self, ctx, operation)
     }
 }
 
