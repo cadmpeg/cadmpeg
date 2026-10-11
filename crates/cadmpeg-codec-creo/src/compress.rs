@@ -930,16 +930,13 @@ mod tests {
         // Two 512-slot fills, three codes, one dictionary-chain link,
         // four output copies and relocation of one, two, then three bytes.
         let work = 2 * (1 << 9) + 3 + 1 + 4 + 1 + 2 + 3;
-        crate::test_support::assert_work_boundaries(
-            &["decode Creo LZW dictionary chain"],
-            |ctx| {
-                let result = super::decode(ctx, &stream, 4);
-                if let Err(CodecError::ResourceLimit(limit)) = &result {
-                    assert_ne!(limit.operation, "creo LZW stack reversal");
-                }
-                result
-            },
-        );
+        crate::test_support::assert_work_boundaries(&["decode Creo LZW dictionary chain"], |ctx| {
+            let result = super::decode(ctx, &stream, 4);
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert_ne!(limit.operation, "creo LZW stack reversal");
+            }
+            result
+        });
         let error = crate::test_support::last_refusal_at(
             &[],
             ResourceDimension::WorkUnits,

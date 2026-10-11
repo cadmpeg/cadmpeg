@@ -335,13 +335,15 @@ impl ScalarCache {
                     *paired_byte_1 = None;
                 }
             } else {
-                cache_storage.with_storage(|| {
-                    ctx.entry_hash_map(
-                        &mut paired_byte_1_by_tail,
-                        tail,
-                        "creo scalar cache paired tails",
-                    )
-                })?.or_insert(Some(raw[1]));
+                cache_storage
+                    .with_storage(|| {
+                        ctx.entry_hash_map(
+                            &mut paired_byte_1_by_tail,
+                            tail,
+                            "creo scalar cache paired tails",
+                        )
+                    })?
+                    .or_insert(Some(raw[1]));
             }
             cache_storage
                 .with_storage(|| ctx.reserve_vec(&mut entries, 1, "creo scalar cache entries"))?;

@@ -1010,7 +1010,8 @@ fn unique_curve_index<'a, T>(
         if let Some(existing) = index.get_mut(&key) {
             *existing = None;
         } else {
-            ctx.entry_hash_map(&mut index, key, operation)?.or_insert(Some(row));
+            ctx.entry_hash_map(&mut index, key, operation)?
+                .or_insert(Some(row));
         }
     }
     Ok(index)
@@ -8820,7 +8821,8 @@ pub(crate) fn two_chart_pcurve_samples(
                         &mut canonical_counts,
                         key,
                         "creo two-chart canonical group nodes",
-                    )?.or_default()
+                    )?
+                    .or_default()
                 };
                 if !counts.contains(&count) {
                     ctx.insert_hash_set(counts, count, "creo two-chart canonical count nodes")?;
@@ -8899,13 +8901,15 @@ pub(crate) fn two_chart_pcurve_samples(
         let count = if let Some(count) = counts.get_mut(&record.curve_id) {
             count
         } else {
-            scratch.with_storage(|| {
-                ctx.entry_hash_map(
-                    &mut counts,
-                    record.curve_id,
-                    "creo two-chart result count nodes",
-                )
-            })?.or_insert(0usize)
+            scratch
+                .with_storage(|| {
+                    ctx.entry_hash_map(
+                        &mut counts,
+                        record.curve_id,
+                        "creo two-chart result count nodes",
+                    )
+                })?
+                .or_insert(0usize)
         };
         *count += 1;
     }

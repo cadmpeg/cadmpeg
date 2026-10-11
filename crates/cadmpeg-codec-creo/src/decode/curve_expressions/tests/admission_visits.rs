@@ -24,7 +24,10 @@ fn isolated_expression_components_charge_only_present_stack_entries() {
         plan.extend([
             (count_work, "creo curve-expression components"),
             (count_work, "creo curve-expression component marks reset"),
-            (count_work, "creo curve-expression component finish traversal"),
+            (
+                count_work,
+                "creo curve-expression component finish traversal",
+            ),
         ]);
         for _ in 0..count {
             plan.push((1, "walk Creo curve-expression reverse dependencies"));
@@ -63,8 +66,20 @@ fn isolated_expression_components_charge_only_present_stack_entries() {
                 }
                 let (used, additional, operation) = reached.expect("first unadmitted work stage");
                 assert_eq!(
-                    (original.dimension, original.limit, original.used, original.additional, original.operation),
-                    (ResourceDimension::WorkUnits, cap, used, additional, operation)
+                    (
+                        original.dimension,
+                        original.limit,
+                        original.used,
+                        original.additional,
+                        original.operation
+                    ),
+                    (
+                        ResourceDimension::WorkUnits,
+                        cap,
+                        used,
+                        additional,
+                        operation
+                    )
                 );
                 Err(CodecError::ResourceLimit(original))
             }
@@ -136,7 +151,10 @@ fn expression_source_projection_admits_each_index_once() {
             if index != 0 {
                 plan.push((1, output_operation));
             }
-            plan.push((cadmpeg_core::decode::u64_from_index(text.len()), output_operation));
+            plan.push((
+                cadmpeg_core::decode::u64_from_index(text.len()),
+                output_operation,
+            ));
         }
         assert_eq!(plan.iter().map(|(units, _)| units).sum::<u64>(), total);
         let reference_bytes =
@@ -183,8 +201,20 @@ fn expression_source_projection_admits_each_index_once() {
                 }
                 let (used, additional, operation) = reached.expect("first unadmitted work stage");
                 assert_eq!(
-                    (original.dimension, original.limit, original.used, original.additional, original.operation),
-                    (ResourceDimension::WorkUnits, cap, used, additional, operation)
+                    (
+                        original.dimension,
+                        original.limit,
+                        original.used,
+                        original.additional,
+                        original.operation
+                    ),
+                    (
+                        ResourceDimension::WorkUnits,
+                        cap,
+                        used,
+                        additional,
+                        operation
+                    )
                 );
                 Err(CodecError::ResourceLimit(original))
             }
