@@ -1190,14 +1190,10 @@ impl<'ctx> TessellationItemAssociator<'_, 'ctx, '_> {
             })?;
         }
         while !frames.is_empty() {
-            self.ctx
-                .charge_work(1, "STEP tessellation association worklist")?;
             let frame = frames
                 .last_mut()
                 .expect("the association stack is nonempty");
             if frame.next < frame.items.len() {
-                self.ctx
-                    .charge_work(1, "STEP tessellation item traversal")?;
                 let item = frame.items[frame.next];
                 frame.next += 1;
                 let placement = frame.placement;
@@ -1223,6 +1219,8 @@ impl<'ctx> TessellationItemAssociator<'_, 'ctx, '_> {
         id: u64,
         inherited_placement: Option<Transform>,
     ) -> Result<Option<AssociationFrame<'ctx>>, CodecError> {
+        self.ctx
+            .charge_work(1, "STEP tessellation association visit")?;
         let mode = match self.mode {
             AssociationMode::BodyItems => 0_u8,
             AssociationMode::Placements => 1,
