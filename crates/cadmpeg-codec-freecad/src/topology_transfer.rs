@@ -127,7 +127,7 @@ pub(crate) fn transfer<'ctx>(
     payloads: &[ShapePayloadRecord],
     properties: &[PropertyRecord],
     losses: &mut Vec<LossNote>,
-    bind_element_maps: bool,
+    element_maps: &[crate::native::element_map::ElementMapRecord],
 ) -> Result<TopologyOccurrences<'ctx>, CodecError> {
     let mut payloads = payloads.iter();
     let first = loop {
@@ -150,6 +150,22 @@ pub(crate) fn transfer<'ctx>(
         storage: ctx.reserve_scoped(0, "FreeCAD pcurve candidates")?,
     };
     if let Some(first) = first {
+        let mut consumer_storage = ctx.reserve_scoped(0, "FreeCAD topology consumer properties")?;
+        let mut consumer_properties = BTreeSet::new();
+        let mut maps = element_maps.iter();
+        while maps.len() != 0 {
+            let Some(map) = ctx.next_charged(&mut maps, "FreeCAD element topology consumers")? else {
+                break;
+            };
+            if map.maps.has_topology_names(ctx)? {
+                consumer_storage.with_storage(|| ctx.insert_btree_set(
+                    &mut consumer_properties,
+                    map.property.as_str(),
+                    "FreeCAD topology consumer properties",
+                ))?;
+            }
+        }
+        let consumers = ScopedData { data: consumer_properties, storage: consumer_storage };
         let (data, storage) = ctx.collect_scoped_btree_map(
             properties
                 .iter()
@@ -201,13 +217,18 @@ pub(crate) fn transfer<'ctx>(
                     .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))
                 })?;
             let source_object = ScopedData { data, storage };
+            let bind_element_map = ctx.contains_btree_set(
+                &consumers.data,
+                payload.property.as_str(),
+                "FreeCAD topology consumer lookup",
+            )?;
             let mut builder = Builder::new(
                 ctx,
                 payload,
                 tables,
                 source_object,
                 geometry,
-                bind_element_maps.then_some(&mut occurrences),
+                bind_element_map.then_some(&mut occurrences),
             )?;
             builder.emit_pcurves()?;
             let (values, storage) =
