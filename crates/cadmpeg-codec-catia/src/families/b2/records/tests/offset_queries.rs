@@ -166,7 +166,7 @@ fn offset_active_slots_reuse_backing_while_one_carrier_stays_live() {
             offset([lower, lower + 1.0], [0.0, 1.0])
         })
         .collect();
-    // An ordered usize set node used 11 key slots, 16 pointer-width slots,
+    // An ordered usize set node has 11 key slots, 16 pointer-width slots,
     // and two alignment slots. Prefix counts use one fixed vector; no such
     // node is allocated on any entry cycle.
     let node_bytes = cadmpeg_core::decode::u64_from_index(29 * std::mem::size_of::<usize>());
@@ -198,15 +198,15 @@ fn invalid_u_spans_do_not_populate_optional_knot_indexes() {
         surface([-f64::MAX, f64::MAX], knots),
     ];
     let queries = vec![offset([0.0, 1.0], [0.0, 1.0]); 8193];
-    // 8193*3 domain candidates exceed 12*2048, so the valid knot bands are
-    // built. The overflowing U span cannot bind and must not visit 1026 knots.
-    let refused =
-        crate::test_support::with_work_refusal("catia_b2_offset_knot_index_scan", |ctx| {
-            offset_support_carriers(ctx, &queries, &carriers)
-        });
+    // The first two valid carriers establish ambiguity. No knot miss is
+    // observed, so neither valid knot bands nor the invalid carrier's long
+    // lane have a consumer.
+    let refused = crate::test_support::with_work_refusal("catia_b2_offset_carrier_scan", |ctx| {
+        offset_support_carriers(ctx, &queries, &carriers)
+    });
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_b2_offset_knot_index_scan")
+        if limit.operation == "catia_b2_offset_carrier_scan")
     );
     let _probe = RefusalProbe::arm(
         ResourceDimension::WorkUnits,
@@ -260,7 +260,7 @@ fn two_offset_domain_candidates_do_not_build_knot_bands_for_many_queries() {
 }
 
 #[test]
-fn optional_knot_bands_preserve_rounded_unique_bindings() {
+fn direct_offset_search_preserves_rounded_unique_bindings() {
     let carriers = [
         surface(
             [0.0, 1.0],
@@ -282,16 +282,22 @@ fn optional_knot_bands_preserve_rounded_unique_bindings() {
             vec![0.0, 0.0, 30_639.389_180_574_413, 30_639.389_180_574_413],
         ),
     ];
-    // Every domain admits three candidates. 9558*3 exceeds 14*2048, so
-    // knot bands run. Only carrier zero has both accepted endpoint knots.
+    // Every domain admits three candidates. The actual visits reach the
+    // 14*2048 construction threshold only at the final query. No unfinished
+    // query can consume an index. Only carrier zero has both endpoint knots.
     let queries = vec![offset([0.0, 1.0], [34.608_586_243_774_91, 100.0]); 9558];
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         offset_support_carriers(ctx, &queries, &carriers)
     };
-    let refused = crate::test_support::with_work_refusal("catia_b2_offset_knot_index_scan", run);
+    let refused = crate::test_support::with_work_refusal("catia_b2_offset_carrier_scan", run);
     assert!(
         matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_b2_offset_knot_index_scan")
+        if limit.operation == "catia_b2_offset_carrier_scan")
+    );
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "catia_b2_offset_knot_index_scan",
+        None,
     );
     let bindings = crate::test_support::with_service_context(run)
         .expect("rounded knot-band bounds admit the exact match");
@@ -352,4 +358,140 @@ fn offset_active_removal_preserves_carrier_index_traversal() {
             if limit.operation == operation)
         );
     }
+}
+
+#[test]
+fn three_ambiguous_offset_candidates_build_no_knot_lane() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+    let carriers = vec![surface([0.0, 1.0], vec![0.0, 0.0, 1.0, 1.0]); 3];
+    let queries = vec![offset([0.0, 1.0], [0.0, 1.0]); 8193];
+    let _probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "catia_b2_offset_knot_index_scan",
+        None,
+    );
+    let bindings = crate::test_support::with_work_limit(u64::MAX, |ctx| {
+        offset_support_carriers(ctx, &queries, &carriers)
+    })
+    .expect("second-match exits need no knot pruning");
+    assert_eq!(bindings, vec![None; 8193]);
+}
+
+#[test]
+fn measured_offset_knot_pruning_preserves_rounded_bindings_and_skips_invalid_spans() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+    let long_knots: Vec<_> = std::iter::once(0.0)
+        .chain((0..1024).map(|index| f64::from(index) / 1023.0))
+        .chain(std::iter::once(1.0))
+        .collect();
+    let carriers = [
+        surface(
+            [0.0, 1.0],
+            vec![
+                0.0,
+                0.0,
+                3.969_197_063_200_492_7,
+                100.0,
+                30_639.389_180_574_413,
+                30_639.389_180_574_413,
+            ],
+        ),
+        surface(
+            [0.0, 1.0],
+            vec![0.0, 0.0, 30_639.389_180_574_413, 30_639.389_180_574_413],
+        ),
+        surface(
+            [0.0, 1.0],
+            vec![0.0, 0.0, 30_639.389_180_574_413, 30_639.389_180_574_413],
+        ),
+        surface([-f64::MAX, f64::MAX], long_knots),
+    ];
+    let queries = vec![offset([0.0, 1.0], [34.608_586_243_774_91, 100.0]); 20_000];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        offset_support_carriers(ctx, &queries, &carriers)
+    };
+    // The first 9558 queries perform 28674 carrier visits and knot misses.
+    // The remaining 10442 would perform 31326 visits at that measured rate;
+    // both exceed 14*2048 = 28672. Knot pruning reduces each remainder to
+    // carrier zero. The invalid U span must not visit its 1026 knots.
+    let refused = crate::test_support::with_work_refusal("catia_b2_offset_knot_index_scan", run);
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_b2_offset_knot_index_scan")
+    );
+    let _probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "catia_b2_offset_knot_index_scan",
+        Some(1026),
+    );
+    assert_eq!(
+        crate::test_support::with_work_limit(u64::MAX, run)
+            .expect("only eligible knot lanes are built"),
+        vec![Some(0); 20_000]
+    );
+}
+
+#[test]
+fn knot_misses_do_not_index_a_remaining_ambiguous_query_population() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+    let carriers = vec![surface([0.0, 1.0], vec![0.0, 0.0, 1.0, 1.0]); 3];
+    let mut queries = vec![offset([0.0, 1.0], [0.25, 0.75]); 8193];
+    queries.extend(vec![offset([0.0, 1.0], [0.0, 1.0]); 8193]);
+    // Misses first perform 8193*3 = 24579 visits, above 12*2048.
+    // Every remaining query establishes ambiguity in its first pair. The
+    // preview removes all remaining consumers before any knot construction.
+    let _probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "catia_b2_offset_knot_index_scan",
+        None,
+    );
+    assert_eq!(
+        crate::test_support::with_work_limit(u64::MAX, |ctx| {
+            offset_support_carriers(ctx, &queries, &carriers)
+        })
+        .expect("remaining ambiguity needs no knot index"),
+        vec![None; 16_386]
+    );
+}
+
+#[test]
+fn knot_lane_resumption_keeps_the_preview_match_for_ambiguity() {
+    let rounded = || {
+        surface(
+            [0.0, 1.0],
+            vec![
+                0.0,
+                0.0,
+                3.969_197_063_200_492_7,
+                100.0,
+                30_639.389_180_574_413,
+                30_639.389_180_574_413,
+            ],
+        )
+    };
+    let carriers = [
+        rounded(),
+        surface(
+            [0.0, 1.0],
+            vec![0.0, 0.0, 30_639.389_180_574_413, 30_639.389_180_574_413],
+        ),
+        rounded(),
+    ];
+    let queries = vec![offset([0.0, 1.0], [34.608_586_243_774_91, 100.0]); 24_000];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        offset_support_carriers(ctx, &queries, &carriers)
+    };
+    // At query 10923, 32769 visits exceed 16*2048 = 32768, and the
+    // remaining 13077 queries predict 39231 visits. The preview's match
+    // at carrier zero and the resumed match at carrier two are ambiguous.
+    let refused = crate::test_support::with_work_refusal("catia_b2_offset_knot_index_scan", run);
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_b2_offset_knot_index_scan")
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(run)
+            .expect("the preview match survives lane selection"),
+        vec![None; 24_000]
+    );
 }
