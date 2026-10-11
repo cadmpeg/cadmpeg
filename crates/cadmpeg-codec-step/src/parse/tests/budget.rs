@@ -761,7 +761,7 @@ fn anchor_reference_stack_refuses_retained_limit() {
         error,
         ResolveError::Resource(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::MaterializedBytes
-                && limit.operation == "step_anchor_reference_stack_storage"
+                && limit.operation == "step_anchor_reference_stack"
     ));
 }
 
@@ -846,7 +846,7 @@ fn reference_stack_refuses_retained_limit() {
         error,
         ResolveError::Resource(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::MaterializedBytes
-                && limit.operation == "step_reference_stack_storage"
+                && limit.operation == "step_reference_stack"
     ));
 }
 
