@@ -81,9 +81,9 @@ pub(crate) struct ZeroEntitySupportRun {
 /// Terminal control byte following a zero-entity face allocation lane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ZeroEntityFaceControl {
-    /// Control byte `0x03`.
+    /// Negative face-to-surface orientation, stored as `0x03`.
     Control03,
-    /// Control byte `0x05`.
+    /// Positive face-to-surface orientation, stored as `0x05`.
     Control05,
 }
 
@@ -1058,14 +1058,20 @@ pub(crate) fn zero_entity_support_runs_in_range(
     let mut loop_roster_is_valid = flattened_terminals == loop_terminals;
     if loop_roster_is_valid {
         let mut loop_index = 0;
-        for terminals in &face_terminals {
+        for (face, terminals) in faces.iter().zip(&face_terminals) {
             let loop_end = loop_index + terminals.len();
             let face_loops = &loops[loop_index..loop_end];
             loop_index = loop_end;
             if !face_loops.first().is_some_and(|outer| {
                 matches!(
-                    outer.loop_class,
-                    ZeroEntityLoopClass::Outer41 | ZeroEntityLoopClass::ReversedC1
+                    (face.terminal_control, outer.loop_class),
+                    (
+                        ZeroEntityFaceControl::Control05,
+                        ZeroEntityLoopClass::Outer41
+                    ) | (
+                        ZeroEntityFaceControl::Control03,
+                        ZeroEntityLoopClass::ReversedC1
+                    )
                 ) && face_loops[1..]
                     .iter()
                     .all(|inner| inner.loop_class == ZeroEntityLoopClass::Bound50)
@@ -4108,6 +4114,28 @@ mod tests {
         assert_eq!(loop_record.loop_class.as_byte(), 0x41);
         assert_eq!(loop_record.forward_senses, [true]);
         assert!(loop_record.support_record_ordinals.is_empty());
+    }
+
+    #[test]
+    fn face_orientation_must_agree_with_outer_loop_class() {
+        let mut stream = zero_entity_face_loop_support_stream();
+        let records = zero_entity_records(&stream);
+        let loop_record = records.iter().find(|r| r.tag[0] == 0x62).expect("loop");
+        let face_record = records.iter().find(|r| r.tag[0] == 0x5f).expect("face");
+        stream[face_record.end - 1] = 0x03;
+        let runs = zero_entity_support_runs(&stream);
+        let face = runs[0].face.as_ref().expect("retained face");
+        assert!(face.loops.is_none(), "contradictory orientation is unbound");
+        stream[loop_record.end - 3] = 0xc1;
+        let runs = zero_entity_support_runs(&stream);
+        let face = runs[0].face.as_ref().expect("retained negative face");
+        assert_eq!(face.terminal_control.as_byte(), 0x03);
+        assert_eq!(
+            face.loops.as_ref().expect("matching negative outer loop")[0]
+                .loop_class
+                .as_byte(),
+            0xc1
+        );
     }
 
     #[test]

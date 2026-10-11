@@ -82,10 +82,12 @@ pub(super) fn validate_zero_entity_support_runs(
                 && derived_terminals.as_ref() == Some(&face.loop_terminals)
                 && (face.loops.is_empty()
                     || face.loops.len() == face.loop_terminals.len()
-                        && face
-                            .loops
-                            .first()
-                            .is_some_and(|outer| matches!(outer.loop_class, 0x41 | 0xc1))
+                        && face.loops.first().is_some_and(|outer| {
+                            matches!(
+                                (face.terminal_control, outer.loop_class),
+                                (0x05, 0x41) | (0x03, 0xc1)
+                            )
+                        })
                         && face.loops[1..].iter().all(|inner| inner.loop_class == 0x50)
                         && face.loops.iter().zip(&face.loop_terminals).all(
                             |(loop_record, terminal)| {

@@ -756,3 +756,8 @@ body offset and same-graph entity resolution. The complete wide schema chain
 joins the associated catalog entries for `Projected3DGeometrySet`,
 `CATEarlySpecBrpLocation`, and `data`. Compact schema tokens remain unnamed.
 Opaque childless bodies retain their complete bytes without these roles.
+
+Zero-entity face terminals assign positive (`05`) or negative (`03`)
+face-to-surface orientation. Complete loop binding requires the matching outer
+class (`41` or `c1`); contradictory orientation retains the native face without
+binding its loop roster.

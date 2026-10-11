@@ -492,14 +492,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 5. Zero-entity `a9 03`
 
-### ZE-01. Class-`0x5fxx` face terminal control
-
-**Question.** What does the terminal control byte in each `0x5fxx` face record control?
-
-**Known.** `catia.md` §8 "Record framing `a9 03 XX YY <payload[YY+8]>`, `record_length = YY + 12`" defines the zero-entity face roster and support incidences.
-
-**Need.** We must know the control to validate and write the face.
-
 ### ZE-02. Oriented-use allocation lane
 
 **Question.** Which allocation-lane rule associates a `0638` oriented use with its owner-local `0x21xx` support and `0x05xx` incidence record?
