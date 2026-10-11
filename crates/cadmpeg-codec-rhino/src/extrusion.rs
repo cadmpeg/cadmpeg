@@ -429,7 +429,8 @@ pub(crate) fn decode<'ctx>(
             boundary_warnings.extend_cloned_admitted(expand.ctx(), &source_warnings)?;
             Ok::<_, GeometryError>(DecodedCurve::leaf(
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                    start_nurbs.try_clone_for_decode(expand.ctx(), "Rhino extrusion start curve")?,
+                    start_nurbs
+                        .try_clone_for_decode(expand.ctx(), "Rhino extrusion start curve")?,
                 )),
                 boundary_warnings,
             ))
