@@ -29,13 +29,13 @@ fn surface_name_prefix_uses_bounded_grammar() {
 #[test]
 fn surface_named_boundary_admits_visited_positions_and_skips_scalar_interiors() {
     let cache = ScalarCache::from_section(&[]);
-    for (payload, offset) in [
-        (b"".as_slice(), None),
-        (b"\xff\xff\xff".as_slice(), None),
-        (b"\xe0\0A\0ignored".as_slice(), Some(0)),
-        (b"\xff\xff\xe0\0A\0ignored".as_slice(), Some(2)),
+    for (payload, offset, visits) in [
+        (b"".as_slice(), None, 0),
+        (b"\xff\xff\xff".as_slice(), None, 3),
+        (b"\xe0\0A\0ignored".as_slice(), Some(0), 1),
+        (b"\xff\xff\xe0\0A\0ignored".as_slice(), Some(2), 3),
         // One eight-byte scalar, followed by the named field. Its interior is not visited.
-        (b"\x46\0\0\0\0\0\0\0\xe0\0A\0ignored".as_slice(), Some(8)),
+        (b"\x46\0\0\0\0\0\0\0\xe0\0A\0ignored".as_slice(), Some(8), 2),
     ] {
         let operations = if payload.is_empty() {
             &[][..]
@@ -69,6 +69,9 @@ fn surface_named_boundary_admits_visited_positions_and_skips_scalar_interiors() 
                             "creo surface named boundary traversal"
                         )
                     );
+                }
+                if result.is_ok() {
+                    assert_eq!(cap, visits, "only present boundary starts are visited");
                 }
                 result
             },

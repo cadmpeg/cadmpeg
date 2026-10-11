@@ -4437,6 +4437,9 @@ fn torus_radius_override_layout(
     ctx: &DecodeContext<'_>,
     body: &[u8],
 ) -> Result<Option<TorusRadiusOverrideLayout>, CodecError> {
+    if body.len() < 2 {
+        return Ok(None);
+    }
     let mut markers = body.windows(2);
     let Some(offset) = ctx.position_by(
         &mut markers,
