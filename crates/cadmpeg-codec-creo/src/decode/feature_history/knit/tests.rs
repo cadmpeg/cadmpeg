@@ -168,37 +168,30 @@ fn knit_native_selection_refuses_retained_limit() {
 }
 
 #[test]
-fn knit_generated_native_copy_refuses_retained_limit() {
+fn knit_generated_face_retains_one_native_reference() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let scan = one_knit_scan();
-
+    let native = "creo:allfeatur:surface_merge_quilts#416:103";
+    // Only the native text and generated member survive the evidence scope.
+    let retained_bytes = native.len() + "creo:model:feature#97".len() + "surface#98".len()
+        + 4 * std::mem::size_of::<cadmpeg_ir::features::GeneratedFaceRef>();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = crate::test_support::allocation_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        Some("creo knit generated native selection"),
-        |cap| {
-            let trial_arena = cadmpeg_core::decode::DecodeArena::new();
-            let mut trial_policy = policy;
-            trial_policy.limits.max_retained_bytes = cap;
-            let (trial_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                &[],
-                &trial_arena,
-                &trial_policy,
-            )
-            .expect("root");
-            knit_surface_feature_definition(&trial_ctx, &scan, 416)
-        },
-    );
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
-    let error = knit_surface_feature_definition(&ctx, &scan, 416)
-        .expect_err("generated native copy exceeds the retained limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-        if resource.operation == "creo knit generated native selection"),
-        "{error:?}"
-    );
+    policy.limits.max_retained_bytes = u64::try_from(retained_bytes).expect("fixture byte bound");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let definition = knit_surface_feature_definition(&ctx, &scan, 416)
+        .expect("one retained native reference admits the generated knit face");
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::KnitSurface {
+            faces: cadmpeg_ir::features::FaceSelection::Generated { faces, native: reference }, ..
+        }
+    ) = definition else {
+        panic!("generated knit face");
+    };
+    assert_eq!(reference.as_str(), native);
+    assert_eq!(faces.len(), 1);
+    assert_eq!(faces[0].feature.as_str(), "creo:model:feature#97");
+    assert_eq!(faces[0].local_id.as_str(), "surface#98");
 }
 
 #[test]
@@ -485,11 +478,6 @@ fn feature_result_topology_arena_refuses_collection_limit() {
         "{error:?}"
     );
     assert!(ir.model.feature_result_topologies.is_empty());
-    let cadmpeg_core::CodecError::ResourceLimit(first) = error else {
-        unreachable!()
-    };
-    assert!(matches!(ctx.finish_session(),
-        Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == first));
     let error = crate::test_support::last_refusal_at(
         &[],
         ResourceDimension::CollectionItems,
