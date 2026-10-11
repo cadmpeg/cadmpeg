@@ -8345,15 +8345,18 @@ fn legacy_entity_runs(
                     "catia_native_legacy_run_id",
                 )?;
                 let byte_offset = run.first_identity.offset;
-                let identities = ctx.collect_vec(
-                    run.identities(ctx)?
-                        .map(|identity| CatiaLegacyEntityIdentity {
+                let mut identities = Vec::new();
+                for identity in run.identities(ctx)? {
+                    ctx.push_vec(
+                        &mut identities,
+                        CatiaLegacyEntityIdentity {
                             byte_offset: u64_from_index(identity.offset),
                             entity_id: identity.entity_id,
                             lead: identity.lead,
-                        }),
-                    "catia_native_legacy_identities",
-                )?;
+                        },
+                        "catia_native_legacy_identities",
+                    )?;
+                }
                 let schema_program = run
                     .schema_program
                     .map(|program| -> Result<_, CodecError> {
@@ -10518,15 +10521,12 @@ impl<Extent: ByteExtent + DecodeCost> NativeExtentIndex<Extent> {
             })?;
         }
         let mut max_end = None;
-        let prefixes = ctx.collect_vec(
-            ctx.admit_iter(&starts, "catia_native_extent_prefix_visits")?
-                .map(|(&start, &end)| {
-                    let high = max_end.map_or(end, |previous: Extent| previous.max(end));
-                    max_end = Some(high);
-                    (start, high)
-                }),
-            "catia_native_extent_prefixes",
-        )?;
+        let mut prefixes = Vec::new();
+        for (&start, &end) in ctx.admit_iter(&starts, "catia_native_extent_prefix_visits")? {
+            let high = max_end.map_or(end, |previous: Extent| previous.max(end));
+            max_end = Some(high);
+            ctx.push_vec(&mut prefixes, (start, high), "catia_native_extent_prefixes")?;
+        }
         Ok(Self(prefixes))
     }
 

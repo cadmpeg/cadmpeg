@@ -1320,8 +1320,6 @@ fn parse_relations(
     identities: &[LegacyEntityIdentity],
 ) -> Result<Vec<LegacyRelation>, CodecError> {
     let mut relations = Vec::new();
-    let mut identity_storage = ctx.reserve_scoped(0, "catia_legacy_relation_identity_ids")?;
-    let mut identity_ids = None;
     let mut start = 0;
     while start < fields.len() {
         let entity_id = fields[start].entity_id;
@@ -1424,27 +1422,13 @@ fn parse_relations(
                 let parameter_selector = relation_role_selector(type_signature, "param");
                 let parameter_entity_id = match (body_selector, parameter_selector) {
                     (Some(body), Some(parameter)) if body == entity_id => {
-                        let ids = match &identity_ids {
-                            Some(ids) => ids,
-                            None => {
-                                let ids = identity_storage.with_storage(|| {
-                                    ctx.collect_hash_set(
-                                        ctx.admit_iter(
-                                            identities,
-                                            "catia_legacy_relation_identity_ids",
-                                        )?
-                                        .map(|identity| identity.entity_id),
-                                        "catia_legacy_relation_identity_ids",
-                                    )
-                                })?;
-                                identity_ids.insert(ids)
-                            }
-                        };
-                        ctx.contains_hash_set(
-                            ids,
-                            &parameter,
-                            "catia_legacy_relation_identity_ids",
+                        // The run's candidate suffix has strictly increasing ids.
+                        ctx.binary_search_by(
+                            identities,
+                            |identity| Ok(identity.entity_id.cmp(&parameter)),
+                            "catia_legacy_relation_identity_search",
                         )?
+                        .is_ok()
                         .then_some(parameter)
                     }
                     _ => None,
