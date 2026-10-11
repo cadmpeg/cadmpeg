@@ -731,3 +731,39 @@ fn v1_units_preserve_geometry_scaling_order_and_final_tolerances() {
     assert_eq!(decoded.source_fidelity.retained_records().len(), 2);
     assert!(decoded.body.losses.is_empty());
 }
+
+#[test]
+fn v1_curves_between_breps_keep_linear_identity_index_work() {
+    let record = super::legacy_line([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], 3);
+    let small = work_with_records_between_breps(64, &record, [1, 1, 0], true);
+    let large = work_with_records_between_breps(128, &record, [1, 1, 0], true);
+    assert!(large < 3 * small,
+        "doubling records must remain below quadratic growth: {small} -> {large}");
+}
+
+#[test]
+fn v1_meshes_between_breps_keep_linear_identity_index_work() {
+    let mut body = Vec::new();
+    for value in [3_i32, 1, 0, 0] {
+        body.extend(value.to_le_bytes());
+    }
+    for value in [0.0_f64, 0.0, 0.0, 1.0, 1.0, 1.0] {
+        body.extend(value.to_le_bytes());
+    }
+    for point in [[0_u16, 0, 0], [65535, 0, 0], [0, 65535, 0]] {
+        for coordinate in point {
+            body.extend(coordinate.to_le_bytes());
+        }
+    }
+    for value in [0_u16, 1, 2, 2] {
+        body.extend(value.to_le_bytes());
+    }
+    let record = super::legacy_chunk(
+        super::super::TCODE_MESH_OBJECT,
+        &super::legacy_chunk(super::super::TCODE_COMPRESSED_MESH_GEOMETRY, &body),
+    );
+    let small = work_with_records_between_breps(64, &record, [0, 0, 1], true);
+    let large = work_with_records_between_breps(128, &record, [0, 0, 1], true);
+    assert!(large < 3 * small,
+        "doubling records must remain below quadratic growth: {small} -> {large}");
+}
