@@ -48,18 +48,13 @@ pub(super) fn unique_match<'values, T>(
     mut predicate: impl FnMut(&T) -> Result<bool, CodecError>,
     operation: &'static str,
 ) -> Result<UniqueMatch<&'values T>, CodecError> {
-    let mut checked_predicate = |value: &T| {
-        let result = predicate(value);
-        ctx.charge_work(0, operation)?;
-        result
-    };
-    let Some(first) = ctx.position_by(values, &mut checked_predicate, operation)? else {
+    let Some(first) = ctx.position_by(values, &mut predicate, operation)? else {
         return Ok(UniqueMatch::Zero);
     };
     let (Some(value), Some(rest)) = (values.get(first), values.get(first + 1..)) else {
         return Ok(UniqueMatch::Zero);
     };
-    Ok(if ctx.any_by(rest, checked_predicate, operation)? {
+    Ok(if ctx.any_by(rest, predicate, operation)? {
         UniqueMatch::Many
     } else {
         UniqueMatch::One(value)
@@ -122,7 +117,6 @@ pub(super) fn find_frame(
     mut visit: impl FnMut(usize, usize) -> Result<bool, CodecError>,
     operation: &'static str,
 ) -> Result<Option<(usize, usize)>, CodecError> {
-    ctx.charge_work(0, operation)?;
     let offsets = records.offsets(record_index);
     let Some(last) = offsets.len().checked_sub(1) else {
         return Ok(None);
@@ -138,9 +132,7 @@ pub(super) fn find_frame(
             let Some(start) = next_start.next() else {
                 return Ok(false);
             };
-            let selected = visit(*start, *paired);
-            ctx.charge_work(0, operation)?;
-            if selected? {
+            if visit(*start, *paired)? {
                 found = Some((*start, *paired));
                 return Ok(true);
             }
@@ -261,6 +253,3 @@ pub(super) fn extrude_operation_at(bytes: &[u8], offset: usize) -> Option<Design
         _ => None,
     }
 }
-
-#[cfg(test)]
-mod tests;

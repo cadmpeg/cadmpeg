@@ -136,8 +136,7 @@ fn exact_surface_offset_face_groups(
 
     // A record is covered once as a group or a group member. It is tracked at
     // the first table position that lists it.
-    let _covered_storage;
-    let (mut covered, held_storage) =
+    let (mut covered, _covered_storage) =
         ctx.with_scoped_storage("track F3D surface offset covered references", || {
             ctx.alloc_filled(
                 references.len(),
@@ -145,7 +144,6 @@ fn exact_surface_offset_face_groups(
                 "track F3D surface offset covered references",
             )
         })?;
-    _covered_storage = held_storage;
     let mut covered_count = 0usize;
     let mut cover = |record_index: u32| -> Result<bool, CodecError> {
         let Some(position) = reference_position(
@@ -182,8 +180,7 @@ fn exact_surface_offset_face_groups(
             };
             // Only the group's record index is kept, so the parsed group is
             // held under scoped storage.
-            let _group_storage;
-            let (group, held_storage) =
+            let (group, _group_storage) =
                 ctx.with_scoped_storage("f3d surface offset face group candidate", || {
                     exact_construction_operand_group(
                         ctx,
@@ -194,7 +191,6 @@ fn exact_surface_offset_face_groups(
                         record_index,
                     )
                 })?;
-            _group_storage = held_storage;
             let Some(group) = group else {
                 return Ok(false);
             };
@@ -261,8 +257,7 @@ fn exact_construction_operand_group(
                 return Ok(true);
             };
             // The group parser borrows the frame header; the group keeps its own copy.
-            let _class_tag_storage;
-            let (class_tag, held_storage) =
+            let (class_tag, _class_tag_storage) =
                 ctx.with_scoped_storage("copy F3D surface offset group class tag", || {
                     retain_class_tag(
                         ctx,
@@ -270,7 +265,6 @@ fn exact_construction_operand_group(
                         "copy F3D surface offset group class tag",
                     )
                 })?;
-            _class_tag_storage = held_storage;
             let header = RecordFrame {
                 record_index,
                 class_tag,

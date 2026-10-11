@@ -884,8 +884,8 @@ fn mesh_texture_entries(
     // A malformed entry ends either map early, so each entry is admitted as
     // it is read and storage grows with the entries read.
     let mut textures = Vec::new();
-    let mut keys_storage = ctx.reserve_scoped(0, "f3d mesh texture keys")?;
     let mut keys = HashMap::new();
+    let mut keys_storage = ctx.reserve_scoped(0, "f3d mesh texture keys")?;
     for ordinal in 0..flags_count {
         ctx.charge_work(1, "read F3D mesh texture flags")?;
         let Some((resource_guid, key, end)) = texture_guid_at(record, at) else {
@@ -1365,9 +1365,7 @@ fn diagnostic_targets<'ctx>(
     run: LocalReferenceRun<'_>,
     operation: &'static str,
 ) -> Result<(Vec<u32>, ScopedReservation<'ctx>), CodecError> {
-    let reservation;
-    let (mut targets, held_storage) = ctx.scoped_vector_storage(run.len(), operation)?;
-    reservation = held_storage;
+    let (mut targets, reservation) = ctx.scoped_vector_storage(run.len(), operation)?;
     for target in run.targets(ctx, operation)? {
         ctx.push_vec(&mut targets, target, operation)?;
     }
@@ -1474,38 +1472,30 @@ impl<'a> MeshGraph<'a> {
         collection: &MeshCollectionRecord<'a>,
         candidate: Option<u32>,
     ) -> Result<CodecError, CodecError> {
-        let _collection_storage;
-        let (collection_bodies, held_storage) = diagnostic_targets(
+        let (collection_bodies, _collection_storage) = diagnostic_targets(
             ctx,
             collection.body_records,
             "f3d mesh diagnostic collection bodies",
         )?;
-        _collection_storage = held_storage;
         let candidate_scope = match candidate {
             Some(scope_index) => ctx.get_hash_map(&self.scopes, &scope_index, GRAPH_LOOKUP)?,
             None => None,
         };
-        let _scope_storage;
-        let (scope_bodies, held_storage) = match candidate_scope {
+        let (scope_bodies, _scope_storage) = match candidate_scope {
             Some(scope) => {
-                let storage;
-                let (bodies, held_storage) = diagnostic_targets(
+                let (bodies, storage) = diagnostic_targets(
                     ctx,
                     scope.body_records,
                     "f3d mesh diagnostic scope bodies",
                 )?;
-                storage = held_storage;
                 (Some(bodies), Some(storage))
             }
             None => (None, None),
         };
-        _scope_storage = held_storage;
-        let _links_storage;
-        let (mut body_links, held_storage) = ctx.scoped_vector_storage(
+        let (mut body_links, _links_storage) = ctx.scoped_vector_storage(
             collection.body_records.len(),
             "f3d mesh diagnostic body links",
         )?;
-        _links_storage = held_storage;
         for body_index in collection
             .body_records
             .targets(ctx, "f3d mesh diagnostic body links")?
@@ -1788,10 +1778,8 @@ where
     let mut storage = ctx.reserve_scoped(0, "f3d mesh graph records")?;
     // The primary frames are resolved once for every record type of the graph.
     let mut typed = TypedFrameSource::new(bytes, meta);
-    let _collection_frames_storage;
-    let (collection_frames, held_storage) =
+    let (collection_frames, _collection_frames_storage) =
         typed.frames(ctx, MESH_COLLECTION_TYPE_GUID, "mesh-collection")?;
-    _collection_frames_storage = held_storage;
     let mut collections = Vec::new();
     for frame in ctx.admit_iter(&collection_frames, "parse F3D mesh collections")? {
         let collection = parse_mesh_collection_record(ctx, bytes, meta, *frame)?;
@@ -1804,9 +1792,7 @@ where
     if collections.is_empty() {
         return Ok(Vec::new());
     }
-    let _stream_storage;
-    let (stream, held_scope_storage) = native_scope_scoped(ctx, source_entry_name)?;
-    _stream_storage = held_scope_storage;
+    let (_stream_storage, stream) = native_scope_scoped(ctx, source_entry_name)?;
     let collection_indices = mesh_collection_indices(ctx, &mut storage, &collections)?;
     let mut frames = |type_guid: &str, record_kind: &str| typed.frames(ctx, type_guid, record_kind);
     let entry_names = record_map(
@@ -1845,9 +1831,7 @@ where
         "mesh-wrapper",
         |frame| parse_mesh_wrapper_record(ctx, bytes, frame).map(Some),
     )?;
-    let _records_storage;
-    let (records, held_storage) = IndexedRecordOffsets::build_scoped(ctx, bytes)?;
-    _records_storage = held_storage;
+    let (records, _records_storage) = IndexedRecordOffsets::build_scoped(ctx, bytes)?;
     let scopes = record_map(
         ctx,
         &mut storage,
@@ -2194,7 +2178,6 @@ mod tests {
     mod identity;
     mod placement;
     mod push_vec;
-    mod storage;
     mod text;
     use super::{
         parse_mesh_collection_owner_record, parse_mesh_scene_state_record,
@@ -2256,8 +2239,7 @@ mod tests {
         frame: TypedPrimaryFrame<'_>,
     ) -> Result<super::MeshTextureTableRecord, CodecError> {
         let mut storage = ctx.reserve_scoped(0, "test texture storage")?;
-        let table = parse_mesh_texture_table_record(ctx, &mut storage, bytes, frame)?;
-        storage.commit_value(table)
+        parse_mesh_texture_table_record(ctx, &mut storage, bytes, frame)
     }
 
     fn parse_mesh_design_records<F>(

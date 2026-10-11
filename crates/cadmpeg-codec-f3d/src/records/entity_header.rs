@@ -138,15 +138,6 @@ pub(crate) struct SegmentType {
 }
 
 impl SegmentType {
-    /// Validate a decoded segment type after admitting its identity grammar.
-    pub(crate) fn try_new_charged(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        id: String,
-        data: SegmentTypeData,
-    ) -> Result<Result<Self, String>, cadmpeg_core::CodecError> {
-        NativeRecordId::admit_grammar(ctx, &id)?;
-        Ok(Self::try_new(id, data))
-    }
     pub(crate) fn try_new(id: String, data: SegmentTypeData) -> Result<Self, String> {
         let id = NativeRecordId::try_f3d_new(id, "design-type", data.byte_offset)?;
         if !id.stream().ends_with("/MetaStream.dat") {

@@ -119,15 +119,14 @@ pub(super) fn reference_at(run: &ReferenceRun<u32>, index: usize) -> Option<u32>
 /// Values keyed by native stream and record index. A later value replaces an
 /// earlier one with the same key. The index is held in scoped storage for as
 /// long as it lives.
-pub(super) struct RecordIndex<'a, 'c, 'arena, T> {
+pub(super) struct RecordIndex<'a, 'c, T> {
     by_identity: HashMap<(&'a str, u32), &'a T>,
     _storage: ScopedReservation<'c>,
-    ctx: &'c DecodeContext<'arena>,
 }
 
-impl<'a, 'c, 'arena, T> RecordIndex<'a, 'c, 'arena, T> {
+impl<'a, 'c, T> RecordIndex<'a, 'c, T> {
     fn build(
-        ctx: &'c DecodeContext<'arena>,
+        ctx: &'c DecodeContext<'_>,
         values: &'a [T],
         identity: impl Fn(&'a T) -> (&'a str, u32),
         scan_operation: &'static str,
@@ -152,16 +151,15 @@ impl<'a, 'c, 'arena, T> RecordIndex<'a, 'c, 'arena, T> {
         Ok(Self {
             by_identity,
             _storage: storage,
-            ctx,
         })
     }
 
-    fn get(&self, stream: &str, record_index: u32) -> Result<Option<&'a T>, CodecError> {
-        let ctx = self.ctx;
-        ctx.charge_work(0, "find F3D indexed record")?;
-        if self.by_identity.is_empty() {
-            return Ok(None);
-        }
+    fn get(
+        &self,
+        ctx: &DecodeContext<'_>,
+        stream: &str,
+        record_index: u32,
+    ) -> Result<Option<&'a T>, CodecError> {
         let by_identity: &HashMap<(&str, u32), &'a T> = &self.by_identity;
         Ok(ctx
             .get_hash_map(
@@ -174,13 +172,13 @@ impl<'a, 'c, 'arena, T> RecordIndex<'a, 'c, 'arena, T> {
 }
 
 /// Record headers keyed by native stream and record index.
-pub(super) type OperandHeaders<'a, 'c, 'arena> = RecordIndex<'a, 'c, 'arena, DesignRecordHeader>;
+pub(super) type OperandHeaders<'a, 'c> = RecordIndex<'a, 'c, DesignRecordHeader>;
 
 /// Index record headers by native stream and record index.
-pub(super) fn indexed_operand_headers<'a, 'c, 'arena>(
-    ctx: &'c DecodeContext<'arena>,
+pub(super) fn indexed_operand_headers<'a, 'c>(
+    ctx: &'c DecodeContext<'_>,
     headers: &'a [DesignRecordHeader],
-) -> Result<OperandHeaders<'a, 'c, 'arena>, CodecError> {
+) -> Result<OperandHeaders<'a, 'c>, CodecError> {
     RecordIndex::build(
         ctx,
         headers,
@@ -192,15 +190,14 @@ pub(super) fn indexed_operand_headers<'a, 'c, 'arena>(
 
 /// Values grouped by native stream and record index, each group in input
 /// order. The index is held in scoped storage for as long as it lives.
-struct RecordGroups<'a, 'c, 'arena, T> {
+struct RecordGroups<'a, 'c, T> {
     groups: HashMap<(&'a str, u32), Vec<&'a T>>,
     _storage: ScopedReservation<'c>,
-    ctx: &'c DecodeContext<'arena>,
 }
 
-impl<'a, 'c, 'arena, T> RecordGroups<'a, 'c, 'arena, T> {
+impl<'a, 'c, T> RecordGroups<'a, 'c, T> {
     fn build(
-        ctx: &'c DecodeContext<'arena>,
+        ctx: &'c DecodeContext<'_>,
         values: &'a [T],
         identity: impl Fn(&'a T) -> (&'a str, u32),
         operation: &'static str,
@@ -225,18 +222,17 @@ impl<'a, 'c, 'arena, T> RecordGroups<'a, 'c, 'arena, T> {
         Ok(Self {
             groups,
             _storage: storage,
-            ctx,
         })
     }
 
     /// The values of `record_index` in `stream`. The lookup key borrows
     /// `stream`, so the result lives no longer than it.
-    fn get<'s>(&'s self, stream: &'s str, record_index: u32) -> Result<&'s [&'a T], CodecError> {
-        let ctx = self.ctx;
-        ctx.charge_work(0, "find F3D grouped records")?;
-        if self.groups.is_empty() {
-            return Ok(&[]);
-        }
+    fn get<'s>(
+        &'s self,
+        ctx: &DecodeContext<'_>,
+        stream: &'s str,
+        record_index: u32,
+    ) -> Result<&'s [&'a T], CodecError> {
         let groups: &HashMap<(&str, u32), Vec<&'a T>> = &self.groups;
         Ok(ctx
             .get_hash_map(groups, &(stream, record_index), "find F3D grouped records")?
@@ -245,10 +241,10 @@ impl<'a, 'c, 'arena, T> RecordGroups<'a, 'c, 'arena, T> {
 }
 
 /// Construction-operand groups grouped by their owning scope.
-fn groups_by_scope<'a, 'c, 'arena>(
-    ctx: &'c DecodeContext<'arena>,
+fn groups_by_scope<'a, 'c>(
+    ctx: &'c DecodeContext<'_>,
     groups: &'a [DesignConstructionOperandGroup],
-) -> Result<RecordGroups<'a, 'c, 'arena, DesignConstructionOperandGroup>, CodecError> {
+) -> Result<RecordGroups<'a, 'c, DesignConstructionOperandGroup>, CodecError> {
     RecordGroups::build(
         ctx,
         groups,
@@ -259,67 +255,68 @@ fn groups_by_scope<'a, 'c, 'arena>(
 
 /// Keys collected into scoped storage for a membership index. Each key is
 /// admitted once as it is added.
-struct KeyCollector<'c, 'arena, K> {
+struct KeyCollector<'c, K> {
     keys: Vec<K>,
     storage: ScopedReservation<'c>,
-    ctx: &'c DecodeContext<'arena>,
 }
 
-impl<'c, 'arena, K: Copy + Ord + cadmpeg_core::decode::cost::DecodeCost>
-    KeyCollector<'c, 'arena, K>
-{
-    fn new(ctx: &'c DecodeContext<'arena>, operation: &'static str) -> Result<Self, CodecError> {
+impl<'c, K: Copy + Ord + cadmpeg_core::decode::cost::DecodeCost> KeyCollector<'c, K> {
+    fn new(ctx: &'c DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
         Ok(Self {
             keys: Vec::new(),
             storage: ctx.reserve_scoped(0, operation)?,
-            ctx,
         })
     }
 
-    fn push(&mut self, key: K, operation: &'static str) -> Result<(), CodecError> {
-        self.ctx
-            .push_scoped_vec(&mut self.storage, &mut self.keys, key, operation)
+    fn push(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        key: K,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        ctx.push_scoped_vec(&mut self.storage, &mut self.keys, key, operation)
     }
 
     /// Sort the collected keys once, so that each lookup is a bisection.
     fn into_sorted(
         mut self,
+        ctx: &DecodeContext<'_>,
         operation: &'static str,
-    ) -> Result<SortedKeys<'c, 'arena, K>, CodecError> {
-        self.ctx.charge_work(0, operation)?;
-        self.ctx
-            .sort_unstable_by_key(&mut self.keys[..], |key| *key, Ord::cmp, operation)?;
+    ) -> Result<SortedKeys<'c, K>, CodecError> {
+        ctx.sort_unstable_by_key(&mut self.keys[..], |key| *key, Ord::cmp, operation)?;
         Ok(SortedKeys {
             keys: self.keys,
             _storage: self.storage,
-            ctx: self.ctx,
         })
     }
 }
 
 /// Sorted keys held in scoped storage; repeated keys do not change membership.
-struct SortedKeys<'c, 'arena, K> {
+struct SortedKeys<'c, K> {
     keys: Vec<K>,
     _storage: ScopedReservation<'c>,
-    ctx: &'c DecodeContext<'arena>,
 }
 
-impl<K: Ord + cadmpeg_core::decode::cost::DecodeCost> SortedKeys<'_, '_, K> {
-    fn contains(&self, key: &K, operation: &'static str) -> Result<bool, CodecError> {
-        self.ctx.charge_work(0, operation)?;
-        Ok(self.ctx.binary_search(&self.keys, key, operation)?.is_ok())
+impl<K: Ord + cadmpeg_core::decode::cost::DecodeCost> SortedKeys<'_, K> {
+    fn contains(
+        &self,
+        ctx: &DecodeContext<'_>,
+        key: &K,
+        operation: &'static str,
+    ) -> Result<bool, CodecError> {
+        Ok(ctx.binary_search(&self.keys, key, operation)?.is_ok())
     }
 }
 
 /// The first header offset of `stream` after `after`. The ordered headers are
 /// bisected.
 fn next_stream_offset(
-    headers: &StreamOrdered<'_, '_, '_, DesignRecordHeader>,
+    ctx: &DecodeContext<'_>,
+    headers: &StreamOrdered<'_, '_, DesignRecordHeader>,
     stream: &str,
     after: u64,
 ) -> Result<Option<u64>, CodecError> {
-    let ctx = headers.ctx;
-    let headers = headers.of_stream(stream)?;
+    let headers = headers.of_stream(ctx, stream)?;
     let at = ctx.partition_point(
         headers,
         |(_, header)| Ok(header.byte_offset <= after),
@@ -350,11 +347,12 @@ pub(crate) fn decode_edge_operands(
             continue;
         };
         terminal_group_members.push(
+            ctx,
             (stream, group.scope_record_index, member.value),
             TERMINAL_OPERATION,
         )?;
     }
-    let terminal_group_members = terminal_group_members.into_sorted(TERMINAL_OPERATION)?;
+    let terminal_group_members = terminal_group_members.into_sorted(ctx, TERMINAL_OPERATION)?;
     let stream_offsets = StreamOrdered::build(
         ctx,
         record_headers,
@@ -379,11 +377,11 @@ pub(crate) fn decode_edge_operands(
         };
         let mut member_indices = KeyCollector::new(ctx, MEMBER_OPERATION)?;
         for group in ctx.admit_iter(
-            scope_groups.get(stream, scope.record_index)?,
+            scope_groups.get(ctx, stream, scope.record_index)?,
             "find F3D edge operand groups",
         )? {
             for member in ctx.admit_iter(group.members(), "scan F3D edge operand group members")? {
-                member_indices.push(member.value, MEMBER_OPERATION)?;
+                member_indices.push(ctx, member.value, MEMBER_OPERATION)?;
             }
         }
         if let Some(operation) = scope.surface_extend_operation() {
@@ -391,7 +389,7 @@ pub(crate) fn decode_edge_operands(
                 &operation.edge_record_indices,
                 "scan F3D surface-extend edge references",
             )? {
-                member_indices.push(index, MEMBER_OPERATION)?;
+                member_indices.push(ctx, index, MEMBER_OPERATION)?;
             }
         }
         if let Some(operation) = scope.surface_offset_operation() {
@@ -404,7 +402,7 @@ pub(crate) fn decode_edge_operands(
                     edge_record_indices,
                     "scan F3D surface-offset edge references",
                 )? {
-                    member_indices.push(index, MEMBER_OPERATION)?;
+                    member_indices.push(ctx, index, MEMBER_OPERATION)?;
                 }
             }
         }
@@ -412,10 +410,10 @@ pub(crate) fn decode_edge_operands(
             for input in
                 ctx.admit_iter(construction.rule.inputs(), "scan F3D WorkPoint rule inputs")?
             {
-                member_indices.push(input.record_index(), MEMBER_OPERATION)?;
+                member_indices.push(ctx, input.record_index(), MEMBER_OPERATION)?;
             }
         }
-        let member_indices = member_indices.into_sorted(MEMBER_OPERATION)?;
+        let member_indices = member_indices.into_sorted(ctx, MEMBER_OPERATION)?;
         let Some(entry) =
             scan.design_stream_entry_for_scope(ctx, ContainerRole::Bulkstream, stream)?
         else {
@@ -436,21 +434,22 @@ pub(crate) fn decode_edge_operands(
         .copied()
         .enumerate()
         {
-            if !member_indices.contains(&record_index, "find F3D edge operand member index")? {
+            if !member_indices.contains(ctx, &record_index, "find F3D edge operand member index")? {
                 continue;
             }
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 continue;
             };
-            let Some(header) = headers.get(stream, record_index)? else {
+            let Some(header) = headers.get(ctx, stream, record_index)? else {
                 continue;
             };
             let terminal_group_limit = if terminal_group_members.contains(
+                ctx,
                 &(stream, scope.record_index, header.record_index),
                 "find F3D edge operand terminal member",
             )? {
                 Some(
-                    next_stream_offset(&stream_offsets, stream, header.byte_offset)?
+                    next_stream_offset(ctx, &stream_offsets, stream, header.byte_offset)?
                         .unwrap_or(stream_end),
                 )
             } else {
@@ -535,7 +534,7 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
         let cache = &mut record_offset_index;
         let records = index_storage
             .with_storage(move || cached_borrowed_record_offsets(ctx, cache, stream, bytes))?;
-        let candidates = scope_groups.get(stream, scope.record_index)?;
+        let candidates = scope_groups.get(ctx, stream, scope.record_index)?;
         for (scope_reference_ordinal, record_index) in admit_reference_values(
             ctx,
             scope.reference_members(),
@@ -570,7 +569,7 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
             )? {
                 continue;
             }
-            let Some(header) = headers.get(stream, record_index)? else {
+            let Some(header) = headers.get(ctx, stream, record_index)? else {
                 continue;
             };
             let Some(recipe) = parse_vertex_recipe(ctx, bytes, records, stream, header, recipes)?
@@ -672,12 +671,10 @@ pub(crate) fn bind_work_point_input_carriers(
     sketch_points: &[SketchPoint],
 ) -> Result<(), CodecError> {
     let headers = indexed_operand_headers(ctx, headers)?;
-    let _work_plane_storage;
-    let (work_planes, held_storage) = ctx
+    let (work_planes, _work_plane_storage) = ctx
         .with_scoped_storage("f3d WorkPoint work-plane index", || {
             work_plane_index(ctx, scopes)
         })?;
-    _work_plane_storage = held_storage;
     let mut index_storage = ctx.reserve_scoped(0, "f3d operand stream index")?;
     let mut record_offset_index: HashMap<String, IndexedRecordOffsets> = HashMap::new();
 
@@ -735,7 +732,7 @@ pub(crate) fn bind_work_point_input_carriers(
                     continue;
                 }
             }
-            let Some(header) = headers.get(stream, record_index)? else {
+            let Some(header) = headers.get(ctx, stream, record_index)? else {
                 continue;
             };
             if let Some(recipe) = parse_vertex_recipe(ctx, bytes, records, stream, header, recipes)?
@@ -946,7 +943,7 @@ pub(crate) fn bind_work_plane_constructions(
             continue;
         }
         let recipe_at = |record_index: u32| -> Result<Option<DesignVertexRecipe>, CodecError> {
-            let Some(header) = headers.get(stream, record_index)? else {
+            let Some(header) = headers.get(ctx, stream, record_index)? else {
                 return Ok(None);
             };
             parse_vertex_recipe(ctx, bytes, records, stream, header, recipes)
@@ -985,12 +982,10 @@ pub(crate) fn bind_vertex_recipe_candidates(
         if scope.work_plane_construction().is_none() && scope.work_point_construction().is_none() {
             continue;
         }
-        let _scope_reservation;
-        let (scope_id, held_storage) = ctx
+        let (scope_id, _scope_reservation) = ctx
             .with_scoped_storage("f3d scoped stream identity", || {
                 ctx.copy_retained_text(&scope.id, "f3d scoped stream identity")
             })?;
-        _scope_reservation = held_storage;
         if let Some(construction) = scope.work_plane_construction_mut() {
             for reference in construction.recipe_references_mut() {
                 ctx.charge_work(1, OPERATION)?;
@@ -1000,6 +995,7 @@ pub(crate) fn bind_vertex_recipe_candidates(
         let Some(construction) = scope.work_point_construction_mut() else {
             continue;
         };
+        // A WorkPoint rule has at most three inputs.
         construction.rule.for_each_vertex_recipe_for_decode(
             ctx,
             "visit F3D WorkPoint candidate inputs",
@@ -1105,7 +1101,7 @@ pub(crate) fn decode_edge_identity_operands(
             continue;
         };
         let Some(scope) = ctx.find_by(
-            scopes_by_record.get(stream, group.scope_record_index)?,
+            scopes_by_record.get(ctx, stream, group.scope_record_index)?,
             |scope| {
                 Ok(matches!(
                     scope_family(scope),
@@ -1128,7 +1124,7 @@ pub(crate) fn decode_edge_identity_operands(
             .map(|member| member.value)
             .enumerate()
         {
-            let Some(header) = headers.get(stream, record_index)? else {
+            let Some(header) = headers.get(ctx, stream, record_index)? else {
                 continue;
             };
             let Ok(start) = usize::try_from(header.byte_offset) else {
@@ -1302,7 +1298,7 @@ pub(crate) fn decode_face_operands(
         let Some(stream) = record_stream(ctx, &group.id)? else {
             continue;
         };
-        let Some(scope) = scope_index.get(stream, group.scope_record_index)? else {
+        let Some(scope) = scope_index.get(ctx, stream, group.scope_record_index)? else {
             continue;
         };
         if !group_selects_face_operands(scope, group)
@@ -1375,7 +1371,7 @@ pub(crate) fn decode_face_operands(
         };
         // A later scope with the same identity replaces an earlier one.
         if !scope_index
-            .get(stream, scope.record_index)?
+            .get(ctx, stream, scope.record_index)?
             .is_some_and(|indexed| std::ptr::eq(indexed, scope))
         {
             continue;
@@ -1462,7 +1458,7 @@ pub(crate) fn decode_face_operands(
         for &((_, _, record_index), (_, position)) in
             ctx.admit_iter(current, "decode F3D face operand visits")?
         {
-            let Some(header) = headers.get(stream, record_index)? else {
+            let Some(header) = headers.get(ctx, stream, record_index)? else {
                 continue;
             };
             let (scope_reference_ordinal, group_ownership, next_byte_offset) = match source {
@@ -1475,7 +1471,7 @@ pub(crate) fn decode_face_operands(
                     };
                     let group_next = match group.members().get(position + 1) {
                         Some(next) => headers
-                            .get(stream, next.value)?
+                            .get(ctx, stream, next.value)?
                             .map(|header| header.byte_offset),
                         None => None,
                     };
@@ -1490,9 +1486,9 @@ pub(crate) fn decode_face_operands(
                             )?
                             .and_then(|ordinal| reference_at(references, ordinal + 1));
                             match next {
-                                Some(next) => {
-                                    headers.get(stream, next)?.map(|header| header.byte_offset)
-                                }
+                                Some(next) => headers
+                                    .get(ctx, stream, next)?
+                                    .map(|header| header.byte_offset),
                                 None => None,
                             }
                         }
@@ -1509,9 +1505,9 @@ pub(crate) fn decode_face_operands(
                         continue;
                     };
                     let next_byte_offset = match reference_at(references, position + 1) {
-                        Some(next) if legacy_as_built => {
-                            headers.get(stream, next)?.map(|header| header.byte_offset)
-                        }
+                        Some(next) if legacy_as_built => headers
+                            .get(ctx, stream, next)?
+                            .map(|header| header.byte_offset),
                         _ => None,
                     };
                     (scope_reference_ordinal, None, next_byte_offset)
@@ -1573,8 +1569,7 @@ pub(crate) fn decode_face_source_groups(
         let Ok(scope_start) = usize::try_from(scope.byte_offset()) else {
             continue;
         };
-        let _reference_headers_storage;
-        let (reference_headers, held_storage) =
+        let (reference_headers, _reference_headers_storage) =
             ctx.with_scoped_storage("f3d face source reference headers", || {
                 face_source_reference_headers(
                     ctx,
@@ -1584,7 +1579,6 @@ pub(crate) fn decode_face_source_groups(
                     records,
                 )
             })?;
-        _reference_headers_storage = held_storage;
         for (carrier_ordinal, carrier) in ctx
             .admit_iter(&reference_headers, "scan F3D face source carriers")?
             .enumerate()
@@ -1966,11 +1960,11 @@ fn sort_and_dedup_faces(
 
 /// Candidate faces of the recipe references that carry `design_reference`,
 /// sorted under scoped storage.
-fn referenced_operand_faces<'a, 'c, 'arena>(
-    ctx: &'c DecodeContext<'arena>,
+fn referenced_operand_faces<'a, 'c>(
+    ctx: &'c DecodeContext<'_>,
     references: &'a [crate::records::dimensions::DesignRecipeReference],
     design_reference: i64,
-) -> Result<SortedKeys<'c, 'arena, &'a str>, CodecError> {
+) -> Result<SortedKeys<'c, &'a str>, CodecError> {
     const OPERATION: &str = "f3d referenced face candidate";
     let mut referenced = KeyCollector::new(ctx, OPERATION)?;
     for reference in ctx.admit_iter(references, "scan F3D face operand references")? {
@@ -1981,10 +1975,10 @@ fn referenced_operand_faces<'a, 'c, 'arena>(
             &reference.candidate_faces,
             "scan F3D referenced face candidates",
         )? {
-            referenced.push(face.as_str(), OPERATION)?;
+            referenced.push(ctx, face.as_str(), OPERATION)?;
         }
     }
-    referenced.into_sorted(OPERATION)
+    referenced.into_sorted(ctx, OPERATION)
 }
 
 /// Join each face recipe's persistent Design reference to active solved faces.
@@ -1995,9 +1989,7 @@ pub(crate) fn bind_face_operand_candidates(
     tags: &[PersistentSubentityTag],
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "bind F3D face operand candidates";
-    let _recipe_storage;
-    let (recipes, held_storage) = indexed_operand_recipes(ctx, recipes)?;
-    _recipe_storage = held_storage;
+    let (recipes, _recipe_storage) = indexed_operand_recipes(ctx, recipes)?;
     for position in ctx.admit_iter(&(0..operands.len()), OPERATION)? {
         let Some(operand) = operands.get_mut(position) else {
             continue;
@@ -2024,7 +2016,7 @@ pub(crate) fn bind_face_operand_candidates(
             referenced_operand_faces(ctx, &operand.recipe_references, design_reference)?;
         let mut unreferenced = Vec::new();
         for face in ctx.admit_iter(&operand.candidate_faces, "scan F3D face operand candidates")? {
-            if !referenced.contains(&face.as_str(), "find F3D referenced face candidate")? {
+            if !referenced.contains(ctx, &face.as_str(), "find F3D referenced face candidate")? {
                 push_operand_face_candidate(ctx, &mut unreferenced, face)?;
             }
         }
@@ -2058,9 +2050,7 @@ pub(crate) fn bind_edge_operand_candidates(
     tags: &[PersistentSubentityTag],
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "bind F3D edge operand candidates";
-    let _recipe_storage;
-    let (recipes, held_storage) = indexed_operand_recipes(ctx, recipes)?;
-    _recipe_storage = held_storage;
+    let (recipes, _recipe_storage) = indexed_operand_recipes(ctx, recipes)?;
     for position in ctx.admit_iter(&(0..operands.len()), OPERATION)? {
         let Some(operand) = operands.get_mut(position) else {
             continue;
@@ -2159,7 +2149,7 @@ pub(crate) fn bind_sketch_profiles(
                 let here = ordinal;
                 ordinal += 1;
                 let (Ok(here), Some(header)) =
-                    (u32::try_from(here), headers.get(stream, record_index)?)
+                    (u32::try_from(here), headers.get(ctx, stream, record_index)?)
                 else {
                     return Ok(false);
                 };
@@ -2230,7 +2220,7 @@ pub(crate) fn decode_extrude_selection_groups(
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 continue;
             };
-            let Some(header) = headers.get(stream, record_index)? else {
+            let Some(header) = headers.get(ctx, stream, record_index)? else {
                 continue;
             };
             if let Some(group) = parse_extrude_selection_group(ctx, bytes, scope, ordinal, header)?
@@ -2360,9 +2350,10 @@ pub(crate) fn decode_construction_operand_groups(
         .copied()
         .enumerate()
         {
-            let (Ok(ordinal), Some(header)) =
-                (u32::try_from(ordinal), headers.get(stream, record_index)?)
-            else {
+            let (Ok(ordinal), Some(header)) = (
+                u32::try_from(ordinal),
+                headers.get(ctx, stream, record_index)?,
+            ) else {
                 continue;
             };
             match parse_construction_operand_group_at(
@@ -2460,7 +2451,7 @@ pub(crate) fn decode_loft_legacy_body_carriers(
             continue;
         };
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
-        let Some(header) = headers.get(stream, record_index)? else {
+        let Some(header) = headers.get(ctx, stream, record_index)? else {
             continue;
         };
         // A carrier keeps the first scope that names it and parses.
@@ -2827,18 +2818,17 @@ impl<'a> FilletParameters<'a, '_> {
     }
 }
 
-fn fillet_parameters<'a, 'c, 'arena>(
+fn fillet_parameters<'a, 'c>(
+    ctx: &'c DecodeContext<'_>,
     owners: &[&DesignParameterOwner],
-    parameters: &RecordIndex<'a, 'c, 'arena, DesignParameter>,
+    parameters: &RecordIndex<'a, '_, DesignParameter>,
     stream: &str,
 ) -> Result<FilletParameters<'a, 'c>, CodecError> {
-    let ctx = parameters.ctx;
     let mut storage = ctx.reserve_scoped(0, "f3d Fillet owned parameters")?;
-    let mut owned_storage = ctx.reserve_scoped(0, "f3d Fillet owned parameters")?;
     let mut owned = Vec::new();
     for owner in ctx.admit_iter(owners, "scan F3D Fillet owners")? {
-        if let Some(parameter) = parameters.get(stream, owner.parameter_record_index())? {
-            owned_storage.with_storage(|| {
+        if let Some(parameter) = parameters.get(ctx, stream, owner.parameter_record_index())? {
+            storage.with_storage(|| {
                 ctx.push_vec(
                     &mut owned,
                     (owner.local_ordinal(), parameter),
@@ -2898,15 +2888,13 @@ pub(crate) fn decode_fillet_radius_groups(
         let Some(stream) = record_stream(ctx, &scope.id)? else {
             continue;
         };
-        let _scope_groups_storage;
-        let (mut scope_groups, held_storage) =
+        let (mut scope_groups, _scope_groups_storage) =
             ctx.with_scoped_storage("f3d Fillet scope groups", || {
                 ctx.copy_slice(
-                    scope_groups_index.get(stream, scope.record_index)?,
+                    scope_groups_index.get(ctx, stream, scope.record_index)?,
                     "f3d Fillet scope groups",
                 )
             })?;
-        _scope_groups_storage = held_storage;
         ctx.stable_sort_by_key(
             &mut scope_groups[..],
             |group| group.scope_reference_ordinal,
@@ -2914,7 +2902,8 @@ pub(crate) fn decode_fillet_radius_groups(
             "sort F3D Fillet scope groups",
         )?;
         let owned = fillet_parameters(
-            scope_owners_index.get(stream, scope.record_index)?,
+            ctx,
+            scope_owners_index.get(ctx, stream, scope.record_index)?,
             &parameter_index,
             stream,
         )?;
@@ -3070,7 +3059,10 @@ pub(crate) fn disambiguate_fixed_fillet_parameters(
         let Some(stream) = record_stream(ctx, &scope.id)? else {
             continue;
         };
-        if owners_by_scope.get(stream, scope.record_index)?.is_empty() {
+        if owners_by_scope
+            .get(ctx, stream, scope.record_index)?
+            .is_empty()
+        {
             continue;
         }
         if let Some(
@@ -3610,7 +3602,7 @@ pub(crate) fn bind_construction_operand_trailing_records(
             group.frame.trailing_records(),
             "scan F3D construction trailing records",
         )? {
-            let Some(header) = headers.get(stream, record.value)? else {
+            let Some(header) = headers.get(ctx, stream, record.value)? else {
                 continue;
             };
             if let Some(transform) = parse_construction_operand_transform(ctx, bytes, header)? {
@@ -3722,7 +3714,7 @@ pub(crate) fn bind_construction_operand_paths(
             &group.frame.auxiliary_records,
             "scan F3D construction auxiliary records",
         )? {
-            let Some(header) = headers.get(stream, record.value)? else {
+            let Some(header) = headers.get(ctx, stream, record.value)? else {
                 continue;
             };
             if let Some(path) =
@@ -4034,7 +4026,7 @@ pub(crate) fn decode_construction_operand_identities(
         else {
             continue;
         };
-        let Some(wrapper_header) = headers.get(stream, trailing_record_index)? else {
+        let Some(wrapper_header) = headers.get(ctx, stream, trailing_record_index)? else {
             continue;
         };
         // An identity keeps the first group that names its wrapper and parses.
@@ -4152,7 +4144,7 @@ pub(crate) fn bind_lost_edge_groups(
         let Some(stream) = record_stream(ctx, &group.id)? else {
             continue;
         };
-        let identity = match identities.get(stream, group.record_index)? {
+        let identity = match identities.get(ctx, stream, group.record_index)? {
             [] => continue,
             [identity] => *identity,
             [..] => {
@@ -4192,7 +4184,7 @@ pub(crate) fn bind_lost_edge_groups(
         }
         // The run extends backward through the records of its stream while
         // each record names its successor. Each visited record is admitted.
-        let stream_start = edges.stream_start(stream)?;
+        let stream_start = edges.stream_start(ctx, stream)?;
         let mut start = terminal;
         while start > stream_start {
             ctx.charge_work(1, RUN_OPERATION)?;
@@ -4751,7 +4743,7 @@ pub(crate) fn decode_extrude_selection_members(
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 continue;
             };
-            let Some(header) = headers.get(stream, record_index)? else {
+            let Some(header) = headers.get(ctx, stream, record_index)? else {
                 continue;
             };
             if let Some(mut member) =
@@ -4804,7 +4796,7 @@ pub(crate) fn decode_entity_selection_operands(
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 continue;
             };
-            let Some(header) = headers.get(stream, record_index)? else {
+            let Some(header) = headers.get(ctx, stream, record_index)? else {
                 continue;
             };
             if let Some(mut operand) =
@@ -5282,15 +5274,14 @@ pub(super) fn parse_entity_selection_frame(
 /// Records with their native streams, ordered by stream and then by a byte
 /// offset; records at one offset keep their input order. The list is held in
 /// scoped storage for as long as it lives.
-struct StreamOrdered<'a, 'c, 'arena, T> {
+struct StreamOrdered<'a, 'c, T> {
     entries: Vec<(&'a str, &'a T)>,
     _storage: ScopedReservation<'c>,
-    ctx: &'c DecodeContext<'arena>,
 }
 
-impl<'a, 'c, 'arena, T> StreamOrdered<'a, 'c, 'arena, T> {
+impl<'a, 'c, T> StreamOrdered<'a, 'c, T> {
     fn build(
-        ctx: &'c DecodeContext<'arena>,
+        ctx: &'c DecodeContext<'_>,
         values: &'a [T],
         keep: impl Fn(&T) -> bool,
         identity: impl Fn(&'a T) -> &'a str,
@@ -5317,16 +5308,13 @@ impl<'a, 'c, 'arena, T> StreamOrdered<'a, 'c, 'arena, T> {
         Ok(Self {
             entries,
             _storage: storage,
-            ctx,
         })
     }
 
     /// The position of the first record of `stream`, or of the first record
     /// of a later stream. The ordered list is bisected.
-    fn stream_start(&self, stream: &str) -> Result<usize, CodecError> {
+    fn stream_start(&self, ctx: &DecodeContext<'_>, stream: &str) -> Result<usize, CodecError> {
         const OPERATION: &str = "find F3D stream records";
-        let ctx = self.ctx;
-        ctx.charge_work(0, OPERATION)?;
         ctx.partition_point(
             &self.entries,
             |(candidate, _)| Ok(ctx.compare(*candidate, stream, OPERATION)?.is_lt()),
@@ -5335,10 +5323,13 @@ impl<'a, 'c, 'arena, T> StreamOrdered<'a, 'c, 'arena, T> {
     }
 
     /// The records of `stream` in byte order. The ordered list is bisected.
-    fn of_stream(&self, stream: &str) -> Result<&[(&'a str, &'a T)], CodecError> {
+    fn of_stream(
+        &self,
+        ctx: &DecodeContext<'_>,
+        stream: &str,
+    ) -> Result<&[(&'a str, &'a T)], CodecError> {
         const OPERATION: &str = "find F3D stream records";
-        let ctx = self.ctx;
-        let start = self.stream_start(stream)?;
+        let start = self.stream_start(ctx, stream)?;
         let end = ctx.partition_point(
             &self.entries,
             |(candidate, _)| Ok(ctx.compare(*candidate, stream, OPERATION)?.is_le()),
@@ -5467,7 +5458,7 @@ pub(crate) fn decode_body_recipe_operands(
             continue;
         };
         if ctx.any_by(
-            scopes_by_record.get(stream, group.scope_record_index)?,
+            scopes_by_record.get(ctx, stream, group.scope_record_index)?,
             |scope| Ok(matches!(scope.payload(), DesignScopePayload::Hole(_))),
             "find F3D body recipe scope",
         )? {
@@ -5482,7 +5473,7 @@ pub(crate) fn decode_body_recipe_operands(
         let cache = &mut record_offset_index;
         let records = index_storage
             .with_storage(move || cached_borrowed_record_offsets(ctx, cache, stream, bytes))?;
-        let stream_recipes = body_recipes.of_stream(stream)?;
+        let stream_recipes = body_recipes.of_stream(ctx, stream)?;
         for (ordinal, record_index) in ctx
             .admit_iter(group.members(), "scan F3D body recipe group members")?
             .map(|member| member.value)
@@ -5522,7 +5513,7 @@ pub(crate) fn decode_body_recipe_operands(
         let cache = &mut record_offset_index;
         let records = index_storage
             .with_storage(move || cached_borrowed_record_offsets(ctx, cache, stream, bytes))?;
-        let stream_recipes = body_recipes.of_stream(stream)?;
+        let stream_recipes = body_recipes.of_stream(ctx, stream)?;
         let mut decode_record_index = |record_index: u32| -> Result<(), CodecError> {
             let Some(scope_reference_ordinal) = unique_reference_position(
                 ctx,
@@ -6009,7 +6000,7 @@ pub(crate) fn bind_body_recipe_operand_candidates(
         // the enclosing N+4 record instead, so each clause joins by its own
         // Design reference and the history pass performs the body proof.
         let owning_scopes = match record_stream(ctx, &operand.id)? {
-            Some(stream) => scopes_by_record.get(stream, operand.scope_record_index)?,
+            Some(stream) => scopes_by_record.get(ctx, stream, operand.scope_record_index)?,
             None => &[],
         };
         let form_three_uses_recipe_selector = match owning_scopes {
@@ -6026,8 +6017,7 @@ pub(crate) fn bind_body_recipe_operand_candidates(
             .flatten()
             .and_then(|recipe| recipe.design.as_ref()?.selector)
             .map(|selector| i64::from(selector.value));
-        let _occurrence_storage;
-        let (occurrence_tags, held_storage) =
+        let (occurrence_tags, _occurrence_storage) =
             ctx.with_scoped_storage("f3d body recipe occurrence tags", || {
                 let mut occurrence_tags = Vec::new();
                 for tag in ctx.admit_iter(tags, "scan F3D body recipe tags")? {
@@ -6039,7 +6029,6 @@ pub(crate) fn bind_body_recipe_operand_candidates(
                 }
                 Ok::<_, CodecError>(occurrence_tags)
             })?;
-        _occurrence_storage = held_storage;
         for reference in operand.reference_bindings_mut() {
             ctx.charge_work(1, OPERATION)?;
             let mut faces = Vec::new();
@@ -6095,7 +6084,7 @@ pub(crate) fn bind_extrude_selection_geometry(
             continue;
         };
         let Some(profile) = scopes_by_record
-            .get(stream, group.scope_record_index)?
+            .get(ctx, stream, group.scope_record_index)?
             .first()
             .and_then(|scope| scope.extrude_profile())
         else {
@@ -6198,12 +6187,11 @@ pub(crate) fn bind_extrude_selection_identities(
         let Some(stream) = record_stream(ctx, &member.id)? else {
             continue;
         };
-        let _matches_storage;
-        let (mut matches, held_storage) =
+        let (mut matches, _matches_storage) =
             ctx.with_scoped_storage("f3d Extrude identity matches", || {
                 let mut matches = Vec::new();
                 for identity in ctx.admit_iter(
-                    identities_by_following.get(stream, member.record_index())?,
+                    identities_by_following.get(ctx, stream, member.record_index())?,
                     OPERATION,
                 )? {
                     if identity.following_byte_offset() != member.byte_offset() {
@@ -6221,7 +6209,6 @@ pub(crate) fn bind_extrude_selection_identities(
                 }
                 Ok::<_, CodecError>(matches)
             })?;
-        _matches_storage = held_storage;
         ctx.stable_sort_by_key(
             &mut matches[..],
             |identity| {
@@ -7264,7 +7251,6 @@ pub(crate) fn edge_recipe_structure_with_context(
     ctx: &DecodeContext<'_>,
     program: &[i32],
 ) -> Result<Option<crate::records::topology::edge_recipe::DesignEdgeRecipeStructure>, CodecError> {
-    ctx.charge_work(0, "interpret F3D edge recipe structure")?;
     let Some(tail) = program.get(7..) else {
         return Ok(None);
     };
@@ -7285,7 +7271,6 @@ pub(crate) fn surface_patch_recipe_structure_with_context(
     Option<crate::records::topology::edge_recipe::DesignSurfacePatchRecipeStructure>,
     CodecError,
 > {
-    ctx.charge_work(0, "interpret F3D SurfacePatch recipe structure")?;
     let Some(mut remaining) = program.get(7..) else {
         return Ok(None);
     };
@@ -7670,7 +7655,6 @@ pub(crate) fn face_recipe_structure_with_context(
     ctx: &DecodeContext<'_>,
     program: &[i32],
 ) -> Result<Option<crate::records::topology::face::DesignFaceRecipeStructure>, CodecError> {
-    ctx.charge_work(0, "interpret F3D face recipe structure")?;
     let Some((&root, remaining)) = program.split_first() else {
         return Ok(None);
     };

@@ -184,8 +184,7 @@ fn copy_design_type(
         design_type.byte_offset,
         "f3d design type id suffix",
     )?;
-    SegmentType::try_new_charged(
-        ctx,
+    SegmentType::try_new(
         id,
         SegmentTypeData {
             byte_offset: design_type.byte_offset,
@@ -197,7 +196,7 @@ fn copy_design_type(
             module,
             entities,
         },
-    )?
+    )
     .map_err(CodecError::Malformed)
 }
 
@@ -676,11 +675,10 @@ pub(super) fn typed_primary_frames<'a>(
     type_guid: &str,
     record_kind: &str,
 ) -> Result<Vec<TypedPrimaryFrame<'a>>, CodecError> {
-    let storage;
-    let (frames, held_storage) =
+    let (frames, storage) =
         TypedFrameSource::new(bytes, meta).frames(ctx, type_guid, record_kind)?;
-    storage = held_storage;
-    storage.commit_value(frames)
+    storage.commit()?;
+    Ok(frames)
 }
 
 /// The primary frames of one `BulkStream`, from which the frames of each
@@ -762,8 +760,8 @@ impl<'a, 'b, 'ctx> TypedFrameSource<'a, 'b, 'ctx> {
         }
 
         let mut resolved = Vec::new();
-        let mut frames_storage = ctx.reserve_scoped(0, "f3d typed primary frames")?;
         let mut frames = Vec::new();
+        let mut frames_storage = ctx.reserve_scoped(0, "f3d typed primary frames")?;
         let (primary_frames, _) = match &mut self.primary_frames {
             Some(primary_frames) => primary_frames,
             slot @ None => {

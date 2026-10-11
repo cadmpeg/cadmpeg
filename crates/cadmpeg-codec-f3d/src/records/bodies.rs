@@ -119,14 +119,6 @@ impl TryFrom<DesignBodyMemberWire> for DesignBodyMember {
 }
 
 impl DesignBodyMember {
-    /// Validate a decoded body member after admitting its identity grammar.
-    pub(crate) fn try_new_charged(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        wire: DesignBodyMemberWire,
-    ) -> Result<Result<Self, String>, cadmpeg_core::CodecError> {
-        NativeRecordId::admit_grammar(ctx, &wire.id)?;
-        Ok(Self::try_from(wire))
-    }
     pub(crate) fn id(&self) -> &String {
         self.id.text()
     }
@@ -320,14 +312,6 @@ impl DesignBodyBounds {
 }
 
 impl DesignBodyBounds {
-    /// Validate decoded body bounds after admitting their identity grammar.
-    pub(crate) fn from_parts_charged(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        wire: DesignBodyBoundsWire<FinitePoint3>,
-    ) -> Result<Result<Self, String>, cadmpeg_core::CodecError> {
-        NativeRecordId::admit_grammar(ctx, &wire.id)?;
-        Ok(Self::from_parts(wire))
-    }
     pub(crate) fn id(&self) -> &String {
         self.id.text()
     }
@@ -540,28 +524,6 @@ impl<T: AsRef<str> + TryInto<NonBlankString>> TryFrom<DesignBodyBindingWire<T>>
 }
 
 impl DesignBodyBinding {
-    /// Validate a decoded body-map pair after admitting its identity, stream
-    /// path and scope-match scans.
-    pub(crate) fn try_new_charged<T: AsRef<str> + TryInto<NonBlankString>>(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        wire: DesignBodyBindingWire<T>,
-    ) -> Result<Result<Self, String>, cadmpeg_core::CodecError> {
-        NativeRecordId::admit_grammar(ctx, &wire.id)?;
-        DesignBulkStreamPath::admit_grammar(ctx, wire.stream.as_ref())?;
-        // The scope match reads the id's stream and the path once each.
-        let scope_match = wire
-            .id
-            .len()
-            .checked_add(wire.stream.as_ref().len())
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("match F3D body binding scope", u64::MAX, u64::MAX)
-            })?;
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(scope_match),
-            "match F3D body binding scope",
-        )?;
-        Ok(Self::try_from(wire))
-    }
     pub(crate) fn id(&self) -> &String {
         self.id.text()
     }

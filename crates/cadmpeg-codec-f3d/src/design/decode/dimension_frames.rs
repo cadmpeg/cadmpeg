@@ -153,44 +153,25 @@ fn dimension_companion_keys<'a, 'ctx>(
 /// Record indices grouped by stream scope. `streams` names the stream of each
 /// index, and each stream's indices are one ascending, distinct run of
 /// `indices`.
-struct StreamIndexRuns<'a, 'ctx, 'arena> {
-    ctx: &'ctx DecodeContext<'arena>,
+struct StreamIndexRuns<'a> {
     streams: Vec<&'a str>,
     indices: Vec<u32>,
 }
 
-impl<'a, 'ctx, 'arena> StreamIndexRuns<'a, 'ctx, 'arena> {
+impl<'a> StreamIndexRuns<'a> {
     fn new(
-        ctx: &'ctx DecodeContext<'arena>,
+        ctx: &DecodeContext<'_>,
         mut keys: StreamRecordKeys<'a>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        ctx.charge_work(0, operation)?;
-        if keys.is_empty() {
-            return Ok(Self {
-                ctx,
-                streams: Vec::new(),
-                indices: Vec::new(),
-            });
-        }
         sort_record_keys(ctx, &mut keys, operation)?;
         let (streams, indices) = ctx.unzip_vec(keys, operation)?;
-        Ok(Self {
-            ctx,
-            streams,
-            indices,
-        })
+        Ok(Self { streams, indices })
     }
 
     /// The ascending, distinct record indices of `stream`.
-    fn of(&self, stream: &str) -> Result<&[u32], CodecError> {
-        self.ctx.charge_work(0, "find F3D grouped records")?;
-        let run = key_range(
-            self.ctx,
-            &self.streams,
-            |record_stream| record_stream,
-            stream,
-        )?;
+    fn of(&self, ctx: &DecodeContext<'_>, stream: &str) -> Result<&[u32], CodecError> {
+        let run = key_range(ctx, &self.streams, |record_stream| record_stream, stream)?;
         Ok(self.indices.get(run).unwrap_or(&[]))
     }
 }
@@ -204,27 +185,22 @@ fn set_contains(ctx: &DecodeContext<'_>, set: &[u32], value: u32) -> Result<bool
 
 /// Record indices of the sketch points and curves of each stream, under the
 /// returned reservation.
-fn dimension_geometry_runs<'a, 'ctx, 'arena>(
-    ctx: &'ctx DecodeContext<'arena>,
+fn dimension_geometry_runs<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     points: &'a [SketchPoint],
     curves: &'a [SketchCurveIdentity],
-) -> Result<(StreamIndexRuns<'a, 'ctx, 'arena>, ScopedReservation<'ctx>), CodecError> {
+) -> Result<(StreamIndexRuns<'a>, ScopedReservation<'ctx>), CodecError> {
     let operation = "f3d dimension geometry indices";
     ctx.with_scoped_storage(operation, || {
-        let mut keys_storage = ctx.reserve_scoped(0, operation)?;
         let mut keys = Vec::new();
         for point in ctx.admit_iter(points, "scan F3D dimension sketch points")? {
             if let Some(stream) = record_stream(ctx, &point.id)? {
-                keys_storage.with_storage(|| {
-                    ctx.push_vec(&mut keys, (stream, point.record_index), operation)
-                })?;
+                ctx.push_vec(&mut keys, (stream, point.record_index), operation)?;
             }
         }
         for curve in ctx.admit_iter(curves, "scan F3D dimension sketch curves")? {
             if let Some(stream) = record_stream(ctx, &curve.id)? {
-                keys_storage.with_storage(|| {
-                    ctx.push_vec(&mut keys, (stream, curve.record_index), operation)
-                })?;
+                ctx.push_vec(&mut keys, (stream, curve.record_index), operation)?;
             }
         }
         StreamIndexRuns::new(ctx, keys, operation)
@@ -233,13 +209,12 @@ fn dimension_geometry_runs<'a, 'ctx, 'arena>(
 
 /// Entity suffixes of the sketch-module entities of each stream, under the
 /// returned reservation.
-fn dimension_sketch_entity_runs<'a, 'ctx, 'arena>(
-    ctx: &'ctx DecodeContext<'arena>,
+fn dimension_sketch_entity_runs<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     entities: &'a [DesignEntityHeader],
-) -> Result<(StreamIndexRuns<'a, 'ctx, 'arena>, ScopedReservation<'ctx>), CodecError> {
+) -> Result<(StreamIndexRuns<'a>, ScopedReservation<'ctx>), CodecError> {
     let operation = "f3d dimension sketch entities";
     ctx.with_scoped_storage(operation, || {
-        let mut keys_storage = ctx.reserve_scoped(0, operation)?;
         let mut keys = Vec::new();
         for entity in ctx.admit_iter(entities, "scan F3D dimension sketch entities")? {
             if !entity.in_sketch_module() {
@@ -251,7 +226,7 @@ fn dimension_sketch_entity_runs<'a, 'ctx, 'arena>(
             ) else {
                 continue;
             };
-            keys_storage.with_storage(|| ctx.push_vec(&mut keys, (stream, index), operation))?;
+            ctx.push_vec(&mut keys, (stream, index), operation)?;
         }
         StreamIndexRuns::new(ctx, keys, operation)
     })
@@ -298,27 +273,17 @@ struct CompanionBoundaries {
 
 impl CompanionBoundaries {
     /// The boundaries of one stream, from the stream's own owners,
-    /// parameters, scopes, and record headers. Fallible input iterators
-    /// propagate refusal before their records are used.
+    /// parameters, scopes, and record headers. The caller admits each run.
     fn build<'r>(
         ctx: &DecodeContext<'_>,
-        owners: impl IntoIterator<Item = Result<&'r DesignParameterOwner, CodecError>>,
-        parameters: impl IntoIterator<Item = Result<&'r DesignParameter, CodecError>>,
-        scopes: impl IntoIterator<Item = Result<&'r DesignParameterScope, CodecError>>,
-        headers: impl IntoIterator<Item = Result<&'r DesignRecordHeader, CodecError>>,
+        owners: impl IntoIterator<Item = &'r DesignParameterOwner>,
+        parameters: impl IntoIterator<Item = &'r DesignParameter>,
+        scopes: impl IntoIterator<Item = &'r DesignParameterScope>,
+        headers: impl IntoIterator<Item = &'r DesignRecordHeader>,
     ) -> Result<Self, CodecError> {
-        ctx.charge_work(0, "F3D companion boundary iterator")?;
         let mut owner_scopes = HashMap::new();
         let mut offsets = Vec::new();
-        let mut owners = owners.into_iter();
-        loop {
-            ctx.charge_work(0, "F3D companion owner iterator")?;
-            let next = owners.next();
-            ctx.charge_work(0, "F3D companion owner iterator")?;
-            let Some(owner) = next else {
-                break;
-            };
-            let owner = owner?;
+        for owner in owners {
             if let Entry::Vacant(slot) = ctx.entry_hash_map(
                 &mut owner_scopes,
                 owner.record_index(),
@@ -332,15 +297,7 @@ impl CompanionBoundaries {
                 "f3d companion boundaries",
             )?;
         }
-        let mut parameters = parameters.into_iter();
-        loop {
-            ctx.charge_work(0, "F3D companion parameter iterator")?;
-            let next = parameters.next();
-            ctx.charge_work(0, "F3D companion parameter iterator")?;
-            let Some(parameter) = next else {
-                break;
-            };
-            let parameter = parameter?;
+        for parameter in parameters {
             ctx.push_vec(
                 &mut offsets,
                 parameter.byte_offset(),
@@ -349,17 +306,8 @@ impl CompanionBoundaries {
         }
         // The record index of the first scope that references each member,
         // and whether a scope with another record index also references it.
-        let mut reference_storage = ctx.reserve_scoped(0, "f3d companion foreign scope members")?;
         let mut referencing_scopes = HashMap::new();
-        let mut scopes = scopes.into_iter();
-        loop {
-            ctx.charge_work(0, "F3D companion scope iterator")?;
-            let next = scopes.next();
-            ctx.charge_work(0, "F3D companion scope iterator")?;
-            let Some(scope) = next else {
-                break;
-            };
-            let scope = scope?;
+        for scope in scopes {
             ctx.push_vec(
                 &mut offsets,
                 scope.byte_offset(),
@@ -370,13 +318,11 @@ impl CompanionBoundaries {
                 scope.reference_members(),
                 "scan F3D companion scope references",
             )? {
-                match reference_storage.with_storage(|| {
-                    ctx.entry_hash_map(
-                        &mut referencing_scopes,
-                        member,
-                        "f3d companion foreign scope members",
-                    )
-                })? {
+                match ctx.entry_hash_map(
+                    &mut referencing_scopes,
+                    member,
+                    "f3d companion foreign scope members",
+                )? {
                     Entry::Occupied(mut entry) => {
                         let (first, other) = entry.get_mut();
                         *other |= *first != scope.record_index;
@@ -388,15 +334,7 @@ impl CompanionBoundaries {
             }
         }
         let mut referenced_headers = Vec::new();
-        let mut headers = headers.into_iter();
-        loop {
-            ctx.charge_work(0, "F3D companion header iterator")?;
-            let next = headers.next();
-            ctx.charge_work(0, "F3D companion header iterator")?;
-            let Some(header) = next else {
-                break;
-            };
-            let header = header?;
+        for header in headers {
             let Some(&(first_scope, other_scope)) = ctx.get_hash_map(
                 &referencing_scopes,
                 &header.record_index,
@@ -511,19 +449,18 @@ impl CompanionBoundaries {
 /// Companion boundaries of the records a pass reads, built per stream on
 /// first use and held until the pass ends. The records are grouped by stream
 /// once, so a stream's boundaries read only that stream's records.
-pub(super) struct CompanionIntervals<'a, 'ctx, 'arena> {
-    owners: Grouped<'a, 'ctx, 'arena, DesignParameterOwner>,
-    parameters: Grouped<'a, 'ctx, 'arena, DesignParameter>,
-    scopes: Grouped<'a, 'ctx, 'arena, DesignParameterScope>,
-    headers: Grouped<'a, 'ctx, 'arena, DesignRecordHeader>,
+pub(super) struct CompanionIntervals<'a, 'ctx> {
+    owners: Grouped<'a, DesignParameterOwner>,
+    parameters: Grouped<'a, DesignParameter>,
+    scopes: Grouped<'a, DesignParameterScope>,
+    headers: Grouped<'a, DesignRecordHeader>,
     boundaries: HashMap<&'a str, CompanionBoundaries>,
     storage: ScopedReservation<'ctx>,
-    ctx: &'ctx DecodeContext<'arena>,
 }
 
-impl<'a, 'ctx, 'arena> CompanionIntervals<'a, 'ctx, 'arena> {
+impl<'a, 'ctx> CompanionIntervals<'a, 'ctx> {
     pub(super) fn new(
-        ctx: &'ctx DecodeContext<'arena>,
+        ctx: &'ctx DecodeContext<'_>,
         parameters: &'a [DesignParameter],
         owners: &'a [DesignParameterOwner],
         scopes: &'a [DesignParameterScope],
@@ -566,7 +503,6 @@ impl<'a, 'ctx, 'arena> CompanionIntervals<'a, 'ctx, 'arena> {
             headers,
             boundaries: HashMap::new(),
             storage,
-            ctx,
         })
     }
 
@@ -577,11 +513,11 @@ impl<'a, 'ctx, 'arena> CompanionIntervals<'a, 'ctx, 'arena> {
     /// references, or to the stream end.
     pub(super) fn interval(
         &mut self,
+        ctx: &DecodeContext<'_>,
         stream: &'a str,
         companion: &DesignParameterCompanion,
         stream_length: usize,
     ) -> Result<Option<(usize, usize)>, CodecError> {
-        let ctx = self.ctx;
         let (owners, parameters, scopes, headers) =
             (&self.owners, &self.parameters, &self.scopes, &self.headers);
         let boundaries = &mut self.boundaries;
@@ -592,10 +528,10 @@ impl<'a, 'ctx, 'arena> CompanionIntervals<'a, 'ctx, 'arena> {
                     let operation = "scan F3D companion stream records";
                     Ok(entry.insert(CompanionBoundaries::build(
                         ctx,
-                        owners.of(stream, operation)?,
-                        parameters.of(stream, operation)?,
-                        scopes.of(stream, operation)?,
-                        headers.of(stream, operation)?,
+                        owners.of(ctx, stream, operation)?,
+                        parameters.of(ctx, stream, operation)?,
+                        scopes.of(ctx, stream, operation)?,
+                        headers.of(ctx, stream, operation)?,
                     )?))
                 }
             }
@@ -606,26 +542,26 @@ impl<'a, 'ctx, 'arena> CompanionIntervals<'a, 'ctx, 'arena> {
     /// The owners of `stream`, in input order, admitted as visited work.
     fn owners_of(
         &self,
+        ctx: &DecodeContext<'_>,
         stream: &str,
         operation: &'static str,
-    ) -> Result<impl Iterator<Item = Result<&'a DesignParameterOwner, CodecError>> + '_, CodecError>
-    {
-        self.owners.of(stream, operation)
+    ) -> Result<impl Iterator<Item = &'a DesignParameterOwner> + '_, CodecError> {
+        self.owners.of(ctx, stream, operation)
     }
 
     /// The scopes of `stream`, in input order, admitted as visited work.
     fn scopes_of(
         &self,
+        ctx: &DecodeContext<'_>,
         stream: &str,
         operation: &'static str,
-    ) -> Result<impl Iterator<Item = Result<&'a DesignParameterScope, CodecError>> + '_, CodecError>
-    {
-        self.scopes.of(stream, operation)
+    ) -> Result<impl Iterator<Item = &'a DesignParameterScope> + '_, CodecError> {
+        self.scopes.of(ctx, stream, operation)
     }
 
     /// The intervals of the companion boundaries in `inputs`.
     fn of_inputs(
-        ctx: &'ctx DecodeContext<'arena>,
+        ctx: &'ctx DecodeContext<'_>,
         inputs: &DimensionDecodeInputs<'a>,
     ) -> Result<Self, CodecError> {
         Self::new(
@@ -656,8 +592,7 @@ impl<'a, 'ctx> GoverningCompanions<'a, 'ctx> {
         owners: &'a [DesignParameterOwner],
         parameters: &'a [DesignParameter],
     ) -> Result<Self, CodecError> {
-        let storage;
-        let ((owners_at, parameters), held_storage) =
+        let ((owners_at, parameters), storage) =
             ctx.with_scoped_storage("f3d governing dimension companions", || {
                 let mut owners_at = HashMap::new();
                 for owner in ctx.admit_iter(owners, "index F3D governing dimension owners")? {
@@ -692,7 +627,6 @@ impl<'a, 'ctx> GoverningCompanions<'a, 'ctx> {
                 }
                 Ok::<_, CodecError>((owners_at, by_index))
             })?;
-        storage = held_storage;
         Ok(Self {
             owners_at,
             parameters,
@@ -764,9 +698,7 @@ fn parse_scoped<'ctx, T>(
     ctx: &'ctx DecodeContext<'_>,
     parse: impl FnOnce() -> Result<Option<T>, CodecError>,
 ) -> Result<Option<(T, ScopedReservation<'ctx>)>, CodecError> {
-    let storage;
-    let (parsed, held_storage) = ctx.with_scoped_storage("f3d dimension frame candidate", parse)?;
-    storage = held_storage;
+    let (parsed, storage) = ctx.with_scoped_storage("f3d dimension frame candidate", parse)?;
     Ok(parsed.map(|parsed| (parsed, storage)))
 }
 
@@ -780,12 +712,9 @@ pub(crate) fn decode_dimension_recipe_records(
     companions: &[DesignParameterCompanion],
     recipes: &[ConstructionRecipe],
 ) -> Result<Vec<DesignDimensionRecipeRecord>, CodecError> {
-    let _parameter_storage;
-    let (parameter_index, held_storage) =
+    let (parameter_index, _parameter_storage) =
         dimension_parameter_index(ctx, parameters, "f3d dimension recipe parameter index")?;
-    _parameter_storage = held_storage;
-    let _owner_storage;
-    let (dimension_owners, held_storage) =
+    let (dimension_owners, _owner_storage) =
         ctx.with_scoped_storage("f3d dimension recipe indexes", || {
             let mut dimension_owners: StreamRecordKeys<'_> = Vec::new();
             for owner in ctx.admit_iter(owners, "scan F3D dimension recipe owners")? {
@@ -808,13 +737,11 @@ pub(crate) fn decode_dimension_recipe_records(
             sort_record_keys(ctx, &mut dimension_owners, "f3d dimension recipe owners")?;
             Ok::<_, CodecError>(dimension_owners)
         })?;
-    _owner_storage = held_storage;
     // A recipe record belongs to a companion of a dimension owner.
     if dimension_owners.is_empty() {
         return Ok(Vec::new());
     }
-    let _recipe_storage;
-    let (recipe_index, held_storage) =
+    let (recipe_index, _recipe_storage) =
         ctx.with_scoped_storage("f3d dimension recipe indexes", || {
             let mut recipe_index = HashMap::new();
             for recipe in ctx.admit_iter(recipes, "index F3D dimension recipes")? {
@@ -827,7 +754,6 @@ pub(crate) fn decode_dimension_recipe_records(
             }
             Ok::<_, CodecError>(recipe_index)
         })?;
-    _recipe_storage = held_storage;
     let mut out = Vec::new();
     for companion in ctx.admit_iter(companions, "scan F3D dimension recipe companions")? {
         let Some(stream) = record_stream(ctx, companion.id())? else {
@@ -968,14 +894,12 @@ pub(crate) fn decode_recipe_references_charged(
     prefix: &[u8],
     prefix_offset: u64,
 ) -> Result<Vec<crate::records::dimensions::DesignRecipeReference>, CodecError> {
-    ctx.charge_work(0, "F3D recipe reference decode entry")?;
     if !recipe_reference_header(prefix) {
         return Ok(Vec::new());
     }
     // A run that fails part-way drops the references it built, so they are
     // held under a scoped reservation until the whole run decodes.
-    let storage;
-    let (references, held_storage) = ctx.with_scoped_storage("f3d recipe references", || {
+    let (references, storage) = ctx.with_scoped_storage("f3d recipe references", || {
         match View::u32_le_at(prefix, 14) {
             Some(2) => decode_paired_recipe_references(ctx, prefix, prefix_offset),
             Some(3) => decode_standard_recipe_references(ctx, prefix, prefix_offset),
@@ -988,11 +912,11 @@ pub(crate) fn decode_recipe_references_charged(
             _ => Ok(None),
         }
     })?;
-    storage = held_storage;
     let Some(references) = references else {
         return Ok(Vec::new());
     };
-    storage.commit_value(references)
+    storage.commit()?;
+    Ok(references)
 }
 
 fn decode_standard_recipe_references(
@@ -1000,7 +924,6 @@ fn decode_standard_recipe_references(
     prefix: &[u8],
     prefix_offset: u64,
 ) -> Result<Option<Vec<crate::records::dimensions::DesignRecipeReference>>, CodecError> {
-    ctx.charge_work(0, "F3D standard recipe reference entry")?;
     if View::u32_le_at(prefix, 22).is_none_or(|value| value == 0) {
         return Ok(None);
     }
@@ -1037,7 +960,6 @@ fn decode_paired_recipe_references(
     prefix: &[u8],
     prefix_offset: u64,
 ) -> Result<Option<Vec<crate::records::dimensions::DesignRecipeReference>>, CodecError> {
-    ctx.charge_work(0, "F3D paired recipe reference entry")?;
     const MINIMUM_PAIR_SIZE: usize = 42;
 
     let Some(pair_count) = View::u32_le_at(prefix, 18).map(index_from_u32) else {
@@ -1114,7 +1036,6 @@ fn decode_grouped_recipe_references(
     prefix_offset: u64,
     group_count: usize,
 ) -> Result<Option<Vec<crate::records::dimensions::DesignRecipeReference>>, CodecError> {
-    ctx.charge_work(0, "F3D grouped recipe reference entry")?;
     const MINIMUM_PACKED_OPERAND_SIZE: usize = 17;
     const GROUP_COUNT_WORD_SIZE: usize = 4;
 
@@ -1173,7 +1094,6 @@ pub(in crate::design) fn is_paired_recipe_reference_frame(
     ctx: &DecodeContext<'_>,
     prefix: &[u8],
 ) -> Result<bool, CodecError> {
-    ctx.charge_work(0, "F3D paired recipe frame entry")?;
     if !recipe_reference_header(prefix)
         || View::u32_le_at(prefix, grouped_recipe::GROUP_COUNT) != Some(2)
     {
@@ -1227,7 +1147,6 @@ pub(crate) fn is_grouped_recipe_reference_frame(
     ctx: &DecodeContext<'_>,
     prefix: &[u8],
 ) -> Result<bool, CodecError> {
-    ctx.charge_work(0, "F3D grouped recipe frame entry")?;
     if !recipe_reference_header(prefix) {
         return Ok(false);
     }
@@ -1313,7 +1232,6 @@ fn scan_recipe_reference_operand<'prefix>(
     at: usize,
     token_frame: RecipeReferenceTokenFrame,
 ) -> Result<Option<ScannedRecipeReferenceOperand<'prefix>>, CodecError> {
-    ctx.charge_work(0, "F3D recipe operand scan entry")?;
     let Some(selector) = View::u32_le_at(prefix, at).filter(|value| *value != 0) else {
         return Ok(None);
     };
@@ -1404,7 +1322,6 @@ fn length_prefixed_token<'p>(
     prefix: &'p [u8],
     count_at: usize,
 ) -> Result<Option<(&'p str, usize, usize)>, CodecError> {
-    ctx.charge_work(0, "F3D length-prefixed recipe token entry")?;
     let Some(length) = View::u32_le_at(prefix, count_at)
         .map(index_from_u32)
         .filter(|length| *length <= 2000)
@@ -1490,7 +1407,6 @@ fn decimal_integer_digits(token: &[u8]) -> Option<&[u8]> {
 
 /// Whether `token` is a decimal integer, charging each digit it tests.
 fn is_decimal_integer_token(ctx: &DecodeContext<'_>, token: &[u8]) -> Result<bool, CodecError> {
-    ctx.charge_work(0, "F3D decimal recipe token entry")?;
     let Some(digits) = decimal_integer_digits(token) else {
         return Ok(false);
     };
@@ -1505,7 +1421,6 @@ fn is_decimal_integer_token(ctx: &DecodeContext<'_>, token: &[u8]) -> Result<boo
 /// a counted run of nonzero references closed by four or six zero bytes that
 /// ends the prefix.
 fn recipe_reference_suffix(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool, CodecError> {
-    ctx.charge_work(0, "F3D recipe suffix entry")?;
     if bytes == [0; 4] {
         return Ok(true);
     }
@@ -1550,11 +1465,9 @@ pub(crate) fn bind_dimension_recipe_reference_candidates(
 ) -> Result<(), CodecError> {
     // A reference visits only the tags of its own token.
     let operation = "f3d recipe reference tags by token";
-    let _tag_storage;
-    let (tags_by_token, held_storage) = ctx.with_scoped_storage(operation, || {
+    let (tags_by_token, _tag_storage) = ctx.with_scoped_storage(operation, || {
         Grouped::build(ctx, tags, |tag| Ok(Some(tag.token.as_str())), operation)
     })?;
-    _tag_storage = held_storage;
     let record_count = records.len();
     for (record, _) in records
         .iter_mut()
@@ -1565,10 +1478,12 @@ pub(crate) fn bind_dimension_recipe_reference_candidates(
             &(0..reference_count),
             "scan F3D dimension recipe references",
         )?) {
+            let token_tags = tags_by_token.run(ctx, &reference.token)?;
             bind_recipe_reference_candidates_from(
                 ctx,
                 reference,
-                tags_by_token.of(&reference.token, "scan F3D recipe-reference tags")?,
+                ctx.admit_iter(token_tags, "scan F3D recipe-reference tags")?
+                    .map(|(_, tag)| *tag),
                 Some(&record.id),
             )?;
         }
@@ -1588,8 +1503,7 @@ pub(crate) fn bind_recipe_reference_candidates_charged(
     bind_recipe_reference_candidates_from(
         ctx,
         reference,
-        ctx.admit_iter(tags, "scan F3D recipe-reference tags")?
-            .map(Ok),
+        ctx.admit_iter(tags, "scan F3D recipe-reference tags")?,
         owner_id,
     )
 }
@@ -1598,26 +1512,17 @@ pub(crate) fn bind_recipe_reference_candidates_charged(
 fn bind_recipe_reference_candidates_from<'t>(
     ctx: &DecodeContext<'_>,
     reference: &mut crate::records::dimensions::DesignRecipeReference,
-    tags: impl IntoIterator<Item = Result<&'t PersistentSubentityTag, CodecError>>,
+    tags: impl IntoIterator<Item = &'t PersistentSubentityTag>,
     owner_id: Option<&str>,
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::attributes::AttributeTarget;
 
-    ctx.charge_work(0, "F3D recipe reference tag iterator")?;
     // Releasing the earlier candidates is free.
     reference.candidate_faces.clear();
     reference.candidate_edges.clear();
     reference.alternate_selector_faces.clear();
     reference.alternate_selector_edges.clear();
-    let mut tags = tags.into_iter();
-    loop {
-        ctx.charge_work(0, "F3D recipe reference tag iterator")?;
-        let next = tags.next();
-        ctx.charge_work(0, "F3D recipe reference tag iterator")?;
-        let Some(tag) = next else {
-            break;
-        };
-        let tag = tag?;
+    for tag in tags {
         if !(ctx.equal_bytes(
             tag.token.as_str().as_bytes(),
             reference.token.as_bytes(),
@@ -1708,8 +1613,7 @@ pub(crate) fn bind_dimension_recipe_edge_operands(
 ) -> Result<(), CodecError> {
     // A record with a stream scope visits only the operands of its stream.
     let operation = "f3d dimension recipe edge operands by stream";
-    let _operand_storage;
-    let (operands_by_stream, held_storage) = ctx.with_scoped_storage(operation, || {
+    let (operands_by_stream, _operand_storage) = ctx.with_scoped_storage(operation, || {
         Grouped::build(
             ctx,
             operands,
@@ -1717,7 +1621,6 @@ pub(crate) fn bind_dimension_recipe_edge_operands(
             operation,
         )
     })?;
-    _operand_storage = held_storage;
     let record_count = records.len();
     for (record, _) in records
         .iter_mut()
@@ -1727,7 +1630,7 @@ pub(crate) fn bind_dimension_recipe_edge_operands(
             Some(stream) => matching_edge_operand_ids(
                 ctx,
                 record,
-                operands_by_stream.of(stream, "scan F3D dimension recipe edge operands")?,
+                operands_by_stream.of(ctx, stream, "scan F3D dimension recipe edge operands")?,
                 |_| Ok(true),
             )?,
             None => dimension_recipe_matching_edge_operand_ids(ctx, record, operands)?,
@@ -1748,8 +1651,7 @@ pub(crate) fn dimension_recipe_matching_edge_operand_ids(
     matching_edge_operand_ids(
         ctx,
         record,
-        ctx.admit_iter(operands, "scan F3D dimension recipe edge operands")?
-            .map(Ok),
+        ctx.admit_iter(operands, "scan F3D dimension recipe edge operands")?,
         |operand| has_stream(ctx, &operand.id, stream),
     )
 }
@@ -1759,24 +1661,12 @@ pub(crate) fn dimension_recipe_matching_edge_operand_ids(
 fn matching_edge_operand_ids<'o>(
     ctx: &DecodeContext<'_>,
     record: &DesignDimensionRecipeRecord,
-    operands: impl IntoIterator<Item = Result<&'o DesignEdgeOperand, CodecError>>,
+    operands: impl IntoIterator<Item = &'o DesignEdgeOperand>,
     mut in_scope: impl FnMut(&DesignEdgeOperand) -> Result<bool, CodecError>,
 ) -> Result<Vec<String>, CodecError> {
-    const OPERATION: &str = "F3D dimension recipe edge callback boundary";
-    ctx.charge_work(0, OPERATION)?;
     let mut ids = Vec::new();
-    let mut operands = operands.into_iter();
-    ctx.charge_work(0, OPERATION)?;
-    loop {
-        let next = operands.next();
-        ctx.charge_work(0, OPERATION)?;
-        let Some(operand) = next else {
-            break;
-        };
-        let operand = operand?;
-        let selected = in_scope(operand);
-        ctx.charge_work(0, OPERATION)?;
-        if !selected? || !program_has_operand_tail(ctx, record, operand)? {
+    for operand in operands {
+        if !in_scope(operand)? || !program_has_operand_tail(ctx, record, operand)? {
             continue;
         }
         ctx.push_formatted_retained(
@@ -1803,7 +1693,6 @@ fn program_has_operand_tail(
     record: &DesignDimensionRecipeRecord,
     operand: &DesignEdgeOperand,
 ) -> Result<bool, CodecError> {
-    ctx.charge_work(0, "F3D dimension recipe operand tail entry")?;
     let Some(tail) = operand
         .recipe_program
         .get(7..)
@@ -1879,7 +1768,6 @@ fn record_containing<'bytes>(
     end: usize,
     member_offset: usize,
 ) -> Result<Option<(IndexedRecordHeader<'bytes>, usize)>, CodecError> {
-    ctx.charge_work(0, "F3D containing dimension record entry")?;
     if start > member_offset || member_offset >= end {
         return Ok(None);
     }
@@ -1905,7 +1793,6 @@ pub(super) fn contiguous_i32_program(
     start: usize,
     end: usize,
 ) -> Result<Option<Vec<i32>>, CodecError> {
-    ctx.charge_work(0, "F3D contiguous recipe program entry")?;
     let Some(view) = View::over_retained(bytes).child(start, end) else {
         return Ok(None);
     };
@@ -1928,7 +1815,7 @@ pub(super) fn contiguous_i32_program(
 pub(crate) fn decode_dimension_locus_pairs<'a>(
     ctx: &DecodeContext<'_>,
     inputs: &DimensionDecodeInputs<'a>,
-    records: &mut RecordOffsetCache<'a, '_, '_>,
+    records: &mut RecordOffsetCache<'a, '_>,
 ) -> Result<Vec<DesignDimensionLocusPair>, CodecError> {
     let &DimensionDecodeInputs {
         scan,
@@ -1939,27 +1826,21 @@ pub(crate) fn decode_dimension_locus_pairs<'a>(
         curves,
         ..
     } = inputs;
-    let _parameter_storage;
-    let (parameter_index, held_storage) =
+    let (parameter_index, _parameter_storage) =
         dimension_parameter_index(ctx, parameters, "f3d dimension locus parameter index")?;
-    _parameter_storage = held_storage;
-    let _companion_storage;
-    let (dimension_companions, held_storage) = dimension_companion_keys(
+    let (dimension_companions, _companion_storage) = dimension_companion_keys(
         ctx,
         owners,
         &parameter_index,
         "f3d dimension locus companions",
     )?;
-    _companion_storage = held_storage;
     // A pair belongs to a dimension companion.
     if dimension_companions.is_empty() {
         return Ok(Vec::new());
     }
-    let mut governing = None;
-    let mut intervals = None;
-    // The geometry and its reservation remain one owner. Tuple fields drop
-    // in order, so the actual backing drops before its reservation.
-    let mut geometry = None;
+    let governing = GoverningCompanions::build(ctx, owners, parameters)?;
+    let mut intervals = CompanionIntervals::of_inputs(ctx, inputs)?;
+    let (geometry, _geometry_storage) = dimension_geometry_runs(ctx, points, curves)?;
     let mut out = Vec::new();
     for companion in ctx.admit_iter(companions, "scan F3D dimension locus companions")? {
         let Some(scope) = record_stream(ctx, companion.id())? else {
@@ -1979,20 +1860,12 @@ pub(crate) fn decode_dimension_locus_pairs<'a>(
             continue;
         };
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
-        let intervals = match &mut intervals {
-            Some(index) => index,
-            vacant => vacant.insert(CompanionIntervals::of_inputs(ctx, inputs)?),
-        };
-        let Some((start, end)) = intervals.interval(scope, companion, bytes.len())? else {
+        let Some((start, end)) = intervals.interval(ctx, scope, companion, bytes.len())? else {
             continue;
         };
-        let (geometry, _) = match &mut geometry {
-            Some(index) => index,
-            vacant => vacant.insert(dimension_geometry_runs(ctx, points, curves)?),
-        };
-        let geometry_indices = geometry.of(scope)?;
-        let stream_records = records.get(&entry.name, bytes)?;
-        let Some(parsed_pair) = find_dimension_locus_pair(
+        let geometry_indices = geometry.of(ctx, scope)?;
+        let stream_records = records.get(ctx, &entry.name, bytes)?;
+        let Some((mut pair, pair_storage)) = find_dimension_locus_pair(
             ctx,
             bytes,
             start,
@@ -2004,18 +1877,12 @@ pub(crate) fn decode_dimension_locus_pairs<'a>(
         else {
             continue;
         };
-        let pair_storage = parsed_pair.1;
-        let pair = parsed_pair.0;
-        let governing = match &mut governing {
-            Some(index) => index,
-            vacant => vacant.insert(GoverningCompanions::build(ctx, owners, parameters)?),
-        };
         let Some(governing_companion_record_index) =
             governing.governing_in(ctx, scope, pair.paired_byte_offset())?
         else {
             continue;
         };
-        let mut pair = pair_storage.commit_value(pair)?;
+        pair_storage.commit()?;
         pair.id = design_record_id_charged(
             ctx,
             &entry.name,
@@ -2109,7 +1976,6 @@ fn parse_dimension_locus_pair(
     geometry_indices: &[u32],
     records: &IndexedRecordOffsets,
 ) -> Result<Option<DesignDimensionLocusPair>, CodecError> {
-    ctx.charge_work(0, "F3D dimension locus pair entry")?;
     let Some(header) = indexed_record_header_at(bytes, start) else {
         return Ok(None);
     };
@@ -2196,7 +2062,7 @@ fn parse_dimension_locus_pair(
 pub(crate) fn decode_dimension_null_locus_pairs<'a>(
     ctx: &DecodeContext<'_>,
     inputs: &DimensionDecodeInputs<'a>,
-    records: &mut RecordOffsetCache<'a, '_, '_>,
+    records: &mut RecordOffsetCache<'a, '_>,
     pairs: &[DesignDimensionLocusPair],
     groups: &[DesignDimensionLocusGroup],
 ) -> Result<Vec<DesignDimensionLocusPair>, CodecError> {
@@ -2209,24 +2075,19 @@ pub(crate) fn decode_dimension_null_locus_pairs<'a>(
         curves,
         ..
     } = inputs;
-    let _parameter_storage;
-    let (parameter_index, held_storage) =
+    let (parameter_index, _parameter_storage) =
         dimension_parameter_index(ctx, parameters, "f3d dimension locus parameter index")?;
-    _parameter_storage = held_storage;
-    let _companion_storage;
-    let (dimension_companions, held_storage) = dimension_companion_keys(
+    let (dimension_companions, _companion_storage) = dimension_companion_keys(
         ctx,
         owners,
         &parameter_index,
         "f3d dimension locus companions",
     )?;
-    _companion_storage = held_storage;
     // A pair belongs to a dimension companion.
     if dimension_companions.is_empty() {
         return Ok(Vec::new());
     }
-    let _typed_storage;
-    let (typed_companions, held_storage) =
+    let (typed_companions, _typed_storage) =
         ctx.with_scoped_storage("f3d typed dimension companions", || {
             let mut typed_companions: StreamRecordKeys<'_> = Vec::new();
             for pair in ctx.admit_iter(pairs, "scan F3D typed dimension locus pairs")? {
@@ -2250,12 +2111,9 @@ pub(crate) fn decode_dimension_null_locus_pairs<'a>(
             sort_record_keys(ctx, &mut typed_companions, "f3d typed dimension companions")?;
             Ok::<_, CodecError>(typed_companions)
         })?;
-    _typed_storage = held_storage;
-    let mut governing = None;
-    let mut intervals = None;
-    // The geometry and its reservation remain one owner. Tuple fields drop
-    // in order, so the actual backing drops before its reservation.
-    let mut geometry = None;
+    let governing = GoverningCompanions::build(ctx, owners, parameters)?;
+    let mut intervals = CompanionIntervals::of_inputs(ctx, inputs)?;
+    let (geometry, _geometry_storage) = dimension_geometry_runs(ctx, points, curves)?;
     let mut out = Vec::new();
     for companion in ctx.admit_iter(companions, "scan F3D null-locus companions")? {
         let Some(scope) = record_stream(ctx, companion.id())? else {
@@ -2277,20 +2135,12 @@ pub(crate) fn decode_dimension_null_locus_pairs<'a>(
             continue;
         };
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
-        let intervals = match &mut intervals {
-            Some(index) => index,
-            vacant => vacant.insert(CompanionIntervals::of_inputs(ctx, inputs)?),
-        };
-        let Some((start, end)) = intervals.interval(scope, companion, bytes.len())? else {
+        let Some((start, end)) = intervals.interval(ctx, scope, companion, bytes.len())? else {
             continue;
         };
-        let (geometry, _) = match &mut geometry {
-            Some(index) => index,
-            vacant => vacant.insert(dimension_geometry_runs(ctx, points, curves)?),
-        };
-        let geometry_indices = geometry.of(scope)?;
-        let stream_records = records.get(&entry.name, bytes)?;
-        let Some(parsed_pair) = find_dimension_null_locus_pair(
+        let geometry_indices = geometry.of(ctx, scope)?;
+        let stream_records = records.get(ctx, &entry.name, bytes)?;
+        let Some((mut pair, pair_storage)) = find_dimension_null_locus_pair(
             ctx,
             bytes,
             start,
@@ -2302,18 +2152,12 @@ pub(crate) fn decode_dimension_null_locus_pairs<'a>(
         else {
             continue;
         };
-        let pair_storage = parsed_pair.1;
-        let pair = parsed_pair.0;
-        let governing = match &mut governing {
-            Some(index) => index,
-            vacant => vacant.insert(GoverningCompanions::build(ctx, owners, parameters)?),
-        };
         let Some(governing_companion_record_index) =
             governing.governing_in(ctx, scope, pair.paired_byte_offset())?
         else {
             continue;
         };
-        let mut pair = pair_storage.commit_value(pair)?;
+        pair_storage.commit()?;
         pair.id = design_record_id_charged(
             ctx,
             &entry.name,
@@ -2364,7 +2208,6 @@ fn parse_dimension_null_locus_pair(
     geometry_indices: &[u32],
     records: &IndexedRecordOffsets,
 ) -> Result<Option<DesignDimensionLocusPair>, CodecError> {
-    ctx.charge_work(0, "F3D dimension null locus pair entry")?;
     let Some(header) = indexed_record_header_at(bytes, start) else {
         return Ok(None);
     };
@@ -2436,7 +2279,7 @@ type AnnotationInterval = (usize, usize, Option<u32>);
 pub(crate) fn decode_dimension_annotation_frames<'a>(
     ctx: &DecodeContext<'_>,
     inputs: &DimensionDecodeInputs<'a>,
-    records: &mut RecordOffsetCache<'a, '_, '_>,
+    records: &mut RecordOffsetCache<'a, '_>,
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignDimensionAnnotationFrame>, CodecError> {
     let &DimensionDecodeInputs {
@@ -2448,31 +2291,33 @@ pub(crate) fn decode_dimension_annotation_frames<'a>(
         curves,
         ..
     } = inputs;
-    let _parameter_storage;
-    let (parameter_index, held_storage) =
+    let (parameter_index, _parameter_storage) =
         dimension_parameter_index(ctx, parameters, "f3d dimension annotation parameter index")?;
-    _parameter_storage = held_storage;
-    let _companion_storage;
-    let (dimension_companions, held_storage) = dimension_companion_keys(
+    let (dimension_companions, _companion_storage) = dimension_companion_keys(
         ctx,
         owners,
         &parameter_index,
         "f3d dimension annotation companions",
     )?;
-    _companion_storage = held_storage;
     // A frame's tail names an owner of a dimension companion.
     if dimension_companions.is_empty() {
         return Ok(Vec::new());
     }
-    let mut intervals_by_stream = None;
-    let mut companions_by_stream = None;
-    let mut geometry = None;
-    let mut sketch_entities = None;
+    let mut intervals_by_stream = CompanionIntervals::of_inputs(ctx, inputs)?;
+    let (companions_by_stream, _companions_storage) =
+        ctx.with_scoped_storage("f3d dimension annotation companions", || {
+            Grouped::build(
+                ctx,
+                companions,
+                |companion| record_stream(ctx, companion.id()),
+                "f3d dimension annotation companions",
+            )
+        })?;
+    let (geometry, _geometry_storage) = dimension_geometry_runs(ctx, points, curves)?;
+    let (sketch_entities, _sketch_entity_storage) = dimension_sketch_entity_runs(ctx, entities)?;
     let mut out = Vec::new();
     // Each stream is decoded once, in the order of its first companion.
-    let _streams_storage;
-    let (streams, held_storage) = companion_streams(ctx, companions)?;
-    _streams_storage = held_storage;
+    let (streams, _streams_storage) = companion_streams(ctx, companions)?;
     for &(stream, _) in ctx.admit_iter(&streams, "scan F3D dimension annotation streams")? {
         // A frame's tail names an owner of a dimension companion of its stream.
         if key_range(
@@ -2491,44 +2336,24 @@ pub(crate) fn decode_dimension_annotation_frames<'a>(
             continue;
         };
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
-        let intervals_by_stream = match &mut intervals_by_stream {
-            Some(index) => index,
-            vacant => vacant.insert(CompanionIntervals::of_inputs(ctx, inputs)?),
-        };
-        let (companions_by_stream, _) = match &mut companions_by_stream {
-            Some(index) => index,
-            vacant => vacant.insert(ctx.with_scoped_storage(
-                "f3d dimension annotation companions",
-                || {
-                    Grouped::build(
-                        ctx,
-                        companions,
-                        |companion| record_stream(ctx, companion.id()),
-                        "f3d dimension annotation companions",
-                    )
-                },
-            )?),
-        };
-        let _interval_storage;
-        let (intervals, held_storage) = annotation_intervals(
+        let (intervals, _interval_storage) = annotation_intervals(
             ctx,
             stream,
             bytes.len(),
-            companions_by_stream,
-            intervals_by_stream,
+            &companions_by_stream,
+            &mut intervals_by_stream,
         )?;
-        _interval_storage = held_storage;
         if intervals.is_empty() {
             continue;
         }
-        let _governed_storage;
-        let (governed_owners, held_storage) =
+        let (governed_owners, _governed_storage) =
             ctx.with_scoped_storage("f3d dimension annotation governed owners", || {
                 let mut governed_owners = HashMap::new();
-                for owner in
-                    intervals_by_stream.owners_of(stream, "scan F3D dimension annotation owners")?
-                {
-                    let owner = owner?;
+                for owner in intervals_by_stream.owners_of(
+                    ctx,
+                    stream,
+                    "scan F3D dimension annotation owners",
+                )? {
                     if has_record_key(
                         ctx,
                         &dimension_companions,
@@ -2545,28 +2370,19 @@ pub(crate) fn decode_dimension_annotation_frames<'a>(
                 }
                 Ok::<_, CodecError>(governed_owners)
             })?;
-        _governed_storage = held_storage;
-        let (geometry, _) = match &mut geometry {
-            Some(index) => index,
-            vacant => vacant.insert(dimension_geometry_runs(ctx, points, curves)?),
-        };
-        let (sketch_entities, _) = match &mut sketch_entities {
-            Some(index) => index,
-            vacant => vacant.insert(dimension_sketch_entity_runs(ctx, entities)?),
-        };
-        let stream_records = records.get(&entry.name, bytes)?;
+        let stream_records = records.get(ctx, &entry.name, bytes)?;
         let frame_inputs = AnnotationFrameInputs {
             governed_owners: &governed_owners,
-            geometry_indices: geometry.of(stream)?,
-            sketch_entities: sketch_entities.of(stream)?,
+            geometry_indices: geometry.of(ctx, stream)?,
+            sketch_entities: sketch_entities.of(ctx, stream)?,
             records: stream_records,
         };
         // The paired header offset of each frame decoded in this stream, by
         // frame offset. A frame's parse depends only on the stream, so a later
         // interval that reaches the same frame reuses its extent.
+        let mut decoded = HashMap::new();
         let mut decoded_storage =
             ctx.reserve_scoped(0, "f3d dimension annotation decoded offsets")?;
-        let mut decoded = HashMap::new();
         for &(start, end, containing_companion_record_index) in
             ctx.admit_iter(&intervals, "scan F3D dimension annotation intervals")?
         {
@@ -2584,7 +2400,7 @@ pub(crate) fn decode_dimension_annotation_frames<'a>(
                     }
                     paired_at
                 } else {
-                    let Some(parsed_frame) = parse_scoped(ctx, || {
+                    let Some((mut frame, frame_storage)) = parse_scoped(ctx, || {
                         parse_dimension_annotation_frame(
                             ctx,
                             bytes,
@@ -2597,9 +2413,7 @@ pub(crate) fn decode_dimension_annotation_frames<'a>(
                     else {
                         continue;
                     };
-                    let frame_storage = parsed_frame.1;
-                    let frame = parsed_frame.0;
-                    let mut frame = frame_storage.commit_value(frame)?;
+                    frame_storage.commit()?;
                     let Ok(paired_at) = usize::try_from(frame.paired_byte_offset()) else {
                         return Err(CodecError::Malformed(
                             "F3D annotation paired offset is not representable".into(),
@@ -2684,27 +2498,23 @@ fn annotation_intervals<'a, 'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     stream: &'a str,
     stream_length: usize,
-    companions: &Grouped<'a, '_, '_, DesignParameterCompanion>,
-    intervals_by_stream: &mut CompanionIntervals<'a, '_, '_>,
+    companions: &Grouped<'a, DesignParameterCompanion>,
+    intervals_by_stream: &mut CompanionIntervals<'a, '_>,
 ) -> Result<(Vec<AnnotationInterval>, ScopedReservation<'ctx>), CodecError> {
     ctx.with_scoped_storage("f3d dimension annotation intervals", || {
         let mut intervals = Vec::new();
         // The first companion of each record index in the stream.
-        let mut companion_storage = ctx.reserve_scoped(0, "f3d dimension annotation companions")?;
         let mut companion_offsets = HashMap::new();
-        for companion in companions.of(stream, "scan F3D annotation owner companions")? {
-            let companion = companion?;
-            if let Entry::Vacant(slot) = companion_storage.with_storage(|| {
-                ctx.entry_hash_map(
-                    &mut companion_offsets,
-                    companion.record_index(),
-                    "f3d dimension annotation companions",
-                )
-            })? {
+        for companion in companions.of(ctx, stream, "scan F3D annotation owner companions")? {
+            if let Entry::Vacant(slot) = ctx.entry_hash_map(
+                &mut companion_offsets,
+                companion.record_index(),
+                "f3d dimension annotation companions",
+            )? {
                 slot.insert(companion.byte_offset());
             }
             let Some((start, end)) =
-                intervals_by_stream.interval(stream, companion, stream_length)?
+                intervals_by_stream.interval(ctx, stream, companion, stream_length)?
             else {
                 continue;
             };
@@ -2715,12 +2525,12 @@ fn annotation_intervals<'a, 'ctx>(
             )?;
         }
         // The nearest companion that an owner of each scope record index names.
-        let mut scope_storage = ctx.reserve_scoped(0, "f3d dimension annotation scope ends")?;
         let mut scope_ends = HashMap::new();
-        for owner in intervals_by_stream
-            .owners_of(stream, "scan F3D dimension annotation interval owners")?
-        {
-            let owner = owner?;
+        for owner in intervals_by_stream.owners_of(
+            ctx,
+            stream,
+            "scan F3D dimension annotation interval owners",
+        )? {
             let Some(offset) = ctx
                 .get_hash_map(
                     &companion_offsets,
@@ -2731,13 +2541,11 @@ fn annotation_intervals<'a, 'ctx>(
             else {
                 continue;
             };
-            match scope_storage.with_storage(|| {
-                ctx.entry_hash_map(
-                    &mut scope_ends,
-                    owner.scope_record_index(),
-                    "f3d dimension annotation scope ends",
-                )
-            })? {
+            match ctx.entry_hash_map(
+                &mut scope_ends,
+                owner.scope_record_index(),
+                "f3d dimension annotation scope ends",
+            )? {
                 Entry::Occupied(mut entry) => {
                     let end = entry.get_mut();
                     *end = offset.min(*end);
@@ -2747,10 +2555,11 @@ fn annotation_intervals<'a, 'ctx>(
                 }
             }
         }
-        for scope in intervals_by_stream
-            .scopes_of(stream, "scan F3D dimension annotation interval scopes")?
-        {
-            let scope = scope?;
+        for scope in intervals_by_stream.scopes_of(
+            ctx,
+            stream,
+            "scan F3D dimension annotation interval scopes",
+        )? {
             let Some(&end) = ctx.get_hash_map(
                 &scope_ends,
                 &scope.record_index,
@@ -2831,7 +2640,6 @@ fn parse_dimension_annotation_frame(
     companion_record_index: Option<u32>,
     inputs: &AnnotationFrameInputs<'_>,
 ) -> Result<Option<DesignDimensionAnnotationFrame>, CodecError> {
-    ctx.charge_work(0, "F3D dimension annotation frame entry")?;
     let Some(header) = indexed_record_header_at(bytes, start) else {
         return Ok(None);
     };
@@ -2991,7 +2799,6 @@ fn annotation_tail(
     operands: &[DesignDimensionAnnotationOperand],
     inputs: &AnnotationFrameInputs<'_>,
 ) -> Result<Option<AnnotationTail>, CodecError> {
-    ctx.charge_work(0, "F3D dimension annotation tail entry")?;
     let Some(last) = paired_at
         .checked_sub(15)
         .filter(|last| annotation_at <= *last)
@@ -3109,7 +2916,6 @@ fn annotation_return_members(
     count: usize,
     inputs: &AnnotationFrameInputs<'_>,
 ) -> Result<Option<[NonZeroU32; 64]>, CodecError> {
-    ctx.charge_work(0, "F3D dimension annotation members entry")?;
     let mut members = [NonZeroU32::MIN; 64];
     for (ordinal, member) in members.iter_mut().take(count).enumerate() {
         let cursor = at + ordinal * 11;
@@ -3151,7 +2957,7 @@ fn is_dimension_presentation_type(type_guid: &str) -> bool {
 pub(crate) fn decode_dimension_presentation_frames<'a>(
     ctx: &DecodeContext<'_>,
     inputs: &DimensionDecodeInputs<'a>,
-    records: &mut RecordOffsetCache<'a, '_, '_>,
+    records: &mut RecordOffsetCache<'a, '_>,
     types: &[SegmentType],
     entities: &'a [DesignEntityHeader],
 ) -> Result<Vec<DesignDimensionPresentationFrame>, CodecError> {
@@ -3161,21 +2967,17 @@ pub(crate) fn decode_dimension_presentation_frames<'a>(
         parameters,
         ..
     } = inputs;
-    let _presentation_streams_storage;
-    let (presentation_streams, held_storage) = presentation_stream_prefixes(ctx, types)?;
-    _presentation_streams_storage = held_storage;
+    let (presentation_streams, _presentation_streams_storage) =
+        presentation_stream_prefixes(ctx, types)?;
     if presentation_streams.is_empty() {
         return Ok(Vec::new());
     }
-    let _parameter_storage;
-    let (parameter_index, held_storage) = dimension_parameter_index(
+    let (parameter_index, _parameter_storage) = dimension_parameter_index(
         ctx,
         parameters,
         "f3d dimension presentation parameter index",
     )?;
-    _parameter_storage = held_storage;
-    let _sketch_scope_storage;
-    let (sketch_scope_by_entity, held_storage) =
+    let (sketch_scope_by_entity, _sketch_scope_storage) =
         ctx.with_scoped_storage("f3d dimension presentation sketch scopes", || {
             let mut sketch_scope_by_entity = HashMap::new();
             for placement in ctx.admit_iter(placements, "index F3D dimension sketch placements")? {
@@ -3194,9 +2996,7 @@ pub(crate) fn decode_dimension_presentation_frames<'a>(
             }
             Ok::<_, CodecError>(sketch_scope_by_entity)
         })?;
-    _sketch_scope_storage = held_storage;
-    let _types_storage;
-    let (types_by_segment, held_storage) =
+    let (types_by_segment, _types_storage) =
         ctx.with_scoped_storage("f3d dimension presentation segment types", || {
             Grouped::build(
                 ctx,
@@ -3208,17 +3008,14 @@ pub(crate) fn decode_dimension_presentation_frames<'a>(
                 "f3d dimension presentation segment types",
             )
         })?;
-    _types_storage = held_storage;
     let mut pass_tables = None;
     let mut out = Vec::new();
     for entry in ctx.admit_iter(&scan.entries, "scan F3D dimension presentation streams")? {
         if !scan.is_design_stream(ctx, entry, ContainerRole::Bulkstream)? {
             continue;
         }
-        let _stream_reservation;
-        let (stream, held_scope_storage) =
+        let (_stream_reservation, stream) =
             crate::design::decode::sketch::native_scope_scoped(ctx, &entry.name)?;
-        _stream_reservation = held_scope_storage;
         let Some(prefix) = stream.strip_suffix(BULK_STREAM_FILE) else {
             continue;
         };
@@ -3232,15 +3029,10 @@ pub(crate) fn decode_dimension_presentation_frames<'a>(
         {
             continue;
         }
-        let _stream_types_storage;
-        let (stream_types, held_storage) =
-            ctx.with_scoped_storage("f3d dimension presentation stream types", || {
-                segment_types_by_entity(
-                    ctx,
-                    types_by_segment.of(prefix, "scan F3D segment types by entity")?,
-                )
+        let (stream_types, _stream_types_storage) = ctx
+            .with_scoped_storage("f3d dimension presentation stream types", || {
+                segment_types_by_entity(ctx, types_by_segment.run(ctx, prefix)?)
             })?;
-        _stream_types_storage = held_storage;
         let type_guid_of = |class_code: u32| -> Result<Option<&str>, CodecError> {
             Ok(ctx
                 .get_hash_map(
@@ -3256,7 +3048,7 @@ pub(crate) fn decode_dimension_presentation_frames<'a>(
             }))
         };
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
-        let stream_records = records.get(&entry.name, bytes)?;
+        let stream_records = records.get(ctx, &entry.name, bytes)?;
         let headers = stream_records.headers_in(ctx, 0, bytes.len())?;
         let is_presentation_record = |at: &usize| -> Result<bool, CodecError> {
             Ok(match indexed_record_header_at(bytes, *at) {
@@ -3279,12 +3071,16 @@ pub(crate) fn decode_dimension_presentation_frames<'a>(
             Some(pass) => &*pass,
             slot @ None => &*slot.insert(PresentationPassTables::build(ctx, inputs, entities)?),
         };
-        let _tables_storage;
-        let (tables, held_storage) = ctx
-            .with_scoped_storage("f3d dimension presentation stream tables", || {
-                PresentationStreamTables::build(&stream, stream_records, pass, &parameter_index)
+        let (tables, _tables_storage) =
+            ctx.with_scoped_storage("f3d dimension presentation stream tables", || {
+                PresentationStreamTables::build(
+                    ctx,
+                    &stream,
+                    stream_records,
+                    pass,
+                    &parameter_index,
+                )
             })?;
-        _tables_storage = held_storage;
         for at in ctx.admit_iter(
             headers.get(first..).unwrap_or(&[]),
             "scan F3D dimension presentation records",
@@ -3292,14 +3088,12 @@ pub(crate) fn decode_dimension_presentation_frames<'a>(
             if !is_presentation_record(at)? {
                 continue;
             }
-            let Some(parsed_frame) = parse_scoped(ctx, || {
-                parse_dimension_presentation_frame(bytes, *at, &tables, is_paired_class)
+            let Some((mut frame, frame_storage)) = parse_scoped(ctx, || {
+                parse_dimension_presentation_frame(ctx, bytes, *at, &tables, is_paired_class)
             })?
             else {
                 continue;
             };
-            let frame_storage = parsed_frame.1;
-            let frame = parsed_frame.0;
             let Some(&scope_record_index) = ctx.get_hash_map(
                 &sketch_scope_by_entity,
                 &(stream.as_str(), u64::from(frame.owner_reference)),
@@ -3309,11 +3103,11 @@ pub(crate) fn decode_dimension_presentation_frames<'a>(
                 continue;
             };
             let Some(owner) =
-                tables.governing_owner(scope_record_index, frame.paired_byte_offset)?
+                tables.governing_owner(ctx, scope_record_index, frame.paired_byte_offset)?
             else {
                 continue;
             };
-            let mut frame = frame_storage.commit_value(frame)?;
+            frame_storage.commit()?;
             frame.id = design_record_id_charged(
                 ctx,
                 &entry.name,
@@ -3341,19 +3135,10 @@ pub(crate) fn decode_dimension_presentation_frames<'a>(
 /// register. A later registration of an entity replaces an earlier one.
 fn segment_types_by_entity<'t>(
     ctx: &DecodeContext<'_>,
-    segment_types: impl IntoIterator<Item = Result<&'t SegmentType, CodecError>>,
+    segment_types: &[(&str, &'t SegmentType)],
 ) -> Result<HashMap<u64, (&'t str, u32)>, CodecError> {
-    ctx.charge_work(0, "F3D segment type iterator")?;
     let mut by_entity = HashMap::new();
-    let mut segment_types = segment_types.into_iter();
-    loop {
-        ctx.charge_work(0, "F3D segment type iterator")?;
-        let next = segment_types.next();
-        ctx.charge_work(0, "F3D segment type iterator")?;
-        let Some(design_type) = next else {
-            break;
-        };
-        let design_type = design_type?;
+    for &(_, design_type) in ctx.admit_iter(segment_types, "scan F3D segment types by entity")? {
         for entity_id in
             admit_reference_values(ctx, &design_type.entities, "scan F3D segment type entities")?
         {
@@ -3380,26 +3165,22 @@ fn presentation_stream_prefixes<'a, 'ctx>(
     let operation = "f3d dimension presentation streams";
     ctx.with_scoped_storage(operation, || {
         let mut presentation = Vec::new();
-        let mut paired_storage = ctx.reserve_scoped(0, operation)?;
         let mut paired = Vec::new();
         for design_type in ctx.admit_iter(types, "scan F3D dimension presentation types")? {
             let type_guid = design_type.type_guid.as_str();
-            let is_presentation = is_dimension_presentation_type(type_guid);
-            if !is_presentation
-                && !type_guid.eq_ignore_ascii_case(DIMENSION_PRESENTATION_PAIR_TYPE_GUID)
-            {
+            let prefixes = if is_dimension_presentation_type(type_guid) {
+                &mut presentation
+            } else if type_guid.eq_ignore_ascii_case(DIMENSION_PRESENTATION_PAIR_TYPE_GUID) {
+                &mut paired
+            } else {
                 continue;
-            }
+            };
             let Some(prefix) = record_stream(ctx, design_type.id())?
                 .and_then(|stream| stream.strip_suffix(META_STREAM_FILE))
             else {
                 continue;
             };
-            if is_presentation {
-                ctx.push_vec(&mut presentation, prefix, operation)?;
-            } else {
-                paired_storage.with_storage(|| ctx.push_vec(&mut paired, prefix, operation))?;
-            }
+            ctx.push_vec(prefixes, prefix, operation)?;
         }
         for prefixes in [&mut presentation, &mut paired] {
             ctx.stable_sort_by(&mut prefixes[..], |prefix| *prefix, Ord::cmp, operation)?;
@@ -3416,22 +3197,21 @@ fn presentation_stream_prefixes<'a, 'ctx>(
 
 /// The tables a presentation pass shares across streams, built when the
 /// first presentation-typed record appears.
-struct PresentationPassTables<'a, 'ctx, 'arena> {
-    owners: Grouped<'a, 'ctx, 'arena, DesignParameterOwner>,
-    geometry: StreamIndexRuns<'a, 'ctx, 'arena>,
-    sketch_entities: StreamIndexRuns<'a, 'ctx, 'arena>,
+struct PresentationPassTables<'a, 'ctx> {
+    owners: Grouped<'a, DesignParameterOwner>,
+    geometry: StreamIndexRuns<'a>,
+    sketch_entities: StreamIndexRuns<'a>,
     _storage: [ScopedReservation<'ctx>; 3],
 }
 
-impl<'a, 'ctx, 'arena> PresentationPassTables<'a, 'ctx, 'arena> {
+impl<'a, 'ctx> PresentationPassTables<'a, 'ctx> {
     fn build(
-        ctx: &'ctx DecodeContext<'arena>,
+        ctx: &'ctx DecodeContext<'_>,
         inputs: &DimensionDecodeInputs<'a>,
         entities: &'a [DesignEntityHeader],
     ) -> Result<Self, CodecError> {
         let operation = "f3d dimension presentation owners";
-        let owner_storage;
-        let (owners, held_storage) = ctx.with_scoped_storage(operation, || {
+        let (owners, owner_storage) = ctx.with_scoped_storage(operation, || {
             Grouped::build(
                 ctx,
                 inputs.owners,
@@ -3439,13 +3219,9 @@ impl<'a, 'ctx, 'arena> PresentationPassTables<'a, 'ctx, 'arena> {
                 operation,
             )
         })?;
-        owner_storage = held_storage;
-        let geometry_storage;
-        let (geometry, held_storage) = dimension_geometry_runs(ctx, inputs.points, inputs.curves)?;
-        geometry_storage = held_storage;
-        let sketch_entity_storage;
-        let (sketch_entities, held_storage) = dimension_sketch_entity_runs(ctx, entities)?;
-        sketch_entity_storage = held_storage;
+        let (geometry, geometry_storage) =
+            dimension_geometry_runs(ctx, inputs.points, inputs.curves)?;
+        let (sketch_entities, sketch_entity_storage) = dimension_sketch_entity_runs(ctx, entities)?;
         Ok(Self {
             owners,
             geometry,
@@ -3457,8 +3233,7 @@ impl<'a, 'ctx, 'arena> PresentationPassTables<'a, 'ctx, 'arena> {
 
 /// Per-stream tables for presentation frames, built when a stream's first
 /// presentation-typed record appears.
-struct PresentationStreamTables<'a, 'r, 'ctx, 'arena> {
-    ctx: &'ctx DecodeContext<'arena>,
+struct PresentationStreamTables<'a, 'r> {
     geometry_indices: &'r [u32],
     sketch_entities: &'r [u32],
     records: &'r IndexedRecordOffsets,
@@ -3467,30 +3242,25 @@ struct PresentationStreamTables<'a, 'r, 'ctx, 'arena> {
     owners_by_scope: HashMap<u32, Vec<&'a DesignParameterOwner>>,
 }
 
-impl<'a, 'r, 'ctx, 'arena> PresentationStreamTables<'a, 'r, 'ctx, 'arena> {
+impl<'a, 'r> PresentationStreamTables<'a, 'r> {
     fn build(
+        ctx: &DecodeContext<'_>,
         stream: &str,
         records: &'r IndexedRecordOffsets,
-        pass: &'r PresentationPassTables<'a, 'ctx, 'arena>,
+        pass: &'r PresentationPassTables<'a, '_>,
         parameters: &ParameterIndex<'_>,
     ) -> Result<Self, CodecError> {
-        let ctx = pass.geometry.ctx;
-        ctx.charge_work(0, "f3d dimension presentation owners")?;
-        let mut owner_storage = ctx.reserve_scoped(0, "f3d dimension presentation owners")?;
         let mut dimension_owners = Vec::new();
         for owner in pass
             .owners
-            .of(stream, "scan F3D dimension presentation owners")?
+            .of(ctx, stream, "scan F3D dimension presentation owners")?
         {
-            let owner = owner?;
             if is_dimension_parameter(ctx, parameters, stream, owner.parameter_record_index())? {
-                owner_storage.with_storage(|| {
-                    ctx.push_vec(
-                        &mut dimension_owners,
-                        owner,
-                        "f3d dimension presentation owners",
-                    )
-                })?;
+                ctx.push_vec(
+                    &mut dimension_owners,
+                    owner,
+                    "f3d dimension presentation owners",
+                )?;
             }
         }
         ctx.stable_sort_by_key(
@@ -3512,9 +3282,8 @@ impl<'a, 'r, 'ctx, 'arena> PresentationStreamTables<'a, 'r, 'ctx, 'arena> {
             )?;
         }
         Ok(Self {
-            ctx,
-            geometry_indices: pass.geometry.of(stream)?,
-            sketch_entities: pass.sketch_entities.of(stream)?,
+            geometry_indices: pass.geometry.of(ctx, stream)?,
+            sketch_entities: pass.sketch_entities.of(ctx, stream)?,
             records,
             owners_by_scope,
         })
@@ -3524,14 +3293,10 @@ impl<'a, 'r, 'ctx, 'arena> PresentationStreamTables<'a, 'r, 'ctx, 'arena> {
     /// `paired_byte_offset`, earliest in the input among owners at one offset.
     fn governing_owner(
         &self,
+        ctx: &DecodeContext<'_>,
         scope_record_index: u32,
         paired_byte_offset: u64,
     ) -> Result<Option<&'a DesignParameterOwner>, CodecError> {
-        let ctx = self.ctx;
-        ctx.charge_work(0, "find F3D dimension presentation owner")?;
-        if self.owners_by_scope.is_empty() {
-            return Ok(None);
-        }
         let Some(owners) = ctx.get_hash_map(
             &self.owners_by_scope,
             &scope_record_index,
@@ -3550,13 +3315,12 @@ impl<'a, 'r, 'ctx, 'arena> PresentationStreamTables<'a, 'r, 'ctx, 'arena> {
 }
 
 fn parse_dimension_presentation_frame(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
-    tables: &PresentationStreamTables<'_, '_, '_, '_>,
+    tables: &PresentationStreamTables<'_, '_>,
     is_paired_class: impl Fn(u32) -> Result<bool, CodecError>,
 ) -> Result<Option<DesignDimensionPresentationFrame>, CodecError> {
-    let ctx = tables.ctx;
-    ctx.charge_work(0, "f3d dimension presentation frame")?;
     let Some(header) = indexed_record_header_at(bytes, start) else {
         return Ok(None);
     };
@@ -3614,12 +3378,10 @@ fn parse_dimension_presentation_frame(
             let Some(candidate) = indexed_record_header_at(bytes, *offset) else {
                 return Ok(None);
             };
-            if candidate.class_tag[0] == b'0' {
-                return Ok(None);
-            }
-            let selected = is_paired_class(candidate.class_code);
-            ctx.charge_work(0, "f3d dimension presentation frame")?;
-            Ok(selected?.then_some(candidate))
+            Ok(
+                (candidate.class_tag[0] != b'0' && is_paired_class(candidate.class_code)?)
+                    .then_some(candidate),
+            )
         },
         "find F3D dimension presentation paired header",
     )?
@@ -3667,7 +3429,7 @@ fn parse_dimension_presentation_frame(
 pub(crate) fn decode_dimension_locus_groups<'a>(
     ctx: &DecodeContext<'_>,
     inputs: &DimensionDecodeInputs<'a>,
-    records: &mut RecordOffsetCache<'a, '_, '_>,
+    records: &mut RecordOffsetCache<'a, '_>,
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignDimensionLocusGroup>, CodecError> {
     let &DimensionDecodeInputs {
@@ -3679,25 +3441,21 @@ pub(crate) fn decode_dimension_locus_groups<'a>(
         curves,
         ..
     } = inputs;
-    let _parameter_storage;
-    let (parameter_index, held_storage) =
+    let (parameter_index, _parameter_storage) =
         dimension_parameter_index(ctx, parameters, "f3d dimension locus parameter index")?;
-    _parameter_storage = held_storage;
-    let _companion_storage;
-    let (dimension_companions, held_storage) = dimension_companion_keys(
+    let (dimension_companions, _companion_storage) = dimension_companion_keys(
         ctx,
         owners,
         &parameter_index,
         "f3d dimension locus companions",
     )?;
-    _companion_storage = held_storage;
     // A group belongs to a dimension companion.
     if dimension_companions.is_empty() {
         return Ok(Vec::new());
     }
-    let mut intervals = None;
-    let mut geometry = None;
-    let mut sketch_entities = None;
+    let mut intervals = CompanionIntervals::of_inputs(ctx, inputs)?;
+    let (geometry, _geometry_storage) = dimension_geometry_runs(ctx, points, curves)?;
+    let (sketch_entities, _sketch_entity_storage) = dimension_sketch_entity_runs(ctx, entities)?;
     let mut out = Vec::new();
     for companion in ctx.admit_iter(companions, "scan F3D dimension locus-group companions")? {
         let Some(scope) = record_stream(ctx, companion.id())? else {
@@ -3717,24 +3475,12 @@ pub(crate) fn decode_dimension_locus_groups<'a>(
             continue;
         };
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
-        let intervals = match &mut intervals {
-            Some(index) => index,
-            vacant => vacant.insert(CompanionIntervals::of_inputs(ctx, inputs)?),
-        };
-        let Some((start, end)) = intervals.interval(scope, companion, bytes.len())? else {
+        let Some((start, end)) = intervals.interval(ctx, scope, companion, bytes.len())? else {
             continue;
         };
-        let (geometry, _) = match &mut geometry {
-            Some(index) => index,
-            vacant => vacant.insert(dimension_geometry_runs(ctx, points, curves)?),
-        };
-        let (sketch_entities, _) = match &mut sketch_entities {
-            Some(index) => index,
-            vacant => vacant.insert(dimension_sketch_entity_runs(ctx, entities)?),
-        };
-        let geometry_indices = geometry.of(scope)?;
-        let stream_sketch_entities = sketch_entities.of(scope)?;
-        let stream_records = records.get(&entry.name, bytes)?;
+        let geometry_indices = geometry.of(ctx, scope)?;
+        let stream_sketch_entities = sketch_entities.of(ctx, scope)?;
+        let stream_records = records.get(ctx, &entry.name, bytes)?;
         find_dimension_locus_groups(
             ctx,
             &LocusGroupStream {
@@ -3784,7 +3530,7 @@ fn find_dimension_locus_groups(
     };
     for &at in std::iter::once(&start).chain(later) {
         ctx.charge_work(1, "scan F3D dimension locus group candidates")?;
-        if let Some(parsed_group) = parse_scoped(ctx, || {
+        if let Some((mut group, group_storage)) = parse_scoped(ctx, || {
             Ok(parse_dimension_locus_group(
                 ctx,
                 stream.bytes,
@@ -3795,9 +3541,7 @@ fn find_dimension_locus_groups(
             )?
             .filter(|group| group.next_byte_offset <= u64_from_index(end)))
         })? {
-            let group_storage = parsed_group.1;
-            let group = parsed_group.0;
-            let mut group = group_storage.commit_value(group)?;
+            group_storage.commit()?;
             group.id = design_record_id_charged(
                 ctx,
                 stream.name,
@@ -3828,7 +3572,6 @@ fn parse_dimension_locus_group(
     geometry_indices: &[u32],
     sketch_entities: &[u32],
 ) -> Result<Option<DesignDimensionLocusGroup>, CodecError> {
-    ctx.charge_work(0, "F3D dimension locus group entry")?;
     let Some(header) = indexed_record_header_at(bytes, start) else {
         return Ok(None);
     };
@@ -3843,11 +3586,8 @@ fn parse_dimension_locus_group(
     };
     let mut position = start + 24;
 
-    let mut geometry_storage = ctx.reserve_scoped(0, "f3d dimension locus geometry")?;
     let mut geometry = Vec::new();
-    geometry_storage.with_storage(|| {
-        ctx.reserve_capacity(&mut geometry, count, "f3d dimension locus geometry")
-    })?;
+    ctx.reserve_capacity(&mut geometry, count, "f3d dimension locus geometry")?;
     for _ in 0..count {
         if bytes.get(position) != Some(&1) || !zeros_at::<6>(bytes, position + 5) {
             return Ok(None);
@@ -3861,18 +3601,16 @@ fn parse_dimension_locus_group(
         if !set_contains(ctx, geometry_indices, geometry_record_index)? {
             return Ok(None);
         }
-        geometry_storage.with_storage(|| {
-            ctx.push_vec(
-                &mut geometry,
-                (
-                    geometry_record_index,
-                    u64_from_index(position + 1),
-                    role,
-                    u64_from_index(position + 11),
-                ),
-                "f3d dimension locus geometry",
-            )
-        })?;
+        ctx.push_vec(
+            &mut geometry,
+            (
+                geometry_record_index,
+                u64_from_index(position + 1),
+                role,
+                u64_from_index(position + 11),
+            ),
+            "f3d dimension locus geometry",
+        )?;
         position += 15;
     }
     if bytes.get(position) != Some(&0)

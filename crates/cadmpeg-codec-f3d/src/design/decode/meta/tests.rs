@@ -206,18 +206,22 @@ fn design_primary_frames_charge_registration_and_frame_storage() {
         secondary_records: Vec::new(),
     };
     let arena = DecodeArena::new();
-    for (allowance, operation) in [
-        (0, "index F3D primary entities"),
-        (1, "frame F3D primary records"),
-        (2, "f3d registered primary entities"),
-        (3, "f3d design primary frames"),
+    for operation in [
+        "frame F3D primary records",
+        "index F3D primary entities",
+        "f3d registered primary entities",
+        "f3d design primary frames",
     ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = allowance;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::design_primary_frames(&ctx, &bytes, &meta)
-            .err()
-            .unwrap();
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                super::design_primary_frames(&ctx, &bytes, &meta)
+            },
+        );
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
@@ -251,21 +255,25 @@ fn typed_primary_frames_charge_all_collections() {
         secondary_records: Vec::new(),
     };
     let arena = DecodeArena::new();
-    for (allowance, operation) in [
-        (0, "f3d typed primary entities"),
-        (1, "index F3D primary entities"),
-        (2, "frame F3D primary records"),
-        (3, "f3d registered primary entities"),
-        (4, "f3d design primary frames"),
-        (5, "f3d resolved primary entities"),
-        (6, "f3d typed primary frames"),
+    for operation in [
+        "f3d typed primary entities",
+        "frame F3D primary records",
+        "index F3D primary entities",
+        "f3d registered primary entities",
+        "f3d design primary frames",
+        "f3d resolved primary entities",
+        "f3d typed primary frames",
     ] {
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = allowance;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::typed_primary_frames(&ctx, &bytes, &meta, type_guid, "test")
-            .err()
-            .unwrap();
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                super::typed_primary_frames(&ctx, &bytes, &meta, type_guid, "test")
+            },
+        );
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems

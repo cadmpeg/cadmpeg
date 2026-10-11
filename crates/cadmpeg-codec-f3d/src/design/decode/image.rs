@@ -144,9 +144,7 @@ pub(super) fn decode_scoped_images<T>(
             continue;
         }
         let bytes = scan.entry_bytes(ctx, &entry.name)?;
-        let _stream_storage;
-        let (stream, held_scope_storage) = native_scope_scoped(ctx, &entry.name)?;
-        _stream_storage = held_scope_storage;
+        let (_stream_storage, stream) = native_scope_scoped(ctx, &entry.name)?;
         let mut stream_records = None;
         for scope in ctx.admit_iter(scopes, "scan F3D image owner scopes")? {
             // The kind is a literal name, so the comparison is constant.
@@ -157,12 +155,9 @@ pub(super) fn decode_scoped_images<T>(
                 Some(records) => records,
                 slot @ None => slot.insert(IndexedRecordOffsets::build_scoped(ctx, bytes)?),
             };
-            let storage;
-            let (image, held_storage) = ctx
-                .with_scoped_storage("f3d scoped image records", || {
-                    parse(ctx, bytes, records, &entry.name, scope)
-                })?;
-            storage = held_storage;
+            let (image, storage) = ctx.with_scoped_storage("f3d scoped image records", || {
+                parse(ctx, bytes, records, &entry.name, scope)
+            })?;
             if let Some(image) = image {
                 ctx.push_scoped_vec(
                     &mut scratch,
@@ -180,9 +175,7 @@ pub(super) fn decode_scoped_images<T>(
         "sort f3d design image 1",
     )?;
     let mut images = Vec::new();
-    for parsed_image in parsed {
-        let storage = parsed_image.1;
-        let image = parsed_image.0;
+    for (image, storage) in parsed {
         ctx.charge_work(1, "dedup f3d design images")?;
         if let Some(kept) = images.last() {
             if ctx.equal_bytes(
@@ -193,7 +186,7 @@ pub(super) fn decode_scoped_images<T>(
                 continue;
             }
         }
-        let image = storage.commit_value(image)?;
+        storage.commit()?;
         ctx.push_vec(&mut images, image, "f3d scoped image records")?;
     }
     Ok(images)
