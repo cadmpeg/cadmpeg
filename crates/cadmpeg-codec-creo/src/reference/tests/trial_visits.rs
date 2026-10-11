@@ -118,3 +118,29 @@ fn empty_reference_outputs_are_free() {
             assert!(result.expect("empty output"));
         }
 }
+
+#[test]
+fn reference_searches_preserve_bounded_marker_ends() {
+    for marker in [
+        b"ent_list(conic)\0".as_slice(),
+        b"ent_list(line)\0".as_slice(),
+        b"ent_list(line3d)\0".as_slice(),
+        b"ent_list(arc_z)\0".as_slice(),
+    ] {
+        let mut repeated = marker.to_vec();
+        repeated.extend_from_slice(b"\xe0\x00");
+        repeated.extend_from_slice(marker);
+        for payload in (0..=marker.len()).map(|end| &marker[..end]).chain(std::iter::once(repeated.as_slice())) {
+            let empty = crate::decode::with_test_decode_ctx(|ctx| {
+                Ok::<_, cadmpeg_core::CodecError>([
+                    super::super::named_conics(ctx, payload)?.is_empty(),
+                    super::super::positional_conics(ctx, payload)?.is_empty(),
+                    super::super::lines(ctx, payload)?.is_empty(),
+                    super::super::line3d_lines(ctx, payload)?.is_empty(),
+                    super::super::arc_z_circles(ctx, payload)?.is_empty(),
+                ])
+            }).expect("marker ends remain within the payload");
+            assert_eq!(empty, [true; 5]);
+        }
+    }
+}

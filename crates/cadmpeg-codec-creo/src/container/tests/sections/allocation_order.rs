@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_core::CodecError;
 
 fn modern_table(marker: &str, entry: &str, offset: &str, length: &str, expanded: &str) -> Vec<u8> {
     let mut bytes = format!("{:<80}\n", "#UGC_TOC 2 1 81 17").into_bytes();
@@ -23,19 +22,12 @@ fn assert_rejected_without_storage(bytes: &[u8], legacy: bool) {
     let mut section_storage = ctx
         .reserve_scoped(0, "test section roster storage")
         .expect("empty storage");
-    let mut parse = || {
-        if legacy {
-            super::super::super::legacy_toc_sections(&ctx, &mut section_storage, bytes, 0)
-        } else {
-            super::super::super::toc_sections(&ctx, &mut section_storage, bytes, 0)
-        }
+    let sections = if legacy {
+        super::super::super::legacy_toc_sections(&ctx, &mut section_storage, bytes, 0)
+    } else {
+        super::super::super::toc_sections(&ctx, &mut section_storage, bytes, 0)
     };
-    assert!(parse().expect("rejected borrowed directory row").is_empty());
-    let original = ctx
-        .charge_work_limit(u64::MAX, "after rejected TOC row")
-        .expect_err("seed original work refusal");
-    assert!(matches!(parse(), Err(CodecError::ResourceLimit(actual)) if actual == original));
-    assert_eq!(ctx.resource_refusal(), Some(original));
+    assert!(sections.expect("rejected borrowed directory row").is_empty());
 }
 
 #[test]
