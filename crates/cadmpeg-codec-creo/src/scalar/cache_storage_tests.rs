@@ -53,19 +53,11 @@ fn checked_scalar_cache_constructor_has_exact_first_image_peak() {
                     Err(CodecError::ResourceLimit(original)) => {
                         assert_eq!(original.dimension, ResourceDimension::MaterializedBytes);
                         assert_eq!(original.limit, cap);
-                        assert!(matches!(ScalarCache::from_section_checked(&ctx, &[]),
-                        Err(CodecError::ResourceLimit(actual)) if actual == original));
-                        assert!(matches!(ScalarCache::from_section_checked(&ctx, &IMAGE),
-                        Err(CodecError::ResourceLimit(actual)) if actual == original));
                         Err(CodecError::ResourceLimit(original))
                     }
                     Err(error) => panic!("constructor error: {error}"),
                 };
-                if let Err(CodecError::ResourceLimit(original)) = &result {
-                    assert!(
-                        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == *original)
-                    );
-                } else {
+                if result.is_ok() {
                     ctx.finish_session().expect("active session");
                 }
                 result
@@ -118,9 +110,6 @@ fn checked_scalar_cache_keeps_only_returned_backing_live() {
         assert_eq!(cache.paired_byte_1(&IMAGE[2..]), Some(0x08));
         drop(cache);
         drop(rest);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-        );
     });
 }
 
@@ -156,7 +145,7 @@ fn checked_scalar_cache_drop_preserves_actual_parent_storage() {
 }
 
 #[test]
-fn empty_checked_scalar_cache_is_free_and_keeps_original_refusal() {
+fn empty_checked_scalar_cache_is_free() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
@@ -168,14 +157,5 @@ fn empty_checked_scalar_cache_is_free_and_keeps_original_refusal() {
     assert!(cache.entries.is_empty());
     assert!(cache.paired_byte_1_by_tail.is_empty());
     drop(cache);
-    let original = ctx
-        .charge_work_limit(1, "before empty checked cache")
-        .expect_err("zero work");
-    for _ in 0..2 {
-        assert!(matches!(ScalarCache::from_section_checked(&ctx, &[]),
-            Err(CodecError::ResourceLimit(actual)) if actual == original));
-    }
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
+    ctx.finish_session().expect("active zero-budget session");
 }

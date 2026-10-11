@@ -5,6 +5,7 @@ mod allocation;
 mod custody;
 mod dimension_admission;
 mod dump;
+mod free_routes;
 mod present_steps;
 mod relations;
 mod rows;
