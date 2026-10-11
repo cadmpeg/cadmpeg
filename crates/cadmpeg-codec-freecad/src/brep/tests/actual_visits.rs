@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! BREP prefix visits, row allocation order and known token exhaustion.
 
-use super::super::{grid_rows, parse_reference_suffix, TokenCursor};
+use super::super::{grid_rows, parse_binary_prefix, parse_reference_suffix, BinaryCursor, TokenCursor};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
@@ -270,4 +270,141 @@ fn nonperiodic_knots_and_zero_padding_move_no_storage() {
     super::super::append_periodic_curve_poles(&ctx, &mut points, None, 0).unwrap();
     assert_eq!(points, [1]);
     assert_eq!(ctx.resource_refusal(), None);
+}
+
+fn binary_work_used(ctx: &DecodeContext<'_>) -> u64 {
+    assert_eq!(ctx.resource_refusal(), None);
+    let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(u64::MAX, "test work probe") else {
+        panic!("the work probe must exceed the policy limit")
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    limit.used
+}
+
+fn binary_polygon_payload(nodes: i32, header_padding: usize) -> Vec<u8> {
+    let mut bytes = format!(
+        "Open CASCADE Topology V3{}\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 1\n",
+        "x".repeat(header_padding)
+    ).into_bytes();
+    bytes.extend(nodes.to_le_bytes());
+    bytes.push(0);
+    bytes.extend(1.0_f64.to_le_bytes());
+    for _ in 0..nodes {
+        for value in [0.0_f64, 1.0, 2.0] {
+            bytes.extend(value.to_le_bytes());
+        }
+    }
+    bytes.extend(b"PolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n");
+    bytes
+}
+
+fn binary_payload_work(nodes: i32, header_padding: usize) -> u64 {
+    let bytes = binary_polygon_payload(nodes, header_padding);
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::desktop();
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let (facts, _) = parse_binary_prefix(&ctx, &bytes).unwrap();
+    assert_eq!(facts.polygons3d.len(), 1);
+    assert_eq!(facts.polygons3d[0].nodes.len(), usize::try_from(nodes).unwrap());
+    assert_eq!(facts.polygons3d[0].nodes[0].coordinates().map(|value| value.get()), [0.0, 1.0, 2.0]);
+    binary_work_used(&ctx)
+}
+
+#[test]
+fn binary_cursor_invalid_header_does_not_pay_for_unread_suffix() {
+    for suffix_length in [0, 4096] {
+        let mut bytes = b"wrong\n".to_vec();
+        bytes.extend(std::iter::repeat_n(b'x', suffix_length));
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 64;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        assert!(matches!(parse_binary_prefix(&ctx, &bytes),
+            Err(CodecError::Malformed(message)) if message == "unsupported binary B-rep header"));
+        // Search includes the newline; validation and trim each visit five bytes.
+        assert_eq!(binary_work_used(&ctx), 6 + 5 + 5);
+    }
+}
+
+#[test]
+fn binary_cursor_valid_payload_growth_pays_each_pass_once() {
+    for padding in [0, 4096] {
+        for nodes in [10, 1000] {
+            assert_eq!(binary_payload_work(nodes + 1, padding) - binary_payload_work(nodes, padding), 24);
+        }
+    }
+    for nodes in [10, 1000] {
+        for padding in [100, 4096] {
+            // A header byte is visited by search, UTF-8 validation and trimming.
+            assert_eq!(binary_payload_work(nodes, padding + 1) - binary_payload_work(nodes, padding), 3);
+        }
+    }
+}
+
+#[test]
+fn binary_cursor_fixed_width_batches_charge_once_before_the_loop() {
+    for count in [1, 1024] {
+        let bytes = [1.0_f64.to_le_bytes(), 2.0_f64.to_le_bytes(), 3.0_f64.to_le_bytes()].concat().repeat(count);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::try_from(bytes.len()).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let mut cursor = BinaryCursor::new(&ctx, &bytes);
+        let points = cursor.read_counted(count, 24, "test point batch", |cursor| cursor.finite_point3("test point")).unwrap();
+        assert_eq!(points.len(), count);
+        assert_eq!(cursor.remaining(), 0);
+        assert_eq!(binary_work_used(&ctx), u64::try_from(bytes.len()).unwrap());
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 23;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let bytes = [0_u8; 24];
+    let mut cursor = BinaryCursor::new(&ctx, &bytes);
+    let mut visits = 0;
+    let result = cursor.read_counted(1, 24, "test point batch", |cursor| {
+        visits += 1;
+        cursor.finite_point3("test point")
+    });
+    assert!(matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.used == 0 && limit.additional == 24));
+    assert_eq!(visits, 0);
+    assert_eq!(cursor.remaining(), 24);
+}
+
+#[test]
+fn binary_cursor_bounds_are_checked_before_read_admission() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut cursor = BinaryCursor::new(&ctx, &[0; 7]);
+    assert!(matches!(cursor.finite_f64("test scalar"), Err(CodecError::Malformed(message)) if message == "truncated test scalar"));
+    let result = cursor.read_counted(usize::MAX, 8, "test batch", |_| -> Result<u8, CodecError> {
+        panic!("an oversized count must not start its loop")
+    });
+    assert!(matches!(result, Err(CodecError::Malformed(message)) if message == "test batch count exceeds remaining input"));
+    assert_eq!(cursor.remaining(), 7);
+    assert_eq!(binary_work_used(&ctx), 0);
+}
+
+#[test]
+fn binary_cursor_scalar_reads_pay_consumed_widths_and_refuse_before_advance() {
+    let mut bytes = vec![1];
+    bytes.extend(2_u16.to_le_bytes());
+    bytes.extend(3_i32.to_le_bytes());
+    bytes.extend(4.0_f64.to_le_bytes());
+    bytes.extend(5.0_f32.to_le_bytes());
+    bytes.push(6);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 19;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let mut cursor = BinaryCursor::new(&ctx, &bytes);
+    assert_eq!(cursor.u8("test byte").unwrap(), 1);
+    assert_eq!(cursor.u16("test word").unwrap(), 2);
+    assert_eq!(cursor.i32("test integer").unwrap(), 3);
+    assert_eq!(cursor.finite_f64("test double").unwrap().get(), 4.0);
+    assert_eq!(cursor.f32("test float").unwrap().get(), 5.0);
+    assert!(matches!(cursor.u8("test refused byte"), Err(CodecError::ResourceLimit(limit)) if limit.used == 19 && limit.additional == 1));
+    assert_eq!(cursor.remaining(), 1);
 }

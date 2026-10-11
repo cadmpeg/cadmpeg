@@ -3069,21 +3069,15 @@ fn parse_binary_prefix(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<(ShapeSet, BinaryTopologyVersion), CodecError> {
-    // Prepay the supplied payload extent before binary cursor parsing.
-    // A malformed prefix can return before the cursor reaches the suffix.
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(bytes.len()),
-        "FreeCAD binary B-rep read",
-    )?;
     let mut cursor = BinaryCursor::new(ctx, bytes);
     let version = loop {
         let line = cursor.line("binary B-rep version")?;
-        let line = line.trim();
+        let line = ctx.trim_text(line, "FreeCAD binary B-rep header trim")?;
         if line.is_empty() {
             continue;
         }
-        let version = line
-            .strip_prefix("Open CASCADE Topology V")
+        let version = ctx
+            .strip_prefix(line, "Open CASCADE Topology V", "FreeCAD binary B-rep header prefix")?
             .and_then(|tail| tail.as_bytes().first())
             .and_then(|byte| byte.checked_sub(b'0'))
             .filter(|version| (1..=4).contains(version))
@@ -4537,6 +4531,7 @@ fn parse_binary_curve2d_leaf(
 struct BinaryCursor<'a, 'c, 'r> {
     view: View<'a>,
     ctx: &'c DecodeContext<'r>,
+    prepaid_bytes: usize,
 }
 
 impl<'a, 'c, 'r> BinaryCursor<'a, 'c, 'r> {
@@ -4544,6 +4539,7 @@ impl<'a, 'c, 'r> BinaryCursor<'a, 'c, 'r> {
         Self {
             view: View::over_retained(bytes),
             ctx,
+            prepaid_bytes: 0,
         }
     }
 
@@ -4551,8 +4547,8 @@ impl<'a, 'c, 'r> BinaryCursor<'a, 'c, 'r> {
         self.view.remaining()
     }
 
-    /// Reads `count` values of at least `element_size` encoded bytes each,
-    /// after checking the unread bytes can hold them.
+    /// Admits a fixed-width batch after checking its encoded extent.
+    /// Scalar reads consume that admission without charging those bytes again.
     fn read_counted<T>(
         &mut self,
         count: usize,
@@ -4563,6 +4559,9 @@ impl<'a, 'c, 'r> BinaryCursor<'a, 'c, 'r> {
         let mut values = self
             .ctx
             .collection_vec(self.bounded(count, element_size, operation)?, operation)?;
+        let extent = count * element_size;
+        self.admit_read(extent, operation)?;
+        self.prepaid_bytes += extent;
         for _ in 0..count {
             values.push(read(self)?);
         }
@@ -4586,49 +4585,58 @@ impl<'a, 'c, 'r> BinaryCursor<'a, 'c, 'r> {
         .ok_or_else(|| CodecError::malformed(format_args!("{label} count exceeds remaining input")))
     }
 
-    fn take(&mut self, count: usize, label: &str) -> Result<&'a [u8], CodecError> {
-        self.view.take(count).ok_or_else(|| Self::truncated(label))
+    fn admit_read(&mut self, count: usize, label: &str) -> Result<(), CodecError> {
+        if count > self.remaining() {
+            return Err(Self::truncated(label));
+        }
+        self.ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(count.saturating_sub(self.prepaid_bytes)),
+            "FreeCAD binary B-rep read",
+        )?;
+        self.prepaid_bytes = self.prepaid_bytes.saturating_sub(count);
+        Ok(())
     }
 
     fn line(&mut self, label: &str) -> Result<&'a str, CodecError> {
         let tail = self.view.unread();
-        let length = tail
-            .iter()
-            .position(|byte| *byte == b'\n')
+        let length = self.ctx
+            .position_by(tail, |byte| Ok(*byte == b'\n'), "FreeCAD binary B-rep line search")?
             .ok_or_else(|| CodecError::malformed(format_args!("unterminated {label}")))?;
-        let line = self.take(length + 1, label)?;
-        std::str::from_utf8(&line[..length])
+        // The search has already admitted every consumed byte, including the newline.
+        let line = self.view.take(length + 1).ok_or_else(|| Self::truncated(label))?;
+        self.ctx.validate_utf8(&line[..length], "FreeCAD binary B-rep UTF-8")?
             .map_err(|_| CodecError::malformed(format_args!("non-UTF-8 {label}")))
     }
 
     fn section_count(&mut self, name: &str) -> Result<usize, CodecError> {
         let line = loop {
             let line = self.line(name)?;
-            // Trimming, splitting and counting reread the line.
-            self.ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(line.len()),
-                "FreeCAD binary B-rep section line",
-            )?;
-            if !line.trim().is_empty() {
+            if !self.ctx.trim_text(line, "FreeCAD binary B-rep section trim")?.is_empty() {
                 break line;
             }
         };
+        self.ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(line.len()),
+            "FreeCAD binary B-rep section tokens",
+        )?;
         let mut tokens = line.split_ascii_whitespace();
-        if tokens.next() != Some(name) || tokens.clone().count() != 1 {
+        let section = tokens.next();
+        let count = tokens.next();
+        if section != Some(name) || count.is_none() || tokens.next().is_some() {
             return Err(crate::resource::malformed_charged(
                 self.ctx,
                 format_args!("binary B-rep expected {name} section, found {line:?}"),
                 "FreeCAD binary section diagnostic",
             ));
         }
-        tokens
-            .next()
-            .and_then(|value| value.parse::<usize>().ok())
+        self.ctx.parse_text::<usize>(count.unwrap_or(""), "FreeCAD binary B-rep section count")?
+            .ok()
             .filter(|count| *count <= 1_000_000)
             .ok_or_else(|| CodecError::malformed(format_args!("invalid binary {name} count")))
     }
 
     fn u8(&mut self, label: &str) -> Result<u8, CodecError> {
+        self.admit_read(1, label)?;
         self.view.u8().ok_or_else(|| Self::truncated(label))
     }
 
@@ -4643,10 +4651,12 @@ impl<'a, 'c, 'r> BinaryCursor<'a, 'c, 'r> {
     }
 
     fn u16(&mut self, label: &str) -> Result<u16, CodecError> {
+        self.admit_read(2, label)?;
         self.view.u16_le().ok_or_else(|| Self::truncated(label))
     }
 
     fn i32(&mut self, label: &str) -> Result<i32, CodecError> {
+        self.admit_read(4, label)?;
         self.view.i32_le().ok_or_else(|| Self::truncated(label))
     }
 
@@ -4659,12 +4669,14 @@ impl<'a, 'c, 'r> BinaryCursor<'a, 'c, 'r> {
     }
 
     fn finite_f64(&mut self, label: &str) -> Result<FiniteReal, CodecError> {
+        self.admit_read(8, label)?;
         let value = self.view.f64_le().ok_or_else(|| Self::truncated(label))?;
         FiniteReal::new(value)
             .ok_or_else(|| CodecError::malformed(format_args!("non-finite {label}")))
     }
 
     fn f32(&mut self, label: &str) -> Result<FiniteBinary32, CodecError> {
+        self.admit_read(4, label)?;
         let value = self.view.f32_le().ok_or_else(|| Self::truncated(label))?;
         FiniteBinary32::new(value)
             .ok_or_else(|| CodecError::malformed(format_args!("non-finite {label}")))
