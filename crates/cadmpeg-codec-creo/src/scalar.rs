@@ -321,11 +321,12 @@ impl ScalarCache {
                 byte_0, byte_1, byte_2, byte_3, byte_4, byte_5, byte_6, byte_7,
             ];
             // Fixed-width image probes are constant; table growth is admitted.
-            if !image_storage.with_storage(|| {
-                ctx.insert_hash_set(&mut seen, raw, "creo scalar cache unique images")
-            })? {
+            if seen.contains(&raw) {
                 continue;
             }
+            image_storage.with_storage(|| {
+                ctx.insert_hash_set(&mut seen, raw, "creo scalar cache unique images")
+            })?;
             let mut ieee = raw;
             ieee[0] = 0x40;
             let tail = [raw[2], raw[3], raw[4], raw[5], raw[6], raw[7]];

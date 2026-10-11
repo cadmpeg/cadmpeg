@@ -3,7 +3,7 @@
 use super::{double_xar_tables, ScalarCache};
 
 #[test]
-fn scalar_cache_discovery_and_duplicate_hashing_refuse_work() {
+fn scalar_cache_discovery_and_unique_insertion_refuse_work() {
     let images = [0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x46, 0x08, 0, 0, 0, 0, 0, 0];
     let cache = crate::test_support::assert_work_boundaries(
         &[
@@ -25,21 +25,36 @@ fn scalar_cache_discovery_and_duplicate_hashing_refuse_work() {
 }
 
 #[test]
-fn duplicate_scalar_image_hashing_refuses_after_the_first_image() {
+fn duplicate_scalar_image_probes_add_no_work() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
     let images = [0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x46, 0x08, 0, 0, 0, 0, 0, 0];
-    // The last image-set refusal is the duplicate's lookup: it hashes and
-    // compares its eight bytes once and adds no table growth.
     let error = crate::test_support::last_refusal_at(
         &images,
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        ResourceDimension::WorkUnits,
         "creo scalar cache unique images",
         |ctx| ScalarCache::from_section_checked(ctx, &images).map(|_| ()),
     );
     let cadmpeg_core::CodecError::ResourceLimit(resource) = error else {
-        panic!("hash work refusal");
+        panic!("unique insertion refusal");
     };
-    assert_eq!(resource.operation, "creo scalar cache unique images");
-    assert_eq!(resource.additional, 8);
+    // Each first table growth admits four eight-byte buckets, four control
+    // bytes, sixteen trailing control bytes and fifteen alignment bytes.
+    let growth = 4 * 8 + 4 + 16 + 15;
+    // Discovery, the first image probe and its table growth precede insertion.
+    assert_eq!((resource.used, resource.additional), (16 + 8 + growth, 8));
+    // Both new keys pay their insertion and table growth charges. Empty
+    // vectors relocate no values, and the repeated image probe is free.
+    let work = 16 + 2 * 8 + 2 * 6 + 2 * growth;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = work;
+    let (ctx, _) = DecodeContext::from_root_bytes(&images, &arena, &policy).expect("root");
+    let cache = ScalarCache::from_section_checked(&ctx, &images).expect("duplicate probe is free");
+    assert_eq!(cache.entries.len(), 1);
+    let refusal = ctx.charge_work_limit(1, "after scalar duplicate discovery")
+        .expect_err("exact work admitted");
+    assert_eq!((refusal.used, refusal.additional), (work, 1));
 }
 
 #[test]
