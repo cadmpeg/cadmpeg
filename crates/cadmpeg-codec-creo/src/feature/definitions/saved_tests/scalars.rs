@@ -233,7 +233,10 @@ fn saved_section_assembly_uses_one_entity_output_buffer() {
 fn saved_section_scalar_lookahead_stops_at_its_end() {
     let cache = scalar::ScalarCache::default();
     assert_eq!(saved_section_scalar(&[0x18, 0xe0], 0, 1, &cache), (None, 1));
-    assert_eq!(saved_section_scalar(&[0x18, 0xe0], 0, 2, &cache), (Some(0.0), 1));
+    assert_eq!(
+        saved_section_scalar(&[0x18, 0xe0], 0, 2, &cache),
+        (Some(0.0), 1)
+    );
 }
 
 #[test]
@@ -243,29 +246,46 @@ fn saved_arc_scalar_stops_before_following_dictionary_bytes() {
     for end in 1..bytes.len() {
         assert_eq!(saved_arc_scalar(&bytes, 0, end, &cache), (None, 1));
     }
-    assert_eq!(saved_arc_scalar(&bytes, 0, bytes.len(), &cache), (Some(4.0), 7));
+    assert_eq!(
+        saved_arc_scalar(&bytes, 0, bytes.len(), &cache),
+        (Some(4.0), 7)
+    );
     assert_eq!(saved_arc_scalar(&[0x18, 0x28], 0, 1, &cache), (None, 1));
-    assert_eq!(saved_arc_scalar(&[0x18, 0x28], 0, 2, &cache), (Some(0.0), 1));
+    assert_eq!(
+        saved_arc_scalar(&[0x18, 0x28], 0, 2, &cache),
+        (Some(0.0), 1)
+    );
 }
 
 #[test]
 fn saved_named_vector_macro_stops_at_its_end() {
     let payload = b"\xe0\x02center\0\x18\xe5";
     let cache = scalar::ScalarCache::default();
-    let parse = |end| crate::decode::with_test_decode_ctx(|ctx| {
-        crate::feature::definitions::saved_named_scalars::<3>(ctx, payload, b"center", 0, end, &cache)
-    }).expect("named vector admitted");
+    let parse = |end| {
+        crate::decode::with_test_decode_ctx(|ctx| {
+            crate::feature::definitions::saved_named_scalars::<3>(
+                ctx, payload, b"center", 0, end, &cache,
+            )
+        })
+        .expect("named vector admitted")
+    };
     assert_eq!(parse(payload.len() - 1), None);
-    assert_eq!(parse(payload.len()), Some([Some(0.0), Some(1.0), Some(0.0)]));
+    assert_eq!(
+        parse(payload.len()),
+        Some([Some(0.0), Some(1.0), Some(0.0)])
+    );
 }
 
 #[test]
 fn saved_spline_parameter_lookahead_stops_at_its_end() {
     let payload = b"\xe0\x02params\0\xf8\x01\x18\x6d";
     let cache = scalar::ScalarCache::default();
-    let parse = |end| crate::decode::with_test_decode_ctx(|ctx| {
-        crate::feature::definitions::saved_spline_parameters(ctx, payload, 0, end, 1, &cache)
-    }).expect("saved parameter admitted");
+    let parse = |end| {
+        crate::decode::with_test_decode_ctx(|ctx| {
+            crate::feature::definitions::saved_spline_parameters(ctx, payload, 0, end, 1, &cache)
+        })
+        .expect("saved parameter admitted")
+    };
     assert_eq!(parse(payload.len() - 1), None);
     let full = parse(payload.len()).expect("zero parameter before dictionary prefix");
     assert_eq!(full.value, vec![0.0]);

@@ -1188,7 +1188,8 @@ mod tests {
                             Ok(())
                         }
                         Err(CodecError::ResourceLimit(original)) => {
-                            let at_entry = cap == 0 || (second_present && cap == 1 + terminator_visits);
+                            let at_entry =
+                                cap == 0 || (second_present && cap == 1 + terminator_visits);
                             assert_eq!(
                                 (
                                     original.dimension,

@@ -285,20 +285,33 @@ fn positional_variable_rows_require_every_stored_field() {
     let definition_end = payload.len();
     payload.extend_from_slice(b"feat_defs_2\0");
     for end in header.len()..definition_end {
-        let table = positional_variable_table(&payload, 0, end, 119,
-            &scalar::ScalarCache::default()).expect("declared header");
+        let table =
+            positional_variable_table(&payload, 0, end, 119, &scalar::ScalarCache::default())
+                .expect("declared header");
         assert!(table.rows.is_empty(), "incomplete row at {end}");
         assert!(!table.is_complete());
     }
-    let table = positional_variable_table(&payload, 0, definition_end, 119,
-        &scalar::ScalarCache::default()).expect("complete table");
+    let table = positional_variable_table(
+        &payload,
+        0,
+        definition_end,
+        119,
+        &scalar::ScalarCache::default(),
+    )
+    .expect("complete table");
     assert!(table.is_complete());
     assert_eq!(table.rows.len(), 1);
     assert_eq!(table.rows[0].key, 128);
     assert_eq!(table.rows[0].value, ScalarLane::Value(0.0));
     assert_eq!(table.rows[0].guess, ScalarLane::Value(0.0));
-    assert_eq!((table.rows[0].known, table.rows[0].homogeneity, table.rows[0].uvar_id),
-        (Some(1), Some(0), Some(129)));
+    assert_eq!(
+        (
+            table.rows[0].known,
+            table.rows[0].homogeneity,
+            table.rows[0].uvar_id
+        ),
+        (Some(1), Some(0), Some(129))
+    );
 }
 
 #[test]
@@ -324,6 +337,12 @@ fn named_variable_replay_requires_every_solver_state_field() {
         .expect("complete named table");
     assert!(table.is_complete());
     assert_eq!(table.rows.len(), 2);
-    assert_eq!((table.rows[1].known, table.rows[1].homogeneity, table.rows[1].uvar_id),
-        (Some(1), Some(0), Some(10)));
+    assert_eq!(
+        (
+            table.rows[1].known,
+            table.rows[1].homogeneity,
+            table.rows[1].uvar_id
+        ),
+        (Some(1), Some(0), Some(10))
+    );
 }

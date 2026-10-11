@@ -545,23 +545,55 @@ fn saved_generated_line_requires_its_orientation_invariant() {
 #[test]
 fn saved_generated_macro_stops_at_its_row_end() {
     let order = FeatureOrderTable {
-        declared_count: 1, has_prototype: false, entity_ref: None,
-        rows: vec![FeatureOrderRow { external_id: 42, internal_id: 7,
-            bitmask: 0, offset: 0 }].into(), offset: 0,
+        declared_count: 1,
+        has_prototype: false,
+        entity_ref: None,
+        rows: vec![FeatureOrderRow {
+            external_id: 42,
+            internal_id: 7,
+            bitmask: 0,
+            offset: 0,
+        }]
+        .into(),
+        offset: 0,
     };
     let segments = FeatureSegmentTable {
-        declared_count: 1, has_elided_prototype: false, entity_ref: None,
-        rows: vec![crate::feature::segment_rows::SegmentRow::Ordinary(FeatureSegment {
-            kind: FeatureSegmentKind::Arc([1, 2]), directions: [None; 3],
-            center_id: Some(3), arc_orientation: Some(0), vertical_horizontal: None,
-            radius_ref: None, radius2_ref: None, external_id: 42, body: Vec::new(), offset: 0,
-        })].into_iter().collect(), offset: 0,
+        declared_count: 1,
+        has_elided_prototype: false,
+        entity_ref: None,
+        rows: vec![crate::feature::segment_rows::SegmentRow::Ordinary(
+            FeatureSegment {
+                kind: FeatureSegmentKind::Arc([1, 2]),
+                directions: [None; 3],
+                center_id: Some(3),
+                arc_orientation: Some(0),
+                vertical_horizontal: None,
+                radius_ref: None,
+                radius2_ref: None,
+                external_id: 42,
+                body: Vec::new(),
+                offset: 0,
+            },
+        )]
+        .into_iter()
+        .collect(),
+        offset: 0,
     };
     let payload = [0xe3, 7, 0xe2, 0x18, 0xe5];
-    let parse = |bytes: &[u8]| crate::decode::with_test_decode_ctx(|ctx| {
-        parse_saved_positional_generated_entities(ctx, bytes, 0, 4,
-            &scalar::ScalarCache::default(), Some(&order), Some(&segments))
-    }).expect("bounded generated row");
+    let parse = |bytes: &[u8]| {
+        crate::decode::with_test_decode_ctx(|ctx| {
+            parse_saved_positional_generated_entities(
+                ctx,
+                bytes,
+                0,
+                4,
+                &scalar::ScalarCache::default(),
+                Some(&order),
+                Some(&segments),
+            )
+        })
+        .expect("bounded generated row")
+    };
     let standalone = parse(&payload[..4]);
     assert_eq!(standalone.len(), 1);
     assert_eq!(parse(&payload), standalone);

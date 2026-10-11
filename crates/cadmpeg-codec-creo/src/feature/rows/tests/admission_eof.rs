@@ -33,16 +33,26 @@ fn exact_work(
                 }
                 Err(CodecError::ResourceLimit(refusal)) => {
                     let mut used = 0;
-                    let (operation, additional) = steps.iter().find_map(|&(operation, units)| {
-                        if used + units > allowed {
-                            Some((operation, units))
-                        } else {
-                            used += units;
-                            None
-                        }
-                    }).expect("first scheduled operation beyond cap");
-                    assert_eq!((refusal.dimension, refusal.used, refusal.additional, refusal.operation),
-                        (ResourceDimension::WorkUnits, used, additional, operation));
+                    let (operation, additional) = steps
+                        .iter()
+                        .find_map(|&(operation, units)| {
+                            if used + units > allowed {
+                                Some((operation, units))
+                            } else {
+                                used += units;
+                                None
+                            }
+                        })
+                        .expect("first scheduled operation beyond cap");
+                    assert_eq!(
+                        (
+                            refusal.dimension,
+                            refusal.used,
+                            refusal.additional,
+                            refusal.operation
+                        ),
+                        (ResourceDimension::WorkUnits, used, additional, operation)
+                    );
 
                     Err(CodecError::ResourceLimit(refusal))
                 }
