@@ -66,25 +66,33 @@ impl Packaging {
         else {
             return Ok(());
         };
-        attributes.insert(
+        ctx.insert_btree_map(
+            attributes,
             cadmpeg_core::nonblank_literal!("container_kind"),
             ctx.copy_retained_text("iso-10303-21-zip", "step_source_attribute_text")?,
-        );
-        attributes.insert(
+            "step_source_attribute_entries",
+        )?;
+        ctx.insert_btree_map(
+            attributes,
             cadmpeg_core::nonblank_literal!("archive_root"),
             ctx.copy_retained_text(crate::archive::ROOT_NAME, "step_source_attribute_text")?,
-        );
-        attributes.insert(
+            "step_source_attribute_entries",
+        )?;
+        ctx.insert_btree_map(
+            attributes,
             cadmpeg_core::nonblank_literal!("archive_entries"),
             ctx.format_retained(format_args!("{entry_count}"), "step_source_attribute_text")?,
-        );
-        attributes.insert(
+            "step_source_attribute_entries",
+        )?;
+        ctx.insert_btree_map(
+            attributes,
             cadmpeg_core::nonblank_literal!("archive_root_data_offset"),
             ctx.format_retained(
                 format_args!("{root_data_offset}"),
                 "step_source_attribute_text",
             )?,
-        );
+            "step_source_attribute_entries",
+        )?;
         Ok(())
     }
 }
@@ -150,25 +158,32 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         ctx: &'ctx DecodeContext<'arena>,
         mode: DecodeMode,
     ) -> Result<Self, CodecError> {
+        // Attribute keys borrow bounded static literals; the tree owns nodes and slots.
         let mut attributes = BTreeMap::new();
-        attributes.insert(
+        ctx.insert_btree_map(
+            &mut attributes,
             cadmpeg_core::nonblank_literal!("schema"),
             exchange.joined_schema_identifiers(ctx)?,
-        );
-        attributes.insert(
+            "step_source_attribute_entries",
+        )?;
+        ctx.insert_btree_map(
+            &mut attributes,
             cadmpeg_core::nonblank_literal!("data_sections"),
             ctx.format_retained(
                 format_args!("{}", exchange.data().len()),
                 "step_source_attribute_text",
             )?,
-        );
-        attributes.insert(
+            "step_source_attribute_entries",
+        )?;
+        ctx.insert_btree_map(
+            &mut attributes,
             cadmpeg_core::nonblank_literal!("entity_instances"),
             ctx.format_retained(
                 format_args!("{}", exchange.records().len()),
                 "step_source_attribute_text",
             )?,
-        );
+            "step_source_attribute_entries",
+        )?;
         if let DecodeMode::Decode(packaging) = mode {
             packaging.add_source_attributes(&mut attributes, ctx)?;
         }
@@ -802,14 +817,18 @@ fn decode_exchange_mode(
                 let bytes = session
                     .ctx
                     .copy_retained(&input[signature.clone()], "step_signature_record")?;
-                let signature_kind = opaque_storage.with_storage(|| {
-                    ctx.copy_retained_text("SIGNATURE", "step_opaque_kind_text")
-                })?;
-                *opaque_storage
-                    .with_storage(|| {
-                        ctx.entry_btree_map(&mut counts, signature_kind, "step_opaque_kind_counts")
-                    })?
-                    .or_default() += 1;
+                if let Some(count) = ctx.get_mut_btree_map(
+                    &mut counts, "SIGNATURE", "step_opaque_kind_counts",
+                )? {
+                    *count += 1;
+                } else {
+                    let signature_kind = opaque_storage.with_storage(|| {
+                        ctx.copy_retained_text("SIGNATURE", "step_opaque_kind_text")
+                    })?;
+                    opaque_storage.with_storage(|| {
+                        ctx.insert_btree_map(&mut counts, signature_kind, 1, "step_opaque_kind_counts")
+                    })?;
+                }
                 opaque.push(UnknownRecord::retained(
                     ids::signature(index),
                     u64_from_index(signature.start),
@@ -825,34 +844,42 @@ fn decode_exchange_mode(
             session.ctx,
         )?;
     }
-    session.source_attributes.insert(
+    ctx.insert_btree_map(
+        &mut session.source_attributes,
         cadmpeg_core::nonblank_literal!("bytes_structural"),
         ctx.format_retained(
             format_args!("{}", accounting.structural),
             "step_byte_accounting_attribute_text",
         )?,
-    );
-    session.source_attributes.insert(
+        "step_source_attribute_entries",
+    )?;
+    ctx.insert_btree_map(
+        &mut session.source_attributes,
         cadmpeg_core::nonblank_literal!("bytes_typed"),
         ctx.format_retained(
             format_args!("{}", accounting.typed),
             "step_byte_accounting_attribute_text",
         )?,
-    );
-    session.source_attributes.insert(
+        "step_source_attribute_entries",
+    )?;
+    ctx.insert_btree_map(
+        &mut session.source_attributes,
         cadmpeg_core::nonblank_literal!("bytes_named_opaque"),
         ctx.format_retained(
             format_args!("{}", accounting.opaque),
             "step_byte_accounting_attribute_text",
         )?,
-    );
-    session.source_attributes.insert(
+        "step_source_attribute_entries",
+    )?;
+    ctx.insert_btree_map(
+        &mut session.source_attributes,
         cadmpeg_core::nonblank_literal!("bytes_unclassified"),
         ctx.format_retained(
             format_args!("{}", accounting.unclassified),
             "step_byte_accounting_attribute_text",
         )?,
-    );
+        "step_source_attribute_entries",
+    )?;
     if accounting.unclassified > 0 {
         (session.ctx).push_vec(
             &mut session.body.losses,
@@ -1658,10 +1685,16 @@ fn count_unknown_kind(
     record: &parse::RawRecord,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    let kind = record_type_text(record, ctx, "step_opaque_kind_text")?;
-
-    *ctx.entry_btree_map(counts, kind, "step_opaque_kind_counts")?
-        .or_default() += 1;
+    let mut candidate_storage = ctx.reserve_scoped(0, "STEP opaque kind candidate")?;
+    let kind = candidate_storage.with_storage(|| {
+        record_type_text(record, ctx, "step_opaque_kind_text")
+    })?;
+    if let Some(count) = ctx.get_mut_btree_map(counts, &kind, "step_opaque_kind_counts")? {
+        *count += 1;
+    } else {
+        let kind = candidate_storage.commit_value(kind)?;
+        ctx.insert_btree_map(counts, kind, 1, "step_opaque_kind_counts")?;
+    }
     Ok(())
 }
 
