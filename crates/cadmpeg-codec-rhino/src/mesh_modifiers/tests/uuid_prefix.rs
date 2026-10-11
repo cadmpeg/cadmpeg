@@ -8,13 +8,20 @@ use crate::wire::Uuid;
 
 #[test]
 fn modifier_uuid_accepts_actual_bytes_without_exhaustion_work() {
-    for text in ["11111111111111111111111111111111", "11111111-1111-1111-1111-111111111111"] {
+    for text in [
+        "11111111111111111111111111111111",
+        "11111111-1111-1111-1111-111111111111",
+    ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         // The forward and reverse brace searches each stop on their first byte.
-        policy.limits.max_work_units = 2 + text.len() as u64;
+        policy.limits.max_work_units =
+            2 + u64::try_from(text.len()).expect("fixture text length fits u64");
         let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-        assert_eq!(parse_uuid(&ctx, text).unwrap(), Some(Uuid::from_canonical([0x11; 16])));
+        assert_eq!(
+            parse_uuid(&ctx, text).unwrap(),
+            Some(Uuid::from_canonical([0x11; 16]))
+        );
         ctx.finish_session().unwrap();
     }
 }
@@ -44,8 +51,12 @@ fn modifier_uuid_digit_refusal_keeps_the_original_fuse() {
     assert_eq!(limit.operation, "Rhino XML UUID digits");
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!((limit.used, limit.additional), (2, 1));
-    assert!(matches!(parse_uuid(&ctx, ""), Err(CodecError::ResourceLimit(original)) if original == limit));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+    assert!(
+        matches!(parse_uuid(&ctx, ""), Err(CodecError::ResourceLimit(original)) if original == limit)
+    );
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+    );
 }
 
 #[test]
@@ -55,11 +66,15 @@ fn modifier_uuid_last_actual_digit_refuses_one_below() {
     // Two brace-search positions plus 31 of the 32 actual digit visits.
     policy.limits.max_work_units = 2 + 31;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-    let CodecError::ResourceLimit(limit) = parse_uuid(&ctx, "11111111111111111111111111111111").unwrap_err() else {
+    let CodecError::ResourceLimit(limit) =
+        parse_uuid(&ctx, "11111111111111111111111111111111").unwrap_err()
+    else {
         panic!("last actual digit must refuse");
     };
     assert_eq!(limit.operation, "Rhino XML UUID digits");
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!((limit.used, limit.additional), (2 + 31, 1));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+    );
 }

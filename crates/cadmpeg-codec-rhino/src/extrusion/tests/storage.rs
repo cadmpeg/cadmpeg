@@ -283,8 +283,7 @@ fn damage_cache_uuid_crc(
         let payload = &userdata[0].known().unwrap().payload_range;
         (payload.start, payload.end)
     } else {
-        let outer = crate::chunks::chunk_at(bytes, range.start, range.end, CHUNKS, false)
-            .unwrap();
+        let outer = crate::chunks::chunk_at(bytes, range.start, range.end, CHUNKS, false).unwrap();
         let cache = crate::chunks::chunk_at(
             bytes,
             outer.body().end - super::one_mesh_cache().len(),
@@ -308,8 +307,8 @@ fn damage_cache_uuid_crc(
             item.body().end,
         )
     };
-    let wrapper = crate::chunks::chunk_at(bytes, wrapper_start, wrapper_end, CHUNKS, false)
-        .unwrap();
+    let wrapper =
+        crate::chunks::chunk_at(bytes, wrapper_start, wrapper_end, CHUNKS, false).unwrap();
     let uuid = crate::chunks::chunk_at(
         bytes,
         wrapper.body().start,
@@ -365,7 +364,9 @@ fn accepted_extrusion_cache_warning_copies_promote_retained_storage() {
                             extrusion.warnings[0].code,
                             Some(crate::loss::RhinoLossCode::IntegrityFailure),
                         );
-                        assert!(extrusion.warnings[0].message.starts_with("CRC mismatch at offset "));
+                        assert!(extrusion.warnings[0]
+                            .message
+                            .starts_with("CRC mismatch at offset "));
                         assert!(extrusion.warnings[0].message.contains("typecode 0x2fffb:"));
                         assert_eq!(extrusion.meshes.len(), 1);
                     }
