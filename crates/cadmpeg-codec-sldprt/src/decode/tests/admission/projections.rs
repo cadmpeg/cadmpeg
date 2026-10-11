@@ -1533,7 +1533,7 @@ fn metadata_thread_enrichment_refuses_collection_limit() {
     let limit = collection_refusal_with_options(
         &selected_thread_source(false),
         options,
-        "enrich SLDPRT cosmetic thread diameters",
+        "insert SLDPRT thread history ID entry",
     );
     assert_eq!(
         limit.dimension,
@@ -1547,7 +1547,7 @@ fn geometry_thread_enrichment_refuses_collection_limit() {
     let limit = collection_refusal_with_options(
         &selected_thread_source(true),
         DecodeOptions::default(),
-        "enrich SLDPRT cosmetic thread diameters",
+        "insert SLDPRT thread history ID entry",
     );
     assert_eq!(
         limit.dimension,

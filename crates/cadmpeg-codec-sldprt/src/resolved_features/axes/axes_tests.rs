@@ -186,7 +186,7 @@ fn revolution_axis_binding_refuses_collection_limit() {
     let histories = single_revolution_history();
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::CollectionItems,
-        "index SLDPRT revolution features",
+        "insert SLDPRT revolution native feature",
         |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -208,7 +208,7 @@ fn revolution_axis_binding_refuses_collection_limit() {
 #[test]
 fn revolution_axis_binding_refuses_work_limit() {
     let histories = single_revolution_history();
-    crate::test_support::work_refusal_at("index SLDPRT revolution features", |ctx| {
+    crate::test_support::work_refusal_at("look up SLDPRT revolution native feature", |ctx| {
         super::bind_profile_revolution_axes(
             ctx,
             &mut revolution_binding_consumer_targets(&histories[0].features[0].id),
@@ -1422,12 +1422,18 @@ fn omitted_origin_and_principal_axes_use_unique_maximum_incidence_support_lines(
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy)
             .expect("profile axis input fits root policy");
 
+    let roster = super::LaneMarkerIndex::new(&ctx, markers.iter().copied()).unwrap();
+    let owned = roster.by_feature["profile-native"].as_slice();
+    let mut queries = super::ProfileEndpointQueries::new(&ctx, &lane, &markers).unwrap();
+    let mut endpoint_ids_storage = ctx.reserve_scoped(0, "hold test indexed endpoints").unwrap();
+    let curve_endpoints = queries.ids(&ctx, &mut endpoint_ids_storage, owned, true).unwrap();
+
     assert_eq!(
         profile_roster_origin_axis_endpoints(
             &ctx,
             "profile-native",
             &super::LaneMarkerIndex::new(&ctx, markers.iter().copied()).unwrap(),
-            &mut super::ProfileEndpointQueries::new(&ctx, &lane, &markers).unwrap(),
+            &curve_endpoints,
         )
         .expect("origin axis scan fits service policy"),
         Some([[0.0, 0.0], [0.0, 0.01]])
@@ -1437,17 +1443,22 @@ fn omitted_origin_and_principal_axes_use_unique_maximum_incidence_support_lines(
             &ctx,
             "profile-native",
             &super::LaneMarkerIndex::new(&ctx, markers.iter().copied()).unwrap(),
-            &mut super::ProfileEndpointQueries::new(&ctx, &lane, &markers).unwrap(),
+            &curve_endpoints,
         )
         .expect("principal axis scan fits service policy"),
         Some([[0.0, 0.0], [0.0, 1.0]])
     );
     crate::test_support::work_refusal_at("collect SLDPRT principal axis candidates", |ctx| {
+        let roster = super::LaneMarkerIndex::new(ctx, markers.iter().copied())?;
+        let owned = roster.by_feature["profile-native"].as_slice();
+        let mut queries = super::ProfileEndpointQueries::new(ctx, &lane, &markers)?;
+        let mut storage = ctx.reserve_scoped(0, "hold test indexed endpoints")?;
+        let ids = queries.ids(ctx, &mut storage, owned, true)?;
         profile_roster_principal_axis_endpoints(
             ctx,
             "profile-native",
             &super::LaneMarkerIndex::new(ctx, markers.iter().copied())?,
-            &mut super::ProfileEndpointQueries::new(ctx, &lane, &markers)?,
+            &ids,
         )
     });
     assert!(super::profile_roster_implicit_axis_endpoints(
