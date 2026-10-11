@@ -267,3 +267,199 @@ fn freeform_surface_source_formats_the_final_scoped_tag() {
         }
     }
 }
+
+#[test]
+fn incomplete_resolved_blocks_build_no_model_indexes() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+    let stream = crate::test_support::test_b5::b5_closed_triangle_stream_with_native_vertex_chain();
+    let file = crate::test_support::test_container::standard_catpart_from_streams(&stream, &[]);
+    let original = crate::test_support::with_service_context(|ctx| {
+        let scan = crate::container::scan_bytes(ctx, file.as_slice()).expect("fixture container");
+        super::super::try_decode_freeform_surfaces(
+            ctx,
+            &scan,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("source transfer")
+        .expect("populated model")
+        .ir
+    });
+    let bytes = crate::test_support::test_b2::b2_edge_block_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    crate::test_support::with_service_context(|ctx| {
+        let blocks =
+            crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
+                ctx,
+                &bytes,
+                &records,
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+            .expect("resolved blocks");
+        assert_eq!(blocks.len(), 1);
+        assert!(
+            crate::families::consolidated::records::consolidated_topology_edge_runs_from_records(
+                ctx, &bytes, &records
+            )
+            .expect("topology inventory")
+            .is_empty()
+        );
+    });
+    for operation in [
+        "catia_model_surface_positions",
+        "catia_freeform_points_index",
+        "catia_freeform_vertices_index",
+        "catia_zero_wire_curve_positions",
+        "catia_freeform_faces_index",
+        "catia_freeform_loops_index",
+        "catia_freeform_coedges_index",
+        "catia_freeform_edges_visits",
+    ] {
+        let mut ir = original.clone();
+        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+        let counts = crate::test_support::with_work_limit(u64::MAX, |ctx| {
+            super::super::append_resolved_consolidated_surface_curves(
+                &mut ir,
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+                &bytes,
+                &records,
+                super::super::FreeformSurfacePool {
+                    surfaces: &[],
+                    surface_ids: &[],
+                    surface_alias_tags: &std::collections::HashMap::new(),
+                },
+                &mut crate::nurbs::LaneRefusals::new(),
+                &mut crate::families::FamilyEntityAdmission::new(ctx),
+            )
+        })
+        .expect("no complete-run transfer consumer");
+        assert_eq!(counts.standard_edges, 0);
+        assert_eq!(counts.partner_supports, 0);
+        assert_eq!(counts.standard_face_surfaces, 0);
+        assert_eq!(counts.standard_face_pcurves, 0);
+        assert_eq!(ir.model, original.model);
+    }
+}
+
+#[test]
+fn fallback_nurbs_traversal_has_no_source_vector_backing() {
+    use cadmpeg_core::decode::{
+        refusal_probe::RefusalProbe, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+    };
+    const MATERIALIZED_LIMIT: u64 = 16 * 1024;
+    let mut bytes = crate::test_support::test_a5a8::a8_surface_stream();
+    let a5_pos = bytes.len();
+    bytes.extend(crate::test_support::test_a5a8::a5_surface_stream());
+    let records = crate::wire::records::consolidated_records(&bytes);
+    for operation in ["catia_a8_resolved_surfaces", "catia_a5_surfaces"] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = MATERIALIZED_LIMIT;
+        policy.limits.max_collection_items = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let _probe = RefusalProbe::arm(ResourceDimension::CollectionItems, operation, None);
+        let pool = ctx
+            .with_scoped_storage("test fallback pool", || {
+                super::super::freeform_surface_carriers(
+                    &ctx,
+                    &bytes,
+                    &records,
+                    &mut crate::nurbs::LaneRefusals::new(),
+                )
+            })
+            .expect("geometry moves directly into the fallback pool");
+        assert_eq!(pool.0.len(), 2);
+        assert_eq!(pool.0[0].pos, 0);
+        assert_eq!(pool.0[1].pos, a5_pos);
+        assert_eq!(pool.0[0].source_tag, "freeform:object_id:decafbad");
+        assert_eq!(
+            pool.0[1].source_tag,
+            format!("freeform:frame_offset:{a5_pos:010}")
+        );
+        for surface in &pool.0 {
+            assert!(matches!(
+                surface.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
+            ));
+            assert!(!surface.source_object.object_id.as_str().is_empty());
+        }
+        drop(pool);
+        // This cap is below the empty-root proportional allowance. Reserving
+        // all of it proves that dropping the pool releases every captured byte.
+        let _released = ctx
+            .reserve_scoped(MATERIALIZED_LIMIT, "test released fallback pool")
+            .expect("no surviving pool charge");
+    }
+}
+
+#[test]
+fn circle_runs_build_no_unqueried_analytic_carrier_indexes() {
+    use crate::test_support::test_b2;
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+    let circle = test_b2::b2_circle_stream();
+    let mut bytes = crate::test_support::test_a5_bound::a5_circle_bound_edge_stream();
+    bytes.truncate(bytes.len() - circle.len());
+    bytes.extend(crate::test_support::test_a5a8::a5_native_edge_identity_stream(6, 139, 142));
+    bytes.extend(circle);
+    for carrier in [
+        test_b2::b2_cylinder_stream(),
+        test_b2::b2_embedded_cylinder_stream(),
+        test_b2::b2_cone_stream(),
+        test_b2::b2_sphere_stream(),
+        test_b2::b2_torus_stream(),
+        test_b2::b2_plane_carrier_stream(),
+    ] {
+        bytes.extend(carrier);
+    }
+    let records = crate::wire::records::consolidated_records(&bytes);
+    crate::test_support::with_service_context(|ctx| {
+        let blocks =
+            crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
+                ctx,
+                &bytes,
+                &records,
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+            .expect("source bindings");
+        assert_eq!(blocks.len(), 1);
+        assert!(blocks[0].supports.iter().all(|binding| matches!(
+            binding,
+            Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Circle { .. })
+        )));
+        assert_eq!(
+            crate::families::consolidated::records::consolidated_topology_edge_runs_from_records(
+                ctx, &bytes, &records,
+            )
+            .expect("complete run")
+            .len(),
+            1
+        );
+    });
+    for operation in [
+        "catia_freeform_standalone_cylinders",
+        "catia_freeform_embedded_cylinders",
+        "catia_freeform_cones",
+        "catia_freeform_spheres",
+        "catia_freeform_tori",
+        "catia_freeform_planes",
+    ] {
+        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+        let counts = crate::test_support::with_work_limit(u64::MAX, |ctx| {
+            super::super::append_resolved_consolidated_surface_curves(
+                &mut cadmpeg_ir::CadIr::empty(),
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+                &bytes,
+                &records,
+                super::super::FreeformSurfacePool {
+                    surfaces: &[],
+                    surface_ids: &[],
+                    surface_alias_tags: &std::collections::HashMap::new(),
+                },
+                &mut crate::nurbs::LaneRefusals::new(),
+                &mut crate::families::FamilyEntityAdmission::new(ctx),
+            )
+        })
+        .expect("circle supports have no analytic position reader");
+        assert_eq!(counts.standard_edges, 0);
+    }
+}

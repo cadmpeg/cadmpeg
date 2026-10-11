@@ -175,3 +175,64 @@ fn resolved_circle_carrier_record_scan_propagates_work_refusal() {
         .map(|runs| runs.len())
     });
 }
+
+fn assert_borrowed_index_storage<T>(
+    operation: &'static str,
+    run: impl FnOnce(&DecodeContext<'_>) -> Result<usize, CodecError>,
+) {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+    let pointer = std::mem::size_of::<usize>();
+    let alignment = std::mem::align_of::<usize>().max(std::mem::align_of::<T>());
+    // The core's node bound has 11 key/value slots, 16 pointer-width slots
+    // and two alignment slots. A borrowed pool must not allocate owning T slots.
+    let owned_node = 11 * (pointer + std::mem::size_of::<T>()) + 16 * pointer + 2 * alignment;
+    let _probe = RefusalProbe::arm(
+        ResourceDimension::MaterializedBytes,
+        operation,
+        Some(cadmpeg_core::decode::u64_from_index(owned_node)),
+    );
+    assert_eq!(
+        crate::test_support::with_materialized_limit(u64::MAX, run)
+            .expect("index borrows live source records"),
+        1
+    );
+}
+
+#[test]
+fn analytic_circle_use_index_borrows_live_source_backing() {
+    let bytes = analytic_circle_run();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert_borrowed_index_storage::<super::super::ConsolidatedEdgeUseRun>(
+        "catia_analytic_circle_use_runs",
+        |ctx| {
+            super::super::consolidated_analytic_circle_edge_runs_from_records(ctx, &bytes, &records)
+                .map(|runs| runs.len())
+        },
+    );
+}
+
+#[test]
+fn class25_use_index_borrows_live_source_backing() {
+    let bytes = class25_run();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert_borrowed_index_storage::<super::super::ConsolidatedEdgeUseRun>(
+        "catia_class25_edge_use_runs",
+        |ctx| {
+            super::super::consolidated_class25_edge_runs_from_records(ctx, &bytes, &records)
+                .map(|runs| runs.len())
+        },
+    );
+}
+
+#[test]
+fn edge_use_metadata_index_borrows_live_source_backing() {
+    let bytes = crate::test_support::test_a5a8::a5_native_edge_identity_stream(6, 139, 142);
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert_borrowed_index_storage::<crate::families::b2::records::B2UseMetadata>(
+        "catia_edge_use_metadata_index",
+        |ctx| {
+            super::super::consolidated_edge_use_runs_from_records(ctx, &bytes, &records)
+                .map(|runs| runs.len())
+        },
+    );
+}

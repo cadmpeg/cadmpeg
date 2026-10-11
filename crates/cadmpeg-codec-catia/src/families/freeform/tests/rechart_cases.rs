@@ -814,8 +814,10 @@ fn a_revolution_frame_admitted_when_read_converts_to_a_torus_without_a_second_ax
             &mut CadIr::empty(),
             &mut AnnotationBuilder::<()>::default(),
             &resolved,
+            true,
             admission,
         )
+        .and_then(|(bindings, storage)| storage.commit_value(bindings))
     })
     .expect("service limits admit freeform model records");
     let [binding] = bindings.as_slice() else {
@@ -867,8 +869,10 @@ fn a_torus_reference_tilted_off_the_axis_by_rounding_keeps_the_perpendicularity_
                 &mut CadIr::empty(),
                 &mut AnnotationBuilder::<()>::default(),
                 &resolved,
+                true,
                 admission,
             )
+            .and_then(|(bindings, storage)| storage.commit_value(bindings))
         })
         .expect("service limits admit freeform model records")
     };
