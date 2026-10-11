@@ -279,14 +279,7 @@ fn finish_decode(
     )?;
     let design_feature_transfer =
         design_feature::transfer_design_features(ctx, &mut ir, &native, &modeling_graph_scope)?;
-    let transferred_native_sketch_entity_records = sketch::transfer_native_sketch_entities(
-        ctx,
-        &mut ir,
-        &native,
-        &design_feature_transfer,
-        &modeling_graph_scope,
-    )?;
-    let transferred_native_sketch_constraint_records = sketch::transfer_native_sketch_constraints(
+    sketch::frame::transfer(
         ctx,
         &mut ir,
         &native,
@@ -1887,13 +1880,6 @@ fn finish_decode(
     let transferred_design_records = ctx.collect_string_set(
         transferred_formula_design_records
             .union(&transferred_design_feature_records)
-            .chain(
-                transferred_native_sketch_entity_records.intersection(&structurally_owned_records),
-            )
-            .chain(
-                transferred_native_sketch_constraint_records
-                    .intersection(&structurally_owned_records),
-            )
             .chain(transferred_constraint_range_records.intersection(&structurally_owned_records))
             .map(String::as_str),
         "catia_transferred_design_records",

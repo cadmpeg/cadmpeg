@@ -138,9 +138,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which fields mark construction geometry? Which relation assigns sketch geometry to a profile?
 
-**Known.** The decoder retains sketch-related objects and their exact incidences.
+**Known.** `catia.md` §7.3 defines sketch member identity, ordered local point coordinates, and placement independently. None assigns standard or construction state. Empty `OutputGeometries` fields and solver lists do not assign profile membership. The native object and entity records retain the geometry and its exact incidences.
 
-**Need.** We must know these semantics to separate construction geometry from closed profiles.
+**Need.** We must identify the complete geometry-owned construction-state production, including both standard and construction states, and the exact native profile-membership incidence. Closed profiles require standard curves and exact endpoint identities; point coordinates and geometric proximity do not establish that relation.
 
 ### DI-21. Sketch geometry classes
 
@@ -154,7 +154,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What are the operand and value fields of each dimensional and non-dimensional sketch constraint?
 
-**Known.** Constraint-range values and structural incidences are retained separately. An exact source-closed relation from an admitted `2DPoint` field to a complete `ConstraintDYS` field is retained as one unresolved native sketch constraint when both fields are direct members of the same transferred `Sketch` owner list and all graph, entity, design-object, class-entry, and owner identities agree. The point entity, target field and entity, target ordinal, source/reference offsets, and every outbound target-field reference occurrence with its source container, identity, offset, resolution state, and resolved target class are retained. A structurally proven sketch-owned `Range`/`CstAttr_Dimension` constraint with a finite bit-agreeing nominal carries that nominal as a neutral millimetre length parameter. No constraint type, coordinate, dimensional subtype, driving or active state, or solver semantics is assigned.
+**Known.** Constraint-range values and structural incidences are retained separately. An exact `2DPoint` field-to-`ConstraintDYS` reference retains both native field and entity identities, offsets, and outbound reference occurrences. This incidence assigns no neutral sketch geometry or constraint type. A structurally proven sketch-owned `Range`/`CstAttr_Dimension` constraint with a finite bit-agreeing nominal carries that nominal as a neutral millimetre length parameter. No dimensional subtype, driving or active state, or solver semantics is assigned.
 
 **Need.** We must know the fields to transfer and solve the constraints.
 

@@ -11,6 +11,51 @@ use crate::native::{CatiaDesignObject, CatiaObjectRecord, CatiaObjectRecordRefer
 use crate::unique_index::UniqueIndex;
 use crate::value_block::ValueField;
 
+/// Transfer placements for admitted sketch declarations.
+pub(crate) fn transfer(
+    ctx: &DecodeContext<'_>,
+    ir: &mut cadmpeg_ir::document::CadIr,
+    native: &crate::native::CatiaNative,
+    feature_transfer: &crate::design_feature::DesignFeatureTransfer,
+    graph_scope: &crate::decode::ModelingGraphScope,
+) -> Result<(), CodecError> {
+    let records = super::unique_object_records(ctx, native)?;
+    let entities = super::unique_entity_records(ctx, native)?;
+    let objects = super::unique_design_objects(ctx, native)?;
+    for sketch in &mut ir.model.sketches {
+        ctx.charge_work(1, "catia_sketch_frame_transfer")?;
+        let Some(object) = sketch
+            .native_ref
+            .as_deref()
+            .and_then(|id| objects.get(id))
+            .copied()
+        else {
+            continue;
+        };
+        if !graph_scope.contains(object.parent.as_str()) {
+            continue;
+        }
+        let Some(owner_id) = object.owner_record.as_deref() else {
+            continue;
+        };
+        if !feature_transfer.sketch_owner_records.contains(owner_id) {
+            continue;
+        }
+        let Some(owner) = records.get(owner_id).copied() else {
+            continue;
+        };
+        if owner.parent != object.parent
+            || owner.design_object.as_deref() != object.owner_design_object.as_deref()
+        {
+            continue;
+        }
+        if let Some(placement) = placement(ctx, owner, &records, &entities, &objects)? {
+            sketch.placement = placement;
+        }
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FrameProgram {
     Absent,
@@ -116,7 +161,7 @@ fn paired_entity<'a>(
     .then_some(entity)
 }
 
-pub(super) fn placement(
+fn placement(
     ctx: &DecodeContext<'_>,
     declaration: &CatiaObjectRecord,
     records: &UniqueIndex<&str, &CatiaObjectRecord>,

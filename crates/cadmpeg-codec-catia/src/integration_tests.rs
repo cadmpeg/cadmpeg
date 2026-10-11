@@ -494,3 +494,103 @@ fn fuzz_crash_container_bytes_do_not_panic() {
     let _probe = CatiaCodec.inspect(&mut Cursor::new(bytes), &InspectOptions::default());
     let _probe = CatiaCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default());
 }
+
+#[test]
+fn sketch_geometry_without_construction_state_stays_native() {
+    use crate::test_support::test_object_graph::{
+        catalog_stream, entity_table_record_with_value, object_graph_from_records,
+        object_graph_record,
+    };
+    let frame = [
+        0x82, 0x86, 0xe8, 0xe0, 0x07, 0x37, 0x8a, 0x81, 0xe8, 0xe7, 0xe8, 0xe8, 0xe8, 0xe7, 0xe8,
+        0xe8, 0xe8, 0xfe,
+    ];
+    let mut pair = vec![0x91, 0x85, 0xe8, 0xe4, 0x07, 0x37, 0x83, 0x81, 0xe6];
+    pair.extend_from_slice(&5.75_f64.to_le_bytes());
+    pair.push(0xe6);
+    pair.extend_from_slice(&12.64_f64.to_le_bytes());
+    pair.extend_from_slice(&[0xfe, 0xfe]);
+    let records = [
+        object_graph_record(
+            &[0x04, 0x01, 0x82, 0x84],
+            &[0x3b, 0x82, 0x81, 0x85, 0x81, 0x83, 0xfe],
+        ),
+        object_graph_record(&[0x12, 0x82, 0x85], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x85], &[0xfe]),
+        object_graph_record(&[0x12, 0x83, 0x86], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x85], &[0xfe]),
+        object_graph_record(&[0x12, 0x81, 0x85], &[0xfe]),
+    ];
+    let mut stream = Vec::new();
+    for (id, value) in [
+        (1, &[0xfe][..]),
+        (2, &[0xfe][..]),
+        (3, pair.as_slice()),
+        (4, &[0xfe][..]),
+        (5, frame.as_slice()),
+        (6, &[0xfe][..]),
+    ] {
+        stream.extend(entity_table_record_with_value(id, value));
+    }
+    stream.push(0xde);
+    stream.extend(object_graph_from_records(&records));
+    stream.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Sketch",
+        "Length",
+        "2DPoint",
+    ]));
+    let (bytes, _) = crate::test_support::test_container::outer_container_catpart(&stream);
+    let result = decode(bytes);
+    assert_valid(&result);
+    let model = &result.ir().model;
+    assert_eq!(model.sketches.len(), 1);
+    assert!(
+        model.sketch_entities.is_empty(),
+        "unknown construction state cannot become standard geometry"
+    );
+    assert!(model.sketch_constraints.is_empty());
+    assert!(matches!(
+        model.sketches[0].placement,
+        cadmpeg_ir::sketches::SketchPlacement::Resolved { .. }
+    ));
+    let native = result
+        .ir()
+        .native
+        .namespace("catia")
+        .expect("native namespace");
+    let records: Vec<crate::native::CatiaObjectRecord> = native
+        .arena_as("object_graph_records")
+        .expect("typed object records");
+    let entities: Vec<crate::native::entity_record::CatiaEntityRecord> = native
+        .arena_as("entity_records")
+        .expect("typed entity records");
+    let point = records
+        .iter()
+        .find(|r| r.entity_id() == Some(4))
+        .expect("retained point field");
+    assert_eq!(point.entity_id(), Some(4));
+    assert_eq!(point.owner_entity_id(), Some(3));
+    assert_eq!(
+        point
+            .class
+            .as_ref()
+            .expect("retained class selector")
+            .ordinal,
+        6
+    );
+    let owner = entities
+        .iter()
+        .find(|e| e.entity_id == 3)
+        .expect("retained coordinate owner");
+    let crate::native::entity_record::CatiaEntityRecordBody::Nested { value_payload, .. } =
+        &owner.body
+    else {
+        panic!("nested coordinate owner");
+    };
+    assert_eq!(value_payload, &pair);
+    assert!(owner.numeric_pair().is_some());
+}
