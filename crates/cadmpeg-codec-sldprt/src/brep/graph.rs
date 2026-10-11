@@ -1201,11 +1201,13 @@ fn unique_body_modifiers(
             }
             Ok::<_, cadmpeg_core::CodecError>(by_attr)
         })?;
-    ctx.collect_vec(
-        ctx.admit_iter(by_attr, "collect Parasolid body modifiers")?
-            .filter_map(|(_, modifier)| modifier),
-        "collect Parasolid body modifiers",
-    )
+    let mut modifiers = Vec::new();
+    for (_, modifier) in ctx.admit_iter(by_attr, "collect Parasolid body modifiers")? {
+        if let Some(modifier) = modifier {
+            ctx.push_vec(&mut modifiers, modifier, "collect Parasolid body modifiers")?;
+        }
+    }
+    Ok(modifiers)
 }
 
 fn unique_face_colors(
@@ -1667,7 +1669,7 @@ mod walk_storage_tests {
 
     #[test]
     fn face_walk_releases_rejected_ring_storage_between_sibling_loops() {
-        let (bridge, tables) = fixture(32, false);
+        let (bridge, tables) = fixture(128, false);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = 4096;
@@ -1726,5 +1728,71 @@ mod walk_storage_tests {
         };
         assert_eq!(limit.used, expected_bytes);
         assert_eq!(limit.additional, 4096);
+    }
+}
+
+#[cfg(test)]
+mod modifier_admission_tests {
+    use super::{attrib, unique_body_modifiers};
+    use cadmpeg_core::CodecError;
+
+    fn modifier(body_attr: u16, history_ordinal: u32) -> attrib::BodyModifier {
+        attrib::BodyModifier {
+            body_attr,
+            history_ordinal,
+            target: None,
+        }
+    }
+
+    #[test]
+    fn body_modifier_collection_charges_one_source_traversal() {
+        const COLLECT: &str = "collect Parasolid body modifiers";
+        const PROBE: &str = "probe collected Parasolid body modifiers";
+        let input = || vec![modifier(30, 3), modifier(10, 1), modifier(20, 2)];
+        let before = crate::test_support::work_refusal_at(COLLECT, |ctx| {
+            unique_body_modifiers(ctx, input())
+        });
+        let after = crate::test_support::work_refusal_at(PROBE, |ctx| {
+            let modifiers = unique_body_modifiers(ctx, input())?;
+            assert_eq!(
+                modifiers
+                    .iter()
+                    .map(|value| (value.body_attr, value.history_ordinal))
+                    .collect::<Vec<_>>(),
+                vec![(10, 1), (20, 2), (30, 3)]
+            );
+            ctx.charge_work(1, PROBE)
+        });
+        let (CodecError::ResourceLimit(before), CodecError::ResourceLimit(after)) = (before, after)
+        else {
+            panic!("work refusal")
+        };
+        assert_eq!(before.additional, 3);
+        assert_eq!(after.used - before.used, 3);
+        assert_eq!(after.additional, 1);
+    }
+
+    #[test]
+    fn body_modifier_collection_preserves_ambiguous_attributes() {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let modifiers = unique_body_modifiers(
+            &ctx,
+            vec![
+                modifier(30, 3),
+                modifier(20, 2),
+                modifier(10, 1),
+                modifier(20, 4),
+                modifier(30, 3),
+                modifier(20, 2),
+            ],
+        )
+        .expect("modifier selectors");
+        assert_eq!(
+            modifiers
+                .iter()
+                .map(|value| (value.body_attr, value.history_ordinal))
+                .collect::<Vec<_>>(),
+            vec![(10, 1), (30, 3)]
+        );
     }
 }
