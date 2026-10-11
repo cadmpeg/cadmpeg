@@ -636,11 +636,18 @@ fn offset_surface_scaled_distance_overflow_keeps_one_represented_fallback() {
         surface.geometry.solved(),
         Some(SolvedSurfaceGeometry::Unknown { record: Some(_) })
     ));
-    let source = surface.source_object.as_ref().expect("representation member");
+    let source = surface
+        .source_object
+        .as_ref()
+        .expect("representation member");
     assert_eq!(source.object_id.as_str(), "#1");
     assert_eq!(source.name.as_deref(), Some("overflow"));
     assert!(decoded.ir().model.procedural_surfaces.is_empty());
-    assert!(decoded.report().losses.iter().any(|loss| loss.message.starts_with("procedural surface #1:")));
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.starts_with("procedural surface #1:")));
 }
 
 #[test]
@@ -667,9 +674,13 @@ fn trimmed_surface_scaled_range_underflow_keeps_one_represented_fallback() {
         surface.geometry.solved(),
         Some(SolvedSurfaceGeometry::Unknown { record: Some(_) })
     ));
-    let source = surface.source_object.as_ref().expect("representation member");
+    let source = surface
+        .source_object
+        .as_ref()
+        .expect("representation member");
     assert_eq!(source.object_id.as_str(), "#1");
     assert_eq!(source.name.as_deref(), Some("underflow"));
     assert!(decoded.ir().model.procedural_surfaces.is_empty());
-    assert!(decoded.report().losses.iter().any(|loss| loss.message == "procedural surface #1: surface subset ranges are not finite and non-zero"));
+    assert!(decoded.report().losses.iter().any(|loss| loss.message
+        == "procedural surface #1: surface subset ranges are not finite and non-zero"));
 }

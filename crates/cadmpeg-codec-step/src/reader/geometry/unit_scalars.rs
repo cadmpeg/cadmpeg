@@ -22,7 +22,11 @@ struct UnitValue {
 }
 
 impl UnitValue {
-    const EMPTY: Self = Self { length: None, angle: None, steps: 0 };
+    const EMPTY: Self = Self {
+        length: None,
+        angle: None,
+        steps: 0,
+    };
 
     fn select(self, kind: UnitScaleKind) -> Option<PositiveReal> {
         match kind {
@@ -32,10 +36,24 @@ impl UnitValue {
     }
 
     fn scaled(self, factor: f64) -> Self {
-        let steps = if self.steps < MAX_UNIT_DEPTH { self.steps + 1 } else { MAX_UNIT_DEPTH };
+        let steps = if self.steps < MAX_UNIT_DEPTH {
+            self.steps + 1
+        } else {
+            MAX_UNIT_DEPTH
+        };
         Self {
-            length: (steps < MAX_UNIT_DEPTH).then(|| self.length.and_then(|value| PositiveReal::new(factor * value.get()))).flatten(),
-            angle: (steps < MAX_UNIT_DEPTH).then(|| self.angle.and_then(|value| PositiveReal::new(factor * value.get()))).flatten(),
+            length: (steps < MAX_UNIT_DEPTH)
+                .then(|| {
+                    self.length
+                        .and_then(|value| PositiveReal::new(factor * value.get()))
+                })
+                .flatten(),
+            angle: (steps < MAX_UNIT_DEPTH)
+                .then(|| {
+                    self.angle
+                        .and_then(|value| PositiveReal::new(factor * value.get()))
+                })
+                .flatten(),
             steps,
         }
     }
@@ -68,7 +86,10 @@ pub(super) struct UnitScalarIndex<'records, 'ctx, 'bytes> {
 }
 
 impl<'records, 'ctx, 'bytes> UnitScalarIndex<'records, 'ctx, 'bytes> {
-    pub(super) fn new(exchange: &'records Exchange, ctx: &'ctx DecodeContext<'bytes>) -> Result<Self, CodecError> {
+    pub(super) fn new(
+        exchange: &'records Exchange,
+        ctx: &'ctx DecodeContext<'bytes>,
+    ) -> Result<Self, CodecError> {
         Ok(Self {
             exchange,
             ctx,
@@ -78,7 +99,11 @@ impl<'records, 'ctx, 'bytes> UnitScalarIndex<'records, 'ctx, 'bytes> {
         })
     }
 
-    pub(super) fn resolve(&mut self, kind: UnitScaleKind, root: u64) -> Result<Option<PositiveReal>, CodecError> {
+    pub(super) fn resolve(
+        &mut self,
+        kind: UnitScaleKind,
+        root: u64,
+    ) -> Result<Option<PositiveReal>, CodecError> {
         let ctx = self.ctx;
         let operation = match kind {
             UnitScaleKind::Length => "step_length_unit_scale_walk",
@@ -96,38 +121,90 @@ impl<'records, 'ctx, 'bytes> UnitScalarIndex<'records, 'ctx, 'bytes> {
             if path.len() >= MAX_UNIT_DEPTH {
                 for frame in &path {
                     ctx.charge_work(1, "step unit scalar path reset")?;
-                    let slot = ctx.get_mut_hash_map(&mut self.nodes, &frame.unit, "step unit scalar memo lookup")?.ok_or_else(invalid_state)?;
+                    let slot = ctx
+                        .get_mut_hash_map(
+                            &mut self.nodes,
+                            &frame.unit,
+                            "step unit scalar memo lookup",
+                        )?
+                        .ok_or_else(invalid_state)?;
                     if let UnitState::Active(rule) = *slot {
                         *slot = UnitState::Parsed(rule);
                     }
                 }
-                value = UnitValue { steps: MAX_UNIT_DEPTH, ..UnitValue::EMPTY };
-                let slot = ctx.get_mut_hash_map(&mut self.nodes, &root, "step unit scalar memo lookup")?.ok_or_else(invalid_state)?;
+                value = UnitValue {
+                    steps: MAX_UNIT_DEPTH,
+                    ..UnitValue::EMPTY
+                };
+                let slot = ctx
+                    .get_mut_hash_map(&mut self.nodes, &root, "step unit scalar memo lookup")?
+                    .ok_or_else(invalid_state)?;
                 *slot = UnitState::Ready(value);
                 return Ok(value.select(kind));
             }
-            let state = ctx.get_hash_map(&self.nodes, &current, "step unit scalar memo lookup")?.copied();
+            let state = ctx
+                .get_hash_map(&self.nodes, &current, "step unit scalar memo lookup")?
+                .copied();
             let rule = match state {
-                Some(UnitState::Ready(ready)) => { value = ready; break; }
-                Some(UnitState::Active(_)) => { value = UnitValue::EMPTY; break; }
+                Some(UnitState::Ready(ready)) => {
+                    value = ready;
+                    break;
+                }
+                Some(UnitState::Active(_)) => {
+                    value = UnitValue::EMPTY;
+                    break;
+                }
                 Some(UnitState::Parsed(rule)) => rule,
                 None => {
-                    let rule = unit_rule(current, self.exchange, ctx, &mut |factor| self.factor(factor))?;
-                    self.storage.with_storage(|| ctx.insert_hash_map(&mut self.nodes, current, UnitState::Parsed(rule), "step unit scalar memo nodes"))?;
+                    let rule = unit_rule(current, self.exchange, ctx, &mut |factor| {
+                        self.factor(factor)
+                    })?;
+                    self.storage.with_storage(|| {
+                        ctx.insert_hash_map(
+                            &mut self.nodes,
+                            current,
+                            UnitState::Parsed(rule),
+                            "step unit scalar memo nodes",
+                        )
+                    })?;
                     rule
                 }
             };
             match rule {
                 UnitRule::Value(leaf) => {
-                    let slot = ctx.get_mut_hash_map(&mut self.nodes, &current, "step unit scalar memo lookup")?.ok_or_else(invalid_state)?;
+                    let slot = ctx
+                        .get_mut_hash_map(
+                            &mut self.nodes,
+                            &current,
+                            "step unit scalar memo lookup",
+                        )?
+                        .ok_or_else(invalid_state)?;
                     *slot = UnitState::Ready(leaf);
                     value = leaf;
                     break;
                 }
-                UnitRule::Factor { value: factor, base } => {
-                    let slot = ctx.get_mut_hash_map(&mut self.nodes, &current, "step unit scalar memo lookup")?.ok_or_else(invalid_state)?;
+                UnitRule::Factor {
+                    value: factor,
+                    base,
+                } => {
+                    let slot = ctx
+                        .get_mut_hash_map(
+                            &mut self.nodes,
+                            &current,
+                            "step unit scalar memo lookup",
+                        )?
+                        .ok_or_else(invalid_state)?;
                     *slot = UnitState::Active(rule);
-                    path_storage.with_storage(|| ctx.push_vec(&mut path, Frame { unit: current, factor }, "step unit scalar path"))?;
+                    path_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut path,
+                            Frame {
+                                unit: current,
+                                factor,
+                            },
+                            "step unit scalar path",
+                        )
+                    })?;
                     current = base;
                 }
             }
@@ -135,7 +212,9 @@ impl<'records, 'ctx, 'bytes> UnitScalarIndex<'records, 'ctx, 'bytes> {
         while let Some(frame) = path.pop() {
             ctx.charge_work(1, "step unit scalar path resolution")?;
             value = value.scaled(frame.factor);
-            let slot = ctx.get_mut_hash_map(&mut self.nodes, &frame.unit, "step unit scalar memo lookup")?.ok_or_else(invalid_state)?;
+            let slot = ctx
+                .get_mut_hash_map(&mut self.nodes, &frame.unit, "step unit scalar memo lookup")?
+                .ok_or_else(invalid_state)?;
             *slot = UnitState::Ready(value);
         }
         Ok(value.select(kind))
@@ -143,19 +222,38 @@ impl<'records, 'ctx, 'bytes> UnitScalarIndex<'records, 'ctx, 'bytes> {
 
     fn factor(&mut self, id: u64) -> Result<Option<(f64, u64)>, CodecError> {
         let ctx = self.ctx;
-        if let Some(fields) = ctx.get_hash_map(&self.factors, &id, "step unit factor memo lookup")? {
+        if let Some(fields) =
+            ctx.get_hash_map(&self.factors, &id, "step unit factor memo lookup")?
+        {
             return Ok(*fields);
         }
         let fields = factor_fields(id, self.exchange, ctx)?;
-        self.storage.with_storage(|| ctx.insert_hash_map(&mut self.factors, id, fields, "step unit factor memo fields"))?;
+        self.storage.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut self.factors,
+                id,
+                fields,
+                "step unit factor memo fields",
+            )
+        })?;
         Ok(fields)
     }
 }
 
-fn factor_fields(id: u64, exchange: &Exchange, ctx: &DecodeContext<'_>) -> Result<Option<(f64, u64)>, CodecError> {
-    let Some(factor) = ctx.get_btree_map(exchange.records(), &id, "step_geometry_lookup")? else { return Ok(None); };
-    let Some(value) = find_record_value(factor, ctx, |value| typed_number(value, ctx))? else { return Ok(None); };
-    let Some(base) = find_record_value(factor, ctx, |value| Ok(value.reference()))? else { return Ok(None); };
+fn factor_fields(
+    id: u64,
+    exchange: &Exchange,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<(f64, u64)>, CodecError> {
+    let Some(factor) = ctx.get_btree_map(exchange.records(), &id, "step_geometry_lookup")? else {
+        return Ok(None);
+    };
+    let Some(value) = find_record_value(factor, ctx, |value| typed_number(value, ctx))? else {
+        return Ok(None);
+    };
+    let Some(base) = find_record_value(factor, ctx, |value| Ok(value.reference()))? else {
+        return Ok(None);
+    };
     Ok(Some((value, base)))
 }
 
@@ -176,8 +274,12 @@ fn unit_rule(
         };
         let name = unit.parameters.get(1).and_then(Value::enumeration);
         return Ok(UnitRule::Value(UnitValue {
-            length: (name == Some("METRE")).then(|| prefix.and_then(|prefix| PositiveReal::new(prefix * 1000.0))).flatten(),
-            angle: (name == Some("RADIAN")).then(|| prefix.and_then(PositiveReal::new)).flatten(),
+            length: (name == Some("METRE"))
+                .then(|| prefix.and_then(|prefix| PositiveReal::new(prefix * 1000.0)))
+                .flatten(),
+            angle: (name == Some("RADIAN"))
+                .then(|| prefix.and_then(PositiveReal::new))
+                .flatten(),
             steps: 0,
         }));
     }

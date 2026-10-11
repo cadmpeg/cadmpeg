@@ -1187,8 +1187,13 @@ fn composite_curves_preserve_chained_producer_retry_order_and_trim_warning_order
                 "step:data:curve#6"
             ]
         );
-        let warnings: Vec<_> = stage.losses.iter()
-            .filter(|loss| loss.message.contains("fell back to a parameter trim selector"))
+        let warnings: Vec<_> = stage
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.message
+                    .contains("fell back to a parameter trim selector")
+            })
             .map(|loss| loss.message.as_str())
             .collect();
         assert_eq!(warnings, [

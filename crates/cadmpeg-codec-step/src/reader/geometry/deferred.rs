@@ -112,7 +112,8 @@ impl DeferredCurves {
                 } else {
                     left
                 };
-                if self.compare(self.ready[index].key, self.ready[child].key)? != Ordering::Greater {
+                if self.compare(self.ready[index].key, self.ready[child].key)? != Ordering::Greater
+                {
                     break;
                 }
                 self.ready.swap(index, child);
@@ -189,7 +190,11 @@ impl DeferredCurves {
                 .ok_or_else(invalid_state)?;
             // Repeated edges produce consecutive equal occurrences. Removing
             // those repetitions preserves every filtered wake list's order.
-            if node.attempts.last().is_none_or(|last| last.group != self.group) {
+            if node
+                .attempts
+                .last()
+                .is_none_or(|last| last.group != self.group)
+            {
                 ctx.push_vec(
                     &mut node.attempts,
                     AttemptBlock {
@@ -204,14 +209,19 @@ impl DeferredCurves {
                 let key = self.first_after(dependent, before, ctx)?;
                 ctx.push_vec(
                     &mut self.ready,
-                    Ready { node: dependent, key },
+                    Ready {
+                        node: dependent,
+                        key,
+                    },
                     "step_deferred_curve_queue",
                 )?;
                 let mut index = self.ready.len() - 1;
                 while index > 0 {
                     ctx.charge_work(1, "step deferred ready heap ascent")?;
                     let parent = (index - 1) / 2;
-                    if self.compare(self.ready[index].key, self.ready[parent].key)? != Ordering::Less {
+                    if self.compare(self.ready[index].key, self.ready[parent].key)?
+                        != Ordering::Less
+                    {
                         break;
                     }
                     self.ready.swap(index, parent);
@@ -236,11 +246,9 @@ impl DeferredCurves {
         block: (usize, usize, usize),
         ctx: &DecodeContext<'_>,
     ) -> Result<usize, CodecError> {
-        if let Some(id) = ctx.get_hash_map(
-            &self.block_index,
-            &block,
-            "step deferred key prefix lookup",
-        )? {
+        if let Some(id) =
+            ctx.get_hash_map(&self.block_index, &block, "step deferred key prefix lookup")?
+        {
             return Ok(*id);
         }
         let id = self.block_index.len() + 1;
@@ -287,8 +295,7 @@ impl DeferredCurves {
                 break;
             }
             let skip = right.skips[level - 1];
-            key.blocks[level] =
-                self.block_id((level, key.blocks[level - 1], right_block), ctx)?;
+            key.blocks[level] = self.block_id((level, key.blocks[level - 1], right_block), ctx)?;
             key.skips[level] = skip;
         }
         let id = KeyId(self.keys.len());
@@ -362,7 +369,9 @@ impl DeferredCurves {
                 }
             }
             let low_group = self.key(low)?.group;
-            let high_group = upper.map(|key| self.key(key).map(|key| key.group)).transpose()?;
+            let high_group = upper
+                .map(|key| self.key(key).map(|key| key.group))
+                .transpose()?;
             let mut start = 0;
             let mut end = count;
             while start < end {
@@ -374,8 +383,15 @@ impl DeferredCurves {
                     end = mid;
                 }
             }
-            let block = self.node(node, ctx)?.attempts.get(start).copied().filter(|_| start < count);
-            let Some(block) = block.filter(|block| high_group.is_none_or(|high| block.group <= high)) else {
+            let block = self
+                .node(node, ctx)?
+                .attempts
+                .get(start)
+                .copied()
+                .filter(|_| start < count);
+            let Some(block) =
+                block.filter(|block| high_group.is_none_or(|high| block.group <= high))
+            else {
                 result = None;
                 break;
             };
@@ -388,7 +404,11 @@ impl DeferredCurves {
                 };
                 break;
             }
-            let fallback = self.node(node, ctx)?.attempts.get(start + 1).copied()
+            let fallback = self
+                .node(node, ctx)?
+                .attempts
+                .get(start + 1)
+                .copied()
                 .filter(|_| start + 1 < count)
                 .filter(|block| high_group.is_none_or(|high| block.group <= high));
             let fallback = if let Some(block) = fallback {
@@ -397,11 +417,16 @@ impl DeferredCurves {
             } else {
                 None
             };
-            storage.with_storage(|| ctx.push_vec(
-                &mut frames,
-                QueryFrame { group: block.group, fallback },
-                "step deferred history query frames",
-            ))?;
+            storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut frames,
+                    QueryFrame {
+                        group: block.group,
+                        fallback,
+                    },
+                    "step deferred history query frames",
+                )
+            })?;
             count = start;
             lower = self.key(low)?.tail;
             upper = Some(child_upper);
