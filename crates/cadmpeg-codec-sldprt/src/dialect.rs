@@ -134,11 +134,14 @@ impl LayerClassification {
         ctx: &DecodeContext<'_>,
         losses: &mut Vec<LossNote>,
     ) -> Result<(), CodecError> {
-        for loss in dialect_losses(ctx, &self.layers)? {
+        for loss in ctx.admit_iter(
+            dialect_losses(ctx, &self.layers)?,
+            "append SLDPRT dialect losses",
+        )? {
             ctx.reserve_vec(losses, 1, "append SLDPRT dialect losses")?;
             losses.push(loss);
         }
-        for loss in &self.losses {
+        for loss in ctx.admit_iter(&self.losses, "scan SLDPRT append_losses values")? {
             let message = ctx.format_retained(
                 format_args!("{}", loss.message),
                 "copy SLDPRT dialect collision loss",
@@ -164,12 +167,12 @@ pub(crate) fn classify_layers(
     scan: &ContainerScan<'_>,
 ) -> Result<LayerClassification, CodecError> {
     let mut kernels = Vec::new();
-    for section in scan.sections() {
+    for section in scan.sections(ctx)? {
         let (site_prefix, site_ordinal) = match section {
             Section::Block(block) => ("block", cadmpeg_core::decode::u64_from_index(block.offset)),
             Section::Compound(stream) => ("compound", u64::from(stream.directory_id)),
         };
-        for stream in section.ps_streams() {
+        for stream in ctx.admit_iter(section.ps_streams(), "scan SLDPRT topology members")? {
             // A nameless section states its absence by omission: the site
             // key and the stream offset already separate two of them.
             let carrier = match section.name() {
@@ -193,11 +196,20 @@ pub(crate) fn classify_layers(
         }
     }
     let declaration = crate::container::declared_sw_version(scan);
-    let host = SldprtDialect::from_declaration(declaration);
+    let version = match declaration {
+        Some(value) => ctx
+            .parse_text::<u32>(value, "parse SLDPRT version declaration")?
+            .ok(),
+        None => None,
+    };
+    let host = SldprtDialect::from_version_number(version);
     let mut layers = DialectLayers::of(host.matched(ctx, declaration)?);
     let extra = cadmpeg_parasolid::extra_layers(ctx, kernels, &VERIFIED_KERNELS)?;
     let mut losses = Vec::new();
-    for message in cadmpeg_parasolid::push_extras(ctx, &mut layers, extra)? {
+    for message in ctx.admit_iter(
+        cadmpeg_parasolid::push_extras(ctx, &mut layers, extra)?,
+        "collect SLDPRT dialect collision losses",
+    )? {
         ctx.reserve_vec(&mut losses, 1, "collect SLDPRT dialect collision losses")?;
         losses.push(SldprtLossCode::DialectLayerCollision.note(message));
     }
@@ -233,7 +245,11 @@ impl SldprtDialect {
     /// the padding rule cannot use — absent, non-numeric, negative,
     /// wider than `u32`, or zero — lands on [`Self::Unknown`].
     pub(crate) fn from_declaration(sw_version: Option<&str>) -> Self {
-        match sw_version.and_then(|value| value.parse::<u32>().ok()) {
+        Self::from_version_number(sw_version.and_then(|value| value.parse::<u32>().ok()))
+    }
+
+    fn from_version_number(version: Option<u32>) -> Self {
+        match version {
             Some(1..12_000) => Self::SwVersionPre12000,
             Some(12_000..) => Self::SwVersion12000Plus,
             _ => Self::Unknown,
@@ -355,7 +371,7 @@ fn dialect_losses(
     layers: &DialectLayers,
 ) -> Result<Vec<LossNote>, CodecError> {
     let mut losses = Vec::new();
-    for layer in layers.iter() {
+    for layer in ctx.admit_iter(layers, "collect SLDPRT dialect losses")? {
         if let Some(loss) = dialect_loss(ctx, layer)? {
             ctx.reserve_vec(&mut losses, 1, "collect SLDPRT dialect losses")?;
             losses.push(loss);

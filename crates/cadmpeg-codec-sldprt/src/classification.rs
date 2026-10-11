@@ -348,6 +348,9 @@ pub(crate) fn native_object_class(name: &str) -> NativeClassKind {
 }
 
 /// Classify a feature from serialized object identity, never its display name.
+///
+/// Each source of evidence is a match against literal names, so the work is
+/// bounded by the literal table, not by the feature's text.
 pub(crate) fn classify(feature: &Feature) -> Option<FeatureClass> {
     let evidence = [
         classify_input_class(feature.input_class.as_deref()),
@@ -375,38 +378,64 @@ pub(crate) fn principal_plane(feature: &Feature) -> Option<PrincipalPlane> {
     }
 }
 
-/// Classify a built-in principal plane from a complete reserved-identity triplet.
-pub(crate) fn principal_plane_with_siblings(
-    feature: &Feature,
+/// Where one history's built-in planes take their reserved identities.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PrincipalPlaneLayout {
+    /// Built-in planes hold sources 2, 3 and 4.
+    Reserved,
+    /// Built-in planes hold sources 3, 4 and 5, so no source names a principal plane.
+    Shifted,
+    /// No complete triplet: only a plane's native class can name it.
+    Unreserved,
+}
+
+fn is_builtin_plane(feature: &Feature) -> bool {
+    classify(feature) == Some(FeatureClass::ReferencePlane)
+        && feature.parameters.is_empty()
+        && feature.properties.is_empty()
+}
+
+/// Find the reserved triplet the built-in planes among `siblings` occupy, in one pass.
+pub(crate) fn principal_plane_layout(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     siblings: &[Feature],
-) -> Option<PrincipalPlane> {
-    let is_builtin_plane = |candidate: &Feature| {
-        classify(candidate) == Some(FeatureClass::ReferencePlane)
-            && candidate.parameters.is_empty()
-            && candidate.properties.is_empty()
-    };
-    let complete_triplet = |start: u32| {
-        (start..start + 3).all(|source| {
-            siblings.iter().any(|candidate| {
-                candidate.source_value() == Some(source) && is_builtin_plane(candidate)
-            })
-        })
-    };
-    let start = if complete_triplet(2) {
-        2
-    } else if complete_triplet(3) {
-        return None;
-    } else {
-        return principal_plane(feature);
-    };
-    if !is_builtin_plane(feature) {
-        return None;
+) -> Result<PrincipalPlaneLayout, cadmpeg_core::CodecError> {
+    let mut present = [false; 4];
+    for sibling in ctx.admit_iter(siblings, "scan SLDPRT principal plane siblings")? {
+        if let Some(slot) = sibling
+            .source_value()
+            .and_then(|source| source.checked_sub(2))
+            .and_then(|slot| present.get_mut(usize::try_from(slot).ok()?))
+        {
+            *slot |= is_builtin_plane(sibling);
+        }
     }
-    match feature.source_value()?.checked_sub(start)? {
-        0 => Some(PrincipalPlane::Front),
-        1 => Some(PrincipalPlane::Top),
-        2 => Some(PrincipalPlane::Right),
-        _ => None,
+    Ok(match present {
+        [true, true, true, _] => PrincipalPlaneLayout::Reserved,
+        [_, true, true, true] => PrincipalPlaneLayout::Shifted,
+        _ => PrincipalPlaneLayout::Unreserved,
+    })
+}
+
+/// Classify a built-in principal plane under its history's reserved-identity layout.
+pub(crate) fn principal_plane_in_layout(
+    layout: PrincipalPlaneLayout,
+    feature: &Feature,
+) -> Option<PrincipalPlane> {
+    match layout {
+        PrincipalPlaneLayout::Shifted => None,
+        PrincipalPlaneLayout::Unreserved => principal_plane(feature),
+        PrincipalPlaneLayout::Reserved => {
+            if !is_builtin_plane(feature) {
+                return None;
+            }
+            match feature.source_value()? {
+                2 => Some(PrincipalPlane::Front),
+                3 => Some(PrincipalPlane::Top),
+                4 => Some(PrincipalPlane::Right),
+                _ => None,
+            }
+        }
     }
 }
 
@@ -495,7 +524,8 @@ pub(crate) fn classify_type_token(kind: &str) -> Option<FeatureClass> {
 #[cfg(test)]
 mod tests {
     use super::{
-        classify, native_object_class, principal_plane_with_siblings, FeatureClass, NativeClassKind,
+        classify, native_object_class, principal_plane_in_layout, principal_plane_layout,
+        FeatureClass, NativeClassKind,
     };
     use crate::records::Feature;
     use crate::records::FeatureInputClassRole;
@@ -563,16 +593,19 @@ mod tests {
             plane.source_id = FeatureSource::from_value(source);
         }
 
+        let layout =
+            principal_plane_layout(&cadmpeg_test_support::service_decode_context(), &planes)
+                .unwrap();
         assert_eq!(
-            principal_plane_with_siblings(&planes[0], &planes),
+            principal_plane_in_layout(layout, &planes[0]),
             Some(PrincipalPlane::Front)
         );
         assert_eq!(
-            principal_plane_with_siblings(&planes[1], &planes),
+            principal_plane_in_layout(layout, &planes[1]),
             Some(PrincipalPlane::Top)
         );
         assert_eq!(
-            principal_plane_with_siblings(&planes[2], &planes),
+            principal_plane_in_layout(layout, &planes[2]),
             Some(PrincipalPlane::Right)
         );
     }

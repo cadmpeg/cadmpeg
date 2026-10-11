@@ -4,26 +4,27 @@
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 
-pub(super) struct DigestPartition<T> {
+pub(super) struct DigestPartition<'ctx, T> {
     original_len: usize,
     original: Vec<T>,
     kept: Vec<T>,
     excluded: Vec<T>,
     kept_positions: Vec<usize>,
+    _storage: ScopedReservation<'ctx>,
 }
 
 pub(super) struct PreparedDigestPartition<'source, 'ctx, T> {
     source: &'source mut Vec<T>,
     decisions: Vec<bool>,
     _decisions: ScopedReservation<'ctx>,
-    partition: DigestPartition<T>,
+    partition: DigestPartition<'ctx, T>,
 }
 
-impl<T> DigestPartition<T> {
-    pub(super) fn prepare<'source, 'ctx>(
+impl<'ctx, T> DigestPartition<'ctx, T> {
+    pub(super) fn prepare<'source>(
         ctx: &'ctx DecodeContext<'_>,
         source: &'source mut Vec<T>,
-        mut keep: impl FnMut(&T) -> bool,
+        mut keep: impl FnMut(&T) -> Result<bool, CodecError>,
         operation: &'static str,
     ) -> Result<PreparedDigestPartition<'source, 'ctx, T>, CodecError> {
         let work = source
@@ -31,11 +32,13 @@ impl<T> DigestPartition<T> {
             .checked_mul(3)
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), operation)?;
-        let (mut decisions, reservation) = ctx.temporary_vec(source.len(), operation)?;
+        let mut reservation;
+        let mut decisions;
+        (decisions, reservation) = ctx.scoped_vector_storage(source.len(), operation)?;
         let mut kept_count = 0usize;
         for item in source.iter() {
-            let decision = keep(item);
-            decisions.push(decision);
+            let decision = keep(item)?;
+            reservation.with_storage(|| ctx.push_vec(&mut decisions, decision, operation))?;
             if decision {
                 kept_count = kept_count
                     .checked_add(1)
@@ -43,11 +46,20 @@ impl<T> DigestPartition<T> {
             }
         }
         let excluded_count = source.len() - kept_count;
-        let kept = ctx.collection_vec(kept_count, operation)?;
-        let excluded = ctx.collection_vec(excluded_count, operation)?;
-        let kept_positions = ctx.collection_vec(kept_count, operation)?;
+        let storage;
+        let kept;
+        let excluded;
+        let kept_positions;
+        ((kept, excluded, kept_positions), storage) = ctx.with_scoped_storage(operation, || {
+            Ok::<_, CodecError>((
+                ctx.collection_vec(kept_count, operation)?,
+                ctx.collection_vec(excluded_count, operation)?,
+                ctx.collection_vec(kept_count, operation)?,
+            ))
+        })?;
         Ok(PreparedDigestPartition {
             partition: Self {
+                _storage: storage,
                 original_len: source.len(),
                 original: Vec::new(),
                 kept,
@@ -92,8 +104,8 @@ impl<T> DigestPartition<T> {
     }
 }
 
-impl<T> PreparedDigestPartition<'_, '_, T> {
-    pub(super) fn move_from(mut self) -> DigestPartition<T> {
+impl<'ctx, T> PreparedDigestPartition<'_, 'ctx, T> {
+    pub(super) fn move_from(mut self) -> DigestPartition<'ctx, T> {
         self.partition.original = std::mem::take(self.source);
         for ((position, item), keep) in self
             .partition
@@ -130,7 +142,7 @@ mod tests {
             &mut source,
             |_| {
                 calls += 1;
-                calls == 1
+                Ok(calls == 1)
             },
             "prepare digest test",
         )
@@ -157,11 +169,90 @@ mod tests {
             let mut source = (0..100).collect::<Vec<_>>();
             let original = source.clone();
             let error =
-                DigestPartition::prepare(&ctx, &mut source, |_| true, "prepare digest refusal")
+                DigestPartition::prepare(&ctx, &mut source, |_| Ok(true), "prepare digest refusal")
                     .err()
                     .unwrap();
             assert!(matches!(error, CodecError::ResourceLimit(_)));
             assert_eq!(source, original);
         }
+    }
+
+    struct ObservedEntry<'ctx, 'session> {
+        ctx: &'ctx DecodeContext<'session>,
+        observation: &'ctx std::cell::RefCell<Option<CodecError>>,
+    }
+
+    impl Drop for ObservedEntry<'_, '_> {
+        fn drop(&mut self) {
+            *self.observation.borrow_mut() = self
+                .ctx
+                .reserve_scoped(1, "probe SLDPRT digest partition destruction")
+                .err();
+        }
+    }
+
+    fn observe_partition_drop(unwind: bool) {
+        use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+        use cadmpeg_core::decode::ResourceDimension;
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = u64::MAX;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("partition context");
+        let observation = std::cell::RefCell::new(None);
+        let mut source = vec![ObservedEntry {
+            ctx: &ctx,
+            observation: &observation,
+        }];
+        let partition = DigestPartition::prepare(
+            &ctx,
+            &mut source,
+            |_| Ok(true),
+            "prepare observed digest partition",
+        )
+        .expect("admitted one-entry partition")
+        .move_from();
+        assert!(source.is_empty());
+        drop(source);
+        // The decision buffer has died. One kept entry slot and its usize position
+        // remain held until the vectors die. Original source backing is not new scratch.
+        let held = cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<ObservedEntry<'_, '_>>() + std::mem::size_of::<usize>(),
+        );
+        let probe = RefusalProbe::arm(
+            ResourceDimension::MaterializedBytes,
+            "probe SLDPRT digest partition destruction",
+            Some(1),
+        );
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _partition = partition;
+            assert!(!unwind, "digest partition unwind");
+        }));
+        drop(probe);
+        assert_eq!(result.is_err(), unwind);
+        let observation = observation.borrow();
+        let Some(CodecError::ResourceLimit(limit)) = observation.as_ref() else {
+            panic!("destructor probe must refuse");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+        assert_eq!(limit.operation, "probe SLDPRT digest partition destruction");
+        assert_eq!(limit.used, held);
+        assert_eq!(limit.additional, 1);
+        assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if &first == limit)
+        );
+    }
+
+    #[test]
+    fn digest_partition_destroys_entries_before_releasing_shell_storage() {
+        observe_partition_drop(false);
+    }
+
+    #[test]
+    fn digest_partition_unwind_keeps_shell_storage_through_entry_destruction() {
+        observe_partition_drop(true);
     }
 }

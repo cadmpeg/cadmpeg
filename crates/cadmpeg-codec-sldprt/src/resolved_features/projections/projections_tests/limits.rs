@@ -3,9 +3,8 @@
 use super::super::{
     bind_parameter_scalars, compact_surface_selection_set_value, cut_with_surface_selection_pair,
     draft_face_selection, full_round_fillet_selection_triple, project_compact_body_selections,
-    project_compact_edge_selections, project_compact_surface_selections,
-    project_unbound_cosmetic_thread_faces, project_unbound_offset_plane_faces,
-    synthesize_display_relation_parameters,
+    project_compact_surface_selections, project_unbound_cosmetic_thread_faces,
+    project_unbound_offset_plane_faces, synthesize_display_relation_parameters,
 };
 use crate::records::{
     FeatureInputBodySelection, FeatureInputComponentPathEntry, FeatureInputLane,
@@ -130,6 +129,30 @@ fn parameter_scalar_binding_preserves_native_reference_and_value() {
     );
 }
 
+#[test]
+fn parameter_scalar_binding_skips_lane_selection_without_native_owners() {
+    use cadmpeg_core::decode::{
+        refusal_probe::RefusalProbe, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+    };
+    let (mut parameters, features, histories, lanes) = parameter_scalar_binding_fixture();
+    parameters[0].owner = None;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let _probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "select SLDPRT parameter identity lanes",
+        None,
+    );
+    bind_parameter_scalars(&ctx, &mut parameters, &features, &histories, &lanes)
+        .expect("no lane selection");
+    assert_eq!(parameters[0].native_ref, None);
+    assert!(matches!(parameters[0].value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(value)) if value.get() == 1.0));
+    ctx.finish_session().expect("accepted session");
+}
+
 fn parameter_scalar_limit_result(
     dimension: cadmpeg_core::decode::ResourceDimension,
 ) -> cadmpeg_core::CodecError {
@@ -231,6 +254,32 @@ fn display_relation_synthesis_preserves_reference_parameter() {
             .get("sldprt_relation_parameter_role"),
         Some(&"reference".into())
     );
+}
+
+#[test]
+fn duplicate_display_parameter_candidates_release_owned_fields() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let (mut parameters, features, lanes) = display_relation_synthesis_fixture();
+    synthesize_display_relation_parameters(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut parameters,
+        &features,
+        &lanes,
+    )
+    .unwrap();
+    assert_eq!(parameters.len(), 1);
+    // Keep the identity collision while removing the earlier relation-property shortcut.
+    parameters[0].properties.clear();
+    let expected = parameters.clone();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 16384;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    for _ in 0..64 {
+        synthesize_display_relation_parameters(&ctx, &mut parameters, &features, &lanes).unwrap();
+        assert_eq!(parameters, expected);
+    }
 }
 
 fn display_relation_synthesis_limit_result(
@@ -485,24 +534,26 @@ fn cosmetic_fallback_fixture() -> (
 fn unbound_cosmetic_thread_refuses_work_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-    let (mut features, histories, faces, surfaces) = cosmetic_fallback_fixture();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
-    let error = project_unbound_cosmetic_thread_faces(
-        &ctx,
-        &mut features,
-        &histories,
-        &[],
-        &faces,
-        &surfaces,
-    )
-    .expect_err("cylindrical scan exceeds work limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "find unique SLDPRT cylindrical face")
+    let (features, histories, faces, surfaces) = cosmetic_fallback_fixture();
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "find unique SLDPRT cylindrical face",
+        |cap| {
+            let mut features = features.clone();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+            project_unbound_cosmetic_thread_faces(
+                &ctx,
+                &mut features,
+                &histories,
+                &[],
+                &faces,
+                &surfaces,
+            )
+        },
     );
 }
 
@@ -542,24 +593,26 @@ fn unbound_cosmetic_thread_refuses_retained_limit() {
 fn unbound_cosmetic_thread_refuses_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-    let (mut features, histories, faces, surfaces) = cosmetic_fallback_fixture();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 5;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
-    let error = project_unbound_cosmetic_thread_faces(
-        &ctx,
-        &mut features,
-        &histories,
-        &[],
-        &faces,
-        &surfaces,
-    )
-    .expect_err("cylindrical face slot exceeds collection limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "project SLDPRT unbound cosmetic thread face")
+    let (features, histories, faces, surfaces) = cosmetic_fallback_fixture();
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "project SLDPRT unbound cosmetic thread face",
+        |cap| {
+            let mut features = features.clone();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+            project_unbound_cosmetic_thread_faces(
+                &ctx,
+                &mut features,
+                &histories,
+                &[],
+                &faces,
+                &surfaces,
+            )
+        },
     );
 }
 
@@ -631,23 +684,25 @@ fn unbound_cosmetic_thread_generated_face_refuses_collection_limit() {
         references: Vec::new(),
         sketch_entities: Vec::new(),
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 12;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
-    let error = project_unbound_cosmetic_thread_faces(
-        &ctx,
-        &mut features,
-        &histories,
-        &[lane],
-        &faces,
-        &surfaces,
-    )
-    .expect_err("generated face vector exceeds collection limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "resolve SLDPRT cosmetic thread generated face")
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "resolve SLDPRT cosmetic thread generated face",
+        |cap| {
+            let mut features = features.clone();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+            project_unbound_cosmetic_thread_faces(
+                &ctx,
+                &mut features,
+                &histories,
+                std::slice::from_ref(&lane),
+                &faces,
+                &surfaces,
+            )
+        },
     );
 }
 
@@ -655,7 +710,7 @@ fn unbound_cosmetic_thread_generated_face_refuses_collection_limit() {
 fn unbound_cosmetic_thread_token_index_refuses_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-    let (mut features, histories, faces, surfaces) = cosmetic_fallback_fixture();
+    let (features, histories, faces, surfaces) = cosmetic_fallback_fixture();
     let class_name = "moCylinderRef_w";
     let mut payload = vec![0; 64];
     let token_offset = 6 + class_name.len();
@@ -689,23 +744,25 @@ fn unbound_cosmetic_thread_token_index_refuses_collection_limit() {
         references: Vec::new(),
         sketch_entities: Vec::new(),
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 7;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
-    let error = project_unbound_cosmetic_thread_faces(
-        &ctx,
-        &mut features,
-        &histories,
-        &[lane],
-        &faces,
-        &surfaces,
-    )
-    .expect_err("cylinder token index exceeds collection limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "collect SLDPRT cosmetic thread cylinder tokens")
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "collect SLDPRT cosmetic thread cylinder tokens",
+        |cap| {
+            let mut features = features.clone();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+            project_unbound_cosmetic_thread_faces(
+                &ctx,
+                &mut features,
+                &histories,
+                std::slice::from_ref(&lane),
+                &faces,
+                &surfaces,
+            )
+        },
     );
 }
 
@@ -713,17 +770,19 @@ fn unbound_cosmetic_thread_token_index_refuses_collection_limit() {
 fn unbound_offset_plane_refuses_work_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-    let (mut features, faces, surfaces) = offset_plane_fixture();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
-    let error = project_unbound_offset_plane_faces(&ctx, &mut features, &faces, &surfaces)
-        .expect_err("planar scan exceeds work limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "find unique SLDPRT planar face")
+    let (features, faces, surfaces) = offset_plane_fixture();
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "find unique SLDPRT planar face",
+        |cap| {
+            let mut features = features.clone();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+            project_unbound_offset_plane_faces(&ctx, &mut features, &faces, &surfaces)
+        },
     );
 }
 
@@ -749,17 +808,19 @@ fn unbound_offset_plane_refuses_retained_limit() {
 fn unbound_offset_plane_refuses_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-    let (mut features, faces, surfaces) = offset_plane_fixture();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
-    let error = project_unbound_offset_plane_faces(&ctx, &mut features, &faces, &surfaces)
-        .expect_err("selected face vector exceeds collection limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "project SLDPRT unbound offset plane face")
+    let (features, faces, surfaces) = offset_plane_fixture();
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "project SLDPRT unbound offset plane face",
+        |cap| {
+            let mut features = features.clone();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+            project_unbound_offset_plane_faces(&ctx, &mut features, &faces, &surfaces)
+        },
     );
 }
 
@@ -859,17 +920,18 @@ fn compact_body_projection_refuses_collection_limit() {
 fn compact_body_projection_refuses_uniqueness_index_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-    let (mut feature, lane) = compact_body_projection_fixture();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
-    let error = project_compact_body_selections(&ctx, std::slice::from_mut(&mut feature), &[lane])
-        .expect_err("uniqueness index exceeds remaining collection slots");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "validate distinct decoded native selections")
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "validate distinct decoded native selections",
+        |cap| {
+            let (mut feature, lane) = compact_body_projection_fixture();
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+            project_compact_body_selections(&ctx, std::slice::from_mut(&mut feature), &[lane])
+        },
     );
 }
 
@@ -930,60 +992,6 @@ fn compact_body_projection_refuses_work_limit() {
 }
 
 #[test]
-fn compact_edge_projection_refuses_index_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let mut feature = compact_edge_projection_feature();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
-    let error = project_compact_edge_selections(&ctx, std::slice::from_mut(&mut feature), &[], &[])
-        .expect_err("feature index exceeds collection limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "index SLDPRT compact edge selections")
-    );
-}
-
-#[test]
-fn compact_edge_projection_refuses_index_work_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let mut feature = compact_edge_projection_feature();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
-    let error = project_compact_edge_selections(&ctx, std::slice::from_mut(&mut feature), &[], &[])
-        .expect_err("feature index exceeds work limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "index SLDPRT compact edge selections")
-    );
-}
-
-#[test]
-fn compact_edge_projection_refuses_index_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-    let mut feature = compact_edge_projection_feature();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
-    let error = project_compact_edge_selections(&ctx, std::slice::from_mut(&mut feature), &[], &[])
-        .expect_err("feature identity exceeds retained limit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "index SLDPRT compact edge selections")
-    );
-}
-
-#[test]
 fn compact_surface_projection_refuses_index_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
@@ -1003,20 +1011,20 @@ fn compact_surface_projection_refuses_index_collection_limit() {
 }
 
 #[test]
-fn compact_surface_projection_refuses_index_retained_limit() {
+fn compact_surface_projection_refuses_index_materialized_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let mut feature = compact_edge_projection_feature();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
     let error =
         project_compact_surface_selections(&ctx, std::slice::from_mut(&mut feature), &[], &[])
-            .expect_err("surface feature ID exceeds retained limit");
+            .expect_err("the surface feature identity index exceeds the materialized limit");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
+        if limit.dimension == ResourceDimension::MaterializedBytes
             && limit.operation == "index SLDPRT compact surface selections")
     );
 }
@@ -1234,4 +1242,107 @@ fn draft_face_selection_refuses_retained_limit() {
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "format SLDPRT draft surface selection set")
     );
+}
+
+#[test]
+fn relation_diameter_expression_propagates_format_work_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    assert!(matches!(
+        super::super::relation_display_parameter_value(
+            &ctx, crate::records::FeatureInputRelationFamily::CircleDiameter, 2.0,
+        ),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "format SLDPRT relation display parameter"
+    ));
+    let (value, display, expression) = super::super::relation_display_parameter_value(
+        &cadmpeg_test_support::service_decode_context(),
+        crate::records::FeatureInputRelationFamily::CircleDiameter,
+        2.0,
+    )
+    .unwrap()
+    .expect("finite diameter");
+    assert_eq!(expression, "<MOD-DIAM>2000mm");
+    assert_eq!(
+        display,
+        Some(cadmpeg_ir::features::DimensionDisplay::Diameter)
+    );
+    assert!(
+        matches!(value, cadmpeg_ir::features::ParameterValue::Length(length) if length.get() == 2000.0)
+    );
+}
+
+#[test]
+fn surface_lane_group_entry_propagates_slot_refusal() {
+    let selection = full_round_selection();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::super::surface_selections_by_lane(&ctx, &[&selection], "group SLDPRT test surface lanes"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "group SLDPRT test surface lanes"
+    ));
+    let grouped = super::super::surface_selections_by_lane(
+        &cadmpeg_test_support::service_decode_context(),
+        &[&selection, &selection],
+        "group SLDPRT test surface lanes",
+    )
+    .unwrap();
+    assert_eq!(grouped.len(), 1);
+    let entries = grouped.get(selection.parent.as_str()).unwrap();
+    assert_eq!(entries.len(), 2);
+    assert!(std::ptr::eq(
+        std::ptr::from_ref(entries[0]),
+        std::ptr::from_ref(&selection)
+    ));
+    assert!(std::ptr::eq(
+        std::ptr::from_ref(entries[1]),
+        std::ptr::from_ref(&selection)
+    ));
+}
+
+#[test]
+fn existing_parameter_ordinal_lookup_propagates_work_refusal() {
+    let (parameters, features, _, lanes) = parameter_scalar_binding_fixture();
+    crate::test_support::work_refusal_at("lookup SLDPRT existing parameter ordinal", |ctx| {
+        synthesize_display_relation_parameters(ctx, &mut parameters.clone(), &features, &lanes)
+    });
+    let mut actual = parameters.clone();
+    synthesize_display_relation_parameters(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut actual,
+        &features,
+        &lanes,
+    )
+    .unwrap();
+    assert_eq!(actual.len(), 1);
+    assert_eq!(actual[0].id, parameters[0].id);
+    assert_eq!(actual[0].ordinal, 0);
+}
+
+#[test]
+fn display_parameter_ordinal_lookup_propagates_work_refusal() {
+    let (parameters, features, lanes) = display_relation_synthesis_fixture();
+    crate::test_support::work_refusal_at("lookup SLDPRT display parameter ordinal", |ctx| {
+        synthesize_display_relation_parameters(ctx, &mut parameters.clone(), &features, &lanes)
+    });
+    let mut actual = parameters;
+    synthesize_display_relation_parameters(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut actual,
+        &features,
+        &lanes,
+    )
+    .unwrap();
+    assert_eq!(actual.len(), 1);
+    assert_eq!(actual[0].ordinal, 0);
+    assert_eq!(actual[0].owner.as_ref(), Some(&features[0].id));
 }

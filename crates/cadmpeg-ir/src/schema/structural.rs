@@ -28,11 +28,6 @@ impl std::ops::Deref for Projection<'_> {
         &self.value
     }
 }
-impl std::ops::DerefMut for Projection<'_> {
-    fn deref_mut(&mut self) -> &mut Value {
-        &mut self.value
-    }
-}
 
 /// Project each node directly, preserving the source floating-point values.
 pub fn project<'ctx>(
@@ -51,7 +46,6 @@ pub fn project<'ctx>(
     if let Some(limit) = refusal.into_inner() {
         return Err(CodecError::ResourceLimit(limit));
     }
-    ctx.charge_work(0, operation)?;
     let value = result.map_err(|error| error.into_codec(ctx, operation))?;
     Ok(Projection {
         value,

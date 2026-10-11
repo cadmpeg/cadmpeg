@@ -246,3 +246,41 @@ fn field_search_offset_overflow_refuses_record() {
         ));
     });
 }
+
+#[test]
+fn fixed_field_start_windows_need_no_probe_work() -> Result<(), cadmpeg_core::CodecError> {
+    let bytes = [0; 512];
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_work_units = 0;
+            policy.limits.max_retained_bytes = 0;
+        },
+        |ctx| {
+            assert_eq!(
+                super::field_registry_start(ctx, &bytes, 0, bytes.len())?,
+                None
+            );
+            assert_eq!(ctx.resource_refusal(), None);
+            Ok(())
+        },
+    )
+}
+
+#[test]
+fn field_search_admits_one_window_instead_of_its_fixed_probes(
+) -> Result<(), cadmpeg_core::CodecError> {
+    let bytes = [0; 512];
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_work_units = 1;
+            policy.limits.max_retained_bytes = 0;
+        },
+        |ctx| {
+            assert!(super::field_definitions(ctx, &bytes, 0, bytes.len())?.is_empty());
+            assert_eq!(ctx.resource_refusal(), None);
+            Ok(())
+        },
+    )
+}

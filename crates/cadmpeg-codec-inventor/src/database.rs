@@ -217,8 +217,13 @@ pub(crate) fn parse_registry(
 ) -> Result<SegmentRegistry, CodecError> {
     let mut cursor = Cursor::new(bytes, "RSe segment registry");
     let count = cursor.count("segment count", 65_536)?;
+    cursor.fits(count, SEGMENT_ENTRY_MIN_BYTES, "segment count")?;
     let mut entries = ctx.vector_storage(count, "admit Inventor segment registry entries")?;
-    for _ in ctx.admit_iter(&(0..count), "visit Inventor database table records")? {
+    let mut steps = 0..count;
+    while ctx
+        .next_charged(&mut steps, "visit Inventor database table records")?
+        .is_some()
+    {
         let display_name = cursor.utf16(ctx, "segment display name", 4_096)?;
         let segment_id = cursor.array("segment id")?;
         let revision_id = cursor.array("segment revision id")?;
@@ -230,10 +235,15 @@ pub(crate) fn parse_registry(
         let type_state = cursor.u32_array("segment type state")?;
         let version = cursor.version("segment version")?;
         let trailing_value = cursor.u32("segment trailing value")?;
+        cursor.fits(object_count, SEGMENT_OBJECT_BYTES, "segment object count")?;
         let mut objects =
             ctx.vector_storage(object_count, "admit Inventor segment registry objects")?;
         let mut node_count = None;
-        for _ in ctx.admit_iter(&(0..object_count), "visit Inventor segment objects")? {
+        let mut steps = 0..object_count;
+        while ctx
+            .next_charged(&mut steps, "visit Inventor segment objects")?
+            .is_some()
+        {
             let object = SegmentObject {
                 revision_id: cursor.array("object revision id")?,
                 state: cursor.array("object state")?,
@@ -259,9 +269,14 @@ pub(crate) fn parse_registry(
                 "RSe segment node count exceeds 1000000".into(),
             ));
         }
+        cursor.fits(node_count, SEGMENT_NODE_BYTES, "segment node count")?;
 
         let mut nodes = ctx.vector_storage(node_count, "admit Inventor segment registry nodes")?;
-        for _ in ctx.admit_iter(&(0..node_count), "visit Inventor segment nodes")? {
+        let mut steps = 0..node_count;
+        while ctx
+            .next_charged(&mut steps, "visit Inventor segment nodes")?
+            .is_some()
+        {
             ctx.push_vec(
                 &mut nodes,
                 SegmentNode {
@@ -317,8 +332,13 @@ pub(crate) fn parse_revisions(
     // does not obey it fails structurally at the cursor.
     let version = cursor.u32("version")?;
     let count = cursor.count("revision count", 1_000_000)?;
+    cursor.fits(count, REVISION_ENTRY_MIN_BYTES, "revision count")?;
     let mut entries = ctx.vector_storage(count, "admit Inventor revision entries")?;
-    for _ in ctx.admit_iter(&(0..count), "visit Inventor database table records")? {
+    let mut steps = 0..count;
+    while ctx
+        .next_charged(&mut steps, "visit Inventor database table records")?
+        .is_some()
+    {
         let id = cursor.array("revision id")?;
         let flags = cursor.u32("revision flags")?;
         let kind = cursor.u16("revision kind")?;
@@ -346,6 +366,18 @@ pub(crate) fn parse_revisions(
     cursor.finish()?;
     Ok(RevisionTable { version, entries })
 }
+
+/// The fewest bytes a segment registry entry occupies: two empty UTF-16
+/// strings' counts, two identifiers, the value, object count, five state words,
+/// the secondary count, two type-state words, a version tuple and the trailing
+/// value.
+const SEGMENT_ENTRY_MIN_BYTES: usize = 4 + 16 + 16 + 4 + 4 + 20 + 4 + 4 + 8 + 8 + 4;
+/// A segment object: revision id, nine state bytes, segment id, value and node count.
+const SEGMENT_OBJECT_BYTES: usize = 16 + 9 + 16 + 4 + 4;
+/// A segment node: index, two segment-list indexes, six values and a number.
+const SEGMENT_NODE_BYTES: usize = 4 + 2 * 2 + 6 * 2 + 2;
+/// The fewest bytes a revision entry occupies: id, flags and kind.
+const REVISION_ENTRY_MIN_BYTES: usize = 16 + 4 + 2;
 
 struct Cursor<'a> {
     source: View<'a>,
@@ -416,6 +448,29 @@ impl<'a> Cursor<'a> {
         Ok(count)
     }
 
+    /// Refuses a count whose records, at `min_record_bytes` each (nonzero),
+    /// cannot fit in the unread bytes, before any storage or traversal for
+    /// them is admitted.
+    fn fits(
+        &self,
+        count: usize,
+        min_record_bytes: usize,
+        field: &'static str,
+    ) -> Result<(), CodecError> {
+        self.source
+            .counted(
+                cadmpeg_core::decode::u64_from_index(count),
+                min_record_bytes,
+            )
+            .map(|_| ())
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "{} {field} exceeds remaining payload",
+                    self.scope
+                ))
+            })
+    }
+
     fn utf16(
         &mut self,
         ctx: &DecodeContext<'_>,
@@ -438,15 +493,13 @@ impl<'a> Cursor<'a> {
         field: &'static str,
     ) -> Result<Vec<[u8; 16]>, CodecError> {
         let count = self.count(field, 1_000_000)?;
-        self.source
-            .counted(cadmpeg_core::decode::u64_from_index(count), 16)
-            .ok_or_else(|| {
-                CodecError::malformed(
-                    "Inventor registry identifier count exceeds remaining payload",
-                )
-            })?;
+        self.fits(count, 16, field)?;
         let mut ids = ctx.vector_storage(count, "admit Inventor registry identifier list")?;
-        for _ in ctx.admit_iter(&(0..count), "visit Inventor database table records")? {
+        let mut steps = 0..count;
+        while ctx
+            .next_charged(&mut steps, "visit Inventor database table records")?
+            .is_some()
+        {
             ctx.push_vec(
                 &mut ids,
                 self.array(field)?,
@@ -483,10 +536,39 @@ mod tests {
     };
 
     #[test]
+    fn registry_rejection_does_not_precharge_unread_entries() {
+        for count in [1_u32, 512] {
+            let mut bytes = Vec::new();
+            bytes.extend_from_slice(&count.to_le_bytes());
+            bytes.extend_from_slice(&4_097_u32.to_le_bytes());
+            bytes.resize(
+                4 + usize::try_from(count).expect("test count") * super::SEGMENT_ENTRY_MIN_BYTES,
+                0,
+            );
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            // The first range step runs. Its display-name count exceeds4096,
+            // so neither a string scan nor a second range step executes.
+            policy.limits.max_work_units = 1;
+            let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("registry rejection context");
+            assert!(matches!(super::parse_registry(&ctx, &bytes),
+                Err(cadmpeg_core::CodecError::Malformed(detail))
+                    if detail.contains("segment display name")));
+            ctx.finish_session()
+                .expect("unread registry entries use no work");
+        }
+    }
+
+    #[test]
     fn revision_traversal_refuses_work_before_record_read() {
         let mut bytes = Vec::new();
         push_u32(&mut bytes, 3);
         push_u32(&mut bytes, 1);
+        // One revision entry: id, flags and a kind with no payload.
+        bytes.extend_from_slice(&[0; 16]);
+        push_u32(&mut bytes, 0);
+        bytes.extend_from_slice(&0_u16.to_le_bytes());
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;

@@ -4,13 +4,14 @@
 use cadmpeg_core::convert::{f64_from_i64, truncate_f64_to_i64, truncate_f64_to_u32};
 use cadmpeg_core::{decode::DecodeContext, CodecError};
 use cadmpeg_ir::{
-    features::{ParameterId, ParameterValue},
+    features::{DesignParameter, ParameterId, ParameterValue},
     scalar::{Angle, FiniteReal, Length},
 };
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use super::{ParameterAliasView, ParameterTokenText};
-use crate::history::literals::parse_parameter_literal;
+use crate::history::literals::{admit_literal, parse_parameter_literal};
 
 enum Token<'a, 'ctx> {
     Quoted(ParameterTokenText<'a, 'ctx>),
@@ -28,36 +29,68 @@ impl From<CodecError> for ExpressionFailure {
     }
 }
 
-pub(super) struct ParameterExpressionParser<'a, 'ctx, 'arena> {
+pub(super) struct ParameterExpressionParser<'a, 'aliases, 'ctx, 'arena> {
     ctx: &'ctx DecodeContext<'arena>,
     input: &'a str,
     offset: usize,
-    aliases: ParameterAliasMap<'a>,
-    values: &'a HashMap<ParameterId, ParameterValue>,
+    aliases: ParameterAliasMap<'aliases, 'a>,
+    values: ParameterValues<'a, 'ctx>,
+    blocked: Option<&'aliases ParameterId>,
 }
 
-enum ParameterAliasMap<'a> {
-    Layered(ParameterAliasView<'a>),
+/// Borrowed validation layers or positions in the model being evaluated.
+pub(super) enum ParameterValues<'a, 'ctx> {
     #[cfg(test)]
-    Flat(&'a HashMap<String, Option<ParameterId>>),
+    Stored(&'a HashMap<ParameterId, ParameterValue>),
+    Validation {
+        values: &'a super::ParameterValueIndex<'a>,
+        configuration: Option<&'a cadmpeg_ir::features::DesignConfiguration>,
+        excluded: &'a ParameterId,
+    },
+    LazyValidation {
+        parameters: &'a [DesignParameter],
+        values: &'a super::ParameterValueCache<'a, 'ctx>,
+        configuration: Option<&'a cadmpeg_ir::features::DesignConfiguration>,
+        excluded: &'a ParameterId,
+    },
+    Indexed {
+        parameters: &'a [DesignParameter],
+        positions: &'a HashMap<ParameterId, usize>,
+    },
 }
 
-impl ParameterAliasMap<'_> {
-    fn get(&self, alias: &str) -> Option<&Option<ParameterId>> {
+pub(super) enum ParameterEvaluation<'aliases> {
+    Value(ParameterValue),
+    Blocked(&'aliases ParameterId),
+    Invalid,
+}
+
+enum ParameterAliasMap<'aliases, 'owner> {
+    Layered(ParameterAliasView<'aliases, 'owner>),
+    #[cfg(test)]
+    Flat(&'aliases HashMap<String, Option<ParameterId>>),
+}
+
+impl<'aliases> ParameterAliasMap<'aliases, '_> {
+    fn get(
+        &self,
+        ctx: &DecodeContext<'_>,
+        alias: &str,
+    ) -> Result<Option<&'aliases Option<ParameterId>>, CodecError> {
         match self {
-            Self::Layered(aliases) => aliases.get(alias),
+            Self::Layered(aliases) => aliases.get(ctx, alias),
             #[cfg(test)]
-            Self::Flat(aliases) => aliases.get(alias),
+            Self::Flat(aliases) => ctx.get_hash_map(aliases, alias, "look up SLDPRT hash key"),
         }
     }
 }
 
-impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
+impl<'a, 'aliases, 'ctx, 'arena> ParameterExpressionParser<'a, 'aliases, 'ctx, 'arena> {
     pub(super) fn new(
         ctx: &'ctx DecodeContext<'arena>,
         input: &'a str,
-        aliases: ParameterAliasView<'a>,
-        values: &'a HashMap<ParameterId, ParameterValue>,
+        aliases: ParameterAliasView<'aliases, 'a>,
+        values: ParameterValues<'a, 'ctx>,
     ) -> Self {
         Self {
             ctx,
@@ -65,6 +98,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             offset: 0,
             aliases: ParameterAliasMap::Layered(aliases),
             values,
+            blocked: None,
         }
     }
 
@@ -72,7 +106,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
     pub(in crate::history) fn new_flat(
         ctx: &'ctx DecodeContext<'arena>,
         input: &'a str,
-        aliases: &'a HashMap<String, Option<ParameterId>>,
+        aliases: &'aliases HashMap<String, Option<ParameterId>>,
         values: &'a HashMap<ParameterId, ParameterValue>,
     ) -> Self {
         Self {
@@ -80,11 +114,19 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             input,
             offset: 0,
             aliases: ParameterAliasMap::Flat(aliases),
-            values,
+            values: ParameterValues::Stored(values),
+            blocked: None,
         }
     }
 
     pub(super) fn parse(mut self) -> Result<Option<ParameterValue>, CodecError> {
+        self.parse_borrowed()?
+            .map(|value| self.retain_value(value))
+            .transpose()
+    }
+
+    /// An evaluated result that borrows referenced values.
+    pub(super) fn parse_borrowed(&mut self) -> Result<Option<Cow<'a, ParameterValue>>, CodecError> {
         match self.parse_value() {
             Ok(value) => Ok(Some(value)),
             Err(ExpressionFailure::NoValue) => Ok(None),
@@ -92,7 +134,28 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
         }
     }
 
-    fn parse_value(&mut self) -> Result<ParameterValue, ExpressionFailure> {
+    /// Evaluate once and name the first absent value that prevented evaluation.
+    pub(super) fn evaluate(mut self) -> Result<ParameterEvaluation<'aliases>, CodecError> {
+        match self.parse_value() {
+            Ok(value) => Ok(ParameterEvaluation::Value(self.retain_value(value)?)),
+            Err(ExpressionFailure::NoValue) => match self.blocked {
+                Some(id) => Ok(ParameterEvaluation::Blocked(id)),
+                None => Ok(ParameterEvaluation::Invalid),
+            },
+            Err(ExpressionFailure::Resource(error)) => Err(error),
+        }
+    }
+
+    fn retain_value(&self, value: Cow<'a, ParameterValue>) -> Result<ParameterValue, CodecError> {
+        match value {
+            Cow::Owned(value) => Ok(value),
+            Cow::Borrowed(value) => {
+                value.try_clone_for_decode(self.ctx, "retain SLDPRT parameter value text")
+            }
+        }
+    }
+
+    fn parse_value(&mut self) -> Result<Cow<'a, ParameterValue>, ExpressionFailure> {
         self.skip_space()?;
         self.take('=');
         self.skip_space()?;
@@ -101,7 +164,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             "parse SLDPRT parameter literal",
         )?;
         if let Some(value) = parse_parameter_literal(&self.input[self.offset..]) {
-            return Ok(value);
+            return Ok(Cow::Owned(value));
         }
         let value = self.comparison()?;
         self.skip_space()?;
@@ -112,7 +175,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
         }
     }
 
-    fn comparison(&mut self) -> Result<ParameterValue, ExpressionFailure> {
+    fn comparison(&mut self) -> Result<Cow<'a, ParameterValue>, ExpressionFailure> {
         let _depth = self.ctx.enter_nested("parse SLDPRT parameter comparison")?;
         self.ctx
             .charge_work(1, "parse SLDPRT parameter expression")?;
@@ -125,12 +188,13 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             return Ok(left);
         };
         self.offset += operator.len();
-        compare_parameter_values(&left, &self.sum()?, operator)
+        compare_parameter_values(self.ctx, &left, self.sum()?.as_ref(), operator)?
             .map(ParameterValue::Boolean)
+            .map(Cow::Owned)
             .ok_or(ExpressionFailure::NoValue)
     }
 
-    fn sum(&mut self) -> Result<ParameterValue, ExpressionFailure> {
+    fn sum(&mut self) -> Result<Cow<'a, ParameterValue>, ExpressionFailure> {
         let mut value = self.product()?;
         loop {
             self.ctx
@@ -139,12 +203,13 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             let Some(op) = self.take_one(&['+', '-']) else {
                 return Ok(value);
             };
-            value = add_parameter_values(value, self.product()?, op == '-')
+            value = add_parameter_values(&value, self.product()?.as_ref(), op == '-')
+                .map(Cow::Owned)
                 .ok_or(ExpressionFailure::NoValue)?;
         }
     }
 
-    fn product(&mut self) -> Result<ParameterValue, ExpressionFailure> {
+    fn product(&mut self) -> Result<Cow<'a, ParameterValue>, ExpressionFailure> {
         let mut value = self.unary()?;
         loop {
             self.ctx
@@ -153,18 +218,21 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             let Some(op) = self.take_one(&['*', '/']) else {
                 return Ok(value);
             };
-            value = multiply_parameter_values(value, self.unary()?, op == '/')
+            value = multiply_parameter_values(&value, self.unary()?.as_ref(), op == '/')
+                .map(Cow::Owned)
                 .ok_or(ExpressionFailure::NoValue)?;
         }
     }
 
-    fn unary(&mut self) -> Result<ParameterValue, ExpressionFailure> {
+    fn unary(&mut self) -> Result<Cow<'a, ParameterValue>, ExpressionFailure> {
         let _depth = self.ctx.enter_nested("parse SLDPRT parameter unary")?;
         self.ctx
             .charge_work(1, "parse SLDPRT parameter expression")?;
         self.skip_space()?;
         if self.take('-') {
-            negate_parameter_value(&self.unary()?).ok_or(ExpressionFailure::NoValue)
+            negate_parameter_value(self.unary()?.as_ref())
+                .map(Cow::Owned)
+                .ok_or(ExpressionFailure::NoValue)
         } else if self.take('+') {
             self.unary()
         } else {
@@ -172,17 +240,19 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
         }
     }
 
-    fn power(&mut self) -> Result<ParameterValue, ExpressionFailure> {
+    fn power(&mut self) -> Result<Cow<'a, ParameterValue>, ExpressionFailure> {
         let base = self.primary()?;
         self.skip_space()?;
         if self.take('^') {
-            exponentiate_parameter_value(&base, &self.unary()?).ok_or(ExpressionFailure::NoValue)
+            exponentiate_parameter_value(&base, self.unary()?.as_ref())
+                .map(Cow::Owned)
+                .ok_or(ExpressionFailure::NoValue)
         } else {
             Ok(base)
         }
     }
 
-    fn primary(&mut self) -> Result<ParameterValue, ExpressionFailure> {
+    fn primary(&mut self) -> Result<Cow<'a, ParameterValue>, ExpressionFailure> {
         self.skip_space()?;
         if self.take('(') {
             let value = self.comparison()?;
@@ -199,7 +269,10 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             if self.take('(') {
                 let function =
                     ParameterFunction::parse(token.as_str()).ok_or(ExpressionFailure::NoValue)?;
-                let mut arguments = Vec::with_capacity(function.argument_count());
+                let mut argument_storage = self
+                    .ctx
+                    .reserve_scoped(0, "SLDPRT parameter function arguments")?;
+                let mut arguments = Vec::new();
                 for index in 0..function.argument_count() {
                     if index != 0 {
                         self.skip_space()?;
@@ -207,7 +280,13 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
                             return Err(ExpressionFailure::NoValue);
                         }
                     }
-                    arguments.push(self.comparison()?);
+                    let value = self.comparison()?;
+                    self.ctx.push_scoped_vec(
+                        &mut argument_storage,
+                        &mut arguments,
+                        value,
+                        "collect SLDPRT decoded vector items",
+                    )?;
                 }
                 self.skip_space()?;
                 if !self.take(')') {
@@ -218,24 +297,84 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             if token.as_str().eq_ignore_ascii_case("pi") {
                 return FiniteReal::new(std::f64::consts::PI)
                     .map(ParameterValue::Real)
+                    .map(Cow::Owned)
                     .ok_or(ExpressionFailure::NoValue);
             }
         }
-        let referenced = |token: &str| -> Result<ParameterValue, ExpressionFailure> {
-            let value = self
+        let mut referenced = |token: &str| -> Result<Cow<'a, ParameterValue>, ExpressionFailure> {
+            let id = self
                 .aliases
-                .get(token)
+                .get(self.ctx, token)?
                 .and_then(Option::as_ref)
-                .and_then(|id| self.values.get(id))
                 .ok_or(ExpressionFailure::NoValue)?;
-            Ok((value).try_clone_for_decode(self.ctx, "retain SLDPRT parameter value text")?)
+            let value = match &self.values {
+                #[cfg(test)]
+                ParameterValues::Stored(values) => {
+                    self.ctx
+                        .get_hash_map(values, id, "look up SLDPRT hash key")?
+                }
+                ParameterValues::Validation { excluded, .. }
+                | ParameterValues::LazyValidation { excluded, .. }
+                    if self
+                        .ctx
+                        .equal(id, *excluded, "check SLDPRT parameter evaluation")? =>
+                {
+                    None
+                }
+                ParameterValues::Validation {
+                    values,
+                    configuration,
+                    ..
+                } => super::configuration_parameter_value(self.ctx, *configuration, id, || {
+                    Ok(self
+                        .ctx
+                        .get_hash_map(values, &id, "check SLDPRT parameter evaluation")?
+                        .copied())
+                })?,
+                ParameterValues::LazyValidation {
+                    parameters,
+                    values,
+                    configuration,
+                    ..
+                } => super::configuration_parameter_value(self.ctx, *configuration, id, || {
+                    let mut values = values.borrow_mut();
+                    if values.is_none() {
+                        *values = Some(super::parameter_value_index(self.ctx, parameters)?);
+                    }
+                    Ok(values
+                        .as_ref()
+                        .map(|(values, _storage)| {
+                            self.ctx
+                                .get_hash_map(values, &id, "check SLDPRT parameter evaluation")
+                                .map(Option::<&&ParameterValue>::copied)
+                        })
+                        .transpose()?
+                        .flatten())
+                })?,
+                ParameterValues::Indexed {
+                    parameters,
+                    positions,
+                } => self
+                    .ctx
+                    .get_hash_map(positions, id, "look up SLDPRT hash key")?
+                    .and_then(|index| parameters.get(*index))
+                    .and_then(|parameter| parameter.value.as_ref()),
+            };
+            let Some(value) = value else {
+                self.blocked = Some(id);
+                return Err(ExpressionFailure::NoValue);
+            };
+            Ok(Cow::Borrowed(value))
         };
         match token {
             Token::Quoted(token) => referenced(token.as_str()),
-            Token::Bare(token) => match parse_parameter_literal(token.as_str()) {
-                Some(value) => Ok(value),
-                None => referenced(token.as_str()),
-            },
+            Token::Bare(token) => {
+                admit_literal(self.ctx, token.as_str(), "parse SLDPRT parameter literal")?;
+                match parse_parameter_literal(token.as_str()) {
+                    Some(value) => Ok(Cow::Owned(value)),
+                    None => referenced(token.as_str()),
+                }
+            }
         }
     }
 
@@ -256,25 +395,10 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             let Token::Bare(value) = self.token()? else {
                 return Err(ExpressionFailure::NoValue);
             };
-            let bytes = prefix
-                .len()
-                .checked_add(value.as_str().len())
-                .ok_or_else(|| {
-                    self.ctx.refuse_codec_limit(
-                        "normalize SLDPRT parameter token",
-                        u64::MAX - 1,
-                        u64::MAX,
-                    )
-                })?;
-            self.ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(bytes),
+            let (text, reservation) = self.ctx.format_scoped(
+                format_args!("{prefix}{}", value.as_str()),
                 "normalize SLDPRT parameter token",
             )?;
-            let (mut text, reservation) = self
-                .ctx
-                .scoped_string(bytes, "normalize SLDPRT parameter token")?;
-            text.push_str(prefix);
-            text.push_str(value.as_str());
             return Ok(Token::Bare(ParameterTokenText::Owned {
                 value: text,
                 _reservation: reservation,
@@ -285,63 +409,56 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             let start = self.offset;
             let mut end = start;
             let mut closed = false;
-            while end < self.input.len() {
-                self.ctx
-                    .charge_work(1, "scan SLDPRT quoted parameter token")?;
-                let rest = &self.input[end..];
-                if rest.starts_with("\"\"") {
-                    end += 2;
-                } else if rest.starts_with('"') {
-                    closed = true;
-                    break;
+            let mut escaped = false;
+            let mut characters = self.input[start..].char_indices();
+            while let Some((at, character)) = self
+                .ctx
+                .next_charged(&mut characters, "scan SLDPRT quoted parameter token")?
+            {
+                end = start + at;
+                if character == '"' {
+                    if self.input[end + 1..].starts_with('"') {
+                        escaped = true;
+                        self.ctx
+                            .next_charged(&mut characters, "scan SLDPRT quoted parameter token")?;
+                        end += 2;
+                    } else {
+                        closed = true;
+                        break;
+                    }
                 } else {
-                    end += rest
-                        .chars()
-                        .next()
-                        .ok_or(ExpressionFailure::NoValue)?
-                        .len_utf8();
+                    end += character.len_utf8();
                 }
             }
             if !closed {
                 self.offset = end;
                 return Err(ExpressionFailure::NoValue);
             }
-            let (mut value, reservation) = self
-                .ctx
-                .scoped_string(end - start, "retain SLDPRT quoted parameter token")?;
-            self.ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(end - start),
-                "copy SLDPRT quoted parameter token",
-            )?;
-            let mut cursor = start;
-            while cursor < end {
-                let rest = &self.input[cursor..end];
-                if rest.starts_with("\"\"") {
-                    value.push('"');
-                    cursor += 2;
-                } else {
-                    let character = rest.chars().next().ok_or(ExpressionFailure::NoValue)?;
-                    value.push(character);
-                    cursor += character.len_utf8();
-                }
-            }
             self.offset = end + 1;
-            return Ok(Token::Quoted(ParameterTokenText::Owned {
-                value,
-                _reservation: reservation,
-            }));
+            if end == start {
+                return Ok(Token::Quoted(ParameterTokenText::Borrowed("")));
+            }
+            let identifier = super::ExpressionIdentifier::quoted(
+                self.ctx,
+                self.input,
+                start - 1,
+                self.offset,
+                escaped,
+            )?
+            .ok_or(ExpressionFailure::NoValue)?;
+            return Ok(Token::Quoted(identifier.value));
         }
         let start = self.offset;
         let numeric = self.input[start..]
             .chars()
             .next()
             .is_some_and(|character| character.is_ascii_digit() || character == '.');
-        while self.offset < self.input.len() {
-            self.ctx.charge_work(1, "scan SLDPRT parameter token")?;
-            let character = self.input[self.offset..]
-                .chars()
-                .next()
-                .ok_or(ExpressionFailure::NoValue)?;
+        let mut characters = self.input[start..].char_indices();
+        while let Some((at, character)) = self
+            .ctx
+            .next_charged(&mut characters, "scan SLDPRT parameter token")?
+        {
+            self.offset = start + at;
             let exponent_sign = numeric
                 && matches!(character, '+' | '-')
                 && self.input[start..self.offset].ends_with(['e', 'E']);
@@ -359,14 +476,16 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
     }
 
     fn skip_space(&mut self) -> Result<(), ExpressionFailure> {
-        while let Some(character) = self.input[self.offset..].chars().next() {
-            self.ctx
-                .charge_work(1, "scan SLDPRT parameter whitespace")?;
-            if !character.is_whitespace() {
-                break;
-            }
-            self.offset += character.len_utf8();
-        }
+        let rest = &self.input[self.offset..];
+        let end = self
+            .ctx
+            .find_map(
+                rest.char_indices(),
+                |(at, character)| Ok((!character.is_whitespace()).then_some(at)),
+                "scan SLDPRT parameter whitespace",
+            )?
+            .unwrap_or(rest.len());
+        self.offset += end;
         Ok(())
     }
 
@@ -399,8 +518,8 @@ fn negate_parameter_value(value: &ParameterValue) -> Option<ParameterValue> {
 }
 
 fn add_parameter_values(
-    left: ParameterValue,
-    right: ParameterValue,
+    left: &ParameterValue,
+    right: &ParameterValue,
     subtract: bool,
 ) -> Option<ParameterValue> {
     let sign = if subtract { -1.0 } else { 1.0 };
@@ -415,52 +534,60 @@ fn add_parameter_values(
             let right = if subtract {
                 right.checked_neg()?
             } else {
-                right
+                *right
             };
             ParameterValue::Integer(left.checked_add(right)?)
         }
         (left, right) => ParameterValue::Real(FiniteReal::new(
-            real_parameter_value(&left)? + sign * real_parameter_value(&right)?,
+            real_parameter_value(left)? + sign * real_parameter_value(right)?,
         )?),
     })
 }
 
 pub(super) fn compare_parameter_values(
+    ctx: &DecodeContext<'_>,
     left: &ParameterValue,
     right: &ParameterValue,
     operator: &str,
-) -> Option<bool> {
+) -> Result<Option<bool>, CodecError> {
     if matches!(
         (left, right),
         (ParameterValue::Boolean(_), ParameterValue::Boolean(_))
     ) && !matches!(operator, "=" | "<>")
     {
-        return None;
+        return Ok(None);
     }
     let ordering = match (left, right) {
-        (ParameterValue::Length(left), ParameterValue::Length(right)) => left.partial_cmp(right)?,
-        (ParameterValue::Angle(left), ParameterValue::Angle(right)) => left.partial_cmp(right)?,
-        (ParameterValue::Real(left), ParameterValue::Real(right)) => left.partial_cmp(right)?,
-        (ParameterValue::Integer(left), ParameterValue::Integer(right)) => left.cmp(right),
+        (ParameterValue::Length(left), ParameterValue::Length(right)) => left.partial_cmp(right),
+        (ParameterValue::Angle(left), ParameterValue::Angle(right)) => left.partial_cmp(right),
+        (ParameterValue::Real(left), ParameterValue::Real(right)) => left.partial_cmp(right),
+        (ParameterValue::Integer(left), ParameterValue::Integer(right)) => Some(left.cmp(right)),
         (ParameterValue::Real(left), ParameterValue::Integer(right)) => {
-            compare_integer_real(*right, left.get())?.reverse()
+            compare_integer_real(*right, left.get()).map(std::cmp::Ordering::reverse)
         }
         (ParameterValue::Integer(left), ParameterValue::Real(right)) => {
-            compare_integer_real(*left, right.get())?
+            compare_integer_real(*left, right.get())
         }
-        (ParameterValue::Boolean(left), ParameterValue::Boolean(right)) => left.cmp(right),
-        (ParameterValue::String(left), ParameterValue::String(right)) => left.cmp(right),
-        _ => return None,
+        (ParameterValue::Boolean(left), ParameterValue::Boolean(right)) => Some(left.cmp(right)),
+        (ParameterValue::String(left), ParameterValue::String(right)) => Some(ctx.compare(
+            left.as_str(),
+            right.as_str(),
+            "compare SLDPRT parameter text",
+        )?),
+        _ => return Ok(None),
     };
-    Some(match operator {
+    let Some(ordering) = ordering else {
+        return Ok(None);
+    };
+    Ok(Some(match operator {
         "=" => ordering.is_eq(),
         "<>" => !ordering.is_eq(),
         "<" => ordering.is_lt(),
         ">" => ordering.is_gt(),
         "<=" => !ordering.is_gt(),
         ">=" => !ordering.is_lt(),
-        _ => return None,
-    })
+        _ => return Ok(None),
+    }))
 }
 
 fn compare_integer_real(integer: i64, real: f64) -> Option<std::cmp::Ordering> {
@@ -482,39 +609,12 @@ fn compare_integer_real(integer: i64, real: f64) -> Option<std::cmp::Ordering> {
     }
 }
 
-fn conditional_parameter_value(
-    condition: &ParameterValue,
-    when_true: ParameterValue,
-    when_false: ParameterValue,
-) -> Option<ParameterValue> {
-    let ParameterValue::Boolean(condition) = condition else {
-        return None;
-    };
-    match (&when_true, &when_false) {
-        (ParameterValue::Length(_), ParameterValue::Length(_))
-        | (ParameterValue::Angle(_), ParameterValue::Angle(_))
-        | (ParameterValue::Real(_), ParameterValue::Real(_))
-        | (ParameterValue::Integer(_), ParameterValue::Integer(_))
-        | (ParameterValue::Boolean(_), ParameterValue::Boolean(_))
-        | (ParameterValue::String(_), ParameterValue::String(_)) => {
-            Some(if *condition { when_true } else { when_false })
-        }
-        (ParameterValue::Real(_), ParameterValue::Integer(_))
-        | (ParameterValue::Integer(_), ParameterValue::Real(_)) => {
-            Some(ParameterValue::Real(FiniteReal::new(
-                real_parameter_value(if *condition { &when_true } else { &when_false })?,
-            )?))
-        }
-        _ => None,
-    }
-}
-
 fn multiply_parameter_values(
-    left: ParameterValue,
-    right: ParameterValue,
+    left: &ParameterValue,
+    right: &ParameterValue,
     divide: bool,
 ) -> Option<ParameterValue> {
-    if divide && parameter_numeric_value(&right)? == 0.0 {
+    if divide && parameter_numeric_value(right)? == 0.0 {
         return None;
     }
     match (left, right) {
@@ -526,31 +626,31 @@ fn multiply_parameter_values(
         ),
         (ParameterValue::Length(left), right) => {
             Some(ParameterValue::Length(Length::new(if divide {
-                left.get() / real_parameter_value(&right)?
+                left.get() / real_parameter_value(right)?
             } else {
-                left.get() * real_parameter_value(&right)?
+                left.get() * real_parameter_value(right)?
             })?))
         }
         (ParameterValue::Angle(left), right) => {
             Some(ParameterValue::Angle(Angle::new(if divide {
-                left.get() / real_parameter_value(&right)?
+                left.get() / real_parameter_value(right)?
             } else {
-                left.get() * real_parameter_value(&right)?
+                left.get() * real_parameter_value(right)?
             })?))
         }
         (left, ParameterValue::Length(right)) if !divide => Some(ParameterValue::Length(
-            Length::new(real_parameter_value(&left)? * right.get())?,
+            Length::new(real_parameter_value(left)? * right.get())?,
         )),
         (left, ParameterValue::Angle(right)) if !divide => Some(ParameterValue::Angle(Angle::new(
-            real_parameter_value(&left)? * right.get(),
+            real_parameter_value(left)? * right.get(),
         )?)),
         (ParameterValue::Integer(left), ParameterValue::Integer(right)) if !divide => {
-            Some(ParameterValue::Integer(left.checked_mul(right)?))
+            Some(ParameterValue::Integer(left.checked_mul(*right)?))
         }
         (left, right) => Some(ParameterValue::Real(FiniteReal::new(if divide {
-            real_parameter_value(&left)? / real_parameter_value(&right)?
+            real_parameter_value(left)? / real_parameter_value(right)?
         } else {
-            real_parameter_value(&left)? * real_parameter_value(&right)?
+            real_parameter_value(left)? * real_parameter_value(right)?
         })?)),
     }
 }
@@ -682,18 +782,42 @@ impl ParameterFunction {
         }
     }
 
-    pub(super) fn apply(self, arguments: Vec<ParameterValue>) -> Option<ParameterValue> {
+    pub(super) fn apply<'a>(
+        self,
+        arguments: Vec<Cow<'a, ParameterValue>>,
+    ) -> Option<Cow<'a, ParameterValue>> {
         if let Self::Iif = self {
-            let [condition, when_true, when_false]: [ParameterValue; 3] =
+            let [condition, when_true, when_false]: [Cow<'a, ParameterValue>; 3] =
                 arguments.try_into().ok()?;
-            return conditional_parameter_value(&condition, when_true, when_false);
+            let ParameterValue::Boolean(condition) = condition.as_ref() else {
+                return None;
+            };
+            return match (when_true.as_ref(), when_false.as_ref()) {
+                (ParameterValue::Length(_), ParameterValue::Length(_))
+                | (ParameterValue::Angle(_), ParameterValue::Angle(_))
+                | (ParameterValue::Real(_), ParameterValue::Real(_))
+                | (ParameterValue::Integer(_), ParameterValue::Integer(_))
+                | (ParameterValue::Boolean(_), ParameterValue::Boolean(_))
+                | (ParameterValue::String(_), ParameterValue::String(_)) => {
+                    Some(if *condition { when_true } else { when_false })
+                }
+                (ParameterValue::Real(_), ParameterValue::Integer(_))
+                | (ParameterValue::Integer(_), ParameterValue::Real(_)) => Some(Cow::Owned(
+                    ParameterValue::Real(FiniteReal::new(real_parameter_value(if *condition {
+                        when_true.as_ref()
+                    } else {
+                        when_false.as_ref()
+                    })?)?),
+                )),
+                _ => None,
+            };
         }
         let arguments = arguments.as_slice();
         let unary = || {
             let [argument] = arguments else {
                 return None;
             };
-            Some(argument)
+            Some(argument.as_ref())
         };
         let angle = || {
             let ParameterValue::Angle(value) = unary()? else {
@@ -701,7 +825,7 @@ impl ParameterFunction {
             };
             Some(value.get())
         };
-        Some(match self {
+        Some(Cow::Owned(match self {
             Self::Iif => return None,
             Self::Abs => match unary()? {
                 ParameterValue::Length(value) => ParameterValue::Length(value.abs()),
@@ -762,7 +886,7 @@ impl ParameterFunction {
                     std::cmp::Ordering::Greater => 1,
                 })
             }
-        })
+        }))
     }
 }
 
@@ -796,19 +920,24 @@ mod tests {
         ParameterFunction,
     };
     use cadmpeg_ir::{features::ParameterValue, scalar::FiniteReal};
+    use std::borrow::Cow;
 
     #[test]
     fn real_arithmetic_rejects_non_finite_results_at_construction() {
         let largest = ParameterValue::Real(FiniteReal::new(f64::MAX).unwrap());
         let two = ParameterValue::Integer(2);
-        assert!(add_parameter_values(largest.clone(), largest.clone(), false).is_none());
-        assert!(multiply_parameter_values(largest.clone(), two.clone(), false).is_none());
+        assert!(add_parameter_values(&largest, &largest, false).is_none());
+        assert!(multiply_parameter_values(&largest, &two, false).is_none());
         assert!(exponentiate_parameter_value(&largest, &two).is_none());
-        assert!(ParameterFunction::Exp.apply(vec![largest]).is_none());
+        assert!(ParameterFunction::Exp
+            .apply(vec![Cow::Owned(largest)])
+            .is_none());
         let negative = ParameterValue::Real(FiniteReal::new(-1.0).unwrap());
         assert!(ParameterFunction::Log
-            .apply(vec![negative.clone()])
+            .apply(vec![Cow::Owned(negative.clone())])
             .is_none());
-        assert!(ParameterFunction::Sqr.apply(vec![negative]).is_none());
+        assert!(ParameterFunction::Sqr
+            .apply(vec![Cow::Owned(negative)])
+            .is_none());
     }
 }

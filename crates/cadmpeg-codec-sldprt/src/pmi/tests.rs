@@ -940,57 +940,54 @@ fn decode_bound_pmi_report_refuses_collection_limit() {
         "Contents/PMISemanticDataDB",
         &pmi_semantic_payload(),
     ));
-    let mut options = DecodeOptions::default();
-    options.policy.limits.max_collection_items = 0;
-    for _ in 0..1024 {
-        let error = SldprtCodec
-            .decode(&mut Cursor::new(&source), &options)
-            .expect_err("collection limit must refuse the PMI decode route");
-        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-            error
-        else {
-            panic!("expected a collection resource refusal");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-        if limit.operation == "collect SLDPRT bound PMI dimensions" {
-            assert_eq!(options.policy.limits.max_collection_items, limit.used);
-            assert_eq!(limit.additional, 1);
-            return;
-        }
-        options.policy.limits.max_collection_items = limit.used + limit.additional;
-    }
-    panic!("bound PMI report charge was not reached");
+    let limit = pmi_decode_refusal(
+        &source,
+        false,
+        ResourceDimension::CollectionItems,
+        "collect SLDPRT bound PMI dimensions",
+    );
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.additional, 1);
 }
 
-fn pmi_projection_collection_refusal(
+fn pmi_decode_refusal(
+    source: &[u8],
     container_only: bool,
+    dimension: cadmpeg_core::decode::ResourceDimension,
     operation: &str,
 ) -> cadmpeg_core::decode::ResourceLimit {
     use cadmpeg_core::decode::ResourceDimension;
 
-    let source = pmi_projection_source();
-    let mut options = DecodeOptions {
-        container_only,
-        ..DecodeOptions::default()
-    };
-    options.policy.limits.max_collection_items = 0;
-    for _ in 0..1024 {
-        let error = SldprtCodec
-            .decode(&mut Cursor::new(&source), &options)
-            .expect_err("collection limit must refuse the PMI projection route");
-        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-            error
-        else {
-            panic!("expected a collection resource refusal");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+        let mut options = DecodeOptions {
+            container_only,
+            ..DecodeOptions::default()
         };
-        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-        if limit.operation == operation {
-            assert_eq!(options.policy.limits.max_collection_items, limit.used);
-            return limit;
+        match dimension {
+            ResourceDimension::CollectionItems => options.policy.limits.max_collection_items = cap,
+            ResourceDimension::RetainedBytes => options.policy.limits.max_retained_bytes = cap,
+            _ => panic!("PMI projection resource dimension"),
         }
-        options.policy.limits.max_collection_items = limit.used + limit.additional;
-    }
-    panic!("PMI projection collection charge was not reached");
+        match SldprtCodec.decode(&mut Cursor::new(source), &options) {
+            Ok(_) => Ok(()),
+            Err(cadmpeg_ir::DecodeFailure::Codec(error)) => {
+                if let cadmpeg_core::CodecError::ResourceLimit(limit) = &error {
+                    assert_eq!(limit.dimension, dimension);
+                    if cap != u64::MAX && dimension == ResourceDimension::CollectionItems {
+                        assert_eq!(cap, limit.used);
+                    }
+                }
+                Err(error)
+            }
+            Err(error) => panic!("expected a PMI projection resource refusal: {error}"),
+        }
+    });
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("expected a PMI projection resource refusal");
+    };
+    assert_eq!(limit.dimension, dimension);
+    assert_eq!(limit.operation, operation);
+    limit
 }
 
 fn pmi_projection_source() -> Vec<u8> {
@@ -1008,67 +1005,47 @@ fn pmi_projection_source() -> Vec<u8> {
     source
 }
 
-fn pmi_projection_retained_refusal(
-    container_only: bool,
-    operation: &str,
-) -> cadmpeg_core::decode::ResourceLimit {
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let source = pmi_projection_source();
-    let mut options = DecodeOptions {
-        container_only,
-        ..DecodeOptions::default()
-    };
-    options.policy.limits.max_retained_bytes = 0;
-    for _ in 0..1024 {
-        let error = SldprtCodec
-            .decode(&mut Cursor::new(&source), &options)
-            .expect_err("retained limit must refuse the PMI projection route");
-        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-            error
-        else {
-            panic!("expected a retained resource refusal");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-        if limit.operation == operation {
-            options.policy.limits.max_retained_bytes = limit.used + limit.additional - 1;
-            let repeated = SldprtCodec
-                .decode(&mut Cursor::new(&source), &options)
-                .expect_err("one byte below PMI retained copy must refuse");
-            assert!(matches!(
-                repeated,
-                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                    if refusal.dimension == ResourceDimension::RetainedBytes
-                        && refusal.operation == operation
-            ));
-            return limit;
-        }
-        options.policy.limits.max_retained_bytes = limit.used + limit.additional;
-    }
-    panic!("PMI projection retained charge was not reached");
-}
-
 #[test]
 fn geometry_pmi_projection_refuses_collection_limit() {
-    let limit = pmi_projection_collection_refusal(false, "group SLDPRT PMI dimension names");
+    let limit = pmi_decode_refusal(
+        &pmi_projection_source(),
+        false,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "group SLDPRT PMI dimension names",
+    );
     assert_eq!(limit.additional, 1);
 }
 
 #[test]
 fn metadata_pmi_projection_refuses_collection_limit() {
-    let limit = pmi_projection_collection_refusal(true, "group SLDPRT PMI dimension names");
+    let limit = pmi_decode_refusal(
+        &pmi_projection_source(),
+        true,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "group SLDPRT PMI dimension names",
+    );
     assert_eq!(limit.additional, 1);
 }
 
 #[test]
 fn geometry_pmi_projection_refuses_retained_limit() {
-    let limit = pmi_projection_retained_refusal(false, "retain SLDPRT PMI parameter native ID");
+    let limit = pmi_decode_refusal(
+        &pmi_projection_source(),
+        false,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain SLDPRT PMI parameter native ID",
+    );
     assert!(limit.additional > 1);
 }
 
 #[test]
 fn metadata_pmi_projection_refuses_retained_limit() {
-    let limit = pmi_projection_retained_refusal(true, "retain SLDPRT PMI parameter native ID");
+    let limit = pmi_decode_refusal(
+        &pmi_projection_source(),
+        true,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain SLDPRT PMI parameter native ID",
+    );
     assert!(limit.additional > 1);
 }
 
@@ -1387,13 +1364,20 @@ fn pmi_alias_comparison_refuses_long_semantic_strings() {
     second.cad_text.push('y');
     let records = [first, second];
     let bound = std::collections::HashSet::from(["bound"]);
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 100;
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::unbound_dimension_count(&ctx, &records, &bound).unwrap_err();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "compare SLDPRT PMI aliases",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            super::unbound_dimension_count(&ctx, &records, &bound)
+        },
+    );
+    // The alias lookup pays for the long semantic text it compares.
     assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "compare SLDPRT PMI aliases")
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional > 1024)
     );
     assert_eq!(
         super::unbound_dimension_count(
@@ -1449,4 +1433,65 @@ fn pmi_patch_admits_records_at_the_maximum_field_depth() {
         patch_payload(&ir, "block", &mut []),
         Err(cadmpeg_core::CodecError::ResourceLimit(_))
     ));
+}
+
+fn pmi_guid_set_insertion_refusal(dimension: cadmpeg_core::decode::ResourceDimension) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let mut payload = pmi_semantic_payload();
+    if dimension == ResourceDimension::MaterializedBytes {
+        // Grow the GUID index beyond the valid record's temporary parsing peak.
+        for index in 0..512 {
+            let guid = format!("{index:08x}-0123-4567-89ab-cdef01234567");
+            payload.extend_from_slice(guid.as_bytes());
+            payload.push(0x80);
+        }
+    }
+    let mut losses = Vec::new();
+    let records = parse_payload(&payload, &mut losses);
+    assert!(losses.is_empty());
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].guid, "01234567-89ab-cdef-0123-456789abcdef");
+    assert_eq!(records[0].cad_text, "D1@Sketch1");
+    assert_eq!(records[0].value.get(), 0.025);
+    let arena = DecodeArena::new();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        dimension,
+        "index SLDPRT PMI candidate GUID",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+                _ => panic!("GUID insertion dimension"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut losses = Vec::new();
+            let result = super::parse_payload(&ctx, &payload, &mut losses);
+            assert!(losses.is_empty());
+            if let Err(CodecError::ResourceLimit(ref limit)) = result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+            }
+            result
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == dimension && limit.operation == "index SLDPRT PMI candidate GUID"
+            && limit.additional > 0));
+}
+
+#[test]
+fn pmi_guid_set_insertion_refuses_collection_without_loss() {
+    pmi_guid_set_insertion_refusal(cadmpeg_core::decode::ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn pmi_guid_set_insertion_refuses_work_without_loss() {
+    pmi_guid_set_insertion_refusal(cadmpeg_core::decode::ResourceDimension::WorkUnits);
+}
+
+#[test]
+fn pmi_guid_set_insertion_refuses_scoped_bytes_without_loss() {
+    pmi_guid_set_insertion_refusal(cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
 }

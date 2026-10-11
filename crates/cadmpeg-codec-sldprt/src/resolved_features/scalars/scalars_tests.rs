@@ -288,3 +288,5 @@ fn shifted_value_only_scalar_carries_standard_operand_cells() {
         ]
     );
 }
+
+mod object_names;

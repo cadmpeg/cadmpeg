@@ -1409,6 +1409,7 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
     let use_refs = uses.iter().collect::<Vec<_>>();
     let parameters = crate::test_support::with_decode_context(|ctx| {
         native_feature_parameters(ctx, &use_refs, &expressions)
+            .map(|(parameters, _nodes)| parameters)
     })
     .unwrap();
     assert_eq!(
@@ -1426,8 +1427,10 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             None,
             None,
             HoleProjection::default(),
-            cadmpeg_core::text::named_entries("UNKNOWN OPERATION", parameters)
-                .expect("the fixture states named parameters"),
+            || Ok(
+                cadmpeg_core::text::named_entries("UNKNOWN OPERATION", parameters)
+                    .expect("the fixture states named parameters")
+            ),
         )
         .unwrap(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -1453,7 +1456,7 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             None,
             None,
             HoleProjection::default(),
-            std::collections::BTreeMap::default(),
+            || Ok(std::collections::BTreeMap::default()),
         ).unwrap(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Native { kind, .. }) if kind.as_str() == "DELETE"
     ));
@@ -1465,7 +1468,7 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             None,
             None,
             HoleProjection::default(),
-            std::collections::BTreeMap::new(),
+            || Ok(std::collections::BTreeMap::new()),
         )
         .unwrap(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -1481,7 +1484,7 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             None,
             None,
             HoleProjection::default(),
-            std::collections::BTreeMap::new(),
+            || Ok(std::collections::BTreeMap::new()),
         ).unwrap(), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
             shape,
             path: None,
@@ -1498,7 +1501,8 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             ctx,
             &use_refs,
             &duplicate_expressions
-        ))
+        )
+        .map(|(parameters, _nodes)| parameters))
         .unwrap()
         .is_empty()
     );
@@ -1508,14 +1512,15 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             ctx,
             &unresolved.iter().collect::<Vec<_>>(),
             &expressions
-        ))
+        )
+        .map(|(parameters, _nodes)| parameters))
         .unwrap()
         .is_empty()
     );
 }
 
-fn native_parameter_with_limit(
-    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+fn native_parameter_result(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let expression = crate::native::om::ParameterFormula {
         id: "expression".into(),
@@ -1539,45 +1544,56 @@ fn native_parameter_with_limit(
         bindings: Vec::new(),
     };
 
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            configure(policy);
-        },
-        |ctx| {
-            let parameters = native_feature_parameters(ctx, &[&use_], &[expression])?;
-            assert_eq!(parameters["length"], "12.5");
-            Ok(())
-        },
-    )
+    let (parameters, _nodes) = native_feature_parameters(ctx, &[&use_], &[expression])?;
+    assert_eq!(parameters["length"], "12.5");
+    Ok(())
 }
 
 #[test]
 fn native_parameter_refuses_collection_limit() {
-    let error =
-        native_parameter_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    crate::test_support::with_decode_context(native_parameter_result).unwrap();
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "NX native feature parameter",
+        native_parameter_result,
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && limit.operation == "NX native feature parameter")
     );
 }
 
 #[test]
 fn native_parameter_refuses_retained_limit() {
-    let error =
-        native_parameter_with_limit(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
+    crate::test_support::with_decode_context(native_parameter_result).unwrap();
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "NX native feature parameter",
+        native_parameter_result,
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && limit.operation == "NX native feature parameter")
     );
 }
 
 #[test]
 fn native_parameter_refuses_work_limit() {
-    let error = native_parameter_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    crate::test_support::with_decode_context(native_parameter_result).unwrap();
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX native feature parameter",
+        native_parameter_result,
+    );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "NX native feature parameter")
     );
 }
 
@@ -1591,7 +1607,7 @@ fn nx_intersection_labels_project_without_fabricating_construction_fields() {
                 None,
                 None,
                 HoleProjection::default(),
-                std::collections::BTreeMap::default(),
+            || Ok(std::collections::BTreeMap::default()),
             ).unwrap(), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::SectionShape {
                 operands,
 
@@ -1609,7 +1625,7 @@ fn nx_multi_instance_output_projects_as_an_unresolved_pattern() {
                 None,
                 None,
                 HoleProjection::default(),
-                std::collections::BTreeMap::default(),
+            || Ok(std::collections::BTreeMap::default()),
             ).unwrap()),
             cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Pattern {
                 seeds,
@@ -1768,7 +1784,7 @@ fn topology_inferred_hole_axis_is_not_an_authored_direction() {
                     }],
                     ..HoleProjection::default()
                 },
-                std::collections::BTreeMap::new(),
+            || Ok(std::collections::BTreeMap::new()),
             ).unwrap(),
             FeatureDefinition::Operation(FeatureOperation::Hole {
                 placements,
@@ -1788,60 +1804,68 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
         LinearTermination, PlanarProfileRef, ProfileRef,
     };
 
-    assert_eq!(
-        extrude_feature_definition(
-            Some("nx:profile#1"),
-            None,
-            BooleanOp::NewBody,
-            &[cadmpeg_ir::topology::BodyKind::Solid],
-        ),
-        FeatureDefinition::Operation(FeatureOperation::Extrude {
-            profile: ProfileRef::Planar(PlanarProfileRef::Native("nx:profile#1".to_string())),
-            direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
-            extent: ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: LinearTermination::Unresolved {},
-                    draft: None,
+    crate::test_support::with_decode_context(|ctx| {
+        assert_eq!(
+            extrude_feature_definition(
+                ctx,
+                Some("nx:profile#1"),
+                None,
+                BooleanOp::NewBody,
+                &[cadmpeg_ir::topology::BodyKind::Solid],
+            )
+            .unwrap(),
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                profile: ProfileRef::Planar(PlanarProfileRef::Native("nx:profile#1".to_string())),
+                direction: cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::Unresolved {},
+                        draft: None,
+                    },
                 },
-            },
-            op: BooleanOp::NewBody,
-            start: cadmpeg_ir::features::ExtrudeStart::Unresolved {},
-            solid: Some(true),
-            face_maker: None,
-            inner_wire_taper: None,
-            length_along_profile_normal: None,
-            allow_multi_profile_faces: None,
-        })
-    );
-    assert!(matches!(
-        extrude_feature_definition(
-            None,
-            None,
-            BooleanOp::Unresolved,
-            &[cadmpeg_ir::topology::BodyKind::Sheet],
-        ),
-        FeatureDefinition::Operation(FeatureOperation::Extrude {
-            profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(_)),
-            solid: Some(false),
-            ..
-        })
-    ));
-    assert!(matches!(
-        extrude_feature_definition(
-            Some("nx:profile#1"),
-            Some("nx:profile#2"),
-            BooleanOp::Unresolved,
-            &[
-                cadmpeg_ir::topology::BodyKind::Solid,
-                cadmpeg_ir::topology::BodyKind::Sheet,
-            ],
-        ),
-        FeatureDefinition::Operation(FeatureOperation::Extrude {
-            profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(_)),
-            solid: None,
-            ..
-        })
-    ));
+                op: BooleanOp::NewBody,
+                start: cadmpeg_ir::features::ExtrudeStart::Unresolved {},
+                solid: Some(true),
+                face_maker: None,
+                inner_wire_taper: None,
+                length_along_profile_normal: None,
+                allow_multi_profile_faces: None,
+            })
+        );
+        assert!(matches!(
+            extrude_feature_definition(
+                ctx,
+                None,
+                None,
+                BooleanOp::Unresolved,
+                &[cadmpeg_ir::topology::BodyKind::Sheet],
+            )
+            .unwrap(),
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(_)),
+                solid: Some(false),
+                ..
+            })
+        ));
+        assert!(matches!(
+            extrude_feature_definition(
+                ctx,
+                Some("nx:profile#1"),
+                Some("nx:profile#2"),
+                BooleanOp::Unresolved,
+                &[
+                    cadmpeg_ir::topology::BodyKind::Solid,
+                    cadmpeg_ir::topology::BodyKind::Sheet,
+                ],
+            )
+            .unwrap(),
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                profile: ProfileRef::Planar(PlanarProfileRef::Unresolved(_)),
+                solid: None,
+                ..
+            })
+        ));
+    });
 }
 
 #[test]
@@ -1934,4 +1958,7 @@ mod colors;
 
 mod body_selection;
 
+mod formatting;
 mod parameter_projection;
+
+mod lookups;

@@ -9,18 +9,17 @@ use cadmpeg_ir::topology::Color;
 
 use crate::container::InventorContainer;
 use crate::decode::rse_native_projection;
+use crate::decode::PreviewMediaType;
 use crate::decode::{
-    admit_assembly_placement, admit_kernel_annotation, admit_kernel_unknown_fidelity,
-    admit_untransferred_carrier, admitted_kernel_attribute, admitted_loss, decode_container,
-    index_asm_face_keys, index_face_colors, index_projected_colors, insert_source_attribute,
+    admit_kernel_annotation, admit_untransferred_carrier, admitted_kernel_attribute, admitted_loss,
+    decode_container, index_asm_face_keys, index_colors, insert_source_attribute,
     project_preview_asset, project_property_set_issue, project_protein_records,
     project_protein_state, project_root_product, project_ufrx_embedded_reference,
     project_ufrx_external_reference, project_ufrx_model_state, project_ufrx_occurrence,
     project_ufrx_representation, project_ufrx_state, property_set_name, structural_issue,
 };
 
-use crate::assembly::{AssemblyInventory, AssemblyOccurrence, AssemblyPlacement};
-use crate::compact_matrix::CompactMatrix;
+use crate::assembly::{AssemblyInventory, AssemblyOccurrence};
 use crate::external_reference::{
     InventorEmbeddedReference, InventorExternalReference, UfrxDocument, UfrxModelState,
     UfrxModelStateParameter, UfrxOccurrence, UfrxRepresentationState, UfrxState,
@@ -28,14 +27,10 @@ use crate::external_reference::{
 use crate::kernel::ActiveCarrierState;
 use crate::loss::InventorLossCode;
 use crate::native::ufrx::UfrxRecord;
-use crate::native::{
-    ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecordWire,
-    StructuralIssueRecord,
-};
+use crate::native::{ActiveCarrierRecord, AssemblyOccurrenceRecord, StructuralIssueRecord};
 use crate::property_set::{Property, PropertySection, PropertyValue};
 use crate::protein::{ProteinInstanceRecords, ProteinState};
-use crate::record_issue::{RecordIssueFamily, RecordIssueWire};
-use crate::rse::{DocumentKind, RecordFrameState, SegmentBulkState, SegmentKind, SegmentMetaState};
+use crate::rse::{DocumentKind, RecordFrameState, SegmentBulkState, SegmentMetaState};
 use crate::test_support::test_fixtures::{fixture_with_ufrx, primary_envelope_fixture};
 use crate::test_support::test_fixtures::{push_u16, push_u32, push_utf16};
 use crate::InventorCodec;
@@ -63,7 +58,7 @@ fn property_set_name_scan_refuses_work_before_lookup() {
         property_set_name(&ctx, &section),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "visit Inventor decode items"
+                && limit.operation == "find Inventor property set name"
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
@@ -347,79 +342,6 @@ fn assembly_occurrence_native_record_refuses_before_id_creation() {
 }
 
 #[test]
-fn assembly_placement_native_record_refuses_id_and_digest_before_creation() {
-    let suffix = [1_u8];
-    let inventory = AssemblyInventory {
-        occurrences: Vec::new(),
-        placements: vec![AssemblyPlacement {
-            segment_token: "segment".into(),
-            record_ordinal: 1,
-            header_id: 0,
-            owner_reference: 0,
-            attribute_reference: 0,
-            state: 0,
-            transform_prefix: false,
-            transform: CompactMatrix::try_new(
-                &cadmpeg_test_support::service_decode_context(),
-                0,
-                0,
-                |_| Ok(cadmpeg_ir::scalar::FiniteReal::ZERO),
-            )
-            .expect("finite matrix"),
-            branch: 0,
-            graphics_state: 0,
-            occurrence_id: 0,
-            graphics_index: 0,
-            object_reference: 0,
-            suffix: View::over_retained(&suffix),
-        }],
-        issues: Vec::new(),
-    };
-    let arena = DecodeArena::new();
-    let id_len = "inventor:assembly:placement#segment-1".len();
-    let token_len = "segment".len();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = u64::try_from(id_len - 1).expect("id length fits");
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
-    assert!(matches!(
-        AssemblyPlacementRecordWire::from_placement(&ctx, &inventory.placements[0]),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain Inventor assembly placement id"
-    ));
-    policy.limits.max_retained_bytes =
-        u64::try_from(id_len + token_len + 63).expect("digest budget fits");
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
-    assert!(matches!(
-        AssemblyPlacementRecordWire::from_placement(&ctx, &inventory.placements[0]),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain Inventor assembly placement suffix digest"
-    ));
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
-    AssemblyPlacementRecordWire::from_placement(&ctx, &inventory.placements[0])
-        .expect("admitted placement");
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_entities = 0;
-    let (limited, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
-    let wire = AssemblyPlacementRecordWire::from_placement(&limited, &inventory.placements[0])
-        .expect("placement wire");
-    assert!(matches!(
-        admit_assembly_placement(&limited, wire, &mut Vec::new()),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::Entities
-                && limit.operation == "admit Inventor native assembly placement"
-    ));
-    let wire = AssemblyPlacementRecordWire::from_placement(&ctx, &inventory.placements[0])
-        .expect("service placement wire");
-    assert!(admit_assembly_placement(&ctx, wire, &mut Vec::new())
-        .expect("service placement admission")
-        .is_some());
-}
-
-#[test]
 fn decode_loss_refuses_before_message_and_code_creation() {
     let mut losses = Vec::new();
     let arena = DecodeArena::new();
@@ -502,37 +424,38 @@ fn coverage_map_refuses_before_key_creation() {
 }
 
 #[test]
-fn root_product_refuses_before_id_and_metadata_copy() {
+fn root_product_takes_projected_metadata_and_copies_only_the_second_title_use() {
+    let metadata = || crate::decode::MetadataProjection {
+        title: Some("Bracket".to_owned()),
+        part_number: Some("P-1".to_owned()),
+        ..crate::decode::MetadataProjection::default()
+    };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
+    // The title fills both the label and the source name; the label takes the
+    // projected text and the source name copies it.
     policy.limits.max_retained_bytes =
-        u64::try_from("inventor:document:product#root".len() - 1).expect("id length fits");
+        u64::try_from("Bracket".len() - 1).expect("title length fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     let mut admitted = 0;
+    let mut projection = metadata();
     assert!(matches!(
-        project_root_product(
-            &ctx,
-            &DocumentKind::Part,
-            &crate::decode::MetadataProjection::default(),
-            0,
-            &mut admitted,
-        ),
+        project_root_product(&ctx, &DocumentKind::Part, &mut projection, 0, &mut admitted),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain Inventor root product id"
+                && limit.operation == "retain Inventor root product source name"
     ));
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+    policy.limits.max_retained_bytes = u64::try_from("Bracket".len()).expect("title length fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     admitted = 0;
-    let product = project_root_product(
-        &ctx,
-        &DocumentKind::Part,
-        &crate::decode::MetadataProjection::default(),
-        0,
-        &mut admitted,
-    )
-    .expect("admitted root product");
+    let mut projection = metadata();
+    let product =
+        project_root_product(&ctx, &DocumentKind::Part, &mut projection, 0, &mut admitted)
+            .expect("admitted root product");
     assert_eq!(product.id.as_str(), "inventor:document:product#root");
+    assert_eq!(product.label.as_deref(), Some("Bracket"));
+    assert_eq!(product.source_name.as_deref(), Some("Bracket"));
+    assert_eq!(product.part_number.as_deref(), Some("P-1"));
 }
 
 #[test]
@@ -543,7 +466,7 @@ fn initial_source_attribute_refuses_before_key_and_value_creation() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     let mut attributes = std::collections::BTreeMap::new();
     assert!(matches!(
-        insert_source_attribute(&ctx, &mut attributes, "kind", format_args!("{}", 42)),
+        insert_source_attribute(&ctx, &mut attributes, b"kind", format_args!("{}", 42)),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "collect Inventor source attribute"
@@ -553,16 +476,36 @@ fn initial_source_attribute_refuses_before_key_and_value_creation() {
     policy.limits.max_retained_bytes = 3;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     assert!(matches!(
-        insert_source_attribute(&ctx, &mut attributes, "kind", format_args!("{}", 42)),
+        insert_source_attribute(&ctx, &mut attributes, b"kind", format_args!("{}", 42)),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain Inventor source attribute key"
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
-    insert_source_attribute(&ctx, &mut attributes, "kind", format_args!("{}", 42))
+    insert_source_attribute(&ctx, &mut attributes, b"kind", format_args!("{}", 42))
         .expect("admitted attribute");
     assert_eq!(attributes["kind"], "42");
+}
+
+#[test]
+fn source_attribute_key_uses_fixed_storage_without_work_charge() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "retain Inventor source attribute key",
+        None,
+    );
+    let mut attributes = std::collections::BTreeMap::new();
+    insert_source_attribute(&ctx, &mut attributes, b"kind", format_args!("{}", 42))
+        .expect("fixed key and variable value are admitted");
+    drop(probe);
+    assert_eq!(attributes["kind"], "42");
+    ctx.finish_session()
+        .expect("fixed source attribute key adds no work charge");
 }
 
 #[test]
@@ -620,31 +563,38 @@ fn retained_carrier_fidelity_refuses_before_unknown_record_creation() {
 }
 
 #[test]
-fn kernel_unknown_fidelity_refuses_before_native_record_copy() {
-    let unknown = cadmpeg_ir::UnknownRecord::retained(
-        cadmpeg_ir::ids::UnknownId::mint("inventor:kernel:unknown#one").expect("valid id"),
-        0,
-        vec![1],
-        vec!["inventor:body#one".into()],
-    );
+fn kernel_unknown_records_are_charged_by_their_ir_attachment() {
+    // The IR attachment moves each link into an admitted native value vector.
+    // Its first push requires one collection item before allocating storage.
+    let unknown = || {
+        cadmpeg_ir::UnknownRecord::retained(
+            cadmpeg_ir::ids::UnknownId::mint("inventor:kernel:unknown#one").expect("valid id"),
+            0,
+            vec![1],
+            vec!["inventor:kernel:body#one".into()],
+        )
+    };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
+    policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    let mut ir = cadmpeg_ir::CadIr::empty();
     assert!(matches!(
-        admit_kernel_unknown_fidelity(
+        cadmpeg_ir::SourceFidelity::default().attach_native_unknown_records(
+            &mut ir,
+            "inventor",
+            vec![unknown()],
             &ctx,
-            &cadmpeg_ir::SourceFidelity::default(),
-            std::slice::from_ref(&unknown),
         ),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "collect Inventor kernel unknown fidelity"
+                && limit.operation == "native unknown arena links"
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
-    admit_kernel_unknown_fidelity(&ctx, &cadmpeg_ir::SourceFidelity::default(), &[unknown])
-        .expect("admitted unknown fidelity");
+    cadmpeg_ir::SourceFidelity::default()
+        .attach_native_unknown_records(&mut ir, "inventor", vec![unknown()], &ctx)
+        .expect("admitted unknown records");
 }
 
 #[test]
@@ -707,7 +657,7 @@ fn preview_asset_refuses_entity_retained_and_collection_limits() {
         0,
         "inventor:property:value#1-0-17",
         b"image",
-        "image/png",
+        PreviewMediaType::Png,
     )
     .expect("projected preview");
     assert!(matches!(
@@ -727,7 +677,7 @@ fn preview_asset_refuses_entity_retained_and_collection_limits() {
             0,
             "inventor:property:value#1-0-17",
             b"image",
-            "image/png",
+            PreviewMediaType::Png,
         ),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::Entities
@@ -745,7 +695,7 @@ fn preview_asset_refuses_entity_retained_and_collection_limits() {
             0,
             "inventor:property:value#1-0-17",
             b"image",
-            "image/png",
+            PreviewMediaType::Png,
         ),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
@@ -761,7 +711,7 @@ fn preview_asset_refuses_entity_retained_and_collection_limits() {
             0,
             "inventor:property:value#1-0-17",
             b"image",
-            "image/png",
+            PreviewMediaType::Png,
         ),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::MaterializedBytes
@@ -775,7 +725,7 @@ fn preview_asset_refuses_entity_retained_and_collection_limits() {
         0,
         "inventor:property:value#1-0-17",
         b"image",
-        "image/png",
+        PreviewMediaType::Png,
     )
     .expect("admitted preview");
     assert_eq!(asset.id.as_str(), "inventor:document:asset#preview-0");
@@ -970,6 +920,21 @@ fn ufrx_state_id_refuses_retained_limit_before_record_creation() {
 }
 
 #[test]
+fn ufrx_fixed_state_id_uses_storage_without_input_work() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let id = "inventor:ufrx:state#root";
+    policy.limits.max_retained_bytes = u64::try_from(id.len()).expect("id length fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        project_ufrx_state(&ctx, &UfrxState::Absent, &mut Vec::new())
+            .expect("fixed state id needs no input work"),
+        UfrxRecord::Absent { id: actual } if actual == id
+    ));
+}
+
+#[test]
 fn ufrx_state_refuses_collection_limit_before_native_record_insert() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -1052,16 +1017,6 @@ fn ufrx_model_state_refuses_id_and_parameter_limits_before_creation() {
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "retain Inventor parameters records"
     ));
-    policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes =
-        u64::try_from("ufrx-model-state-0".len() - 1).expect("scope length fits");
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    assert!(matches!(
-        project_ufrx_model_state(&ctx, 0, &state, &mut Vec::new()),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::MaterializedBytes
-                && limit.operation == "format Inventor UFRx model-state issue scope"
-    ));
     let mut issues = Vec::new();
     assert!(project_ufrx_model_state(&setup_ctx, 0, &state, &mut issues)
         .expect("admitted model state")
@@ -1077,14 +1032,14 @@ fn structural_issue_refuses_collection_limit_before_record_creation() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert!(matches!(
-        structural_issue(&ctx, &mut issues, "scope", "bad"),
+        structural_issue(&ctx, &mut issues, format_args!("scope"), "bad"),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "collect Inventor structural issue"
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
-    structural_issue(&ctx, &mut issues, "scope", "bad").expect("admitted issue");
+    structural_issue(&ctx, &mut issues, format_args!("scope"), "bad").expect("admitted issue");
     let issue = issues.pop().expect("one issue");
     assert_eq!(issue.scope, "scope");
     assert_eq!(issue.detail, "bad");
@@ -1094,36 +1049,55 @@ fn structural_issue_refuses_collection_limit_before_record_creation() {
 fn protein_conversion_issue_refuses_before_failure_text_creation() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
+    let scope = "asset";
+    let issue_id = "inventor:rse:structural-issue#asset";
+    let issue_detail = "entry_name must end with InstanceProperties.bin";
+    // Retain four initial vector slots, then the issue ID, scope and message.
+    let retained_needed = 4 * std::mem::size_of::<StructuralIssueRecord>()
+        + issue_id.len()
+        + scope.len()
+        + issue_detail.len();
     policy.limits.max_retained_bytes =
-        u64::try_from("entry_name must end with InstanceProperties.bin".len() - 1)
-            .expect("detail length fits");
+        u64::try_from(retained_needed - 1).expect("issue budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let wire = serde_json::from_value(serde_json::json!({
+    let fixture = serde_json::json!({
         "id": "asset", "entry_name": "bad.bin", "ordinal": 3,
         "asset": { "ordinal": 3, "logical_offset": 0, "schema": "GenericSchema",
             "guid": "asset-guid", "base": "", "asset_lib_id": "", "properties": {} }
-    }))
-    .expect("Protein asset wire fixture");
+    });
+    let wire: crate::native::protein::ProteinAssetRecordWire =
+        serde_json::from_value(fixture.clone()).expect("Protein asset wire fixture");
     let mut issues = Vec::new();
     assert!(matches!(
-        crate::decode::admit_protein_asset(&ctx, wire, &mut issues),
+        crate::decode::admit_ufrx_record(
+            &ctx,
+            wire.into_record(&ctx),
+            format_args!("{scope}"),
+            &mut issues,
+        ),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain Inventor Protein asset conversion issue"
+                && limit.operation == "retain Inventor structural issue detail"
     ));
     assert!(issues.is_empty());
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
-    let wire = serde_json::from_value(serde_json::json!({
-        "id": "asset", "entry_name": "bad.bin", "ordinal": 3,
-        "asset": { "ordinal": 3, "logical_offset": 0, "schema": "GenericSchema",
-            "guid": "asset-guid", "base": "", "asset_lib_id": "", "properties": {} }
-    }))
-    .expect("Protein asset wire fixture");
-    assert!(crate::decode::admit_protein_asset(&ctx, wire, &mut issues)
-        .expect("service admission")
-        .is_none());
+    issues = Vec::new();
+    policy.limits.max_retained_bytes =
+        u64::try_from(retained_needed).expect("full issue budget fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("full context");
+    let wire: crate::native::protein::ProteinAssetRecordWire =
+        serde_json::from_value(fixture).expect("Protein asset wire fixture");
+    assert!(crate::decode::admit_ufrx_record(
+        &ctx,
+        wire.into_record(&ctx),
+        format_args!("{scope}"),
+        &mut issues,
+    )
+    .expect("service admission")
+    .is_none());
     assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].id, issue_id);
+    assert_eq!(issues[0].scope, scope);
+    assert_eq!(issues[0].detail, issue_detail);
 }
 
 #[test]
@@ -1142,33 +1116,38 @@ fn ufrx_model_state_conversion_issue_refuses_before_failure_text_creation() {
     };
     let id = "inventor:ufrx:model-state#0";
     let issue_detail = "suffix_len must be 77";
-    let retained_before_issue = id
-        .len()
-        .checked_add(state.name.len())
-        .and_then(|bytes| bytes.checked_add(64))
-        .expect("preceding retained bytes fit");
-    // The cap admits the ID, name and digest, then refuses the issue text.
-    let retained_cap = retained_before_issue
-        .checked_add(issue_detail.len() - 1)
-        .expect("retained byte cap fits");
+    let retained_before_issue = id.len() + state.name.len() + 64;
+    let issue_scope = "ufrx-model-state-0";
+    let issue_id = "inventor:rse:structural-issue#ufrx-model-state-0";
+    // Retain wire text, four initial vector slots, then issue ID, scope and message.
+    let retained_needed = retained_before_issue
+        + 4 * std::mem::size_of::<StructuralIssueRecord>()
+        + issue_id.len()
+        + issue_scope.len()
+        + issue_detail.len();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes =
-        u64::try_from(retained_cap).expect("retained byte cap fits u64");
+        u64::try_from(retained_needed - 1).expect("retained byte cap fits u64");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let mut issues = Vec::new();
     assert!(matches!(
         project_ufrx_model_state(&ctx, 0, &state, &mut issues),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain Inventor UFRx model-state conversion issue"
+                && limit.operation == "retain Inventor structural issue detail"
     ));
     assert!(issues.is_empty());
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+    issues = Vec::new();
+    policy.limits.max_retained_bytes =
+        u64::try_from(retained_needed).expect("full issue budget fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("full context");
     assert!(project_ufrx_model_state(&ctx, 0, &state, &mut issues)
         .expect("service admission")
         .is_none());
     assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].id, issue_id);
+    assert_eq!(issues[0].scope, issue_scope);
+    assert_eq!(issues[0].detail, issue_detail);
 }
 
 #[test]
@@ -1218,6 +1197,106 @@ fn ufrx_external_reference_refuses_id_and_state_group_limits_before_creation() {
 }
 
 #[test]
+fn ufrx_external_path_validation_runs_once() {
+    let path = "\u{2003} \tpart.ipt";
+    for document_id in [[0; 16], [1; 16]] {
+        let reference = InventorExternalReference {
+            path: path.into(),
+            library_id: 0,
+            library_name: String::new(),
+            display_name: String::new(),
+            state_groups: Vec::new(),
+            state: [0; 2],
+            document_id,
+            database_id: [0; 16],
+            reference_id: 7,
+            occurrence_count: 1,
+            version: 0,
+            flags: 0,
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Four characters reach the first nonblank one. Copying the path
+        // visits 13 bytes; the 34-byte record id is formatted twice:
+        // 4 + 13 + 2 * 34 = 85. Identifier formatting has fixed extent.
+        policy.limits.max_work_units = 85;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+        let mut issues = Vec::new();
+        let record = project_ufrx_external_reference(&ctx, 0, &reference, &mut issues)
+            .expect("one path scan fits")
+            .expect("path identity");
+        assert!(issues.is_empty());
+        let value = serde_json::to_value(&record).expect("record");
+        assert_eq!(value["path"], path);
+        assert_eq!(value["reference_id"], 7);
+        assert_eq!(
+            value["document_id"].as_str(),
+            (document_id != [0; 16]).then_some("01010101010101010101010101010101")
+        );
+
+        policy.limits.max_work_units = 84;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("short context");
+        assert!(matches!(
+            project_ufrx_external_reference(&ctx, 0, &reference, &mut Vec::new()),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.used == 84
+                    && limit.additional == 1
+        ));
+    }
+}
+
+#[test]
+fn ufrx_external_reference_retains_only_nonzero_document_ids() {
+    for document_id in [[0; 16], [1; 16]] {
+        let reference = InventorExternalReference {
+            path: "part.ipt".into(),
+            library_id: 0,
+            library_name: String::new(),
+            display_name: String::new(),
+            state_groups: Vec::new(),
+            state: [0; 2],
+            document_id,
+            database_id: [0; 16],
+            reference_id: 7,
+            occurrence_count: 1,
+            version: 0,
+            flags: 0,
+        };
+        // Record id + path + database id: 34 + 8 + 32 = 74 bytes.
+        // Only a nonzero document id adds another 32 bytes: 106 total.
+        let retained_needed = 74 + if document_id == [0; 16] { 0 } else { 32 };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = retained_needed - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("short context");
+        assert!(matches!(
+            project_ufrx_external_reference(&ctx, 0, &reference, &mut Vec::new()),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain Inventor UFRx database id"
+                    && limit.used == retained_needed - 32
+                    && limit.additional == 32
+        ));
+
+        policy.limits.max_retained_bytes = retained_needed;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("exact context");
+        let mut issues = Vec::new();
+        let record = project_ufrx_external_reference(&ctx, 0, &reference, &mut issues)
+            .expect("only retained identity bytes fit")
+            .expect("path identity");
+        assert!(issues.is_empty());
+        let value = serde_json::to_value(record).expect("record");
+        assert_eq!(value["path"], reference.path);
+        assert_eq!(value["database_id"], "00000000000000000000000000000000");
+        assert_eq!(
+            value["document_id"].as_str(),
+            (document_id != [0; 16]).then_some("01010101010101010101010101010101")
+        );
+    }
+}
+
+#[test]
 fn ufrx_external_conversion_issue_refuses_before_failure_text_creation() {
     let arena = DecodeArena::new();
     let reference = InventorExternalReference {
@@ -1234,37 +1313,90 @@ fn ufrx_external_conversion_issue_refuses_before_failure_text_creation() {
         version: 0,
         flags: 0,
     };
-    let id = "inventor:ufrx:external-reference#0";
     let issue_detail = "path or a nonzero document_id is required";
-    let retained_before_issue = id
-        .len()
-        .checked_add(32)
-        .and_then(|bytes| bytes.checked_add(32))
-        .expect("preceding retained bytes fit");
-    // The cap admits the ID and both hex IDs, then refuses the issue text.
-    let retained_cap = retained_before_issue
-        .checked_add(issue_detail.len() - 1)
-        .expect("retained byte cap fits");
+    let issue_scope = "ufrx-external-reference-0";
+    let issue_id = "inventor:rse:structural-issue#ufrx-external-reference-0";
+    // Rejection retains only four issue slots and issue text:
+    // 4 * size_of::<StructuralIssueRecord>() + 55 + 25 + 41 bytes.
+    // The 34-byte wire id and two 32-byte identifiers are no longer copied.
+    let retained_needed = 4 * std::mem::size_of::<StructuralIssueRecord>()
+        + issue_id.len()
+        + issue_scope.len()
+        + issue_detail.len();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes =
-        u64::try_from(retained_cap).expect("retained byte cap fits u64");
+        u64::try_from(retained_needed - 1).expect("retained byte cap fits u64");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let mut issues = Vec::new();
     assert!(matches!(
         project_ufrx_external_reference(&ctx, 0, &reference, &mut issues),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain Inventor UFRx external conversion issue"
+                && limit.operation == "retain Inventor structural issue detail"
     ));
     assert!(issues.is_empty());
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
+    issues = Vec::new();
+    policy.limits.max_retained_bytes =
+        u64::try_from(retained_needed).expect("full issue budget fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("full context");
     assert!(
         project_ufrx_external_reference(&ctx, 0, &reference, &mut issues)
             .expect("service admission")
             .is_none()
     );
     assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].id, issue_id);
+    assert_eq!(issues[0].scope, issue_scope);
+    assert_eq!(issues[0].detail, issue_detail);
+}
+
+#[test]
+fn ufrx_blank_external_identity_skips_all_source_field_copies() {
+    let reference = InventorExternalReference {
+        path: "\u{2003} \t\n".into(),
+        library_id: 0,
+        library_name: "library".repeat(1024),
+        display_name: "display".repeat(1024),
+        state_groups: vec![[0; 3]; 512],
+        state: [0; 2],
+        document_id: [0; 16],
+        database_id: [0; 16],
+        reference_id: 7,
+        occurrence_count: 1,
+        version: 0,
+        flags: 0,
+    };
+    let issue_detail = "path or a nonzero document_id is required";
+    let issue_scope = "ufrx-external-reference-0";
+    let issue_id = "inventor:rse:structural-issue#ufrx-external-reference-0";
+    let mut policy = DecodePolicy::service();
+    // Only 4 issue slots + 55-byte id + 25-byte scope + 41-byte detail fit.
+    // The large rejected names and state groups have no retained allowance.
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        4 * std::mem::size_of::<StructuralIssueRecord>()
+            + issue_id.len()
+            + issue_scope.len()
+            + issue_detail.len(),
+    );
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("issue context");
+    let mut issues = Vec::new();
+    assert!(
+        project_ufrx_external_reference(&ctx, 0, &reference, &mut issues)
+            .expect("missing identity is rejected before copies")
+            .is_none()
+    );
+    assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].id, issue_id);
+    assert_eq!(issues[0].scope, issue_scope);
+    assert_eq!(issues[0].detail, issue_detail);
+    assert!(
+        matches!(ctx.charge_retained(1, "probe rejected reference storage"),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.used == policy.limits.max_retained_bytes
+                && limit.additional == 1)
+    );
 }
 
 #[test]
@@ -1422,69 +1554,67 @@ fn product_body_id_copy_refuses_limits_before_target_changes() {
 }
 
 #[test]
-fn projected_appearance_color_index_refuses_limits_before_id_copy() {
+fn color_index_borrows_keys_and_refuses_collection_limit_before_insertion() {
     let id = AppearanceId::mint("inventor:test:appearance#one").expect("valid appearance id");
     let color = Color::new(0.2, 0.3, 0.4, 1.0).expect("valid color");
+    let operation = "index Inventor test colors";
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert!(matches!(
-        index_projected_colors(&ctx, &[(&id, color)], |entry| Ok(Some(*entry))),
+        index_colors(&ctx, &[(&id, color)], operation, |entry| Ok(Some(*entry))),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "index Inventor projected appearance colors"
+                && limit.operation == operation
     ));
 
+    // The index holds borrowed keys and its table lives in scoped storage, so
+    // it retains nothing.
     policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len() - 1);
+    policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    assert!(matches!(
-        index_projected_colors(&ctx, &[(&id, color)], |entry| Ok(Some(*entry))),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain Inventor projected appearance color id"
-    ));
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
-    assert_eq!(
-        index_projected_colors(&ctx, &[(&id, color)], |entry| Ok(Some(*entry)))
-            .expect("admitted color")[&id],
-        color
-    );
+    let entries = [(&id, color)];
+    let mut storage = ctx.reserve_scoped(0, operation).expect("scoped storage");
+    let index = storage
+        .with_storage(|| index_colors(&ctx, &entries, operation, |entry| Ok(Some(*entry))))
+        .expect("admitted color");
+    assert_eq!(index.get(&id), Some(&color));
 }
 
 #[test]
-fn face_color_index_refuses_limits_before_face_id_copy() {
-    let id = FaceId::mint("inventor:test:face#one").expect("valid face id");
+fn flat_color_index_stops_before_unvisited_tail_on_projection_refusal() {
+    let id = AppearanceId::mint("inventor:test:appearance#one").expect("valid appearance id");
     let color = Color::new(0.2, 0.3, 0.4, 1.0).expect("valid color");
+    let entries = [(&id, color), (&id, color)];
+    let operation = "visit Inventor test color entries";
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    policy.limits.max_work_units = 1;
+    policy.limits.max_entities = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    let projected = std::cell::Cell::new(0);
+    let Err(error) = index_colors(&ctx, &entries, operation, |entry| {
+        projected.set(projected.get() + 1);
+        ctx.charge_entities(1, "project Inventor test color")?;
+        Ok(Some(*entry))
+    }) else {
+        panic!("first projected entry exceeds the entity cap");
+    };
+    let CodecError::ResourceLimit(refusal) = error else {
+        panic!("projection entity admission must refuse");
+    };
+    assert_eq!(refusal.dimension, ResourceDimension::Entities);
+    assert_eq!(refusal.operation, "project Inventor test color");
+    assert_eq!(refusal.limit, 0);
+    assert_eq!(refusal.used, 0);
+    assert_eq!(refusal.additional, 1);
+    assert_eq!(projected.get(), 1, "the second source entry stays unread");
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
     assert!(matches!(
-        index_face_colors(&ctx, &[(&id, color)], |entry| Ok(Some(*entry))),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "index Inventor face colors"
+        ctx.finish_session(),
+        Err(CodecError::ResourceLimit(limit)) if limit == refusal
     ));
-
-    policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len() - 1);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    assert!(matches!(
-        index_face_colors(&ctx, &[(&id, color)], |entry| Ok(Some(*entry))),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain Inventor face color id"
-    ));
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
-    assert_eq!(
-        index_face_colors(&ctx, &[(&id, color)], |entry| Ok(Some(*entry))).expect("admitted color")
-            [&id],
-        color
-    );
 }
 
 #[test]
@@ -1683,144 +1813,6 @@ fn rejected_occurrence_does_not_fail_decode() {
     assert_eq!(ufrx.external_references().len(), 1);
 }
 
-#[test]
-fn nonfinite_assembly_placement_transform_is_rejected_at_parse() {
-    let bytes = primary_envelope_fixture();
-    let arena = DecodeArena::new();
-    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
-        .expect("container fixture");
-    let mut container = InventorContainer::open(&ctx, root).expect("container fixture");
-    let mut payload = vec![0; 15];
-    payload.extend_from_slice(&0_u16.to_le_bytes());
-    payload.extend_from_slice(&0_u16.to_le_bytes());
-    payload.extend_from_slice(&f64::INFINITY.to_le_bytes());
-    let segment = &mut container.rse.segments[0];
-    segment.kind = SegmentKind::AmGraphics;
-    let SegmentBulkState::Framed(bulk) = &mut segment.bulk else {
-        panic!("framed fixture");
-    };
-    let RecordFrameState::Framed(table) = &mut bulk.records else {
-        panic!("record fixture");
-    };
-    table.records[0].type_id = [
-        0xa2, 0x63, 0x71, 0xca, 0xd0, 0x11, 0xb2, 0xd3, 0x00, 0x08, 0xbf, 0xbb, 0x21, 0xed, 0xdc,
-        0x09,
-    ];
-    table.records[0].payload = View::over_retained(&payload);
-    let decoded =
-        decode_container(&ctx, &container).expect("invalid placement must not fail decode");
-    let namespace = decoded
-        .ir
-        .native
-        .namespace("inventor")
-        .expect("native namespace");
-    let issues = namespace
-        .arena_as::<RecordIssueWire>("assembly_record_issues")
-        .expect("assembly issue wires")
-        .into_iter()
-        .map(|wire| wire.into_record(&ctx))
-        .collect::<Result<Vec<_>, _>>()
-        .expect("assembly issues");
-    assert_eq!(issues.len(), 1);
-    assert_eq!(issues[0].family, RecordIssueFamily::Assembly);
-    assert!(issues[0].detail.contains("finite"), "{:?}", issues[0]);
-    assert!(namespace
-        .arena_as::<serde_json::Value>("assembly_placements")
-        .expect("placements")
-        .is_empty());
-    assert!(super::validation_findings(&decoded.ir)
-        .iter()
-        .any(|finding| finding.message.contains(&issues[0].detail)));
-}
-
-#[test]
-fn rejected_placement_digest_records_its_source_and_keeps_later_placements() {
-    let wire = serde_json::json!({
-        "id": "inventor:assembly:placement#segment-1", "segment_token": "segment", "record_ordinal": 1,
-        "header_id": 0, "owner_reference": 0, "attribute_reference": 0, "state": 0,
-        "transform_prefix": false, "transform_encoding": [0, 0],
-        "transform": [[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]],
-        "branch": 0, "graphics_state": 0, "occurrence_id": 1, "graphics_index": 0,
-        "object_reference": 0, "suffix_len": 48, "suffix_sha256": "invalid"
-    });
-    let mut issues = Vec::new();
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("service context");
-    let bad: AssemblyPlacementRecordWire =
-        serde_json::from_value(wire.clone()).expect("wire fixture");
-    assert!(admit_assembly_placement(&ctx, bad, &mut issues)
-        .expect("service admission")
-        .is_none());
-    assert_eq!(issues.len(), 1);
-    assert_eq!(issues[0].segment_token.as_str(), "segment");
-    assert_eq!(issues[0].record_ordinal, 1);
-    assert!(issues[0].detail.contains("suffix_sha256"));
-    let mut wire = wire;
-    wire["suffix_sha256"] = serde_json::json!("0".repeat(64));
-    let good = serde_json::from_value(wire).expect("wire fixture");
-    assert!(admit_assembly_placement(&ctx, good, &mut issues)
-        .expect("service admission")
-        .is_some());
-    assert_eq!(issues.len(), 1);
-}
-
-#[test]
-fn placement_conversion_issue_refuses_before_failure_text_creation() {
-    let wire: AssemblyPlacementRecordWire = serde_json::from_value(serde_json::json!({
-        "id": "inventor:assembly:placement#segment-1", "segment_token": "segment", "record_ordinal": 1,
-        "header_id": 0, "owner_reference": 0, "attribute_reference": 0, "state": 0,
-        "transform_prefix": false, "transform_encoding": [0, 0],
-        "transform": [[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]],
-        "branch": 0, "graphics_state": 0, "occurrence_id": 1, "graphics_index": 0,
-        "object_reference": 0, "suffix_len": 0, "suffix_sha256": "0".repeat(64)
-    }))
-    .expect("placement wire");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        u64::try_from("suffix_len must not be zero".len() - 1).expect("detail length fits");
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
-    let mut issues = Vec::new();
-    assert!(matches!(
-        admit_assembly_placement(&ctx, wire, &mut issues),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain Inventor placement conversion issue"
-    ));
-    assert!(issues.is_empty());
-}
-
-#[test]
-fn uppercase_placement_digest_refuses_before_failure_text_creation() {
-    let wire: AssemblyPlacementRecordWire = serde_json::from_value(serde_json::json!({
-        "id": "inventor:assembly:placement#segment-1", "segment_token": "segment", "record_ordinal": 1,
-        "header_id": 0, "owner_reference": 0, "attribute_reference": 0, "state": 0,
-        "transform_prefix": false, "transform_encoding": [0, 0],
-        "transform": [[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]],
-        "branch": 0, "graphics_state": 0, "occurrence_id": 1, "graphics_index": 0,
-        "object_reference": 0, "suffix_len": 48, "suffix_sha256": "A".repeat(64)
-    }))
-    .expect("placement wire");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = u64::try_from(
-        "suffix_sha256: sha256 digest must contain exactly 64 lowercase hexadecimal characters"
-            .len()
-            - 1,
-    )
-    .expect("detail length fits");
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
-    let mut issues = Vec::new();
-    assert!(matches!(
-        admit_assembly_placement(&ctx, wire, &mut issues),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "retain Inventor placement conversion issue"
-    ));
-    assert!(issues.is_empty());
-}
-
 fn assert_ufrx_issue(ir: &cadmpeg_ir::document::CadIr, scope: &str, field: &str) {
     let namespace = ir.native.namespace("inventor").expect("native namespace");
     let issues = namespace
@@ -1967,4 +1959,7 @@ fn external_references_stream() -> Vec<u8> {
     bytes
 }
 
+mod fixed_text;
+mod kernel_retention;
+mod placement;
 mod protein;

@@ -51,7 +51,8 @@ impl TextTriangulation {
         let nodes = nodes
             .into_iter()
             .map(|point| {
-                FinitePoint3::new(point).ok_or("nodes coordinates must be finite".to_owned())
+                FinitePoint3::new(point)
+                    .ok_or_else(|| "nodes coordinates must be finite".to_owned())
             })
             .collect::<Result<Vec<_>, _>>()?;
         let uv_nodes = uv_nodes
@@ -61,7 +62,7 @@ impl TextTriangulation {
                     .into_iter()
                     .map(|point| {
                         FinitePoint2::new(point)
-                            .ok_or("uv_nodes coordinates must be finite".to_owned())
+                            .ok_or_else(|| "uv_nodes coordinates must be finite".to_owned())
                     })
                     .collect::<Result<Vec<_>, _>>()
                     .map(PerNode)
@@ -74,7 +75,7 @@ impl TextTriangulation {
                     .into_iter()
                     .map(|normal| {
                         FiniteVector3::new(normal)
-                            .ok_or("normals components must be finite".to_owned())
+                            .ok_or_else(|| "normals components must be finite".to_owned())
                     })
                     .collect::<Result<Vec<_>, _>>()
                     .map(PerNode)

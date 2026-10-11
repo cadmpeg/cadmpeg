@@ -11,6 +11,7 @@ use crate::resolved_features::relation_loci::relation_constraint_is_inactive;
 use crate::resolved_features::relation_loci::single_marker_line_entity;
 use crate::resolved_features::relation_loci::typed_relation_definition;
 use crate::resolved_features::relation_loci::unique_profile_distance_locus;
+use crate::resolved_features::transforms::relation_marker_entities;
 use crate::resolved_features::typed_relations::line_endpoint_markers;
 use crate::resolved_features::typed_relations::marker_relation_is_inactive;
 use crate::resolved_features::typed_relations::typed_marker_relation_definition;
@@ -28,6 +29,46 @@ use cadmpeg_ir::{
     scalar::Length,
 };
 use std::collections::{BTreeMap, HashMap};
+
+#[test]
+fn repeated_relation_markers_copy_each_entity_identity_once() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let first = marker("first", None);
+    let second = marker("second", None);
+    let first_id = SketchEntityId::mint("synthetic:test:id#z-entity").unwrap();
+    let second_id = SketchEntityId::mint("synthetic:test:id#a-entity").unwrap();
+    let third_id = SketchEntityId::mint("synthetic:test:id#b-entity").unwrap();
+    let markers = HashMap::from([(first.id(), &first), (second.id(), &second)]);
+    let loci = HashMap::from([
+        (
+            first.id().to_string(),
+            vec![
+                SketchLocus::Entity(first_id.clone()),
+                SketchLocus::Entity(second_id.clone()),
+            ],
+        ),
+        (
+            second.id().to_string(),
+            vec![
+                SketchLocus::Entity(second_id.clone()),
+                SketchLocus::Entity(third_id.clone()),
+            ],
+        ),
+    ]);
+    let expected_retained = [first_id.as_str(), second_id.as_str(), third_id.as_str()]
+        .into_iter()
+        .map(str::len)
+        .sum::<usize>()
+        + 4 * std::mem::size_of::<SketchEntityId>();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(expected_retained).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let entities =
+        relation_marker_entities(&ctx, ["first", "second", "first"], &markers, &loci).unwrap();
+    assert_eq!(entities, [second_id, third_id, first_id]);
+}
 
 #[test]
 fn unary_relation_uses_one_resolved_reverse_curve_owner() {
@@ -967,6 +1008,25 @@ fn point_operand_canonicalizes_shared_endpoint_loci() {
         sketch_entities: vec![first_start, shared, second_end],
     };
 
+    let mut lookup_lane = lane.clone();
+    lookup_lane.relation_instances.clear();
+    let lookup_entities = [
+        first
+            .clone()
+            .with_endpoint_refs(vec!["shared".into(), "shared".into()]),
+        second
+            .clone()
+            .with_endpoint_refs(vec!["shared".into(), "shared".into()]),
+    ];
+    crate::test_support::work_refusal_at("lookup SLDPRT marker endpoint loci", |ctx| {
+        profile_loci_by_marker(
+            ctx,
+            std::slice::from_ref(&feature),
+            std::slice::from_ref(&sketch),
+            &lookup_entities,
+            std::slice::from_ref(&lookup_lane),
+        )
+    });
     let loci = profile_loci_by_marker(
         &resource_ctx,
         &[feature],

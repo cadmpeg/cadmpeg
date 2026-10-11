@@ -66,3 +66,27 @@ fn preview_attachment_refuses_asset_retained_limit() {
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "NX JPEG preview assets"));
 }
+
+#[test]
+fn preview_attachment_charges_both_retained_identities() {
+    preview_attachment_result(|_| {}).unwrap();
+    for (operation, identity) in [
+        (
+            "NX JPEG preview native identity",
+            "nx:container:jpeg-preview#0",
+        ),
+        (
+            "NX JPEG preview asset identity",
+            "nx:container:jpeg-preview#0:asset",
+        ),
+    ] {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            operation,
+            |cap| preview_attachment_result(|policy| policy.limits.max_retained_bytes = cap),
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == operation
+                && limit.additional == cadmpeg_core::decode::u64_from_index(identity.len())));
+    }
+}
