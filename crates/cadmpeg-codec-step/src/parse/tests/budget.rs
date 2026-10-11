@@ -791,63 +791,49 @@ fn reference_bindings_are_admitted_before_map_allocation() {
 
 #[test]
 fn reference_stack_item_is_admitted_before_push() {
-    let anchors = BTreeMap::from([("a".into(), Value::Integer(7))]);
-    let references = [ReferenceEntry {
-        name: ReferenceName::Value(2),
-        uri: "#a".into(),
-    }];
-    let value = Value::ExternalReference(2);
-    let arena = DecodeArena::new();
-    let service = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &service)
-        .expect("root fits service profile");
-    assert_eq!(
-        ReferenceResolver::new(&references, &anchors, &ctx)
-            .expect("create resolver")
-            .resolve_value(&value, 0)
-            .expect("service admits reference"),
-        Value::Integer(7)
+    let anchors = BTreeMap::from([("a".into(), Value::List(vec![Value::Integer(7)]))]);
+    let references = [ReferenceEntry { name: ReferenceName::Value(2), uri: "#a".into() }];
+    crate::test_support::with_service_context(b"reference", |_, ctx| {
+        assert_eq!(ReferenceResolver::new(&references, &anchors, ctx)
+            .expect("compile binding").resolve_value(&Value::ExternalReference(2), 0)
+            .expect("service admits reference"), anchors["a"]);
+    });
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems, "step_reference_stack", |limit| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            crate::test_support::with_policy_context(b"reference", &policy, |_, ctx| {
+                ReferenceResolver::new(&references, &anchors, ctx)?
+                    .resolve_value(&Value::ExternalReference(2), 0)
+            }).map_err(|error| match error {
+                ResolveError::Resource(error) => error,
+                ResolveError::Syntax(message) => panic!("unexpected syntax error: {message}"),
+            })
+        },
     );
-    let mut limited = service;
-    limited.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &limited)
-        .expect("root fits selected profile");
-    let error = ReferenceResolver::new(&references, &anchors, &ctx)
-        .expect("binding fits selected profile")
-        .resolve_value(&value, 0)
-        .expect_err("stack item exceeds the remaining collection allowance");
-    assert!(
-        matches!(error, ResolveError::Resource(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "step_reference_stack")
-    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "step_reference_stack"));
 }
 
 #[test]
 fn reference_stack_refuses_retained_limit() {
-    let anchors = BTreeMap::from([("a".into(), Value::Integer(7))]);
-    let references = [ReferenceEntry {
-        name: ReferenceName::Value(2),
-        uri: "#a".into(),
-    }];
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    let binding_bytes = 11 * (std::mem::size_of::<ReferenceName>() + std::mem::size_of::<&str>())
-        + 16 * std::mem::size_of::<usize>()
-        + 2 * std::mem::align_of::<usize>();
-    let stack_bytes = 4 * std::mem::size_of::<ReferenceName>();
-    policy.limits.max_materialized_bytes =
-        u64::try_from(binding_bytes + stack_bytes - 1).expect("small storage");
-    let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &policy)
-        .expect("root fits selected profile");
-    let error = ReferenceResolver::new(&references, &anchors, &ctx)
-        .expect("binding storage fits selected profile")
-        .resolve_value(&Value::ExternalReference(2), 0)
-        .expect_err("reference stack needs retained storage");
-    assert!(matches!(
-        error,
-        ResolveError::Resource(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::MaterializedBytes
-                && limit.operation == "step_reference_stack"
-    ));
+    let anchors = BTreeMap::from([("a".into(), Value::List(vec![Value::Integer(7)]))]);
+    let references = [ReferenceEntry { name: ReferenceName::Value(2), uri: "#a".into() }];
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes, "step_reference_stack", |limit| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = limit;
+            crate::test_support::with_policy_context(b"reference", &policy, |_, ctx| {
+                ReferenceResolver::new(&references, &anchors, ctx)?
+                    .resolve_value(&Value::ExternalReference(2), 0)
+            }).map_err(|error| match error {
+                ResolveError::Resource(error) => error,
+                ResolveError::Syntax(message) => panic!("unexpected syntax error: {message}"),
+            })
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_reference_stack"));
 }
 
 #[test]
