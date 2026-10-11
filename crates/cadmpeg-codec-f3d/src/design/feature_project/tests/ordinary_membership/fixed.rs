@@ -140,7 +140,7 @@ fn membership_parameter_self_edge_keeps_original_refusal() {
     let original = parameters.clone();
     let unresolved = std::collections::BTreeSet::from([0]);
     assert_original_refusal(CYCLE_MEMBERSHIP, |ctx| {
-        super::super::super::cyclic_parameter_components(ctx, &parameters, &unresolved)
+        crate::design::feature_project::parameter_order::cyclic_parameter_components(ctx, &parameters, &unresolved)
     });
     assert_eq!(parameters, original);
 }
@@ -152,7 +152,7 @@ fn membership_parameter_self_edge_keeps_exact_component() {
     let unresolved = std::collections::BTreeSet::from([0]);
     crate::test_support::with_decode_context(|ctx| {
         assert_eq!(
-            super::super::super::cyclic_parameter_components(ctx, &parameters, &unresolved)
+            crate::design::feature_project::parameter_order::cyclic_parameter_components(ctx, &parameters, &unresolved)
                 .unwrap(),
             [(0, Vec::<usize>::new())]
         );
@@ -170,7 +170,7 @@ fn membership_parameter_empty_edges_skip_self_edge_query() {
     crate::test_support::with_decode_policy(&policy, |ctx| {
         let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, CYCLE_MEMBERSHIP, None);
         assert!(
-            super::super::super::cyclic_parameter_components(ctx, &parameters, &unresolved)
+            crate::design::feature_project::parameter_order::cyclic_parameter_components(ctx, &parameters, &unresolved)
                 .unwrap()
                 .is_empty()
         );
@@ -191,7 +191,7 @@ fn membership_parameter_multi_node_cycle_skips_unused_self_edge_query() {
     crate::test_support::with_decode_policy(&policy, |ctx| {
         let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, CYCLE_MEMBERSHIP, None);
         let cycles =
-            super::super::super::cyclic_parameter_components(ctx, &parameters, &unresolved)
+            crate::design::feature_project::parameter_order::cyclic_parameter_components(ctx, &parameters, &unresolved)
                 .unwrap();
         let [(root, others)] = cycles.as_slice() else {
             panic!("one actual strongly connected component");
