@@ -180,16 +180,18 @@ fn malformed_user_string_suffix_releases_all_prefix_text_and_slots() {
             policy.limits.max_materialized_bytes = SCRATCH_BYTES;
             let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
             for _ in 0..3 {
-                let error = match parse_user_string_list(
-                    &ctx, &bytes, 0..bytes.len(), archive, selection,
-                ) {
-                    Err(error) => error,
-                    Ok(_) => panic!("malformed suffix discards the successful prefix"),
+                let Err(error) =
+                    parse_user_string_list(&ctx, &bytes, 0..bytes.len(), archive, selection)
+                else {
+                    panic!("malformed suffix discards the successful prefix");
                 };
-                assert!(matches!(error, crate::chunks::FramingError::Structural { ref message, .. }
-                    if message == "invalid UTF-16 surrogate sequence"));
+                assert!(
+                    matches!(error, crate::chunks::FramingError::Structural { ref message, .. }
+                    if message == "invalid UTF-16 surrogate sequence")
+                );
                 drop(error);
-                let reusable = ctx.reserve_scoped(SCRATCH_BYTES, "next user-string list")
+                let reusable = ctx
+                    .reserve_scoped(SCRATCH_BYTES, "next user-string list")
                     .expect("discarded text and vector slots are released");
                 drop(reusable);
             }

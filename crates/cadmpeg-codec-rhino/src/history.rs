@@ -162,13 +162,13 @@ pub(crate) struct HistoryScan<'ctx> {
     /// Valid history records in source order.
     pub(crate) records: Vec<HistoryRecord>,
     /// History-record vector backing stays scratch until source projection ends.
-    pub(crate) _records_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+    pub(crate) records_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
     /// Complete records whose registered class payload was not admitted.
     pub(crate) opaque_records: Vec<OpaqueRecord>,
     /// Parsed record fields stay scratch until projection and native output.
-    pub(crate) _record_storage: Vec<cadmpeg_core::decode::ScopedReservation<'ctx>>,
+    pub(crate) record_storage: Vec<cadmpeg_core::decode::ScopedReservation<'ctx>>,
     /// Per-record guards and scan diagnostics stay scratch with the scan.
-    pub(crate) _record_guards_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+    pub(crate) record_guards_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
 fn anonymous(
@@ -783,9 +783,9 @@ pub(crate) fn parse_records<'ctx>(
     let mut result = HistoryScan {
         records: Vec::new(),
         opaque_records: Vec::new(),
-        _records_storage: ctx.reserve_scoped(0, "Rhino history records")?,
-        _record_storage: Vec::new(),
-        _record_guards_storage: ctx.reserve_scoped(0, "Rhino history record storage guards")?,
+        records_storage: ctx.reserve_scoped(0, "Rhino history records")?,
+        record_storage: Vec::new(),
+        record_guards_storage: ctx.reserve_scoped(0, "Rhino history record storage guards")?,
     };
     let mut record_source = records.iter();
     for _ in 0..record_source.len() {
@@ -797,30 +797,30 @@ pub(crate) fn parse_records<'ctx>(
         let parsed = record_storage.with_storage(|| {
             parse_record(ctx, bytes, record, archive, &mut |code, message| {
                 result
-                    ._record_guards_storage
+                    .record_guards_storage
                     .with_storage(|| warnings.push_coded_admitted(ctx, code, message))
             })
         });
         match parsed {
             Ok(value) => {
                 ctx.reserve_scoped_vec(
-                    &mut result._records_storage,
+                    &mut result.records_storage,
                     &mut result.records,
                     1,
                     "Rhino history records",
                 )?;
                 ctx.reserve_scoped_vec(
-                    &mut result._record_guards_storage,
-                    &mut result._record_storage,
+                    &mut result.record_guards_storage,
+                    &mut result.record_storage,
                     1,
                     "Rhino history record storage guards",
                 )?;
                 result.records.push(value);
-                result._record_storage.push(record_storage);
+                result.record_storage.push(record_storage);
             }
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
-                result._record_guards_storage.with_storage(|| {
+                result.record_guards_storage.with_storage(|| {
                     warnings.push_admitted(
                         ctx,
                         format_args!("history record at {} degraded: {error}", record.range.start),
@@ -828,7 +828,7 @@ pub(crate) fn parse_records<'ctx>(
                 })?;
                 drop(error);
                 ctx.reserve_scoped_vec(
-                    &mut result._record_guards_storage,
+                    &mut result.record_guards_storage,
                     &mut result.opaque_records,
                     1,
                     "Rhino opaque history records",

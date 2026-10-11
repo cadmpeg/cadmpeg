@@ -112,7 +112,7 @@ struct AnnotationRecord<'ctx> {
     leader_points: Vec<cadmpeg_ir::units::FiniteVector<2>>,
     links: Vec<String>,
     #[serde(skip)]
-    _storage: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
+    storage: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -133,7 +133,7 @@ struct TextDotRecord<'ctx> {
     data: TextDotData,
     links: Vec<String>,
     #[serde(skip)]
-    _storage: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
+    storage: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
 }
 
 /// Whether the dot draws in front of the objects it overlaps.
@@ -260,7 +260,7 @@ struct AnnotationArrowRecord<'ctx> {
     head: [FiniteReal; 3],
     links: Vec<String>,
     #[serde(skip)]
-    _storage: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
+    storage: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
 }
 
 fn anonymous(
@@ -853,7 +853,7 @@ pub(crate) fn install<'ctx>(
                         "Rhino annotation ID",
                     )?;
                     Ok::<_, CodecError>(AnnotationRecord {
-                        _storage: None,
+                        storage: None,
                         id,
                         source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
                         source_uuid,
@@ -897,7 +897,7 @@ pub(crate) fn install<'ctx>(
                         links,
                     })
                 })?;
-                record._storage = Some(record_storage);
+                record.storage = Some(record_storage);
                 annotations.push(record);
             }
             AnnotationClass::Legacy { leader } => {
@@ -961,7 +961,7 @@ pub(crate) fn install<'ctx>(
                         "Rhino annotation ID",
                     )?;
                     Ok::<_, CodecError>(AnnotationRecord {
-                        _storage: None,
+                        storage: None,
                         id,
                         source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
                         source_uuid,
@@ -998,7 +998,7 @@ pub(crate) fn install<'ctx>(
                         links,
                     })
                 })?;
-                record._storage = Some(record_storage);
+                record.storage = Some(record_storage);
                 annotations.push(record);
             }
             AnnotationClass::V2 => {
@@ -1066,7 +1066,7 @@ pub(crate) fn install<'ctx>(
                         "Rhino annotation ID",
                     )?;
                     Ok::<_, CodecError>(AnnotationRecord {
-                        _storage: None,
+                        storage: None,
                         id,
                         source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
                         source_uuid,
@@ -1099,7 +1099,7 @@ pub(crate) fn install<'ctx>(
                         links,
                     })
                 })?;
-                record._storage = Some(record_storage);
+                record.storage = Some(record_storage);
                 annotations.push(record);
             }
             AnnotationClass::Dot { v2 } => {
@@ -1144,7 +1144,7 @@ pub(crate) fn install<'ctx>(
                         "Rhino text dot ID",
                     )?;
                     Ok::<_, CodecError>(TextDotRecord {
-                        _storage: None,
+                        storage: None,
                         id,
                         source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
                         source_uuid,
@@ -1152,7 +1152,7 @@ pub(crate) fn install<'ctx>(
                         links,
                     })
                 })?;
-                record._storage = Some(record_storage);
+                record.storage = Some(record_storage);
                 dots.push(record);
             }
             AnnotationClass::V2Arrow => {
@@ -1200,7 +1200,7 @@ pub(crate) fn install<'ctx>(
                         "Rhino annotation arrow ID",
                     )?;
                     Ok::<_, CodecError>(AnnotationArrowRecord {
-                        _storage: None,
+                        storage: None,
                         id,
                         source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
                         source_uuid,
@@ -1209,7 +1209,7 @@ pub(crate) fn install<'ctx>(
                         links,
                     })
                 })?;
-                record._storage = Some(record_storage);
+                record.storage = Some(record_storage);
                 arrows.push(record);
             }
         }
@@ -1491,7 +1491,7 @@ mod tests {
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
                     && limit.operation == "retain native arena name"
                     && limit.used == 0
-                    && limit.additional == "annotations".len() as u64
+                    && limit.additional == u64::try_from("annotations".len()).expect("arena name length fits")
                     && Some(limit) == ctx.resource_refusal()
         ));
     }

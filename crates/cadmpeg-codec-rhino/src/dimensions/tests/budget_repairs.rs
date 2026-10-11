@@ -150,6 +150,7 @@ fn dimension_with_unresolved_references() -> super::super::Dimension {
 
 #[test]
 fn unresolved_dimension_reference_backing_is_scoped_through_consumption() {
+    const SCRATCH_BYTES: u64 = 1 << 20;
     let dimension = dimension_with_unresolved_references();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -168,7 +169,6 @@ fn unresolved_dimension_reference_backing_is_scoped_through_consumption() {
         matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit)
     );
 
-    const SCRATCH_BYTES: u64 = 1 << 20;
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = SCRATCH_BYTES;
@@ -258,7 +258,8 @@ fn discarded_annotation_override_diagnostics_release_their_storage() {
     assert!(annotation.override_present);
     assert!(annotation.allow_text_scaling);
     assert_eq!(reader.position(), bytes.len());
-    let reusable = ctx.reserve_scoped(SCRATCH_BYTES, "next annotation overrides")
+    let reusable = ctx
+        .reserve_scoped(SCRATCH_BYTES, "next annotation overrides")
         .expect("unused diagnostics released while annotation text remains live");
     drop(reusable);
     ctx.finish_session().unwrap();
