@@ -29,6 +29,7 @@ use cadmpeg_ir::sketches::{
     SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
 };
 
+const EPS_LINEAR_REFUSAL: f64 = 1.0e-6;
 const EPS_NATIVE_FALLBACK_LINEAR: f64 = 1.0e-6;
 
 struct Fixture {
@@ -446,24 +447,21 @@ fn assert_recipe_group_refusal(operation: &'static str) {
     let recipes = [dimension_recipe_record(40), dimension_recipe_record(41)];
     let mut inputs = fixture.inputs();
     inputs.recipe_records = &recipes;
-    for limit in 0..128 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == operation =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected {operation} refusal, got success"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
-    }
-    panic!("no {operation} refusal");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+            (project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR))
+                .map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 fn assert_recipe_projection_refusal(operation: &'static str, dimension: ResourceDimension) {
@@ -509,7 +507,7 @@ fn assert_companion_projection_refusal(operation: &'static str, dimension: Resou
     let companion = parameter_companion().bound(DesignCompanionPayload::new(58, 1, Vec::new()));
     let mut inputs = fixture.inputs();
     inputs.companions = std::slice::from_ref(&companion);
-    for limit in 0..16_384 {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |limit| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         match dimension {
@@ -518,18 +516,11 @@ fn assert_companion_projection_refusal(operation: &'static str, dimension: Resou
             _ => panic!("unsupported companion projection limit"),
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == dimension && failure.operation == operation =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected {operation} refusal, got success"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
-    }
-    panic!("no {operation} refusal");
+
+        (project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR)).map(|_| ())
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == dimension));
 }
 
 #[test]
@@ -1027,24 +1018,21 @@ fn assert_projected_companion_refusal(kind: &str, operation: &'static str) {
         "annotation" => inputs.annotation_frames = std::slice::from_ref(&frame),
         _ => panic!("unknown companion kind"),
     }
-    for limit in 0..256 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == operation =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected {operation} refusal, got success"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
-    }
-    panic!("no {operation} refusal");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+            (project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR))
+                .map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]
@@ -1362,29 +1350,26 @@ fn parameter_companion() -> DesignParameterCompanion {
 
 fn assert_refusal(operation: &'static str) {
     let fixture = fixture();
-    for limit in 0..32 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_dimension_constraints(
-            &ctx,
-            &fixture.inputs(),
-            std::slice::from_ref(&fixture.spatial),
-            1.0e-6,
-        ) {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == operation
-                    && failure.dimension == ResourceDimension::CollectionItems =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected {operation} refusal, got success"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
-    }
-    panic!("no {operation} refusal");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+            (project_dimension_constraints(
+                &ctx,
+                &fixture.inputs(),
+                std::slice::from_ref(&fixture.spatial),
+                EPS_LINEAR_REFUSAL,
+            ))
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]
@@ -1444,24 +1429,21 @@ fn dimension_recipe_companion_index_refuses_collection_limit() {
     let mut inputs = fixture.inputs();
     inputs.companions = std::slice::from_ref(&companion);
     let operation = "f3d dimension recipe companion index";
-    for limit in 0..64 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == operation =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(_) => panic!("expected {operation} refusal, got success"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
-    }
-    panic!("no {operation} refusal");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+            (project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR))
+                .map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]
@@ -1591,22 +1573,21 @@ fn parameterized_offset_companion_refuses_collection_limit() {
     inputs.curves = &curves;
     inputs.entities = &entities;
     inputs.groups = std::slice::from_ref(&group);
-    for limit in 0..64 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == "f3d parameterized offset companion" =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            result => panic!("expected offset companion refusal: {result:?}"),
-        }
-    }
-    panic!("no offset companion refusal");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "f3d parameterized offset companion",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+            (project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR))
+                .map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == "f3d parameterized offset companion" && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 fn assert_counted_offset_refusal(

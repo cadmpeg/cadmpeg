@@ -107,7 +107,9 @@ pub(super) fn project_solid_primitive(
     })
 }
 
-pub(super) fn matrix_axis_angle(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::AxisAngle> {
+pub(super) fn matrix_axis_angle(
+    transform: &[[f64; 4]; 4],
+) -> Option<cadmpeg_ir::features::AxisAngle> {
     use cadmpeg_ir::features::AxisAngle;
     use cadmpeg_ir::scalar::Angle;
 
@@ -172,7 +174,6 @@ pub(super) fn matrix_axis_angle(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir:
         angle: Angle::new(angle)?,
     })
 }
-
 
 #[cfg(test)]
 mod tests;

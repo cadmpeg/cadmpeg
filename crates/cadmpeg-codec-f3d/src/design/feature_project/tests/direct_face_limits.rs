@@ -332,3 +332,24 @@ fn direct_partial_selection_refuses_retained_limit() {
         true,
     );
 }
+
+#[test]
+fn invalid_thicken_thickness_returns_no_definition_with_zero_retained_bytes() {
+    let group = group(DesignOperandRole::ROLE_0X5);
+    for value in [0.0, f64::MAX] {
+        let mut scope = scope(DesignFeatureKind::Thicken);
+        if let DesignScopePayloadMut::Thicken(Some(operation)) = scope.payload_mut() {
+            operation.signed_thickness = cadmpeg_ir::scalar::FiniteReal::new(value).unwrap();
+        }
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = 0;
+        crate::test_support::with_decode_policy(&policy, |ctx| {
+            assert!(
+                super::super::project_thicken(ctx, &scope, &[], std::slice::from_ref(&group))
+                    .unwrap()
+                    .is_none()
+            );
+            assert_eq!(ctx.resource_refusal(), None);
+        });
+    }
+}

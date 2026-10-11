@@ -199,25 +199,28 @@ fn assert_projected_constraint_refusal(operation: &'static str) {
     let points = [point, unprojected_point];
     let relations = [relation];
     let entities = [entity];
-    for limit in 0..64 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match super::project_sketch_constraints(
-            &ctx,
-            &placements,
-            &[],
-            (&points, &[], &[]),
-            &relations,
-            &entities,
-        ) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected collection refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("no refusal at {operation}");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+            (super::project_sketch_constraints(
+                &ctx,
+                &placements,
+                &[],
+                (&points, &[], &[]),
+                &relations,
+                &entities,
+            ))
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 fn assert_projected_constraint_retained_refusal(operation: &'static str) {

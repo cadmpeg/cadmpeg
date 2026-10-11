@@ -30,8 +30,7 @@ fn membership_parameter_self_edge_keeps_exact_component() {
     let unresolved = std::collections::BTreeSet::from([0]);
     crate::test_support::with_decode_context(|ctx| {
         assert_eq!(
-            super::super::cyclic_parameter_components(ctx, &parameters, &unresolved)
-                .unwrap(),
+            super::super::cyclic_parameter_components(ctx, &parameters, &unresolved).unwrap(),
             [(0, Vec::<usize>::new())]
         );
         assert_eq!(ctx.resource_refusal(), None);
@@ -69,8 +68,7 @@ fn membership_parameter_multi_node_cycle_skips_unused_self_edge_query() {
     crate::test_support::with_decode_policy(&policy, |ctx| {
         let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, CYCLE_MEMBERSHIP, None);
         let cycles =
-            super::super::cyclic_parameter_components(ctx, &parameters, &unresolved)
-                .unwrap();
+            super::super::cyclic_parameter_components(ctx, &parameters, &unresolved).unwrap();
         let [(root, others)] = cycles.as_slice() else {
             panic!("one actual strongly connected component");
         };

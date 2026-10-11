@@ -195,7 +195,7 @@ fn dispatcher_projects_referenced_work_plane_frame() {
 
 #[test]
 fn scale_center_id_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_core::CodecError;
 
     let mut scope = DesignParameterScope::empty(
@@ -213,23 +213,22 @@ fn scale_center_id_refuses_retained_limit() {
             uniform_factor_offset: 20,
         });
     }
-    let mut found = false;
-    for limit in 0..2048 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = limit;
 
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(super::project_single_scope_with_context(&ctx, &scope),
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == "f3d Scale center id"
-                    && failure.dimension == ResourceDimension::RetainedBytes)
-        {
-            found = true;
-            break;
-        }
-    }
-    assert!(found, "Scale center charge was not reached");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "f3d Scale center id",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_retained_bytes = limit;
+
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+            (super::project_single_scope_with_context(&ctx, &scope)).map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == "f3d Scale center id" && failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
 }
 
 #[test]

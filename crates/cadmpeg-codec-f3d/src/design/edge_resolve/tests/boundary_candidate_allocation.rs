@@ -49,36 +49,38 @@ fn assert_boundary_refusal(operation: &'static str, route: u8) {
     result.recipe_references = vec![recipe_reference(&[]), recipe_reference(&[])];
     result.recipe_reference_contexts = vec![context(19), context(19)];
     result.result_boundary_edge_slots = vec![19];
-    for limit in 0..64 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let candidate = match route {
-            0 => crate::design::edge_resolve::common_deleted_edge_group_candidates(
-                [(true, &[17, 18][..]), (true, &[18, 17][..])],
-                &ctx,
-            ),
-            1 => crate::design::edge_resolve::deleted_boundary_edge_group_candidates(
-                &[&deleted],
-                &ctx,
-            ),
-            2 => crate::design::edge_resolve::result_boundary_reference_edge_group_candidates(
-                &[&result],
-                &ctx,
-            ),
-            _ => crate::design::edge_resolve::changed_boundary_count_edge_group_candidates(
-                [first.as_slice(), second.as_slice()],
-                &ctx,
-            ),
-        };
-        match candidate {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected boundary refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("no boundary refusal at {operation}");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let candidate = match route {
+                0 => crate::design::edge_resolve::common_deleted_edge_group_candidates(
+                    [(true, &[17, 18][..]), (true, &[18, 17][..])],
+                    &ctx,
+                ),
+                1 => crate::design::edge_resolve::deleted_boundary_edge_group_candidates(
+                    &[&deleted],
+                    &ctx,
+                ),
+                2 => crate::design::edge_resolve::result_boundary_reference_edge_group_candidates(
+                    &[&result],
+                    &ctx,
+                ),
+                _ => crate::design::edge_resolve::changed_boundary_count_edge_group_candidates(
+                    [first.as_slice(), second.as_slice()],
+                    &ctx,
+                ),
+            };
+
+            (candidate).map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]

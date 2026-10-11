@@ -25,33 +25,35 @@ fn assert_reference_assignment_refusal(operation: &'static str, route: u8) {
     second.recipe_reference_contexts = vec![context(18)];
     let references = [vec![17], vec![18]];
     let deleted = [vec![17], vec![18]];
-    for limit in 0..128 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = match route {
-            0 => crate::design::edge_resolve::changed_reference_edge_group_candidates(
-                &[&first, &second],
-                &ctx,
-            ),
-            1 => crate::design::edge_resolve::deleted_reference_edge_group_candidates(
-                &[&first, &second],
-                &ctx,
-            ),
-            _ => crate::design::edge_resolve::unique_deleted_reference_assignment(
-                &references,
-                &deleted,
-                &ctx,
-            ),
-        };
-        match result {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected reference assignment refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("no reference assignment refusal at {operation}");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = match route {
+                0 => crate::design::edge_resolve::changed_reference_edge_group_candidates(
+                    &[&first, &second],
+                    &ctx,
+                ),
+                1 => crate::design::edge_resolve::deleted_reference_edge_group_candidates(
+                    &[&first, &second],
+                    &ctx,
+                ),
+                _ => crate::design::edge_resolve::unique_deleted_reference_assignment(
+                    &references,
+                    &deleted,
+                    &ctx,
+                ),
+            };
+
+            (result).map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]

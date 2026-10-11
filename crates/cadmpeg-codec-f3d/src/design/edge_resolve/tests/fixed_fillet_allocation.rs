@@ -25,34 +25,37 @@ fn assert_fixed_fillet_refusal(operation: &'static str, variable: bool, complete
     operand.recipe_state_id = Some(7);
     operand.resolved_edge_slot = Some(17);
     let identity = identity(10, &[(17, 3.0), (18, 5.0), (19, 3.0)]);
-    for limit in 0..256 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let operands = if complete {
-            std::slice::from_ref(&operand)
-        } else {
-            &[]
-        };
-        let identities = if complete {
-            &[][..]
-        } else {
-            std::slice::from_ref(&identity)
-        };
-        match project_fixed_fillet(
-            &scope,
-            std::slice::from_ref(&selection_group),
-            operands,
-            identities,
-            &ctx,
-        ) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected fixed Fillet refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("no fixed Fillet refusal at {operation}");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let operands = if complete {
+                std::slice::from_ref(&operand)
+            } else {
+                &[]
+            };
+            let identities = if complete {
+                &[][..]
+            } else {
+                std::slice::from_ref(&identity)
+            };
+
+            (project_fixed_fillet(
+                &scope,
+                std::slice::from_ref(&selection_group),
+                operands,
+                identities,
+                &ctx,
+            ))
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]

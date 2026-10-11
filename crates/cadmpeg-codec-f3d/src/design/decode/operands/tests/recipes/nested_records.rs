@@ -1727,7 +1727,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     operand.preceding_candidate_faces =
         vec![FaceId::mint("f3d:brep:entity#50").expect("identity grammar")];
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| crate::design::face_resolve::resolve_face_operand_history_candidates(ctx, &operand)).unwrap(),
+        crate::test_support::with_decode_context(|ctx| {
+            crate::design::face_resolve::resolve_face_operand_history_candidates(ctx, &operand)
+        })
+        .unwrap(),
         Some(50)
     );
     operand.resolved_face_slots = vec![50];
@@ -1887,12 +1890,24 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     split_context.changed_candidate_faces =
         vec![FaceId::mint("f3d:brep:entity#999").expect("identity grammar")];
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| crate::design::face_resolve::resolve_face_operand_history_candidates(ctx, &split_context)).unwrap(),
+        crate::test_support::with_decode_context(|ctx| {
+            crate::design::face_resolve::resolve_face_operand_history_candidates(
+                ctx,
+                &split_context,
+            )
+        })
+        .unwrap(),
         None
     );
     split_context.changed_candidate_faces = vec![nested_candidate];
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| crate::design::face_resolve::resolve_face_operand_history_candidates(ctx, &split_context)).unwrap(),
+        crate::test_support::with_decode_context(|ctx| {
+            crate::design::face_resolve::resolve_face_operand_history_candidates(
+                ctx,
+                &split_context,
+            )
+        })
+        .unwrap(),
         Some(nested_slot)
     );
     split_context.changed_candidate_faces.clear();

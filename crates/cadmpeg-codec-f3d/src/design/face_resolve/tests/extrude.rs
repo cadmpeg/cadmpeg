@@ -245,7 +245,7 @@ fn selected_start_native_id_refuses_retained_limit() {
 
 #[test]
 fn target_native_id_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::features::{
         ExtrudeExtent, ExtrudeStart, FaceSelection, FeatureDefinition, FeatureOperation,
@@ -317,23 +317,22 @@ fn target_native_id_refuses_retained_limit() {
             ..
         })
     ));
-    let mut found = false;
-    for limit in 0..256 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = limit;
 
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(run(&ctx).0,
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == "f3d target face native ID"
-                    && failure.dimension == ResourceDimension::RetainedBytes)
-        {
-            found = true;
-            break;
-        }
-    }
-    assert!(found, "no retained-byte refusal at target native ID");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "f3d target face native ID",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_retained_bytes = limit;
+
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+            run(&ctx).0
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == "f3d target face native ID" && failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
 }
 
 #[test]
