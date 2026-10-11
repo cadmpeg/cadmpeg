@@ -50,7 +50,6 @@ fn collect_pmi_references(
     operation: &'static str,
 ) -> Result<Vec<u64>, CodecError> {
     let mut ids = Vec::new();
-    ctx.charge_work(0, "STEP collect pmi references traversal")?;
     let mut pmi_source = values.iter();
     for _ in 0..pmi_source.len() {
         let value = ctx
@@ -251,7 +250,6 @@ pub(super) fn decode<'ctx>(
         let mut reference_storage =
             ctx.reserve_scoped(0, "STEP datum reference candidate scratch")?;
         let mut datum_references = Vec::new();
-        ctx.charge_work(0, "STEP decode traversal")?;
         let mut pmi_source = constituents.iter().enumerate();
         for _ in 0..pmi_source.len() {
             let (index, constituent) = ctx
@@ -308,7 +306,6 @@ pub(super) fn decode<'ctx>(
                     let mut seen = BTreeSet::new();
                     let mut targets = Vec::new();
                     let mut parameters = record.parameters().iter();
-                    ctx.charge_work(0, "STEP datum target parameter traversal")?;
                     for _ in 0..parameters.len() {
                         let value = ctx
                             .next_charged(&mut parameters, "STEP datum target parameter traversal")?
@@ -426,13 +423,11 @@ pub(super) fn decode<'ctx>(
         let mut aspect_targets = Vec::new();
         let mut aspect_storage = ctx.reserve_scoped(0, "STEP dimension aspect scratch")?;
         let mut aspect_ids = BTreeSet::new();
-        ctx.charge_work(0, "STEP dimension aspect partial traversal")?;
         let mut pmi_source = record.partials[..].iter();
         for _ in 0..pmi_source.len() {
             let partial = ctx
                 .next_charged(&mut pmi_source, "STEP dimension aspect partial traversal")?
                 .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
-            ctx.charge_work(0, "STEP dimension aspect parameter traversal")?;
             let mut pmi_source = partial.parameters.as_slice().iter();
             for _ in 0..pmi_source.len() {
                 let value = ctx
@@ -850,7 +845,6 @@ pub(super) fn decode<'ctx>(
                     let mut seen = BTreeSet::new();
                     let mut targets = Vec::new();
                     let mut references = refs.iter();
-                    ctx.charge_work(0, "STEP tolerance target reference traversal")?;
                     for _ in 0..references.len() {
                         let &id = ctx
                             .next_charged(
@@ -890,7 +884,6 @@ pub(super) fn decode<'ctx>(
         )?;
         claim_storage
             .with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_pmi_typed_claims"))?;
-        ctx.charge_work(0, "STEP tolerance measure reference traversal")?;
         let mut pmi_source = refs.as_slice().iter().copied();
         for _ in 0..pmi_source.len() {
             let reference = ctx
@@ -909,13 +902,11 @@ pub(super) fn decode<'ctx>(
                 }
             }
         }
-        ctx.charge_work(0, "STEP decode traversal")?;
         let mut pmi_source = record.partials[..].iter();
         for _ in 0..pmi_source.len() {
             let partial = ctx
                 .next_charged(&mut pmi_source, "STEP decode traversal")?
                 .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
-            ctx.charge_work(0, "STEP record parameter traversal")?;
             let mut pmi_source = partial.parameters.as_slice().iter();
             for _ in 0..pmi_source.len() {
                 let value = ctx
@@ -1005,13 +996,11 @@ pub(super) fn decode<'ctx>(
             }
         };
         let mut semantics = Vec::new();
-        ctx.charge_work(0, "STEP PMI record partial traversal")?;
         let mut pmi_source = record.partials[..].iter();
         for _ in 0..pmi_source.len() {
             let partial = ctx
                 .next_charged(&mut pmi_source, "STEP PMI record partial traversal")?
                 .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
-            ctx.charge_work(0, "STEP PMI record parameter traversal")?;
             let mut pmi_source = partial.parameters.as_slice().iter();
             for _ in 0..pmi_source.len() {
                 let parameter = ctx
@@ -1036,7 +1025,6 @@ pub(super) fn decode<'ctx>(
             &id,
             "STEP pmi presentation_semantics get",
         )? {
-            ctx.charge_work(0, "STEP optional collection traversal")?;
             let mut pmi_source = items.iter();
             for _ in 0..pmi_source.len() {
                 let semantic = ctx
@@ -1136,13 +1124,11 @@ pub(super) fn decode<'ctx>(
     )?;
 
     let mut targeted_aspects = BTreeSet::new();
-    ctx.charge_work(0, "STEP targeted annotation traversal")?;
     let mut pmi_source = ir.model.pmi[..].iter();
     for _ in 0..pmi_source.len() {
         let annotation = ctx
             .next_charged(&mut pmi_source, "STEP targeted annotation traversal")?
             .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
-        ctx.charge_work(0, "STEP annotation target traversal")?;
         let mut pmi_source = annotation.targets.iter();
         for _ in 0..pmi_source.len() {
             let target = ctx
@@ -1168,7 +1154,6 @@ pub(super) fn decode<'ctx>(
     }
     {
         let mut visited_items = targeted_aspects.iter();
-        ctx.charge_work(0, "step_pmi_typed_claims")?;
         for _ in 0..visited_items.len() {
             let &id = ctx
                 .next_charged(&mut visited_items, "step_pmi_typed_claims")?
@@ -1223,13 +1208,11 @@ fn mark_characteristic_representations(
             continue;
         };
         claim_storage.with_storage(|| ctx.insert_btree_set(typed, id, "step_pmi_typed_claims"))?;
-        ctx.charge_work(0, "STEP PMI record partial traversal")?;
         let mut pmi_source = record.partials[..].iter();
         for _ in 0..pmi_source.len() {
             let partial = ctx
                 .next_charged(&mut pmi_source, "STEP PMI record partial traversal")?
                 .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
-            ctx.charge_work(0, "STEP PMI record parameter traversal")?;
             let mut pmi_source = partial.parameters.as_slice().iter();
             for _ in 0..pmi_source.len() {
                 let parameter = ctx
@@ -1265,7 +1248,6 @@ fn mark_characteristic_representations(
                     claim_storage.with_storage(|| {
                         ctx.insert_btree_set(typed, representation_id, "step_pmi_typed_claims")
                     })?;
-                    ctx.charge_work(0, "STEP PMI record partial traversal")?;
                     let mut pmi_source = representation.partials[..].iter();
                     for _ in 0..pmi_source.len() {
                         let partial = ctx
@@ -1273,7 +1255,6 @@ fn mark_characteristic_representations(
                             .ok_or_else(|| {
                                 CodecError::malformed("STEP PMI traversal source ended early")
                             })?;
-                        ctx.charge_work(0, "STEP PMI record parameter traversal")?;
                         let mut pmi_source = partial.parameters.as_slice().iter();
                         for _ in 0..pmi_source.len() {
                             let parameter = ctx
@@ -1383,7 +1364,6 @@ fn resolve_geometric_item_usages(
     let mut aspect_annotations = BTreeMap::<u64, BTreeSet<AnnotationIndex>>::new();
     {
         let mut visited_items = exchange.records().iter();
-        ctx.charge_work(0, "STEP resolve geometric item usages traversal")?;
         for _ in 0..visited_items.len() {
             let (&annotation_id, record) = ctx
                 .next_charged(
@@ -1409,7 +1389,6 @@ fn resolve_geometric_item_usages(
                     )
                 })?;
             }
-            ctx.charge_work(0, "STEP PMI record partial traversal")?;
             let mut pmi_source = record.partials[..].iter();
             for _ in 0..pmi_source.len() {
                 let partial = ctx
@@ -1417,7 +1396,6 @@ fn resolve_geometric_item_usages(
                     .ok_or_else(|| {
                         CodecError::malformed("STEP PMI traversal source ended early")
                     })?;
-                ctx.charge_work(0, "STEP PMI record parameter traversal")?;
                 let mut pmi_source = partial.parameters.as_slice().iter();
                 for _ in 0..pmi_source.len() {
                     let parameter = ctx
@@ -1451,7 +1429,6 @@ fn resolve_geometric_item_usages(
     let mut relationship_aspects = BTreeMap::<u64, BTreeSet<u64>>::new();
     {
         let mut visited_items = exchange.records().iter();
-        ctx.charge_work(0, "STEP resolve geometric item usages map traversal")?;
         for _ in 0..visited_items.len() {
             let (_, record) = ctx
                 .next_charged(
@@ -1485,7 +1462,6 @@ fn resolve_geometric_item_usages(
 
     {
         let mut visited_items = exchange.records().iter();
-        ctx.charge_work(0, "STEP resolve geometric item usages traversal")?;
         for _ in 0..visited_items.len() {
             let (&id, record) = ctx
                 .next_charged(
@@ -1514,7 +1490,6 @@ fn resolve_geometric_item_usages(
             )? {
                 {
                     let mut visited_items = items.iter();
-                    ctx.charge_work(0, "STEP optional collection traversal")?;
                     for _ in 0..visited_items.len() {
                         let &index = ctx
                             .next_charged(&mut visited_items, "STEP optional collection traversal")?
@@ -1538,7 +1513,6 @@ fn resolve_geometric_item_usages(
             )? {
                 {
                     let mut visited_items = aspects.iter();
-                    ctx.charge_work(0, "STEP pmi aspects traversal")?;
                     for _ in 0..visited_items.len() {
                         let aspect = ctx
                             .next_charged(&mut visited_items, "STEP pmi aspects traversal")?
@@ -1552,7 +1526,6 @@ fn resolve_geometric_item_usages(
                         )? {
                             {
                                 let mut visited_items = items.iter();
-                                ctx.charge_work(0, "STEP optional collection traversal")?;
                                 for _ in 0..visited_items.len() {
                                     let &index = ctx
                                         .next_charged(
@@ -1590,7 +1563,6 @@ fn resolve_geometric_item_usages(
             }
             {
                 let mut visited_items = annotation_indices.into_iter();
-                ctx.charge_work(0, "STEP pmi annotation_indices traversal")?;
                 for _ in 0..visited_items.len() {
                     let annotation_index = ctx
                         .next_charged(&mut visited_items, "STEP pmi annotation_indices traversal")?
@@ -1598,7 +1570,6 @@ fn resolve_geometric_item_usages(
                             CodecError::malformed("STEP PMI traversal source ended early")
                         })?;
                     let annotation = &mut ir.model.pmi[annotation_index.get()];
-                    ctx.charge_work(0, "STEP resolve geometric item usages traversal")?;
                     let mut pmi_source = targets[..].iter();
                     for _ in 0..pmi_source.len() {
                         let target = ctx
@@ -1655,7 +1626,6 @@ fn topology_targets(
         &id,
         "STEP pmi topology.body_by_root get",
     )? {
-        ctx.charge_work(0, "STEP optional collection traversal")?;
         let mut pmi_source = items.iter();
         for _ in 0..pmi_source.len() {
             let body = ctx
@@ -1680,7 +1650,6 @@ fn topology_targets(
         &id,
         "STEP pmi topology.faces_by_source get",
     )? {
-        ctx.charge_work(0, "STEP optional collection traversal")?;
         let mut pmi_source = items.iter();
         for _ in 0..pmi_source.len() {
             let face = ctx
@@ -1705,7 +1674,6 @@ fn topology_targets(
         &id,
         "STEP pmi topology.edges_by_source get",
     )? {
-        ctx.charge_work(0, "STEP optional collection traversal")?;
         let mut pmi_source = items.iter();
         for _ in 0..pmi_source.len() {
             let edge = ctx
@@ -1730,7 +1698,6 @@ fn topology_targets(
         &id,
         "STEP pmi topology.vertices_by_source get",
     )? {
-        ctx.charge_work(0, "STEP optional collection traversal")?;
         let mut pmi_source = items.iter();
         for _ in 0..pmi_source.len() {
             let vertex = ctx
@@ -1755,7 +1722,6 @@ fn topology_targets(
         &id,
         "STEP pmi geometry_sources.points get",
     )? {
-        ctx.charge_work(0, "STEP optional collection traversal")?;
         let mut pmi_source = items.iter();
         for _ in 0..pmi_source.len() {
             let point = ctx
@@ -1780,7 +1746,6 @@ fn topology_targets(
         &id,
         "STEP pmi geometry_sources.curves get",
     )? {
-        ctx.charge_work(0, "STEP optional collection traversal")?;
         let mut pmi_source = items.iter();
         for _ in 0..pmi_source.len() {
             let curve = ctx
@@ -1833,7 +1798,6 @@ fn target_index<'a>(
         std::collections::btree_map::Entry::Occupied(entry) => Ok(entry.into_mut()),
         std::collections::btree_map::Entry::Vacant(entry) => {
             let mut keys: TargetIndex = std::array::from_fn(|_| BTreeSet::new());
-            ctx.charge_work(0, "STEP PMI existing target traversal")?;
             let mut pmi_source = targets.iter();
             for _ in 0..pmi_source.len() {
                 let target = ctx
@@ -1908,7 +1872,6 @@ fn point_sources(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, Vec<cadmpeg_ir::ids::PointId>>, CodecError> {
     let mut points = BTreeMap::new();
-    ctx.charge_work(0, "STEP point sources traversal")?;
     let mut pmi_source = ir.model.points[..].iter();
     for _ in 0..pmi_source.len() {
         let point = ctx
@@ -1936,7 +1899,6 @@ fn curve_sources(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, Vec<cadmpeg_ir::ids::CurveId>>, CodecError> {
     let mut curves = BTreeMap::new();
-    ctx.charge_work(0, "STEP curve sources traversal")?;
     let mut pmi_source = ir.model.curves[..].iter();
     for _ in 0..pmi_source.len() {
         let curve = ctx
@@ -1990,7 +1952,6 @@ fn datum_references_for_compartment(
     let (compartment_modifiers_buffer, mut modifier_storage) =
         ctx.temporary_vec(0, "step_pmi_datum_modifier_items")?;
     let mut compartment_modifiers = compartment_modifiers_buffer;
-    ctx.charge_work(0, "STEP datum modifier traversal")?;
     let mut pmi_source = datum_modifiers(ctx, compartment)?
         .and_then(ValueExt::list)
         .unwrap_or_default()
@@ -2032,7 +1993,6 @@ fn datum_references_for_compartment(
                 "STEP datum common group member search",
             )?
             .then_some(precedence.get());
-        ctx.charge_work(0, "STEP datum references for compartment traversal")?;
         let mut members = members.iter();
         for _ in 0..members.len() {
             let member = ctx
@@ -2066,7 +2026,6 @@ fn datum_references_for_compartment(
                     "step_pmi_datum_modifier_items",
                 )
             })?;
-            ctx.charge_work(0, "STEP datum modifier traversal")?;
             let mut pmi_source = datum_modifiers(ctx, element)?
                 .and_then(ValueExt::list)
                 .unwrap_or_default()
@@ -2175,7 +2134,6 @@ fn visit_datum_ids(
     match value {
         Value::Reference(id) => visitor(*id)?,
         Value::List(values) => {
-            ctx.charge_work(0, "STEP visit datum ids value traversal")?;
             let mut pmi_source = values.as_slice().iter();
             for _ in 0..pmi_source.len() {
                 let value = ctx
@@ -2294,7 +2252,6 @@ fn hidden_presentation_annotation_ids(
     let mut hidden = BTreeSet::new();
     {
         let mut visited_items = exchange.records().iter();
-        ctx.charge_work(0, "STEP hidden presentation annotation ids map traversal")?;
         for _ in 0..visited_items.len() {
             let (_, record) = ctx
                 .next_charged(
@@ -2342,7 +2299,6 @@ fn collect_typed_placement_candidates(
         },
         "STEP collect typed placement candidates traversal",
     )?;
-    ctx.charge_work(0, "STEP collect typed placement candidates traversal")?;
     let mut pmi_source = record.partials[..].iter();
     for _ in 0..pmi_source.len() {
         let partial = ctx
@@ -2364,7 +2320,6 @@ fn collect_typed_placement_candidates(
         if !is_carrier {
             continue;
         }
-        ctx.charge_work(0, "STEP collect typed placement candidates traversal")?;
         let mut parameters = partial.parameters.iter();
         for _ in 0..parameters.len() {
             let value = ctx
@@ -2487,13 +2442,11 @@ fn collect_annotation_text(
             })?;
         }
     }
-    ctx.charge_work(0, "STEP PMI record partial traversal")?;
     let mut pmi_source = record.partials[..].iter();
     for _ in 0..pmi_source.len() {
         let partial = ctx
             .next_charged(&mut pmi_source, "STEP PMI record partial traversal")?
             .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
-        ctx.charge_work(0, "STEP PMI record parameter traversal")?;
         let mut pmi_source = partial.parameters.as_slice().iter();
         for _ in 0..pmi_source.len() {
             let value = ctx
@@ -2540,13 +2493,11 @@ fn collect_placement_candidates(
         return Ok(());
     };
     collect_typed_placement_candidates(record, geometry, candidates, ctx)?;
-    ctx.charge_work(0, "STEP PMI record partial traversal")?;
     let mut pmi_source = record.partials[..].iter();
     for _ in 0..pmi_source.len() {
         let partial = ctx
             .next_charged(&mut pmi_source, "STEP PMI record partial traversal")?
             .ok_or_else(|| CodecError::malformed("STEP PMI traversal source ended early"))?;
-        ctx.charge_work(0, "STEP PMI record parameter traversal")?;
         let mut pmi_source = partial.parameters.as_slice().iter();
         for _ in 0..pmi_source.len() {
             let value = ctx
@@ -2923,7 +2874,6 @@ fn tolerance_modifiers(
 ) -> Result<Vec<String>, CodecError> {
     let mut modifiers = Vec::new();
     if let Some(partial) = record.partial(ctx, "GEOMETRIC_TOLERANCE_WITH_MODIFIERS")? {
-        ctx.charge_work(0, "STEP tolerance modifiers traversal")?;
         let mut pmi_source = partial.parameters[..].iter();
         for _ in 0..pmi_source.len() {
             let value = ctx
@@ -2948,7 +2898,6 @@ fn modifier_values(
             ctx.push_vec(output, text, "step_pmi_modifier_items")?;
         }
         Value::List(values) => {
-            ctx.charge_work(0, "STEP modifier values value traversal")?;
             let mut pmi_source = values.as_slice().iter();
             for _ in 0..pmi_source.len() {
                 let value = ctx
@@ -3165,7 +3114,6 @@ impl MeasureParameters<'_> {
     ) -> Result<(), CodecError> {
         match self {
             Self::Items(items) => {
-                ctx.charge_work(0, "STEP measure item traversal")?;
                 let mut pmi_source = items.iter();
                 for _ in 0..pmi_source.len() {
                     let value = ctx
@@ -3177,7 +3125,6 @@ impl MeasureParameters<'_> {
                 }
             }
             Self::Record(record) => {
-                ctx.charge_work(0, "STEP PMI record partial traversal")?;
                 let mut pmi_source = record.partials[..].iter();
                 for _ in 0..pmi_source.len() {
                     let partial = ctx
@@ -3185,7 +3132,6 @@ impl MeasureParameters<'_> {
                         .ok_or_else(|| {
                             CodecError::malformed("STEP PMI traversal source ended early")
                         })?;
-                    ctx.charge_work(0, "STEP PMI record parameter traversal")?;
                     let mut pmi_source = partial.parameters.as_slice().iter();
                     for _ in 0..pmi_source.len() {
                         let value = ctx
@@ -3227,7 +3173,6 @@ fn characteristic_measure_values(
     let mut values = Vec::new();
     {
         let mut visited_items = measure_ids.into_iter();
-        ctx.charge_work(0, "STEP pmi measure_ids traversal")?;
         for _ in 0..visited_items.len() {
             let id = ctx
                 .next_charged(&mut visited_items, "STEP pmi measure_ids traversal")?
@@ -3293,7 +3238,6 @@ fn collect_measure_ids(
                 if is_measure_record(ctx, record)? {
                     ctx.insert_btree_set(measure_ids, *id, "step_pmi_measure_ids")?;
                 } else {
-                    ctx.charge_work(0, "STEP collect measure ids traversal")?;
                     let mut pmi_source = record.partials[..].iter();
                     for _ in 0..pmi_source.len() {
                         let partial = ctx
@@ -3301,7 +3245,6 @@ fn collect_measure_ids(
                             .ok_or_else(|| {
                                 CodecError::malformed("STEP PMI traversal source ended early")
                             })?;
-                        ctx.charge_work(0, "STEP collect measure ids traversal")?;
                         let mut pmi_source = partial.parameters[..].iter();
                         for _ in 0..pmi_source.len() {
                             let parameter = ctx
@@ -3327,7 +3270,6 @@ fn collect_measure_ids(
             }
         }
         Value::List(values) => {
-            ctx.charge_work(0, "STEP collect measure ids value traversal")?;
             let mut pmi_source = values.as_slice().iter();
             for _ in 0..pmi_source.len() {
                 let value = ctx

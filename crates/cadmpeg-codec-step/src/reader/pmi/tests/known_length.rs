@@ -64,23 +64,6 @@ fn pmi_measure_empty_items_require_no_work() {
 }
 
 #[test]
-fn pmi_measure_empty_items_preserve_original_refusal() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-        let CodecError::ResourceLimit(first) = ctx.charge_work(1, "test original caller refusal")
-            .expect_err("caller refuses") else { panic!("resource refusal"); };
-        let mut visits = 0;
-        assert!(matches!(MeasureParameters::Items(&[]).visit(ctx, |_| {
-            visits += 1;
-            Ok(())
-        }), Err(CodecError::ResourceLimit(refusal)) if refusal == first));
-        assert_eq!(visits, 0);
-        assert_eq!(ctx.resource_refusal(), Some(first));
-    });
-}
-
-#[test]
 fn pmi_measure_first_item_refuses_before_visitor() {
     let values = vec![Value::Omitted];
     let mut policy = DecodePolicy::service();
@@ -193,20 +176,6 @@ fn pmi_hidden_empty_records_require_no_work() {
         assert!(super::super::hidden_presentation_annotation_ids(&exchange, ctx)
             .expect("empty source").is_empty());
         assert_eq!(ctx.resource_refusal(), None);
-    });
-}
-
-#[test]
-fn pmi_hidden_empty_records_preserve_original_refusal() {
-    let exchange = invisibility_exchange(0);
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-        let CodecError::ResourceLimit(first) = ctx.charge_work(1, "test original caller refusal")
-            .expect_err("caller refuses") else { panic!("resource refusal"); };
-        assert!(matches!(super::super::hidden_presentation_annotation_ids(&exchange, ctx),
-            Err(CodecError::ResourceLimit(refusal)) if refusal == first));
-        assert_eq!(ctx.resource_refusal(), Some(first));
     });
 }
 
