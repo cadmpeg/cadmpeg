@@ -212,7 +212,7 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
         {
             continue;
         }
-        let Some((data_blocks, block_reservation)) = copy_block_ids(
+        let Some((data_blocks, source_id_storage, mut source_text_storage)) = copy_block_ids(
             ctx,
             field
                 .iter()
@@ -231,10 +231,12 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
         {
             continue;
         }
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, blocks)? else {
+        let Some(content) = source_text_storage.with_storage(|| {
+            FeaturePayloadContent::from_scoped_source(ctx, data_blocks, blocks, source_id_storage)
+        })?
+        else {
             continue;
         };
-        drop(block_reservation);
         let Some(operation_key) = operation_key(
             ctx,
             operation_label,
@@ -243,6 +245,7 @@ pub(in crate::native) fn feature_projected_curve_construction_payloads(
         else {
             continue;
         };
+        let content = source_text_storage.commit_value(content)?;
         let id = ctx.format_retained(
             format_args!("nx:feature-history:projected-curve-construction-payload#{operation_key}"),
             "NX projected curve payload identity",
@@ -713,7 +716,7 @@ pub(in crate::native) fn feature_surface_construction_payloads(
         else {
             continue;
         };
-        let Some((data_blocks, _source_id_storage)) = copy_block_ids(
+        let Some((data_blocks, source_id_storage, mut source_text_storage)) = copy_block_ids(
             ctx,
             graph
                 .iter()
@@ -732,7 +735,14 @@ pub(in crate::native) fn feature_surface_construction_payloads(
         {
             continue;
         }
-        let Some(content) = FeaturePayloadContent::from_source_array(ctx, data_blocks, blocks)?
+        let Some(content) = source_text_storage.with_storage(|| {
+            FeaturePayloadContent::from_scoped_source_array(
+                ctx,
+                data_blocks,
+                blocks,
+                source_id_storage,
+            )
+        })?
         else {
             continue;
         };
@@ -744,6 +754,7 @@ pub(in crate::native) fn feature_surface_construction_payloads(
         else {
             continue;
         };
+        let content = source_text_storage.commit_value(content)?;
         let id = ctx.format_retained(
             format_args!("nx:feature-history:surface-construction-payload#{operation_key}"),
             "NX surface construction payload identity",
@@ -1993,6 +2004,7 @@ pub(in crate::native) fn feature_block_construction_payloads(
     let mut payloads = Vec::new();
     for construction in ctx.admit_iter(constructions, "build NX block construction payloads")? {
         let mut reservation = ctx.reserve_scoped(0, "NX block construction source blocks")?;
+        let mut source_text_storage = ctx.reserve_scoped(0, "NX block construction source text")?;
         let mut data_blocks = Vec::new();
         for source in construction
             .members
@@ -2000,8 +2012,11 @@ pub(in crate::native) fn feature_block_construction_payloads(
             .map(|member| member.data_block.as_str())
             .chain(std::iter::once(construction.terminal_data_block.as_str()))
         {
-            ctx.charge_work(1, "NX block construction source blocks")?;
-            let owned = ctx.copy_retained_text(source, "NX block construction source blocks")?;
+            let owned = ctx.copy_scoped_text(
+                source,
+                &mut source_text_storage,
+                "NX block construction source blocks",
+            )?;
             reservation.with_storage(|| {
                 ctx.push_vec(
                     &mut data_blocks,
@@ -2010,10 +2025,13 @@ pub(in crate::native) fn feature_block_construction_payloads(
                 )
             })?;
         }
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, blocks)? else {
+        let Some(content) = source_text_storage.with_storage(|| {
+            FeaturePayloadContent::from_scoped_source(ctx, data_blocks, blocks, reservation)
+        })?
+        else {
             continue;
         };
-        drop(reservation);
+        let content = source_text_storage.commit_value(content)?;
         let id = replace_operation_text(
             ctx,
             &construction.id,
@@ -2867,3 +2885,6 @@ pub(super) fn unique_offset_data_store(
 
 #[cfg(test)]
 mod text_storage_tests;
+
+#[cfg(test)]
+mod payload_storage_tests;
