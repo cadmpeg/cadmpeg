@@ -467,16 +467,6 @@ pub(crate) const TRANSFERRED_LEGACY_PARAMETER_COUNT: CoverageKey =
     CoverageKey::new("transferred_legacy_parameter_count");
 pub(crate) const TRANSFERRED_LEGACY_SELECTOR_PARAMETER_COUNT: CoverageKey =
     CoverageKey::new("transferred_legacy_selector_parameter_count");
-pub(crate) const TRANSFERRED_NATIVE_OPERATION_COUNT: CoverageKey =
-    CoverageKey::new("transferred_native_operation_count");
-pub(crate) const TRANSFERRED_NATIVE_OPERATION_DEFINITION_CHAIN_VALUE_COUNT: CoverageKey =
-    CoverageKey::new("transferred_native_operation_definition_chain_value_count");
-pub(crate) const TRANSFERRED_NATIVE_OPERATION_DEFINITION_VALUE_COUNT: CoverageKey =
-    CoverageKey::new("transferred_native_operation_definition_value_count");
-pub(crate) const TRANSFERRED_NATIVE_OPERATION_RANGE_COUNT: CoverageKey =
-    CoverageKey::new("transferred_native_operation_range_count");
-pub(crate) const TRANSFERRED_NATIVE_OPERATION_PARAMETER_COUNT: CoverageKey =
-    CoverageKey::new("transferred_native_operation_parameter_count");
 pub(crate) const TRANSFERRED_OBJECT_STREAM_FACE_COUNT: CoverageKey =
     CoverageKey::new("transferred_object_stream_face_count");
 pub(crate) const TRANSFERRED_OBJECT_STREAM_LOOP_COUNT: CoverageKey =
@@ -814,8 +804,6 @@ pub(crate) const TRANSFERRED_APPEARANCE_ASSET_COUNT: CoverageKey =
     CoverageKey::new("transferred_appearance_asset_count");
 pub(crate) const TRANSFERRED_APPEARANCE_BINDING_COUNT: CoverageKey =
     CoverageKey::new("transferred_appearance_binding_count");
-pub(crate) const TRANSFERRED_NATIVE_SKETCH_ENTITY_COUNT: CoverageKey =
-    CoverageKey::new("transferred_native_sketch_entity_count");
 pub(crate) const TRANSFERRED_PRINCIPAL_PLANE_RECORD_COUNT: CoverageKey =
     CoverageKey::new("transferred_principal_plane_record_count");
 pub(crate) const TRANSFERRED_SKETCH_ENTITY_COUNT: CoverageKey =
@@ -1005,7 +993,6 @@ const ALL: &[CoverageKey] = &[
     DECODED_ZERO_ENTITY_ORIENTED_MODEL_ENDPOINT_PAIR_COUNT,
     TRANSFERRED_APPEARANCE_ASSET_COUNT,
     TRANSFERRED_APPEARANCE_BINDING_COUNT,
-    TRANSFERRED_NATIVE_SKETCH_ENTITY_COUNT,
     TRANSFERRED_PRINCIPAL_PLANE_RECORD_COUNT,
     TRANSFERRED_SKETCH_ENTITY_COUNT,
     UNCLASSIFIED_DESIGN_PARALLEL_REFERENCE_CELL_COUNT,
@@ -1270,11 +1257,6 @@ const ALL: &[CoverageKey] = &[
     TRANSFERRED_LEGACY_FORMULA_COUNT,
     TRANSFERRED_LEGACY_PARAMETER_COUNT,
     TRANSFERRED_LEGACY_SELECTOR_PARAMETER_COUNT,
-    TRANSFERRED_NATIVE_OPERATION_COUNT,
-    TRANSFERRED_NATIVE_OPERATION_DEFINITION_CHAIN_VALUE_COUNT,
-    TRANSFERRED_NATIVE_OPERATION_DEFINITION_VALUE_COUNT,
-    TRANSFERRED_NATIVE_OPERATION_RANGE_COUNT,
-    TRANSFERRED_NATIVE_OPERATION_PARAMETER_COUNT,
     TRANSFERRED_OBJECT_STREAM_FACE_COUNT,
     TRANSFERRED_OBJECT_STREAM_LOOP_COUNT,
     TRANSFERRED_PARAMETER_COUNT,

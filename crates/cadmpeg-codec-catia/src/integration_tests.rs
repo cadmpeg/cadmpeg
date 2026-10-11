@@ -594,3 +594,83 @@ fn sketch_geometry_without_construction_state_stays_native() {
     assert_eq!(value_payload, &pair);
     assert!(owner.numeric_pair().is_some());
 }
+
+#[test]
+fn operation_schema_buckets_stay_native_without_feature_ownership() {
+    use crate::test_support::test_container::outer_container_catpart;
+    use crate::test_support::test_object_graph::{
+        catalog_stream, entity_backed_object_graph, object_graph_record,
+    };
+    for label in [
+        "EdgeFillet",
+        "Prism_EndLimit_Length",
+        "Prism_ThickThin1",
+        "Prism_ThickThin2",
+        "Revol_ThickThin1",
+        "CircPattern_RadialNumber",
+        "Sweep_ThickThin1",
+    ] {
+        let mut stream = entity_backed_object_graph(
+            &[
+                object_graph_record(&[0x54, 0x01, 0x82, 0x84, 0x83], &[0xfe]),
+                object_graph_record(&[0x12, 0x82, 0x85], &[0xfe]),
+                object_graph_record(&[0x14, 0x01, 0x81, 0x86], &[0xfe]),
+                object_graph_record(
+                    &[0x14, 0x01, 0x81, 0x87],
+                    &[0xf5, 0x83, 0x81, 0x83, 0x81, 0x82, 0x81, 0xfe],
+                ),
+            ],
+            &[1, 2, 3, 4],
+        );
+        stream.extend(catalog_stream(&[
+            "CATCatalogManager",
+            "catalogManager",
+            "catalogLinks",
+            "",
+            label,
+            "MainTool",
+            "EndAngle",
+            "ConstraintDYS",
+        ]));
+        let result = decode(outer_container_catpart(&stream).0);
+        let namespace = result
+            .ir()
+            .native
+            .namespace("catia")
+            .expect("native namespace");
+        let objects: Vec<crate::native::CatiaDesignObject> = namespace
+            .arena_as("design_objects")
+            .expect("native design objects");
+        let bucket = objects
+            .iter()
+            .find(|object| object.owner_entity_id == 1)
+            .expect("complete owner declaration retains a native bucket");
+        assert_eq!(
+            bucket.owner_class.as_ref().map(|class| class.name.as_str()),
+            Some(label)
+        );
+        assert_eq!(bucket.fields.len(), 2);
+        assert!(
+            result.ir().model.features.is_empty(),
+            "schema label {label} has no operation closure"
+        );
+        let records: Vec<crate::native::CatiaObjectRecord> = namespace
+            .arena_as("object_graph_records")
+            .expect("native object records");
+        assert_eq!(records.len(), 4);
+        let constraint = records
+            .iter()
+            .find(|record| record.entity_id() == Some(4))
+            .expect("native constraint field");
+        assert_eq!(constraint.class_name(), Some("ConstraintDYS"));
+        assert_eq!(
+            constraint
+                .references
+                .iter()
+                .map(crate::native::CatiaObjectRecordReference::entity_id)
+                .collect::<Vec<_>>(),
+            vec![3, 2]
+        );
+        assert_valid(&result);
+    }
+}

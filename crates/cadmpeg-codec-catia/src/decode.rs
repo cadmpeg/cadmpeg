@@ -10,8 +10,6 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
-use std::collections::HashSet;
-
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::CodecError;
@@ -1920,46 +1918,6 @@ fn finish_decode(
                 .starts_with("catia:consolidated:line-profile-curve#")
         })
         .count();
-    let transferred_native_sketch_entity_count = ir
-        .model
-        .sketch_entities
-        .iter()
-        .filter(|entity| {
-            matches!(
-                entity.geometry.definition(),
-                cadmpeg_ir::sketches::SketchGeometryDefinition::Native { .. }
-            )
-        })
-        .count();
-    let mut native_operation_feature_ids = HashSet::new();
-    for feature in ir.model.features.iter().filter(|feature| {
-        feature
-            .source_tag
-            .as_deref()
-            .is_some_and(|name| design_feature::NativeOperationClass::try_from(name).is_ok())
-    }) {
-        if !native_operation_feature_ids.contains(&feature.id) {
-            let id = feature
-                .id
-                .try_clone_for_decode(ctx, "catia_native_operation_feature_id")?;
-            ctx.insert_hash_set(
-                &mut native_operation_feature_ids,
-                id,
-                "catia_native_operation_feature_ids",
-            )?;
-        }
-    }
-    let transferred_native_operation_parameter_count = ir
-        .model
-        .parameters
-        .iter()
-        .filter(|parameter| {
-            parameter
-                .owner
-                .as_ref()
-                .is_some_and(|owner| native_operation_feature_ids.contains(owner))
-        })
-        .count();
     for (key, count) in [
         (
             crate::coverage::DECODED_APPEARANCE_PACKET_COUNT,
@@ -3398,26 +3356,6 @@ fn finish_decode(
             transferred_principal_plane_records.len(),
         ),
         (
-            crate::coverage::TRANSFERRED_NATIVE_OPERATION_COUNT,
-            design_feature_transfer.native_operation_records.len(),
-        ),
-        (
-            crate::coverage::TRANSFERRED_NATIVE_OPERATION_DEFINITION_VALUE_COUNT,
-            design_feature_transfer.native_operation_definition_value_count,
-        ),
-        (
-            crate::coverage::TRANSFERRED_NATIVE_OPERATION_DEFINITION_CHAIN_VALUE_COUNT,
-            design_feature_transfer.native_operation_definition_chain_value_count,
-        ),
-        (
-            crate::coverage::TRANSFERRED_NATIVE_OPERATION_RANGE_COUNT,
-            design_feature_transfer.native_operation_range_count,
-        ),
-        (
-            crate::coverage::TRANSFERRED_NATIVE_OPERATION_PARAMETER_COUNT,
-            transferred_native_operation_parameter_count,
-        ),
-        (
             crate::coverage::UNRESOLVED_DESIGN_RECORD_COUNT,
             unresolved_object_record_count,
         ),
@@ -3425,10 +3363,6 @@ fn finish_decode(
         (
             crate::coverage::TRANSFERRED_SKETCH_ENTITY_COUNT,
             ir.model.sketch_entities.len(),
-        ),
-        (
-            crate::coverage::TRANSFERRED_NATIVE_SKETCH_ENTITY_COUNT,
-            transferred_native_sketch_entity_count,
         ),
         (
             crate::coverage::TRANSFERRED_SKETCH_CONSTRAINT_COUNT,

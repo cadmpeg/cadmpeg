@@ -328,25 +328,10 @@ current levels require those matrices and representative fixtures.
   tie-breaker. This records parameter order and ownership only; it does not
   assign a parameter to an operation role such as profile, direction, extent,
   or output.
-- Typed unresolved operation definitions expose the admitted CATIA operation
-  family without asserting unresolved operands: `Prism_EndLimit_Length`,
-  `Prism_ThickThin1`, and `Prism_ThickThin2` are unresolved extrusions,
-  `Revol_ThickThin1` is an
-  unresolved revolution, `Sweep_ThickThin1` is a sweep with unresolved section,
-  path, and result mode, `EdgeFillet` is an unresolved fillet, and
-  `CircPattern_RadialNumber` is an unresolved circular pattern. Exact
-  definition-bound values remain in `Feature.source_properties` under stable
-  `catia_definition_` keys. Feature-owned parameter expressions remain model
-  parameters and are copied under `catia_parameter_<neutral-name>` source
-  properties. These values record generic feature inputs only; they do not
-  assign operation roles, pattern seeds, an axis, an angle, or an instance
-  count.
-- Exact source-schema `Range` fields whose entity record is linked through a
-  listed field object on a complete operation owner chain are copied to
-  `Feature.source_properties` under `catia_range_<ordinal>_*`. The projection
-  retains selectors, prefix, nullable slots, nominal framing, and incidence
-  counts. It does not assign an extent, parameter, PMI, sketch, or other
-  operation role; semantic ownership remains unresolved under DI-18.
+- Operation-like schema labels retain native design-object identity, fields,
+  definition-bound values, range intervals, and relations. Structural ownership
+  and class identity do not establish an operation instance or a neutral
+  operation family. Parameters receive no feature owner from these labels.
 - A transferred feature receives a structural `parent` only when its exact
   `owner_design_object` incidence selects another design object that also
   transfers as a feature. Self-links and owner cycles do not create neutral
@@ -367,15 +352,6 @@ current levels require those matrices and representative fixtures.
   with source order, identity, and structural parent linkage. The transfer does
   not assign support, angle, signed offset, normal, in-plane frame, or
   construction dependencies; this slice does not raise the CATIA score.
-- Exact separator-form owner declarations for the admitted operation classes
-  `EdgeFillet`, `Prism_EndLimit_Length`, `Prism_ThickThin1`,
-  `Prism_ThickThin2`, `Revol_ThickThin1`, `Sweep_ThickThin1`, and
-  `CircPattern_RadialNumber` transfer family-specific unresolved feature nodes
-  with source order, identity, and structural parent linkage. Their operands,
-  profiles, directions, axes, extents, outputs, edge groups, radii, pattern
-  seeds, pattern axis, pattern angle, pattern count, operation-specific
-  dependency roles, and regeneration semantics remain unresolved; this slice
-  does not raise the CATIA score.
 - Several non-primary envelopes transfer connected topology or exact analytic,
   NURBS, and procedural carrier subsets. These are extras until every
   cumulative gate in one closed envelope passes.
