@@ -1256,7 +1256,6 @@ fn apply_idef_alternative_path(
     }
 
     let mut degraded = false;
-    ctx.charge_work(0, "Rhino apply idef alternative path traversal")?;
     let mut userdata = userdata.iter();
     for _ in 0..userdata.len() {
         let descriptor = ctx

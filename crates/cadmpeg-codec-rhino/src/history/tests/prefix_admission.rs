@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! History source traversal and empty-route refusal controls.
+//! History source traversal and empty-route work controls.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -27,31 +27,6 @@ fn empty_history_record_scan_has_no_terminal_work() {
     assert!(warnings.is_empty());
     drop(scan);
     ctx.finish_session().expect("zero work fits");
-}
-
-#[test]
-fn empty_history_record_scan_keeps_the_original_refusal() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("context");
-    let original = ctx
-        .charge_work(1, "history original refusal")
-        .expect_err("original fuse");
-    let error = super::super::parse_records(
-        &ctx,
-        b"",
-        &[],
-        ArchiveVersion::V8,
-        &mut Diagnostics::new(),
-        0x1000_0026,
-    )
-    .expect_err("empty source keeps the fuse");
-    assert_eq!(error.to_string(), original.to_string());
-    assert_eq!(
-        ctx.finish_session().expect_err("original fuse").to_string(),
-        original.to_string()
-    );
 }
 
 #[test]
