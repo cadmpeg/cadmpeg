@@ -392,7 +392,12 @@ fn wrapper_refuses_collection(operation: &str) {
     let (exchange, _) =
         crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
             .expect("valid wrapper exchange");
-    let targets = BTreeMap::from([(2, ["target".to_owned()].into_iter().collect())]);
+    let identities = if operation == "step_drawing_wrapper_identities" {
+        ["target", "other"].as_slice()
+    } else {
+        ["target"].as_slice()
+    };
+    let targets = BTreeMap::from([(2, identities.iter().map(|identity| (*identity).to_owned()).collect())]);
     let refused = (0..=16).any(|limit| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
