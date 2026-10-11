@@ -270,6 +270,7 @@ impl PlaneProofKeys {
         }
     }
 
+    /// Adds an absent key after admitting each new table slot and its growth.
     pub(super) fn insert(
         &mut self,
         key: (u32, CoplanarityPlaneKey),
@@ -284,14 +285,17 @@ impl PlaneProofKeys {
                 } else {
                     let mut indexed = std::collections::HashSet::new();
                     for value in values.iter() {
-                        ctx.insert_hash_set(&mut indexed, *value, operation)?;
+                        ctx.reserve_set(&mut indexed, 1, operation)?;
+                        indexed.extend(std::iter::once(*value));
                     }
-                    ctx.insert_hash_set(&mut indexed, key, operation)?;
+                    ctx.reserve_set(&mut indexed, 1, operation)?;
+                    indexed.extend(std::iter::once(key));
                     *self = Self::Indexed(indexed);
                 }
             }
             Self::Indexed(values) => {
-                ctx.insert_hash_set(values, key, operation)?;
+                ctx.reserve_set(values, 1, operation)?;
+                values.extend(std::iter::once(key));
             }
         }
         Ok(())
@@ -304,7 +308,9 @@ mod tests {
 
     #[test]
     fn plane_proof_key_presence_distinguishes_planes_and_sequences() {
-        crate::test_support::with_service_context(&[], |ctx| {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        crate::test_support::with_policy_context(&[], &policy, |ctx| {
             let mut keys = PlaneProofKeys::default();
             let key = |position| {
                 if position % 2 == 0 {
@@ -315,6 +321,16 @@ mod tests {
             };
             assert!(!keys.contains((1, key(0))));
             for position in 0..64 {
+                let key_bytes = cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<u32>() + 6 * std::mem::size_of::<u64>(),
+                );
+                let _probe = (position == 2).then(|| {
+                    cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+                        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                        "test plane proof keys",
+                        Some(key_bytes),
+                    )
+                });
                 keys.insert((1, key(position)), ctx, "test plane proof keys")
                     .expect("proof key admission");
                 for previous in 0..=position {
