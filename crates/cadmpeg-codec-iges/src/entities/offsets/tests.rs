@@ -29,9 +29,9 @@ const EPS_OFFSET_ENDPOINT_MATCH: f64 = 1.0e-9;
 const EPS_SOURCE_PARAMETER_DOMAIN: f64 = 1.0e-12;
 const EPS_PLACED_OFFSET: f64 = 1.0e-12;
 
+mod batch_attachment;
 mod index_sources;
 mod raw_controls;
-mod batch_attachment;
 
 fn assert_offset_collection_refusal(bytes: &[u8], operation: &str) {
     cadmpeg_test_support::refusal::resource_limit_at(

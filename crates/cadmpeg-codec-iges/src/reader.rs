@@ -1027,9 +1027,10 @@ fn decode_with_occurrence_limits(
     }
     let verification_index = cadmpeg_ir::index::ModelIndex::build(&ir, ctx)?;
     let mut verification_storage = ctx.reserve_scoped(0, "iges transfer verification")?;
-    if let Err(message) = verification_storage
-        .with_storage(|| transfer_ledger.verify_for_decode(ctx, &verification_index))?
-    {
+    let verification = verification_storage
+        .with_storage(|| transfer_ledger.verify_for_decode(ctx, &verification_index))?;
+    drop(verification_index);
+    if let Err(message) = verification {
         return Err(CodecError::Malformed(ctx.format_retained(
             format_args!("IGES transfer ledger is inconsistent: {message}"),
             "iges transfer ledger error",
@@ -1056,7 +1057,6 @@ fn decode_with_occurrence_limits(
         crate::SOURCE_IMAGE_ID,
         "iges_document_digest",
     )?;
-    drop(verification_index);
     if let Some(source) = &mut ir.source {
         ctx.insert_btree_map(
             &mut source.attributes,
@@ -1112,11 +1112,14 @@ fn reject_invalid_semantic_ir(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(),
         &validation.findings,
         |finding| Ok(finding.severity >= Severity::Error),
         "iges semantic error finding",
-    )? else {
+    )?
+    else {
         return Ok(());
     };
     let entity = validation_storage.with_storage(|| match finding.entity.as_deref() {
-        Some(entity) => ctx.format_retained(format_args!(" for {entity}"), "iges semantic error entity"),
+        Some(entity) => {
+            ctx.format_retained(format_args!(" for {entity}"), "iges semantic error entity")
+        }
         None => Ok(String::new()),
     })?;
     Err(CodecError::Malformed(ctx.format_retained(
