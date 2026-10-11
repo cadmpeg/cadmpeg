@@ -112,6 +112,9 @@ pub(crate) fn bind_pattern_inputs(
 ) -> Result<(), cadmpeg_core::CodecError> {
     const DIRECTIONS: &str = "collect SLDPRT pattern line directions";
     const DEPENDENCIES: &str = "collect SLDPRT pattern dependencies";
+    if model_features.is_empty() || lanes.is_empty() {
+        return Ok(());
+    }
     let mut storage = ctx.reserve_scoped(0, PATTERN_INPUTS)?;
     let metadata_ids = storage.with_storage(|| history_metadata_ids(ctx, histories))?;
     let mut history_features = Vec::new();
@@ -133,41 +136,35 @@ pub(crate) fn bind_pattern_inputs(
             })?;
         }
     }
-    let by_source = FeaturesBySource::new(ctx, history_features.iter().copied())?;
-    // Cosmetic threads by owning history, in ordinal order.
-    let mut cosmetic_threads = BTreeMap::<&str, Vec<&crate::records::Feature>>::new();
-    for feature in ctx.admit_iter(&history_features, PATTERN_INPUTS)? {
-        if feature.input_class.as_deref() == Some("moCosmeticThread_c") {
-            storage.with_storage(|| {
-                ctx.push_btree_group(
-                    &mut cosmetic_threads,
-                    feature.parent.as_str(),
-                    *feature,
-                    PATTERN_INPUTS,
-                    PATTERN_INPUTS,
-                )
-            })?;
-        }
-    }
-    for (_, threads) in ctx.admit_iter(&mut cosmetic_threads, PATTERN_INPUTS)? {
-        ctx.stable_sort_by_key(threads, |thread| thread.ordinal, Ord::cmp, PATTERN_INPUTS)?;
-    }
-    // The last cosmetic thread of the feature's history before it.
-    let derived_cosmetic_thread_seed = |feature: &crate::records::Feature| {
-        let Some(threads) =
-            ctx.get_btree_map(&cosmetic_threads, feature.parent.as_str(), PATTERN_INPUTS)?
-        else {
+    let mut by_source = None;
+    let mut cosmetic_threads_storage = ctx.reserve_scoped(0, PATTERN_INPUTS)?;
+    let mut cosmetic_threads = None;
+    // The last cosmetic thread of the feature's history before it. Build the
+    // ordinal index only when a derived output needs this seed query.
+    let mut derived_cosmetic_thread_seed = |feature: &crate::records::Feature| {
+        const INDEX: &str = "index SLDPRT cosmetic thread seeds";
+        let cosmetic_threads = match &mut cosmetic_threads {
+            Some(threads) => threads,
+            slot @ None => {
+                let mut threads = BTreeMap::<&str, Vec<&crate::records::Feature>>::new();
+                for feature in ctx.admit_iter(&history_features, INDEX)? {
+                    if feature.input_class.as_deref() == Some("moCosmeticThread_c") {
+                        cosmetic_threads_storage.with_storage(|| {
+                            ctx.push_btree_group(&mut threads, feature.parent.as_str(), *feature, INDEX, INDEX)
+                        })?;
+                    }
+                }
+                for (_, group) in ctx.admit_iter(&mut threads, INDEX)? {
+                    ctx.stable_sort_by_key(group, |thread| thread.ordinal, Ord::cmp, INDEX)?;
+                }
+                slot.insert(threads)
+            }
+        };
+        let Some(threads) = ctx.get_btree_map(cosmetic_threads, feature.parent.as_str(), PATTERN_INPUTS)? else {
             return Ok::<_, cadmpeg_core::CodecError>(None);
         };
-        let before = ctx.partition_point(
-            threads,
-            |thread| Ok(thread.ordinal < feature.ordinal),
-            PATTERN_INPUTS,
-        )?;
-        Ok(before
-            .checked_sub(1)
-            .and_then(|index| threads.get(index))
-            .map(|thread| thread.id.as_str()))
+        let before = ctx.partition_point(threads, |thread| Ok(thread.ordinal < feature.ordinal), PATTERN_INPUTS)?;
+        Ok(before.checked_sub(1).and_then(|index| threads.get(index)).copied().map(|thread| thread.id.as_str()))
     };
     let mut model_by_native = HashMap::new();
     for (index, feature) in ctx
@@ -264,31 +261,28 @@ pub(crate) fn bind_pattern_inputs(
             Ord::cmp,
             "sort SLDPRT pattern input candidates",
         )?;
+        // The next named object bounds a pattern. A derived thread output
+        // extends that bound to the following object and supplies a seed fallback.
+        let object_interval = |start_index: usize| {
+            let derived_thread = starts.get(start_index + 1).is_some_and(|(_, candidate)| {
+                candidate.input_class.as_deref() == Some("moDerivedCosmeticThread_c")
+            });
+            let next = start_index + 1 + usize::from(derived_thread);
+            let end = starts.get(next).map_or(lane.native_payload.len(), |(offset, _)| *offset);
+            (end, derived_thread)
+        };
         for (start_index, &(start, feature)) in ctx
             .admit_iter(&starts, "scan SLDPRT pattern input candidates")?
             .enumerate()
         {
-            let has_derived_cosmetic_thread_output = starts
-                .get(start_index + 1)
-                .is_some_and(|(_, candidate)| candidate.input_class.as_deref() == Some("moDerivedCosmeticThread_c"));
-            // The end of this pattern's object is the next object name's
-            // offset, or the end of the payload when this is the last one.
-            // Both are inside `native_payload`: an object name states the
-            // payload bytes at its own offset, and `SldprtNative::load`
-            // refuses a name whose offset the payload does not state.
-            let end = {
-                let next = start_index + 1 + usize::from(has_derived_cosmetic_thread_output);
-                match starts.get(next) {
-                    Some((offset, _)) => *offset,
-                    None => lane.native_payload.len(),
-                }
+            let class = native_object_class(feature.input_class.as_deref().unwrap_or_default());
+            if !matches!(class, NativeClassKind::MirrorPattern | NativeClassKind::CircularPattern | NativeClassKind::LinearPattern | NativeClassKind::CurvePattern) {
+                continue;
+            }
+            let Some(model_index) = model_of(feature.id.as_str())? else {
+                continue;
             };
-            if native_object_class(feature.input_class.as_deref().unwrap_or_default())
-                == NativeClassKind::MirrorPattern
-            {
-                let Some(model_index) = model_of(feature.id.as_str())? else {
-                    continue;
-                };
+            if class == NativeClassKind::MirrorPattern {
                 let (needs_plane, needs_seeds) =
                     match model_features[model_index].evaluation.definition() {
                         FeatureDefinition::Operation(FeatureOperation::Pattern {
@@ -298,7 +292,11 @@ pub(crate) fn bind_pattern_inputs(
                         }) => (pattern.is_unresolved(), seeds.is_empty()),
                         _ => continue,
                     };
-                if (!needs_plane && !needs_seeds) || start >= end {
+                if !needs_plane && !needs_seeds {
+                    continue;
+                }
+                let (end, has_derived_cosmetic_thread_output) = object_interval(start_index);
+                if start >= end {
                     continue;
                 }
                 let object = &lane.native_payload[start..end];
@@ -339,6 +337,10 @@ pub(crate) fn bind_pattern_inputs(
                         })?;
                     let Some(components) = components else {
                         continue;
+                    };
+                    let by_source = match &mut by_source {
+                        Some(index) => index,
+                        slot @ None => slot.insert(FeaturesBySource::new(ctx, history_features.iter().copied())?),
                     };
                     let Some(native) = by_source.terminal_feature(ctx, &components)? else {
                         continue;
@@ -407,9 +409,6 @@ pub(crate) fn bind_pattern_inputs(
                 continue;
             }
             if feature.input_class.as_deref() == Some("moCirPattern_c") {
-                let Some(model_index) = model_of(feature.id.as_str())? else {
-                    continue;
-                };
                 let (needs_seed, needs_axis) = match model_features[model_index]
                     .evaluation
                     .definition()
@@ -429,7 +428,11 @@ pub(crate) fn bind_pattern_inputs(
                     }
                     _ => continue,
                 };
-                if (!needs_seed && !needs_axis) || start >= end {
+                if !needs_seed && !needs_axis {
+                    continue;
+                }
+                let (end, _) = object_interval(start_index);
+                if start >= end {
                     continue;
                 }
                 if needs_seed {
@@ -455,6 +458,10 @@ pub(crate) fn bind_pattern_inputs(
                             {
                                 continue;
                             }
+                            let by_source = match &mut by_source {
+                                Some(index) => index,
+                                slot @ None => slot.insert(FeaturesBySource::new(ctx, history_features.iter().copied())?),
+                            };
                             let Some(seed) = by_source.source(
                                 ctx,
                                 identity.feature_source_id.value(),
@@ -522,9 +529,13 @@ pub(crate) fn bind_pattern_inputs(
                 continue;
             }
             if feature.input_class.as_deref() == Some("moLPattern_c") {
-                let Some(model_index) = model_of(feature.id.as_str())? else {
+                if !matches!(model_features[model_index].evaluation.definition(),
+                    FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern })
+                        if matches!(pattern.definition(), PatternTransform::Unresolved { form: Some(cadmpeg_ir::features::patterns::PatternForm::Linear) })
+                            || matches!(pattern.definition(), PatternTransform::Linear { direction, .. } if seeds.is_empty() || direction.is_none())) {
                     continue;
-                };
+                }
+                let (end, has_derived_cosmetic_thread_output) = object_interval(start_index);
                 if matches!(&(model_features[model_index].evaluation.definition()),
                     FeatureDefinition::Operation(FeatureOperation::Pattern {
                         pattern: admitted_pattern,
@@ -735,9 +746,6 @@ pub(crate) fn bind_pattern_inputs(
             if feature.input_class.as_deref() != Some("moCurvePattern_c") {
                 continue;
             }
-            let Some(model_index) = model_of(feature.id.as_str())? else {
-                continue;
-            };
             let (needs_seed, needs_path) = match model_features[model_index].evaluation.definition()
             {
                 FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) => {
