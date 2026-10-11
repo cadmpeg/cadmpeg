@@ -817,16 +817,21 @@ fn decode_exchange_mode(
                 let bytes = session
                     .ctx
                     .copy_retained(&input[signature.clone()], "step_signature_record")?;
-                if let Some(count) = ctx.get_mut_btree_map(
-                    &mut counts, "SIGNATURE", "step_opaque_kind_counts",
-                )? {
+                if let Some(count) =
+                    ctx.get_mut_btree_map(&mut counts, "SIGNATURE", "step_opaque_kind_counts")?
+                {
                     *count += 1;
                 } else {
                     let signature_kind = opaque_storage.with_storage(|| {
                         ctx.copy_retained_text("SIGNATURE", "step_opaque_kind_text")
                     })?;
                     opaque_storage.with_storage(|| {
-                        ctx.insert_btree_map(&mut counts, signature_kind, 1, "step_opaque_kind_counts")
+                        ctx.insert_btree_map(
+                            &mut counts,
+                            signature_kind,
+                            1,
+                            "step_opaque_kind_counts",
+                        )
                     })?;
                 }
                 opaque.push(UnknownRecord::retained(
@@ -1686,9 +1691,8 @@ fn count_unknown_kind(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let mut candidate_storage = ctx.reserve_scoped(0, "STEP opaque kind candidate")?;
-    let kind = candidate_storage.with_storage(|| {
-        record_type_text(record, ctx, "step_opaque_kind_text")
-    })?;
+    let kind = candidate_storage
+        .with_storage(|| record_type_text(record, ctx, "step_opaque_kind_text"))?;
     if let Some(count) = ctx.get_mut_btree_map(counts, &kind, "step_opaque_kind_counts")? {
         *count += 1;
     } else {
