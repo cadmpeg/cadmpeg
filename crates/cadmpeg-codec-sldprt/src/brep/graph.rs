@@ -1054,8 +1054,8 @@ pub(crate) fn decode_bodies(
     }
     let typed_bridge_attrs_storage;
     let typed_bridge_attrs;
-    (typed_bridge_attrs, typed_bridge_attrs_storage) =
-        ctx.with_scoped_storage("hold Parasolid typed face selector", || {
+    (typed_bridge_attrs, typed_bridge_attrs_storage) = ctx
+        .with_scoped_storage("hold Parasolid typed face selector", || {
             typed_facts.valid_ownership_face_attrs(ctx)
         })?;
     let selected_bridge_attrs = typed_bridge_attrs.as_ref();
@@ -1154,8 +1154,8 @@ fn decode_body(
     let typed_face_offsets = selector_storage.with_storage(|| {
         let _typed_face_attrs_storage;
         let typed_face_attrs;
-        (typed_face_attrs, _typed_face_attrs_storage) =
-            ctx.with_scoped_storage("hold Parasolid typed face selector", || {
+        (typed_face_attrs, _typed_face_attrs_storage) = ctx
+            .with_scoped_storage("hold Parasolid typed face selector", || {
                 typed_facts.valid_ownership_face_attrs(ctx)
             })?;
         selected_typed_face_offsets(ctx, &typed_facts, typed_face_attrs.as_ref())
@@ -1256,7 +1256,10 @@ fn unique_face_colors(
     let mut by_face = by_face_storage.with_storage(|| {
         // A face keeps its first current row, or a sticky conflict marker.
         let mut by_face = BTreeMap::<u16, Option<usize>>::new();
-        for (index, color) in ctx.admit_iter(&colors, "select Parasolid face colors")?.enumerate() {
+        for (index, color) in ctx
+            .admit_iter(&colors, "select Parasolid face colors")?
+            .enumerate()
+        {
             if ctx.get_btree_map(
                 &current_versions,
                 &color.face_attr,
@@ -1290,7 +1293,7 @@ fn unique_face_colors(
     let mut unresolved = 0;
     let mut by_color_storage = ctx.reserve_scoped(0, "resolve Parasolid color identities")?;
     let by_color = by_color_storage.with_storage(|| {
-        // Color identity agreement does not need copies of the selected rows.
+        // Color identities keep RGBA agreement or a sticky conflict marker.
         let mut by_color = BTreeMap::<u16, Option<cadmpeg_ir::topology::Color>>::new();
         for (_, &first) in ctx.admit_iter(&by_face, "select Parasolid face colors")? {
             let Some(first) = first else {
@@ -1325,7 +1328,12 @@ fn unique_face_colors(
             continue;
         };
         let color = &colors[index];
-        if ctx.get_btree_map(&by_color, &color.color_attr, "lookup Parasolid color agreement")?
+        if ctx
+            .get_btree_map(
+                &by_color,
+                &color.color_attr,
+                "lookup Parasolid color agreement",
+            )?
             .is_some_and(Option::is_some)
         {
             selected += 1;
@@ -1340,9 +1348,15 @@ fn unique_face_colors(
     }
     let mut out = Vec::new();
     ctx.reserve_capacity(&mut out, selected, "collect resolved Parasolid face colors")?;
-    for (index, color) in ctx.admit_iter(colors, "collect resolved Parasolid face colors")?.enumerate() {
-        if ctx.get_btree_map(&by_face, &color.face_attr, "lookup Parasolid selected face colors")?
-            == Some(&Some(index))
+    for (index, color) in ctx
+        .admit_iter(colors, "collect resolved Parasolid face colors")?
+        .enumerate()
+    {
+        if ctx.get_btree_map(
+            &by_face,
+            &color.face_attr,
+            "lookup Parasolid selected face colors",
+        )? == Some(&Some(index))
         {
             ctx.push_vec(&mut out, color, "collect resolved Parasolid face colors")?;
         }
@@ -1365,9 +1379,9 @@ fn typed_body_records(
     if facts.bodies.is_empty() {
         return Ok(None);
     }
-    let _hierarchy_storage;
+    let hierarchy_storage;
     let hierarchies;
-    (hierarchies, _hierarchy_storage) =
+    (hierarchies, hierarchy_storage) =
         ctx.with_scoped_storage("hold typed Parasolid hierarchies", || {
             let _bridge_attrs_storage;
             let bridge_attrs;
@@ -1489,6 +1503,7 @@ fn typed_body_records(
                 "collect typed Parasolid body regions",
             )?;
         }
+        drop((shells_by_region, faces_by_shell, scratch));
         ctx.stable_sort_by(
             &mut regions,
             |value| &value.attr,
@@ -1507,6 +1522,7 @@ fn typed_body_records(
             "collect typed Parasolid body records",
         )?;
     }
+    drop((hierarchies, hierarchy_storage));
     ctx.stable_sort_by(
         &mut records,
         |value| &value.attr,
@@ -1872,7 +1888,7 @@ mod binding_color_storage_tests {
     };
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::topology::{BodyKind, Color};
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
 
     const PROBE: &str = "probe graph stage storage";
 
@@ -2028,17 +2044,19 @@ mod binding_color_storage_tests {
     #[test]
     fn body_bridges_are_not_indexed_without_typed_bodies() {
         let mut tables = topology::Tables::default();
-        tables.insert_bridge(
-            &cadmpeg_test_support::service_decode_context(),
-            topology::Bridge {
-                attr: 10,
-                refs: [0; 5],
-                sequence: 0,
-                sense: Sense::Forward,
-                owner: None,
-                offset: 0,
-            },
-        ).expect("fixture bridge");
+        tables
+            .insert_bridge(
+                &cadmpeg_test_support::service_decode_context(),
+                topology::Bridge {
+                    attr: 10,
+                    refs: [0; 5],
+                    sequence: 0,
+                    sense: Sense::Forward,
+                    owner: None,
+                    offset: 0,
+                },
+            )
+            .expect("fixture bridge");
         let error = crate::test_support::work_refusal_at(PROBE, |ctx| {
             let records = super::typed_body_records(ctx, &super::typed::Facts::default(), &tables)?;
             assert!(records.is_none());
@@ -2081,8 +2099,8 @@ mod binding_color_storage_tests {
 
     #[test]
     fn face_color_stages_reuse_consumed_map_storage() {
-        // The live storage bound is two grouped maps, or one grouped map and
-        // the returned vector. The version index does not overlap either pair.
+        // Two grouped maps, or one grouped map and an output vector, define
+        // the cap. Version storage ends before color agreement begins.
         let mut cap = 0;
         for second_map in [true, false] {
             let boundary = storage_boundary(|ctx| {
@@ -2138,20 +2156,25 @@ mod binding_color_storage_tests {
             Ok(())
         });
         let cap = bound.used + bound.additional;
-        let colors: Vec<_> = (1..=128).rev().map(|attr| {
-            let mut row = color();
-            row.face_attr = attr;
-            row.color_attr = 999 + attr;
-            row
-        }).collect();
-        let versions: Vec<_> = (1..=128).map(|face_attr| entity::FaceColorVersion {
-            face_attr,
-            seq: 1,
-            stream_order: 0,
-        }).collect();
-        let (selected, unresolved) = storage_run(cap, |ctx| {
-            unique_face_colors(ctx, colors, versions)
-        }).expect("only live selection backing is charged");
+        let colors: Vec<_> = (1..=128)
+            .rev()
+            .map(|attr| {
+                let mut row = color();
+                row.face_attr = attr;
+                row.color_attr = 999 + attr;
+                row
+            })
+            .collect();
+        let versions: Vec<_> = (1..=128)
+            .map(|face_attr| entity::FaceColorVersion {
+                face_attr,
+                seq: 1,
+                stream_order: 0,
+            })
+            .collect();
+        let (selected, unresolved) =
+            storage_run(cap, |ctx| unique_face_colors(ctx, colors, versions))
+                .expect("only live selection backing is charged");
         assert_eq!(unresolved, 0);
         assert_eq!(selected.len(), 128);
         for (index, row) in selected.iter().enumerate() {
@@ -2189,19 +2212,34 @@ mod binding_color_storage_tests {
         let mut independent = color();
         independent.face_attr = 9;
         independent.color_attr = 23;
-        let versions = (9..=14).map(|face_attr| entity::FaceColorVersion {
-            face_attr,
-            seq: 1,
-            stream_order: 0,
-        }).collect();
+        let versions = (9..=14)
+            .map(|face_attr| entity::FaceColorVersion {
+                face_attr,
+                seq: 1,
+                stream_order: 0,
+            })
+            .collect();
         let (rows, unresolved) = unique_face_colors(
             &cadmpeg_test_support::service_decode_context(),
-            vec![first, duplicate, face_conflict.clone(), conflicting_face,
-                face_conflict, shared, conflicting_shared, later_shared, independent],
+            vec![
+                first,
+                duplicate,
+                face_conflict.clone(),
+                conflicting_face,
+                face_conflict,
+                shared,
+                conflicting_shared,
+                later_shared,
+                independent,
+            ],
             versions,
-        ).expect("color agreement");
+        )
+        .expect("color agreement");
         assert_eq!(unresolved, 4);
-        assert_eq!(rows.iter().map(|row| row.face_attr).collect::<Vec<_>>(), vec![9, 10]);
+        assert_eq!(
+            rows.iter().map(|row| row.face_attr).collect::<Vec<_>>(),
+            vec![9, 10]
+        );
         assert_eq!(rows[1].offset, 90);
         assert_eq!(rows[1].target.as_deref(), Some("first-target"));
     }
@@ -2211,10 +2249,15 @@ mod binding_color_storage_tests {
         for index in 0..32_u16 {
             let base = index * 200;
             bytes.extend(crate::test_support::parasolid::owned_triangle_with_kind(
-                base, base + 190, f64::from(index) * 2.0, 1,
+                base,
+                base + 190,
+                f64::from(index) * 2.0,
+                1,
             ));
             bytes.extend(crate::test_support::parasolid::line_carrier(
-                10_000 + index, [0.0; 3], [1.0, 0.0, 0.0],
+                10_000 + index,
+                [0.0; 3],
+                [1.0, 0.0, 0.0],
             ));
         }
         bytes
@@ -2226,10 +2269,15 @@ mod binding_color_storage_tests {
         let fixture_ctx = cadmpeg_test_support::service_decode_context();
         let facts = super::typed::scan(&bytes, &fixture_ctx).unwrap();
         let attrs = facts.valid_ownership_face_attrs(&fixture_ctx).unwrap();
-        let offsets = super::selected_typed_face_offsets(&fixture_ctx, &facts, attrs.as_ref()).unwrap();
+        let offsets =
+            super::selected_typed_face_offsets(&fixture_ctx, &facts, attrs.as_ref()).unwrap();
         let tables = topology::scan_with_curve_attrs_excluding(
-            &fixture_ctx, &bytes, &Default::default(), &offsets,
-        ).unwrap();
+            &fixture_ctx,
+            &bytes,
+            &BTreeSet::new(),
+            &offsets,
+        )
+        .unwrap();
         let mut output_bytes = 0;
         let boundary = storage_boundary(|ctx| {
             let records = super::typed_body_records(ctx, &facts, &tables)?.unwrap();
@@ -2275,10 +2323,13 @@ mod binding_color_storage_tests {
         let bytes = selector_body();
         let fixture_ctx = cadmpeg_test_support::service_decode_context();
         let carriers = super::scan_stream_carriers(&fixture_ctx, &bytes).unwrap();
-        let curve_attrs = super::CarrierView::Stream(&carriers).curve_attrs(&fixture_ctx).unwrap();
+        let curve_attrs = super::CarrierView::Stream(&carriers)
+            .curve_attrs(&fixture_ctx)
+            .unwrap();
         let typed = super::typed::scan(&bytes, &fixture_ctx).unwrap();
         let attrs = typed.valid_ownership_face_attrs(&fixture_ctx).unwrap();
-        let offsets = super::selected_typed_face_offsets(&fixture_ctx, &typed, attrs.as_ref()).unwrap();
+        let offsets =
+            super::selected_typed_face_offsets(&fixture_ctx, &typed, attrs.as_ref()).unwrap();
         assert_eq!(curve_attrs.len(), 32);
         assert_eq!(attrs.as_ref().unwrap().len(), 32);
         assert_eq!(offsets.len(), 32);
@@ -2289,33 +2340,58 @@ mod binding_color_storage_tests {
             let carriers = super::scan_stream_carriers(ctx, &bytes)?;
             let mut source_storage = ctx.reserve_scoped(0, "test source records")?;
             let typed = source_storage.with_storage(|| super::typed::scan(&bytes, ctx))?;
-            let tables = source_storage.with_storage(|| topology::scan_with_curve_attrs_excluding(
-                ctx, &bytes, &curve_attrs, &offsets,
-            ))?;
+            let tables = source_storage.with_storage(|| {
+                topology::scan_with_curve_attrs_excluding(ctx, &bytes, &curve_attrs, &offsets)
+            })?;
             let facts = entity::scan_metadata(ctx, &bytes, false)?;
-            super::decode_graph(ctx, super::CarrierView::Stream(&carriers), &tables, facts, &typed, &stream)
+            super::decode_graph(
+                ctx,
+                super::CarrierView::Stream(&carriers),
+                &tables,
+                facts,
+                &typed,
+                &stream,
+            )
         });
         let actual = body_emission_boundary(|ctx| super::decode_body(ctx, &bytes, &stream));
-        assert_eq!((actual.used, actual.additional), (expected.used, expected.additional));
+        assert_eq!(
+            (actual.used, actual.additional),
+            (expected.used, expected.additional)
+        );
     }
 
     #[test]
     fn multi_stream_face_selector_ends_before_graph_emission() {
         let bytes = selector_body();
         let payload = crate::test_support::parasolid::parasolid_with_body(
-            "partition", "SCH_2400149_24000_13006", &bytes,
+            "partition",
+            "SCH_2400149_24000_13006",
+            &bytes,
         );
         let deltas = crate::test_support::parasolid::parasolid_with_body(
-            "deltas", "SCH_2400149_24000_13006", &[],
+            "deltas",
+            "SCH_2400149_24000_13006",
+            &[],
         );
         let fixture_ctx = cadmpeg_test_support::service_decode_context();
-        let primary_header = crate::parasolid::stream_header(&fixture_ctx, &payload).unwrap().unwrap();
-        let delta_header = crate::parasolid::stream_header(&fixture_ctx, &deltas).unwrap().unwrap();
+        let primary_header = crate::parasolid::stream_header(&fixture_ctx, &payload)
+            .unwrap()
+            .unwrap();
+        let delta_header = crate::parasolid::stream_header(&fixture_ctx, &deltas)
+            .unwrap()
+            .unwrap();
         let stream = cadmpeg_ir::stream_name!("selector-lifetimes");
         let expected = body_emission_boundary(|ctx| super::decode_body(ctx, &bytes, &stream));
-        let actual = body_emission_boundary(|ctx| super::decode_bodies(
-            ctx, &[(&payload, &primary_header), (&deltas, &delta_header)], &stream,
-        ));
-        assert_eq!((actual.used, actual.additional), (expected.used, expected.additional));
+        let actual = body_emission_boundary(|ctx| {
+            super::decode_bodies(
+                ctx,
+                &[(&payload, &primary_header), (&deltas, &delta_header)],
+                &stream,
+            )
+        });
+        assert_eq!(
+            (actual.used, actual.additional),
+            (expected.used, expected.additional)
+        );
     }
 }
