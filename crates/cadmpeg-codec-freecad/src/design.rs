@@ -2345,7 +2345,7 @@ fn sketch_nurbs_lanes(
             break;
         };
         let mut source = 0..*multiplicity;
-        while source.len() != 0 {
+        while !source.is_empty() {
             let Some(_) = ctx.next_charged(&mut source, "fcstd sketch NURBS knot repetition")?
             else {
                 break;
@@ -4708,7 +4708,7 @@ fn vector_list_property(
             }
             let mut points = ctx.vector_storage(count, "fcstd vector-list points")?;
             let mut source = 0..count;
-            while source.len() != 0 {
+            while !source.is_empty() {
                 let Some(_) = ctx.next_charged(&mut source, "fcstd vector-list points")? else {
                     break;
                 };
@@ -5754,7 +5754,7 @@ fn part_fillet_edge_values(
     };
     let mut values = ctx.vector_storage(bounded.get(), "fcstd fillet edge values")?;
     let mut source = 0..count;
-    while source.len() != 0 {
+    while !source.is_empty() {
         let Some(_) = ctx.next_charged(&mut source, "fcstd fillet edge values")? else {
             break;
         };
@@ -8159,8 +8159,8 @@ fn multi_transform_stage_seeds<'ctx, 'features>(
         let Some(originals) = originals else {
             continue;
         };
-        let (_selected_storage, selected);
-        (selected, _selected_storage) =
+        let (selected_storage, selected);
+        (selected, selected_storage) =
             ctx.with_scoped_storage("fcstd multi-transform seed selection storage", || {
                 let mut selected = Vec::new();
                 let complete = ctx.all_by(
@@ -8194,7 +8194,7 @@ fn multi_transform_stage_seeds<'ctx, 'features>(
         if !complete || selected.is_empty() {
             continue;
         }
-        return Ok(Some((selected, _selected_storage)));
+        return Ok(Some((selected, selected_storage)));
     }
     Ok(None)
 }
@@ -8563,7 +8563,7 @@ fn pattern_locations(
                     let mut intervals =
                         ctx.vector_storage(interval_count, "freecad pattern intervals")?;
                     let mut source = 0..interval_count;
-                    while source.len() != 0 {
+                    while !source.is_empty() {
                         let Some(index) =
                             ctx.next_charged(&mut source, "freecad pattern intervals")?
                         else {
@@ -9000,7 +9000,7 @@ fn numeric_list(
             }
             let mut values = ctx.vector_storage(count, "fcstd numeric-list values")?;
             let mut source = 0..count;
-            while source.len() != 0 {
+            while !source.is_empty() {
                 let Some(_) = ctx.next_charged(&mut source, "fcstd numeric-list values")? else {
                     break;
                 };

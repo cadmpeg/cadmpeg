@@ -49,10 +49,7 @@ pub(crate) fn parse(
     let (data, storage) = ctx.with_scoped_storage("FreeCAD string-hasher carriers", || {
         validate_string_hasher_framing(ctx, root)
     })?;
-    let hashers = ScopedData {
-        data,
-        _storage: storage,
-    };
+    let hashers = ScopedData { data, storage };
     let mut entry_data = EntryLookup {
         entries,
         index: None,
@@ -353,10 +350,7 @@ pub(crate) fn bind_topology(
             .map(|occurrence| (occurrence.property.as_str(), occurrence)),
         "FreeCAD element topology occurrence index",
     )?;
-    let by_property = ScopedData {
-        data,
-        _storage: storage,
-    };
+    let by_property = ScopedData { data, storage };
     let mut map_iter = maps.iter_mut();
     while map_iter.len() != 0 {
         let Some(map) = ctx.next_charged(&mut map_iter, "FreeCAD element topology map scan")?
@@ -410,16 +404,10 @@ impl<'a, 'c> PropertyOwners<'a, 'c> {
                 }),
             "FreeCAD property ownership endpoints",
         )?;
-        let events = ScopedData {
-            data,
-            _storage: storage,
-        };
+        let events = ScopedData { data, storage };
         let (data, storage) =
             ctx.temporary_vec(events.data.len(), "FreeCAD property ownership spans")?;
-        let mut spans = ScopedData {
-            data,
-            _storage: storage,
-        };
+        let mut spans = ScopedData { data, storage };
         let mut active_count = 0_usize;
         let mut active_xor = 0_usize;
         let mut offsets = events.data.iter();
@@ -448,9 +436,12 @@ impl<'a, 'c> PropertyOwners<'a, 'c> {
         }
         let ScopedData {
             data: spans,
-            _storage,
+            storage,
         } = spans;
-        Ok(Self { spans, _storage })
+        Ok(Self {
+            spans,
+            _storage: storage,
+        })
     }
 }
 
@@ -809,10 +800,7 @@ fn parse_legacy_element_map<'c>(
     }
     let records = if file_version > 1 {
         let (data, storage) = node_text_bytes(ctx, marker)?;
-        let bytes = ScopedData {
-            data,
-            _storage: storage,
-        };
+        let bytes = ScopedData { data, storage };
         parse_legacy_stream(ctx, &bytes.data, Some(declared_count))?.1
     } else {
         parse_legacy_elements(ctx, marker, declared_count)?
@@ -867,10 +855,10 @@ fn parse_legacy_records<'c>(
     }
     let mut groups = ScopedData {
         data: BTreeMap::new(),
-        _storage: ctx.reserve_scoped(0, "FreeCAD legacy element groups")?,
+        storage: ctx.reserve_scoped(0, "FreeCAD legacy element groups")?,
     };
     let mut records_left = 0..count;
-    while records_left.len() != 0
+    while !records_left.is_empty()
         && ctx
             .next_charged(&mut records_left, "FreeCAD element-map record step")?
             .is_some()
@@ -898,7 +886,7 @@ fn parse_legacy_records<'c>(
         .ok_or_else(|| CodecError::malformed("legacy string-id count exceeds input"))?;
         let mut string_ids = ctx.collection_vec(sid_capacity, "FreeCAD legacy string IDs")?;
         let mut records_left = 0..sid_count;
-        while records_left.len() != 0
+        while !records_left.is_empty()
             && ctx
                 .next_charged(&mut records_left, "FreeCAD element-map record step")?
                 .is_some()
@@ -923,7 +911,7 @@ fn parse_legacy_elements<'c>(
 ) -> Result<LegacyNameGroups<'c>, CodecError> {
     let mut groups = ScopedData {
         data: BTreeMap::new(),
-        _storage: ctx.reserve_scoped(0, "FreeCAD legacy element groups")?,
+        storage: ctx.reserve_scoped(0, "FreeCAD legacy element groups")?,
     };
     let mut record_count = 0;
     let mut children = marker.children();
@@ -987,7 +975,7 @@ fn append_legacy_name(
     let (family, index) = split_indexed_name(ctx, indexed)?;
     if !ctx.contains_key_btree_map(&groups.data, family, "FreeCAD legacy element group lookup")? {
         let family = ctx.copy_retained_text(family, "FreeCAD legacy element family")?;
-        groups._storage.with_storage(|| {
+        groups.storage.with_storage(|| {
             ctx.insert_btree_map(
                 &mut groups.data,
                 family,
@@ -1230,7 +1218,7 @@ fn parse_string_table(
     let mut output = ctx.collection_vec(capacity, "FreeCAD string table entries")?;
     let mut previous_id = 0_i64;
     let mut records_left = 0..declared_count;
-    while records_left.len() != 0
+    while !records_left.is_empty()
         && ctx
             .next_charged(&mut records_left, "FreeCAD element-map record step")?
             .is_some()
@@ -1533,7 +1521,7 @@ fn parse_element_map(
     .ok_or_else(|| CodecError::malformed("element-map postfix count exceeds input"))?;
     let mut postfixes = ctx.collection_vec(postfix_capacity, "FreeCAD element map postfixes")?;
     let mut records_left = 0..postfix_count;
-    while records_left.len() != 0
+    while !records_left.is_empty()
         && ctx
             .next_charged(&mut records_left, "FreeCAD element-map record step")?
             .is_some()
@@ -1579,7 +1567,7 @@ fn parse_element_map(
         .ok_or_else(|| CodecError::Malformed("element-map group count exceeds input".into()))?;
         let mut groups = ctx.collection_vec(group_capacity, "FreeCAD element map groups")?;
         let mut records_left = 0..group_count;
-        while records_left.len() != 0
+        while !records_left.is_empty()
             && ctx
                 .next_charged(&mut records_left, "FreeCAD element-map record step")?
                 .is_some()
@@ -1600,7 +1588,7 @@ fn parse_element_map(
             let mut children =
                 ctx.collection_vec(child_capacity, "FreeCAD element map children")?;
             let mut records_left = 0..child_count;
-            while records_left.len() != 0
+            while !records_left.is_empty()
                 && ctx
                     .next_charged(&mut records_left, "FreeCAD element-map record step")?
                     .is_some()
@@ -1626,7 +1614,7 @@ fn parse_element_map(
             .ok_or_else(|| CodecError::Malformed("element-map name count exceeds input".into()))?;
             let mut names = ctx.collection_vec(name_capacity, "FreeCAD element map names")?;
             let mut records_left = 0..name_count;
-            while records_left.len() != 0
+            while !records_left.is_empty()
                 && ctx
                     .next_charged(&mut records_left, "FreeCAD element-map record step")?
                     .is_some()

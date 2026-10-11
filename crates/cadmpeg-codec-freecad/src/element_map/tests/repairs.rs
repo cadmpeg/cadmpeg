@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Element-map demand and diagnostic-order regressions.
 
+use std::fmt::Write as _;
+
 use super::{in_decode_context, legacy_entry, test_parse, test_property};
 use crate::element_map::{parse, parse_legacy_stream, parse_mapped_name};
 use cadmpeg_core::decode::refusal_probe::RefusalProbe;
@@ -162,9 +164,9 @@ fn string_hasher_invalid_first_threshold_does_not_admit_later_hashers() {
     let mut document = String::from("<Document>");
     for index in 0..257 {
         let threshold = if index == 0 { "nope" } else { "0" };
-        document.push_str(&format!(
+        write!(document,
             "<Property type=\"Part::PropertyPartShape\"><Part/><StringHasher threshold=\"{threshold}\" count=\"0\"/></Property>"
-        ));
+        ).expect("write fixture text");
     }
     document.push_str("</Document>");
     let xml = roxmltree::Document::parse(&document).unwrap();

@@ -81,7 +81,7 @@ fn empty_orchestration_paths_use_no_work() {
         .expect("no native namespace")
         .is_empty());
     assert!(
-        crate::first_difference(&ctx, &[] as &[u8], &[], "empty comparison")
+        crate::first_difference::<u8>(&ctx, &[], &[], "empty comparison")
             .expect("empty comparison")
             .is_none()
     );
@@ -367,7 +367,7 @@ fn mapped_name_record(
             0,
             crate::native::element_map::ScopedData {
                 data: groups.0,
-                _storage: groups.1,
+                storage: groups.1,
             },
         )
         .expect("root map")
@@ -640,7 +640,7 @@ fn decode_native_populations_use_scoped_storage_and_keep_serialized_output() {
 fn medium_detection_does_not_charge_unvisited_marker_suffixes() {
     // The fallback visits five windows before the marker at offset four.
     assert_detection_suffix_work(
-        b"PK\x03\x04Document.xml".to_vec(),
+        b"PK\x03\x04Document.xml",
         cadmpeg_ir::codec::Confidence::Medium,
         5,
     );
@@ -650,7 +650,7 @@ fn medium_detection_does_not_charge_unvisited_marker_suffixes() {
 fn high_detection_does_not_charge_unvisited_marker_suffixes() {
     // XML markers start at offsets zero and ten: one plus eleven visits.
     assert_detection_suffix_work(
-        crate::test_support::test_archive::archive(
+        &crate::test_support::test_archive::archive(
             "<Document SchemaVersion=\"4\" FileVersion=\"1\"/>",
         ),
         cadmpeg_ir::codec::Confidence::High,
@@ -658,14 +658,10 @@ fn high_detection_does_not_charge_unvisited_marker_suffixes() {
     );
 }
 
-fn assert_detection_suffix_work(
-    prefix: Vec<u8>,
-    expected: cadmpeg_ir::codec::Confidence,
-    work: u64,
-) {
+fn assert_detection_suffix_work(prefix: &[u8], expected: cadmpeg_ir::codec::Confidence, work: u64) {
     use cadmpeg_ir::codec::Codec;
     for suffix in [0, 64 * 1024] {
-        let mut bytes = prefix.clone();
+        let mut bytes = prefix.to_vec();
         bytes.resize(bytes.len() + suffix, 0);
         for below in [false, true] {
             let arena = DecodeArena::new();

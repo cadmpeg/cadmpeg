@@ -226,7 +226,7 @@ fn parse_mesh(
     }
     let mut vertices = ctx.collection_vec(point_count, "FreeCAD mesh vertices")?;
     let mut vertex_sources = 0..point_count;
-    while vertex_sources.len() != 0 {
+    while !vertex_sources.is_empty() {
         let Some(_) = ctx.next_charged(&mut vertex_sources, "FreeCAD mesh vertex visits")? else {
             break;
         };
@@ -244,7 +244,7 @@ fn parse_mesh(
         })?;
     let mut triangles = ctx.collection_vec(facet_capacity, "FreeCAD mesh facets")?;
     let mut facet_sources = 0..facet_count;
-    while facet_sources.len() != 0 {
+    while !facet_sources.is_empty() {
         let Some(_) = ctx.next_charged(&mut facet_sources, "FreeCAD mesh facet visits")? else {
             break;
         };
@@ -318,7 +318,7 @@ fn parse_points(
     drop(document);
     ctx.reserve_vec(points, count, "FreeCAD point-cloud points")?;
     let mut point_sources = 0..count;
-    while point_sources.len() != 0 {
+    while !point_sources.is_empty() {
         let Some(index) =
             ctx.next_charged(&mut point_sources, "FreeCAD point-cloud point visits")?
         else {

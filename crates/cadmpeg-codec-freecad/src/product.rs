@@ -525,7 +525,7 @@ pub(crate) fn transfer_neutral(
             )
         })?;
         let mut element_visits = 0..count;
-        while element_visits.len() != 0 {
+        while !element_visits.is_empty() {
             let Some(index) =
                 ctx.next_charged(&mut element_visits, "fcstd product occurrence elements")?
             else {

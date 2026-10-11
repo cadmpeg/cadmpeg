@@ -58,7 +58,7 @@ fn builder<'a, 'c, 'r, 'occ>(
         tables,
         ScopedData {
             data: cadmpeg_core::text::NonBlankString::try_from("Object").unwrap(),
-            _storage: ctx.reserve_scoped(0, "test source object").unwrap(),
+            storage: ctx.reserve_scoped(0, "test source object").unwrap(),
         },
         GeometryIndexes::new(ctx).unwrap(),
         None,
@@ -66,8 +66,8 @@ fn builder<'a, 'c, 'r, 'occ>(
     .unwrap()
 }
 
-fn assert_original<T>(result: Result<T, CodecError>, original: ResourceLimit) {
-    assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
+fn assert_original<T>(result: &Result<T, CodecError>, original: ResourceLimit) {
+    assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if *actual == original));
 }
 
 #[test]
@@ -100,7 +100,7 @@ fn indexed_polygon_first_invalid_node_leaves_suffix_unvisited() {
             panic!("first node exhausts work")
         };
         assert_eq!(original.used, 1);
-        assert_original(builder.indexed_polygon(1, 1), original);
+        assert_original(&builder.indexed_polygon(1, 1), original);
     });
     with_work(0, |ctx| {
         let builder = builder(ctx, &payload, tables);
@@ -109,7 +109,7 @@ fn indexed_polygon_first_invalid_node_leaves_suffix_unvisited() {
         };
         assert_eq!(original.operation, "FreeCAD indexed polygon node scan");
         assert_eq!((original.used, original.additional), (0, 1));
-        assert_original(builder.indexed_polygon(1, 1), original);
+        assert_original(&builder.indexed_polygon(1, 1), original);
     });
 }
 

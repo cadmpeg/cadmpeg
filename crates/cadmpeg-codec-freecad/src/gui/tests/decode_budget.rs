@@ -373,17 +373,18 @@ fn gui_deferred_removal_keeps_material_face_binding_identity() {
             element_maps: &[],
             requires_alpha_conversion: false,
         };
-        let mut shape_index = Some(shape);
-        let mut topology_index = Some(topology);
+        let mut indexes = super::super::AppearanceIndexes {
+            ir: &ir,
+            shape: Some(shape),
+            topology: Some(topology),
+        };
         super::super::transfer_shape_appearances(
             ctx,
             &mut plan,
             &graph,
             &materials,
             &sources,
-            &ir,
-            &mut shape_index,
-            &mut topology_index,
+            &mut indexes,
             &mut Vec::new(),
         )
         .expect("single material replacement");
@@ -403,7 +404,7 @@ fn gui_deferred_removal_keeps_material_face_binding_identity() {
         let key = cadmpeg_ir::identity_key!("Q");
         let appearance =
             AppearanceId::mint("fcstd:appearance:shape-material#Q:1").expect("appearance");
-        let topology = topology_index.as_mut().expect("topology index");
+        let topology = indexes.topology.as_mut().expect("topology index");
         super::super::bind_material_faces(
             ctx,
             topology,
@@ -419,6 +420,7 @@ fn gui_deferred_removal_keeps_material_face_binding_identity() {
             plan.bindings.last().expect("face binding").id.as_str(),
             "fcstd:appearance:binding#shape-material:Q:2"
         );
+        drop(indexes);
         plan.apply(ctx, &mut ir).expect("apply");
         assert_eq!(ir.model.appearance_bindings.len(), 3);
     });

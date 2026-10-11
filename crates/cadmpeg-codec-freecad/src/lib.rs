@@ -486,7 +486,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     let cyclic_products = ctx.with_scoped_storage("fcstd product cycle lookup", || {
         product::product_cycle_nodes(ctx, &product_nodes)
     })?;
-    let _cycle_storage = cyclic_products.1;
+    let cycle_storage = cyclic_products.1;
     let cyclic_products = cyclic_products.0;
     let mut node_sources = product_nodes.iter();
     while node_sources.len() != 0 {
@@ -548,7 +548,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         }
     }
     drop(cyclic_products);
-    drop(_cycle_storage);
+    drop(cycle_storage);
     let mut joint_sources = joints.iter();
     while joint_sources.len() != 0 {
         let Some(joint) = ctx.next_charged(&mut joint_sources, "FreeCAD validation joints")? else {
@@ -1253,10 +1253,10 @@ fn validate_logical_ledger(
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => entry.insert(ScopedData {
                 data: Vec::new(),
-                _storage: ctx.reserve_scoped(0, OPERATION)?,
+                storage: ctx.reserve_scoped(0, OPERATION)?,
             }),
         };
-        ctx.push_scoped_vec(&mut group._storage, &mut group.data, span, OPERATION)?;
+        ctx.push_scoped_vec(&mut group.storage, &mut group.data, span, OPERATION)?;
         let owner_valid = match &span.classification {
             native::LogicalClassification::Structural => true,
             native::LogicalClassification::Typed { owner }
@@ -1388,7 +1388,7 @@ fn validate_logical_ledger(
             break;
         };
         let ScopedData {
-            _storage: storage,
+            storage,
             data: mut spans,
         } = group;
         ctx.stable_sort_by_key(

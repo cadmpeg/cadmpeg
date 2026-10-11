@@ -6154,7 +6154,6 @@ fn normalize_periodic_knots(
 ) -> Result<(Vec<FiniteReal>, usize), CodecError> {
     let (knots, source_storage) = knots;
     let _source_storage = source_storage;
-    let knots = knots;
     if !periodic {
         return Ok((knots, 0));
     }

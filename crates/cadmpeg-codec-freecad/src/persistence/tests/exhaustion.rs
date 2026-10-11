@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact attribute visits and empty value populations.
 
+use std::fmt::Write as _;
+
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
@@ -38,7 +40,7 @@ fn link_alias_exhaustion_costs_only_actual_attribute_visits() {
 fn first_link_alias_error_does_not_visit_later_attributes() {
     let mut source = "<Link object=\"A\"".to_owned();
     for index in 0..1024 {
-        source.push_str(&format!(" z{index}=\"unused\""));
+        write!(source, " z{index}=\"unused\"").expect("write fixture text");
     }
     source.push_str("/>");
     let xml = roxmltree::Document::parse(&source).unwrap();

@@ -8,7 +8,7 @@ use cadmpeg_core::CodecError;
 /// Owns scoped scratch data and releases it before its reservation.
 pub(crate) struct ScopedData<'ctx, T> {
     pub(crate) data: T,
-    pub(crate) _storage: ScopedReservation<'ctx>,
+    pub(crate) storage: ScopedReservation<'ctx>,
 }
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

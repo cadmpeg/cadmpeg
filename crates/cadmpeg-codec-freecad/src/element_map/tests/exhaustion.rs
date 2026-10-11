@@ -27,8 +27,8 @@ fn parsed(groups: Vec<ElementMapGroup>) -> ParsedMap {
     }
 }
 
-fn assert_original<T>(result: Result<T, CodecError>, original: ResourceLimit) {
-    assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
+fn assert_original<T>(result: &Result<T, CodecError>, original: ResourceLimit) {
+    assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if *actual == original));
 }
 
 #[test]
@@ -147,7 +147,7 @@ fn field_refusal_preserves_unvisited_suffix_and_original_fuse() {
         assert_eq!(original.operation, "FreeCAD element-map field scan");
         assert_eq!((original.used, original.additional), (1, 1));
         assert_eq!(scanner.position, 1);
-        assert_original(scanner.next_field(ctx), original);
+        assert_original(&scanner.next_field(ctx), original);
         assert_eq!(scanner.position, 1);
     });
 }

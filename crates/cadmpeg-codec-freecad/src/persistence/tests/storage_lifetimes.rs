@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Persistence scratch retires with its last reader.
 
+use std::fmt::Write as _;
+
 use cadmpeg_core::decode::refusal_probe::RefusalProbe;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -156,7 +158,7 @@ fn consumed_dependency_vector_retires_before_the_next_object() {
     for _ in 0..DEPENDENCIES {
         text.push_str("<Dep Name=\"B\"/>");
     }
-    text.push_str(&format!("</ObjectDeps><ObjectDeps Name=\"B\" Count=\"0\"/><Object name=\"A\" type=\"T\"/><Object name=\"B\" type=\"{long_type}\"/></Objects><ObjectData Count=\"2\"><Object name=\"A\"/><Object name=\"B\"/></ObjectData></Document>"));
+    write!(text, "</ObjectDeps><ObjectDeps Name=\"B\" Count=\"0\"/><Object name=\"A\" type=\"T\"/><Object name=\"B\" type=\"{long_type}\"/></Objects><ObjectData Count=\"2\"><Object name=\"A\"/><Object name=\"B\"/></ObjectData></Document>").expect("write fixture text");
     let xml = roxmltree::Document::parse(&text).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

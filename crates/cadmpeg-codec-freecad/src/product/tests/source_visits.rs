@@ -139,14 +139,14 @@ fn product_source_helpers_preserve_identity_and_source_order() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty context");
     let records = [super::node("A", &[]), super::node("B", &[])];
     let index = product_record_index(&ctx, &records).expect("unique products");
-    assert!(std::ptr::eq(index["A"], &records[0]));
-    assert!(std::ptr::eq(index["B"], &records[1]));
+    assert!(std::ptr::eq(index["A"], &raw const records[0]));
+    assert!(std::ptr::eq(index["B"], &raw const records[1]));
     assert_eq!(
         linked_object_names(&ctx, &[None, Some(target()), None]).expect("names"),
         ["A"]
     );
     assert_eq!(
-        nonempty_subelements(&ctx, &["".into(), "Face2".into(), "Face1".into()])
+        nonempty_subelements(&ctx, &[String::new(), "Face2".into(), "Face1".into()])
             .expect("subelements"),
         ["Face2", "Face1"]
     );

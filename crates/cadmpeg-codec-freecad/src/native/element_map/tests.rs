@@ -428,15 +428,12 @@ fn legacy_root_node_allocation_releases_the_consumed_group_tree() {
                 3,
                 super::ScopedData {
                     data: groups,
-                    _storage: group_storage,
+                    storage: group_storage,
                 },
             )
         })
         .unwrap();
-    let nodes = super::ScopedData {
-        data,
-        _storage: storage,
-    };
+    let nodes = super::ScopedData { data, storage };
     drop(probe);
     assert_eq!(nodes.data.root().map_id, 3);
     assert_eq!(nodes.data.root().groups.len(), 8);

@@ -62,7 +62,7 @@ fn grounded(reference: Option<LinkTarget>) -> JointRecord {
     record(
         JointBody::Grounded {
             reference,
-            placement: Default::default(),
+            placement: crate::native::frame::FiniteFrame::default(),
         },
         BTreeMap::new(),
     )
@@ -79,13 +79,13 @@ fn pair(
             connectors: Box::new([
                 JointConnectorRecord {
                     reference: first,
-                    placement: Default::default(),
-                    offset: Default::default(),
+                    placement: crate::native::frame::FiniteFrame::default(),
+                    offset: crate::native::frame::FiniteFrame::default(),
                 },
                 JointConnectorRecord {
                     reference: second,
-                    placement: Default::default(),
-                    offset: Default::default(),
+                    placement: crate::native::frame::FiniteFrame::default(),
+                    offset: crate::native::frame::FiniteFrame::default(),
                 },
             ]),
         },

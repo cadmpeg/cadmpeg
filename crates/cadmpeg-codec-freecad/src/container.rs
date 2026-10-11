@@ -957,11 +957,11 @@ pub(crate) fn byte_coverage(
                 std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
                 std::collections::btree_map::Entry::Vacant(entry) => entry.insert(ScopedData {
                     data: Vec::new(),
-                    _storage: ctx.reserve_scoped(0, "FCStd entry logical spans")?,
+                    storage: ctx.reserve_scoped(0, "FCStd entry logical spans")?,
                 }),
             };
             ctx.push_scoped_vec(
-                &mut spans._storage,
+                &mut spans.storage,
                 &mut spans.data,
                 span,
                 "FCStd entry logical spans",
@@ -976,10 +976,7 @@ pub(crate) fn byte_coverage(
         .collect::<BTreeMap<_, _>>();
     let physical_exact = {
         let (data, storage) = ctx.temporary_vec(physical.len(), "FCStd ordered physical spans")?;
-        let mut ordered_physical = ScopedData {
-            data,
-            _storage: storage,
-        };
+        let mut ordered_physical = ScopedData { data, storage };
         ordered_physical
             .data
             .extend(ctx.admit_iter(physical, "FCStd ordered physical spans")?);
@@ -1018,7 +1015,7 @@ pub(crate) fn byte_coverage(
             Some(spans) => spans,
             None => ScopedData {
                 data: Vec::new(),
-                _storage: ctx.reserve_scoped(0, "FCStd entry logical spans")?,
+                storage: ctx.reserve_scoped(0, "FCStd entry logical spans")?,
             },
         };
         ctx.stable_sort_by_key(

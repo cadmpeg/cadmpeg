@@ -48,7 +48,7 @@ fn checked_joint_property_keeps_scalar_and_source_spelling() {
             parameters
                 .scalar_value(ctx, "Angle")
                 .expect("lookup")
-                .map(|value| value.get()),
+                .map(cadmpeg_ir::scalar::FiniteReal::get),
             Some(15.5)
         );
     });

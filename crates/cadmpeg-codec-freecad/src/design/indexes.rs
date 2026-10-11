@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Lazily built indexes used by FreeCAD design transfer.
+//! Lazily built indexes used by `FreeCAD` design transfer.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -51,7 +51,7 @@ impl<'ctx, 'arena, 'objects> ObjectIndex<'ctx, 'arena, 'objects> {
         };
         self.ctx
             .get_btree_map(entries, key, operation)
-            .map(|object| object.copied())
+            .map(Option::<&_>::copied)
     }
 }
 
@@ -183,7 +183,7 @@ impl<'ctx, 'arena, 'data> BodyPredecessors<'ctx, 'arena, 'data> {
         };
         self.ctx
             .get_btree_map(entries, key, operation)
-            .map(|feature| feature.copied())
+            .map(Option::<&_>::copied)
     }
 }
 

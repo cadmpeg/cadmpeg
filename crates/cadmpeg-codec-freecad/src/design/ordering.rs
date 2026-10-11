@@ -578,7 +578,7 @@ pub(super) fn bind_parameter_dependencies<'ctx>(
         })?;
     drop(candidate_storage);
     let mut source = 0..parameters.len();
-    while source.len() != 0 {
+    while !source.is_empty() {
         let Some(index) =
             ctx.next_charged(&mut source, "fcstd parameter dependency materialization")?
         else {
@@ -661,7 +661,7 @@ pub(super) fn bind_parameter_dependencies<'ctx>(
     (parameter_cycle_features, parameter_cycle_storage) =
         order_parameters_by_dependencies(ctx, parameters)?;
     let mut source = 0..parameters.len();
-    while source.len() != 0 {
+    while !source.is_empty() {
         let Some(index) =
             ctx.next_charged(&mut source, "fcstd parameter dependency cycle clearing")?
         else {

@@ -140,16 +140,15 @@ fn empty_and_unmatched_body_requests_create_no_prefix_groups() {
         topology
             .ensure_bodies(ctx, std::iter::empty::<&str>())
             .expect("empty demand");
-        assert!(!topology.body_candidates_built);
-        assert!(topology.body_candidates.is_empty());
         assert!(topology.body_candidate_storage.is_none());
+        assert!(topology.body_candidates.is_empty());
         assert!(topology.bodies.is_empty());
         assert!(topology.body_storage.is_none());
 
         topology
             .ensure_bodies(ctx, std::iter::once("fcstd:payload#missing"))
             .expect("unmatched demand");
-        assert!(topology.body_candidates_built);
+        assert!(topology.body_candidate_storage.is_some());
         assert!(topology.bodies.is_empty());
         assert!(topology.body_storage.is_none());
     });
@@ -213,7 +212,7 @@ fn body_group_refusal_uses_a_cached_source_index() {
     topology
         .ensure_bodies(&index_ctx, std::iter::once("fcstd:payload#missing"))
         .expect("cache source candidates before group construction");
-    assert!(topology.body_candidates_built);
+    assert!(topology.body_candidate_storage.is_some());
     assert!(topology.bodies.is_empty());
 
     let error = topology
