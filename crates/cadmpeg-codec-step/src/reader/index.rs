@@ -320,5 +320,4 @@ mod tests {
         assert!(matches!(ctx.finish_session(),
             Err(CodecError::ResourceLimit(sticky)) if sticky == refusal));
     }
-
 }

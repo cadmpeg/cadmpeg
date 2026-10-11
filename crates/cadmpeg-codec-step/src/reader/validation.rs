@@ -53,7 +53,8 @@ pub(super) fn decode<'ctx>(
     let mut representations = BTreeMap::new();
     let mut representation_source = exchange.records().iter();
     for _ in 0..representation_source.len() {
-        let (&id, record) = ctx.next_charged(&mut representation_source, "STEP decode traversal")?
+        let (&id, record) = ctx
+            .next_charged(&mut representation_source, "STEP decode traversal")?
             .ok_or_else(|| CodecError::malformed("STEP validation traversal source ended early"))?;
         let Some(representation_items) = super::representation::item_values(ctx, record)? else {
             continue;
@@ -61,9 +62,14 @@ pub(super) fn decode<'ctx>(
         let mut items = BTreeSet::new();
         let mut item_source = representation_items.iter();
         for _ in 0..item_source.len() {
-            let value = ctx.next_charged(&mut item_source, "STEP representation item traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP representation item source ended early"))?;
-            let Some(item) = value.reference() else { continue };
+            let value = ctx
+                .next_charged(&mut item_source, "STEP representation item traversal")?
+                .ok_or_else(|| {
+                    CodecError::malformed("STEP representation item source ended early")
+                })?;
+            let Some(item) = value.reference() else {
+                continue;
+            };
             scratch_storage.with_storage(|| {
                 ctx.insert_btree_set(&mut items, item, "step_validation_representation_items")
             })?;
@@ -182,8 +188,11 @@ pub(super) fn decode<'ctx>(
         })?;
         let mut item_source = item_ids.iter();
         for _ in 0..item_source.len() {
-            let &item_id = ctx.next_charged(&mut item_source, "STEP validation item traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP validation traversal source ended early"))?;
+            let &item_id = ctx
+                .next_charged(&mut item_source, "STEP validation item traversal")?
+                .ok_or_else(|| {
+                    CodecError::malformed("STEP validation traversal source ended early")
+                })?;
             let Some(item) =
                 ctx.get_btree_map(exchange.records(), &item_id, "STEP validation record get")?
             else {
@@ -266,8 +275,11 @@ pub(super) fn decode<'ctx>(
     if !validation_points.is_empty() {
         let mut record_source = exchange.records().iter();
         for _ in 0..record_source.len() {
-            let (&record_id, record) = ctx.next_charged(&mut record_source, "STEP decode traversal")?
-                .ok_or_else(|| CodecError::malformed("STEP validation traversal source ended early"))?;
+            let (&record_id, record) = ctx
+                .next_charged(&mut record_source, "STEP decode traversal")?
+                .ok_or_else(|| {
+                    CodecError::malformed("STEP validation traversal source ended early")
+                })?;
             if ctx.contains_btree_set(
                 &validation_representations,
                 &record_id,
@@ -277,12 +289,24 @@ pub(super) fn decode<'ctx>(
             }
             let mut partial_source = record.partials.iter();
             for _ in 0..partial_source.len() {
-                let partial = ctx.next_charged(&mut partial_source, "STEP validation reference partial traversal")?
-                    .ok_or_else(|| CodecError::malformed("STEP validation traversal source ended early"))?;
+                let partial = ctx
+                    .next_charged(
+                        &mut partial_source,
+                        "STEP validation reference partial traversal",
+                    )?
+                    .ok_or_else(|| {
+                        CodecError::malformed("STEP validation traversal source ended early")
+                    })?;
                 let mut parameter_source = partial.parameters.iter();
                 for _ in 0..parameter_source.len() {
-                    let value = ctx.next_charged(&mut parameter_source, "STEP validation reference parameter traversal")?
-                        .ok_or_else(|| CodecError::malformed("STEP validation traversal source ended early"))?;
+                    let value = ctx
+                        .next_charged(
+                            &mut parameter_source,
+                            "STEP validation reference parameter traversal",
+                        )?
+                        .ok_or_else(|| {
+                            CodecError::malformed("STEP validation traversal source ended early")
+                        })?;
                     scratch_storage.with_storage(|| {
                         collect_validation_references(
                             value,
@@ -549,9 +573,12 @@ fn collect_unit_records(
     };
     let mut element_source = elements.iter();
     for _ in 0..element_source.len() {
-        let value = ctx.next_charged(&mut element_source, "STEP derived unit element traversal")?
+        let value = ctx
+            .next_charged(&mut element_source, "STEP derived unit element traversal")?
             .ok_or_else(|| CodecError::malformed("STEP validation traversal source ended early"))?;
-        let Some(element) = value.reference() else { continue };
+        let Some(element) = value.reference() else {
+            continue;
+        };
         ctx.insert_btree_set(typed, element, "step_validation_claims")?;
         if let Some(base) = ctx
             .get_btree_map(exchange.records(), &element, "STEP validation record get")?
@@ -589,12 +616,14 @@ fn mesh_properties(
     let Some(body) = (ir.model.bodies.len() == 1).then(|| &ir.model.bodies[0].id) else {
         return Ok(None);
     };
-    let (meshes_buffer, mut mesh_storage) = ctx.temporary_vec(0, "STEP validation selected meshes")?;
+    let (meshes_buffer, mut mesh_storage) =
+        ctx.temporary_vec(0, "STEP validation selected meshes")?;
     let mut meshes = meshes_buffer;
     let mut origin = None;
     let mut mesh_source = ir.model.tessellations.iter();
     for _ in 0..mesh_source.len() {
-        let mesh = ctx.next_charged(&mut mesh_source, "STEP validation mesh selection traversal")?
+        let mesh = ctx
+            .next_charged(&mut mesh_source, "STEP validation mesh selection traversal")?
             .ok_or_else(|| CodecError::malformed("STEP validation traversal source ended early"))?;
         if !ctx.equal(
             &mesh.body.as_ref(),
@@ -619,7 +648,8 @@ fn mesh_properties(
     let mut extent = 0.0_f64;
     let mut extent_source = meshes.iter();
     for _ in 0..extent_source.len() {
-        let mesh = ctx.next_charged(&mut extent_source, "STEP validation mesh extent traversal")?
+        let mesh = ctx
+            .next_charged(&mut extent_source, "STEP validation mesh extent traversal")?
             .ok_or_else(|| CodecError::malformed("STEP validation traversal source ended early"))?;
         extent = extent.max(mesh::extent(mesh, origin, ctx)?);
     }
@@ -635,7 +665,11 @@ fn mesh_properties(
     let mut coordinate_scale = 0.0_f64;
     let mut property_source = meshes.iter();
     for _ in 0..property_source.len() {
-        let mesh = ctx.next_charged(&mut property_source, "STEP validation mesh property traversal")?
+        let mesh = ctx
+            .next_charged(
+                &mut property_source,
+                "STEP validation mesh property traversal",
+            )?
             .ok_or_else(|| CodecError::malformed("STEP validation traversal source ended early"))?;
         let mut edge_storage = ctx.reserve_scoped(0, "STEP mesh edge scratch")?;
         let mut edge_uses = BTreeMap::<(u32, u32), usize>::new();
@@ -701,7 +735,9 @@ fn mesh_properties(
             triangles += 1;
             Ok(true)
         })?;
-        if !complete { return Ok(None); }
+        if !complete {
+            return Ok(None);
+        }
         watertight &= !edge_uses.is_empty()
             && ctx.all_by(
                 edge_uses.values(),
@@ -788,8 +824,14 @@ fn collect_validation_references(
         Value::List(values) => {
             let mut value_source = values.iter();
             for _ in 0..value_source.len() {
-                let value = ctx.next_charged(&mut value_source, "STEP collect validation references value traversal")?
-                    .ok_or_else(|| CodecError::malformed("STEP validation traversal source ended early"))?;
+                let value = ctx
+                    .next_charged(
+                        &mut value_source,
+                        "STEP collect validation references value traversal",
+                    )?
+                    .ok_or_else(|| {
+                        CodecError::malformed("STEP validation traversal source ended early")
+                    })?;
                 collect_validation_references(value, validation_points, referenced, ctx)?;
             }
         }
