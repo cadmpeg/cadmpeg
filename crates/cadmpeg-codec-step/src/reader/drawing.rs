@@ -1381,15 +1381,22 @@ fn target_resolution<'ctx>(
             Vec::new(),
         )));
     }
-    let opaque_fallback = if !ctx.contains_hash_set(known_typed, &id, "STEP drawing known_typed contains")? {
-        ctx.get_btree_map(exchange.records(), &id, "STEP drawing record get")?
-    } else {
-        None
-    };
+    let opaque_fallback =
+        if ctx.contains_hash_set(known_typed, &id, "STEP drawing known_typed contains")? {
+            None
+        } else {
+            ctx.get_btree_map(exchange.records(), &id, "STEP drawing record get")?
+        };
     let wrapper = if let Some(cache) = wrappers {
         cache.resolve(id, target_identities, exchange, opaque_fallback.is_none())?
     } else {
-        wrapper_target_resolution(id, target_identities, exchange, opaque_fallback.is_none(), ctx)?
+        wrapper_target_resolution(
+            id,
+            target_identities,
+            exchange,
+            opaque_fallback.is_none(),
+            ctx,
+        )?
     };
     let wrapper_ambiguity = match wrapper {
         Some(WrapperTargetResolution::Singleton(identity)) => {
@@ -1441,7 +1448,7 @@ struct WrapperSummary<'ctx> {
     // Identity materialization omits empty branches and jumps to singleton
     // sources. The original edges remain available for target invalidation.
     target_children: Vec<u64>,
-    _edge_storage: ScopedReservation<'ctx>,
+    edge_storage: ScopedReservation<'ctx>,
 }
 
 struct WrapperCache<'ctx, 'arena> {
@@ -1707,22 +1714,43 @@ impl<'ctx, 'arena> WrapperCache<'ctx, 'arena> {
                         _ => WrapperTargets::Ambiguous,
                     };
                 }
-                let mut target_storage = ctx.reserve_scoped(0, "STEP wrapper target edge storage")?;
+                let mut target_storage =
+                    ctx.reserve_scoped(0, "STEP wrapper target edge storage")?;
                 let mut target_children = Vec::new();
                 if matches!(targets, WrapperTargets::Ambiguous) {
-                    let mut unique_storage = ctx.reserve_scoped(0, "STEP wrapper unique target edges")?;
+                    let mut unique_storage =
+                        ctx.reserve_scoped(0, "STEP wrapper unique target edges")?;
                     let mut unique = BTreeSet::new();
                     let mut children = node.children.iter();
-                    while let Some(&child_id) = ctx.next_charged(&mut children, "STEP wrapper target edge traversal")? {
-                        let child = ctx.get_btree_map(&values, &child_id, "STEP wrapper target edge summary")?
-                            .ok_or_else(|| CodecError::malformed("STEP wrapper target edge missing"))?;
+                    while let Some(&child_id) =
+                        ctx.next_charged(&mut children, "STEP wrapper target edge traversal")?
+                    {
+                        let child = ctx
+                            .get_btree_map(&values, &child_id, "STEP wrapper target edge summary")?
+                            .ok_or_else(|| {
+                                CodecError::malformed("STEP wrapper target edge missing")
+                            })?;
                         let (key, source) = match child.targets {
                             WrapperTargets::Empty => continue,
-                            WrapperTargets::Singleton { source, identity } => ((false, cadmpeg_core::decode::u64_from_index(identity)), source),
+                            WrapperTargets::Singleton { source, identity } => (
+                                (false, cadmpeg_core::decode::u64_from_index(identity)),
+                                source,
+                            ),
                             WrapperTargets::Ambiguous => ((true, child_id), child_id),
                         };
-                        if unique_storage.with_storage(|| ctx.insert_btree_set(&mut unique, key, "STEP wrapper unique target edges"))? {
-                            ctx.push_scoped_vec(&mut target_storage, &mut target_children, source, "STEP wrapper target edges")?;
+                        if unique_storage.with_storage(|| {
+                            ctx.insert_btree_set(
+                                &mut unique,
+                                key,
+                                "STEP wrapper unique target edges",
+                            )
+                        })? {
+                            ctx.push_scoped_vec(
+                                &mut target_storage,
+                                &mut target_children,
+                                source,
+                                "STEP wrapper target edges",
+                            )?;
                         }
                     }
                 }
@@ -1733,7 +1761,7 @@ impl<'ctx, 'arena> WrapperCache<'ctx, 'arena> {
                     .ok_or_else(|| CodecError::malformed("STEP wrapper node missing"))?;
                 node.complete = true;
                 node.cycle = cycle;
-                node._edge_storage.absorb(&mut target_storage)?;
+                node.edge_storage.absorb(&mut target_storage)?;
                 node.targets = targets;
                 node.target_children = target_children;
                 continue;
@@ -1841,7 +1869,7 @@ impl<'ctx, 'arena> WrapperCache<'ctx, 'arena> {
                             targets,
                             children: Vec::new(),
                             target_children: Vec::new(),
-                            _edge_storage: ctx.reserve_scoped(0, "STEP wrapper edge storage")?,
+                            edge_storage: ctx.reserve_scoped(0, "STEP wrapper edge storage")?,
                         },
                         "step_drawing_wrapper_complete",
                     )
@@ -1904,7 +1932,7 @@ impl<'ctx, 'arena> WrapperCache<'ctx, 'arena> {
                         targets: WrapperTargets::Empty,
                         children,
                         target_children: Vec::new(),
-                        _edge_storage: edge_storage,
+                        edge_storage,
                     },
                     "step_drawing_wrapper_active",
                 )
@@ -2000,7 +2028,9 @@ impl<'ctx, 'arena> WrapperCache<'ctx, 'arena> {
                             "STEP wrapper identity targets",
                         )? {
                             let mut targets = targets.iter();
-                            while let Some(target) = ctx.next_charged(&mut targets, "STEP wrapper identity members")? {
+                            while let Some(target) =
+                                ctx.next_charged(&mut targets, "STEP wrapper identity members")?
+                            {
                                 if !ctx.contains_btree_set(
                                     &identities,
                                     target,
@@ -2024,7 +2054,9 @@ impl<'ctx, 'arena> WrapperCache<'ctx, 'arena> {
                                     CodecError::malformed("STEP wrapper identity node missing")
                                 })?;
                             let mut children = node.target_children.iter();
-                            while let Some(child) = ctx.next_charged(&mut children, "STEP wrapper identity edges")? {
+                            while let Some(child) =
+                                ctx.next_charged(&mut children, "STEP wrapper identity edges")?
+                            {
                                 ctx.push_scoped_vec(
                                     &mut walk_storage,
                                     &mut pending,
