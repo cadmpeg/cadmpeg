@@ -86,13 +86,17 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must resolve a nonlocal selector to bind the relation context.
 
+**Note.** None of the 79 retained CATIA files contains the required legacy catalog opener. The local self-identity rule and synthetic nonlocal rejection do not establish the nonlocal selector namespace.
+
 ### DI-09. Legacy relation `param` selector
 
 **Question.** What identity space does a nonlocal `param` selector on a legacy typed relation use?
 
-**Known.** `catia.md` §7.1 "A typed relation consists of" defines the local identity case. A `param` selector inside the containing run can select the relation parameter.
+**Known.** `catia.md` §7.1 "A typed relation consists of" defines the local identity case. A `param` selector inside the containing run selects the relation parameter only when the `body` selector equals the relation's containing identity.
 
 **Need.** We must resolve a nonlocal selector to bind the relation result.
+
+**Note.** None of the 79 retained CATIA files contains the required legacy catalog opener. A synthetic same-run binding or nonlocal rejection does not establish an external parameter identity.
 
 ### DI-10. Evaluated `String` relation inputs
 
