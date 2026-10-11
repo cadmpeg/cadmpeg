@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{
+    u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+};
 use cadmpeg_core::CodecError;
 
 use crate::lex::{Lexer, LiteralStorage, TokenKind};
@@ -82,7 +84,7 @@ fn normalized_first_character_preserves_refusal_before_the_suffix() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     // The required complete length pass and first actual emission-byte visit.
-    policy.limits.max_work_units = data.len() as u64 + 1;
+    policy.limits.max_work_units = u64_from_index(data.len()) + 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
     let lexer = Lexer::new(&data, &ctx);
     let error = lexer
@@ -93,7 +95,10 @@ fn normalized_first_character_preserves_refusal_before_the_suffix() {
     };
     assert_eq!(limit.operation, "step_lex_normalized_retained");
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-    assert_eq!((limit.used, limit.additional), (data.len() as u64 + 1, 1));
+    assert_eq!(
+        (limit.used, limit.additional),
+        (u64_from_index(data.len()) + 1, 1)
+    );
     assert_eq!(ctx.resource_refusal(), Some(limit));
     drop(lexer);
     assert!(
@@ -132,7 +137,7 @@ fn empty_normalized_text_has_no_visit_and_preserves_fuse() {
 fn empty_unterminated_string_admits_its_real_diagnostic_copy() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = "unterminated string".len() as u64;
+    policy.limits.max_work_units = u64_from_index("unterminated string".len());
     let (ctx, _) = DecodeContext::from_root_bytes(b"'", &arena, &policy).unwrap();
     let mut lexer = Lexer::new(b"'", &ctx);
     let error = lexer.string().unwrap_err();

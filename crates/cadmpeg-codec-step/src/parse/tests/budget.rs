@@ -792,20 +792,30 @@ fn reference_bindings_are_admitted_before_map_allocation() {
 #[test]
 fn reference_stack_item_is_admitted_before_push() {
     let anchors = BTreeMap::from([("a".into(), Value::List(vec![Value::Integer(7)]))]);
-    let references = [ReferenceEntry { name: ReferenceName::Value(2), uri: "#a".into() }];
+    let references = [ReferenceEntry {
+        name: ReferenceName::Value(2),
+        uri: "#a".into(),
+    }];
     crate::test_support::with_service_context(b"reference", |_, ctx| {
-        assert_eq!(ReferenceResolver::new(&references, &anchors, ctx)
-            .expect("compile binding").resolve_value(&Value::ExternalReference(2), 0)
-            .expect("service admits reference"), anchors["a"]);
+        assert_eq!(
+            ReferenceResolver::new(&references, &anchors, ctx)
+                .expect("compile binding")
+                .resolve_value(&Value::ExternalReference(2), 0)
+                .expect("service admits reference"),
+            anchors["a"]
+        );
     });
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::CollectionItems, "step_reference_stack", |limit| {
+        ResourceDimension::CollectionItems,
+        "step_reference_stack",
+        |limit| {
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = limit;
             crate::test_support::with_policy_context(b"reference", &policy, |_, ctx| {
                 ReferenceResolver::new(&references, &anchors, ctx)?
                     .resolve_value(&Value::ExternalReference(2), 0)
-            }).map_err(|error| match error {
+            })
+            .map_err(|error| match error {
                 ResolveError::Resource(error) => error,
                 ResolveError::Syntax(message) => panic!("unexpected syntax error: {message}"),
             })
@@ -818,15 +828,21 @@ fn reference_stack_item_is_admitted_before_push() {
 #[test]
 fn reference_stack_refuses_retained_limit() {
     let anchors = BTreeMap::from([("a".into(), Value::List(vec![Value::Integer(7)]))]);
-    let references = [ReferenceEntry { name: ReferenceName::Value(2), uri: "#a".into() }];
+    let references = [ReferenceEntry {
+        name: ReferenceName::Value(2),
+        uri: "#a".into(),
+    }];
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::MaterializedBytes, "step_reference_stack", |limit| {
+        ResourceDimension::MaterializedBytes,
+        "step_reference_stack",
+        |limit| {
             let mut policy = DecodePolicy::service();
             policy.limits.max_materialized_bytes = limit;
             crate::test_support::with_policy_context(b"reference", &policy, |_, ctx| {
                 ReferenceResolver::new(&references, &anchors, ctx)?
                     .resolve_value(&Value::ExternalReference(2), 0)
-            }).map_err(|error| match error {
+            })
+            .map_err(|error| match error {
                 ResolveError::Resource(error) => error,
                 ResolveError::Syntax(message) => panic!("unexpected syntax error: {message}"),
             })

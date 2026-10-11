@@ -723,34 +723,22 @@ fn xml_root_start_tag(bytes: &[u8]) -> Option<XmlRootTag<'_>> {
             return None;
         }
         if bytes.get(cursor + 1) == Some(&b'?') {
-            let Some(tail) = bytes.get(cursor + 2..) else {
-                return None;
-            };
-            let Some(relative_end) = tail.windows(2).position(|window| window == b"?>") else {
-                return None;
-            };
+            let tail = bytes.get(cursor + 2..)?;
+            let relative_end = tail.windows(2).position(|window| window == b"?>")?;
             let end = relative_end + cursor + 2;
             cursor = end + 2;
             continue;
         }
         if bytes.get(cursor + 1..cursor + 4) == Some(b"!--") {
-            let Some(tail) = bytes.get(cursor + 4..) else {
-                return None;
-            };
-            let Some(relative_end) = tail.windows(3).position(|window| window == b"-->") else {
-                return None;
-            };
+            let tail = bytes.get(cursor + 4..)?;
+            let relative_end = tail.windows(3).position(|window| window == b"-->")?;
             let end = relative_end + cursor + 4;
             cursor = end + 3;
             continue;
         }
         if bytes.get(cursor + 1) == Some(&b'!') {
-            let Some(tail) = bytes.get(cursor + 2..) else {
-                return None;
-            };
-            let Some(relative_end) = tail.iter().position(|byte| *byte == b'>') else {
-                return None;
-            };
+            let tail = bytes.get(cursor + 2..)?;
+            let relative_end = tail.iter().position(|byte| *byte == b'>')?;
             let end = relative_end + cursor + 2;
             cursor = end + 1;
             continue;
@@ -761,9 +749,7 @@ fn xml_root_start_tag(bytes: &[u8]) -> Option<XmlRootTag<'_>> {
     if cursor == bytes.len() {
         return None;
     }
-    let Some(tag_end) = find_xml_tag_end(bytes, cursor + 1) else {
-        return None;
-    };
+    let tag_end = find_xml_tag_end(bytes, cursor + 1)?;
     let mut name_end = cursor + 1;
     while bytes
         .get(name_end)
@@ -803,10 +789,10 @@ fn has_namespace_value(attributes: &[u8], namespaces: &[&[u8]]) -> bool {
     .is_some()
 }
 
-fn xml_attribute_value<'a>(
-    attributes: &'a [u8],
+fn xml_attribute_value(
+    attributes: &[u8],
     mut matches: impl FnMut(&[u8], &[u8]) -> bool,
-) -> Option<&'a [u8]> {
+) -> Option<&[u8]> {
     let mut cursor = 0;
     while cursor < attributes.len() {
         while attributes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
@@ -833,9 +819,7 @@ fn xml_attribute_value<'a>(
         while attributes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
             cursor += 1;
         }
-        let Some(&delimiter) = attributes.get(cursor) else {
-            return None;
-        };
+        let &delimiter = attributes.get(cursor)?;
         if delimiter != b'\'' && delimiter != b'"' {
             return None;
         }

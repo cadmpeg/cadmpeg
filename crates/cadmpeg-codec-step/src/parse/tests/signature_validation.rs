@@ -28,7 +28,9 @@ fn signature_validation_error_escapes_with_retained_storage() {
                         crate::parse::ParseError::Syntax { .. } => {
                             cadmpeg_core::CodecError::malformed("syntax result")
                         }
-                        error => panic!("unexpected parse error: {error:?}"),
+                        error @ crate::parse::ParseError::Lex(_) => {
+                            panic!("unexpected parse error: {error:?}")
+                        }
                     })
             })
         },

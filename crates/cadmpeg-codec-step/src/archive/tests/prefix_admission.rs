@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{
+    u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+};
 use cadmpeg_core::CodecError;
 use zip::CompressionMethod;
 
@@ -33,7 +35,7 @@ fn empty_reference_notes_have_no_exhaustion_visit() {
 fn uri_member_releases_component_storage_while_the_member_is_live() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = (4 * std::mem::size_of::<&str>() + 1) as u64;
+    policy.limits.max_materialized_bytes = u64_from_index(4 * std::mem::size_of::<&str>() + 1);
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
     let mut member_storage = ctx.reserve_scoped(0, "test URI member storage").unwrap();
     let target = crate::archive::resolve_uri(&ctx, &mut member_storage, ROOT_NAME, "a").unwrap();
