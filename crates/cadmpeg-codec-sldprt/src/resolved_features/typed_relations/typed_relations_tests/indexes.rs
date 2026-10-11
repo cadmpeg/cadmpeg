@@ -388,3 +388,26 @@ fn linked_and_unrecognized_endpoint_queries_leave_geometry_unbuilt() {
     assert!(endpoints.is_empty());
     assert!(cache.is_none());
 }
+
+#[test]
+fn unlocated_unrecognized_curves_leave_geometry_unbuilt() {
+    for kind in [SketchInputKind::LineOrCircle, SketchInputKind::Arc] {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut curve = SketchInputEntity::new("unknown", "lane", 0, 0, kind);
+        curve.feature_ref = Some("feature".into());
+        let unrelated: Vec<_> = (1..65)
+            .map(|offset| point(&format!("extra-{offset}"), offset, Some("other")))
+            .collect();
+        let mut roster = vec![&curve];
+        roster.extend(unrelated.iter());
+        let by_id = roster.iter().map(|marker| (marker.id(), *marker)).collect();
+        let index = CurveMarkers::new(&ctx, &roster).unwrap();
+        let mut cache = None;
+        let endpoints = marker_curve_endpoint_markers_in(
+            &ctx, &[], &curve, &by_id, &index,
+            CurveEndpointGeometry::Cached { ctx: &ctx, payload: &[], cache: &mut cache },
+        ).unwrap();
+        assert!(endpoints.is_empty());
+        assert!(cache.is_none());
+    }
+}
