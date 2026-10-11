@@ -263,11 +263,22 @@ mod tests {
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        assert_eq!(super::exactly_one_by(&ctx, &[] as &[u32], |_| panic!("absent row"),
-            "test present unique rows").expect("empty query"), None);
-        assert!(super::unique_feature_datum_plane(&ctx, &[], 7).expect("empty datums").is_none());
+        assert_eq!(
+            super::exactly_one_by::<u32>(
+                &ctx,
+                &[],
+                |_| panic!("absent row"),
+                "test present unique rows"
+            )
+            .expect("empty query"),
+            None
+        );
+        assert!(super::unique_feature_datum_plane(&ctx, &[], 7)
+            .expect("empty datums")
+            .is_none());
         assert!(super::unique_feature_profile_definition(&ctx, &[], &[], 7)
-            .expect("empty profile sources").is_none());
+            .expect("empty profile sources")
+            .is_none());
     }
 
     #[test]

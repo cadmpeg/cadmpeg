@@ -3,6 +3,7 @@
 use crate::feature::definitions::{FeatureTrimEntity, FeatureTrimEntityTable, TrimEntityKind};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
+use std::collections::BTreeMap;
 use std::mem::size_of;
 
 fn assert_free_metadata_route(run: impl Fn(&DecodeContext<'_>) -> Result<bool, CodecError>) {
@@ -21,48 +22,67 @@ fn assert_free_metadata_route(run: impl Fn(&DecodeContext<'_>) -> Result<bool, C
 #[test]
 fn absent_trim_ids_are_free() {
     let definition = super::arc_radius_definition([3.0, 3.0]);
-    assert_free_metadata_route(|ctx| super::super::trim_segment_ids(ctx, &definition).map(|ids| ids.is_empty()));
+    assert_free_metadata_route(|ctx| {
+        super::super::trim_segment_ids(ctx, &definition).map(|ids| ids.is_empty())
+    });
 }
 
 #[test]
 fn absent_arc_carrier_kind_is_free() {
     let mut segment = super::arc_carrier_segment();
     segment.kind = crate::feature::definitions::FeatureSegmentKind::Point(7);
-    assert_free_metadata_route(|ctx| super::super::section_arc_carrier(
-        ctx, &Default::default(), &Default::default(), &segment).map(|carrier| carrier.is_none()));
+    assert_free_metadata_route(|ctx| {
+        super::super::section_arc_carrier(ctx, &BTreeMap::default(), &BTreeMap::default(), &segment)
+            .map(|carrier| carrier.is_none())
+    });
 }
 
 #[test]
 fn absent_arc_carrier_fields_are_free() {
     let mut segment = super::arc_carrier_segment();
     segment.radius_ref = None;
-    assert_free_metadata_route(|ctx| super::super::section_arc_carrier(
-        ctx, &Default::default(), &Default::default(), &segment).map(|carrier| carrier.is_none()));
+    assert_free_metadata_route(|ctx| {
+        super::super::section_arc_carrier(ctx, &BTreeMap::default(), &BTreeMap::default(), &segment)
+            .map(|carrier| carrier.is_none())
+    });
 }
 
 #[test]
 fn absent_axis_carrier_kind_is_free() {
     let segment = super::arc_carrier_segment();
-    assert_free_metadata_route(|ctx| super::super::section_axis_line_carrier_with_points(
-        ctx, &Default::default(), &segment).map(|carrier| carrier.is_none()));
+    assert_free_metadata_route(|ctx| {
+        super::super::section_axis_line_carrier_with_points(ctx, &BTreeMap::default(), &segment)
+            .map(|carrier| carrier.is_none())
+    });
 }
 
 #[test]
 fn absent_axis_carrier_selector_is_free() {
     let mut segment = super::arc_carrier_segment();
     segment.kind = crate::feature::definitions::FeatureSegmentKind::Line([1, 2]);
-    assert_free_metadata_route(|ctx| super::super::section_axis_line_carrier_with_points(
-        ctx, &Default::default(), &segment).map(|carrier| carrier.is_none()));
+    assert_free_metadata_route(|ctx| {
+        super::super::section_axis_line_carrier_with_points(ctx, &BTreeMap::default(), &segment)
+            .map(|carrier| carrier.is_none())
+    });
 }
 
 fn assert_absent_radius_relation(kind: u32) {
     let definition = super::arc_radius_definition([3.0, 3.0]);
     let relation = crate::feature::definitions::FeatureRelation {
-        relation_id: 1, used: 0, operands: Vec::new(), operand_vectors: None,
-        sign: 1, dimension_id: 0, relation_type: kind, body: Vec::new(), offset: 0,
+        relation_id: 1,
+        used: 0,
+        operands: Vec::new(),
+        operand_vectors: None,
+        sign: 1,
+        dimension_id: 0,
+        relation_type: kind,
+        body: Vec::new(),
+        offset: 0,
     };
-    assert_free_metadata_route(|ctx| super::super::section_radius_relation_arc(
-        ctx, &definition, &relation).map(|carrier| carrier.is_none()));
+    assert_free_metadata_route(|ctx| {
+        super::super::section_radius_relation_arc(ctx, &definition, &relation)
+            .map(|carrier| carrier.is_none())
+    });
 }
 
 #[test]
@@ -124,10 +144,11 @@ fn trim_last_unmatched_row_keeps_its_unique_segment_without_an_empty_visit() {
                         final_charge.set(Some((original.used, original.additional)));
                     }
                     *original
-                },
+                }
                 Ok(ids) => {
                     assert_eq!(*ids, vec![Some(10)]);
-                    let refusal = ctx.charge_work_limit(1, "after trim partner boundary")
+                    let refusal = ctx
+                        .charge_work_limit(1, "after trim partner boundary")
                         .expect_err("all route work used");
                     assert_eq!((refusal.used, refusal.additional), (work, 1));
                     refusal
@@ -136,14 +157,19 @@ fn trim_last_unmatched_row_keeps_its_unique_segment_without_an_empty_visit() {
             };
             assert_eq!(original.dimension, ResourceDimension::WorkUnits);
             if cap == work - scalar_bytes {
-                assert_eq!((original.operation, original.used, original.additional),
-                    ("creo trim segment IDs", work - scalar_bytes, scalar_bytes));
+                assert_eq!(
+                    (original.operation, original.used, original.additional),
+                    ("creo trim segment IDs", work - scalar_bytes, scalar_bytes)
+                );
             }
             result
         },
     );
     assert_eq!(ids, vec![Some(10)]);
-    assert_eq!(final_charge.get(), Some((work - scalar_bytes, scalar_bytes)));
+    assert_eq!(
+        final_charge.get(),
+        Some((work - scalar_bytes, scalar_bytes))
+    );
 }
 
 #[test]
