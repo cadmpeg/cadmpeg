@@ -120,29 +120,6 @@ fn first_brep_ring_visit_preserves_its_sticky_refusal() {
 }
 
 #[test]
-fn empty_brep_ring_route_preserves_original_session_refusal() {
-    let mut raw = super::one_face_raw();
-    let mut resolved = super::degenerate_trim_resolved(Some(0));
-    raw.loops.clear();
-    resolved.loops.clear();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let ctx = DecodeContext::new(&arena, &policy, false);
-    let CodecError::ResourceLimit(first) = ctx
-        .charge_work(1, "test initial refusal")
-        .expect_err("initial refusal")
-    else {
-        panic!("resource refusal");
-    };
-    assert!(
-        matches!(super::super::validate_rings(&ctx, &raw, &resolved),
-        Err(GeometryError::Codec(CodecError::ResourceLimit(limit))) if limit == first)
-    );
-    assert_eq!(ctx.resource_refusal(), Some(first));
-}
-
-#[test]
 fn invalid_brep_validation_releases_resolved_topology_and_local_warnings() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

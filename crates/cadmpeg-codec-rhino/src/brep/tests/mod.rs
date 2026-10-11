@@ -1545,7 +1545,7 @@ fn endpoint_incidence_counts_refuse_before_building() {
                         .unwrap();
                 let result = crate::brep::validate_edge_incidences(&ctx, &raw, &resolved);
                 assert!(matches!(
-                    ctx.charge_work(0, "after incidence refusal"),
+                    ctx.finish_session(),
                     Err(CodecError::ResourceLimit(_))
                 ));
                 result.map_err(|error| match error {

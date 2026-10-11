@@ -425,7 +425,10 @@ pub(crate) fn decode(
     scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<DecodedGeometry, GeometryError> {
+    let (candidate, storage) = ctx.with_scoped_storage("Rhino decoded geometry", || {
     decode_inner(ctx, data, class_uuid, range, scale, archive, 0)
+    })?;
+    Ok(storage.commit_value(candidate)?)
 }
 
 /// Decodes a Brep C2 curve in surface parameter space.
@@ -436,7 +439,10 @@ pub(crate) fn decode_2d(
     range: Range<usize>,
     archive: ArchiveVersion,
 ) -> Result<DecodedGeometry, GeometryError> {
+    let (candidate, storage) = ctx.with_scoped_storage("Rhino decoded C2 geometry", || {
     decode_inner_2d(ctx, data, class_uuid, range, archive, 0)
+    })?;
+    Ok(storage.commit_value(candidate)?)
 }
 
 pub(crate) fn decode_inner(
@@ -1379,11 +1385,14 @@ pub(crate) fn join_nurbs_curves(
     input_storage: Option<cadmpeg_core::decode::ScopedReservation<'_>>,
     input: Vec<NurbsCurve>,
     offset: usize,
-    mut result_storage: Option<&mut cadmpeg_core::decode::ScopedReservation<'_>>,
+    result_storage: Option<&mut cadmpeg_core::decode::ScopedReservation<'_>>,
     mut scratch_warnings: Option<&mut ScratchDiagnostics<'_>>,
 ) -> Result<NurbsCurve, GeometryError> {
-    let source_storage = input_storage;
-    let segments = input;
+    let source = (input, input_storage);
+    let (curve_buffer, mut storage) = ctx.with_scoped_storage("Rhino joined curve output", || {
+    let source = source;
+    let (segments_buffer, source_storage) = source;
+    let segments = segments_buffer;
     let Some(_) = segments.first() else {
         return Err(error(offset, "polycurve has no segments"));
     };
@@ -1399,17 +1408,12 @@ pub(crate) fn join_nurbs_curves(
     }
     if segments.len() == 1 {
         let segment = &segments[0];
-        let result = if let Some(storage) = result_storage.as_deref_mut() {
-            storage.with_storage(|| elevate_to_degree(ctx, segment, target, offset))
-        } else {
-            elevate_to_degree(ctx, segment, target, offset)
-        };
+        let result = elevate_to_degree(ctx, segment, target, offset);
         drop(segments);
         drop(source_storage);
         return result;
     }
     let mut container_storage = ctx.reserve_scoped(0, "Rhino elevated segment container")?;
-    let mut segment_storage = ctx.reserve_scoped(0, "Rhino elevated segment geometry")?;
     let mut elevated_segments = container_storage
         .with_storage(|| ctx.collection_vec(segments.len(), "Rhino elevated polycurve segments"))?;
     let segment_count = segments.len();
@@ -1418,9 +1422,9 @@ pub(crate) fn join_nurbs_curves(
         let segment = ctx
             .next_charged(&mut segment_source, "Rhino join nurbs segments traversal")?
             .ok_or_else(|| CodecError::malformed("Rhino join segment source ended early"))?;
-        elevated_segments.push(
-            segment_storage.with_storage(|| elevate_to_degree(ctx, segment, target, offset))?,
-        );
+        let mut segment_storage = ctx.reserve_scoped(0, "Rhino elevated segment geometry")?;
+        let elevated = segment_storage.with_storage(|| elevate_to_degree(ctx, segment, target, offset))?;
+        elevated_segments.push((elevated, segment_storage));
     }
     drop(segments);
     drop(source_storage);
@@ -1432,7 +1436,7 @@ pub(crate) fn join_nurbs_curves(
     let segment_count = segments.len();
     let mut segment_source = segments.iter();
     for _ in 0..segment_count {
-        let segment = ctx
+        let (segment, _) = ctx
             .next_charged(&mut segment_source, "Rhino join nurbs segments traversal")?
             .ok_or_else(|| CodecError::malformed("Rhino join segment source ended early"))?;
         let start = segment.knots().get(multiplicity - 1).copied();
@@ -1460,7 +1464,7 @@ pub(crate) fn join_nurbs_curves(
     }
     let rational = ctx.any_by(
         &segments[..],
-        |segment| {
+        |(segment, _)| {
             Ok(matches!(
                 segment.pole_rows(),
                 cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { .. }
@@ -1475,9 +1479,10 @@ pub(crate) fn join_nurbs_curves(
     let segment_count = segments.len();
     let mut segments = segments.into_iter().enumerate();
     for _ in 0..segment_count {
-        let (index, segment) = ctx
+        let (index, owned_segment) = ctx
             .next_charged(&mut segments, "Rhino joined segment traversal")?
             .ok_or_else(|| CodecError::malformed("Rhino joined segment source ended early"))?;
+        let segment = &owned_segment.0;
         let midpoint = if index > 0 {
             let Some(previous) = control_points.last().copied() else {
                 return Err(error(
@@ -1572,13 +1577,7 @@ pub(crate) fn join_nurbs_curves(
         }
         let knot_skip = if index == 0 { 0 } else { multiplicity };
         let knot_added = segment.knots().len() - knot_skip;
-        if let Some(storage) = result_storage.as_deref_mut() {
-            storage.with_storage(|| {
-                ctx.reserve_vec(&mut knots, knot_added, "Rhino joined polycurve knots")
-            })?;
-        } else {
-            ctx.reserve_vec(&mut knots, knot_added, "Rhino joined polycurve knots")?;
-        }
+        ctx.reserve_vec(&mut knots, knot_added, "Rhino joined polycurve knots")?;
         knots.extend(
             ctx.admit_iter(&segment.knots()[knot_skip..], "Rhino joined knot traversal")
                 .map_err(CodecError::from)?
@@ -1587,17 +1586,19 @@ pub(crate) fn join_nurbs_curves(
         );
     }
     drop(segments);
-    drop(segment_storage);
     drop(container_storage);
-    let constructed = if let Some(storage) = result_storage.as_deref_mut() {
-        storage.with_storage(|| {
-            NurbsCurve::from_checked_lanes(ctx, degree, knots, control_points, weights, false)
-        })?
-    } else {
-        NurbsCurve::from_checked_lanes(ctx, degree, knots, control_points, weights, false)?
-    };
+    let constructed = NurbsCurve::from_checked_lanes(ctx, degree, knots, control_points, weights, false)?;
     drop(output_storage);
     constructed.map_err(|error| GeometryError::malformed(offset, format!("{error}")))
+    })?;
+    let curve = curve_buffer;
+    if let Some(result_storage) = result_storage {
+        result_storage.absorb(&mut storage)?;
+        Ok(curve)
+    } else {
+        Ok(storage.commit_value(curve)?)
+    }
+
 }
 
 pub(crate) fn decode_inner_2d(
@@ -1870,6 +1871,7 @@ fn read_polyline(
     scale: MillimeterScale,
     expected_dimension: Option<i32>,
 ) -> Result<NurbsCurve, GeometryError> {
+    let (candidate, storage) = ctx.with_scoped_storage("Rhino polyline output", || {
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
     let point_count = crate::wire::element_count(reader, 24)?;
@@ -1946,6 +1948,8 @@ fn read_polyline(
     knots.push(parameters[point_count - 1].get());
     NurbsCurve::from_checked_lanes(ctx, 1, knots, points, None, false)?
         .map_err(|error| GeometryError::malformed(reader.position(), format!("{error}")))
+    })?;
+    Ok(storage.commit_value(candidate)?)
 }
 
 fn read_arc(
@@ -2374,6 +2378,7 @@ pub(crate) fn error(offset: usize, message: impl Into<String>) -> GeometryError 
 #[cfg(test)]
 mod tests {
     mod degenerate;
+    mod ownership;
 
     #[test]
     fn degree_elevation_preserves_nonuniform_rational_spans_and_unclamped_ends() {

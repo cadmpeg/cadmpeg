@@ -68,6 +68,7 @@ pub(crate) fn decode(
     scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<Cage, GeometryError> {
+    let (candidate, storage) = expand.ctx().with_scoped_storage("Rhino decoded cage", || {
     let (cage, next) = decode_at(expand, range.start, range.end, scale, archive)?;
     if next != range.end {
         return Err(GeometryError::malformed(
@@ -76,6 +77,8 @@ pub(crate) fn decode(
         ));
     }
     Ok(cage)
+    })?;
+    Ok(storage.commit_value(candidate)?)
 }
 
 pub(crate) fn decode_at(
@@ -85,6 +88,7 @@ pub(crate) fn decode_at(
     scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<(Cage, usize), GeometryError> {
+    let (candidate, storage) = expand.ctx().with_scoped_storage("Rhino cage candidate", || {
     let data = expand.data();
     let chunk = chunk_at(data, offset, end, archive, false)?;
     if chunk.typecode != ANONYMOUS || chunk.short() {
@@ -278,6 +282,8 @@ pub(crate) fn decode_at(
         },
         chunk.next_offset(),
     ))
+    })?;
+    Ok(storage.commit_value(candidate)?)
 }
 
 #[cfg(test)]

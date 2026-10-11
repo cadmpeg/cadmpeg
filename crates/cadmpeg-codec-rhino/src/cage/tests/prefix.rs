@@ -133,3 +133,23 @@ fn cage_header_i32_read_advances_four_bytes_before_minor_truncation() {
     ctx.finish_session()
         .expect("fixed header reads do not charge work");
 }
+
+#[test]
+fn cage_framing_rejection_releases_decoded_storage() {
+    let mut bytes = crc_chunk(ArchiveVersion::V5, ANONYMOUS, &rational_cage_body());
+    bytes.push(0);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 64 * 1024;
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let error = decode(MeshExpand::new(&ctx, root), 0..bytes.len(),
+        crate::settings::MillimeterScale::IDENTITY, ArchiveVersion::V8)
+        .expect_err("decoded cage has trailing framing bytes");
+    assert!(matches!(error, GeometryError::Malformed(crate::chunks::FramingError::Structural { offset: 0, message })
+        if message == "invalid NURBS cage framing"));
+    let reuse = ctx.reserve_scoped(policy.limits.max_materialized_bytes, "test failed cage scratch reuse")
+        .expect("all decoded cage backing was destroyed before recovery");
+    drop(reuse);
+    ctx.finish_session().expect("failed cage retains no storage");
+}

@@ -190,11 +190,12 @@ fn segment(
     })
 }
 
-pub(crate) fn decode(
-    expand: MeshExpand<'_>,
+pub(crate) fn decode<'ctx>(
+    expand: MeshExpand<'ctx>,
     range: Range<usize>,
     archive: ArchiveVersion,
-) -> Result<PersistentPolyEdge, FramingError> {
+) -> Result<(PersistentPolyEdge, cadmpeg_core::decode::ScopedReservation<'ctx>), FramingError> {
+    expand.ctx().with_scoped_storage("Rhino polyedge parse storage", || {
     let data = expand.data();
     let mut body = expand
         .root()
@@ -282,6 +283,7 @@ pub(crate) fn decode(
         parameters,
         segments,
     })
+    })
 }
 
 const SEMANTIC_JSON_OPERATION: &str = "Rhino polyedge semantic JSON";
@@ -361,6 +363,7 @@ pub(crate) fn semantic_json(
     ctx: &DecodeContext<'_>,
     polyedge: &PersistentPolyEdge,
 ) -> Result<Option<String>, CodecError> {
+    let (serialized, storage) = ctx.with_scoped_storage(SEMANTIC_JSON_OPERATION, || {
     let mut writer = SemanticJsonWriter {
         ctx,
         bytes: Vec::new(),
@@ -370,12 +373,14 @@ pub(crate) fn semantic_json(
     if let Some(refusal) = writer.refusal {
         return Err(refusal);
     }
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal));
-    }
     Ok(serialized
         .ok()
         .and_then(|()| String::from_utf8(writer.bytes).ok()))
+    })?;
+    match serialized {
+        Some(text) => Ok(Some(storage.commit_value(text)?)),
+        None => Ok(None),
+    }
 }
 
 #[cfg(test)]
