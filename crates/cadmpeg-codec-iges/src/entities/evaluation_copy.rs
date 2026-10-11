@@ -80,10 +80,18 @@ pub(super) fn procedural_surface(
             text_allocation(support.as_str(), ctx)?;
             array_allocation::<cadmpeg_ir::ids::CurveId>(boundaries.len(), ctx)?;
             array_allocation::<cadmpeg_ir::ids::PcurveId>(boundary_pcurves.len(), ctx)?;
-            for id in ctx.admit_iter(boundaries, COPY)? {
+            let mut input = boundaries.iter();
+            while input.len() != 0 {
+                let Some(id) = ctx.next_charged(&mut input, COPY)? else {
+                    break;
+                };
                 text_allocation(id.as_str(), ctx)?;
             }
-            for id in ctx.admit_iter(boundary_pcurves, COPY)? {
+            let mut input = boundary_pcurves.iter();
+            while input.len() != 0 {
+                let Some(id) = ctx.next_charged(&mut input, COPY)? else {
+                    break;
+                };
                 text_allocation(id.as_str(), ctx)?;
             }
         }
@@ -118,7 +126,11 @@ pub(super) fn procedural_curve(
                     cadmpeg_ir::scalar::FiniteReal,
                 >,
             >(payload.components().len(), ctx)?;
-            for component in ctx.admit_iter(payload.components(), COPY)? {
+            let mut input = payload.components().iter();
+            while input.len() != 0 {
+                let Some(component) = ctx.next_charged(&mut input, COPY)? else {
+                    break;
+                };
                 text_allocation(component.component.as_str(), ctx)?;
             }
         }
@@ -204,3 +216,6 @@ impl<'ctx> SourceGeometrySnapshot<'ctx> {
             .ok_or_else(|| CodecError::malformed("source geometry snapshot is absent"))
     }
 }
+
+#[cfg(test)]
+mod tests;
