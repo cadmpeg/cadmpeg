@@ -100,14 +100,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** None of the 79 retained CATIA files contains the required legacy catalog opener. A synthetic same-run binding or nonlocal rejection does not establish an external parameter identity.
 
-### DI-12. Typed `Boolean` value production
-
-**Question.** What byte production stores the scalar value of a typed `Boolean` parameter?
-
-**Known.** `catia.md` §7.3 "A complete entity-record suffix value begins" defines scalar, unset, atom, control, and schema-selected object values. Boolean-named field classes can contain compound object payloads.
-
-**Need.** We must know the scalar production to transfer a Boolean parameter.
-
 ### DI-13. Active configuration state
 
 **Question.** Which production defines document design configurations, and which field selects the active state?
