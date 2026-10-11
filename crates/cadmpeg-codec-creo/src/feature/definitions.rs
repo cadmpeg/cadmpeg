@@ -2572,6 +2572,7 @@ fn decode_parameter_scalar(
     const DICT_PREFIXES: &[u8] = &[
         0x5e, 0x60, 0x68, 0x6f, 0x71, 0x74, 0x81, 0x85, 0x8b, 0x90, 0x91, 0x99, 0xa1, 0xa2, 0xb7,
     ];
+    let payload = payload.get(..end)?;
     let prefix = *payload.get(offset)?;
     if DICT_PREFIXES.contains(&prefix) && offset + 7 <= end {
         let (first, second) = if prefix == 0xb7 {
@@ -2652,7 +2653,10 @@ fn decode_variable_scalar(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<(ScalarLane, usize), CodecError> {
-    let Some(&prefix) = payload.get(offset).filter(|_| offset < end) else {
+    let Some(payload) = payload.get(..end) else {
+        return Ok((ScalarLane::Undefined, offset));
+    };
+    let Some(&prefix) = payload.get(offset) else {
         return Ok((ScalarLane::Undefined, offset));
     };
     if matches!(prefix, 0x90 | 0xd7) && offset + 7 <= end {
@@ -2748,6 +2752,9 @@ fn decode_section_coordinate_scalar(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<(ScalarLane, usize), CodecError> {
+    let Some(payload) = payload.get(..end) else {
+        return Ok((ScalarLane::Undefined, offset));
+    };
     match payload.get(offset) {
         Some(0x00 | 0x34) if offset + 3 <= end => return Ok((ScalarLane::Undefined, offset + 3)),
         Some(0x01) if offset + 4 <= end => return Ok((ScalarLane::Undefined, offset + 4)),
@@ -2770,16 +2777,15 @@ fn decode_variable_guess(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<(ScalarLane, usize), CodecError> {
+    let Some(payload) = payload.get(..end) else {
+        return Ok((ScalarLane::Undefined, offset));
+    };
     if payload.get(offset) == Some(&0x18) {
         let mut trailing = offset + 1;
         let complete_suffix = (0..3).all(|_| {
-            if trailing >= end || payload[trailing] >= 0xc0 {
+            let Some((_, next)) = psb::complete_compact_int(payload, trailing) else {
                 return false;
-            }
-            let (_, next) = psb::compact_int(payload, trailing);
-            if next <= trailing {
-                return false;
-            }
+            };
             trailing = next;
             true
         });
@@ -4488,11 +4494,11 @@ fn section_3d(
     start: usize,
     end: usize,
 ) -> Result<Option<FeatureSection3d>, CodecError> {
+    const GSEC3D: &[u8] = b"\xe0\x00gsec3d_ptr\0";
+    const SAVED_RESULT: &[u8] = b"\xe0\x00p_saved_result\0";
     let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
         return Ok(None);
     };
-    const GSEC3D: &[u8] = b"\xe0\x00gsec3d_ptr\0";
-    const SAVED_RESULT: &[u8] = b"\xe0\x00p_saved_result\0";
     let Some(section) = ctx.find_bytes_in(
         payload,
         GSEC3D,
@@ -7590,14 +7596,14 @@ fn saved_spline_entities(
     cache: &scalar::ScalarCache,
     entities: &mut Vec<FeatureSavedEntity>,
 ) -> Result<(), CodecError> {
-    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
-        return Ok(());
-    };
     const LABEL: &[u8] = b"\xe0\x00save_entity_ptr(spline)\0";
     const POINTS_LABEL: &[u8] = b"\xe0\x02i_pnts\0";
     const POINTS: &[u8] = b"\xe0\x02i_pnts\0\xf9";
     const TANGENTS_LABEL: &[u8] = b"\xe0\x02end_tangts\0";
     const TANGENTS: &[u8] = b"\xe0\x02end_tangts\0\xf9\x02\x03";
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(());
+    };
     let mut search = start;
     while let Some(entity_offset) = ctx.find_bytes_in(
         payload,
@@ -7748,11 +7754,11 @@ fn saved_spline_parameters(
     point_count: usize,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<DecodedField<Vec<f64>>>, CodecError> {
+    const PARAMETERS_LABEL: &[u8] = b"\xe0\x02params\0";
+    const PARAMETERS: &[u8] = b"\xe0\x02params\0\xf8";
     let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
         return Ok(None);
     };
-    const PARAMETERS_LABEL: &[u8] = b"\xe0\x02params\0";
-    const PARAMETERS: &[u8] = b"\xe0\x02params\0\xf8";
     let Some(label) = ctx.find_bytes_in(
         payload,
         PARAMETERS,
