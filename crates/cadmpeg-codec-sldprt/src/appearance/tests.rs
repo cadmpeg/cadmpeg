@@ -234,8 +234,8 @@ fn visual_states_feature_assignment_decodes_identity_and_color() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .unwrap();
-    let assignments =
-        super::feature_assignments(&ctx, &crate::test_support::container::scan(&source)).unwrap();
+    let scan = crate::test_support::container::scan(&source);
+    let assignments = super::feature_assignments(&ctx, &scan).unwrap();
     assert_eq!(assignments.len(), 1);
     assert_eq!(assignments[0].feature_source_id.value(), 36);
     assert_eq!(assignments[0].feature_timestamp, 0x6a81_f0f4);
@@ -925,14 +925,13 @@ fn feature_appearance_class_workspace_keeps_only_assignment_output() {
     let source = feature_only_appearance_source();
     let scan = crate::test_support::container::scan(&source);
     let class_size = std::mem::size_of::<crate::tessellation::ClassInterval<'_>>();
-    let assignment_size = std::mem::size_of::<super::FeatureAppearanceAssignment>();
+    let assignment_size = std::mem::size_of::<super::FeatureAppearanceAssignment<'_>>();
     assert!((2..=1024).contains(&class_size));
     assert!((2..=1024).contains(&assignment_size));
     let class_bytes = u64::try_from(4 * class_size).unwrap();
-    // One retained source-name copy and the first four-slot assignment backing
-    // survive. The borrowed class roster does not survive the return.
-    let output_bytes =
-        u64::try_from("ThirdPtyStore/VisualStates".len() + 4 * assignment_size).unwrap();
+    // The four-slot assignment backing survives; names borrow the scan.
+    // The borrowed class roster does not survive the return.
+    let output_bytes = u64::try_from(4 * assignment_size).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = output_bytes;
@@ -940,10 +939,12 @@ fn feature_appearance_class_workspace_keeps_only_assignment_output() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let assignments = super::feature_assignments(&ctx, &scan).unwrap();
     assert_eq!(assignments.len(), 1);
+    let section = scan.sections(&ctx).unwrap().find(|section| section.name() == Some("ThirdPtyStore/VisualStates")).unwrap();
+    assert!(std::ptr::eq(assignments[0].source_name, section.source_stream()));
     assert_eq!(assignments[0].feature_source_id.value(), 36);
     assert_eq!(assignments[0].feature_timestamp, 10);
     assert_eq!(assignments[0].packed_color, 0x0000_ffec);
-    assert_eq!(assignments[0].color, super::packed_rgb(0x0000_ffec));
+    assert_eq!(super::packed_rgb(assignments[0].packed_color), super::packed_rgb(0x0000_ffec));
     assert_eq!(
         assignments[0].source_name.as_str(),
         "ThirdPtyStore/VisualStates"
@@ -1008,29 +1009,33 @@ fn feature_appearance_output_refuses_one_byte_below_assignment_backing() {
     let source = feature_only_appearance_source();
     let scan = crate::test_support::container::scan(&source);
     let class_size = std::mem::size_of::<crate::tessellation::ClassInterval<'_>>();
-    let assignment_size = std::mem::size_of::<super::FeatureAppearanceAssignment>();
+    let assignment_size = std::mem::size_of::<super::FeatureAppearanceAssignment<'_>>();
     assert!((2..=1024).contains(&class_size));
     assert!((2..=1024).contains(&assignment_size));
-    let source_bytes = u64::try_from("ThirdPtyStore/VisualStates".len()).unwrap();
     let assignment_bytes = u64::try_from(4 * assignment_size).unwrap();
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = source_bytes + assignment_bytes - 1;
-    policy.limits.max_materialized_bytes = u64::try_from(4 * class_size).unwrap();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let Err(CodecError::ResourceLimit(limit)) = super::feature_assignments(&ctx, &scan) else {
-        panic!("expected first assignment-vector growth refusal");
-    };
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "collect SLDPRT feature appearances",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            policy.limits.max_materialized_bytes = u64::try_from(4 * class_size).unwrap();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let result = super::feature_assignments(&ctx, &scan);
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(ctx.resource_refusal().as_ref(), Some(limit));
+                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
+            }
+            result
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else { panic!("expected first assignment-vector growth refusal") };
     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
     assert_eq!(limit.operation, "collect SLDPRT feature appearances");
-    assert_eq!(limit.limit, source_bytes + assignment_bytes - 1);
-    assert_eq!(limit.used, source_bytes);
+    assert_eq!(limit.limit, assignment_bytes - 1);
+    assert_eq!(limit.used, 0);
     assert_eq!(limit.additional, assignment_bytes);
-    assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky))
-        if sticky == limit)
-    );
 }
 
 fn feature_appearance_resolution_storage() -> (u64, u64) {
@@ -1063,8 +1068,8 @@ fn feature_appearance_resolution_storage() -> (u64, u64) {
     // The first hash-table insertion uses four buckets. Core includes control
     // bytes, the trailing control group and maximum-alignment padding.
     let hash_node = 4 * size_of::<FeatureEntry>() + align_of::<FeatureEntry>().max(16) - 1 + 4 + 16;
-    assert!((2..=1024).contains(&size_of::<FeatureAppearanceAssignment>()));
-    let records = 4 * size_of::<FeatureAppearanceAssignment>() + "ThirdPtyStore/VisualStates".len();
+    assert!((2..=1024).contains(&size_of::<FeatureAppearanceAssignment<'_>>()));
+    let records = 4 * size_of::<FeatureAppearanceAssignment<'_>>();
     // Borrowed winners coexist with feature records and their keyed index.
     let materialized = records + hash_node + winner_node;
     let class_bytes = 4 * size_of::<crate::tessellation::ClassInterval<'_>>();
@@ -1198,7 +1203,6 @@ fn conflicting_feature_appearance_index_retains_no_output() {
         .unwrap();
     let faces = crate::tessellation::section_display_faces(&fixture_ctx, section).unwrap();
     let (_, materialized) = feature_appearance_resolution_storage();
-    let materialized = materialized + u64::try_from("ThirdPtyStore/VisualStates".len()).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
@@ -1535,4 +1539,77 @@ fn appearance_source_set_releases_discarded_record_storage() {
         limit.used
     };
     assert_eq!(live_storage(true), live_storage(false));
+}
+
+#[test]
+fn cold_appearance_source_queries_skip_assignment_and_name_storage() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let source = display_fixture([1, 2, 3], &[Vec::new()], &[], &vec![(36, 10, [4, 5, 6]); 64]);
+    let scan = crate::test_support::container::scan(&source);
+    for operation in ["copy SLDPRT appearance stream name", "collect SLDPRT feature appearances"] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+        let sources = super::FeatureAppearances::default().into_source_ids(&ctx, &scan).unwrap();
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources.first().unwrap().value(), 36);
+        ctx.finish_session().unwrap();
+    }
+    crate::test_support::work_refusal_at("index SLDPRT feature appearance sources", |ctx| {
+        super::FeatureAppearances::default().into_source_ids(ctx, &scan)
+    });
+}
+
+#[test]
+fn inline_appearance_ambiguity_skips_both_candidate_output_copies() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let mut payload = inline_display_appearance("first", [1, 2, 3]);
+    payload.extend(inline_display_appearance(&"second".repeat(32), [4, 5, 6]));
+    let mut source = outer_header();
+    source.extend(make_block(0x43, "DisplayLists", &payload));
+    let scan = crate::test_support::container::scan(&source);
+    let fixture_ctx = cadmpeg_test_support::service_decode_context();
+    let section = scan.sections(&fixture_ctx).unwrap().next().unwrap();
+    for operation in ["retain SLDPRT appearance name", "copy SLDPRT appearance stream name"] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 1024 * 1024;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+        assert!(super::inline_definition(&ctx, section, 0, payload.len()).unwrap().is_none());
+        let storage = ctx.reserve_scoped(policy.limits.max_materialized_bytes, "reuse ambiguous candidate storage").unwrap();
+        drop(storage);
+        ctx.finish_session().unwrap();
+    }
+    // A unique candidate reaches the copy that ambiguity skips.
+    crate::test_support::work_refusal_at("retain SLDPRT appearance name", |ctx| {
+        super::inline_definition(ctx, section, 0, inline_display_appearance("first", [1, 2, 3]).len()).map(|_| ())
+    });
+}
+
+#[test]
+fn overridden_feature_appearance_cache_borrows_unemitted_stream_names() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let source = display_fixture([1, 2, 3], &[vec![("moFromSktEntSurfIdRep_c", 36, 1)]], &[(0, [7, 8, 9])], &vec![(36, 10, [4, 5, 6]); 64]);
+    let scan = crate::test_support::container::scan(&source);
+    let fixture_ctx = cadmpeg_test_support::service_decode_context();
+    let section = scan.sections(&fixture_ctx).unwrap().find(|section| section.name() == Some("Contents/DisplayLists")).unwrap();
+    let faces = crate::tessellation::section_display_faces(&fixture_ctx, section).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let cache = super::FeatureAppearances::default();
+    let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "copy SLDPRT appearance stream name", Some(u64::try_from("ThirdPtyStore/VisualStates".len()).unwrap()));
+    let resolved = super::resolve_display_appearances(&ctx, &scan, &cache, section, &faces).unwrap();
+    assert_eq!(resolved.by_face[&0].name, "Face override");
+    assert_eq!(resolved.matched_feature_sources.len(), 1);
+    assert!(cache.records.get().is_some());
+    assert!(cache.index.get().is_some());
+    drop(cache);
+    ctx.finish_session().unwrap();
 }
