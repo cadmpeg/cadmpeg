@@ -88,19 +88,20 @@ fn brep_merge_admits_destination_arena_storage_and_moves() {
                 ..Brep::default()
             };
             let result = merge_brep(&ctx, &mut target, replay_source);
-            assert!(target.points.is_empty());
             if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert!(target.points.is_empty());
                 assert!(matches!(ctx.finish_session(),
                     Err(CodecError::ResourceLimit(original)) if original == *limit));
             }
             result
         };
         let error = if dimension == ResourceDimension::WorkUnits {
-            // Admit annotation traversal and empty arenas first. Moving the
-            // one point requires size_of::<Point>() work units.
+            // Annotation traversal and the empty arenas charge no arena work.
+            // The point arena's append is the first positive charge of the
+            // arena operation.
             cadmpeg_test_support::refusal::resource_limit_at(
                 dimension,
-                "merge SLDPRT B-rep arena moves",
+                "merge SLDPRT B-rep arena",
                 &mut run,
             )
         } else {
@@ -113,9 +114,11 @@ fn brep_merge_admits_destination_arena_storage_and_moves() {
         assert_eq!(limit.operation, "merge SLDPRT B-rep arena");
         assert!(target.points.is_empty());
         if dimension == ResourceDimension::WorkUnits {
+            // Appending one point admits one step for the slot plus one move
+            // of each of its bytes.
             assert_eq!(
                 limit.additional,
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Point>())
+                1 + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Point>())
             );
         }
     }
