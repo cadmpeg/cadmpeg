@@ -331,8 +331,15 @@ pub(crate) fn enrich_history_extrusion_terminations(
                             else {
                                 return Ok(false);
                             };
-                            if !ctx.equal(name.value.as_str(), "D1", "compare SLDPRT extrusion D1 depth name")?
-                                && !ctx.equal(name.value.as_str(), "Depth", "compare SLDPRT extrusion named depth")? {
+                            if !ctx.equal(
+                                name.value.as_str(),
+                                "D1",
+                                "compare SLDPRT extrusion D1 depth name",
+                            )? && !ctx.equal(
+                                name.value.as_str(),
+                                "Depth",
+                                "compare SLDPRT extrusion named depth",
+                            )? {
                                 return Ok(false);
                             }
                             Ok(value_only_scalar_offset(ctx, &lane.native_payload, name)?
@@ -1970,8 +1977,8 @@ fn compact_termination_reference_offsets(
         ctx.next_charged(&mut markers, "scan SLDPRT termination reference offsets")?
     {
         let present = if require_path {
-            let (present, _storage) = ctx
-                .with_scoped_storage("SLDPRT termination reference candidate", || {
+            let (present, _storage) =
+                ctx.with_scoped_storage("SLDPRT termination reference candidate", || {
                     compact_termination_reference_path_at(ctx, payload, marker)
                         .map(|path| path.is_some())
                 })?;

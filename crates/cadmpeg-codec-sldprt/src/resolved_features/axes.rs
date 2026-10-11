@@ -1498,8 +1498,11 @@ pub(crate) fn bind_profile_revolution_axes(
                         &mut slot.insert((entries, reservation)).0
                     }
                 };
-                let Some(&profile_index) =
-                    ctx.get_hash_map(model_index, profile_id, "look up SLDPRT revolution model feature")?
+                let Some(&profile_index) = ctx.get_hash_map(
+                    model_index,
+                    profile_id,
+                    "look up SLDPRT revolution model feature",
+                )?
                 else {
                     continue;
                 };
@@ -1536,7 +1539,11 @@ pub(crate) fn bind_profile_revolution_axes(
                         &mut slot.insert((entries, reservation)).0
                     }
                 };
-                let Some(Some(owner)) = ctx.get_hash_map(owner_index, sketch_id, "look up SLDPRT revolution sketch owner")?
+                let Some(Some(owner)) = ctx.get_hash_map(
+                    owner_index,
+                    sketch_id,
+                    "look up SLDPRT revolution sketch owner",
+                )?
                 else {
                     continue;
                 };
@@ -1562,7 +1569,12 @@ pub(crate) fn bind_profile_revolution_axes(
                     let mut entries = HashMap::new();
                     for history in ctx.admit_iter(histories, INDEX)? {
                         for feature in ctx.admit_iter(&history.features, INDEX)? {
-                            ctx.insert_hash_map(&mut entries, feature.id.as_str(), feature, "insert SLDPRT revolution native feature")?;
+                            ctx.insert_hash_map(
+                                &mut entries,
+                                feature.id.as_str(),
+                                feature,
+                                "insert SLDPRT revolution native feature",
+                            )?;
                         }
                     }
                     Ok::<_, CodecError>(entries)
@@ -1571,7 +1583,11 @@ pub(crate) fn bind_profile_revolution_axes(
             }
         };
         if !ctx
-            .get_hash_map(native_index, profile_native, "look up SLDPRT revolution native feature")?
+            .get_hash_map(
+                native_index,
+                profile_native,
+                "look up SLDPRT revolution native feature",
+            )?
             .is_some_and(|feature| is_profile_feature_object(feature))
         {
             continue;
@@ -1582,7 +1598,12 @@ pub(crate) fn bind_profile_revolution_axes(
                 let (entries, reservation) = ctx.with_scoped_storage(SKETCH_INDEX, || {
                     let mut entries = HashMap::new();
                     for sketch in ctx.admit_iter(sketches, SKETCH_INDEX)? {
-                        ctx.insert_hash_map(&mut entries, &sketch.id, sketch, "insert SLDPRT revolution sketch")?;
+                        ctx.insert_hash_map(
+                            &mut entries,
+                            &sketch.id,
+                            sketch,
+                            "insert SLDPRT revolution sketch",
+                        )?;
                     }
                     Ok::<_, CodecError>(entries)
                 })?;
@@ -1796,7 +1817,8 @@ fn profile_roster_construction_axis_in(
                 };
                 Some([start.get(), end.get()])
             } else {
-                let mut endpoint_ids_storage = ctx.reserve_scoped(0, "hold SLDPRT indexed profile endpoints")?;
+                let mut endpoint_ids_storage =
+                    ctx.reserve_scoped(0, "hold SLDPRT indexed profile endpoints")?;
                 let curve_endpoints = endpoints.ids(ctx, &mut endpoint_ids_storage, owned, true)?;
                 match profile_roster_origin_axis_endpoints(
                     ctx,
