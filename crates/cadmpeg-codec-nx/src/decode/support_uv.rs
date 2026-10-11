@@ -14,7 +14,7 @@ use super::blend::{
     CircularBlendDefinition,
 };
 use super::emit::{procedural_curve_owners, EndpointWitnessOperations, EndpointWitnessSink};
-use super::geometry_work::{same_pcurve_geometry, same_text, GeometryWorkBudget};
+use super::geometry_work::{same_pcurve_geometry, same_surface_geometry, same_text, GeometryWorkBudget};
 use super::offset::{
     coarse_model_surface_parameters,
     continue_surface_intersection_parameters_with_index_and_seeds_and_budget_and_grid_cache,
@@ -2674,7 +2674,12 @@ pub(super) fn parameterization_equivalent_surfaces_with_index(
         ) else {
             return Ok(Step::Different);
         };
-        if first_geometry == second_geometry {
+        if same_surface_geometry(
+            ctx,
+            first_geometry,
+            second_geometry,
+            "NX equivalent surface geometry comparison",
+        )? {
             return Ok(Step::Equal);
         }
         let (
@@ -3045,14 +3050,16 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
                     Some(values) => {
                         // Equal candidates are recorded once; the search stops
                         // at the first equal value.
-                        let mut recorded = false;
-                        for value in values.iter() {
-                            ctx.charge_work(1, "nx completion candidate search")?;
-                            if *value == candidate {
-                                recorded = true;
-                                break;
-                            }
-                        }
+                        let recorded = ctx.any_by(
+                            values.as_slice(),
+                            |value| Ok(value.1 == candidate.1 && value.2 == candidate.2 && same_pcurve_geometry(
+                                ctx,
+                                value.0,
+                                candidate.0,
+                                "nx completion candidate pcurve comparison",
+                            )?),
+                            "nx completion candidate search",
+                        )?;
                         if !recorded {
                             storage.with_storage(|| {
                                 ctx.push_vec(values, candidate, "nx completion candidate values")

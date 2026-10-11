@@ -572,3 +572,91 @@ fn chart_reproduction_refuses_each_visit_without_admitting_the_suffix() {
     // sample 31 adds exactly 31 chart visits; parameter fitting is unchanged.
     assert_eq!(work(31) - work(0), 31);
 }
+
+#[test]
+fn equivalent_surface_route_charges_equal_nurbs_geometry_after_lookups() {
+    use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    let (mut ir, ids) = plane_model();
+    for rational in [false, true] {
+        let geometry = with_decode_context(|ctx| {
+            let mut knots = vec![0.0];
+            knots.extend((0..64).map(|i| cadmpeg_core::convert::f64_from_index(i).unwrap()));
+            knots.push(63.0);
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                NurbsSurface::from_lanes(
+                    ctx,
+                    NurbsSurfaceAxis::new(1, knots, false),
+                    NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                    NurbsSurfaceLanes::new(
+                        vec![vec![Point3::new(0.0, 0.0, 0.0); 2]; 64],
+                        rational.then(|| vec![vec![1.0; 2]; 64]),
+                    ),
+                    false,
+                )
+                .unwrap()
+                .unwrap(),
+            ))
+        });
+        for surface in &mut ir.model.surfaces {
+            surface.geometry = geometry.clone();
+        }
+        let index =
+            cadmpeg_ir::index::ModelIndex::new_model_only(&ir, cadmpeg_ir::index::StandardIndex);
+        resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "NX equivalent surface geometry comparison",
+            |ctx| Ok(parameterization_equivalent_surfaces_with_index(&index, &ids[0], &ids[1], ctx)?),
+        );
+        with_decode_context(|ctx| {
+            assert!(parameterization_equivalent_surfaces_with_index(&index, &ids[0], &ids[1], ctx).unwrap());
+            assert_eq!(ctx.resource_refusal(), None);
+        });
+    }
+}
+
+#[test]
+fn duplicate_attachment_candidates_charge_equal_nurbs_pcurves() {
+    let (mut ir, _) = charted_fixture();
+    let pcurve = long_pcurve(64);
+    let context = ir.model.procedural_curves[0].intersection_context_mut().unwrap();
+    let surface = context.sides()[0].surface.clone();
+    context.set_surface(1, surface);
+    for side in 0..2 {
+        context.set_unmapped_pcurve(side, Some(pcurve.clone()));
+    }
+    for coedge in &mut ir.model.coedges {
+        coedge.pcurves.clear();
+    }
+    assert!(!ir.model.coedges.is_empty());
+    let graph = with_decode_context(|ctx| Graph::parse(ctx, &[])).unwrap();
+    let run = |ctx: &DecodeContext<'_>| {
+        let mut ir = ir.clone();
+        let geometry = GeometryWorkBudget::from_context(ctx, 100_000);
+        let stream = StreamHandle::new(ctx, cadmpeg_ir::stream_name!("nx:test"), "nx test stream")?;
+        let sources = [0, 1].map(|index| IntersectionCompletionSource {
+            scope: crate::decode::ids::IdScope::stream(index),
+            graph: &graph,
+            source_stream: stream.clone(),
+            coedge_start: 0,
+            procedural_start: 0,
+        });
+        attach_completed_intersection_pcurves_for_sources_with_budget(
+            ctx,
+            &mut ir,
+            &sources,
+            &mut AnnotationBuilder::new(),
+            &BTreeMap::new(),
+            &geometry,
+        )?;
+        assert_eq!(ctx.resource_refusal(), None);
+        Ok::<_, CodecError>(())
+    };
+    resource_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "nx completion candidate pcurve comparison",
+        run,
+    );
+    with_decode_context(|ctx| run(ctx).unwrap());
+}
