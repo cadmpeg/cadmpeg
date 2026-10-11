@@ -654,3 +654,80 @@ fn committed_v1_brep_surfaces_require_retained_admission() {
         },
     );
 }
+
+fn units_record(unit: i32) -> Vec<u8> {
+    let mut body = 1_i32.to_le_bytes().to_vec();
+    body.extend(unit.to_le_bytes());
+    for value in [0.01_f64, 0.02, 0.03] {
+        body.extend(value.to_le_bytes());
+    }
+    super::chunk(super::super::TCODE_UNIT_AND_TOLERANCES, &body)
+}
+
+fn work_with_records_between_breps(
+    count: usize,
+    record: &[u8],
+    added: [usize; 3],
+    retained: bool,
+) -> u64 {
+    let fixture = legacy_face_archive();
+    let comment = chunk_at(&fixture, 32, fixture.len(), ArchiveVersion::V1, false).unwrap();
+    let brep = &fixture[comment.next_offset()..];
+    let mut data = super::archive(&[]);
+    for _ in 0..count {
+        data.extend(brep);
+        data.extend(record);
+    }
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
+    let decoded = super::super::decode_v1(&ctx, &data).unwrap();
+    assert_eq!(decoded.ir.model.bodies.len(), count * (1 + added[0]));
+    assert_eq!(decoded.ir.model.curves.len(), count * (4 + added[1]));
+    assert_eq!(decoded.ir.model.tessellations.len(), count * added[2]);
+    assert_eq!(decoded.source_fidelity.retained_records().len(), count * (1 + usize::from(retained)));
+    assert!(!decoded.body.notes.iter().any(|note| note.starts_with("V1 Brep at offset ")));
+    // A final refusal exposes completed work without pinning individual charges.
+    let cadmpeg_core::CodecError::ResourceLimit(limit) =
+        ctx.charge_work(u64::MAX, "completed interleaved V1 work").unwrap_err()
+    else {
+        panic!("work counter probe refuses");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    limit.used
+}
+
+#[test]
+fn v1_units_between_breps_keep_linear_identity_index_work() {
+    let record = units_record(2);
+    let small = work_with_records_between_breps(64, &record, [0, 0, 0], false);
+    let large = work_with_records_between_breps(128, &record, [0, 0, 0], false);
+    assert!(large < 3 * small,
+        "doubling records must remain below quadratic growth: {small} -> {large}");
+}
+
+#[test]
+fn v1_points_between_breps_keep_linear_identity_index_work() {
+    let coordinates = [1.0_f64, 2.0, 3.0].into_iter().flat_map(f64::to_le_bytes).collect::<Vec<_>>();
+    let record = super::chunk(super::super::TCODE_RH_POINT, &coordinates);
+    let small = work_with_records_between_breps(64, &record, [1, 0, 0], true);
+    let large = work_with_records_between_breps(128, &record, [1, 0, 0], true);
+    assert!(large < 3 * small,
+        "doubling records must remain below quadratic growth: {small} -> {large}");
+}
+
+#[test]
+fn v1_units_preserve_geometry_scaling_order_and_final_tolerances() {
+    let mut data = super::archive(&[[1.0, 2.0, 3.0]]);
+    data.extend(units_record(4));
+    let coordinates = [1.0_f64, 2.0, 3.0].into_iter().flat_map(f64::to_le_bytes).collect::<Vec<_>>();
+    data.extend(super::chunk(super::super::TCODE_RH_POINT, &coordinates));
+    let decoded = super::decode_v1(&data).unwrap();
+    assert_eq!(decoded.ir.model.points[0].position().get(), Point3::new(1.0, 2.0, 3.0));
+    assert_eq!(decoded.ir.model.points[1].position().get(), Point3::new(1000.0, 2000.0, 3000.0));
+    assert_eq!(decoded.ir.model.bodies.len(), 2);
+    assert_eq!(decoded.ir.tolerances.linear.get(), 10.0);
+    assert_eq!(decoded.ir.tolerances.angular.get(), 0.03);
+    assert_eq!(decoded.source_fidelity.retained_records().len(), 2);
+    assert!(decoded.body.losses.is_empty());
+}

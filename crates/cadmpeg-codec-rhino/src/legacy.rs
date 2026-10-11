@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
-use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::document::{CadIr, Model};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
@@ -16,6 +16,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{IdentityKey, UnknownId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::native::Native;
 use cadmpeg_ir::report::decode::TransferLedger;
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveReal};
 use cadmpeg_ir::tessellation::Tessellation;
@@ -3546,6 +3547,7 @@ pub(crate) fn decode_v1_with_header(
         crate::container::SourceMetaDetail::FlatLegacyArchive,
     )?);
     let mut session = cadmpeg_ir::draft::CommitSession::new(ir, ctx, None)?;
+    let mut tolerances = session.document().tolerances;
     let mut decoded = 0_usize;
     let mut decoded_curves = 0_usize;
     let mut decoded_meshes = 0_usize;
@@ -3579,7 +3581,6 @@ pub(crate) fn decode_v1_with_header(
             continue;
         }
         if chunk.typecode == TCODE_UNIT_AND_TOLERANCES && !chunk.short() {
-            let ir = session.document_mut()?;
             let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)
                 .or_else(|error| Err(malformed(ctx, &error)?))?;
             let version = reader.i32().or_else(|error| Err(malformed(ctx, &error)?))?;
@@ -3600,7 +3601,7 @@ pub(crate) fn decode_v1_with_header(
             };
             let linear =
                 reader.f64().or_else(|error| Err(malformed(ctx, &error)?))? * scale.value();
-            ir.tolerances.linear = crate::decode::admitted_tolerance(
+            tolerances.linear = crate::decode::admitted_tolerance(
                 ctx,
                 cadmpeg_ir::scalar::PositiveLength::new(linear),
                 linear,
@@ -3610,7 +3611,7 @@ pub(crate) fn decode_v1_with_header(
             )?;
             let _relative_tolerance = reader.f64().or_else(|error| Err(malformed(ctx, &error)?))?;
             let angular = reader.f64().or_else(|error| Err(malformed(ctx, &error)?))?;
-            ir.tolerances.angular = crate::decode::admitted_tolerance(
+            tolerances.angular = crate::decode::admitted_tolerance(
                 ctx,
                 cadmpeg_ir::scalar::PositiveAngle::new(angular),
                 angular,
@@ -3630,7 +3631,8 @@ pub(crate) fn decode_v1_with_header(
                 &mut retained_bytes,
             )?;
         } else if chunk.typecode == TCODE_RH_POINT && !chunk.short() {
-            let ir = session.document_mut()?;
+            let mut model = Model::default();
+            let mut model_storage = ctx.reserve_scoped(0, "Rhino V1 point candidate backing")?;
             let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)
                 .or_else(|error| Err(malformed(ctx, &error)?))?;
             let Some(position) = FinitePoint3::new(Point3::new(
@@ -3643,28 +3645,33 @@ pub(crate) fn decode_v1_with_header(
                 )));
             };
             ctx.charge_entities(5, "Rhino V1 point topology")?;
-            ctx.reserve_vec(
-                &mut ir.model.points,
+            ctx.reserve_scoped_vec(
+                &mut model_storage,
+                &mut model.points,
                 1,
                 "Rhino V1 point topology collections",
             )?;
-            ctx.reserve_vec(
-                &mut ir.model.vertices,
+            ctx.reserve_scoped_vec(
+                &mut model_storage,
+                &mut model.vertices,
                 1,
                 "Rhino V1 point topology collections",
             )?;
-            ctx.reserve_vec(
-                &mut ir.model.shells,
+            ctx.reserve_scoped_vec(
+                &mut model_storage,
+                &mut model.shells,
                 1,
                 "Rhino V1 point topology collections",
             )?;
-            ctx.reserve_vec(
-                &mut ir.model.regions,
+            ctx.reserve_scoped_vec(
+                &mut model_storage,
+                &mut model.regions,
                 1,
                 "Rhino V1 point topology collections",
             )?;
-            ctx.reserve_vec(
-                &mut ir.model.bodies,
+            ctx.reserve_scoped_vec(
+                &mut model_storage,
+                &mut model.bodies,
                 1,
                 "Rhino V1 point topology collections",
             )?;
@@ -3692,19 +3699,19 @@ pub(crate) fn decode_v1_with_header(
                 &cadmpeg_ir::identity_namespace!("rhino", "object", "point"),
                 suffix_key,
             );
-            ir.model.points.push(Point::new(
+            model.points.push(Point::new(
                 point_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                 position,
                 None,
             ));
-            ir.model.vertices.push(Vertex {
+            model.vertices.push(Vertex {
                 id: vertex_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                 point: point_id,
                 tolerance: None,
             });
             let mut free_vertices = ctx.collection_vec(1, "Rhino V1 point topology collections")?;
             free_vertices.push(vertex_id);
-            ir.model.shells.push(
+            model.shells.push(
                 Shell::new(
                     shell_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                     region_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
@@ -3714,7 +3721,7 @@ pub(crate) fn decode_v1_with_header(
                 )
                 .map_err(CodecError::malformed)?,
             );
-            ir.model.regions.push(Region {
+            model.regions.push(Region {
                 id: region_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                 body: body_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                 shells: {
@@ -3723,7 +3730,7 @@ pub(crate) fn decode_v1_with_header(
                     values
                 },
             });
-            ir.model.bodies.push(Body {
+            model.bodies.push(Body {
                 id: body_id,
                 kind: BodyKind::General,
                 regions: {
@@ -3736,6 +3743,8 @@ pub(crate) fn decode_v1_with_header(
                 color: None,
                 visible: None,
             });
+            session.try_append(model, Native::default(), |_, _| Ok(Ok::<(), CodecError>(())))??;
+            drop(model_storage);
             push_v1_record(
                 ctx,
                 &mut source_storage,
@@ -4193,6 +4202,7 @@ pub(crate) fn decode_v1_with_header(
         offset = chunk.next_offset();
     }
     let (mut ir, _unknowns) = session.into_parts();
+    ir.tolerances = tolerances;
     let has_direct_records = !direct_records.is_empty();
     if has_direct_records {
         let namespace = ir.native.namespace_mut("rhino");
