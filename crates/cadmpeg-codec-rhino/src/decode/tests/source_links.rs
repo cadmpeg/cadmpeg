@@ -220,3 +220,64 @@ fn unknown_record_link_copy_refuses_retained_limit() {
         if refusal.operation == "Rhino unknown record link copy")
     );
 }
+
+fn source_link_flush_refuses_sort_work(seeded: bool) {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+
+    let scan = scan_with_objects(&[object_record(ArchiveVersion::V5, 1, POINT_CLASS)]);
+    let run = |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
+        let expand = crate::mesh::MeshExpand::new(&ctx, root);
+        let mut transaction = DecodeContext::new(&scan, expand)?;
+        if seeded {
+            transaction
+                .unknown_links_mut(0)
+                .expect("fixture source row")
+                .extend(["rhino:curve#a".into(), "rhino:curve#z".into()]);
+            transaction.append_link(0, "rhino:curve#0")?;
+        } else {
+            transaction.append_link(0, "rhino:curve#z")?;
+            transaction.append_link(0, "rhino:curve#a")?;
+        }
+        let before = transaction.unknown(0).unwrap().links().to_vec();
+        let result = if seeded {
+            transaction.flush_seeded_source_links()
+        } else {
+            transaction.flush_source_links()
+        };
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = &result {
+            assert_eq!(transaction.unknown(0).unwrap().links(), before);
+            assert!(!transaction.link_indices.get(&0).unwrap().sorted);
+            assert_eq!(ctx.resource_refusal(), Some(*refusal));
+        } else if result.is_ok() {
+            let expected = if seeded {
+                vec!["rhino:curve#0", "rhino:curve#a", "rhino:curve#z"]
+            } else {
+                vec!["rhino:curve#a", "rhino:curve#z"]
+            };
+            assert_eq!(transaction.unknown(0).unwrap().links(), expected);
+            assert!(transaction.link_indices.get(&0).unwrap().sorted);
+        }
+        result
+    };
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "Rhino unknown record links",
+        run,
+    );
+    run(u64::MAX).expect("complete sort is admitted");
+}
+
+#[test]
+fn source_link_flush_refuses_work_before_sorting() {
+    source_link_flush_refuses_sort_work(false);
+}
+
+#[test]
+fn seeded_source_link_flush_refuses_work_before_sorting() {
+    source_link_flush_refuses_sort_work(true);
+}

@@ -630,3 +630,104 @@ fn warning_family_split_preserves_refusal_at_commit() {
         },
     );
 }
+
+#[test]
+fn instance_nurbs_surface_transform_preserves_budget_refusals_and_grid_lanes() {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::scalar::NonZeroReal;
+    use cadmpeg_ir::transform::Transform;
+
+    let transform = Transform::affine([
+        [2.0, 0.0, 0.0, 5.0],
+        [0.0, 3.0, 0.0, 6.0],
+        [0.0, 0.0, 4.0, 7.0],
+    ])
+    .unwrap();
+    for rational in [false, true] {
+        let points = vec![
+            vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+            vec![Point3::new(7.0, 8.0, 9.0), Point3::new(10.0, 11.0, 12.0)],
+        ]
+        .into_iter()
+        .map(|row| row.into_iter().map(|point| FinitePoint3::new(point).unwrap()).collect())
+        .collect();
+        let weights = rational.then(|| {
+            vec![vec![1.0, 2.0], vec![3.0, 4.0]]
+                .into_iter()
+                .map(|row| row.into_iter().map(|weight| NonZeroReal::new(weight).unwrap()).collect())
+                .collect()
+        });
+        let nurbs = NurbsSurface::from_checked_lanes(
+            &cadmpeg_test_support::service_decode_context(),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 2.0, 2.0], false),
+            NurbsSurfaceAxis::new(1, vec![1.0, 1.0, 3.0, 3.0], false),
+            NurbsSurfaceLanes::new(points, weights),
+            true,
+        )
+        .unwrap()
+        .unwrap();
+        let fixture = Surface {
+            id: "rhino:test:surface#grid".try_into().unwrap(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs.clone())),
+            source_object: None,
+        };
+        for operation in ["IR pole edit validation", "IR pole edit mutation"] {
+            cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::WorkUnits,
+                operation,
+                |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_work_units = cap;
+                    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                        &[], &arena, &policy,
+                    )?;
+                    let result = super::transform_surface(&ctx, &mut fixture.clone(), transform);
+                    match result {
+                        Err(super::ReferenceFailure::Codec(error)) => {
+                            if let cadmpeg_core::CodecError::ResourceLimit(refusal) = &error {
+                                assert_eq!(ctx.resource_refusal(), Some(*refusal));
+                            }
+                            Err(error)
+                        }
+                        Err(error) => panic!("unexpected semantic failure: {error:?}"),
+                        Ok(()) => Ok(()),
+                    }
+                },
+            );
+        }
+        let mut surface = fixture;
+        super::transform_surface(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut surface,
+            transform,
+        )
+        .expect("admitted surface placement");
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(placed)) = surface.geometry else {
+            panic!("surface remains a NURBS carrier");
+        };
+        let expected = [
+            [Point3::new(7.0, 12.0, 19.0), Point3::new(13.0, 21.0, 31.0)],
+            [Point3::new(19.0, 30.0, 43.0), Point3::new(25.0, 39.0, 55.0)],
+        ];
+        for (u, row) in expected.iter().enumerate() {
+            for (v, point) in row.iter().enumerate() {
+                assert_eq!(placed.pole(u, v).unwrap().get(), *point);
+                assert_eq!(placed.weight(u, v), nurbs.weight(u, v));
+            }
+        }
+        assert_eq!(placed.u_count(), 2);
+        assert_eq!(placed.v_count(), 2);
+        assert_eq!(placed.u_degree(), nurbs.u_degree());
+        assert_eq!(placed.v_degree(), nurbs.v_degree());
+        assert_eq!(placed.u_knots(), nurbs.u_knots());
+        assert_eq!(placed.v_knots(), nurbs.v_knots());
+        assert_eq!(placed.u_periodic(), nurbs.u_periodic());
+        assert_eq!(placed.v_periodic(), nurbs.v_periodic());
+        assert_eq!(placed.normal_reversed(), nurbs.normal_reversed());
+    }
+}
