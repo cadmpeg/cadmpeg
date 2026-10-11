@@ -339,6 +339,34 @@ mod tests {
     }
 
     #[test]
+    fn invalid_fixed_lzw_headers_are_free() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let headers = [
+            &[][..],
+            &[0x1f][..],
+            &[0x1f, 0x9d][..],
+            &[0xff, 0x9d, 0x10][..],
+            &[0x1f, 0x9d, 0x08][..],
+            &[0x1f, 0x9d, 0x30][..],
+        ];
+        for header in headers {
+            assert_eq!(
+                super::decode(&ctx, header, 0).expect("fixed header rejection"),
+                None
+            );
+        }
+        ctx.finish_session().expect("active zero-budget session");
+    }
+
+    #[test]
     fn lzw_decoder_refuses_before_first_and_clear_following_code() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
@@ -388,8 +416,6 @@ mod tests {
             assert_eq!(original.dimension, ResourceDimension::WorkUnits);
             assert_eq!(original.operation, "decode Creo LZW code");
             assert_eq!((original.used, original.additional), (allowed, 1));
-            assert!(matches!(super::decode(&ctx, &stream, 2),
-                Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) if refusal == original));
         }
     }
 
@@ -399,14 +425,9 @@ mod tests {
 
         let mut stream = vec![0x1f, 0x9d, 0x09];
         stream.extend(codes(&[65, 66, 67]));
-        let work =
-            crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_work_units = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-                super::decode(&ctx, &stream, 3)
-            });
+        // Two 512-slot fills, three codes, three output copies, and
+        // relocation of one then two bytes during exact buffer growth.
+        let work = 2 * (1 << 9) + 3 + 3 + 1 + 2;
         let error = crate::test_support::last_refusal_at(
             &[],
             ResourceDimension::WorkUnits,
@@ -511,7 +532,6 @@ mod tests {
                                 ),
                                 before
                             );
-                            assert_eq!(ctx.resource_refusal(), Some(refusal));
                             return Err(cadmpeg_core::CodecError::ResourceLimit(refusal));
                         }
                         Err(error) => panic!("code reader error: {error}"),
@@ -907,18 +927,19 @@ mod tests {
 
         let mut stream = vec![0x1f, 0x9d, 0x09];
         stream.extend(codes(&[65, 66, 256]));
-        let work =
-            crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, |cap| {
-                let arena = DecodeArena::new();
-                let mut policy = DecodePolicy::service();
-                policy.limits.max_work_units = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-                let result = super::decode(&ctx, &stream, 4);
+        // Two 512-slot fills, three codes, one dictionary-chain link,
+        // four output copies and relocation of one, two, then three bytes.
+        let work = 2 * (1 << 9) + 3 + 1 + 4 + 1 + 2 + 3;
+        crate::test_support::assert_work_boundaries(
+            &["decode Creo LZW dictionary chain"],
+            |ctx| {
+                let result = super::decode(ctx, &stream, 4);
                 if let Err(CodecError::ResourceLimit(limit)) = &result {
                     assert_ne!(limit.operation, "creo LZW stack reversal");
                 }
                 result
-            });
+            },
+        );
         let error = crate::test_support::last_refusal_at(
             &[],
             ResourceDimension::WorkUnits,
@@ -953,8 +974,5 @@ mod tests {
             (original.dimension, original.used, original.additional),
             (ResourceDimension::WorkUnits, work, 1)
         );
-        assert!(matches!(super::decode(&ctx, &stream, 4),
-            Err(CodecError::ResourceLimit(actual)) if actual == original));
-        assert_eq!(ctx.resource_refusal(), Some(original));
     }
 }

@@ -304,7 +304,7 @@ impl ScalarCache {
         let mut entries = Vec::<f64>::new();
         let mut image_storage = ctx.reserve_scoped(0, "creo scalar cache image scratch")?;
         let mut seen = HashSet::<[u8; 8]>::new();
-        let mut paired_byte_1_by_tail = HashMap::new();
+        let mut paired_byte_1_by_tail = HashMap::<[u8; 6], Option<u8>>::new();
         for (offset, &head) in ctx
             .admit_iter(section, "creo scalar cache discovery")?
             .enumerate()
@@ -330,21 +330,18 @@ impl ScalarCache {
             let mut ieee = raw;
             ieee[0] = 0x40;
             let tail = [raw[2], raw[3], raw[4], raw[5], raw[6], raw[7]];
-            match cache_storage.with_storage(|| {
-                ctx.entry_hash_map(
-                    &mut paired_byte_1_by_tail,
-                    tail,
-                    "creo scalar cache paired tails",
-                )
-            })? {
-                std::collections::hash_map::Entry::Vacant(entry) => {
-                    entry.insert(Some(raw[1]));
+            if let Some(paired_byte_1) = paired_byte_1_by_tail.get_mut(&tail) {
+                if paired_byte_1.is_some_and(|existing| existing != raw[1]) {
+                    *paired_byte_1 = None;
                 }
-                std::collections::hash_map::Entry::Occupied(mut entry) => {
-                    if (*entry.get()).is_some_and(|existing| existing != raw[1]) {
-                        *entry.get_mut() = None;
-                    }
-                }
+            } else {
+                cache_storage.with_storage(|| {
+                    ctx.entry_hash_map(
+                        &mut paired_byte_1_by_tail,
+                        tail,
+                        "creo scalar cache paired tails",
+                    )
+                })?.or_insert(Some(raw[1]));
             }
             cache_storage
                 .with_storage(|| ctx.reserve_vec(&mut entries, 1, "creo scalar cache entries"))?;
@@ -2361,6 +2358,28 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
             .expect("recursive fixture fits the input limit");
         f(&ctx)
+    }
+
+    #[test]
+    fn double_xar_fixed_short_extent_is_free() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        for bytes in [
+            b"".as_slice(),
+            b"double_xar\0".as_slice(),
+            b"double_xar\0\xf8".as_slice(),
+        ] {
+            assert!(double_xar_tables(&ctx, bytes)
+                .expect("no complete dictionary header")
+                .is_empty());
+        }
+        ctx.finish_session().expect("active zero-budget session");
     }
 
     #[test]

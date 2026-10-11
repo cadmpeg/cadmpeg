@@ -1006,13 +1006,11 @@ fn unique_curve_index<'a, T>(
 ) -> Result<std::collections::HashMap<u32, Option<&'a T>>, cadmpeg_core::CodecError> {
     let mut index = std::collections::HashMap::new();
     for row in ctx.admit_iter(rows, operation)? {
-        match ctx.entry_hash_map(&mut index, id(row), operation)? {
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(Some(row));
-            }
-            std::collections::hash_map::Entry::Occupied(mut entry) => {
-                *entry.get_mut() = None;
-            }
+        let key = id(row);
+        if let Some(existing) = index.get_mut(&key) {
+            *existing = None;
+        } else {
+            ctx.entry_hash_map(&mut index, key, operation)?.or_insert(Some(row));
         }
     }
     Ok(index)
@@ -1052,15 +1050,17 @@ pub(crate) fn prototype_topology_rows(
     let mut positional_ids = std::collections::HashSet::new();
     let mut referenced_ids = std::collections::HashSet::new();
     for row in ctx.admit_iter(positional_rows, "creo positional topology traversal")? {
-        scratch.with_storage(|| {
-            ctx.insert_hash_set(
-                &mut positional_ids,
-                row.id,
-                "creo positional topology ID nodes",
-            )
-        })?;
+        if !positional_ids.contains(&row.id) {
+            scratch.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut positional_ids,
+                    row.id,
+                    "creo positional topology ID nodes",
+                )
+            })?;
+        }
         for id in row.next_edges {
-            if id != 0 {
+            if id != 0 && !referenced_ids.contains(&id) {
                 scratch.with_storage(|| {
                     ctx.insert_hash_set(
                         &mut referenced_ids,
@@ -1073,7 +1073,7 @@ pub(crate) fn prototype_topology_rows(
     }
     for row in ctx.admit_iter(prototype_topology, "creo prototype reference traversal")? {
         for id in row.next_edges {
-            if id != 0 {
+            if id != 0 && !referenced_ids.contains(&id) {
                 scratch.with_storage(|| {
                     ctx.insert_hash_set(
                         &mut referenced_ids,
@@ -1392,6 +1392,9 @@ fn synchronize_solve_blocks(
     let mut scratch = ctx.reserve_scoped(0, "creo synchronized assignment scratch")?;
     let mut by_offset = HashMap::new();
     for assignment in ctx.admit_iter(assignments, "creo synchronized assignment index traversal")? {
+        if by_offset.contains_key(&assignment.offset) {
+            continue;
+        }
         scratch
             .with_storage(|| {
                 ctx.entry_hash_map(
@@ -2786,10 +2789,14 @@ fn evaluate_expression_program_details(
     let mut block_ends = std::collections::HashMap::new();
     for block in ctx.admit_iter(&solve_program.blocks, "creo solve block index traversal")? {
         scratch.with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
-            ctx.entry_hash_map(&mut block_starts, block.offset, "creo solve start index")?
-                .or_insert(block);
-            ctx.entry_hash_map(&mut block_ends, block.for_offset, "creo solve end index")?
-                .or_insert(block);
+            if !block_starts.contains_key(&block.offset) {
+                ctx.entry_hash_map(&mut block_starts, block.offset, "creo solve start index")?
+                    .or_insert(block);
+            }
+            if !block_ends.contains_key(&block.for_offset) {
+                ctx.entry_hash_map(&mut block_ends, block.for_offset, "creo solve end index")?
+                    .or_insert(block);
+            }
             Ok(())
         })?;
     }
@@ -8805,14 +8812,19 @@ pub(crate) fn two_chart_pcurve_samples(
         };
         if prefix.feature_id != 0 {
             scratch.with_storage(|| -> Result<(), cadmpeg_core::CodecError> {
-                let counts = ctx
-                    .entry_hash_map(
+                let key = (row.namespace_start, prefix.feature_id, prefix.type_byte);
+                let counts = if let Some(counts) = canonical_counts.get_mut(&key) {
+                    counts
+                } else {
+                    ctx.entry_hash_map(
                         &mut canonical_counts,
-                        (row.namespace_start, prefix.feature_id, prefix.type_byte),
+                        key,
                         "creo two-chart canonical group nodes",
-                    )?
-                    .or_default();
-                ctx.insert_hash_set(counts, count, "creo two-chart canonical count nodes")?;
+                    )?.or_default()
+                };
+                if !counts.contains(&count) {
+                    ctx.insert_hash_set(counts, count, "creo two-chart canonical count nodes")?;
+                }
                 Ok(())
             })?;
         }
@@ -8884,15 +8896,17 @@ pub(crate) fn two_chart_pcurve_samples(
     }
     let mut counts = HashMap::new();
     for (record, _) in ctx.admit_iter(&candidates, "creo two-chart result count traversal")? {
-        let count = scratch
-            .with_storage(|| {
+        let count = if let Some(count) = counts.get_mut(&record.curve_id) {
+            count
+        } else {
+            scratch.with_storage(|| {
                 ctx.entry_hash_map(
                     &mut counts,
                     record.curve_id,
                     "creo two-chart result count nodes",
                 )
-            })?
-            .or_insert(0usize);
+            })?.or_insert(0usize)
+        };
         *count += 1;
     }
     let mut result = Vec::new();

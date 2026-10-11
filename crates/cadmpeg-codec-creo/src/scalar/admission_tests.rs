@@ -58,6 +58,35 @@ fn duplicate_scalar_image_probes_add_no_work() {
 }
 
 #[test]
+fn scalar_cache_tail_collision_probes_add_no_work() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let images = [
+        0x46, 0x08, 1, 2, 3, 4, 5, 6,
+        0x46, 0x13, 1, 2, 3, 4, 5, 6,
+        0x46, 0x13, 1, 2, 3, 4, 5, 6,
+    ];
+    // The two first table growths each admit four eight-byte buckets,
+    // four control bytes, sixteen trailing bytes and fifteen alignment bytes.
+    let growth = 4 * 8 + 4 + 16 + 15;
+    // Twenty-four discovery bytes, two new eight-byte images, and one new
+    // six-byte tail. Neither the conflicting tail nor duplicate image grows.
+    let work = 24 + 2 * (2 * 8) + 2 * 6 + 2 * growth;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = work;
+    let (ctx, _) = DecodeContext::from_root_bytes(&images, &arena, &policy).expect("root");
+    let cache = ScalarCache::from_section_checked(&ctx, &images).expect("fixed collision probes are free");
+    assert_eq!(cache.entries.len(), 2);
+    assert_eq!(cache.paired_byte_1(&[1, 2, 3, 4, 5, 6]), None);
+    assert_eq!(super::decode_in_lane(&[0x9e, 1, 2, 3, 4, 5, 6], 0, &cache), None);
+    assert_eq!(super::decode_in_lane(&[0xa3, 1, 2, 3, 4, 5, 6], 0, &cache), None);
+    let refusal = ctx.charge_work_limit(1, "after scalar tail collision")
+        .expect_err("exact work admitted");
+    assert_eq!((refusal.used, refusal.additional), (work, 1));
+}
+
+#[test]
 fn double_xar_discovery_and_slot_parsing_refuse_work() {
     let bytes = b"double_xar\0\xf8\x02\x10\xe0";
     let tables = crate::test_support::assert_work_boundaries(
