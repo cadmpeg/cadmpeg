@@ -1991,15 +1991,13 @@ fn project_datum<'index, 'feature: 'index>(
         "copy SWIFT datum identifier",
     )?;
     let name = object_name(ctx, entity)?;
-    Ok(
-        (short_class(ctx, &entity.class)? == "GdtDatum").then_some(PmiAnnotation {
-            id,
-            name,
-            visible: None,
-            targets,
-            definition: PmiDefinition::Datum { identification },
-        }),
-    )
+    Ok(Some(PmiAnnotation {
+        id,
+        name,
+        visible: None,
+        targets,
+        definition: PmiDefinition::Datum { identification },
+    }))
 }
 
 struct ProjectedTolerance {
@@ -3519,26 +3517,28 @@ fn rendered_nominal(
     };
     let precision = 10.0_f64.powi(exponent);
     let mut candidate: Option<FiniteReal> = None;
-    let mut ambiguous = false;
     for scale in LENGTH_SCALES_MM {
         let rendered = (raw_mm.get() / scale * precision).round() / precision;
-        for value in ctx
-            .admit_iter(rendered_dimensions, "scan SWIFT rendered dimension values")?
-            .filter(|value| value.kind == kind && value.decimal_places == decimal_places)
-        {
+        let mut values = rendered_dimensions.iter();
+        while let Some(value) = ctx.next_charged(&mut values, "scan SWIFT rendered dimension values")? {
+            if value.kind != kind || value.decimal_places != decimal_places {
+                continue;
+            }
             if approximately_equal(value.value.get(), rendered) {
                 let Some(measured) = FiniteReal::new(value.value.get() * scale) else {
                     return Ok(None);
                 };
                 if let Some(first) = candidate {
-                    ambiguous |= !approximately_equal(measured.get(), first.get());
+                    if !approximately_equal(measured.get(), first.get()) {
+                        return Ok(None);
+                    }
                 } else {
                     candidate = Some(measured);
                 }
             }
         }
     }
-    Ok(if ambiguous { None } else { candidate })
+    Ok(candidate)
 }
 
 fn rendered_dimensions(
