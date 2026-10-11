@@ -601,7 +601,7 @@ impl cadmpeg_core::decode::cost::DecodeCost for CoedgeRecordIndex {
 /// emit passes read decoded shapes from here and consume them (`remove`) as the
 /// owning surface or curve record is emitted.
 #[derive(Default)]
-struct Carriers {
+struct Carriers<'ctx> {
     /// Source record indices of synthetic procedural support surfaces.
     procedural_support_sources: Vec<(i64, SurfaceId)>,
     /// Source record indices of synthetic procedural surface curves.
@@ -611,7 +611,10 @@ struct Carriers {
     procedural_surface_defs: HashMap<i64, DecodedProceduralSurface>,
     curve_geo: HashMap<i64, CurveGeometry>,
     procedural_curve_defs: HashMap<i64, ProceduralCurveSource>,
-    pcurve_geo: HashMap<PcurveRecordIndex, PcurveGeometry>,
+    pcurve_geo: HashMap<
+        PcurveRecordIndex,
+        (PcurveGeometry, Option<cadmpeg_core::decode::ScopedReservation<'ctx>>),
+    >,
     pcurve_decodes:
         HashMap<PcurveRecordIndex, Option<(cadmpeg_ir::geometry::pcurve::PcurveNurbs, bool)>>,
     pcurve_parameter_ranges: HashMap<CoedgeRecordIndex, [f64; 2]>,

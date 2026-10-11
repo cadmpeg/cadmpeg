@@ -27,11 +27,11 @@ use super::geometry::{
 use super::{count_kind, id, AsmBrep, Carriers, DecodePurpose, Reachable, WireShellTopology};
 /// Pass 1: classify carriers and decode analytic geometry. Returns the seeded
 /// carrier maps and the set of carriers whose native normal is inward.
-pub(super) fn decode_analytic_carriers(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn decode_analytic_carriers<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     records: &[Record],
     scratch: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-) -> Result<(Carriers, HashSet<i64>), cadmpeg_core::CodecError> {
+) -> Result<(Carriers<'ctx>, HashSet<i64>), cadmpeg_core::CodecError> {
     let mut surface_geo: HashMap<i64, SurfaceGeometry> = HashMap::new();
     let mut inward_normal_surfaces = HashSet::new();
     let mut curve_geo: HashMap<i64, CurveGeometry> = HashMap::new();
@@ -402,11 +402,11 @@ pub(super) fn keep_faces_and_carriers(
 
 /// Pass 2 (topology): walk each kept face's loops and coedge rings, pulling in
 /// the supporting edge/vertex/point graph and decoding curve and pcurve carriers.
-pub(super) fn walk_reachable_topology(
-    inputs: TopologyContext<'_, '_, '_>,
+pub(super) fn walk_reachable_topology<'ctx>(
+    inputs: TopologyContext<'ctx, '_, '_>,
     out: &mut AsmBrep,
     records: &[Record],
-    carriers: &mut Carriers,
+    carriers: &mut Carriers<'ctx>,
     reach: &mut Reachable,
     scratch: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -505,9 +505,9 @@ pub(super) fn walk_reachable_topology(
                                         ctx.insert_hash_map(
                                             pcurve_geo,
                                             super::PcurveRecordIndex(pc),
-                                            PcurveGeometry::Line(
+                                            (PcurveGeometry::Line(
                                                 cadmpeg_ir::geometry::pcurve::LinePcurve::U_AXIS,
-                                            ),
+                                            ), None),
                                             "ASM topology pcurve_geo",
                                         )
                                     })?;
@@ -622,13 +622,12 @@ pub(super) fn walk_reachable_topology(
 
                                 })?;
                                 if let Some(candidate) = decoded {
-                                    let (decoded, parameter_range) =
-                                        attempt.commit_value(candidate)?;
+                                    let (decoded, parameter_range) = candidate;
                                     scratch.with_storage(|| {
                                         ctx.insert_hash_map(
                                             pcurve_geo,
                                             super::PcurveRecordIndex(pc),
-                                            PcurveGeometry::Nurbs { nurbs: decoded },
+                                            (PcurveGeometry::Nurbs { nurbs: decoded }, Some(attempt)),
                                             "ASM topology pcurve_geo",
                                         )
                                     })?;
