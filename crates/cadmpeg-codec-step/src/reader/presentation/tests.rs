@@ -5,9 +5,9 @@ use super::{find_color, style_application_order, ColorResolution, StyleDomain};
 use std::collections::{BTreeMap, BTreeSet};
 
 mod collection_limits;
+mod name_storage;
 mod stage_caches;
 mod string_limits;
-mod name_storage;
 mod style_indices;
 mod surface_styles;
 mod target_expansion;

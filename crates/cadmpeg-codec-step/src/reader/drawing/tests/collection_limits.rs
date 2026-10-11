@@ -397,7 +397,13 @@ fn wrapper_refuses_collection(operation: &str) {
     } else {
         ["target"].as_slice()
     };
-    let targets = BTreeMap::from([(2, identities.iter().map(|identity| (*identity).to_owned()).collect())]);
+    let targets = BTreeMap::from([(
+        2,
+        identities
+            .iter()
+            .map(|identity| (*identity).to_owned())
+            .collect(),
+    )]);
     let refused = (0..=16).any(|limit| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();

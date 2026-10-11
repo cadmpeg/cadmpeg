@@ -106,9 +106,8 @@ fn style_domain_query_preserves_collection_refusal() {
     policy.limits.max_collection_items = 3;
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
         let mut index = super::super::StyleDomainIndex::new(ctx).expect("stage index");
-        let error = match index.domain(1, &exchange) {
-            Err(error) => error,
-            Ok(_) => panic!("the second child needs a fourth collection slot"),
+        let Err(error) = index.domain(1, &exchange) else {
+            panic!("the second child needs a fourth collection slot")
         };
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

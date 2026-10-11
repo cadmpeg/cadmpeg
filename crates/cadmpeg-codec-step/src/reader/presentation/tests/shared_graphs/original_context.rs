@@ -53,8 +53,10 @@ fn cache_refusal(cached: bool, references: &[u64]) {
     else {
         panic!("resource refusal");
     };
-    assert!(matches!(shared.resolve(references, StyleDomain::Surface, (&mut losses, &report_storage)),
-        Err(CodecError::ResourceLimit(refusal)) if refusal == original));
+    assert!(
+        matches!(shared.resolve(references, StyleDomain::Surface, (&mut losses, &report_storage)),
+        Err(CodecError::ResourceLimit(refusal)) if refusal == original)
+    );
     assert_eq!(shared.prefixes.len(), prior_prefixes);
     assert_eq!(shared.values.len(), prior_queries);
     assert!(losses.is_empty());
@@ -109,11 +111,7 @@ fn shared_color_claim_preserves_original_session_refusal() {
     );
     let mut losses = Vec::new();
     let (query, cached) = shared
-        .resolve(
-            &[1],
-            StyleDomain::Surface,
-            (&mut losses, &report_storage),
-        )
+        .resolve(&[1], StyleDomain::Surface, (&mut losses, &report_storage))
         .expect("initial color query");
     assert_eq!(
         cached
