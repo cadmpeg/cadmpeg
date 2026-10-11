@@ -75,19 +75,52 @@ fn brep_merge_admits_destination_arena_storage_and_moves() {
         match dimension {
             ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
             ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+            ResourceDimension::WorkUnits => {}
             _ => unreachable!(),
         }
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let Err(CodecError::ResourceLimit(limit)) = merge_brep(&ctx, &mut target, source) else {
+        let mut run = |cap| {
+            if dimension == ResourceDimension::WorkUnits {
+                policy.limits.max_work_units = cap;
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let replay_source = Brep {
+                points: source.points.clone(),
+                ..Brep::default()
+            };
+            let result = merge_brep(&ctx, &mut target, replay_source);
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert!(target.points.is_empty());
+                assert!(matches!(ctx.finish_session(),
+                    Err(CodecError::ResourceLimit(original)) if original == *limit));
+            }
+            result
+        };
+        let error = if dimension == ResourceDimension::WorkUnits {
+            // Annotation traversal and the empty arenas charge no arena work.
+            // The point arena's append is the first positive charge of the
+            // arena operation.
+            cadmpeg_test_support::refusal::resource_limit_at(
+                dimension,
+                "merge SLDPRT B-rep arena",
+                &mut run,
+            )
+        } else {
+            run(0).expect_err("arena merge must retain the caller refusal")
+        };
+        let CodecError::ResourceLimit(limit) = error else {
             panic!("arena merge must retain the caller refusal");
         };
         assert_eq!(limit.dimension, dimension);
         assert_eq!(limit.operation, "merge SLDPRT B-rep arena");
         assert!(target.points.is_empty());
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
-        );
+        if dimension == ResourceDimension::WorkUnits {
+            // Appending one point admits one step for the slot plus one move
+            // of each of its bytes.
+            assert_eq!(
+                limit.additional,
+                1 + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Point>())
+            );
+        }
     }
     let mut target = Brep::default();
     let mut source = Brep::default();

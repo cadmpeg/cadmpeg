@@ -445,7 +445,7 @@ mod tests {
             other => panic!("typed native copy should refuse work: {other:?}"),
         };
         assert_eq!(first_refusal.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(first_refusal.operation, "construct canonical native value");
+        assert_eq!(first_refusal.operation, "select typed native arena");
         assert_eq!(ctx.resource_refusal(), Some(first_refusal));
     }
 
