@@ -295,9 +295,10 @@ fn invalid_first_packed_sense_does_not_admit_the_unread_tail() {
         panic!("work limit");
     };
     assert_eq!(limit.additional, 1);
+    // One invalid sense visit is followed by the outer record iterator's end probe.
     assert_eq!(
-        crate::test_support::with_work_limit(limit.used + 1, |ctx| read(ctx, &bytes))
-            .expect("first sense fits"),
+        crate::test_support::with_work_limit(limit.used + 2, |ctx| read(ctx, &bytes))
+            .expect("first sense and record end probe fit"),
         0
     );
 }

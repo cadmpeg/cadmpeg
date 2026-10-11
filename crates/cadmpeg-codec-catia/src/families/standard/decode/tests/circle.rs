@@ -120,6 +120,7 @@ fn standard_edge_circle_axes_use_fixed_slots_before_curve_growth() {
         build_standard_edge_curve(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                support_storage: None,
                 native_surfaces:
                     &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
                         admission.context(),
@@ -148,6 +149,7 @@ fn standard_edge_circle_axes_use_fixed_slots_before_curve_growth() {
         build_standard_edge_curve(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                support_storage: None,
                 native_surfaces:
                     &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
                         admission.context(),
@@ -255,6 +257,7 @@ fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() 
         build_standard_edge_curve(
             ctx,
             crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                support_storage: None,
                 native_surfaces:
                     &mut crate::families::standard::decode::edge_geometry::NativeSurfaceIndex::new(
                         admission.context(),
@@ -436,5 +439,36 @@ fn numerical_seventh_short_witnessed_arc_retains_its_sweep() {
     assert_eq!(
         range(&geometry, point(0.0), point(0.0), Some(point(1.0))),
         Some([0.0, std::f64::consts::TAU])
+    );
+}
+
+#[test]
+fn circle_capacity_setup_advances_one_key_before_allocation() {
+    use crate::families::standard::decode::edge_geometry::StandardCirclePairConstraint;
+    let supports: Vec<_> = (0..32)
+        .map(|face| StandardCurveSupport {
+            pos: face,
+            tag: u32::try_from(face).expect("tag"),
+            faces: [face, face + 1],
+            geometry: super::checked_circle(Point3::new(0.0, 0.0, 0.0), 1.0),
+        })
+        .collect();
+    let options = vec![vec![[0, 1], [1, 2]]; supports.len()];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        StandardCirclePairConstraint::new(ctx, &supports, &options).map(|_| ())
+    };
+    crate::test_support::with_service_context(run).expect("circle capacity setup");
+    let result =
+        crate::test_support::with_work_refusal("catia_standard_circle_constraint_counts", run);
+    assert!(
+        matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "catia_standard_circle_constraint_counts" && limit.additional == 1)
+    );
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "catia_standard_circle_constraint_ranges",
+        |cap| crate::test_support::with_materialized_limit(cap, run),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "catia_standard_circle_constraint_ranges")
     );
 }

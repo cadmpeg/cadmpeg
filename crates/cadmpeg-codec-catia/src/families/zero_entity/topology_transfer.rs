@@ -167,10 +167,9 @@ pub(super) fn transfer_closed_face_topology(
             &ir.model.curves,
             &[]
         ));
-        for run in admitted!(admission
-            .context()
-            .admit_iter(support_runs, "catia_zero_topology_source_visits")
-            .map_err(cadmpeg_core::CodecError::from))
+        let mut run_visits = support_runs.iter();
+        while let Some(run) =
+            admitted!(ctx.next_charged(&mut run_visits, "catia_zero_topology_source_visits"))
         {
             let face = run.face.as_ref()?;
             let surface_index = *admitted!(ctx.get_hash_map(
@@ -202,11 +201,10 @@ pub(super) fn transfer_closed_face_topology(
             let mut run_storage =
                 admitted!(ctx.reserve_scoped(0, "catia_zero_topology_support_ordinals"));
             let mut supports_by_ordinal = HashMap::new();
-            for support in admitted!(admission
-                .context()
-                .admit_iter(&run.supports, "catia_zero_topology_source_visits")
-                .map_err(cadmpeg_core::CodecError::from))
-            {
+            let mut support_visits = run.supports.iter();
+            while let Some(support) = admitted!(
+                ctx.next_charged(&mut support_visits, "catia_zero_topology_source_visits")
+            ) {
                 admitted!(run_storage.with_storage(|| ctx.insert_hash_map(
                     &mut supports_by_ordinal,
                     support.record_ordinal,
@@ -214,16 +212,9 @@ pub(super) fn transfer_closed_face_topology(
                     "catia_zero_topology_support_ordinals"
                 )));
             }
-            for loop_record in admitted!(admission
-                .context()
-                .admit_iter(
-                    match face.loops.as_deref() {
-                        Some(loops) => loops,
-                        None => &[],
-                    },
-                    "catia_zero_topology_source_visits"
-                )
-                .map_err(cadmpeg_core::CodecError::from))
+            let mut loop_visits = face.loops.as_deref().unwrap_or_default().iter();
+            while let Some(loop_record) =
+                admitted!(ctx.next_charged(&mut loop_visits, "catia_zero_topology_source_visits"))
             {
                 if loop_record.support_record_ordinals.len() != loop_record.forward_senses.len()
                     || loop_record.support_record_ordinals.len()
@@ -232,16 +223,14 @@ pub(super) fn transfer_closed_face_topology(
                 {
                     return None;
                 }
-                for (member_index, support_record_ordinal) in admitted!(admission
-                    .context()
-                    .admit_iter(
-                        &loop_record.support_record_ordinals,
-                        "catia_zero_topology_source_visits"
-                    )
-                    .map_err(cadmpeg_core::CodecError::from))
-                .copied()
-                .enumerate()
-                {
+                let mut member_visits = loop_record
+                    .support_record_ordinals
+                    .iter()
+                    .copied()
+                    .enumerate();
+                while let Some((member_index, support_record_ordinal)) = admitted!(
+                    ctx.next_charged(&mut member_visits, "catia_zero_topology_source_visits")
+                ) {
                     let support = *admitted!(ctx.get_hash_map(
                         &supports_by_ordinal,
                         &support_record_ordinal,
@@ -335,13 +324,11 @@ pub(super) fn transfer_closed_face_topology(
             }
         }
 
-        for occurrence in admitted!(ctx
-            .admit_iter(
-                &mut occurrences,
-                "catia_zero_topology_occurrence_curve_visits"
-            )
-            .map_err(cadmpeg_core::CodecError::from))
-        {
+        let mut occurrence_visits = occurrences.iter_mut();
+        while let Some(occurrence) = admitted!(ctx.next_charged(
+            &mut occurrence_visits,
+            "catia_zero_topology_occurrence_curve_visits"
+        )) {
             let curve_geometry = &ir.model.curves[occurrence.curve_position].geometry;
             let source_range = occurrence
                 .model_parameters
@@ -546,11 +533,9 @@ pub(super) fn transfer_closed_face_topology(
             return None;
         }
         let mut edge_for_support = HashMap::<u32, usize>::new();
-        for (edge_index, candidate) in admitted!(admission
-            .context()
-            .admit_iter(&edge_candidates, "catia_zero_topology_source_visits")
-            .map_err(cadmpeg_core::CodecError::from))
-        .enumerate()
+        let mut edge_visits = edge_candidates.iter().enumerate();
+        while let Some((edge_index, candidate)) =
+            admitted!(ctx.next_charged(&mut edge_visits, "catia_zero_topology_source_visits"))
         {
             for support_record_ordinal in candidate.support_record_ordinals {
                 if !admitted!(ctx.contains_key_hash_map(
@@ -592,20 +577,14 @@ pub(super) fn transfer_closed_face_topology(
             Err(error) => return Some(Err(error)),
         };
         let mut vertex_for_endpoint = HashMap::<(usize, usize), usize>::new();
-        for (vertex_index, locus) in admitted!(admission
-            .context()
-            .admit_iter(&endpoint_loci, "catia_zero_topology_source_visits")
-            .map_err(cadmpeg_core::CodecError::from))
-        .enumerate()
+        let mut locus_visits = endpoint_loci.iter().enumerate();
+        while let Some((vertex_index, locus)) =
+            admitted!(ctx.next_charged(&mut locus_visits, "catia_zero_topology_source_visits"))
         {
-            for &(edge_index, endpoint_index) in admitted!(admission
-                .context()
-                .admit_iter(
-                    &locus.incident_endpoint_pair_endpoints,
-                    "catia_zero_topology_source_visits"
-                )
-                .map_err(cadmpeg_core::CodecError::from))
-            {
+            let mut endpoint_visits = locus.incident_endpoint_pair_endpoints.iter();
+            while let Some(&(edge_index, endpoint_index)) = admitted!(
+                ctx.next_charged(&mut endpoint_visits, "catia_zero_topology_source_visits")
+            ) {
                 let edge_index = edge_index.ordinal();
                 let endpoint_index = usize::from(u8::from(endpoint_index));
                 if edge_index >= edge_candidates.len() {

@@ -342,7 +342,11 @@ fn transfer_closed_wire_loops(
         let mut support_storage = ctx.reserve_scoped(0, "catia_zero_wire_support_ordinals")?;
         let supports_by_ordinal = support_storage.with_storage(|| {
             let mut index = HashMap::new();
-            for support in ctx.admit_iter(&run.supports, "catia_zero_wire_support_visits")? {
+
+            let mut charged_visits = (run.supports).iter();
+            while let Some(support) =
+                ctx.next_charged(&mut charged_visits, "catia_zero_wire_support_visits")?
+            {
                 ctx.insert_hash_map(
                     &mut index,
                     support.record_ordinal,
@@ -350,6 +354,7 @@ fn transfer_closed_wire_loops(
                     "catia_zero_wire_support_ordinals",
                 )?;
             }
+
             Ok::<_, cadmpeg_core::CodecError>(index)
         })?;
         let mut visits = loops.iter();

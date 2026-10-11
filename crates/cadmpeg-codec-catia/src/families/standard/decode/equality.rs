@@ -157,7 +157,15 @@ fn solved_surfaces_equal(
         (
             SolvedSurfaceGeometry::Unknown { record: left },
             SolvedSurfaceGeometry::Unknown { record: right },
-        ) => ctx.equal(left, right, operation),
+        ) => match (left, right) {
+            (None, None) => Ok(true),
+            (Some(left), Some(right)) => ctx.equal_bytes(
+                left.as_str().as_bytes(),
+                right.as_str().as_bytes(),
+                operation,
+            ),
+            _ => Ok(false),
+        },
         (SolvedSurfaceGeometry::Plane(left), SolvedSurfaceGeometry::Plane(right)) => {
             Ok(left == right)
         }
@@ -293,6 +301,109 @@ pub(super) fn rolling_ball_jets_equal(
     }
 }
 
+fn extrusion_supports_equal(
+    ctx: &DecodeContext<'_>,
+    left: &crate::families::b5::transfer::ResolvedExtrusionSupport,
+    right: &crate::families::b5::transfer::ResolvedExtrusionSupport,
+    operation: &'static str,
+) -> Result<bool, CodecError> {
+    Ok(left.surface_object_id == right.surface_object_id
+        && left.pcurve_parameter_range == right.pcurve_parameter_range
+        && surfaces_equal(ctx, &left.surface, &right.surface, operation)?
+        && pcurves_equal(ctx, &left.pcurve, &right.pcurve, operation)?)
+}
+
+/// Lifted extrusion curves contain only lines, circles, or NURBS.
+fn extrusion_curves_equal(
+    ctx: &DecodeContext<'_>,
+    left: &cadmpeg_ir::geometry::CurveGeometry,
+    right: &cadmpeg_ir::geometry::CurveGeometry,
+    operation: &'static str,
+) -> Result<bool, CodecError> {
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+    match (left, right) {
+        (
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(left)),
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(right)),
+        ) => nurbs_curves_equal(ctx, left, right, operation),
+        (
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(left)),
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(right)),
+        ) => Ok(left == right),
+        (
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(left)),
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(right)),
+        ) => Ok(left == right),
+        _ => Ok(false),
+    }
+}
+
+pub(super) fn extrusions_equal(
+    ctx: &DecodeContext<'_>,
+    left: &crate::families::b5::transfer::ResolvedExtrusionSurface,
+    right: &crate::families::b5::transfer::ResolvedExtrusionSurface,
+    operation: &'static str,
+) -> Result<bool, CodecError> {
+    use crate::families::b5::transfer::ResolvedExtrusionDirectrix;
+    if left.surface_object_id != right.surface_object_id
+        || left.directrix_object_id != right.directrix_object_id
+        || left.directrix_parameter_range != right.directrix_parameter_range
+        || left.direction != right.direction
+        || left.parameter_bounds != right.parameter_bounds
+    {
+        return Ok(false);
+    }
+    match (&left.directrix, &right.directrix) {
+        (
+            ResolvedExtrusionDirectrix::Intersection {
+                supports: left,
+                cache_fit_tolerance: left_tolerance,
+            },
+            ResolvedExtrusionDirectrix::Intersection {
+                supports: right,
+                cache_fit_tolerance: right_tolerance,
+            },
+        ) => Ok(left_tolerance == right_tolerance
+            && extrusion_supports_equal(ctx, &left[0], &right[0], operation)?
+            && extrusion_supports_equal(ctx, &left[1], &right[1], operation)?),
+        (
+            ResolvedExtrusionDirectrix::SurfaceCurve {
+                support: left,
+                curve: left_curve,
+            },
+            ResolvedExtrusionDirectrix::SurfaceCurve {
+                support: right,
+                curve: right_curve,
+            },
+        ) => Ok(extrusion_supports_equal(ctx, left, right, operation)?
+            && extrusion_curves_equal(ctx, left_curve, right_curve, operation)?),
+        (
+            ResolvedExtrusionDirectrix::Offset {
+                source_object_id: left_id,
+                support: left,
+                source_curve: left_curve,
+                source_parameter_range: left_range,
+                distance: left_distance,
+                direction: left_direction,
+            },
+            ResolvedExtrusionDirectrix::Offset {
+                source_object_id: right_id,
+                support: right,
+                source_curve: right_curve,
+                source_parameter_range: right_range,
+                distance: right_distance,
+                direction: right_direction,
+            },
+        ) => Ok(left_id == right_id
+            && left_range == right_range
+            && left_distance == right_distance
+            && left_direction == right_direction
+            && extrusion_supports_equal(ctx, left, right, operation)?
+            && extrusion_curves_equal(ctx, left_curve, right_curve, operation)?),
+        _ => Ok(false),
+    }
+}
+
 pub(super) fn procedures_equal(
     ctx: &DecodeContext<'_>,
     left: &super::StandardSurfaceProcedure,
@@ -352,17 +463,15 @@ pub(super) fn procedures_equal(
                 (ResolvedOffsetSupport::Geometry(left), ResolvedOffsetSupport::Geometry(right)) => {
                     surfaces_equal(ctx, left, right, operation)
                 }
-                // Extrusion support has a private model-curve field.
                 (
                     ResolvedOffsetSupport::Extrusion(left),
                     ResolvedOffsetSupport::Extrusion(right),
-                ) => Ok(left == right),
+                ) => extrusions_equal(ctx, left, right, operation),
                 _ => Ok(false),
             }
         }
-        // Complete extrusion equality needs a borrowed curve accessor in its owner.
         (StandardSurfaceProcedure::Extrusion(left), StandardSurfaceProcedure::Extrusion(right)) => {
-            Ok(left == right)
+            extrusions_equal(ctx, left, right, operation)
         }
         _ => Ok(false),
     }
@@ -370,6 +479,196 @@ pub(super) fn procedures_equal(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn unknown_surface_equality_admits_only_present_id_pairs() {
+        use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+        use cadmpeg_ir::ids::UnknownId;
+        let absent = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
+        let present = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+            record: Some(
+                UnknownId::mint(format!("catia:test:unknown#{}", "x".repeat(4096)))
+                    .expect("identity"),
+            ),
+        });
+        crate::test_support::with_work_limit(0, |ctx| {
+            assert!(
+                super::surfaces_equal(ctx, &absent, &absent, "unknown equality")
+                    .expect("fixed option match")
+            );
+            assert!(
+                !super::surfaces_equal(ctx, &absent, &present, "unknown equality")
+                    .expect("fixed option mismatch")
+            );
+            assert!(
+                !super::surfaces_equal(ctx, &present, &absent, "unknown equality")
+                    .expect("fixed option mismatch")
+            );
+        });
+        let result = crate::test_support::with_work_refusal("unknown equality", |ctx| {
+            super::surfaces_equal(ctx, &present, &present, "unknown equality")
+        });
+        assert!(
+            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "unknown equality")
+        );
+    }
+
+    #[test]
+    fn extrusion_equality_admits_each_directrix_geometry_lane() {
+        use super::super::{StandardSupportRef, StandardSurfaceProcedure};
+        use crate::families::b5::transfer::{
+            ResolvedExtrusionDirectrix, ResolvedExtrusionSupport, ResolvedExtrusionSurface,
+            ResolvedOffsetSupport,
+        };
+        use cadmpeg_ir::geometry::pcurve::{LinePcurve, PcurveGeometry, PcurveNurbs};
+        use cadmpeg_ir::geometry::{
+            CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+        };
+        use cadmpeg_ir::math::{Point2, Point3, Vector3};
+        use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
+        use cadmpeg_ir::topology::IncreasingParameterInterval;
+        let interval = IncreasingParameterInterval::new([0.0, 1.0]).expect("interval");
+        let direction =
+            cadmpeg_ir::units::UnitVector3::new(Vector3::new(0.0, 0.0, 1.0)).expect("direction");
+        let support = ResolvedExtrusionSupport {
+            surface_object_id: 1,
+            surface: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            pcurve: PcurveGeometry::Line(LinePcurve::U_AXIS),
+            pcurve_parameter_range: [0.0, 1.0],
+        };
+        let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            super::NurbsCurve::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                None,
+                false,
+            )
+            .expect("admission")
+            .expect("curve"),
+        ));
+        let pcurve = PcurveGeometry::Nurbs {
+            nurbs: PcurveNurbs::from_lanes(
+                &cadmpeg_test_support::service_decode_context(),
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+                None,
+                false,
+            )
+            .expect("admission")
+            .expect("pcurve"),
+        };
+        let mut pcurve_support = support.clone();
+        pcurve_support.pcurve = pcurve;
+        let mut surface_support = support.clone();
+        surface_support.surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+            record: Some(
+                cadmpeg_ir::ids::UnknownId::mint(format!(
+                    "catia:test:unknown#{}",
+                    "x".repeat(4096)
+                ))
+                .expect("identity"),
+            ),
+        });
+        let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::from(direction),
+            )
+            .expect("line"),
+        ));
+        for directrix in [
+            ResolvedExtrusionDirectrix::Intersection {
+                supports: Box::new([support.clone(), surface_support]),
+                cache_fit_tolerance: PositiveReal::new(0.001).expect("tolerance"),
+            },
+            ResolvedExtrusionDirectrix::Intersection {
+                supports: Box::new([support.clone(), pcurve_support.clone()]),
+                cache_fit_tolerance: PositiveReal::new(0.001).expect("tolerance"),
+            },
+            ResolvedExtrusionDirectrix::SurfaceCurve {
+                support: pcurve_support,
+                curve: line,
+            },
+            ResolvedExtrusionDirectrix::SurfaceCurve {
+                support: support.clone(),
+                curve: curve.clone(),
+            },
+            ResolvedExtrusionDirectrix::Offset {
+                source_object_id: 3,
+                support,
+                source_curve: curve,
+                source_parameter_range: interval,
+                distance: FiniteReal::new(1.0).expect("distance"),
+                direction,
+            },
+        ] {
+            let extrusion = ResolvedExtrusionSurface {
+                surface_object_id: 4,
+                directrix_object_id: 5,
+                directrix_parameter_range: interval,
+                direction,
+                parameter_bounds: [interval; 2],
+                directrix,
+            };
+            let procedure = StandardSurfaceProcedure::Extrusion(Box::new(extrusion.clone()));
+            let offset = ResolvedOffsetSupport::Extrusion(Box::new(extrusion.clone()));
+            let offset_procedure = StandardSurfaceProcedure::Offset {
+                carrier_object_id: 6,
+                support_object_id: 4,
+                support: offset.clone(),
+                distance: FiniteReal::new(1.0).expect("distance"),
+                parameter_bounds: [interval; 2],
+            };
+            crate::test_support::with_service_context(|ctx| {
+                assert!(
+                    super::procedures_equal(ctx, &procedure, &procedure, "extrusion equality")
+                        .expect("equal geometry")
+                );
+                assert!(super::procedures_equal(
+                    ctx,
+                    &offset_procedure,
+                    &offset_procedure,
+                    "extrusion equality"
+                )
+                .expect("equal offset geometry"));
+                assert!(StandardSupportRef::Offset(&offset)
+                    .equivalent(ctx, &StandardSupportRef::Offset(&offset))
+                    .expect("equal support"));
+            });
+            for procedure in [&procedure, &offset_procedure] {
+                let result = crate::test_support::with_work_refusal("extrusion equality", |ctx| {
+                    super::procedures_equal(ctx, procedure, procedure, "extrusion equality")
+                });
+                assert!(
+                    matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "extrusion equality")
+                );
+            }
+            let result = crate::test_support::with_work_refusal(
+                "catia_standard_support_candidates",
+                |ctx| {
+                    StandardSupportRef::Offset(&offset)
+                        .equivalent(ctx, &StandardSupportRef::Offset(&offset))
+                },
+            );
+            assert!(
+                matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "catia_standard_support_candidates")
+            );
+            let mut different = extrusion.clone();
+            different.surface_object_id += 1;
+            crate::test_support::with_work_limit(0, |ctx| {
+                assert!(!super::extrusions_equal(
+                    ctx,
+                    &extrusion,
+                    &different,
+                    "extrusion equality"
+                )
+                .expect("fixed metadata mismatch"));
+            });
+        }
+    }
+
     #[test]
     fn geometry_lane_comparison_stops_at_first_difference() {
         let left = vec![0.0; 4096];
