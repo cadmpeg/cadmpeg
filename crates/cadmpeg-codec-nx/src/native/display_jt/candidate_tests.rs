@@ -89,7 +89,7 @@ fn partition_name_control_rejection_charges_only_the_first_character() {
     );
 }
 
-fn container(data: Vec<u8>) -> crate::container::Container<'static> {
+fn container(data: &[u8]) -> crate::container::Container<'_> {
     use crate::container::{Container, DirEntry, DirEntryBody, Region};
     let len = cadmpeg_core::decode::u64_from_index(data.len());
     Container {
@@ -140,10 +140,7 @@ fn end_marker(bytes: &mut Vec<u8>) {
     bytes.extend_from_slice(&[0xff; 16]);
 }
 
-fn compressed_fixture(
-    expanded: &[u8],
-    kind: u32,
-) -> (crate::container::Container<'static>, DisplayJtSegment) {
+fn compressed_fixture(expanded: &[u8], kind: u32) -> (Vec<u8>, DisplayJtSegment) {
     let compressed = crate::test_support::test_bytes::zlib_compress_at_level(expanded, 1);
     let mut bytes = vec![0; 33];
     bytes.extend_from_slice(&compressed);
@@ -158,7 +155,7 @@ fn compressed_fixture(
         inflated_sha256: Sha256Digest::digest(expanded),
     };
     let segment = segment(&bytes, kind, Some(compression));
-    (container(bytes), segment)
+    (bytes, segment)
 }
 
 const TRI_STRIP_TYPE: [u8; 16] = [
@@ -180,12 +177,7 @@ fn tri_strip_body(representation: &[u8]) -> Vec<u8> {
     body
 }
 
-fn shape_fixture(
-    body: &[u8],
-) -> (
-    crate::container::Container<'static>,
-    Vec<DisplayJtShapeLodElement>,
-) {
+fn shape_fixture(body: &[u8]) -> (Vec<u8>, Vec<DisplayJtShapeLodElement>) {
     let mut bytes = vec![0; 25];
     bytes.extend_from_slice(body);
     let element = DisplayJtShapeLodElement {
@@ -200,7 +192,7 @@ fn shape_fixture(
     };
     let mut invalid = element.clone();
     invalid.source_offset = u64::MAX;
-    (container(bytes), vec![element, invalid])
+    (bytes, vec![element, invalid])
 }
 
 /// One zero value in fixed-width bitlength mode: mode, two six-bit zero widths.
@@ -255,7 +247,7 @@ fn index_candidate_releases_valid_row_after_nonascending_offset() {
         bytes.extend_from_slice(&40_u32.to_le_bytes());
     }
     bytes.extend_from_slice(b"Version ");
-    let container = container(bytes);
+    let container = container(&bytes);
     assert_released(|ctx| {
         assert!(display_jt_indices(ctx, &container)?.is_empty());
         Ok(())
@@ -264,8 +256,9 @@ fn index_candidate_releases_valid_row_after_nonascending_offset() {
 
 #[test]
 fn document_candidate_releases_valid_document_before_invalid_second_header() {
-    let mut container = super::document_admission_tests::one_document();
+    let mut bytes = super::document_admission_tests::one_document_bytes();
     let mut indices = crate::test_support::with_decode_context(|ctx| {
+        let container = super::document_admission_tests::one_document(&bytes);
         display_jt_indices(ctx, &container).unwrap()
     });
     let first = indices[0].rows.first().clone();
@@ -274,12 +267,8 @@ fn document_candidate_releases_valid_document_before_invalid_second_header() {
     second.ordinal = 1;
     second.header_offset = 189;
     indices[0] = DisplayJtIndex::new(indices[0].id.clone(), 9, vec![first, second], 0).unwrap();
-    container.data.to_mut().extend_from_slice(b"Version ");
-    container.physical_size += 8;
-    container.entries[0].body = crate::container::DirEntryBody::File {
-        offset: 0,
-        len: container.physical_size,
-    };
+    bytes.extend_from_slice(b"Version ");
+    let container = super::document_admission_tests::one_document(&bytes);
     assert_released(|ctx| {
         assert!(display_jt_documents(ctx, &container, &indices)?.is_empty());
         Ok(())
@@ -288,11 +277,11 @@ fn document_candidate_releases_valid_document_before_invalid_second_header() {
 
 #[test]
 fn segment_candidate_releases_valid_segment_before_uuid_mismatch() {
-    let mut container = super::document_admission_tests::one_document();
-    let data = container.data.to_mut();
+    let mut data = super::document_admission_tests::one_document_bytes();
     data[165..181].copy_from_slice(&[2; 16]);
     data[181..185].copy_from_slice(&1_u32.to_le_bytes());
     data[185..189].copy_from_slice(&24_u32.to_le_bytes());
+    let container = super::document_admission_tests::one_document(&data);
     let mut documents = crate::test_support::with_decode_context(|ctx| {
         let indices = display_jt_indices(ctx, &container).unwrap();
         let documents = display_jt_documents(ctx, &container, &indices).unwrap();
@@ -321,7 +310,7 @@ fn shape_element_candidate_releases_valid_element_before_wrong_base_type() {
     end_marker(&mut bytes);
     bytes.extend_from_slice(&[1, 0, 0, 0, 0, 0]);
     let segment = segment(&bytes, 7, None);
-    let container = container(bytes);
+    let container = container(&bytes);
     assert_released(|ctx| {
         assert!(
             display_jt_shape_lod_elements(ctx, &container, std::slice::from_ref(&segment))?
@@ -333,7 +322,8 @@ fn shape_element_candidate_releases_valid_element_before_wrong_base_type() {
 
 #[test]
 fn tri_strip_header_candidate_releases_valid_header_before_invalid_element() {
-    let (container, elements) = shape_fixture(&tri_strip_body(&[]));
+    let (bytes, elements) = shape_fixture(&tri_strip_body(&[]));
+    let container = container(&bytes);
     crate::test_support::with_decode_context(|ctx| {
         assert_eq!(
             display_jt_tri_strip_lod_headers(ctx, &container, &elements[..1])
@@ -350,7 +340,8 @@ fn tri_strip_header_candidate_releases_valid_header_before_invalid_element() {
 
 #[test]
 fn face_degree_candidate_releases_valid_record_before_invalid_element() {
-    let (container, elements) = shape_fixture(&tri_strip_body(&zero_packet()));
+    let (bytes, elements) = shape_fixture(&tri_strip_body(&zero_packet()));
+    let container = container(&bytes);
     crate::test_support::with_decode_context(|ctx| {
         assert_eq!(
             display_jt_initial_face_degree_symbols(ctx, &container, &elements[..1]).unwrap()[0]
@@ -369,7 +360,8 @@ fn topology_candidate_releases_valid_packets_before_invalid_element() {
     let mut representation = vec![0; 24 * 4];
     representation.extend_from_slice(&0x1234_5678_u32.to_le_bytes());
     representation.extend_from_slice(&[0; 16]);
-    let (container, elements) = shape_fixture(&tri_strip_body(&representation));
+    let (bytes, elements) = shape_fixture(&tri_strip_body(&representation));
+    let container = container(&bytes);
     crate::test_support::with_decode_context(|ctx| {
         assert_eq!(
             display_jt_topology_packet_sequences(ctx, &container, &elements[..1])
@@ -437,7 +429,7 @@ fn coordinate_candidate_releases_valid_array_before_invalid_component() {
         bytes.extend_from_slice(&zero_packet());
     }
     bytes.extend_from_slice(&0_u32.to_le_bytes());
-    let container = container(bytes);
+    let container = container(&bytes);
     let mut first = coordinate_header();
     first.compressed_components_byte_len = 6 * 13 + 4;
     let mut second = first.clone();
@@ -467,7 +459,7 @@ fn normal_candidate_releases_valid_array_before_missing_owner() {
         bytes.extend_from_slice(&zero_packet());
     }
     bytes.extend_from_slice(&0_u32.to_le_bytes());
-    let container = container(bytes);
+    let container = container(&bytes);
     let first = vertex_header(0x8);
     let mut second = first.clone();
     second.element = "missing".into();
@@ -512,7 +504,7 @@ fn color_candidate_releases_valid_array_before_missing_normal() {
         bytes.extend_from_slice(&zero_packet());
     }
     bytes.extend_from_slice(&0_u32.to_le_bytes());
-    let container = container(bytes);
+    let container = container(&bytes);
     let first = vertex_header(0x30);
     let mut second = first.clone();
     second.vertex_bindings |= 0x8;
@@ -555,7 +547,7 @@ fn texture_candidate_releases_valid_array_before_zero_attribute_count() {
     bytes.push(1);
     bytes.extend_from_slice(&zero_packet());
     bytes.extend_from_slice(&0_u32.to_le_bytes());
-    let container = container(bytes);
+    let container = container(&bytes);
     let first = vertex_header(0x100);
     let mut second = first.clone();
     second.vertex_attribute_count = 0;
@@ -596,7 +588,7 @@ fn texture_candidate_releases_valid_array_before_zero_attribute_count() {
 fn flag_candidate_releases_valid_array_before_missing_texture() {
     let mut bytes = 1_u32.to_le_bytes().to_vec();
     bytes.extend_from_slice(&zero_packet());
-    let container = container(bytes);
+    let container = container(&bytes);
     let first = vertex_header(0x40);
     let mut second = first.clone();
     second.vertex_bindings |= 0x100;
@@ -630,16 +622,12 @@ fn flag_candidate_releases_valid_array_before_missing_texture() {
 fn compressed_sequence_candidate_releases_prefix_before_failed_inflation() {
     let mut expanded = framed_element([0; 16], 4, &[1]);
     end_marker(&mut expanded);
-    let (mut container, first) = compressed_fixture(&expanded, 7);
+    let (mut bytes, first) = compressed_fixture(&expanded, 7);
     let mut second = first.clone();
-    second.source_offset = cadmpeg_core::decode::u64_from_index(container.data.len());
+    second.source_offset = cadmpeg_core::decode::u64_from_index(bytes.len());
     second.segment_byte_len = 37;
-    container.data.to_mut().extend_from_slice(&[0; 37]);
-    container.physical_size += 37;
-    container.entries[0].body = crate::container::DirEntryBody::File {
-        offset: 0,
-        len: container.physical_size,
-    };
+    bytes.extend_from_slice(&[0; 37]);
+    let container = container(&bytes);
     crate::test_support::with_decode_context(|ctx| {
         assert_eq!(
             display_jt_compressed_element_sequences(ctx, &container, std::slice::from_ref(&first))
@@ -676,7 +664,8 @@ fn string_property_candidate_releases_atom_before_wrong_type() {
     let mut expanded = framed_element(STRING_TYPE, 5, &string_body("x"));
     let mut valid = expanded.clone();
     end_marker(&mut valid);
-    let (valid_container, valid_segment) = compressed_fixture(&valid, 31);
+    let (valid_bytes, valid_segment) = compressed_fixture(&valid, 31);
+    let valid_container = container(&valid_bytes);
     crate::test_support::with_decode_context(|ctx| {
         assert_eq!(
             display_jt_string_property_atoms(ctx, &valid_container, &[valid_segment])
@@ -687,7 +676,8 @@ fn string_property_candidate_releases_atom_before_wrong_type() {
     });
     expanded.extend_from_slice(&framed_element([0; 16], 5, &string_body("y")));
     end_marker(&mut expanded);
-    let (container, segment) = compressed_fixture(&expanded, 31);
+    let (bytes, segment) = compressed_fixture(&expanded, 31);
+    let container = container(&bytes);
     assert_released(|ctx| {
         assert!(
             display_jt_string_property_atoms(ctx, &container, std::slice::from_ref(&segment))?
@@ -802,7 +792,8 @@ fn binding_candidate_releases_valid_binding_before_trailing_property_bytes() {
         segment_id: [9; 16],
         ..segment(&[], 7, None)
     };
-    let (valid_container, valid_segment) = compressed_fixture(&expanded, 1);
+    let (valid_bytes, valid_segment) = compressed_fixture(&expanded, 1);
+    let valid_container = container(&valid_bytes);
     crate::test_support::with_decode_context(|ctx| {
         assert_eq!(
             display_jt_shape_lod_bindings(ctx, &valid_container, &[valid_segment, target.clone()])
@@ -812,7 +803,8 @@ fn binding_candidate_releases_valid_binding_before_trailing_property_bytes() {
         );
     });
     expanded.push(1);
-    let (container, source) = compressed_fixture(&expanded, 1);
+    let (bytes, source) = compressed_fixture(&expanded, 1);
+    let container = container(&bytes);
     assert_released(|ctx| {
         assert!(
             display_jt_shape_lod_bindings(ctx, &container, &[source.clone(), target.clone()])?
@@ -832,7 +824,8 @@ fn scene_family_candidate_releases_prefix_when_its_next_member_fails() {
     let mut expanded = framed_element([0; 16], 1, &group);
     let mut valid = expanded.clone();
     end_marker(&mut valid);
-    let (valid_container, valid_segment) = compressed_fixture(&valid, 1);
+    let (valid_bytes, valid_segment) = compressed_fixture(&valid, 1);
+    let valid_container = container(&valid_bytes);
     let document = DisplayJtDocument {
         id: "document".into(),
         index_row: "row".into(),
@@ -858,7 +851,8 @@ fn scene_family_candidate_releases_prefix_when_its_next_member_fails() {
     });
     expanded.extend_from_slice(&framed_element([0; 16], 1, &[]));
     end_marker(&mut expanded);
-    let (container, segment) = compressed_fixture(&expanded, 1);
+    let (bytes, segment) = compressed_fixture(&expanded, 1);
+    let container = container(&bytes);
     assert_released(|ctx| {
         let result = display_jt_scene_nodes(
             ctx,
@@ -876,7 +870,8 @@ fn scene_family_candidate_releases_prefix_when_its_next_member_fails() {
 fn null_predictor_keeps_the_packet_without_copying_its_collection() {
     let mut packet = zero_packet();
     packet[..4].copy_from_slice(&2_u32.to_le_bytes());
-    let (container, elements) = shape_fixture(&tri_strip_body(&packet));
+    let (bytes, elements) = shape_fixture(&tri_strip_body(&packet));
+    let container = container(&bytes);
     crate::test_support::with_decode_context_over(
         &[],
         |policy| policy.limits.max_collection_items = 3,
@@ -938,7 +933,7 @@ fn invalid_first_index_row_does_not_visit_the_remaining_rows() {
     let mut bytes = 9_u32.to_le_bytes().to_vec();
     bytes.extend_from_slice(&129_u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 129 * 16]);
-    let container = container(bytes);
+    let container = container(&bytes);
     assert_first_visit_only("scan DisplayJT index rows", |ctx| {
         assert!(display_jt_indices(ctx, &container)?.is_empty());
         Ok(())
@@ -947,19 +942,15 @@ fn invalid_first_index_row_does_not_visit_the_remaining_rows() {
 
 #[test]
 fn invalid_first_toc_extent_does_not_visit_the_remaining_entries() {
-    let mut container = super::document_admission_tests::one_document();
+    let mut data = super::document_admission_tests::one_document_bytes();
     let indices = crate::test_support::with_decode_context(|ctx| {
+        let container = super::document_admission_tests::one_document(&data);
         display_jt_indices(ctx, &container).unwrap()
     });
-    let data = container.data.to_mut();
     data[133..137].copy_from_slice(&129_u32.to_le_bytes());
     data[153..157].copy_from_slice(&u32::MAX.to_le_bytes());
     data.extend_from_slice(&[0; 128 * 28]);
-    container.physical_size = u64::try_from(data.len()).unwrap();
-    container.entries[0].body = crate::container::DirEntryBody::File {
-        offset: 0,
-        len: container.physical_size,
-    };
+    let container = super::document_admission_tests::one_document(&data);
     assert_first_visit_only("scan DisplayJT table of contents", |ctx| {
         assert!(display_jt_documents(ctx, &container, &indices)?.is_empty());
         Ok(())
@@ -981,7 +972,8 @@ fn topology_predictor_scratch_is_released_while_values_remain_retained() {
     }
     representation.extend_from_slice(&0x1234_5678_u32.to_le_bytes());
     representation.extend_from_slice(&[0; 16]);
-    let (container, elements) = shape_fixture(&tri_strip_body(&representation));
+    let (bytes, elements) = shape_fixture(&tri_strip_body(&representation));
+    let container = container(&bytes);
     crate::test_support::with_decode_context_over(
         &[],
         |policy| policy.limits.max_retained_bytes = ALLOWANCE,

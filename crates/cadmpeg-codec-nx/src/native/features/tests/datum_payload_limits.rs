@@ -117,7 +117,7 @@ fn native_datum_plane_unique_lane_transfers_only_token_storage() {
     let end = at + identity.len() + 1;
     file[end - 10..end].copy_from_slice(&[0x7f, 1, 2, 0x80, 7, 0, 0x12, 0x34, 0x56, 0x78]);
     let container =
-        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
             .unwrap();
     let headers = crate::test_support::with_decode_context(|ctx| {
         let history = crate::native::features::FeatureHistory::new(ctx, &container)?;
