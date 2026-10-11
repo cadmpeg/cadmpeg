@@ -80,7 +80,7 @@ fn audit_regression_near_half_turn_retains_negative_axis() {
         [0., 0., 1., 0.],
         [0., 0., 0., 1.],
     ];
-    let rotation = super::matrix_axis_angle(&matrix).unwrap();
+    let rotation = crate::design::feature_project::fixed_geometry::matrix_axis_angle(&matrix).unwrap();
     assert!(rotation.direction.z < 0.0);
     assert!((rotation.angle.get() - theta).abs() <= 4.0 * f64::EPSILON);
 }
