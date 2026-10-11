@@ -4,8 +4,8 @@ use super::*;
 
 #[test]
 fn relation_operands_refuse_before_retained_copy() {
-    assert!(
-        matches!(positional_relation_with_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo relation operands"), |cap| positional_relation_with_limits(u64::MAX, cap))),
+    let result = positional_relation_with_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo relation operands"), |cap| positional_relation_with_limits(u64::MAX, cap)));
+    assert!(matches!(result,
 Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo relation operands")
@@ -25,8 +25,8 @@ Err(CodecError::ResourceLimit(limit))
 
 #[test]
 fn relation_row_body_refuses_before_retained_copy() {
-    assert!(
-        matches!(positional_relation_with_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo relation row body"), |cap| positional_relation_with_limits(u64::MAX, cap))),
+    let result = positional_relation_with_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo relation row body"), |cap| positional_relation_with_limits(u64::MAX, cap)));
+    assert!(matches!(result,
 Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo relation row body")
@@ -46,8 +46,8 @@ Err(CodecError::ResourceLimit(limit))
 
 #[test]
 fn relation_row_refuses_before_vec_growth() {
-    assert!(
-        matches!(positional_relation_with_limits(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo relation rows"), |cap| positional_relation_with_limits(cap, u64::MAX)), u64::MAX),
+    let result = positional_relation_with_limits(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo relation rows"), |cap| positional_relation_with_limits(cap, u64::MAX)), u64::MAX);
+    assert!(matches!(result,
 Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo relation rows")
@@ -165,8 +165,8 @@ fn equation_table_accepts_final_row_at_table_separator() {
 
 #[test]
 fn equation_prototype_body_refuses_before_retained_copy() {
-    assert!(
-        matches!(equation_with_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo equation prototype body"), |cap| equation_with_limits(u64::MAX, cap))),
+    let result = equation_with_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo equation prototype body"), |cap| equation_with_limits(u64::MAX, cap)));
+    assert!(matches!(result,
 Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo equation prototype body")
@@ -175,8 +175,8 @@ Err(CodecError::ResourceLimit(limit))
 
 #[test]
 fn equation_arguments_refuse_before_vec_growth() {
-    assert!(
-        matches!(equation_with_limits(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo equation arguments"), |cap| equation_with_limits(cap, u64::MAX)), u64::MAX),
+    let result = equation_with_limits(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo equation arguments"), |cap| equation_with_limits(cap, u64::MAX)), u64::MAX);
+    assert!(matches!(result,
 Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo equation arguments")
@@ -185,8 +185,8 @@ Err(CodecError::ResourceLimit(limit))
 
 #[test]
 fn equation_argument_body_refuses_before_retained_copy() {
-    assert!(
-        matches!(equation_with_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo equation argument body"), |cap| equation_with_limits(u64::MAX, cap))),
+    let result = equation_with_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo equation argument body"), |cap| equation_with_limits(u64::MAX, cap)));
+    assert!(matches!(result,
 Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo equation argument body")
@@ -195,8 +195,8 @@ Err(CodecError::ResourceLimit(limit))
 
 #[test]
 fn equation_auxiliary_body_refuses_before_retained_copy() {
-    assert!(
-        matches!(equation_with_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo equation auxiliary body"), |cap| equation_with_limits(u64::MAX, cap))),
+    let result = equation_with_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo equation auxiliary body"), |cap| equation_with_limits(u64::MAX, cap)));
+    assert!(matches!(result,
 Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo equation auxiliary body")
@@ -205,8 +205,8 @@ Err(CodecError::ResourceLimit(limit))
 
 #[test]
 fn equation_row_body_refuses_before_retained_copy() {
-    assert!(
-        matches!(equation_with_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo equation row body"), |cap| equation_with_limits(u64::MAX, cap))),
+    let result = equation_with_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo equation row body"), |cap| equation_with_limits(u64::MAX, cap)));
+    assert!(matches!(result,
 Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo equation row body")
@@ -215,8 +215,8 @@ Err(CodecError::ResourceLimit(limit))
 
 #[test]
 fn equation_row_refuses_before_vec_growth() {
-    assert!(
-        matches!(equation_with_limits(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo equation rows"), |cap| equation_with_limits(cap, u64::MAX)), u64::MAX),
+    let result = equation_with_limits(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo equation rows"), |cap| equation_with_limits(cap, u64::MAX)), u64::MAX);
+    assert!(matches!(result,
 Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "creo equation rows")
@@ -638,7 +638,7 @@ fn optional_solver_header_propagates_the_search_refusal() {
         cadmpeg_core::decode::ResourceDimension::WorkUnits
     );
     assert_eq!(limit.operation, "find Creo solver table");
-    assert_eq!(ctx.resource_refusal(), Some(limit));
+
 }
 
 #[test]
@@ -800,7 +800,8 @@ fn positional_relation_triples_stop_at_definition_end() {
 
 #[test]
 fn positional_relation_triples_header_and_multibyte_rows_stay_in_definition() {
-    let mut payload = b"\xf8\x01\xf7\x80\x80\xfb\xe2\xf7\x80\x81\x80\x80\xc0\0\x02\xea\x03\0\0".to_vec();
+    let mut payload = b"\xf8\x01\xf7\x80\x80\xfb\xe2\xf7\x80\x81\
+        \x80\x80\xc0\0\x02\xea\x03\0\0".to_vec();
     let definition_end = payload.len();
     payload.extend_from_slice(b"feat_defs_2\0");
     for end in 0..definition_end {

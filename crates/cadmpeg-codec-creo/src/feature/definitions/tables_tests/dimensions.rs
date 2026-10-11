@@ -4,8 +4,8 @@ use super::*;
 
 #[test]
 fn named_dimension_value_body_refuses_before_copy() {
-    assert!(
-        matches!(named_dimension_with_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo dimension value body"), |cap| named_dimension_with_limits(u64::MAX, cap))),
+    let result = named_dimension_with_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo dimension value body"), |cap| named_dimension_with_limits(u64::MAX, cap)));
+    assert!(matches!(result,
 Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo dimension value body")
@@ -29,8 +29,8 @@ Err(CodecError::ResourceLimit(limit))
 
 #[test]
 fn named_dimension_auxiliary_body_refuses_before_copy() {
-    assert!(
-        matches!(named_dimension_with_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo dimension auxiliary body"), |cap| named_dimension_with_limits(u64::MAX, cap))),
+    let result = named_dimension_with_limits(u64::MAX, crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo dimension auxiliary body"), |cap| named_dimension_with_limits(u64::MAX, cap)));
+    assert!(matches!(result,
 Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo dimension auxiliary body")
@@ -65,8 +65,8 @@ fn positional_dimension_unresolved_token_refuses_before_copy() {
             )
         })
     };
-    assert!(
-        matches!(run(crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo dimension unresolved token"), run)),
+    let result = run(crate::test_support::allocation_limit_at(ResourceDimension::RetainedBytes, Some("creo dimension unresolved token"), run));
+    assert!(matches!(result,
 Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo dimension unresolved token")
@@ -98,11 +98,11 @@ fn positional_dimension_rows_refuse_before_each_append() {
 
 #[test]
 fn positional_dimension_value_body_refuses_before_copy() {
-    assert!(
-        matches!(crate::test_support::last_refusal_at(POSITIONAL_DIMENSION_LIMIT_INPUT, ResourceDimension::RetainedBytes, "creo dimension value body", |ctx| {
+    let result = crate::test_support::last_refusal_at(POSITIONAL_DIMENSION_LIMIT_INPUT, ResourceDimension::RetainedBytes, "creo dimension value body", |ctx| {
             parse_positional_dimension(ctx, POSITIONAL_DIMENSION_LIMIT_INPUT, 0,
                 POSITIONAL_DIMENSION_LIMIT_INPUT.len(), &scalar::ScalarCache::default())
-        }),
+        });
+    assert!(matches!(result,
 CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo dimension value body")
@@ -111,11 +111,11 @@ CodecError::ResourceLimit(limit)
 
 #[test]
 fn positional_dimension_auxiliary_body_refuses_before_copy() {
-    assert!(
-        matches!(crate::test_support::last_refusal_at(POSITIONAL_DIMENSION_LIMIT_INPUT, ResourceDimension::RetainedBytes, "creo dimension auxiliary body", |ctx| {
+    let result = crate::test_support::last_refusal_at(POSITIONAL_DIMENSION_LIMIT_INPUT, ResourceDimension::RetainedBytes, "creo dimension auxiliary body", |ctx| {
             parse_positional_dimension(ctx, POSITIONAL_DIMENSION_LIMIT_INPUT, 0,
                 POSITIONAL_DIMENSION_LIMIT_INPUT.len(), &scalar::ScalarCache::default())
-        }),
+        });
+    assert!(matches!(result,
 CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "creo dimension auxiliary body")
@@ -134,8 +134,8 @@ fn named_section_dimension_id_refuses_before_vec_growth() {
             )
         })
     };
-    assert!(
-        matches!(run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo section dimension IDs"), run)),
+    let result = run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo section dimension IDs"), run));
+    assert!(matches!(result,
 Err(CodecError::ResourceLimit(refusal))
         if refusal.dimension == ResourceDimension::CollectionItems
             && refusal.operation == "creo section dimension IDs")

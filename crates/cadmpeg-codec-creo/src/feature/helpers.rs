@@ -69,6 +69,8 @@ mod tests {
         policy.limits.max_materialized_bytes = materialized;
         policy.limits.max_retained_bytes = retained;
         policy.limits.max_collection_items = items;
+        policy.limits.max_entities = 0;
+        policy.limits.max_recursion_depth = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         test(&ctx)
     }
@@ -121,59 +123,83 @@ mod tests {
     fn exact_scalar_values_refuse_before_the_next_present_slot() {
         let cache = ScalarCache::from_section(&[]);
         for count in 1..=4 {
-            let cap = u64::try_from(count - 1).expect("three slots fit u64");
-            with_limits(cap, SCALAR_VECTOR_BYTES, SCALAR_VECTOR_BYTES, 4, |ctx| {
-                let error = decode_exact_scalars(ctx, &[0x0f; 4][..count], count, &cache)
-                    .expect_err("last present slot exceeds its work cap");
-                assert!(matches!(error, CodecError::ResourceLimit(limit)
-                    if limit.dimension == ResourceDimension::WorkUnits
-                        && limit.operation == "creo exact scalar scan"
-                        && (limit.used, limit.additional) == (cap, 1)));
-            });
+            let visits = u64::try_from(count).expect("four slots fit u64");
+            crate::test_support::assert_refusal_order(
+                ResourceDimension::WorkUnits,
+                &vec!["creo exact scalar scan"; count],
+                |cap| with_limits(cap, SCALAR_VECTOR_BYTES, SCALAR_VECTOR_BYTES, 4, |ctx| {
+                    match decode_exact_scalars(ctx, &[0x0f; 4][..count], count, &cache) {
+                        Ok(values) => {
+                            assert_eq!(values.as_deref(), Some(&[0.0; 4][..count]));
+                            let limit = ctx.charge_work_limit(1, "after walked scalar visits")
+                                .expect_err("all present slots were visited");
+                            assert_eq!((limit.used, limit.additional), (visits, 1));
+                            Ok(())
+                        }
+                        Err(CodecError::ResourceLimit(limit)) => {
+                            assert_eq!((limit.dimension, limit.used, limit.additional, limit.operation),
+                                (ResourceDimension::WorkUnits, cap, 1, "creo exact scalar scan"));
+                            Err(CodecError::ResourceLimit(limit))
+                        }
+                        Err(error) => Err(error),
+                    }
+                }),
+            );
         }
     }
 
     #[test]
     fn exact_scalar_values_refuse_each_storage_boundary() {
         let cache = ScalarCache::from_section(&[]);
-        for (dimension, materialized, retained, items, used, additional) in [
-            (
-                ResourceDimension::MaterializedBytes,
-                SCALAR_VECTOR_BYTES - 1,
-                SCALAR_VECTOR_BYTES,
-                3,
-                0,
-                SCALAR_VECTOR_BYTES,
-            ),
-            (
-                ResourceDimension::RetainedBytes,
-                SCALAR_VECTOR_BYTES,
-                SCALAR_VECTOR_BYTES - 1,
-                3,
-                0,
-                SCALAR_VECTOR_BYTES,
-            ),
-            (
-                ResourceDimension::CollectionItems,
-                SCALAR_VECTOR_BYTES,
-                SCALAR_VECTOR_BYTES,
-                2,
-                2,
-                1,
-            ),
-        ] {
-            with_limits(3, materialized, retained, items, |ctx| {
-                let error = decode_exact_scalars(ctx, &[0x0f; 3], 3, &cache)
-                    .expect_err("scalar vector boundary refuses");
-                let CodecError::ResourceLimit(original) = error else {
-                    panic!("expected resource refusal");
-                };
-                assert_eq!(original.dimension, dimension);
-                assert_eq!(original.operation, "creo feature scalar values");
-                assert_eq!((original.used, original.additional), (used, additional));
-                assert_eq!(ctx.resource_refusal(), Some(original));
+        for dimension in [ResourceDimension::MaterializedBytes,
+            ResourceDimension::RetainedBytes, ResourceDimension::CollectionItems] {
+            let operations = if dimension == ResourceDimension::CollectionItems {
+                vec!["creo feature scalar values"; 3]
+            } else {
+                vec!["creo feature scalar values"]
+            };
+            crate::test_support::assert_refusal_order(dimension, &operations, |cap| {
+                let materialized = if dimension == ResourceDimension::MaterializedBytes {
+                    cap
+                } else { SCALAR_VECTOR_BYTES };
+                let retained = if dimension == ResourceDimension::RetainedBytes {
+                    cap
+                } else { SCALAR_VECTOR_BYTES };
+                let items = if dimension == ResourceDimension::CollectionItems { cap } else { 3 };
+                with_limits(3, materialized, retained, items, |ctx| {
+                    match decode_exact_scalars(ctx, &[0x0f; 3], 3, &cache) {
+                        Ok(values) => {
+                            assert_eq!(values.as_deref(), Some(&[0.0; 3][..]));
+                            assert_eq!(cap, if dimension == ResourceDimension::CollectionItems {
+                                3
+                            } else { SCALAR_VECTOR_BYTES });
+                            Ok(())
+                        }
+                        Err(CodecError::ResourceLimit(limit)) => {
+                            let (used, additional) = if dimension == ResourceDimension::CollectionItems {
+                                (cap, 1)
+                            } else { (0, SCALAR_VECTOR_BYTES) };
+                            assert_eq!((limit.dimension, limit.used, limit.additional, limit.operation, limit.limit),
+                                (dimension, used, additional, "creo feature scalar values", cap));
+                            Err(CodecError::ResourceLimit(limit))
+                        }
+                        Err(error) => Err(error),
+                    }
+                })
             });
         }
+    }
+
+    #[test]
+    fn exact_scalar_empty_and_impossible_counts_are_free() {
+        let cache = ScalarCache::from_section(&[]);
+        with_limits(0, 0, 0, 0, |ctx| {
+            assert_eq!(decode_exact_scalars(ctx, &[], 0, &cache).expect("empty lane"),
+                Some(Vec::new()));
+            assert_eq!(decode_exact_scalars(ctx, &[0x0f], 2, &cache).expect("impossible count"), None);
+            assert_eq!(decode_exact_scalars(ctx, &[0x0f], 0, &cache).expect("unread payload"), None);
+            assert!(ctx.resource_refusal().is_none());
+        });
     }
 
     #[test]

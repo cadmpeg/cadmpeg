@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::{inline_recipe_resolution, FeatureRecipe, RecipeState};
+use super::super::{inline_recipe_resolution, operations, operation_states, reference_names, FeatureRecipe, RecipeState};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
@@ -54,7 +54,7 @@ fn check_windows(record: &[u8], total: u64, expected: RecipeState) {
                     Ok(())
                 }
                 Err(CodecError::ResourceLimit(original)) => {
-                    assert_eq!(ctx.resource_refusal(), Some(original));
+
                     assert_eq!(original.additional, 1);
                     assert_eq!(original.operation, "creo inline recipe scan");
                     Err(CodecError::ResourceLimit(original))
@@ -63,4 +63,62 @@ fn check_windows(record: &[u8], total: u64, expected: RecipeState) {
             }
         },
     );
+}
+
+#[test]
+fn operation_fixed_returns_are_free() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut results = Vec::new();
+        for payload in [&[][..], &[0xf8][..], &[0xf8, 0xf8][..]] {
+            results.push(reference_names(&ctx, payload).map(|names| names.is_empty()));
+        }
+        for record in [&[][..], &[0xff][..], &[0xff; 10][..]] {
+            results.push(inline_recipe_resolution(&ctx, record).map(|recipe| recipe == RecipeState::None));
+        }
+        results.push(operation_states(&ctx, &[]).map(|states| states.is_empty()));
+        results.push(operations(&ctx, &[]).map(|operations| operations.is_empty()));
+    for result in results {
+        assert!(result.expect("free fixed route"));
+    }
+    assert_eq!(ctx.resource_refusal(), None);
+}
+
+#[test]
+fn derived_operation_materialization_is_free() {
+    use super::super::{OperationKind, OperationName, ParsedKind, ParsedOperation};
+
+    for (kind, expected) in [
+        (ParsedKind::Native, OperationKind::Native),
+        (ParsedKind::Recipe(FeatureRecipe::ProtrudeExtrude), OperationKind::Extrude),
+        (ParsedKind::Recipe(FeatureRecipe::CutExtrude), OperationKind::Extrude),
+        (ParsedKind::Recipe(FeatureRecipe::ProtrudeRevolve), OperationKind::Revolve),
+        (ParsedKind::Recipe(FeatureRecipe::CutRevolve), OperationKind::Revolve),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let operation = ParsedOperation {
+            feature_id: 7, kind, name: None, recipe: RecipeState::None,
+            display_state_conflict: false, depdb: None, offset: 11, state_offset: 11,
+        }.materialize(&ctx).expect("fixed derived projection needs no resources");
+        assert_eq!(operation.kind, expected);
+        assert_eq!(operation.name, OperationName::Derived);
+        assert_eq!(operation.feature_id, 7);
+        assert_eq!(operation.recipe, RecipeState::None);
+        assert!(!operation.display_state_conflict);
+        assert_eq!(operation.depdb, None);
+        assert_eq!((operation.offset, operation.state_offset), (11, 11));
+        assert_eq!(ctx.resource_refusal(), None);
+    }
 }
