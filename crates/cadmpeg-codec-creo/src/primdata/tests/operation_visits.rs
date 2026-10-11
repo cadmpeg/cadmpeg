@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::super::PrimitiveTriangleStrip;
 use super::*;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -208,22 +207,30 @@ fn primitive_geometry_projects_present_points_and_stops_at_first_representation_
 }
 
 #[test]
-fn primitive_shaded_pairing_refuses_at_the_first_actual_pair_without_a_second_bulk_fee() {
+fn primitive_shaded_pairing_refuses_at_the_actual_projection_without_a_second_bulk_fee() {
+    let bytes = super::strip_visits::strip_geometry_input(17, &[3],
+        &[[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], Some(&[[0.0, 0.0, 1.0]; 3]));
+    let record_len = bytes.len() - 17;
+    let tail_len = record_len - RECORD.len();
+    let work = bytes.len() - RECORD.len() + 1 // Global record discovery.
+        + tail_len - BOUNDARY.len() + 2 // Missing boundary and end probe.
+        + RECORD.len() + 1 // Cumulative label match.
+        + 1 + 1 // Cumulative count and strip-length projection.
+        + record_len - 4 + 18 // Scalar windows and dispatches.
+        + 1 + 3; // Lane selection and one shaded vertex projection.
+    let scan = exact_work(work, true, |ctx| triangle_strips(ctx, &bytes));
+    let [strip] = scan.strips.as_slice() else { panic!("one complete shaded strip"); };
+    assert_eq!(strip.positions().map(|point| point.get()).collect::<Vec<_>>(),
+        [[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]);
+    assert_eq!(strip.normals().expect("shaded vertices").map(|normal| normal.get()).collect::<Vec<_>>(), [[0.0, 0.0, 1.0]; 3]);
     let error = crate::test_support::last_refusal_at(
-        &[],
+        &bytes,
         ResourceDimension::WorkUnits,
-        "creo primitive shaded vertices",
-        |ctx| {
-            PrimitiveTriangleStrip::new(
-                ctx,
-                17,
-                finite_points(vec![[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]),
-                Some(finite_points(vec![[0.0, 0.0, 1.0]; 3])),
-                vec![3],
-            )
-        },
+        "creo primitive shaded vertex projection",
+        |ctx| triangle_strips(ctx, &bytes),
     );
     assert!(matches!(error, CodecError::ResourceLimit(refusal)
         if refusal.dimension == ResourceDimension::WorkUnits
-                && refusal.operation == "creo primitive shaded vertices"));
+            && refusal.operation == "creo primitive shaded vertex projection"
+            && refusal.additional == 3));
 }
