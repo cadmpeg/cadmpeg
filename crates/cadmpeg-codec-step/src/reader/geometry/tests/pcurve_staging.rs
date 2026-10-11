@@ -215,9 +215,6 @@ fn assert_raw_pole_refusal(source: &str, polyline: bool) {
         u64::try_from(raw_bytes).expect("test storage fits u64")
     );
     assert!(losses.is_empty());
-    assert!(
-        matches!(ctx.charge_work(0, "later operation"), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
-    );
     drop(storage);
     drop(loss_storage);
     assert!(

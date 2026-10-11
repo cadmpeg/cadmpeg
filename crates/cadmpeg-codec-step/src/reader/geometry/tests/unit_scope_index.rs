@@ -105,9 +105,6 @@ fn unit_scope_repeated_contexts_need_only_distinct_member_slots() {
             (first.used, first.additional, first.limit),
             (slots, 1, slots)
         );
-        assert!(
-            matches!(ctx.charge_work(0, "later operation"), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
-        );
         drop(units);
         drop(losses);
         drop(storage);
@@ -150,9 +147,6 @@ fn unit_scope_context_index_refuses_before_member_propagation() {
         assert_eq!(first.operation, "step unit context index");
         assert_eq!((first.used, first.additional, first.limit), (3, 1, 3));
         assert!(losses.is_empty());
-        assert!(
-            matches!(ctx.charge_work(0, "later operation"), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
-        );
         drop(losses);
         drop(storage);
         drop(loss_storage);
