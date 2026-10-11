@@ -93,3 +93,33 @@ fn invalid_scratch_text_keeps_its_loss_retained() {
         matches!(error, CodecError::ResourceLimit(refusal) if refusal.operation == "step_invalid_string_loss_text")
     );
 }
+
+#[test]
+fn repeated_opaque_kind_candidates_release_discarded_text() {
+    use std::collections::BTreeMap;
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(LONG_UNKNOWN_KIND() ANOTHER_UNKNOWN_KIND());ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("exchange");
+    let record = &exchange.records()[&1];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 4096;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("root");
+    let mut storage = ctx
+        .reserve_scoped(0, "opaque count fixture")
+        .expect("scope");
+    let mut counts = BTreeMap::new();
+    for _ in 0..1024 {
+        storage
+            .with_storage(|| super::super::count_unknown_kind(&mut counts, record, &ctx))
+            .expect("only one map key survives");
+    }
+    assert_eq!(counts.len(), 1);
+    assert_eq!(counts["LONG_UNKNOWN_KIND+ANOTHER_UNKNOWN_KIND"], 1024);
+    drop(counts);
+    drop(storage);
+    ctx.reserve_scoped(4096, "opaque candidate release probe")
+        .expect("all count storage released");
+}
