@@ -269,8 +269,6 @@ pub(crate) struct Scan<'a> {
     _history_record_storage: Vec<ScopedReservation<'a>>,
     /// The history-record vector backing stays scratch through source reporting.
     _history_storage: ScopedReservation<'a>,
-    /// The history record-guard vector stays scratch through source reporting.
-    _history_record_guards_storage: ScopedReservation<'a>,
     /// Parsed instance-definition fields stay scratch through native projection.
     _definition_storage: Vec<(crate::wire::Uuid, ScopedReservation<'a>)>,
     /// The definition guard vector stays scratch through native projection.
@@ -293,6 +291,10 @@ pub(crate) struct Scan<'a> {
     _object_record_storage: Vec<ScopedReservation<'a>>,
     /// Source object records are scratch until projection completes.
     _object_storage: ScopedReservation<'a>,
+    /// Direct scan diagnostics stay scratch through warning consumption.
+    _warnings_storage: ScopedReservation<'a>,
+    /// History guard backing and global warning text outlive both value fields.
+    _history_record_guards_storage: ScopedReservation<'a>,
     /// Table, record, opaque-descriptor, and count-map backing storage.
     _descriptor_storage: ScopedReservation<'a>,
 }
@@ -345,6 +347,7 @@ fn checksum_warning(
 ) -> Result<Option<String>, CodecError> {
     let chunk = chunk_at(data, offset, parent_end, archive, false)
         .or_else(|error| Err(framing_error(ctx, error)?))?;
+    let mut child_storage = ctx.reserve_scoped(0, "Rhino checksum child workspace")?;
     let status = if typecode & TCODE_TABLE != 0
         || matches!(
             typecode,
@@ -390,10 +393,9 @@ fn checksum_warning(
         typecode,
         TCODE_RENDER_MESH_SETTINGS | TCODE_ANALYSIS_MESH_SETTINGS
     ) {
-        let (children, _storage) = match ctx
-            .with_scoped_storage("Rhino checksum child workspace", || {
-                mesh_checksum_children(ctx, data, &chunk, archive)
-            }) {
+        let children = match child_storage
+            .with_storage(|| mesh_checksum_children(ctx, data, &chunk, archive))
+        {
             Ok(children) => children,
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
@@ -406,10 +408,9 @@ fn checksum_warning(
             .or_else(|error| Err(framing_error(ctx, error)?))?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_RENDER_SETTINGS {
-        let (children, _storage) = match ctx
-            .with_scoped_storage("Rhino checksum child workspace", || {
-                render_settings_checksum_children(ctx, data, &chunk, archive)
-            }) {
+        let children = match child_storage
+            .with_storage(|| render_settings_checksum_children(ctx, data, &chunk, archive))
+        {
             Ok(children) => children,
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
@@ -422,10 +423,9 @@ fn checksum_warning(
             .or_else(|error| Err(framing_error(ctx, error)?))?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_SETTINGS_ATTRIBUTES {
-        let (children, _storage) = match ctx
-            .with_scoped_storage("Rhino checksum child workspace", || {
-                settings_attributes_checksum_children(ctx, data, &chunk, archive)
-            }) {
+        let children = match child_storage
+            .with_storage(|| settings_attributes_checksum_children(ctx, data, &chunk, archive))
+        {
             Ok(children) => children,
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
@@ -438,10 +438,9 @@ fn checksum_warning(
             .or_else(|error| Err(framing_error(ctx, error)?))?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_PLUGIN_LIST {
-        let (children, _storage) = match ctx
-            .with_scoped_storage("Rhino checksum child workspace", || {
-                plugin_list_checksum_children(ctx, data, &chunk, archive)
-            }) {
+        let children = match child_storage
+            .with_storage(|| plugin_list_checksum_children(ctx, data, &chunk, archive))
+        {
             Ok(children) => children,
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
@@ -454,32 +453,30 @@ fn checksum_warning(
             .or_else(|error| Err(framing_error(ctx, error)?))?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_RENDER_USERDATA {
-        let (children, _storage) =
-            match ctx.with_scoped_storage("Rhino checksum child workspace", || {
-                checksum_children_through_class_end(
-                    ctx,
-                    data,
-                    chunk.body().clone(),
-                    archive,
-                    "render-settings userdata",
-                )
-            }) {
-                Ok(children) => children,
-                Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
-                Err(error) => {
-                    return Ok(Some(checksum_children_warning(
-                        ctx, typecode, offset, &error,
-                    )?));
-                }
-            };
+        let children = match child_storage.with_storage(|| {
+            checksum_children_through_class_end(
+                ctx,
+                data,
+                chunk.body().clone(),
+                archive,
+                "render-settings userdata",
+            )
+        }) {
+            Ok(children) => children,
+            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
+            Err(error) => {
+                return Ok(Some(checksum_children_warning(
+                    ctx, typecode, offset, &error,
+                )?));
+            }
+        };
         let direct = direct_checksum_ranges(ctx, &chunk.body(), &children)
             .or_else(|error| Err(framing_error(ctx, error)?))?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_COMPRESSED_PREVIEW {
-        let (children, _storage) = match ctx
-            .with_scoped_storage("Rhino checksum child workspace", || {
-                compressed_preview_checksum_children(ctx, data, &chunk, archive)
-            }) {
+        let children = match child_storage
+            .with_storage(|| compressed_preview_checksum_children(ctx, data, &chunk, archive))
+        {
             Ok(children) => children,
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
@@ -492,10 +489,9 @@ fn checksum_warning(
             .or_else(|error| Err(framing_error(ctx, error)?))?;
         verify_checksum_ranges(ctx, data, &chunk, &direct)
     } else if typecode == TCODE_USER_TABLE_UUID {
-        let (children, _storage) = match ctx
-            .with_scoped_storage("Rhino checksum child workspace", || {
-                user_table_uuid_checksum_children(ctx, data, &chunk, archive)
-            }) {
+        let children = match child_storage
+            .with_storage(|| user_table_uuid_checksum_children(ctx, data, &chunk, archive))
+        {
             Ok(children) => children,
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
@@ -511,6 +507,7 @@ fn checksum_warning(
         verify_checksum(ctx, data, &chunk)
     }
     .or_else(|error| Err(framing_error(ctx, error)?))?;
+    drop(child_storage);
     match status {
         ChecksumStatus::Mismatch { expected, actual } => Ok(Some(ctx.format_retained(format_args!(
             "CRC mismatch at offset {offset} for typecode {typecode:#x}: expected {expected:#x}, got {actual:#x}"
@@ -624,6 +621,7 @@ fn settings_attributes_checksum_children(
     }
 
     let minor = packed_version & 0x0f;
+    let mut backing_storage = ctx.reserve_scoped(0, "Rhino settings checksum children")?;
     let mut children = Vec::new();
     if minor >= 1 {
         let child = take_anonymous_checksum_child(
@@ -633,8 +631,13 @@ fn settings_attributes_checksum_children(
             archive,
             "settings-attributes page units",
         )?;
-        ctx.reserve_vec(&mut children, 1, "Rhino settings checksum children")
-            .map_err(crate::chunks::FramingError::from)?;
+        ctx.reserve_scoped_vec(
+            &mut backing_storage,
+            &mut children,
+            1,
+            "Rhino settings checksum children",
+        )
+        .map_err(crate::chunks::FramingError::from)?;
         children.push(child);
     }
     if minor >= 2 {
@@ -649,8 +652,13 @@ fn settings_attributes_checksum_children(
             archive,
             "settings-attributes earth anchor",
         )?;
-        ctx.reserve_vec(&mut children, 1, "Rhino settings checksum children")
-            .map_err(crate::chunks::FramingError::from)?;
+        ctx.reserve_scoped_vec(
+            &mut backing_storage,
+            &mut children,
+            1,
+            "Rhino settings checksum children",
+        )
+        .map_err(crate::chunks::FramingError::from)?;
         children.push(child);
     }
     if minor >= 4 {
@@ -664,21 +672,33 @@ fn settings_attributes_checksum_children(
             archive,
             "settings-attributes IO settings",
         )?;
-        ctx.reserve_vec(&mut children, 1, "Rhino settings checksum children")
-            .map_err(crate::chunks::FramingError::from)?;
+        ctx.reserve_scoped_vec(
+            &mut backing_storage,
+            &mut children,
+            1,
+            "Rhino settings checksum children",
+        )
+        .map_err(crate::chunks::FramingError::from)?;
         children.push(child);
     }
     if minor >= 6 {
         if let Some(child) = mesh_subd_checksum_child(ctx, data, &mut reader, archive)? {
-            ctx.reserve_vec(&mut children, 1, "Rhino settings checksum children")
-                .map_err(crate::chunks::FramingError::from)?;
+            ctx.reserve_scoped_vec(
+                &mut backing_storage,
+                &mut children,
+                1,
+                "Rhino settings checksum children",
+            )
+            .map_err(crate::chunks::FramingError::from)?;
             children.push(child);
         }
     }
     if minor >= 7 {
         reader.skip(16 * 6)?;
     }
-    Ok(children)
+    backing_storage
+        .commit_value(children)
+        .map_err(FramingError::from)
 }
 
 /// Returns the deflate children in an `ON_WindowsBitmap::WriteCompressed`
@@ -733,6 +753,7 @@ fn compressed_preview_checksum_children(
         offset: reader.position(),
     })?;
 
+    let mut backing_storage = ctx.reserve_scoped(0, "Rhino preview checksum children")?;
     let mut children = Vec::new();
     let contiguous_size = palette_size
         .checked_add(image_size)
@@ -748,8 +769,13 @@ fn compressed_preview_checksum_children(
             first_size,
             "compressed preview buffer",
         )? {
-            ctx.reserve_vec(&mut children, 1, "Rhino preview checksum children")
-                .map_err(crate::chunks::FramingError::from)?;
+            ctx.reserve_scoped_vec(
+                &mut backing_storage,
+                &mut children,
+                1,
+                "Rhino preview checksum children",
+            )
+            .map_err(crate::chunks::FramingError::from)?;
             children.push(child);
         }
     } else if image_size > 0 && first_size == palette_size {
@@ -761,8 +787,13 @@ fn compressed_preview_checksum_children(
             first_size,
             "compressed preview palette buffer",
         )? {
-            ctx.reserve_vec(&mut children, 1, "Rhino preview checksum children")
-                .map_err(crate::chunks::FramingError::from)?;
+            ctx.reserve_scoped_vec(
+                &mut backing_storage,
+                &mut children,
+                1,
+                "Rhino preview checksum children",
+            )
+            .map_err(crate::chunks::FramingError::from)?;
             children.push(child);
         }
         let second_size = usize::try_from(reader.u32()?).map_err(|_| FramingError::Overflow {
@@ -779,15 +810,22 @@ fn compressed_preview_checksum_children(
             second_size,
             "compressed preview image buffer",
         )? {
-            ctx.reserve_vec(&mut children, 1, "Rhino preview checksum children")
-                .map_err(crate::chunks::FramingError::from)?;
+            ctx.reserve_scoped_vec(
+                &mut backing_storage,
+                &mut children,
+                1,
+                "Rhino preview checksum children",
+            )
+            .map_err(crate::chunks::FramingError::from)?;
             children.push(child);
         }
     } else {
         return Ok(Vec::new());
     }
 
-    Ok(children)
+    backing_storage
+        .commit_value(children)
+        .map_err(FramingError::from)
 }
 
 /// Reads one `WriteCompressedBuffer` prefix and returns its nested deflate
@@ -908,18 +946,20 @@ fn list_checksum_children(
             needed: offset - chunk.body().end,
         });
     }
+    let mut backing_storage = ctx.reserve_scoped(0, "Rhino view checksum ranges")?;
     let mut children = Vec::new();
     for _ in 0..child_count {
         ctx.charge_work(1, "Rhino view checksum child ranges")?;
         let child = chunk_at(data, offset, chunk.body().end, archive, false)?;
         ctx.push_scoped_vec(
-            reservation,
+            &mut backing_storage,
             &mut children,
             child.range(),
             "Rhino view checksum ranges",
         )?;
         offset = child.next_offset();
     }
+    reservation.absorb(&mut backing_storage)?;
     Ok(children)
 }
 
@@ -947,6 +987,7 @@ fn plugin_list_checksum_children(
         TABLE_RECORD_CAP,
         count_offset,
     )?;
+    let mut backing_storage = ctx.reserve_scoped(0, "Rhino plugin-list child ranges")?;
     let mut children = Vec::new();
     for _ in 0..child_count {
         ctx.charge_work(1, "Rhino plugin checksum child walk")?;
@@ -958,14 +999,17 @@ fn plugin_list_checksum_children(
                 "plugin-list child must be an anonymous long chunk",
             ));
         }
-        ctx.push_vec(
+        ctx.push_scoped_vec(
+            &mut backing_storage,
             &mut children,
             child.range(),
             "Rhino plugin-list child ranges",
         )?;
         reader.skip(child.next_offset() - start)?;
     }
-    Ok(children)
+    backing_storage
+        .commit_value(children)
+        .map_err(FramingError::from)
 }
 
 fn table_rank(typecode: u32) -> Option<u8> {
@@ -1125,6 +1169,7 @@ fn scan_with_record_limit<'a>(
             "first post-header chunk is not a long comment".to_string(),
         ));
     }
+    let mut warnings_storage = ctx.reserve_scoped(0, "Rhino scan diagnostics")?;
     let mut warnings = Diagnostics::new();
     if let (Some(note), _note_storage) =
         ctx.with_scoped_storage("Rhino checksum warning workspace", || {
@@ -1138,11 +1183,13 @@ fn scan_with_record_limit<'a>(
             )
         })?
     {
-        warnings.push_coded_admitted(
-            ctx,
-            crate::loss::RhinoLossCode::IntegrityFailure,
-            format_args!("{note}"),
-        )?;
+        warnings_storage.with_storage(|| {
+            warnings.push_coded_admitted(
+                ctx,
+                crate::loss::RhinoLossCode::IntegrityFailure,
+                format_args!("{note}"),
+            )
+        })?;
     }
     let mut descriptor_storage = ctx.reserve_scoped(0, "Rhino scan descriptors")?;
     let mut tables = Vec::new();
@@ -1215,6 +1262,7 @@ fn scan_with_record_limit<'a>(
                 _definition_ambiguous_storage: definition_ambiguous_storage,
                 eof_offset: offset,
                 warnings,
+                _warnings_storage: warnings_storage,
                 metadata,
                 _metadata_storage: metadata_storage,
                 _object_record_storage: object_record_storage,
@@ -1329,13 +1377,15 @@ fn scan_with_record_limit<'a>(
                         record.typecode, chunk.typecode
                     )));
                 }
-                warnings.push_admitted(
-                    ctx,
-                    format_args!(
+                warnings_storage.with_storage(|| {
+                    warnings.push_admitted(
+                        ctx,
+                        format_args!(
                     "unknown bounded record {:#x} skipped in table {:#x} at offset {child_offset}",
                     record.typecode, chunk.typecode
                 ),
-                )?;
+                    )
+                })?;
             }
             if let (Some(note), _note_storage) =
                 ctx.with_scoped_storage("Rhino checksum warning workspace", || {
@@ -1349,52 +1399,59 @@ fn scan_with_record_limit<'a>(
                     )
                 })?
             {
-                warnings.push_coded_admitted(
-                    ctx,
-                    crate::loss::RhinoLossCode::IntegrityFailure,
-                    format_args!("{note}"),
-                )?;
+                warnings_storage.with_storage(|| {
+                    warnings.push_coded_admitted(
+                        ctx,
+                        crate::loss::RhinoLossCode::IntegrityFailure,
+                        format_args!("{note}"),
+                    )
+                })?;
             }
             if table_base(chunk.typecode) == TCODE_OBJECTS && record.typecode == TCODE_OBJECT_RECORD
             {
                 let mut record_storage = ctx.reserve_scoped(0, "Rhino scanned object record")?;
-                let (descriptor, record_storage) = match parse_object_record(
-                    ctx,
-                    &mut record_storage,
-                    data,
-                    &record,
-                    archive,
-                    writer_version,
-                    &mut warnings,
-                ) {
-                    Ok(descriptor) => (descriptor, Some(record_storage)),
+                let (descriptor, record_storage) = match warnings_storage.with_storage(|| {
+                    parse_object_record(
+                        ctx,
+                        &mut record_storage,
+                        data,
+                        &record,
+                        archive,
+                        writer_version,
+                        &mut warnings,
+                    )
+                }) {
+                    Ok(descriptor) => (descriptor, record_storage),
                     Err(FramingError::Resource(limit)) => {
                         return Err(CodecError::ResourceLimit(limit))
                     }
                     Err(error) => {
-                        warnings.push_admitted(
-                            ctx,
-                            format_args!(
-                                "bounded object record at {child_offset} is malformed: {error}"
-                            ),
-                        )?;
+                        warnings_storage.with_storage(|| {
+                            warnings.push_admitted(
+                                ctx,
+                                format_args!(
+                                    "bounded object record at {child_offset} is malformed: {error}"
+                                ),
+                            )
+                        })?;
                         // The parser can return an admitted diagnostic string
                         // inside `error`; keep its source reservation live
-                        // through both retained warning copies.
-                        let descriptor = degraded_object_record(ctx, &record, &error)?;
+                        // through both scoped warning copies.
+                        let mut degraded_storage =
+                            ctx.reserve_scoped(0, "Rhino degraded object record")?;
+                        let descriptor = degraded_storage
+                            .with_storage(|| degraded_object_record(ctx, &record, &error))?;
                         drop(error);
                         drop(record_storage);
-                        (descriptor, None)
+                        (descriptor, degraded_storage)
                     }
                 };
-                if let Some(record_storage) = record_storage {
-                    ctx.push_scoped_vec(
-                        &mut object_storage,
-                        &mut object_record_storage,
-                        record_storage,
-                        "Rhino scanned object record guards",
-                    )?;
-                }
+                ctx.push_scoped_vec(
+                    &mut object_storage,
+                    &mut object_record_storage,
+                    record_storage,
+                    "Rhino scanned object record guards",
+                )?;
                 let typecode = descriptor.framed().map_or(0, |object| object.object_type);
                 descriptor_storage
                     .with_storage(|| count_object_typecode(ctx, &mut object_typecodes, typecode))?;
@@ -1427,10 +1484,12 @@ fn scan_with_record_limit<'a>(
             child_offset = child.next_offset();
         }
         if !terminated {
-            warnings.push_admitted(
-                ctx,
-                format_args!("table {:#x} has no end-of-table marker", chunk.typecode),
-            )?;
+            warnings_storage.with_storage(|| {
+                warnings.push_admitted(
+                    ctx,
+                    format_args!("table {:#x} has no end-of-table marker", chunk.typecode),
+                )
+            })?;
         }
         if let (Some(note), _note_storage) =
             ctx.with_scoped_storage("Rhino checksum warning workspace", || {
@@ -1444,11 +1503,13 @@ fn scan_with_record_limit<'a>(
                 )
             })?
         {
-            warnings.push_coded_admitted(
-                ctx,
-                crate::loss::RhinoLossCode::IntegrityFailure,
-                format_args!("{note}"),
-            )?;
+            warnings_storage.with_storage(|| {
+                warnings.push_coded_admitted(
+                    ctx,
+                    crate::loss::RhinoLossCode::IntegrityFailure,
+                    format_args!("{note}"),
+                )
+            })?;
         }
         if table_base(chunk.typecode) == TCODE_INSTANCE_DEFINITION {
             let crate::instances::DefinitionParse {
