@@ -48,15 +48,12 @@ fn vertex_fixed_absence_routes_need_no_work() {
     let policy = visit_policy(0);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let results = [
-        line_conic_intersections(&ctx, &first, &same_plane_line)
-            .map(|points| points.is_empty()),
+        line_conic_intersections(&ctx, &first, &same_plane_line).map(|points| points.is_empty()),
         line_conic_intersections(&ctx, &same_plane_line, &same_plane_line)
             .map(|points| points.is_empty()),
         line_conic_intersections(&ctx, &skew_line, &first).map(|points| points.is_empty()),
-        conic_conic_intersections(&ctx, &same_plane_line, &first)
-            .map(|points| points.is_empty()),
-        conic_conic_intersections(&ctx, &first, &same_plane_line)
-            .map(|points| points.is_empty()),
+        conic_conic_intersections(&ctx, &same_plane_line, &first).map(|points| points.is_empty()),
+        conic_conic_intersections(&ctx, &first, &same_plane_line).map(|points| points.is_empty()),
         conic_conic_intersections(&ctx, &first, &separated).map(|points| points.is_empty()),
         // Unsupported direction bytes exercise this helper's fixed precondition.
         pcurve_candidate_agrees_with_fixed_points(&ctx, [1, 2], [[0.0; 3]; 2], [0, 0], &fixed),
@@ -65,6 +62,13 @@ fn vertex_fixed_absence_routes_need_no_work() {
     for result in results {
         assert!(result.expect("fixed precondition"));
     }
+    let refusal = ctx
+        .charge_work_limit(1, "after fixed vertex absence")
+        .expect_err("zero cap");
+    assert_eq!(
+        (refusal.dimension, refusal.used, refusal.additional),
+        (ResourceDimension::WorkUnits, 0, 1)
+    );
 }
 
 #[test]

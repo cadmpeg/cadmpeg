@@ -59,8 +59,7 @@ fn carrier_fixed_preconditions_need_no_work() {
         polygon_strictly_contains_polygon(&ctx, &[], &[]),
         ordered_contained_face_loops(&ctx, Vec::new(), &[]).map(|ordered| ordered.is_none()),
         ordered_contained_face_loops(&ctx, vec![&lp], &[]).map(|ordered| ordered.is_none()),
-        ordered_contained_face_loops(&ctx, vec![&lp, &lp], &[])
-            .map(|ordered| ordered.is_none()),
+        ordered_contained_face_loops(&ctx, vec![&lp, &lp], &[]).map(|ordered| ordered.is_none()),
         ordered_parameter_face_loops(&ctx, vec![&lp], &[]).map(|ordered| {
             let ordered = ordered.expect("one supplied loop");
             ordered.len() == 1 && std::ptr::eq(ordered[0], &raw const lp)
@@ -69,6 +68,13 @@ fn carrier_fixed_preconditions_need_no_work() {
     for result in results {
         assert!(result.expect("fixed precondition"));
     }
+    let refusal = ctx
+        .charge_work_limit(1, "after carrier fixed preconditions")
+        .expect_err("zero cap");
+    assert_eq!(
+        (refusal.dimension, refusal.used, refusal.additional),
+        (ResourceDimension::WorkUnits, 0, 1)
+    );
 }
 
 fn assert_visits(
