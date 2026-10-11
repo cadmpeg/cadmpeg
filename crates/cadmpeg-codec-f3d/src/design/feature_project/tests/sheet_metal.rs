@@ -812,7 +812,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
 }
 
 #[test]
-fn edge_flange_native_height_target_id_refuses_retained_limit() {
+fn edge_flange_native_height_target_id_refuses_materialized_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::features::{
@@ -835,17 +835,20 @@ fn edge_flange_native_height_target_id_refuses_retained_limit() {
     else {
         panic!("native to-object target");
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = u64::try_from(native.len() - 1).unwrap();
-
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = edge_flange_to_object_fixture(&ctx, false, false);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "f3d EdgeFlange native height target id",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_materialized_bytes = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            edge_flange_to_object_fixture(&ctx, false, false).map(|_| ())
+        },
+    );
+    assert!(!native.is_empty());
     assert!(
-        matches!(result, Err(CodecError::ResourceLimit(ref failure))
-        if failure.operation == "f3d EdgeFlange native height target id"
-            && failure.dimension == ResourceDimension::RetainedBytes),
-        "expected native height target refusal, got {result:?}"
+        matches!(error, CodecError::ResourceLimit(failure) if failure.operation == "f3d EdgeFlange native height target id" && failure.dimension == ResourceDimension::MaterializedBytes)
     );
 }
 

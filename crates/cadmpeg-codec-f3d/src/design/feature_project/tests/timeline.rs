@@ -820,8 +820,6 @@ fn authored_scope_validation_orders_independent_streams_separately() {
     ));
 }
 
-
-
 #[test]
 fn history_state_identity_orders_cross_family_feature_dependencies() {
     let scope = |record_index, byte_offset, kind: &str, current, previous| {
@@ -963,10 +961,6 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
     assert_eq!(depth.dependencies.as_slice(), [width.id.clone()]);
 }
 
-
-
-
-
 fn feature_dependency_index_fixture() -> cadmpeg_ir::features::Feature {
     use cadmpeg_ir::features::{
         Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
@@ -995,22 +989,20 @@ fn assert_feature_dependency_index_refusal(operation: &'static str) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_core::CodecError;
     let feature = feature_dependency_index_fixture();
-    for limit in 0..3 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match super::super::ensure_feature_dependencies_precede(
-            &ctx,
-            std::slice::from_ref(&feature),
-        ) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            Ok(()) => panic!("expected {operation} refusal, got success"),
-            Err(error) => panic!("expected {operation} refusal: {error}"),
-        }
-    }
-    panic!("no {operation} refusal");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+            super::super::ensure_feature_dependencies_precede(&ctx, std::slice::from_ref(&feature))
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]
@@ -1068,7 +1060,7 @@ fn authored_ordinal_limit_fixture() -> (Vec<DesignParameterScope>, DesignFeature
 }
 
 fn assert_authored_ordinal_refusal(operation: &'static str, with_timeline: bool, per_stream: bool) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_core::CodecError;
     let (scopes, timeline) = authored_ordinal_limit_fixture();
     let timelines = if with_timeline {
@@ -1076,30 +1068,27 @@ fn assert_authored_ordinal_refusal(operation: &'static str, with_timeline: bool,
     } else {
         &[]
     };
-    for limit in 0..25 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = if per_stream {
-            crate::design::feature_project::authored_scope_ordinals_per_stream(
-                &ctx, &scopes, timelines,
-            )
-        } else {
-            crate::design::feature_project::authored_scope_ordinals(&ctx, &scopes, timelines)
-        };
-        match result {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == operation =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected {operation} refusal: {other:?}"),
-        }
-    }
-    panic!("no {operation} refusal");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = if per_stream {
+                crate::design::feature_project::authored_scope_ordinals_per_stream(
+                    &ctx, &scopes, timelines,
+                )
+            } else {
+                crate::design::feature_project::authored_scope_ordinals(&ctx, &scopes, timelines)
+            };
+
+            (result).map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]

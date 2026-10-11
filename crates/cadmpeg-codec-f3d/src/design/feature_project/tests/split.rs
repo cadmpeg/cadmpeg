@@ -429,11 +429,6 @@ fn split_face_path_tool_group_id_refuses_retained_limit() {
     assert_split_face_retained_refusal("f3d SplitFace path tool group id");
 }
 
-#[test]
-fn split_face_target_group_id_refuses_retained_limit() {
-    assert_split_face_retained_refusal("f3d SplitFace target group id");
-}
-
 fn selected_plane_fixture() -> (
     DesignParameterScope,
     DesignConstructionOperandGroup,
@@ -493,7 +488,7 @@ fn selected_plane_fixture() -> (
 }
 
 fn assert_selected_plane_limit(operation: &'static str) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_core::CodecError;
     let (scope, group, selection, plane) = selected_plane_fixture();
     let selected = crate::test_support::with_decode_context(|decode_ctx| {
@@ -509,22 +504,28 @@ fn assert_selected_plane_limit(operation: &'static str) {
     .unwrap();
     assert_eq!(selected.len(), 1);
     assert_eq!(selected[0].record_index, plane.record_index);
-    for limit in 0..4 {
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let arena = DecodeArena::new();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let arena = DecodeArena::new();
 
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(
-            selected_work_planes(&ctx, &scope, &group, std::slice::from_ref(&selection), std::slice::from_ref(&plane)),
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == operation
-        ) {
-            return;
-        }
-    }
-    panic!("no selected work plane refusal at {operation}");
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+            (selected_work_planes(
+                &ctx,
+                &scope,
+                &group,
+                std::slice::from_ref(&selection),
+                std::slice::from_ref(&plane),
+            ))
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]

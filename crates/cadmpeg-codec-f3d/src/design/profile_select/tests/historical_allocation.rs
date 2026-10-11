@@ -69,26 +69,29 @@ fn assert_historical_selection_refusal(operation: &'static str) {
         states: vec![transition_state(2, topology, None)],
     }];
     let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
-    for limit in 0..64 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match super::super::historical_selection_regions(
-            &[&member],
-            &sketch,
-            &[],
-            &histories,
-            0.000_001,
-            &arrangement_budget,
-            &ctx,
-        ) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected historical selection refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("no historical selection refusal at {operation}");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+            (super::super::historical_selection_regions(
+                &[&member],
+                &sketch,
+                &[],
+                &histories,
+                0.000_001,
+                &arrangement_budget,
+                &ctx,
+            ))
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 macro_rules! historical_selection_refusal {
@@ -149,25 +152,28 @@ fn assert_historical_boundary_refusal(operation: &'static str) {
         .unwrap(),
     );
     let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
-    for limit in 0..16 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match super::super::selection_containing_points(
-            &sketch,
-            std::slice::from_ref(&entity),
-            &[Point3::new(0.5, 0.0, 0.0)],
-            0.000_001,
-            &arrangement_budget,
-            &ctx,
-        ) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected historical boundary refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("no historical boundary refusal at {operation}");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+            (super::super::selection_containing_points(
+                &sketch,
+                std::slice::from_ref(&entity),
+                &[Point3::new(0.5, 0.0, 0.0)],
+                0.000_001,
+                &arrangement_budget,
+                &ctx,
+            ))
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]
@@ -412,23 +418,26 @@ fn assert_boundary_region_refusal(operation: &'static str) {
         Some(ResolvedProfileSelection::Regions(vec![region])),
         Some(ResolvedProfileSelection::Loops(vec![0])),
     ];
-    for limit in 0..8 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match super::super::region_with_boundary_selection_members(
-            &[&member, &member],
-            &sketch,
-            &selections,
-            &ctx,
-        ) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected boundary region refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("no boundary region refusal at {operation}");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+            (super::super::region_with_boundary_selection_members(
+                &[&member, &member],
+                &sketch,
+                &selections,
+                &ctx,
+            ))
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]
@@ -534,29 +543,28 @@ fn historical_selected_arrangement_region_refuses_collection_limit() {
     }
     sketch.profiles.try_push(boundary).unwrap();
     let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
-    for limit in 0..10_000 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match super::super::selection_containing_points(
-            &sketch,
-            &entities,
-            &[Point3::new(1.0, 1.0, 0.0)],
-            0.000_001,
-            &arrangement_budget,
-            &ctx,
-        ) {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == "f3d historical selected arrangement region" =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected arrangement region refusal: {other:?}"),
-        }
-    }
-    panic!("no arrangement region refusal");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "f3d historical selected arrangement region",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+            (super::super::selection_containing_points(
+                &sketch,
+                &entities,
+                &[Point3::new(1.0, 1.0, 0.0)],
+                0.000_001,
+                &arrangement_budget,
+                &ctx,
+            ))
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == "f3d historical selected arrangement region" && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 fn assert_extrude_selection_refusal(operation: &'static str, matched: bool, retained: bool) {
@@ -748,35 +756,38 @@ fn assert_transition_collection_refusal(operation: &'static str, deleted: bool) 
         ],
     }];
     let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
-    for limit in 0..16 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let scope_histories = HashMap::new();
-        let resolution = ExtrudeProfileResolution {
-            entities: &[],
-            spatial_sketches: &[],
-            spatial_entities: &[],
-            histories: &histories,
-            scope_histories: &scope_histories,
-            linear_tolerance: 0.000_001,
-            angular_tolerance: 0.000_000_001,
-            arrangement_budget: &arrangement_budget,
-            ctx: &ctx,
-        };
-        match super::super::transition_profile_selection(
-            &sketch,
-            resolution.scoped(&histories),
-            2,
-            1,
-        ) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected transition refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("no transition refusal at {operation}");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let scope_histories = HashMap::new();
+            let resolution = ExtrudeProfileResolution {
+                entities: &[],
+                spatial_sketches: &[],
+                spatial_entities: &[],
+                histories: &histories,
+                scope_histories: &scope_histories,
+                linear_tolerance: 0.000_001,
+                angular_tolerance: 0.000_000_001,
+                arrangement_budget: &arrangement_budget,
+                ctx: &ctx,
+            };
+
+            (super::super::transition_profile_selection(
+                &sketch,
+                resolution.scoped(&histories),
+                2,
+                1,
+            ))
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]
@@ -808,18 +819,21 @@ fn assert_deleted_carrier_refusal(operation: &'static str) {
         ],
         ..AsmHistoricalTopology::default()
     };
-    for limit in 0..16 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match super::super::unique_multi_face_deleted_carrier_family(&[10, 11], &topology, &ctx) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected deleted carrier refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("no deleted carrier refusal at {operation}");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+            (super::super::unique_multi_face_deleted_carrier_family(&[10, 11], &topology, &ctx))
+                .map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]
@@ -841,43 +855,46 @@ fn assert_inserted_selection_refusal(operation: &'static str, region: bool) {
     use super::super::ResolvedProfileSelection;
 
     let sketch = empty_sketch();
-    for limit in 0..16 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let selections = if region {
-            let region = cadmpeg_ir::features::SketchProfileRegion::loops(
-                0,
-                vec![1],
-                &cadmpeg_test_support::service_decode_context(),
-            )
-            .expect("fixture loop-region admission")
-            .unwrap();
-            vec![
-                Some(ResolvedProfileSelection::Regions(vec![region])),
-                Some(ResolvedProfileSelection::Loops(vec![0])),
-                Some(ResolvedProfileSelection::Loops(vec![1])),
-            ]
-        } else {
-            vec![
-                Some(ResolvedProfileSelection::Loops(vec![0])),
-                Some(ResolvedProfileSelection::Loops(vec![1])),
-            ]
-        };
-        match super::super::transition_inserted_profile_selection(
-            &sketch,
-            &[],
-            0.000_001,
-            &selections,
-            &ctx,
-        ) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected inserted selection refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("no inserted selection refusal at {operation}");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let selections = if region {
+                let region = cadmpeg_ir::features::SketchProfileRegion::loops(
+                    0,
+                    vec![1],
+                    &cadmpeg_test_support::service_decode_context(),
+                )
+                .expect("fixture loop-region admission")
+                .unwrap();
+                vec![
+                    Some(ResolvedProfileSelection::Regions(vec![region])),
+                    Some(ResolvedProfileSelection::Loops(vec![0])),
+                    Some(ResolvedProfileSelection::Loops(vec![1])),
+                ]
+            } else {
+                vec![
+                    Some(ResolvedProfileSelection::Loops(vec![0])),
+                    Some(ResolvedProfileSelection::Loops(vec![1])),
+                ]
+            };
+
+            (super::super::transition_inserted_profile_selection(
+                &sketch,
+                &[],
+                0.000_001,
+                &selections,
+                &ctx,
+            ))
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]
@@ -1018,30 +1035,29 @@ fn cylindrical_profile_projected_points_refuse_collection_limit() {
         }],
         ..AsmHistoricalTopology::default()
     };
-    for limit in 0..32 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match super::super::inserted_cylindrical_profile_selection(
-            &sketch,
-            std::slice::from_ref(&circle),
-            &topology,
-            10,
-            0.000_001,
-            0.000_000_001,
-            &ctx,
-        ) {
-            Err(CodecError::ResourceLimit(failure))
-                if failure.operation == "f3d cylindrical profile projected point" =>
-            {
-                return
-            }
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected cylindrical projected point refusal: {other:?}"),
-        }
-    }
-    panic!("no cylindrical projected point refusal");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "f3d cylindrical profile projected point",
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+            (super::super::inserted_cylindrical_profile_selection(
+                &sketch,
+                std::slice::from_ref(&circle),
+                &topology,
+                10,
+                0.000_001,
+                0.000_000_001,
+                &ctx,
+            ))
+            .map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == "f3d cylindrical profile projected point" && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 fn historical_face_profile_fixture() -> (

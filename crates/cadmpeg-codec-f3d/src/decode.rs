@@ -1350,14 +1350,15 @@ fn design_projection_gaps(
     })?;
     let mut unprojected_history_dependencies = 0;
     let mut ambiguous_history_dependencies = 0;
-    let (scope_history, _scope_history_storage) = crate::design::feature_project::ScopeHistoryGraph::new(
-        ctx,
-        &native.design_parameter_scopes,
-        &native.design_body_bindings,
-        &native.design_body_recipe_operands,
-        &native.design_component_naming_spaces,
-        &native.asm_histories,
-    )?;
+    let (scope_history, _scope_history_storage) =
+        crate::design::feature_project::ScopeHistoryGraph::new(
+            ctx,
+            &native.design_parameter_scopes,
+            &native.design_body_bindings,
+            &native.design_body_recipe_operands,
+            &native.design_component_naming_spaces,
+            &native.asm_histories,
+        )?;
     for scope in ctx.admit_iter(
         &native.design_parameter_scopes,
         "scan F3D native design parameter scopes",

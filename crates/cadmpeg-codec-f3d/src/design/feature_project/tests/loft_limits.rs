@@ -91,10 +91,10 @@ fn loft_profile_group_refuses_collection_limit() {
 }
 
 #[test]
-fn loft_profile_id_refuses_retained_limit() {
+fn loft_profile_id_refuses_materialized_limit() {
     assert_loft_limit(
         "f3d Loft profile group id",
-        ResourceDimension::RetainedBytes,
+        ResourceDimension::MaterializedBytes,
     );
 }
 
@@ -104,21 +104,26 @@ fn loft_section_refuses_collection_limit() {
 }
 
 #[test]
-fn loft_point_section_id_refuses_retained_limit() {
+fn loft_point_section_id_refuses_materialized_limit() {
     assert_loft_limit_with_roles(
         "f3d Loft section group id",
-        ResourceDimension::RetainedBytes,
+        ResourceDimension::MaterializedBytes,
         [DesignOperandRole::ROLE_0X43, DesignOperandRole::ROLE_0X5],
         true,
     );
 }
 
 #[test]
-fn loft_native_section_id_refuses_retained_limit() {
+fn loft_native_section_id_refuses_materialized_limit() {
     assert_loft_limit_with_roles(
         "f3d Loft section group id",
-        ResourceDimension::RetainedBytes,
+        ResourceDimension::MaterializedBytes,
         [DesignOperandRole::ROLE_0X5, DesignOperandRole::ROLE_0X5],
         false,
     );
+}
+
+#[test]
+fn loft_accepted_definition_refuses_retained_limit() {
+    assert_loft_limit("f3d Loft accepted output", ResourceDimension::RetainedBytes);
 }

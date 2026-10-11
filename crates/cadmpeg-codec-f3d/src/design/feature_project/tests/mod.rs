@@ -70,8 +70,6 @@ fn project_single_scope_with_context(
     )
 }
 
-
-
 mod numeric_text_limits;
 
 mod history_lookup_lifetimes;

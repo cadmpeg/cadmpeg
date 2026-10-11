@@ -27,8 +27,7 @@ fn move_matrix_decomposes_to_translation_and_axis_angle() {
         [-angle.sin(), 0.0, angle.cos(), 9.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    let rotation = super::matrix_axis_angle(&transform)
-        .expect("nonidentity rotation");
+    let rotation = super::matrix_axis_angle(&transform).expect("nonidentity rotation");
     assert!((rotation.angle.get() - angle).abs() <= EPS_MATRIX_RECONSTRUCTION);
     assert!((rotation.direction.x - 0.0).abs() <= EPS_MATRIX_RECONSTRUCTION);
     assert!((rotation.direction.y - 1.0).abs() <= EPS_MATRIX_RECONSTRUCTION);

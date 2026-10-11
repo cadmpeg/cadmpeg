@@ -29,18 +29,20 @@ fn assert_contextual_refusal(operation: &'static str) {
     second.recipe_structure = Some(structure());
     second.recipe_references = vec![recipe_reference(&[]), recipe_reference(&[])];
     second.recipe_reference_contexts = vec![context(17), context(18)];
-    for limit in 0..96 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = limit;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match contextual_deleted_edge_group_candidates(&[&first, &second], &ctx) {
-            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
-            Err(CodecError::ResourceLimit(_)) => {}
-            other => panic!("expected contextual deletion refusal at {operation}: {other:?}"),
-        }
-    }
-    panic!("no contextual deletion refusal at {operation}");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        operation,
+        |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+
+            (contextual_deleted_edge_group_candidates(&[&first, &second], &ctx)).map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.operation == operation && failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]

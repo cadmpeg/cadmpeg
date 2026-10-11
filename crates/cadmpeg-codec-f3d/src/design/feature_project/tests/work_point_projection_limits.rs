@@ -125,14 +125,14 @@ fn edge_operand(historical: bool) -> DesignEdgeOperand {
     operand
 }
 
-fn assert_retained_refusal(
+fn assert_materialized_refusal(
     construction: &DesignWorkPointConstruction,
     edge_operands: &[DesignEdgeOperand],
     scope_ids: &HashMap<(&str, u32), FeatureId>,
     operation: &'static str,
 ) {
     let error = crate::test_support::resource_refusal_at(
-        ResourceDimension::RetainedBytes,
+        ResourceDimension::MaterializedBytes,
         operation,
         0,
         |ctx| {
@@ -147,14 +147,14 @@ fn assert_retained_refusal(
         },
     );
     assert!(
-        matches!(error, CodecError::ResourceLimit(failure) if failure.operation == operation && failure.dimension == ResourceDimension::RetainedBytes)
+        matches!(error, CodecError::ResourceLimit(failure) if failure.operation == operation && failure.dimension == ResourceDimension::MaterializedBytes)
     );
 }
 
 #[test]
-fn work_point_native_vertex_recipe_id_refuses_retained_limit() {
+fn work_point_native_vertex_recipe_id_refuses_materialized_limit() {
     let construction = vertex_construction(false);
-    assert_retained_refusal(
+    assert_materialized_refusal(
         &construction,
         &[],
         &HashMap::new(),
@@ -163,9 +163,9 @@ fn work_point_native_vertex_recipe_id_refuses_retained_limit() {
 }
 
 #[test]
-fn work_point_historical_vertex_recipe_id_refuses_retained_limit() {
+fn work_point_historical_vertex_recipe_id_refuses_materialized_limit() {
     let construction = vertex_construction(true);
-    assert_retained_refusal(
+    assert_materialized_refusal(
         &construction,
         &[],
         &HashMap::new(),
@@ -174,11 +174,11 @@ fn work_point_historical_vertex_recipe_id_refuses_retained_limit() {
 }
 
 #[test]
-fn work_point_plane_feature_id_refuses_retained_limit() {
+fn work_point_plane_feature_id_refuses_materialized_limit() {
     let construction = plane_construction();
     let id = FeatureId::mint("synthetic:test:id#f3d:work-plane:10").unwrap();
     let scope_ids = HashMap::from([(("f3d:native/BulkStream.dat", 10), id.clone())]);
-    assert_retained_refusal(
+    assert_materialized_refusal(
         &construction,
         &[],
         &scope_ids,
@@ -187,7 +187,7 @@ fn work_point_plane_feature_id_refuses_retained_limit() {
 }
 
 #[test]
-fn work_point_native_edge_operand_id_refuses_retained_limit() {
+fn work_point_native_edge_operand_id_refuses_materialized_limit() {
     let operand = edge_operand(false);
     let construction = construction(DesignWorkPointRuleForm::CircleCenter {
         input: input(
@@ -197,7 +197,7 @@ fn work_point_native_edge_operand_id_refuses_retained_limit() {
             },
         ),
     });
-    assert_retained_refusal(
+    assert_materialized_refusal(
         &construction,
         std::slice::from_ref(&operand),
         &HashMap::new(),
@@ -206,7 +206,7 @@ fn work_point_native_edge_operand_id_refuses_retained_limit() {
 }
 
 #[test]
-fn work_point_historical_edge_operand_id_refuses_retained_limit() {
+fn work_point_historical_edge_operand_id_refuses_materialized_limit() {
     let operand = edge_operand(true);
     let construction = construction(DesignWorkPointRuleForm::CircleCenter {
         input: input(
@@ -216,7 +216,7 @@ fn work_point_historical_edge_operand_id_refuses_retained_limit() {
             },
         ),
     });
-    assert_retained_refusal(
+    assert_materialized_refusal(
         &construction,
         std::slice::from_ref(&operand),
         &HashMap::new(),
@@ -312,3 +312,48 @@ fn work_point_without_recipe_state_skips_terminal_edge_proof() {
 }
 
 mod queries;
+
+#[test]
+fn work_point_missing_later_plane_returns_no_construction_with_zero_retained_bytes() {
+    let construction = plane_construction();
+    let id = FeatureId::mint("synthetic:test:id#f3d:work-plane:10").unwrap();
+    let scope_ids = HashMap::from([(("f3d:native/BulkStream.dat", 10), id)]);
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        assert!(super::super::project_work_point_construction(
+            ctx,
+            &scope(),
+            &construction,
+            &[],
+            &[],
+            &scope_ids
+        )
+        .unwrap()
+        .is_none());
+        assert_eq!(ctx.resource_refusal(), None);
+    });
+}
+
+#[test]
+fn work_point_accepted_construction_refuses_retained_limit() {
+    let construction = vertex_construction(false);
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::RetainedBytes,
+        "f3d WorkPoint accepted construction",
+        0,
+        |ctx| {
+            super::super::project_work_point_construction(
+                ctx,
+                &scope(),
+                &construction,
+                &[],
+                &[],
+                &HashMap::new(),
+            )
+        },
+    );
+    assert!(
+        matches!(error, CodecError::ResourceLimit(failure) if failure.operation == "f3d WorkPoint accepted construction" && failure.dimension == ResourceDimension::RetainedBytes)
+    );
+}

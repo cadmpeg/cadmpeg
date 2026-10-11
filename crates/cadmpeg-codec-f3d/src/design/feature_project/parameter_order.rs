@@ -10,191 +10,236 @@ pub(super) fn normalize_parameter_ordinals(
     parameters: &mut [cadmpeg_ir::features::DesignParameter],
     owners: &HashMap<cadmpeg_ir::features::ParameterId, Option<cadmpeg_ir::features::FeatureId>>,
 ) -> Result<(), CodecError> {
-    let mut storage = ctx.reserve_scoped(0, "f3d parameter ordering storage")?;
-    storage.with_storage(|| {
-        use cadmpeg_ir::features::FeatureId;
+    use cadmpeg_ir::features::FeatureId;
 
-        let mut groups = BTreeMap::<Option<FeatureId>, Vec<usize>>::new();
-        for (index, parameter) in ctx
-            .admit_iter(&*parameters, "f3d parameter owner scan")?
-            .enumerate()
-        {
-            if let Some(indices) =
-                ctx.get_mut_btree_map(&mut groups, &parameter.owner, "f3d parameter owner lookup")?
+    let (groups, _groups_storage) =
+        ctx.with_scoped_storage("f3d parameter ordering storage", || {
+            let mut groups = BTreeMap::<Option<FeatureId>, Vec<usize>>::new();
+            for (index, parameter) in ctx
+                .admit_iter(&*parameters, "f3d parameter owner scan")?
+                .enumerate()
             {
-                ctx.push_vec(indices, index, "f3d parameter owner member")?;
-            } else {
-                let owner = parameter
-                    .owner
-                    .as_ref()
-                    .map(|id| (id).try_clone_for_decode(ctx, "f3d parameter owner ID"))
-                    .transpose()?;
-                let mut indices = Vec::new();
-                ctx.push_vec(&mut indices, index, "f3d parameter owner member")?;
-                // discarded-value: a new owner group has no previous member list.
-                let _ =
-                    ctx.insert_btree_map(&mut groups, owner, indices, "f3d parameter owner group")?;
-            }
-        }
-        for (owner, indices) in ctx.admit_iter(groups, "f3d parameter owner group scan")? {
-            let mut ordinals = Vec::new();
-            for index in ctx.admit_iter(&indices, "f3d parameter group member scan")? {
-                ctx.push_vec(
-                    &mut ordinals,
-                    parameters[*index].ordinal,
-                    "f3d parameter group ordinal",
-                )?;
-            }
-            ctx.sort_unstable_by(
-                &mut ordinals,
-                |value| value,
-                Ord::cmp,
-                "f3d parameter group ordinal sort",
-            )?;
-            let mut unresolved = BTreeSet::new();
-            for index in ctx.admit_iter(indices, "f3d parameter unresolved scan")? {
-                // discarded-value: each parameter index occurs once in its owner group.
-                let _ =
-                    ctx.insert_btree_set(&mut unresolved, index, "f3d parameter unresolved index")?;
-            }
-            let mut resolved = HashSet::new();
-            let mut order = Vec::new();
-            while !unresolved.is_empty() {
-                let mut ready = Vec::new();
-                for index in ctx.admit_iter(&unresolved, "f3d parameter readiness")? {
-                    if ctx.all_by(
-                        parameters[*index].dependencies.as_slice(),
-                        |dependency| {
-                            let same_owner = match ctx.get_hash_map(
-                                owners,
-                                dependency,
-                                "f3d parameter dependency owner",
-                            )? {
-                                Some(dependency_owner) => ctx.equal(
-                                    dependency_owner,
-                                    &owner,
-                                    "f3d parameter dependency owner comparison",
-                                )?,
-                                None => false,
-                            };
-                            Ok(!same_owner
-                                || ctx.contains_hash_set(
-                                    &resolved,
-                                    dependency,
-                                    "f3d parameter resolved lookup",
-                                )?)
-                        },
-                        "f3d parameter dependency scan",
-                    )? {
-                        ctx.push_vec(&mut ready, *index, "f3d parameter ready index")?;
-                    }
+                if let Some(indices) = ctx.get_mut_btree_map(
+                    &mut groups,
+                    &parameter.owner,
+                    "f3d parameter owner lookup",
+                )? {
+                    ctx.push_vec(indices, index, "f3d parameter owner member")?;
+                } else {
+                    let owner = parameter
+                        .owner
+                        .as_ref()
+                        .map(|id| (id).try_clone_for_decode(ctx, "f3d parameter owner ID"))
+                        .transpose()?;
+                    let mut indices = Vec::new();
+                    ctx.push_vec(&mut indices, index, "f3d parameter owner member")?;
+                    // discarded-value: a new owner group has no previous member list.
+                    let _ = ctx.insert_btree_map(
+                        &mut groups,
+                        owner,
+                        indices,
+                        "f3d parameter owner group",
+                    )?;
                 }
-                ctx.stable_sort_by_key(
-                    &mut ready[..],
-                    |index| (parameters[*index].ordinal, parameters[*index].id.as_str()),
+            }
+            Ok::<_, CodecError>(groups)
+        })?;
+    for (owner, indices) in ctx.admit_iter(&groups, "f3d parameter owner group scan")? {
+        let ((), _group_storage) =
+            ctx.with_scoped_storage("f3d parameter group storage", || {
+                let mut ordinals = Vec::new();
+                for index in
+                    ctx.admit_iter(indices.as_slice(), "f3d parameter group member scan")?
+                {
+                    ctx.push_vec(
+                        &mut ordinals,
+                        parameters[*index].ordinal,
+                        "f3d parameter group ordinal",
+                    )?;
+                }
+                ctx.sort_unstable_by(
+                    &mut ordinals,
+                    |value| value,
                     Ord::cmp,
-                    "sort f3d design feature_project 8",
+                    "f3d parameter group ordinal sort",
                 )?;
-                if ready.is_empty() {
-                    // Every blocked parameter has an unresolved dependency, so the
-                    // remaining graph contains a cycle. Break its lowest-ordinal
-                    // member, then resume ordering before selecting another cycle.
-                    let cycles = cyclic_parameter_components(ctx, parameters, &unresolved)?;
-                    let mut selected: Option<(usize, usize)> = None;
-                    for (component, (first, remaining)) in ctx
-                        .admit_iter(&cycles, "f3d parameter cycle selection scan")?
-                        .enumerate()
-                    {
-                        let breaker = ctx.fold(
-                            remaining,
-                            *first,
-                            |best, &index| {
-                                Ok(
-                                    if ctx.compare(
-                                        &(parameters[index].ordinal, parameters[index].id.as_str()),
-                                        &(parameters[best].ordinal, parameters[best].id.as_str()),
-                                        "f3d parameter cycle breaker comparison",
-                                    )? == std::cmp::Ordering::Less
-                                    {
-                                        index
-                                    } else {
-                                        best
-                                    },
-                                )
+                let mut unresolved = BTreeSet::new();
+                for index in ctx
+                    .admit_iter(indices.as_slice(), "f3d parameter unresolved scan")?
+                    .copied()
+                {
+                    // discarded-value: each parameter index occurs once in its owner group.
+                    let _ = ctx.insert_btree_set(
+                        &mut unresolved,
+                        index,
+                        "f3d parameter unresolved index",
+                    )?;
+                }
+                let mut resolved = HashSet::new();
+                let mut order = Vec::new();
+                while !unresolved.is_empty() {
+                    let mut ready_storage = ctx.reserve_scoped(0, "f3d parameter ready storage")?;
+                    let mut ready = Vec::new();
+                    for index in ctx.admit_iter(&unresolved, "f3d parameter readiness")? {
+                        if ctx.all_by(
+                            parameters[*index].dependencies.as_slice(),
+                            |dependency| {
+                                let same_owner = match ctx.get_hash_map(
+                                    owners,
+                                    dependency,
+                                    "f3d parameter dependency owner",
+                                )? {
+                                    Some(dependency_owner) => ctx.equal(
+                                        dependency_owner,
+                                        owner,
+                                        "f3d parameter dependency owner comparison",
+                                    )?,
+                                    None => false,
+                                };
+                                Ok(!same_owner
+                                    || ctx.contains_hash_set(
+                                        &resolved,
+                                        dependency,
+                                        "f3d parameter resolved lookup",
+                                    )?)
                             },
-                            "f3d parameter cycle breaker scan",
-                        )?;
-                        if match selected {
-                            None => true,
-                            Some((_, best)) => {
-                                ctx.compare(
-                                    &(parameters[breaker].ordinal, parameters[breaker].id.as_str()),
-                                    &(parameters[best].ordinal, parameters[best].id.as_str()),
-                                    "f3d parameter cycle selection comparison",
-                                )? == std::cmp::Ordering::Less
-                            }
-                        } {
-                            selected = Some((component, breaker));
-                        }
-                    }
-                    if let Some((component, breaker)) = selected {
-                        let (first, remaining) = &cycles[component];
-                        let (before, selected) = parameters.split_at_mut(breaker);
-                        let [parameter, after @ ..] = selected else {
-                            return Err(CodecError::malformed(
-                                "parameter cycle breaker is outside its group",
-                            ));
-                        };
-                        let mut members = HashSet::new();
-                        let mut indices = std::iter::once(*first).chain(remaining.iter().copied());
-                        while let Some(index) =
-                            ctx.next_charged(&mut indices, "f3d parameter cycle member scan")?
-                        {
-                            let id = match index.cmp(&breaker) {
-                                std::cmp::Ordering::Less => &before[index].id,
-                                std::cmp::Ordering::Equal => &parameter.id,
-                                std::cmp::Ordering::Greater => &after[index - breaker - 1].id,
-                            };
-                            // discarded-value: component indices are distinct.
-                            let _ = ctx.insert_hash_set(
-                                &mut members,
-                                id,
-                                "f3d parameter cycle member",
+                            "f3d parameter dependency scan",
+                        )? {
+                            ctx.push_scoped_vec(
+                                &mut ready_storage,
+                                &mut ready,
+                                *index,
+                                "f3d parameter ready index",
                             )?;
                         }
-                        parameter
-                            .dependencies
-                            .retain(|dependency| !members.contains(dependency));
                     }
-                    continue;
-                }
-                for index in ctx.admit_iter(ready, "f3d parameter ready scan")? {
-                    ctx.remove_btree_set(
-                        &mut unresolved,
-                        &index,
-                        "f3d parameter resolved removal",
+                    ctx.stable_sort_by_key(
+                        &mut ready[..],
+                        |index| (parameters[*index].ordinal, parameters[*index].id.as_str()),
+                        Ord::cmp,
+                        "sort f3d design feature_project 8",
                     )?;
-                    if let Some((id, _)) = ctx.get_key_value_hash_map(
-                        owners,
-                        &parameters[index].id,
-                        "f3d parameter resolved owner lookup",
-                    )? {
-                        // discarded-value: a parameter is resolved once.
-                        let _ =
-                            ctx.insert_hash_set(&mut resolved, id, "f3d parameter resolved index")?;
+                    if ready.is_empty() {
+                        // Every blocked parameter has an unresolved dependency, so the
+                        // remaining graph contains a cycle. Break its lowest-ordinal
+                        // member, then resume ordering before selecting another cycle.
+                        let (cycles, _cycle_storage) = ctx
+                            .with_scoped_storage("f3d parameter cycle output storage", || {
+                                cyclic_parameter_components(ctx, parameters, &unresolved)
+                            })?;
+                        let mut selected: Option<(usize, usize)> = None;
+                        for (component, (first, remaining)) in ctx
+                            .admit_iter(&cycles, "f3d parameter cycle selection scan")?
+                            .enumerate()
+                        {
+                            let breaker = ctx.fold(
+                                remaining,
+                                *first,
+                                |best, &index| {
+                                    Ok(
+                                        if ctx.compare(
+                                            &(
+                                                parameters[index].ordinal,
+                                                parameters[index].id.as_str(),
+                                            ),
+                                            &(
+                                                parameters[best].ordinal,
+                                                parameters[best].id.as_str(),
+                                            ),
+                                            "f3d parameter cycle breaker comparison",
+                                        )? == std::cmp::Ordering::Less
+                                        {
+                                            index
+                                        } else {
+                                            best
+                                        },
+                                    )
+                                },
+                                "f3d parameter cycle breaker scan",
+                            )?;
+                            if match selected {
+                                None => true,
+                                Some((_, best)) => {
+                                    ctx.compare(
+                                        &(
+                                            parameters[breaker].ordinal,
+                                            parameters[breaker].id.as_str(),
+                                        ),
+                                        &(parameters[best].ordinal, parameters[best].id.as_str()),
+                                        "f3d parameter cycle selection comparison",
+                                    )? == std::cmp::Ordering::Less
+                                }
+                            } {
+                                selected = Some((component, breaker));
+                            }
+                        }
+                        if let Some((component, breaker)) = selected {
+                            let (first, remaining) = &cycles[component];
+                            let (before, selected) = parameters.split_at_mut(breaker);
+                            let [parameter, after @ ..] = selected else {
+                                return Err(CodecError::malformed(
+                                    "parameter cycle breaker is outside its group",
+                                ));
+                            };
+                            let mut member_storage =
+                                ctx.reserve_scoped(0, "f3d parameter cycle member storage")?;
+                            let mut members = HashSet::new();
+                            let mut indices =
+                                std::iter::once(*first).chain(remaining.iter().copied());
+                            while let Some(index) =
+                                ctx.next_charged(&mut indices, "f3d parameter cycle member scan")?
+                            {
+                                let id = match index.cmp(&breaker) {
+                                    std::cmp::Ordering::Less => &before[index].id,
+                                    std::cmp::Ordering::Equal => &parameter.id,
+                                    std::cmp::Ordering::Greater => &after[index - breaker - 1].id,
+                                };
+                                // discarded-value: component indices are distinct.
+                                let _ = member_storage.with_storage(|| {
+                                    ctx.insert_hash_set(
+                                        &mut members,
+                                        id,
+                                        "f3d parameter cycle member",
+                                    )
+                                })?;
+                            }
+                            parameter
+                                .dependencies
+                                .retain(|dependency| !members.contains(dependency));
+                        }
+                        continue;
                     }
-                    ctx.push_vec(&mut order, index, "f3d parameter sorted order")?;
+                    for index in ctx.admit_iter(ready, "f3d parameter ready scan")? {
+                        ctx.remove_btree_set(
+                            &mut unresolved,
+                            &index,
+                            "f3d parameter resolved removal",
+                        )?;
+                        if let Some((id, _)) = ctx.get_key_value_hash_map(
+                            owners,
+                            &parameters[index].id,
+                            "f3d parameter resolved owner lookup",
+                        )? {
+                            // discarded-value: a parameter is resolved once.
+                            let _ = ctx.insert_hash_set(
+                                &mut resolved,
+                                id,
+                                "f3d parameter resolved index",
+                            )?;
+                        }
+                        ctx.push_vec(&mut order, index, "f3d parameter sorted order")?;
+                    }
                 }
-            }
-            for (index, ordinal) in ctx
-                .admit_iter(order, "f3d parameter ordinal assignment")?
-                .zip(ordinals)
-            {
-                parameters[index].ordinal = ordinal;
-            }
-        }
-        Ok(())
-    })
+                for (index, ordinal) in ctx
+                    .admit_iter(order, "f3d parameter ordinal assignment")?
+                    .zip(ordinals)
+                {
+                    parameters[index].ordinal = ordinal;
+                }
+                Ok::<_, CodecError>(())
+            })?;
+    }
+    Ok(())
 }
 
 /// Strongly connected components of the unresolved parameter graph that contain a cycle.
@@ -291,9 +336,10 @@ pub(super) fn cyclic_parameter_components(
         if ctx.contains_hash_set(&visited, &root, "f3d parameter cycle root membership")? {
             continue;
         }
+        let mut pending_storage = ctx.reserve_scoped(0, "f3d parameter cycle pending storage")?;
         let mut pending = Vec::new();
         ctx.push_scoped_vec(
-            &mut scratch,
+            &mut pending_storage,
             &mut pending,
             Visit::Enter(root),
             "f3d parameter cycle pending visit",
@@ -310,7 +356,7 @@ pub(super) fn cyclic_parameter_components(
                         continue;
                     }
                     ctx.push_scoped_vec(
-                        &mut scratch,
+                        &mut pending_storage,
                         &mut pending,
                         Visit::Leave(node),
                         "f3d parameter cycle pending visit",
@@ -319,7 +365,7 @@ pub(super) fn cyclic_parameter_components(
                         ctx.admit_iter(&edges[node], "f3d parameter cycle outgoing scan")?
                     {
                         ctx.push_scoped_vec(
-                            &mut scratch,
+                            &mut pending_storage,
                             &mut pending,
                             Visit::Enter(*dependency),
                             "f3d parameter cycle pending visit",
@@ -350,9 +396,10 @@ pub(super) fn cyclic_parameter_components(
             continue;
         }
         let mut remaining_members = Vec::new();
+        let mut pending_storage = ctx.reserve_scoped(0, "f3d parameter cycle pending storage")?;
         let mut pending = Vec::new();
         ctx.push_scoped_vec(
-            &mut scratch,
+            &mut pending_storage,
             &mut pending,
             root,
             "f3d parameter cycle reverse pending",
@@ -371,7 +418,7 @@ pub(super) fn cyclic_parameter_components(
                         "f3d parameter cycle component member",
                     )?;
                     ctx.push_scoped_vec(
-                        &mut scratch,
+                        &mut pending_storage,
                         &mut pending,
                         source,
                         "f3d parameter cycle reverse pending",
