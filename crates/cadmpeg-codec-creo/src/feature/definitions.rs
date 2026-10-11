@@ -6144,6 +6144,9 @@ fn positional_relation_triples(
     end: usize,
     table_class: u32,
 ) -> Result<Option<SolverSubtable<FeatureRelationTriple>>, CodecError> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(None);
+    };
     let Some((table, count, mut cursor, class_encoding)) =
         positional_array_header(ctx, payload, start, end, table_class)?
     else {
