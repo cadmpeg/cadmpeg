@@ -307,7 +307,7 @@ pub(crate) fn b5_closed_triangle_stream_over_edges(edges: [u32; 3]) -> Vec<u8> {
 
 /// Build the closed-triangle object stream with the complete native endpoint
 /// chain: `5e` edges reference `5d` vertices and `06` endpoint incidences;
-/// each `5d` points through one `05` roster to the two incident `06` records.
+/// each `5d` points through one `05` roster to its vertex-local `06` record.
 pub(crate) fn b5_closed_triangle_stream_with_native_vertex_chain() -> Vec<u8> {
     const SURFACE: u32 = 100;
     let pcurves = [
@@ -417,15 +417,9 @@ fn append_b5_closed_triangle_native_vertex_chain(
         payload.push(0x04);
         append_b5_record(bytes, 0x5d, vertex, &payload);
     }
-    for (roster, incidence_ids) in ROSTERS.into_iter().zip([
-        [INCIDENCES[0], INCIDENCES[2]],
-        [INCIDENCES[1], INCIDENCES[0]],
-        [INCIDENCES[2], INCIDENCES[1]],
-    ]) {
-        let mut payload = vec![0x82];
-        for incidence in incidence_ids {
-            payload.extend_from_slice(&b5_object_ref(incidence));
-        }
+    for (roster, incidence) in ROSTERS.into_iter().zip(INCIDENCES) {
+        let mut payload = vec![0x81];
+        payload.extend_from_slice(&b5_object_ref(incidence));
         append_b5_record(bytes, 0x05, roster, &payload);
     }
     for ((id, curves), parameters) in INCIDENCES

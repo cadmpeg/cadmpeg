@@ -800,3 +800,24 @@ Numeric object-loop terminals retain patch-aware U/V rectangle corners and paire
 A8 freeform surfaces consume their pole and weight grids inside the declared logical frame after descriptor reconstruction. Nonphysical extent order preserves the complete neutral model. Unframed pcurve gaps do not supply pole grids or bridge object-stream namespaces. The fixed terminal-span tail retains local intervals and identity affine pairs independently of the full knot domain.
 
 Vertex-incidence links accept exactly terminal `00` or `04` after one complete object reference and retain the terminal separately from the resolved roster. The two controls use the same incidence resolution. Strict frame closure rejects missing and extra terminal bytes. Class-`5d` dispatch uses the complete payload signature.
+
+## Float-packed native identity fixtures
+
+The frozen plane and cone fixtures contain 18 and 23 complete B5 frames,
+respectively, inside nested containers with a one-byte `SurfacicReps` and no
+FBB spine. Their vertex rosters contain one vertex-local incidence each;
+every adjoining curve station agrees at the vertex. The plane main stream
+has 762 bytes and its container has 1,026 bytes. The cone main stream has
+1,026 bytes and its container has 1,290 bytes.
+
+End-to-end tests require one body, region, shell, face, loop and surface;
+three plane or four cone edges, coedges, vertices and pcurves; complete typed
+edge, vertex, roster and parameter-incidence coverage; and zero unresolved
+faces or loops. The cone uses a nonzero reference radius and a generator
+angle different from π/4. Point coordinates, neutral validation, and every
+geometry annotation, including procedural curves and surfaces, are checked.
+The sole decode loss is the `topology.b5-gauge-substituted` warning.
+
+The smaller nine-frame coordinate-backed triangle remains a routing fixture.
+Its empty edge payloads do not exercise native edge or vertex identity grammar.
+Successful fallback transfer does not establish incidence-roster coincidence.

@@ -792,6 +792,14 @@ connected graph.
 
 ---
 
+### 6.8 Reference-closed object-stream graphs
+
+A class-`5d` vertex identity references a class-`05` roster. For rosters whose members are class-`06` parameter incidences, each incidence names its curves and their stations; every station must lift through the curve's carrier to the same vertex point. The same coincidence requirement applies across all incidences in one roster. References that close to distinct vertex loci do not establish a vertex coordinate.
+
+A plane triangle with three separate degree-one class-`21` boundaries and a complete parameter-derived vertex chain has 18 frames: one class-`27` carrier; three each of classes `21`, `5e`, `5d`, `05`, and `06`; one class-`62` loop; and one class-`5f` face. Each edge names its pcurve, ordered vertices, and corresponding endpoint incidences. Each vertex's one-member roster names the incidence evaluating the two adjoining pcurves at that vertex. Neither binary32 coordinate allocations nor class-`60/65` body-kind records are required by that reference-closed graph.
+
+The corresponding four-edge cone sector has 23 frames, using one class-`29` carrier and four each of classes `21`, `5e`, `5d`, `05`, and `06`. Its vertex stations use the cone chart in §6.7, including the reference radius and radial-plane generator angle. The carrier class is a geometric choice within the graph, rather than a discriminator of the enclosing storage variant.
+
 ## 7. Outer schema and object records
 
 ### 7.1 Legacy entity identity runs

@@ -1315,6 +1315,14 @@ pub(in crate::families) fn try_decode_zero_entity(
                 role,
                 Exactness::Derived));
             admitted!(crate::resource::derived_annotation(ctx, &mut annotations, &curve_id, "geometry", "catia_annotation_field"));
+            admitted!(annotate(
+                ctx,
+                &mut annotations,
+                &construction_id,
+                "zero_entity_a9_03",
+                u64_from_index(support.pos),
+                role,
+                Exactness::Derived));
             admitted!(crate::resource::derived_annotation(ctx, &mut annotations, &construction_id, "curve", "catia_annotation_field"));
             admitted!(crate::resource::derived_annotation(ctx, &mut annotations, &construction_id, "definition", "catia_annotation_field"));
             if let Err(error) = admission.reserve_entity(&mut ir.model.curves, "catia_zero_parametric_curves") {

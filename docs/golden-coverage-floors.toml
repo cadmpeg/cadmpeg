@@ -12,7 +12,7 @@
 # flate2 backend and diverge compressor output.
 
 [floors]
-catia = 57
+catia = 59
 creo = 84
 f3d = 317
 freecad = 48

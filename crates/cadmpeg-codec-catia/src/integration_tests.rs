@@ -792,3 +792,5 @@ fn decode_reconstructs_inline_poles_from_nonphysical_extent_order() {
     assert_eq!(reconstructed.ir().model, expected.ir().model);
     assert_eq!(reconstructed.ir().model.surfaces.len(), 1);
 }
+
+mod float_packed_fixtures;

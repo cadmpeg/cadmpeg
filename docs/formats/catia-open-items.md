@@ -506,13 +506,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Need.** We must know its role to classify and write the loop.
 
 
-### FV-10. Float-packed fixture validity
-
-**Question.** What object-stream and analytic-carrier records must a synthesized float-packed inner-no-FBB input contain to be a valid specimen of the variant?
-
-**Known.** `catia.md` §6.7 "For `b5 03 29`, the 185-byte payload is" fixes the cone chart and §6.7 "`b5 03 5d` (vertex identity)" fixes the native vertex-identity chain. The committed freeform fixtures include geometry-transferred A5 and A8 carriers, but they do not exercise the object-stream transfer route: that route has no face, loop, edge, coedge, or vertex population in those fixtures. Route coverage is a programmatically synthesized object stream held in the crate's tests, which decodes end to end through the container.
-
-**Need.** We must know the minimum valid record set to synthesize golden fixtures that hold the object-stream route under snapshot.
 
 ## 8. Appearance
 
