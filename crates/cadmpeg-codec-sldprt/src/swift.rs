@@ -1295,7 +1295,7 @@ fn read_doubles(
 fn read_objects(
     ctx: &DecodeContext<'_>,
     cursor: &mut View<'_>,
-    end: &str,
+    end: &'static str,
     depth: usize,
 ) -> Result<Option<ObjectSection>, CodecError> {
     let Some(count) = cursor.u32_le() else {
@@ -1348,11 +1348,7 @@ fn read_objects(
         ctx.reserve_vec(&mut entities, 1, "collect SWIFT object entities")?;
         entities.push(entity);
     }
-    if !ctx.equal(
-        &pstr(ctx, cursor)?,
-        &Some(end),
-        "check SWIFT object section end",
-    )? {
+    if pstr(ctx, cursor)? != Some(end) {
         return Ok(None);
     }
     ObjectSection::new(ctx, references, entities)
@@ -1395,7 +1391,8 @@ fn read_related(
         })?;
     }
     let mut related = Vec::new();
-    for (name, class) in descriptors {
+    let mut descriptors = descriptors.into_iter();
+    while let Some((name, class)) = ctx.next_charged(&mut descriptors, "scan SWIFT related descriptors")? {
         let next_depth = depth.checked_add(1).ok_or_else(|| {
             ctx.refuse_codec_limit(
                 "advance SWIFT recursion depth",
@@ -1860,7 +1857,9 @@ fn project_with_topology<'model, 'ctx>(
                         format_args!("{}:datum-system", id.as_str()),
                         "format SWIFT datum-system ID",
                     )?;
-                    let system_id = PmiId::mint(system_id)
+                    let system_id = PmiId::mint_for_decode(
+                        ctx, system_id, "validate SWIFT datum-system ID",
+                    )?
                         .map_err(|_| CodecError::malformed("invalid SWIFT datum-system ID"))?;
                     let datum_system =
                         system_id.try_clone_for_decode(ctx, "copy SWIFT PMI identity")?;
@@ -2012,11 +2011,11 @@ fn project_datum<'index, 'feature: 'index>(
     }))
 }
 
-/// Datum identities built once at the first reference lookup.
+/// Eligible datum source identities indexed at the first reference lookup.
 struct DatumIdentities<'root, 'ctx> {
     root: &'root Entity,
     entries: OnceCell<(
-        BTreeMap<&'root str, PmiId>,
+        BTreeSet<&'root str>,
         cadmpeg_core::decode::ScopedReservation<'ctx>,
     )>,
 }
@@ -2033,13 +2032,13 @@ impl<'root, 'ctx> DatumIdentities<'root, 'ctx> {
         &self,
         ctx: &'ctx DecodeContext<'_>,
         source_id: &str,
-    ) -> Result<Option<&PmiId>, CodecError> {
+    ) -> Result<Option<&'root str>, CodecError> {
         if self.entries.get().is_none() {
             let entries = ctx.with_scoped_storage(
                 "SWIFT datum identity workspace",
                 || -> Result<_, CodecError> {
                     let root = self.root;
-                    let mut datum_ids = BTreeMap::new();
+                    let mut datum_ids = BTreeSet::new();
                     for (reference, entity) in ctx
                         .admit_iter(
                             &root.annotations.references,
@@ -2062,13 +2061,9 @@ impl<'root, 'ctx> DatumIdentities<'root, 'ctx> {
                         {
                             continue;
                         }
-                        let Some(id) = pmi_id_charged(ctx, &reference.id)? else {
-                            continue;
-                        };
-                        ctx.insert_btree_map(
+                        ctx.insert_btree_set(
                             &mut datum_ids,
                             reference.id.as_str(),
-                            id,
                             "index SWIFT datum IDs",
                         )?;
                     }
@@ -2084,7 +2079,7 @@ impl<'root, 'ctx> DatumIdentities<'root, 'ctx> {
             .entries
             .get()
             .ok_or_else(|| CodecError::malformed("missing SWIFT datum identities"))?;
-        ctx.get_btree_map(entries, source_id, "look up SLDPRT ordered key")
+        Ok(ctx.get_btree_set(entries, source_id, "look up SLDPRT ordered key")?.copied())
     }
 }
 
@@ -2151,7 +2146,7 @@ fn project_lower_profile_tier(
         "format SWIFT lower-tier ID",
     )?;
     drop((id, identity_storage));
-    let id = PmiId::mint(text).map_err(|_| CodecError::malformed("invalid SWIFT lower-tier ID"))?;
+    let id = PmiId::mint_for_decode(ctx, text, "validate SWIFT lower-tier ID")?.map_err(|_| CodecError::malformed("invalid SWIFT lower-tier ID"))?;
     let name = ctx
         .get_btree_map(&entity.strings, "ObjectName", "look up SWIFT attribute")?
         .filter(|name| !name.is_empty())
@@ -2174,7 +2169,15 @@ fn project_lower_profile_tier(
             defined_area_unit: None,
             defined_area_second_unit: None,
             datum_system: None,
-            modifiers: vec!["composite_lower_tier".into()],
+            modifiers: {
+                let mut modifiers = Vec::new();
+                ctx.push_vec(
+                    &mut modifiers,
+                    ctx.copy_retained_text("composite_lower_tier", "copy SWIFT PMI modifier")?,
+                    "collect SWIFT PMI modifiers",
+                )?;
+                modifiers
+            },
         },
     }))
 }
@@ -2336,13 +2339,16 @@ fn diameter_from_applied_geometry(
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
 ) -> Result<Option<PositiveReal>, CodecError> {
-    let _contributor_storage;
-    let contributors;
-    (contributors, _contributor_storage) = ctx
-        .with_scoped_storage("SWIFT diameter contributor workspace", || {
-            diameter_contributors(ctx, annotation, feature_index)
-        })?;
-    unique_diameter(ctx, contributors.iter().copied())
+    let mut first: Option<PositiveReal> = None;
+    let complete = diameter_contributors(ctx, annotation, feature_index, |value| {
+        if let Some(prior) = first {
+            Ok(diameters_equivalent(value.get(), prior.get()))
+        } else {
+            first = Some(value);
+            Ok(true)
+        }
+    })?;
+    Ok(complete.then_some(first).flatten())
 }
 
 fn directional_distance(
@@ -2732,7 +2738,7 @@ fn plane_projection(
 fn axis_projection(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     feature: &Entity,
-    geometry: &str,
+    geometry: &'static str,
     direction: [f64; 3],
 ) -> Result<Option<FiniteReal>, cadmpeg_core::CodecError> {
     let axis = &match unique_related(ctx, feature, geometry)? {
@@ -2762,6 +2768,16 @@ fn axis_projection(
     Ok::<_, cadmpeg_core::CodecError>(FiniteReal::new(
         point_x * direction_i + point_y * direction_j + point_z * direction_k,
     ))
+}
+
+enum FeatureListConsumer<'out, T> {
+    Collect(&'out mut Vec<T>),
+    Visit(&'out mut dyn FnMut(T) -> Result<bool, CodecError>),
+}
+
+enum FeatureListCompletion {
+    Complete { cacheable: bool, has_values: bool },
+    Stopped,
 }
 
 /// One ordered feature-list query. Completed values keep their path order and
@@ -2815,36 +2831,82 @@ where
         depth: usize,
         output: &mut Vec<T>,
     ) -> Result<bool, CodecError> {
+        match self.walk(id, depth, &mut FeatureListConsumer::Collect(output))? {
+            FeatureListCompletion::Complete { cacheable, .. } => Ok(cacheable),
+            FeatureListCompletion::Stopped => Ok(false),
+        }
+    }
+
+    /// Visits values in contributor order until the consumer returns false.
+    fn visit(
+        &mut self,
+        id: &'a str,
+        depth: usize,
+        visit: &mut dyn FnMut(T) -> Result<bool, CodecError>,
+    ) -> Result<bool, CodecError> {
+        Ok(matches!(
+            self.walk(id, depth, &mut FeatureListConsumer::Visit(visit))?,
+            FeatureListCompletion::Complete { .. }
+        ))
+    }
+
+    fn walk(
+        &mut self,
+        id: &'a str,
+        depth: usize,
+        consumer: &mut FeatureListConsumer<'_, T>,
+    ) -> Result<FeatureListCompletion, CodecError> {
         const CACHE_LOOKUP: &str = "look up SWIFT feature traversal result";
         const CACHE_COPY: &str = "copy SWIFT feature traversal result";
         const CACHE_INSERT: &str = "cache SWIFT feature traversal result";
         let ctx = self.ctx;
         ctx.charge_work(1, self.operation)?;
         if ctx.contains_btree_set(&self.active, id, "check SWIFT traversal path")? {
-            return Ok(false);
+            return Ok(FeatureListCompletion::Complete { cacheable: false, has_values: false });
         }
         admit_swift_depth(ctx, depth, self.operation)?;
         let _depth = ctx.enter_nested(self.operation)?;
         if depth != 0 {
             if let Some(cached) = ctx.get_btree_map(&self.completed, &(id, depth), CACHE_LOOKUP)? {
-                // The key includes logical depth. This subtree completed before
-                // under the same query and policy, at this same nesting depth.
-                ctx.extend_from_slice(output, cached, self.result_operation)?;
-                return Ok(true);
+                match consumer {
+                    FeatureListConsumer::Collect(output) => {
+                        ctx.extend_from_slice(output, cached, self.result_operation)?;
+                    }
+                    FeatureListConsumer::Visit(visit) => {
+                        if !ctx.all_by(cached.iter().copied(), visit, self.result_operation)? {
+                            return Ok(FeatureListCompletion::Stopped);
+                        }
+                    }
+                }
+                return Ok(FeatureListCompletion::Complete { cacheable: true, has_values: !cached.is_empty() });
             }
         }
         let (_, path_storage) = ctx.with_scoped_storage("SWIFT traversal path storage", || {
             ctx.insert_btree_set(&mut self.active, id, self.path_operation)
         })?;
-        let first_value = output.len();
-        let result = (|| -> Result<bool, CodecError> {
+        let first_value = match consumer {
+            FeatureListConsumer::Collect(output) => output.len(),
+            FeatureListConsumer::Visit(_) => 0,
+        };
+        let result = (|| -> Result<FeatureListCompletion, CodecError> {
             let mut cacheable = true;
+            let mut has_values = false;
             if let Some(feature) =
                 ctx.get_btree_map(self.feature_index, id, "look up SLDPRT ordered key")?
             {
                 if let Some(value) = (self.direct_value)(feature)? {
-                    ctx.reserve_vec(output, 1, self.result_operation)?;
-                    output.push(value);
+                    has_values = true;
+                    match consumer {
+                        FeatureListConsumer::Collect(output) => {
+                            ctx.reserve_vec(output, 1, self.result_operation)?;
+                            output.push(value);
+                        }
+                        FeatureListConsumer::Visit(visit) => {
+                            if !visit(value)? {
+                                return Ok(FeatureListCompletion::Stopped);
+                            }
+                        }
+                    }
                 } else {
                     let next_depth = depth.checked_add(1).ok_or_else(|| {
                         ctx.refuse_codec_limit(
@@ -2853,39 +2915,58 @@ where
                             u64::MAX,
                         )
                     })?;
-                    let mut children = child_feature_ids(ctx, feature)?;
-                    while let Some(child) =
-                        ctx.next_charged(&mut children, "scan SWIFT child features")?
-                    {
-                        let child_result = self.collect(child, next_depth, output)?;
-                        if !child_result {
-                            cacheable = false;
+                    let mut visit_child = |child| {
+                        match self.walk(child, next_depth, consumer)? {
+                            FeatureListCompletion::Complete { cacheable: child_cacheable, has_values: child_values } => {
+                                cacheable &= child_cacheable;
+                                has_values |= child_values;
+                                Ok(true)
+                            }
+                            FeatureListCompletion::Stopped => Ok(false),
+                        }
+                    };
+                    // Visit embedded references before inspecting a separate
+                    // SubFeatures collection that the consumer may never need.
+                    if !ctx.all_by(
+                        feature.features.references.iter().map(|reference| reference.id.as_str()),
+                        &mut visit_child,
+                        "scan SWIFT child features",
+                    )? {
+                        return Ok(FeatureListCompletion::Stopped);
+                    }
+                    if let Some(children) = direct_subfeature_ids(ctx, feature)? {
+                        if !ctx.all_by(children, visit_child, "scan SWIFT child features")? {
+                            return Ok(FeatureListCompletion::Stopped);
                         }
                     }
                 }
             }
             if cacheable && depth != 0 {
-                let values = output
-                    .get(first_value..)
-                    .ok_or_else(|| CodecError::malformed("invalid SWIFT traversal result range"))?;
-                let cached_values = self
-                    .cache_storage
-                    .with_storage(|| ctx.copy_slice(values, CACHE_COPY))?;
-                self.cache_storage.with_storage(|| {
-                    ctx.insert_btree_map(
-                        &mut self.completed,
-                        (id, depth),
-                        cached_values,
-                        CACHE_INSERT,
-                    )
-                })?;
+                let cached_values = match consumer {
+                    FeatureListConsumer::Collect(output) => {
+                        let values = output.get(first_value..).ok_or_else(|| {
+                            CodecError::malformed("invalid SWIFT traversal result range")
+                        })?;
+                        Some(self.cache_storage.with_storage(|| ctx.copy_slice(values, CACHE_COPY))?)
+                    }
+                    // Streaming keeps no owned contributor list. Empty results
+                    // still cache shared subgraphs that yield no values.
+                    FeatureListConsumer::Visit(_) if !has_values => Some(Vec::new()),
+                    FeatureListConsumer::Visit(_) => None,
+                };
+                if let Some(cached_values) = cached_values {
+                    self.cache_storage.with_storage(|| {
+                        ctx.insert_btree_map(&mut self.completed, (id, depth), cached_values, CACHE_INSERT)
+                    })?;
+                }
             }
-            Ok(cacheable)
+            Ok(FeatureListCompletion::Complete { cacheable, has_values })
         })();
         ctx.remove_btree_set(&mut self.active, id, self.path_operation)?;
         drop(path_storage);
         result
     }
+
 }
 
 fn diameter_nominal(
@@ -3022,37 +3103,28 @@ fn hole_diameter_excluding_counterbore(
     let Some(counterbore_diameter) = counterbore_diameter else {
         return Ok(None);
     };
-    let _contributor_storage;
-    let contributors;
-    (contributors, _contributor_storage) = ctx
-        .with_scoped_storage("SWIFT diameter contributor workspace", || {
-            diameter_contributors(ctx, annotation, feature_index)
-        })?;
     let mut removed_counterbore = false;
     let mut first: Option<PositiveReal> = None;
-    let mut remaining = contributors.iter();
-    while let Some(value) =
-        ctx.next_charged(&mut remaining, "scan SLDPRT hole diameter contributors")?
-    {
+    let complete = diameter_contributors(ctx, annotation, feature_index, |value| {
         if diameters_equivalent(value.get(), counterbore_diameter.get()) {
             removed_counterbore = true;
         } else if let Some(prior) = first {
-            if !diameters_equivalent(value.get(), prior.get()) {
-                return Ok(None);
-            }
+            return Ok(diameters_equivalent(value.get(), prior.get()));
         } else {
-            first = Some(*value);
+            first = Some(value);
         }
-    }
-    Ok(removed_counterbore.then_some(first).flatten())
+        Ok(true)
+    })?;
+    Ok((complete && removed_counterbore).then_some(first).flatten())
 }
 
+/// Streams measured diameter contributors until the consumer returns false.
 fn diameter_contributors<'a>(
     ctx: &DecodeContext<'_>,
     annotation: &Entity,
     feature_index: &'a BTreeMap<&'a str, &'a Entity>,
-) -> Result<Vec<PositiveReal>, CodecError> {
-    let mut values = Vec::new();
+    mut visit: impl FnMut(PositiveReal) -> Result<bool, CodecError>,
+) -> Result<bool, CodecError> {
     let mut traversal = FeatureListTraversal::new(
         ctx,
         feature_index,
@@ -3068,13 +3140,11 @@ fn diameter_contributors<'a>(
             Ok(radius.and_then(|radius| PositiveReal::new(radius.get() * 2.0)))
         },
     )?;
-    for reference in ctx.admit_iter(
-        &annotation.features.references,
+    ctx.all_by(
+        annotation.features.references.iter(),
+        |reference| traversal.visit(&reference.id, 0, &mut visit),
         "scan SLDPRT diameter_contributors values",
-    )? {
-        traversal.collect(&reference.id, 0, &mut values)?;
-    }
-    Ok(values)
+    )
 }
 
 fn depth_from_applied_geometry<'a>(
@@ -3277,7 +3347,7 @@ fn unique_direct_feature<'a>(
     ctx: &DecodeContext<'_>,
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &'a Entity>,
-    class: &str,
+    class: &'static str,
 ) -> Result<Option<&'a Entity>, CodecError> {
     let mut selected = None;
     let mut references = annotation.features.references.iter();
@@ -3292,11 +3362,7 @@ fn unique_direct_feature<'a>(
         else {
             continue;
         };
-        if !ctx.equal(
-            short_class(ctx, &feature.class)?,
-            class,
-            "compare SWIFT feature class",
-        )? {
+        if short_class(ctx, &feature.class)? != class {
             continue;
         }
         if selected.is_some() {
@@ -3311,7 +3377,7 @@ fn direct_feature_context<'a>(
     ctx: &DecodeContext<'_>,
     annotation: &'a Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-    operation_class: &str,
+    operation_class: &'static str,
 ) -> Result<Option<BTreeSet<&'a str>>, CodecError> {
     let mut context = BTreeSet::new();
     for reference in ctx.admit_iter(
@@ -3325,11 +3391,7 @@ fn direct_feature_context<'a>(
                 "look up SLDPRT ordered key",
             )?
             .map(|feature| {
-                ctx.equal(
-                    short_class(ctx, &feature.class)?,
-                    operation_class,
-                    "compare SWIFT feature context class",
-                )
+                Ok::<_, CodecError>(short_class(ctx, &feature.class)? == operation_class)
             })
             .transpose()?
             .unwrap_or(false)
@@ -3567,7 +3629,7 @@ fn measurement_from_direct_features(
     ctx: &DecodeContext<'_>,
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-    class: &str,
+    class: &'static str,
     measurement: impl Fn(&Entity) -> Result<Option<PositiveReal>, CodecError>,
 ) -> Result<Option<PositiveReal>, CodecError> {
     let mut first: Option<PositiveReal> = None;
@@ -3583,11 +3645,7 @@ fn measurement_from_direct_features(
         else {
             continue;
         };
-        if !ctx.equal(
-            short_class(ctx, &feature.class)?,
-            class,
-            "compare SWIFT feature class",
-        )? {
+        if short_class(ctx, &feature.class)? != class {
             continue;
         }
         let Some(value) = measurement(feature)? else {
@@ -3935,22 +3993,11 @@ where
     }
 }
 
-fn child_feature_ids<'a>(
-    ctx: &DecodeContext<'_>,
-    feature: &'a Entity,
-) -> Result<impl Iterator<Item = &'a str> + 'a, CodecError> {
-    Ok(feature
-        .features
-        .references
-        .iter()
-        .map(|reference| reference.id.as_str())
-        .chain(direct_subfeature_ids(ctx, feature)?.into_iter().flatten()))
-}
 
 fn nominal_radius(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     feature: &Entity,
-    name: &str,
+    name: &'static str,
 ) -> Result<Option<PositiveReal>, cadmpeg_core::CodecError> {
     nominal_measurement(ctx, feature, name, "R")
 }
@@ -3958,7 +4005,7 @@ fn nominal_radius(
 fn nominal_measurement(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     feature: &Entity,
-    object: &str,
+    object: &'static str,
     field: &str,
 ) -> Result<Option<PositiveReal>, cadmpeg_core::CodecError> {
     Ok::<_, cadmpeg_core::CodecError>(PositiveReal::new(
@@ -4141,21 +4188,6 @@ fn unique_measurement<T: Copy + Into<f64>>(
         .then_some(first))
 }
 
-fn unique_diameter<T: Copy + Into<f64>>(
-    ctx: &DecodeContext<'_>,
-    mut values: impl Iterator<Item = T>,
-) -> Result<Option<T>, CodecError> {
-    let Some(first) = ctx.next_charged(&mut values, "scan SWIFT unique measurements")? else {
-        return Ok(None);
-    };
-    Ok(ctx
-        .all_by(
-            values,
-            |value| Ok(diameters_equivalent(value.into(), first.into())),
-            "scan SWIFT unique measurements",
-        )?
-        .then_some(first))
-}
 
 fn diameters_equivalent(left: f64, right: f64) -> bool {
     approximately_equal(left, right) || (left - right).abs() <= DIAMETER_EQUIVALENCE_MM
@@ -4242,22 +4274,26 @@ fn datum_references<'ctx>(
             let [reference] = datum.entity.annotations.references.as_slice() else {
                 continue;
             };
-            let Some(id) = datum_ids.lookup(ctx, reference.id.as_str())? else {
+            let Some(source_id) = datum_ids.lookup(ctx, reference.id.as_str())? else {
+                continue;
+            };
+            let Some(id) = pmi_id_charged(ctx, source_id)? else {
                 continue;
             };
             ctx.reserve_vec(&mut result, 1, "collect SWIFT datum references")?;
             result.push(DatumReference {
-                datum: id.try_clone_for_decode(ctx, "copy SWIFT PMI identity")?,
+                datum: id,
                 precedence,
                 common_group,
                 modifiers: integer_modifier(
+                    ctx,
                     ctx.get_btree_map(
                         &datum.entity.integers,
                         "Modifier",
                         "look up SWIFT attribute",
                     )?
                     .copied(),
-                ),
+                )?,
             });
         }
     }
@@ -4269,13 +4305,13 @@ fn datum_references<'ctx>(
 fn unique_related<'a>(
     ctx: &DecodeContext<'_>,
     entity: &'a Entity,
-    name: &str,
+    name: &'static str,
 ) -> Result<Option<&'a RelatedObject>, CodecError> {
     const OPERATION: &str = "find SWIFT related object";
     let mut remaining = entity.related.iter();
     let Some(object) = ctx.find_by(
         &mut remaining,
-        |object| ctx.equal(object.name.as_str(), name, OPERATION),
+        |object| Ok(object.name == name),
         OPERATION,
     )?
     else {
@@ -4283,7 +4319,7 @@ fn unique_related<'a>(
     };
     Ok((!ctx.any_by(
         &mut remaining,
-        |object| ctx.equal(object.name.as_str(), name, OPERATION),
+        |object| Ok(object.name == name),
         OPERATION,
     )?)
     .then_some(object))
@@ -4323,9 +4359,8 @@ fn targets(
             let mut seen_storage = ctx.reserve_scoped(0, "SWIFT target identity workspace")?;
             let mut seen = BTreeSet::new();
             let mut targets = Vec::new();
-            for reference in
-                ctx.admit_iter(&entity.features.references, "scan SLDPRT targets values")?
-            {
+            let mut references = entity.features.references.iter();
+            while let Some(reference) = ctx.next_charged(&mut references, "scan SLDPRT targets values")? {
                 let valid = visit_expanded_feature_ids(
                     ctx,
                     &reference.id,
@@ -4519,9 +4554,10 @@ fn tolerance_modifiers(
     entity: &Entity,
 ) -> Result<Vec<String>, cadmpeg_core::CodecError> {
     let mut values = integer_modifier(
+        ctx,
         ctx.get_btree_map(&entity.integers, "Modifier", "look up SWIFT attribute")?
             .copied(),
-    );
+    )?;
     for (key, name) in [
         ("IsFreeState", "free_state"),
         ("IsStatistical", "statistical"),
@@ -4533,9 +4569,9 @@ fn tolerance_modifiers(
             .is_some_and(|value| *value != 0)
         {
             ctx.push_vec(
-                &mut (values),
-                name.into(),
-                "collect SLDPRT decoded vector items",
+                &mut values,
+                ctx.copy_retained_text(name, "copy SWIFT PMI modifier")?,
+                "collect SWIFT PMI modifiers",
             )?;
         }
     }
@@ -4556,15 +4592,15 @@ fn tolerance_modifiers(
             .and_then(|v| NonNegativeReal::new(*v))
         {
             ctx.push_vec(
-                &mut (values),
-                format!("projected_zone:{}_mm", value.get()),
-                "collect SLDPRT decoded vector items",
+                &mut values,
+                ctx.format_retained(format_args!("projected_zone:{}_mm", value.get()), "format SWIFT PMI modifier")?,
+                "collect SWIFT PMI modifiers",
             )?;
         } else {
             ctx.push_vec(
-                &mut (values),
-                "projected_zone".into(),
-                "collect SLDPRT decoded vector items",
+                &mut values,
+                ctx.copy_retained_text("projected_zone", "copy SWIFT PMI modifier")?,
+                "collect SWIFT PMI modifiers",
             )?;
         }
     }
@@ -4581,28 +4617,31 @@ fn tolerance_modifiers(
             .and_then(|v| NonNegativeReal::new(*v))
         {
             ctx.push_vec(
-                &mut (values),
-                format!("maximum_tolerance:{}_mm", value.get()),
-                "collect SLDPRT decoded vector items",
+                &mut values,
+                ctx.format_retained(format_args!("maximum_tolerance:{}_mm", value.get()), "format SWIFT PMI modifier")?,
+                "collect SWIFT PMI modifiers",
             )?;
         } else {
             ctx.push_vec(
-                &mut (values),
-                "maximum_tolerance".into(),
-                "collect SLDPRT decoded vector items",
+                &mut values,
+                ctx.copy_retained_text("maximum_tolerance", "copy SWIFT PMI modifier")?,
+                "collect SWIFT PMI modifiers",
             )?;
         }
     }
     Ok::<_, cadmpeg_core::CodecError>(values)
 }
 
-fn integer_modifier(value: Option<i32>) -> Vec<String> {
-    match value {
-        Some(1) => vec!["maximum_material_requirement".into()],
-        Some(2) => vec!["least_material_requirement".into()],
-        Some(value) if value != 0 => vec![format!("sldprt:{value}")],
-        _ => Vec::new(),
-    }
+fn integer_modifier(ctx: &DecodeContext<'_>, value: Option<i32>) -> Result<Vec<String>, CodecError> {
+    let modifier = match value {
+        Some(1) => ctx.copy_retained_text("maximum_material_requirement", "copy SWIFT PMI modifier")?,
+        Some(2) => ctx.copy_retained_text("least_material_requirement", "copy SWIFT PMI modifier")?,
+        Some(value) if value != 0 => ctx.format_retained(format_args!("sldprt:{value}"), "format SWIFT PMI modifier")?,
+        _ => return Ok(Vec::new()),
+    };
+    let mut modifiers = Vec::new();
+    ctx.push_vec(&mut modifiers, modifier, "collect SWIFT PMI modifiers")?;
+    Ok(modifiers)
 }
 
 type DefinedArea = (Option<PmiValue>, Option<String>, Option<PmiValue>);
@@ -4632,7 +4671,7 @@ fn defined_area(ctx: &DecodeContext<'_>, entity: &Entity) -> Result<DefinedArea,
                 .copied()
                 .and_then(PositiveReal::new)
                 .map(|value| PmiValue::from_parts(value.into(), PmiQuantity::Length)),
-                Some("rectangular".into()),
+                Some(ctx.copy_retained_text("rectangular", "copy SWIFT defined-area unit")?),
                 ctx.get_btree_map(
                     &entity.doubles,
                     "PerUnitAreaWidth",
@@ -4651,11 +4690,11 @@ fn defined_area(ctx: &DecodeContext<'_>, entity: &Entity) -> Result<DefinedArea,
                 .copied()
                 .and_then(PositiveReal::new)
                 .map(|value| PmiValue::from_parts(value.into(), PmiQuantity::Length)),
-                Some("circular".into()),
+                Some(ctx.copy_retained_text("circular", "copy SWIFT defined-area unit")?),
                 None,
             ),
-            Some(kind) => (None, Some(format!("sldprt:{kind}")), None),
-            None => (None, Some("sldprt:unspecified".into()), None),
+            Some(kind) => (None, Some(ctx.format_retained(format_args!("sldprt:{kind}"), "format SWIFT defined-area unit")?), None),
+            None => (None, Some(ctx.copy_retained_text("sldprt:unspecified", "copy SWIFT defined-area unit")?), None),
         },
     )
 }
