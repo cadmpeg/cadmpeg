@@ -2828,18 +2828,7 @@ pub(super) fn decode<'ctx>(
             };
             let parameter_ranges = [[u_start, u_end], [v_start, v_end]];
             let surface = SurfaceId::from(ids::data(kind!("surface"), id));
-            let copied_geometry =
-                solved_geometry.try_clone_for_decode(ctx, "step_trim_surface_carrier")?;
-            ctx.push_vec(
-                &mut ir.model.surfaces,
-                Surface {
-                    id: surface.try_clone_for_decode(ctx, "step_surface_identity_copy")?,
-                    geometry: SurfaceGeometry::Solved(copied_geometry),
-                    source_object: None,
-                },
-                "step_geometry_ir_surfaces",
-            )?;
-            let _attached = ir.model.add_procedural_surface(ctx, &surface, match (|| {
+            let procedural = match (|| {
                     let ranges = parameter_ranges.map(|range| {
                         DirectedParameterRange::from_finite_endpoints(range).map_err(|_| {
                             ProceduralGeometryError::Payload(
@@ -2876,7 +2865,19 @@ pub(super) fn decode<'ctx>(
                                 .note(ctx.format_retained(format_args!("procedural surface #{id}: {error}"), "STEP decode text")?), "step_geometry_losses")?;
                         continue;
                     }
-                })?;
+                };
+            let copied_geometry =
+                solved_geometry.try_clone_for_decode(ctx, "step_trim_surface_carrier")?;
+            ctx.push_vec(
+                &mut ir.model.surfaces,
+                Surface {
+                    id: surface.try_clone_for_decode(ctx, "step_surface_identity_copy")?,
+                    geometry: SurfaceGeometry::Solved(copied_geometry),
+                    source_object: None,
+                },
+                "step_geometry_ir_surfaces",
+            )?;
+            let _attached = ir.model.add_procedural_surface(ctx, &surface, procedural)?;
             carrier_storage.with_storage(|| {
                 ctx.insert_hash_map(
                     &mut carrier_index.surfaces,
@@ -3096,6 +3097,19 @@ pub(super) fn decode<'ctx>(
             let Some((distance, self_intersect)) = distance.zip(self_intersect) else {
                 continue;
             };
+            let procedural = match cadmpeg_ir::geometry::surface_payloads::ParallelOffsetSurfaceConstruction::try_new(support, distance * record_scale, self_intersect).map(|admitted_payload| ProceduralSurface::new(
+                    ProceduralSurfaceId::from(ids::construction(kind!("offset_surface"), id)),
+                    ProceduralSurfaceDefinition::ParallelOffset(admitted_payload),
+                    None,
+                )) {
+                    Ok(surface) => surface,
+                    Err(error) => {
+                        ctx.push_scoped_vec(
+                &mut loss_storage,
+                &mut losses, StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!("procedural surface #{id}: {error}"), "STEP decode text")?), "step_geometry_losses")?;
+                        continue;
+                    }
+                };
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
             ctx.push_vec(
                 &mut ir.model.surfaces,
@@ -3108,19 +3122,7 @@ pub(super) fn decode<'ctx>(
                 },
                 "step_geometry_ir_surfaces",
             )?;
-            let _attached = ir.model.add_procedural_surface(ctx, &surface, match cadmpeg_ir::geometry::surface_payloads::ParallelOffsetSurfaceConstruction::try_new(support, distance * record_scale, self_intersect).map(|admitted_payload| ProceduralSurface::new(
-                    ProceduralSurfaceId::from(ids::construction(kind!("offset_surface"), id)),
-                    ProceduralSurfaceDefinition::ParallelOffset(admitted_payload),
-                    None,
-                )) {
-                    Ok(surface) => surface,
-                    Err(error) => {
-                        ctx.push_scoped_vec(
-                &mut loss_storage,
-                &mut losses, StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!("procedural surface #{id}: {error}"), "STEP decode text")?), "step_geometry_losses")?;
-                        continue;
-                    }
-                })?;
+            let _attached = ir.model.add_procedural_surface(ctx, &surface, procedural)?;
             carrier_storage.with_storage(|| {
                 ctx.insert_hash_map(
                     &mut carrier_index.surfaces,
