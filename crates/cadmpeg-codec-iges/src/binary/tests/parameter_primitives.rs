@@ -167,12 +167,18 @@ fn binary_stream_repeated_integer_preserves_pending_values_and_cursor() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("valid test input and admitted budget");
     let mut stream = ValueStream::new(&bytes, lengths(), &ctx);
-    assert_eq!(stream.next().expect("valid repeated integer"), Some(BinaryValue::Integer(7)));
+    assert_eq!(
+        stream.next().expect("valid repeated integer"),
+        Some(BinaryValue::Integer(7))
+    );
     assert_eq!(stream.pending.len(), 2);
     assert!(stream.bits.is_empty());
     let cursor = (stream.bits.byte, stream.bits.bit);
     for remaining in [1, 0] {
-        assert_eq!(stream.next().expect("valid pending integer"), Some(BinaryValue::Integer(7)));
+        assert_eq!(
+            stream.next().expect("valid pending integer"),
+            Some(BinaryValue::Integer(7))
+        );
         assert_eq!(stream.pending.len(), remaining);
         assert_eq!((stream.bits.byte, stream.bits.bit), cursor);
     }
