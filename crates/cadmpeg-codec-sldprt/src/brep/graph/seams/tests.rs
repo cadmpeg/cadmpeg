@@ -389,7 +389,11 @@ fn sphere_four_edge_repair_skips_pole_selector() {
 fn cylinder_rejected_first_ring_skips_second_ring_curve_index() {
     let mut out = cylinder(1.);
     out.edges[0].end = VertexId::mint("test:model:vertex#open-ring").unwrap();
-    let original_points: Vec<_> = out.points.iter().map(|point| point.position()).collect();
+    let original_points: Vec<_> = out
+        .points
+        .iter()
+        .map(cadmpeg_ir::topology::Point::position)
+        .collect();
     let out = assert_seam_pass_skips_indexes(
         out,
         false,
@@ -405,7 +409,7 @@ fn cylinder_rejected_first_ring_skips_second_ring_curve_index() {
     assert_eq!(
         out.points
             .iter()
-            .map(|point| point.position())
+            .map(cadmpeg_ir::topology::Point::position)
             .collect::<Vec<_>>(),
         original_points
     );

@@ -705,7 +705,7 @@ fn rejected_intersection_control_skips_the_remaining_error_lane() {
                 match dimension {
                     ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
                     ResourceDimension::MaterializedBytes => {
-                        policy.limits.max_materialized_bytes = cap
+                        policy.limits.max_materialized_bytes = cap;
                     }
                     _ => unreachable!(),
                 }
@@ -732,10 +732,10 @@ fn rejected_intersection_control_skips_the_remaining_error_lane() {
         let mut policy = DecodePolicy::service();
         match dimension {
             ResourceDimension::CollectionItems => {
-                policy.limits.max_collection_items = limit.used + limit.additional
+                policy.limits.max_collection_items = limit.used + limit.additional;
             }
             ResourceDimension::MaterializedBytes => {
-                policy.limits.max_materialized_bytes = limit.used + limit.additional
+                policy.limits.max_materialized_bytes = limit.used + limit.additional;
             }
             _ => unreachable!(),
         }
