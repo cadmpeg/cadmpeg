@@ -26,6 +26,10 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+mod plane_translation;
+
+use plane_translation::TranslationLattice;
+
 const DEFAULT_DIMENSION_UNITS_CHARACTER_SET: i64 = 1;
 const LEGACY_PLANE_NORMAL_EPSILON: f64 = 1.0e-10;
 
@@ -1829,6 +1833,7 @@ fn linear_nurbs_boundary_points(
     nurbs: &NurbsCurve,
     parameter_range: [f64; 2],
     transform: Transform,
+    proof: Option<&PlaneBoundaryMeasurements>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<Point3>>, CodecError> {
     let knots = nurbs.knots().as_slice();
@@ -1881,6 +1886,9 @@ fn linear_nurbs_boundary_points(
             return Ok(false);
         };
         ctx.push_vec(&mut points, point.get(), "iges plane NURBS boundary points")?;
+        if let Some(measurements) = proof {
+            measurements.record(point.get());
+        }
         Ok(true)
     };
     if !append_sample(parameter_range[0])? {
@@ -1901,18 +1909,33 @@ fn linear_nurbs_boundary_points(
     Ok(Some(points))
 }
 
+/// Coordinate bounds and orientation margin for one boundary proof.
+struct PlaneBoundaryMeasurements {
+    orientation_margin: std::cell::Cell<f64>,
+    lattice: std::cell::Cell<TranslationLattice>,
+}
+
+impl PlaneBoundaryMeasurements {
+    fn record(&self, point: Point3) {
+        let mut lattice = self.lattice.get();
+        lattice.record(point);
+        self.lattice.set(lattice);
+    }
+}
+
 fn linear_nurbs_is_simple_closed(
     nurbs: &NurbsCurve,
     parameter_range: [f64; 2],
     plane: (Point3, Vector3),
     resolution: f64,
     transform: Transform,
-    margin: Option<&std::cell::Cell<f64>>,
+    proof: Option<&PlaneBoundaryMeasurements>,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     let mut storage = ctx.reserve_scoped(0, "iges plane boundary samples")?;
-    let Some(points) = storage
-        .with_storage(|| linear_nurbs_boundary_points(nurbs, parameter_range, transform, ctx))?
+    let Some(points) = storage.with_storage(|| {
+        linear_nurbs_boundary_points(nurbs, parameter_range, transform, proof, ctx)
+    })?
     else {
         return Ok(false);
     };
@@ -1930,7 +1953,9 @@ fn linear_nurbs_is_simple_closed(
         return Ok(false);
     };
     Ok(!planar_polyline_has_self_intersection(
-        &projected, margin, ctx,
+        &projected,
+        proof.map(|proof| &proof.orientation_margin),
+        ctx,
     )?)
 }
 
@@ -1962,7 +1987,7 @@ fn bounded_plane_curve_is_simple(
     context: PlaneBoundarySimplicity<'_, '_>,
     source_is_certified_simple: bool,
     parameter_range: Option<[f64; 2]>,
-    (active, margin): (&mut BTreeSet<CurveId>, Option<&std::cell::Cell<f64>>),
+    (active, proof): (&mut BTreeSet<CurveId>, Option<&PlaneBoundaryMeasurements>),
 ) -> Result<bool, CodecError> {
     let _nested = context.ctx.enter_nested("iges plane boundary simplicity")?;
     match geometry {
@@ -2025,7 +2050,7 @@ fn bounded_plane_curve_is_simple(
                         context,
                         false,
                         None,
-                        (active, margin),
+                        (active, proof),
                     );
                     context.ctx.remove_btree_set(
                         active,
@@ -2064,7 +2089,7 @@ fn bounded_plane_curve_is_simple(
                 },
                 source_is_certified_simple,
                 parameter_range,
-                (active, margin),
+                (active, proof),
             )
         }
         SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => {
@@ -2084,7 +2109,7 @@ fn bounded_plane_curve_is_simple(
                 context.plane,
                 context.resolution,
                 context.transform,
-                margin,
+                proof,
                 context.ctx,
             )
         }
@@ -2110,10 +2135,13 @@ fn bounded_plane_curve_is_simple(
             let points = storage.with_storage(|| {
                 context.ctx.collect_options(
                     polyline.points().map(|point| {
-                        context
-                            .transform
-                            .apply_point(point.get())
-                            .map(cadmpeg_ir::features::FinitePoint3::get)
+                        context.transform.apply_point(point.get()).map(|point| {
+                            let point = point.get();
+                            if let Some(measurements) = proof {
+                                measurements.record(point);
+                            }
+                            point
+                        })
                     }),
                     "iges plane polyline points",
                 )
@@ -2142,7 +2170,7 @@ fn bounded_plane_curve_is_simple(
             };
             Ok(!planar_polyline_has_self_intersection(
                 &projected,
-                margin,
+                proof.map(|proof| &proof.orientation_margin),
                 context.ctx,
             )?)
         }
@@ -2206,6 +2234,7 @@ type PlaneBoundaryKey = (u32, super::plane_proof::CoplanarityPlaneKey);
 struct PlaneBoundaryProof<'ir> {
     coplanarity: super::plane_proof::CoplanarityProof<'ir, &'ir Edge>,
     orientation_margin: f64,
+    lattice: TranslationLattice,
 }
 
 impl PlaneBoundaryProof<'_> {
@@ -2220,6 +2249,12 @@ impl PlaneBoundaryProof<'_> {
         }
         if self.orientation_margin == f64::INFINITY
             || (self.coplanarity.origin == plane.0 && self.coplanarity.normal == plane.1)
+        {
+            return true;
+        }
+        if self
+            .lattice
+            .preserves_projection((self.coplanarity.origin, self.coplanarity.normal), plane)
         {
             return true;
         }
@@ -2249,7 +2284,7 @@ impl PlaneBoundaryProof<'_> {
 
 /// Successful boundary proofs for one immutable model.
 struct PlaneBoundaryProofs<'ir, 'ctx> {
-    sequences: super::plane_proof::PlaneProofSequences,
+    keys: super::plane_proof::PlaneProofKeys,
     proven: BTreeMap<PlaneBoundaryKey, PlaneBoundaryProof<'ir>>,
     storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
@@ -2285,8 +2320,8 @@ fn plane_boundary_edge<'ir>(
             return Ok(proof.coplanarity.result);
         }
     }
-    if proofs.sequences.contains(boundary_sequence) {
-        for neighbor in super::plane_proof::coplanarity_neighbors(plane_key, plane.1) {
+    for neighbor in super::plane_proof::coplanarity_neighbors(plane_key) {
+        if proofs.keys.contains((boundary_sequence, neighbor)) {
             if let Some(proof) = ctx.get_btree_map(
                 &proofs.proven,
                 &(boundary_sequence, neighbor),
@@ -2328,7 +2363,10 @@ fn plane_boundary_edge<'ir>(
     let active_id = active_storage.with_storage(|| {
         curve_id.try_clone_for_decode(ctx, "iges plane boundary active curve ID")
     })?;
-    let orientation_margin = std::cell::Cell::new(f64::INFINITY);
+    let measurements = PlaneBoundaryMeasurements {
+        orientation_margin: std::cell::Cell::new(f64::INFINITY),
+        lattice: std::cell::Cell::new(TranslationLattice::default()),
+    };
     if !active_storage.with_storage(|| {
         ctx.insert_btree_set(&mut active, active_id, "iges plane boundary active curve")
     })? || !bounded_plane_curve_is_simple(
@@ -2344,7 +2382,7 @@ fn plane_boundary_edge<'ir>(
         source_edge
             .param_range()
             .map(cadmpeg_ir::units::FiniteVector::get),
-        (&mut active, Some(&orientation_margin)),
+        (&mut active, Some(&measurements)),
     )? {
         return Err(PlaneBoundaryError::NotSimple);
     }
@@ -2374,7 +2412,8 @@ fn plane_boundary_edge<'ir>(
             &mut proofs.proven,
             proof_key,
             PlaneBoundaryProof {
-                orientation_margin: orientation_margin.get(),
+                orientation_margin: measurements.orientation_margin.get(),
+                lattice: measurements.lattice.get(),
                 coplanarity: super::plane_proof::CoplanarityProof {
                     origin: plane.0,
                     normal: plane.1,
@@ -2386,12 +2425,12 @@ fn plane_boundary_edge<'ir>(
             "iges plane boundary proof cache",
         )
     })?;
-    if !proofs.sequences.contains(boundary_sequence) {
+    if !proofs.keys.contains(proof_key) {
         proofs.storage.with_storage(|| {
-            proofs.sequences.insert(
-                boundary_sequence,
+            proofs.keys.insert(
+                proof_key,
                 ctx,
-                "iges plane boundary proof sequences",
+                "iges plane boundary proof keys",
             )
         })?;
     }
@@ -4072,7 +4111,7 @@ pub(super) fn project<'ctx>(
 
     let mut plane_index = None;
     let mut plane_proofs = PlaneBoundaryProofs {
-        sequences: super::plane_proof::PlaneProofSequences::default(),
+        keys: super::plane_proof::PlaneProofKeys::default(),
         proven: BTreeMap::new(),
         storage: ctx.reserve_scoped(0, "iges plane boundary proof cache")?,
     };
