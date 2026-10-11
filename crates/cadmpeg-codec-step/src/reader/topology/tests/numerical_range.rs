@@ -5,6 +5,8 @@ use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::math::Point2;
 
+const EPS_NEWTON_PARAMETER_RELATIVE: f64 = 1e-6;
+
 fn with_context<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
@@ -454,7 +456,7 @@ fn the_mapped_pcurve_search_halves_a_step_whose_point_overflows() {
     .expect("resource allocation did not fail")
     .unwrap();
     assert!(
-        (parameter / target_parameter - 1.).abs() < 1e-6,
+        (parameter / target_parameter - 1.).abs() < EPS_NEWTON_PARAMETER_RELATIVE,
         "{parameter}"
     );
     assert!(error < 1e300, "{error}");

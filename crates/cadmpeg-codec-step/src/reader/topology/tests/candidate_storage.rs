@@ -32,6 +32,8 @@ fn repeated_rejected_shell_candidates_release_identity_and_region_storage() {
     let ir = CadIr::empty();
     let carriers = crate::reader::index::CarrierIndex::from_ir(&ir, &setup).expect("empty carriers");
     let ctx = cadmpeg_test_support::service_decode_context();
+    let decoded = BTreeSet::new();
+    let mut associations = super::super::associations::PcurveAssociations::new(&exchange, &decoded, &ctx).expect("empty associations");
     let mut cache = FaceAttributeCache::new(&ctx).expect("face cache");
     let mut storage = ctx.reserve_scoped(0, "test losses").expect("loss slots");
     let mut losses = Vec::new();
@@ -41,9 +43,9 @@ fn repeated_rejected_shell_candidates_release_identity_and_region_storage() {
             BuildSources {
                 exchange: &exchange, ir: &ir, vdefs: &BTreeMap::new(),
                 edefs: &BTreeMap::new(), odefs: &BTreeMap::new(),
-                shell_definitions: &shells, decoded_pcurves: &BTreeSet::new(),
+                shell_definitions: &shells,
                 point_positions: &carriers, ctx: &ctx,
-            }, &mut cache, false, (&mut losses, &mut storage),
+            }, &mut cache, &mut associations, false, (&mut losses, &mut storage),
         ).expect("recoverable shell rejection");
         let (built, failures, owner) = outcome.into_parts();
         assert!(built.is_empty());
@@ -51,7 +53,7 @@ fn repeated_rejected_shell_candidates_release_identity_and_region_storage() {
         drop((built, owner));
     }
     assert!(losses.is_empty());
-    drop((losses, storage, cache));
+    drop((losses, storage, cache, associations));
     assert_eq!(retained_bytes(&ctx), 0);
 }
 
@@ -121,14 +123,16 @@ fn rejected_named_face(name: &str, invalid: bool) {
     let odefs = super::super::oriented_defs(&exchange, &setup).expect("oriented edges");
     let shells = super::super::shell_defs(&exchange, &setup).expect("shell definitions");
     let ctx = cadmpeg_test_support::service_decode_context();
+    let decoded = BTreeSet::new();
+    let mut associations = super::super::associations::PcurveAssociations::new(&exchange, &decoded, &ctx).expect("empty associations");
     let mut cache = FaceAttributeCache::new(&ctx).expect("face cache");
     let mut storage = ctx.reserve_scoped(0, "test losses").expect("loss slots");
     let mut losses = Vec::new();
     let outcome = super::super::build(31, exchange.records().get(&31).expect("sheet root"),
         BuildSources { exchange: &exchange, ir: &ir, vdefs: &vdefs, edefs: &edefs,
-            odefs: &odefs, shell_definitions: &shells, decoded_pcurves: &BTreeSet::new(),
+            odefs: &odefs, shell_definitions: &shells,
             point_positions: &carriers, ctx: &ctx },
-        &mut cache, false, (&mut losses, &mut storage),
+        &mut cache, &mut associations, false, (&mut losses, &mut storage),
     ).expect("late face rejection");
     let (built, failures, owner) = outcome.into_parts();
     assert!(built.is_empty());
@@ -139,7 +143,7 @@ fn rejected_named_face(name: &str, invalid: bool) {
         assert!(losses[0].message.starts_with("STEP record #29 has an invalid face name string:"));
     }
     let expected: u64 = losses.iter().map(|loss| u64::try_from(loss.message.len()).expect("warning bytes fit")).sum();
-    drop((built, owner, cache));
+    drop((built, owner, cache, associations));
     assert_eq!(retained_bytes(&ctx), expected);
     drop((losses, storage));
 }

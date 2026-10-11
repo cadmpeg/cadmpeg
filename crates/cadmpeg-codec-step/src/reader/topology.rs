@@ -40,6 +40,7 @@ use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use self::admissions::{pcurve_admission_note, PcurveAdmission};
+use self::associations::PcurveAssociations;
 use super::geometry::surface_periodic_domains;
 use super::index::CarrierIndex;
 use super::StageOutcome;
@@ -88,6 +89,7 @@ fn insert_topology_body_group(
 }
 
 mod admissions;
+mod associations;
 
 pub(super) struct TopologyData<'ctx> {
     pub(super) body_by_root: BTreeMap<u64, Vec<BodyId>>,
@@ -942,6 +944,7 @@ pub(super) fn decode<'ctx>(
     let mut admission_storage = ctx.reserve_scoped(0, "STEP document admission scratch")?;
     let mut admissions: Vec<PcurveAdmission> = Vec::new();
     let mut face_cache = FaceAttributeCache::new(ctx)?;
+    let mut associations = PcurveAssociations::new(exchange, &decoded_pcurves, ctx)?;
     let mut face_ancestor_storage = ctx.reserve_scoped(0, "STEP committed face ancestry")?;
     let mut claimed_face_ancestors = BTreeSet::new();
     let mut shell_ancestor_storage = ctx.reserve_scoped(0, "STEP committed shell ancestry")?;
@@ -1024,11 +1027,11 @@ pub(super) fn decode<'ctx>(
                 edefs: &edges,
                 odefs: &oriented,
                 shell_definitions: &shells,
-                decoded_pcurves: &decoded_pcurves,
                 point_positions: carrier_index,
                 ctx,
             },
             &mut face_cache,
+            &mut associations,
             scope_root,
             (&mut losses, &mut loss_storage),
         )?;
@@ -3673,13 +3676,13 @@ struct BuildSources<'records, 'a, 'ctx, 'b> {
     edefs: &'a BTreeMap<u64, EdgeDef>,
     odefs: &'a BTreeMap<u64, OrientedDef>,
     shell_definitions: &'a BTreeMap<u64, ShellDef>,
-    decoded_pcurves: &'a BTreeSet<u64>,
     point_positions: &'a CarrierIndex,
     ctx: &'ctx DecodeContext<'b>,
 }
 
 struct BuildState<'ctx, 'ir, 'records, 'cache, 'arena> {
     face_cache: &'cache mut FaceAttributeCache<'ctx, 'records, 'arena>,
+    associations: &'cache mut PcurveAssociations<'ctx, 'records, 'arena>,
     failure: Option<BuildFailure>,
     selection_index: Option<PcurveSelectionIndex<'ctx, 'ir>>,
 }
@@ -3705,6 +3708,7 @@ fn build<'ctx, 'records, 'arena>(
     root: &RawRecord,
     sources: BuildSources<'records, '_, 'ctx, 'arena>,
     face_cache: &mut FaceAttributeCache<'ctx, 'records, 'arena>,
+    associations: &mut PcurveAssociations<'ctx, 'records, 'arena>,
     scope_root: bool,
     losses: (&mut Vec<LossNote>, &mut ScopedReservation<'_>),
 ) -> Result<BuildOutcome<'ctx>, CodecError> {
@@ -3729,6 +3733,7 @@ fn build<'ctx, 'records, 'arena>(
     };
     let mut state = BuildState {
         face_cache,
+        associations,
         failure: None,
         selection_index: None,
     };
@@ -3861,6 +3866,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
     let (losses, loss_storage) = losses;
     let BuildState {
         face_cache,
+        associations,
         failure,
         selection_index,
     } = state;
@@ -3871,7 +3877,6 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
         edefs,
         odefs,
         shell_definitions,
-        decoded_pcurves,
         point_positions,
         ctx,
     } = sources;
@@ -4629,8 +4634,6 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
                             else {
                                 break;
                             };
-                            let mut pcurve_scratch =
-                                ctx.reserve_scoped(0, "STEP edge pcurve scratch")?;
                             let o = require_carrier(
                                 ctx.get_btree_map(odefs, &use_step, "STEP topology odefs lookup")?,
                                 failure,
@@ -4653,58 +4656,9 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
                                     .with_tail(&face_suffix),
                             ));
                             let selected_pcurve = if let OrientedKind::Seam { pcurve } = o.kind {
-                                let candidate =
-                                    if let Some(((surface_step, pcurve_step), edge_curve)) =
-                                        surface_step.zip(pcurve).zip(edge.curve())
-                                    {
-                                        ctx.get_btree_map(
-                                            exchange.records(),
-                                            &pcurve_step,
-                                            "STEP topology record lookup",
-                                        )?
-                                        .map(|pcurve| {
-                                            (surface_step, pcurve_step, pcurve, edge_curve)
-                                        })
-                                    } else {
-                                        None
-                                    };
-                                let explicit_pcurve =
-                                    if let Some((surface_step, pcurve_step, pcurve, edge_curve)) =
-                                        candidate
-                                    {
-                                        let associated = if let Some(curve_record) = ctx
-                                            .get_btree_map(
-                                                exchange.records(),
-                                                &edge_curve,
-                                                "STEP topology record lookup",
-                                            )? {
-                                            ctx.any_by(
-                                                surface_curve_pcurves(ctx, curve_record)?,
-                                                |value| Ok(value.reference() == Some(pcurve_step)),
-                                                "STEP explicit seam pcurve lookup",
-                                            )?
-                                        } else {
-                                            false
-                                        };
-                                        (pcurve.partial(ctx, "PCURVE")?.is_some()
-                                            && entity_parameter(ctx, pcurve, "PCURVE", 1)?
-                                                .and_then(ValueExt::reference)
-                                                == Some(surface_step)
-                                            && ctx.contains_btree_set(
-                                                decoded_pcurves,
-                                                &pcurve_step,
-                                                "STEP topology decoded_pcurves membership",
-                                            )?
-                                            && associated)
-                                            .then(|| {
-                                                PcurveId::from(ids::data(
-                                                    kind!("pcurve"),
-                                                    pcurve_step,
-                                                ))
-                                            })
-                                    } else {
-                                        None
-                                    };
+                                let explicit_pcurve = if let Some(((surface, pcurve), curve)) = surface_step.zip(pcurve).zip(edge.curve()) {
+                                    associations.contains(curve, surface, pcurve)?.then(|| PcurveId::from(ids::data(kind!("pcurve"), pcurve)))
+                                } else { None };
                                 if let Some(pcurve) = explicit_pcurve {
                                     Some((pcurve, None))
                                 } else {
@@ -4716,15 +4670,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
                             } else if let (Some(surface), Some(curve)) =
                                 (surface_step, edge.curve())
                             {
-                                let associated = pcurve_scratch.with_storage(|| {
-                                    associated_pcurves(
-                                        curve,
-                                        surface,
-                                        exchange,
-                                        decoded_pcurves,
-                                        ctx,
-                                    )
-                                })?;
+                                let associated = associations.candidates(curve, surface)?;
                                 if associated.is_empty() {
                                     None
                                 } else {
@@ -4740,7 +4686,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
                                         PcurveAssociationSources {
                                             vdefs,
                                             point_positions,
-                                            candidates: &associated,
+                                            candidates: associated,
                                         },
                                         ctx,
                                     )) {
@@ -6078,64 +6024,6 @@ fn implicit_face_plane(
     ))))
 }
 
-fn associated_pcurves(
-    curve_step: u64,
-    surface_step: u64,
-    exchange: &Exchange,
-    decoded_pcurves: &BTreeSet<u64>,
-    ctx: &DecodeContext<'_>,
-) -> Result<Vec<PcurveId>, CodecError> {
-    let Some(curve) = ctx.get_btree_map(
-        exchange.records(),
-        &curve_step,
-        "STEP topology record lookup",
-    )?
-    else {
-        return Ok(Vec::new());
-    };
-    if !ctx.any_by(
-        &curve.partials[..],
-        |partial| {
-            Ok(matches!(
-                partial.name.as_str(),
-                "SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE"
-            ))
-        },
-        "STEP associated pcurves traversal",
-    )? {
-        return Ok(Vec::new());
-    }
-    let mut associated = Vec::new();
-    for source_value in ctx.admit_iter(
-        surface_curve_pcurves(ctx, curve)?,
-        "STEP surface curve pcurve reference traversal",
-    )? {
-        let Some(pcurve_step) = source_value.reference() else {
-            continue;
-        };
-        let Some(pcurve) = ctx.get_btree_map(
-            exchange.records(),
-            &pcurve_step,
-            "STEP topology record lookup",
-        )?
-        else {
-            continue;
-        };
-        if pcurve.partial(ctx, "PCURVE")?.is_some()
-            && entity_parameter(ctx, pcurve, "PCURVE", 1)?.and_then(Value::reference)
-                == Some(surface_step)
-            && ctx.contains_btree_set(
-                decoded_pcurves,
-                &pcurve_step,
-                "STEP topology decoded_pcurves membership",
-            )?
-        {
-            let pcurve_id = PcurveId::from(ids::data(kind!("pcurve"), pcurve_step));
-            ctx.push_vec(&mut associated, pcurve_id, "step_associated_pcurves")?;
-        }
-    }
-    Ok(associated)
-}
 
 /// Select the only non-seam pcurve candidate with endpoint and locus witnesses.
 /// Part 42 supplies no selector for competing same-surface pcurves; the CADIR
