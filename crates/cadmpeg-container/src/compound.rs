@@ -14,6 +14,10 @@ use cadmpeg_core::{CodecError, ContainerEntry};
 
 use crate::layout::directory_entry as directory_layout;
 
+mod prefix_probe;
+
+use prefix_probe::{probe_directory_availability, PrefixDirectoryAvailability, PrefixProbe};
+
 const MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 const FREE_SECTOR: u32 = 0xffff_ffff;
 const END_OF_CHAIN: u32 = 0xffff_fffe;
@@ -1373,18 +1377,6 @@ pub enum CompoundPrefixProbe {
     DirectoryEvidence(Vec<String>),
 }
 
-enum PrefixDirectoryAvailability<'ctx> {
-    NotCompound,
-    Incomplete,
-    Malformed(&'static str),
-    Ready {
-        version: CompoundVersion,
-        available: usize,
-        directory_chain: Vec<u32>,
-        storage: ScopedReservation<'ctx>,
-    },
-}
-
 enum PrefixEvidenceFailure {
     Malformed(&'static str),
     Display(CodecError),
@@ -1401,290 +1393,6 @@ impl From<ResourceLimit> for PrefixEvidenceFailure {
     fn from(error: ResourceLimit) -> Self {
         Self::Error(error.into())
     }
-}
-
-fn probe_directory_availability<'ctx>(
-    ctx: &'ctx DecodeContext<'_>,
-    prefix: View<'_>,
-) -> Result<PrefixDirectoryAvailability<'ctx>, CodecError> {
-    let prefix = prefix.window();
-    if prefix.get(..8) != Some(&MAGIC) {
-        return Ok(PrefixDirectoryAvailability::NotCompound);
-    }
-    let Some(major) = View::u16_le_at(prefix, 26) else {
-        return Ok(PrefixDirectoryAvailability::Incomplete);
-    };
-    let Some(shift) = View::u16_le_at(prefix, 30) else {
-        return Ok(PrefixDirectoryAvailability::Incomplete);
-    };
-    let Some(version) = CompoundVersion::from_header(major, shift) else {
-        return Ok(PrefixDirectoryAvailability::Malformed(
-            "invalid CFB sector layout",
-        ));
-    };
-    let sector_size = version.sector_size();
-    if prefix.len() < sector_size {
-        return Ok(PrefixDirectoryAvailability::Incomplete);
-    }
-    if prefix.get(8..24) != Some(&[0; 16])
-        || View::u16_le_at(prefix, 24) != Some(0x003e)
-        || View::u16_le_at(prefix, 28) != Some(0xfffe)
-        || View::u16_le_at(prefix, 32) != Some(6)
-        || prefix.get(34..40) != Some(&[0; 6])
-        || View::u32_le_at(prefix, 56) != Some(4096)
-    {
-        return Ok(PrefixDirectoryAvailability::Malformed("invalid CFB header"));
-    }
-    if version == CompoundVersion::V4 && prefix[512..4096].iter().any(|byte| *byte != 0) {
-        return Ok(PrefixDirectoryAvailability::Malformed(
-            "CFB v4 header padding is not zero",
-        ));
-    }
-    let Some(fat_count) = View::u32_le_at(prefix, 44).and_then(|v| usize::try_from(v).ok()) else {
-        return Ok(PrefixDirectoryAvailability::Incomplete);
-    };
-    let Some(directory_start) = View::u32_le_at(prefix, 48) else {
-        return Ok(PrefixDirectoryAvailability::Incomplete);
-    };
-    let Some(directory_sector_count) = View::u32_le_at(prefix, 40) else {
-        return Ok(PrefixDirectoryAvailability::Incomplete);
-    };
-    let Some(difat_start) = View::u32_le_at(prefix, 68) else {
-        return Ok(PrefixDirectoryAvailability::Incomplete);
-    };
-    let Some(difat_count) = View::u32_le_at(prefix, 72).and_then(|v| usize::try_from(v).ok())
-    else {
-        return Ok(PrefixDirectoryAvailability::Incomplete);
-    };
-    if fat_count == 0
-        || (version == CompoundVersion::V3 && directory_sector_count != 0)
-        || (version == CompoundVersion::V4 && directory_sector_count == 0)
-    {
-        return Ok(PrefixDirectoryAvailability::Malformed(
-            "invalid CFB header counts",
-        ));
-    }
-
-    let available = (prefix.len() - sector_size) / sector_size;
-    let mut fat_sectors = ctx.scoped_vector_storage(0, "probe CFB FAT sectors")?;
-    let mut header_free_seen = false;
-    for index in 0..109 {
-        let Some(id) = View::u32_le_at(prefix, 76 + index * 4) else {
-            return Ok(PrefixDirectoryAvailability::Incomplete);
-        };
-        if id == FREE_SECTOR {
-            header_free_seen = true;
-        } else {
-            if header_free_seen {
-                return Ok(PrefixDirectoryAvailability::Malformed(
-                    "non-free CFB header DIFAT entry follows a free entry",
-                ));
-            }
-            if fat_sectors.0.len() == fat_count {
-                return Ok(PrefixDirectoryAvailability::Malformed(
-                    "CFB FAT ids exceed the declared count",
-                ));
-            }
-            ctx.push_scoped_vec(
-                &mut fat_sectors.1,
-                &mut fat_sectors.0,
-                id,
-                "probe CFB FAT sectors",
-            )?;
-        }
-    }
-    let mut next_difat = difat_start;
-    let difat_entries = sector_size / 4 - 1;
-    let mut seen_difat_storage = ctx.reserve_scoped(0, "CFB probe visits")?;
-    let mut seen_difat = BTreeSet::new();
-    for _ in 0..difat_count {
-        ctx.charge_work(1, "visit CFB probe DIFAT sector")?;
-        if cadmpeg_core::decode::index_from_u32(next_difat) >= available {
-            return Ok(PrefixDirectoryAvailability::Incomplete);
-        }
-        if !ctx.insert_scoped_btree_set(
-            &mut seen_difat_storage,
-            &mut seen_difat,
-            next_difat,
-            "CFB probe DIFAT visits",
-            "CFB probe DIFAT visits",
-        )? {
-            return Ok(PrefixDirectoryAvailability::Malformed(
-                "CFB DIFAT chain is cyclic",
-            ));
-        }
-        // An id below `available` addresses a complete sector in this prefix.
-        let start = (cadmpeg_core::decode::index_from_u32(next_difat) + 1) * sector_size;
-        let raw = &prefix[start..start + sector_size];
-        let mut free_seen = false;
-        for index in 0..difat_entries {
-            ctx.charge_work(1, "visit CFB DIFAT entries")?;
-            let Some(id) = View::u32_le_at(raw, index * 4) else {
-                return Ok(PrefixDirectoryAvailability::Incomplete);
-            };
-            if id == FREE_SECTOR {
-                free_seen = true;
-            } else {
-                if free_seen {
-                    return Ok(PrefixDirectoryAvailability::Malformed(
-                        "non-free CFB DIFAT entry follows a free entry",
-                    ));
-                }
-                if fat_sectors.0.len() == fat_count {
-                    return Ok(PrefixDirectoryAvailability::Malformed(
-                        "CFB FAT ids exceed the declared count",
-                    ));
-                }
-                ctx.push_scoped_vec(
-                    &mut fat_sectors.1,
-                    &mut fat_sectors.0,
-                    id,
-                    "probe CFB FAT sectors",
-                )?;
-            }
-        }
-        let Some(next) = View::u32_le_at(raw, difat_entries * 4) else {
-            return Ok(PrefixDirectoryAvailability::Incomplete);
-        };
-        next_difat = next;
-    }
-    if (difat_count == 0 && difat_start != END_OF_CHAIN)
-        || (difat_count != 0 && next_difat != END_OF_CHAIN)
-    {
-        return Ok(PrefixDirectoryAvailability::Malformed(
-            "CFB DIFAT chain length does not match the header",
-        ));
-    }
-    if fat_sectors.0.len() != fat_count {
-        return Ok(PrefixDirectoryAvailability::Malformed(
-            "CFB DIFAT does not match its declared FAT count",
-        ));
-    }
-
-    let mut fat = (Vec::new(), ctx.reserve_scoped(0, "CFB probe FAT words")?);
-    let mut loaded_fat_count = 0;
-    ctx.find_map(
-        &fat_sectors.0,
-        |&id| {
-            if cadmpeg_core::decode::index_from_u32(id) >= available {
-                return Ok(Some(()));
-            }
-            // An id below `available` addresses a complete sector in this prefix.
-            let start = (cadmpeg_core::decode::index_from_u32(id) + 1) * sector_size;
-            let raw = &prefix[start..start + sector_size];
-            // Available sectors contain complete words, so the admitted width is exact.
-            ctx.reserve_scoped_vec(&mut fat.1, &mut fat.0, raw.len() / 4, "CFB probe FAT words")?;
-            for word in ctx.admit_iter(raw.as_chunks::<4>().0, "decode CFB probe FAT words")? {
-                fat.1.with_storage(|| {
-                    ctx.reserve_capacity(&mut fat.0, 1, "CFB probe FAT word slot")
-                })?;
-                fat.0.push(View::u32_le_at(word, 0).ok_or_else(|| {
-                    CodecError::Malformed("CFB probe FAT word is truncated".into())
-                })?);
-            }
-            loaded_fat_count += 1;
-            Ok((loaded_fat_count == fat_count).then_some(()))
-        },
-        "visit CFB FAT sectors",
-    )?;
-    let fat_role_stop = ctx.find_map(
-        &fat_sectors.0[..loaded_fat_count.min(fat_sectors.0.len())],
-        |id| {
-            Ok(match fat.0.get(cadmpeg_core::decode::index_from_u32(*id)) {
-                None => Some(PrefixDirectoryAvailability::Incomplete),
-                Some(&FAT_SECTOR) => None,
-                Some(_) => Some(PrefixDirectoryAvailability::Malformed(
-                    "CFB allocation sector has the wrong role marker",
-                )),
-            })
-        },
-        "check CFB probe FAT roles",
-    )?;
-    if let Some(stop) = fat_role_stop {
-        return Ok(stop);
-    }
-    let difat_role_stop = ctx.find_map(
-        &seen_difat,
-        |id| {
-            Ok(match fat.0.get(cadmpeg_core::decode::index_from_u32(*id)) {
-                None => Some(PrefixDirectoryAvailability::Incomplete),
-                Some(&DIFAT_SECTOR) => None,
-                Some(_) => Some(PrefixDirectoryAvailability::Malformed(
-                    "CFB allocation sector has the wrong role marker",
-                )),
-            })
-        },
-        "check CFB probe DIFAT roles",
-    )?;
-    if let Some(stop) = difat_role_stop {
-        return Ok(stop);
-    }
-    drop((seen_difat, seen_difat_storage));
-    drop(fat_sectors);
-    let expected_directory_count = if version == CompoundVersion::V4 {
-        Some(cadmpeg_core::decode::index_from_u32(directory_sector_count))
-    } else {
-        None
-    };
-
-    let mut directory_chain_storage = ctx.reserve_scoped(0, "CFB probe directory chain")?;
-    let mut directory_chain = Vec::new();
-    let mut seen_directory_storage = ctx.reserve_scoped(0, "CFB probe visits")?;
-    let mut seen_directory = BTreeSet::new();
-    let mut current = directory_start;
-    loop {
-        ctx.charge_work(1, "visit CFB probe directory chain")?;
-        if cadmpeg_core::decode::index_from_u32(current) >= available {
-            return Ok(PrefixDirectoryAvailability::Incomplete);
-        }
-        let Some(&next) = fat.0.get(cadmpeg_core::decode::index_from_u32(current)) else {
-            return Ok(if loaded_fat_count < fat_count {
-                PrefixDirectoryAvailability::Incomplete
-            } else {
-                PrefixDirectoryAvailability::Malformed(
-                    "CFB FAT does not address the directory sector",
-                )
-            });
-        };
-        if !ctx.insert_scoped_btree_set(
-            &mut seen_directory_storage,
-            &mut seen_directory,
-            current,
-            "CFB probe directory visits",
-            "CFB probe directory visits",
-        )? {
-            return Ok(PrefixDirectoryAvailability::Malformed(
-                "CFB directory chain is cyclic",
-            ));
-        }
-        ctx.push_scoped_vec(
-            &mut directory_chain_storage,
-            &mut directory_chain,
-            current,
-            "CFB probe directory chain",
-        )?;
-        if next == END_OF_CHAIN {
-            break;
-        }
-        if next >= DIFAT_SECTOR {
-            return Ok(PrefixDirectoryAvailability::Malformed(
-                "CFB directory chain has an invalid terminator",
-            ));
-        }
-        current = next;
-    }
-    if expected_directory_count.is_some_and(|count| count != directory_chain.len()) {
-        return Ok(PrefixDirectoryAvailability::Malformed(
-            "CFB directory chain length does not match the header",
-        ));
-    }
-    drop((fat, seen_directory, seen_directory_storage));
-    Ok(PrefixDirectoryAvailability::Ready {
-        version,
-        available,
-        directory_chain,
-        storage: directory_chain_storage,
-    })
 }
 
 fn malformed_prefix_probe<'ctx>(
@@ -1942,9 +1650,10 @@ pub fn read_detection_prefix<R: Read + ?Sized>(
         Err(_) => prefix_len,
     };
     let mut bytes = ctx.read_input_prefix(source, phase_one_len)?;
+    let mut probe = PrefixProbe::new();
     loop {
         ctx.charge_work(1, "visit CFB detection prefix")?;
-        let availability = probe_directory_availability(ctx, View::over_retained(&bytes))?;
+        let availability = probe.advance(ctx, View::over_retained(&bytes))?;
         let incomplete = matches!(&availability, PrefixDirectoryAvailability::Incomplete);
         drop(availability);
         if !incomplete {
@@ -2626,7 +2335,7 @@ mod tests {
         metadata.commit_value(entries)
     }
 
-    fn probe(bytes: &[u8]) -> CompoundPrefixProbe {
+    pub(super) fn probe(bytes: &[u8]) -> CompoundPrefixProbe {
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::default())
             .expect("probe root");
@@ -3945,7 +3654,7 @@ mod tests {
         file
     }
 
-    fn fixture_v4() -> Vec<u8> {
+    pub(super) fn fixture_v4() -> Vec<u8> {
         const V4_SECTOR_SIZE: usize = 4096;
         let mut file = vec![0_u8; V4_SECTOR_SIZE * 4];
         file[..8].copy_from_slice(&MAGIC);
@@ -4038,7 +3747,7 @@ mod tests {
         clippy::too_many_arguments,
         reason = "field-level synthetic CFB directory builder"
     )]
-    fn directory_entry(
+    pub(super) fn directory_entry(
         directory: &mut [u8],
         index: usize,
         name: &str,
@@ -4074,12 +3783,12 @@ mod tests {
         sector_mut_with_size(file, SECTOR_SIZE, id)
     }
 
-    fn sector_mut_with_size(file: &mut [u8], sector_size: usize, id: usize) -> &mut [u8] {
+    pub(super) fn sector_mut_with_size(file: &mut [u8], sector_size: usize, id: usize) -> &mut [u8] {
         let start = sector_size * (id + 1);
         &mut file[start..start + sector_size]
     }
 
-    fn initialize_empty_directory_entries(directory: &mut [u8]) {
+    pub(super) fn initialize_empty_directory_entries(directory: &mut [u8]) {
         for entry in directory.chunks_exact_mut(directory_layout::LEN) {
             entry.fill(0);
             entry[directory_layout::LEFT..directory_layout::CLSID].fill(0xff);

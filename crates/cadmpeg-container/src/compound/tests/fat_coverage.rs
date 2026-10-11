@@ -1,5 +1,5 @@
 use super::*;
-use crate::compound::{probe_directory_availability, PrefixDirectoryAvailability};
+use crate::compound::prefix_probe::{probe_directory_availability, PrefixDirectoryAvailability};
 use cadmpeg_core::decode::View;
 
 #[test]
