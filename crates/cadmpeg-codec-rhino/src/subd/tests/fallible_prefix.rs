@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Actual first-visit refusal for fallible SubD traversals.
+//! Actual first-visit refusal for fallible `SubD` traversals.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -18,19 +18,26 @@ fn subd_level_validation_refuses_only_first_vertex_visit() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
     let level = RawLevel {
         source_offset: 0,
-        vertices: (1..=1024).map(|archive_id| RawVertex {
-            base: ComponentBase { source_offset: 0, archive_id },
-            point: FinitePoint3::ZERO,
-            tag: Some(cadmpeg_ir::subd::SubdVertexTag::Smooth),
-            edges: Vec::new(),
-            faces: Vec::new(),
-        }).collect(),
+        vertices: (1..=1024)
+            .map(|archive_id| RawVertex {
+                base: ComponentBase {
+                    source_offset: 0,
+                    archive_id,
+                },
+                point: FinitePoint3::ZERO,
+                tag: Some(cadmpeg_ir::subd::SubdVertexTag::Smooth),
+                edges: Vec::new(),
+                faces: Vec::new(),
+            })
+            .collect(),
         edges: Vec::new(),
         faces: Vec::new(),
-        _storage: ctx.reserve_scoped(0, "test SubD raw level storage").unwrap(),
+        _storage: ctx
+            .reserve_scoped(0, "test SubD raw level storage")
+            .unwrap(),
     };
-    let error = super::super::validate_level(&ctx, &level, 0)
-        .expect_err("refuse one actual vertex visit");
+    let error =
+        super::super::validate_level(&ctx, &level, 0).expect_err("refuse one actual vertex visit");
     let SubdError::Resource(refusal) = error else {
         panic!("SubD first-visit resource refusal");
     };
@@ -46,7 +53,13 @@ fn subd_level_validation_refuses_only_first_vertex_visit() {
 
 #[test]
 fn subd_incidence_comparison_refuses_only_first_pointer_visit() {
-    let pointers = vec![ComponentPointer { archive_id: 1, direction: false }; 1024];
+    let pointers = vec![
+        ComponentPointer {
+            archive_id: 1,
+            direction: false
+        };
+        1024
+    ];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;

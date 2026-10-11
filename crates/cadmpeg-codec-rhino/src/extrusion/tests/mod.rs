@@ -1115,7 +1115,7 @@ fn extrusion_mesh_cache_child_range_refuses_collection_limit() {
             &mut crate::mesh::MeshBudget::new(),
             &mut Diagnostics::new(),
         )
-        .map(|(meshes, _storage)| meshes)
+        .and_then(|(meshes, _storage, payload_storage)| Ok(payload_storage.commit_value(meshes)?))
     })
     .expect("service profile admits the cache");
     assert_eq!(meshes.len(), 1);
@@ -1207,7 +1207,7 @@ fn v5_mesh_cache_consumes_two_mesh_slots_and_a_null_slot() {
             &mut crate::mesh::MeshBudget::new(),
             &mut Diagnostics::new(),
         )
-        .map(|(meshes, _storage)| meshes)
+        .and_then(|(meshes, _storage, payload_storage)| Ok(payload_storage.commit_value(meshes)?))
     })
     .expect("V5 mesh cache");
     assert_eq!(result.len(), 1);
@@ -1294,7 +1294,7 @@ fn v5_mesh_cache_skips_a_bounded_suffix_after_three_slots() {
             &mut crate::mesh::MeshBudget::new(),
             &mut Diagnostics::new(),
         )
-        .map(|(meshes, _storage)| meshes)
+        .and_then(|(meshes, _storage, payload_storage)| Ok(payload_storage.commit_value(meshes)?))
     })
     .expect("V5 mesh cache suffix");
     assert_eq!(result.len(), 1);
