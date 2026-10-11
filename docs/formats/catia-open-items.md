@@ -766,10 +766,12 @@ The `5e1a` tuple does not provide this missing join: its `T`, `T−1`, and `T−
 
 ## 8. Appearance
 
-### AP-01. `FeatureForColor` face selection
+### AP-01. `SelectingFeatureForColorUuid` presentation target
 
-**Question.** How does `SelectingFeatureForColorUuid` select the face targeted by an `EC 03 R G B A` override that occurs with an `EB 01 R G B` all-face color?
+**Question.** Which presentation object does `SelectingFeatureForColorUuid` select?
 
-**Known.** `catia.md` defines both color packets. The `EB` value applies to the complete face population. The `EC` value supplies the override color asset. The positional FBB rows independently store the effective face colors, so neutral face appearance binding does not depend on this UUID incidence. The application object graph contains `FeatureForColor` and `SelectingFeatureForColorUuid`, but the UUID-to-standard-face incidence is not assigned.
+**Known.** `catia.md` §7.4 "A `FeatureForColor` schema selection can carry" defines the color, selector atom, and UUID-named entry as distinct source values. Their framing does not assign a B-rep face. Governing FBB rows independently supply effective face colors.
 
-**Need.** We must know the incidence to preserve or write the native selection relation independently of the effective FBB presentation population.
+**Need.** An independent presentation-object incidence must establish the selector's target namespace. A face-selector rule must identify a native face independently before binding its appearance.
+
+**Note.** The four reference `FeatureForColor` groups in CTC-05 and STC-10 carry black-alpha-127 assets, selector atom `1`, and UUID-named atom `12`. Their 434 governing FBB rows are all pale blue. The sibling AP242 black styles reach 20 annotation-curve occurrences and 68 tessellated-annotation occurrences, respectively, and zero advanced faces. These groups supply no face-selector witness.
