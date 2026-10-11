@@ -61,6 +61,90 @@ impl DeclaredEnd {
     }
 }
 
+/// One lane's classes of one name, in offset order.
+fn sorted_classes<'l>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    lane: &'l crate::records::FeatureInputLane,
+    name: &str,
+    operation: &'static str,
+) -> Result<Vec<&'l crate::records::FeatureInputClass>, cadmpeg_core::CodecError> {
+    let mut classes = Vec::new();
+    for class in ctx.admit_iter(&lane.classes, operation)? {
+        if ctx.equal(
+            class.name.as_str(),
+            name,
+            "compare SLDPRT filtered class name",
+        )? {
+            storage.with_storage(|| ctx.push_vec(&mut classes, class, operation))?;
+        }
+    }
+    ctx.stable_sort_by(&mut classes, |class| &class.offset, Ord::cmp, operation)?;
+    Ok(classes)
+}
+
+/// The classes of an offset-sorted list declared in `start..end`.
+fn classes_within<'c, 'l>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    classes: &'c [&'l crate::records::FeatureInputClass],
+    start: u64,
+    end: u64,
+    operation: &'static str,
+) -> Result<&'c [&'l crate::records::FeatureInputClass], cadmpeg_core::CodecError> {
+    let first = ctx.partition_point(classes, |class| Ok(class.offset < start), operation)?;
+    let last = ctx.partition_point(classes, |class| Ok(class.offset < end), operation)?;
+    Ok(classes.get(first..last).unwrap_or_default())
+}
+
+/// Whether each history feature, in history order, carries a name that no
+/// other feature repeats. An empty name counts only with `count_empty`.
+fn unique_feature_names(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    temporary: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    histories: &[crate::records::FeatureHistory],
+    count_empty: bool,
+) -> Result<Vec<bool>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "count SLDPRT history feature names";
+    let mut once = std::collections::HashMap::<&str, bool>::new();
+    for history in ctx.admit_iter(histories, OPERATION)? {
+        for feature in ctx.admit_iter(&history.features, OPERATION)? {
+            if feature.name.is_empty() && !count_empty {
+                continue;
+            }
+            if let Some(single) =
+                ctx.get_mut_hash_map(&mut once, feature.name.as_str(), OPERATION)?
+            {
+                *single = false;
+                continue;
+            }
+            temporary.with_storage(|| {
+                ctx.insert_hash_map(&mut once, feature.name.as_str(), true, OPERATION)
+            })?;
+        }
+    }
+    let mut unique = Vec::new();
+    for history in ctx.admit_iter(histories, "mark SLDPRT unique history feature names")? {
+        for feature in ctx.admit_iter(
+            &history.features,
+            "mark SLDPRT unique history feature names",
+        )? {
+            let single = ctx.get_hash_map(
+                &once,
+                feature.name.as_str(),
+                "find SLDPRT history feature-name count",
+            )? == Some(&true);
+            temporary.with_storage(|| {
+                ctx.push_vec(
+                    &mut unique,
+                    single,
+                    "mark SLDPRT unique history feature names",
+                )
+            })?;
+        }
+    }
+    Ok(unique)
+}
+
 pub(crate) mod assembly;
 
 pub(crate) mod axes;
@@ -70,6 +154,8 @@ pub(crate) mod bindings;
 pub(crate) mod classes;
 
 pub(crate) mod compact_reference_planes;
+
+mod child_sources;
 
 pub(crate) mod component_paths;
 
@@ -133,3 +219,6 @@ pub(crate) mod validate;
 mod write_generate;
 
 pub(crate) mod write_prepare;
+
+#[cfg(test)]
+mod class_filter_tests;

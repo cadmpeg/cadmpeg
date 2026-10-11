@@ -22,9 +22,9 @@
 //! and qualifies the other sites' identities; without an active site, it
 //! qualifies every site's identities.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::topology::Sense;
 
@@ -114,7 +114,6 @@ pub(in crate::brep) struct VertexUse {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Point {
     attr: u16,
-    refs: Vec<u16>,
     pub(super) xyz_m: [f64; 3],
     pub(crate) xyz_offset: usize,
     pub(crate) offset: usize,
@@ -235,28 +234,51 @@ fn parse_loop(buf: &[u8], off: usize) -> Option<Loop> {
 /// compact form. The third post-magic cell is the support-curve carrier, so
 /// preserve that field in the compact variant. The missing
 /// canonical-coedge slot is resolved from the coedge table by the graph walk.
-fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<EdgeUse> {
+fn parse_edge_use_candidates<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+    buf: &[u8],
+    off: usize,
+) -> Result<CandidateRecords<'ctx, EdgeUse>, cadmpeg_core::CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "Parasolid topology candidate storage")?;
     let Some(p) = body_start(buf, off, 0x10) else {
-        return Vec::new();
+        return Ok::<_, cadmpeg_core::CodecError>(CandidateRecords {
+            records: Vec::new(),
+            _storage: storage,
+        });
     };
     if p + 28 > buf.len() {
-        return Vec::new();
+        return Ok::<_, cadmpeg_core::CodecError>(CandidateRecords {
+            records: Vec::new(),
+            _storage: storage,
+        });
     }
     let Some(attr) = attr_at(buf, p) else {
-        return Vec::new();
+        return Ok::<_, cadmpeg_core::CodecError>(CandidateRecords {
+            records: Vec::new(),
+            _storage: storage,
+        });
     };
     let Some(sequence) = View::u32_be_at(buf, p + 2) else {
-        return Vec::new();
+        return Ok::<_, cadmpeg_core::CodecError>(CandidateRecords {
+            records: Vec::new(),
+            _storage: storage,
+        });
     };
     let mut out = Vec::new();
     if buf.get(p + 8..p + 16) == Some(MAGIC.as_slice()) {
         if let Some(refs) = refs_be::<6>(buf, p + 16) {
-            out.push(EdgeUse {
-                attr,
-                sequence,
-                references: EdgeReferences::Bare(refs),
-                offset: off,
-            });
+            storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut (out),
+                    EdgeUse {
+                        attr,
+                        sequence,
+                        references: EdgeReferences::Bare(refs),
+                        offset: off,
+                    },
+                    "collect SLDPRT decoded vector items",
+                )
+            })?;
         }
     }
 
@@ -267,9 +289,10 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<EdgeUse> {
         }
         let q = magic + MAGIC.len();
         for prefix_first in [true, false] {
-            let mut decoded = Vec::new();
-            let mut at = q;
-            while decoded.len() < 8 {
+            // The compact layout needs three complete reference triples; the
+            // third is the support-curve carrier.
+            let mut curve = None;
+            for at in [q, q + 3, q + 6] {
                 let (matches, reference_at) = if prefix_first {
                     // `[01][hi][lo]` triples.
                     (buf.get(at) == Some(&1), at + 1)
@@ -277,27 +300,34 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<EdgeUse> {
                     // `[hi][lo][01]` triples.
                     (buf.get(at + 2) == Some(&1), at)
                 };
-                if !matches {
+                curve = matches
+                    .then(|| View::u16_be_at(buf, reference_at))
+                    .flatten();
+                if curve.is_none() {
                     break;
                 }
-                let Some(reference) = View::u16_be_at(buf, reference_at) else {
-                    break;
-                };
-                decoded.push(reference);
-                at += 3;
             }
-            if decoded.len() >= 3 {
-                out.push(EdgeUse {
-                    attr,
-                    sequence,
-                    references: EdgeReferences::Compact { curve: decoded[2] },
-                    offset: off,
-                });
+            if let Some(curve) = curve {
+                storage.with_storage(|| {
+                    ctx.push_vec(
+                        &mut (out),
+                        EdgeUse {
+                            attr,
+                            sequence,
+                            references: EdgeReferences::Compact { curve },
+                            offset: off,
+                        },
+                        "collect SLDPRT decoded vector items",
+                    )
+                })?;
             }
         }
     }
     out.dedup();
-    out
+    Ok::<_, cadmpeg_core::CodecError>(CandidateRecords {
+        records: out,
+        _storage: storage,
+    })
 }
 
 /// Edge-use `00 10`: 28-byte body, magic at body+8, `refs[6]` at body+16.
@@ -307,39 +337,68 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<EdgeUse> {
 /// Coedge `00 11`: 21-byte body, no magic, `refs[9]` at body+2, marker at
 /// body+20. `refs[1]` = owning loop, `refs[3]` = next coedge, `refs[4]` = start
 /// vertex-use, `refs[5]` = twin coedge, `refs[6]` = edge-use.
-fn parse_coedge_candidates(buf: &[u8], off: usize) -> Vec<Coedge> {
+fn parse_coedge_candidates<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+    buf: &[u8],
+    off: usize,
+) -> Result<CandidateRecords<'ctx, Coedge>, cadmpeg_core::CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "Parasolid topology candidate storage")?;
     let Some(p) = body_start(buf, off, 0x11) else {
-        return Vec::new();
+        return Ok::<_, cadmpeg_core::CodecError>(CandidateRecords {
+            records: Vec::new(),
+            _storage: storage,
+        });
     };
     if p + 21 > buf.len() {
-        return Vec::new();
+        return Ok::<_, cadmpeg_core::CodecError>(CandidateRecords {
+            records: Vec::new(),
+            _storage: storage,
+        });
     }
     let Some(attr) = attr_at(buf, p) else {
-        return Vec::new();
+        return Ok::<_, cadmpeg_core::CodecError>(CandidateRecords {
+            records: Vec::new(),
+            _storage: storage,
+        });
     };
     let mut out = Vec::new();
     if let (Some(refs), Some(marker)) = (refs_be::<9>(buf, p + 2), buf.get(p + 20).copied()) {
         if let Some(sense) = parse_sense(marker) {
-            out.push(Coedge {
-                attr,
-                refs,
-                sense,
-                offset: off,
-            });
+            storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut (out),
+                    Coedge {
+                        attr,
+                        refs,
+                        sense,
+                        offset: off,
+                    },
+                    "collect SLDPRT decoded vector items",
+                )
+            })?;
         }
     }
     if let (Some(refs), Some(marker)) = (refs_tripled::<9>(buf, p + 2), buf.get(p + 29).copied()) {
         if let Some(sense) = parse_sense(marker) {
-            out.push(Coedge {
-                attr,
-                refs,
-                sense,
-                offset: off,
-            });
+            storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut (out),
+                    Coedge {
+                        attr,
+                        refs,
+                        sense,
+                        offset: off,
+                    },
+                    "collect SLDPRT decoded vector items",
+                )
+            })?;
         }
     }
     out.dedup();
-    out
+    Ok::<_, cadmpeg_core::CodecError>(CandidateRecords {
+        records: out,
+        _storage: storage,
+    })
 }
 
 /// Vertex-use `00 12`: 24-byte body, magic at body+16, `refs[5]` at body+6.
@@ -376,87 +435,94 @@ fn parse_vertex_use(buf: &[u8], off: usize) -> Option<VertexUse> {
 
 /// World point `00 1d`: 38-byte body, no magic, `refs[4]` at body+6, xyz as
 /// three big-endian f64 (metres) at body+14.
-fn parse_point(
-    ctx: &DecodeContext<'_>,
-    buf: &[u8],
-    off: usize,
-    prefixed: bool,
-) -> Result<Option<Point>, CodecError> {
-    let Some(p) = body_start(buf, off, 0x1d) else {
-        return Ok(None);
-    };
+/// The prefixed form stores up to sixteen `[hi][lo][01]` reference triples
+/// before the coordinates; the bare form stores four adjacent references.
+fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Point> {
+    let p = body_start(buf, off, 0x1d)?;
     if p + world_pt::LEN > buf.len() {
-        return Ok(None);
+        return None;
     }
-    let Some(attr) = attr_at(buf, p) else {
-        return Ok(None);
-    };
-    let (references, reference_count, xyz_at) = if prefixed {
-        let mut refs = [0_u16; 16];
-        let mut len = 0;
+    let attr = attr_at(buf, p)?;
+    let (first_reference, xyz_at) = if prefixed {
+        let mut first = None;
+        let mut count = 0;
         let mut cursor = p + world_pt::REFS;
-        while buf.get(cursor + 2) == Some(&1) && len < refs.len() {
-            let Some(reference) = View::u16_be_at(buf, cursor) else {
-                return Ok(None);
-            };
-            refs[len] = reference;
-            len += 1;
+        while buf.get(cursor + 2) == Some(&1) && count < 16 {
+            let reference = View::u16_be_at(buf, cursor)?;
+            first.get_or_insert(reference);
+            count += 1;
             cursor += 3;
         }
-        if len == 0 {
-            return Ok(None);
-        }
-        (refs, len, cursor)
+        (first?, cursor)
     } else {
-        let Some(references) = refs_be::<4>(buf, p + world_pt::REFS) else {
-            return Ok(None);
-        };
-        let mut refs = [0_u16; 16];
-        refs[..4].copy_from_slice(&references);
-        (refs, 4, p + world_pt::XYZ)
+        let [first, ..] = refs_be::<4>(buf, p + world_pt::REFS)?;
+        (first, p + world_pt::XYZ)
     };
-    if references[0] > 1 {
-        return Ok(None);
+    if first_reference > 1 {
+        return None;
     }
-    let (Some(x), Some(y), Some(z)) = (
-        View::f64_be_at(buf, xyz_at),
-        View::f64_be_at(buf, xyz_at + 8),
-        View::f64_be_at(buf, xyz_at + 16),
-    ) else {
-        return Ok(None);
-    };
+    let (x, y, z) = (
+        View::f64_be_at(buf, xyz_at)?,
+        View::f64_be_at(buf, xyz_at + 8)?,
+        View::f64_be_at(buf, xyz_at + 16)?,
+    );
     for v in [x, y, z] {
         // Reject exponent-poisoned reads from a misaligned candidate: real part
         // coordinates in metres sit well under this cap.
         if !v.is_finite() || v.abs() > 1e4 {
-            return Ok(None);
+            return None;
         }
     }
-    let mut refs = ctx.collection_vec(reference_count, "copy Parasolid point references")?;
-    refs.extend_from_slice(&references[..reference_count]);
-
-    Ok(Some(Point {
+    Some(Point {
         attr,
-        refs,
         xyz_m: [x, y, z],
         xyz_offset: xyz_at,
         offset: off,
-    }))
+    })
 }
 
 /// The topology record tables of one stream, each keyed by `attr`.
 #[derive(Default)]
 pub(crate) struct Tables {
-    bridges: HashMap<u16, Bridge>,
-    loops: HashMap<u16, Loop>,
-    edge_uses: HashMap<u16, EdgeUse>,
-    coedges: HashMap<u16, Coedge>,
-    vertex_uses: HashMap<u16, VertexUse>,
-    points: HashMap<u16, Point>,
+    bridges: BTreeMap<u16, Bridge>,
+    loops: BTreeMap<u16, Loop>,
+    edge_uses: BTreeMap<u16, EdgeUse>,
+    coedges: BTreeMap<u16, Coedge>,
+    vertex_uses: BTreeMap<u16, VertexUse>,
+    points: BTreeMap<u16, Point>,
+}
+
+/// A scanned non-primary stream whose tables remain charged until merge.
+pub(super) struct MergeSource<'ctx> {
+    tables: Tables,
+    storage: ScopedReservation<'ctx>,
+}
+
+impl<'ctx> MergeSource<'ctx> {
+    pub(super) fn scan(
+        ctx: &'ctx DecodeContext<'_>,
+        scan: impl FnOnce() -> Result<Tables, CodecError>,
+    ) -> Result<Self, CodecError> {
+        let (tables, storage) =
+            ctx.with_scoped_storage("hold Parasolid topology merge source", scan)?;
+        Ok(Self { tables, storage })
+    }
+
+    pub(super) fn merge_into(
+        self,
+        ctx: &DecodeContext<'_>,
+        target: &mut Tables,
+        selected_bridge_attrs: Option<&BTreeSet<u16>>,
+    ) -> Result<(), CodecError> {
+        let Self { tables, storage } = self;
+        target.merge_deltas(ctx, tables, selected_bridge_attrs)?;
+        drop(storage);
+        Ok(())
+    }
 }
 
 impl Tables {
-    pub(super) fn bridges(&self) -> &HashMap<u16, Bridge> {
+    pub(super) fn bridges(&self) -> &BTreeMap<u16, Bridge> {
         &self.bridges
     }
 
@@ -465,7 +531,7 @@ impl Tables {
         ctx: &DecodeContext<'_>,
         record: Bridge,
     ) -> Result<(), CodecError> {
-        ctx.insert_hash_map(
+        ctx.insert_btree_map(
             &mut self.bridges,
             record.attr,
             record,
@@ -474,7 +540,7 @@ impl Tables {
         .map(|_previous| ())
     }
 
-    pub(super) fn loops(&self) -> &HashMap<u16, Loop> {
+    pub(super) fn loops(&self) -> &BTreeMap<u16, Loop> {
         &self.loops
     }
 
@@ -483,7 +549,7 @@ impl Tables {
         ctx: &DecodeContext<'_>,
         record: Loop,
     ) -> Result<(), CodecError> {
-        ctx.insert_hash_map(
+        ctx.insert_btree_map(
             &mut self.loops,
             record.attr,
             record,
@@ -492,7 +558,7 @@ impl Tables {
         .map(|_previous| ())
     }
 
-    pub(super) fn edge_uses(&self) -> &HashMap<u16, EdgeUse> {
+    pub(super) fn edge_uses(&self) -> &BTreeMap<u16, EdgeUse> {
         &self.edge_uses
     }
 
@@ -501,7 +567,7 @@ impl Tables {
         ctx: &DecodeContext<'_>,
         record: EdgeUse,
     ) -> Result<(), CodecError> {
-        ctx.insert_hash_map(
+        ctx.insert_btree_map(
             &mut self.edge_uses,
             record.attr,
             record,
@@ -510,7 +576,7 @@ impl Tables {
         .map(|_previous| ())
     }
 
-    pub(super) fn coedges(&self) -> &HashMap<u16, Coedge> {
+    pub(super) fn coedges(&self) -> &BTreeMap<u16, Coedge> {
         &self.coedges
     }
 
@@ -519,7 +585,7 @@ impl Tables {
         ctx: &DecodeContext<'_>,
         record: Coedge,
     ) -> Result<(), CodecError> {
-        ctx.insert_hash_map(
+        ctx.insert_btree_map(
             &mut self.coedges,
             record.attr,
             record,
@@ -528,7 +594,7 @@ impl Tables {
         .map(|_previous| ())
     }
 
-    pub(super) fn vertex_uses(&self) -> &HashMap<u16, VertexUse> {
+    pub(super) fn vertex_uses(&self) -> &BTreeMap<u16, VertexUse> {
         &self.vertex_uses
     }
 
@@ -537,7 +603,7 @@ impl Tables {
         ctx: &DecodeContext<'_>,
         record: VertexUse,
     ) -> Result<(), CodecError> {
-        ctx.insert_hash_map(
+        ctx.insert_btree_map(
             &mut self.vertex_uses,
             record.attr,
             record,
@@ -546,12 +612,12 @@ impl Tables {
         .map(|_previous| ())
     }
 
-    pub(crate) fn points(&self) -> &HashMap<u16, Point> {
+    pub(crate) fn points(&self) -> &BTreeMap<u16, Point> {
         &self.points
     }
 
     fn insert_point(&mut self, ctx: &DecodeContext<'_>, record: Point) -> Result<(), CodecError> {
-        ctx.insert_hash_map(
+        ctx.insert_btree_map(
             &mut self.points,
             record.attr,
             record,
@@ -568,15 +634,20 @@ impl Tables {
         &mut self,
         ctx: &DecodeContext<'_>,
         mut deltas: Self,
-        selected_bridge_attrs: Option<&HashSet<u16>>,
+        selected_bridge_attrs: Option<&BTreeSet<u16>>,
     ) -> Result<(), CodecError> {
         if self.bridges.is_empty() {
             if let Some(selected_bridge_attrs) = selected_bridge_attrs {
-                retain_selected_bridges(&mut deltas.bridges, selected_bridge_attrs);
+                retain_selected_bridges(ctx, &mut deltas.bridges, selected_bridge_attrs)?;
             }
-            self.bridges = deltas.bridges;
+            merge_missing(
+                ctx,
+                &mut self.bridges,
+                deltas.bridges,
+                "merge Parasolid topology bridges",
+            )?;
         } else if let Some(selected_bridge_attrs) = selected_bridge_attrs {
-            retain_selected_bridges(&mut deltas.bridges, selected_bridge_attrs);
+            retain_selected_bridges(ctx, &mut deltas.bridges, selected_bridge_attrs)?;
             merge_missing(
                 ctx,
                 &mut self.bridges,
@@ -608,8 +679,8 @@ impl Tables {
             deltas.vertex_uses,
             "merge Parasolid topology vertex uses",
         )?;
-        for (attr, record) in deltas.points.drain() {
-            ctx.insert_hash_map(
+        for (attr, record) in ctx.admit_iter(deltas.points, "merge Parasolid topology points")? {
+            ctx.insert_btree_map(
                 &mut self.points,
                 attr,
                 record,
@@ -621,44 +692,55 @@ impl Tables {
 }
 
 fn retain_selected_bridges(
-    bridges: &mut HashMap<u16, Bridge>,
-    selected_bridge_attrs: &HashSet<u16>,
-) {
-    bridges.retain(|attr, record| {
-        selected_bridge_attrs.contains(attr)
-            || record
-                .owner
-                .is_some_and(|owner| selected_bridge_attrs.contains(&owner))
-    });
+    ctx: &DecodeContext<'_>,
+    bridges: &mut BTreeMap<u16, Bridge>,
+    selected_bridge_attrs: &BTreeSet<u16>,
+) -> Result<(), CodecError> {
+    const OPERATION: &str = "select Parasolid deltas bridges";
+    ctx.retain_btree_map(
+        bridges,
+        |attr, record| {
+            Ok(
+                ctx.contains_btree_set(selected_bridge_attrs, attr, OPERATION)?
+                    || match record.owner {
+                        Some(owner) => {
+                            ctx.contains_btree_set(selected_bridge_attrs, &owner, OPERATION)?
+                        }
+                        None => false,
+                    },
+            )
+        },
+        OPERATION,
+    )
 }
 
 fn merge_missing<T>(
     ctx: &DecodeContext<'_>,
-    target: &mut HashMap<u16, T>,
-    source: HashMap<u16, T>,
+    target: &mut BTreeMap<u16, T>,
+    source: BTreeMap<u16, T>,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    for (attr, record) in source {
-        if !target.contains_key(&attr) {
-            ctx.insert_hash_map(target, attr, record, operation)?;
+    for (attr, record) in ctx.admit_iter(source, operation)? {
+        if !ctx.contains_key_btree_map(target, &attr, operation)? {
+            ctx.insert_btree_map(target, attr, record, operation)?;
         }
     }
     Ok(())
 }
 
-type CandidateMap<T> = HashMap<u16, Vec<T>>;
+struct CandidateRecords<'ctx, T> {
+    records: Vec<T>,
+    /// Scoped backing of `records`, released with them.
+    _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
 
 trait Candidate: PartialEq {
     fn attr(&self) -> u16;
-    fn offset(&self) -> usize;
 }
 
 impl Candidate for EdgeUse {
     fn attr(&self) -> u16 {
         self.attr
-    }
-    fn offset(&self) -> usize {
-        self.offset
     }
 }
 
@@ -666,10 +748,8 @@ impl Candidate for Coedge {
     fn attr(&self) -> u16 {
         self.attr
     }
-    fn offset(&self) -> usize {
-        self.offset
-    }
 }
+
 #[derive(Clone, Copy)]
 struct CoedgeEvidence<'a> {
     owner: Option<&'a Loop>,
@@ -694,60 +774,65 @@ impl CoedgeEvidence<'_> {
     }
 }
 
-/// Keep the latest record occurrence for each attribute while retaining all
-/// frame readings at that occurrence. A stream can contain overlapping payload
-/// bytes, and a later complete record has the same override semantics as the
-/// ordinary topology tables.
-fn insert_candidates<T: Candidate>(
+/// Keep the latest record occurrence for each attribute with all frame
+/// readings at that occurrence. The scan parses each offset once, in
+/// increasing order, so a later reading set replaces the earlier one. A
+/// stream can contain overlapping payload bytes, and a later complete record
+/// has the same override semantics as the ordinary topology tables.
+fn insert_candidates<'ctx, T: Candidate>(
     ctx: &DecodeContext<'_>,
-    target: &mut CandidateMap<T>,
-    records: Vec<T>,
+    storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    target: &mut BTreeMap<u16, CandidateRecords<'ctx, T>>,
+    records: CandidateRecords<'ctx, T>,
 ) -> Result<(), CodecError> {
-    let Some(first) = records.first() else {
+    let Some(first) = records.records.first() else {
         return Ok(());
     };
     let attr = first.attr();
-    ctx.admit_hash_map_entry(target, &attr, "index Parasolid topology candidates")?;
-    let count = u64::try_from(records.len()).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "collect Parasolid topology frame candidates",
-            u64::MAX - 1,
-            u64::MAX,
-        )
+    storage.with_storage(|| {
+        ctx.insert_btree_map(target, attr, records, "index Parasolid topology candidates")
     })?;
-    match target.entry(attr) {
-        std::collections::hash_map::Entry::Vacant(entry) => {
-            ctx.charge_collection_items(count, "collect Parasolid topology frame candidates")?;
-            entry.insert(records);
-        }
-        std::collections::hash_map::Entry::Occupied(mut entry) => {
-            let current = entry.get();
-            if current
-                .first()
-                .is_some_and(|record| record.offset() < first.offset())
-            {
-                ctx.charge_collection_items(count, "collect Parasolid topology frame candidates")?;
-                entry.insert(records);
-            } else if current
-                .first()
-                .is_some_and(|record| record.offset() == first.offset())
-            {
-                let candidates = entry.get_mut();
-                ctx.reserve_vec(
-                    candidates,
-                    records.len(),
-                    "collect Parasolid topology frame candidates",
-                )?;
-                candidates.extend(records);
-                candidates.dedup();
-            }
-        }
-    }
     Ok(())
 }
 
-fn loop_is_owned(record: &Loop, bridges: &HashMap<u16, Bridge>) -> bool {
-    record.refs[2] != 0 && bridges.contains_key(&record.refs[2])
+/// Loop facts the coedge evidence reads, indexed once per scan.
+struct LoopIndex<'a> {
+    /// The last loop candidate of each attribute.
+    last: BTreeMap<u16, &'a Loop>,
+    /// `(loop, first coedge)` of every loop candidate owned by a bridge.
+    owned_heads: BTreeSet<(u16, u16)>,
+}
+
+impl<'a> LoopIndex<'a> {
+    fn new(
+        ctx: &DecodeContext<'_>,
+        loops: &'a [Loop],
+        bridges: &BTreeMap<u16, Bridge>,
+        storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    ) -> Result<Self, CodecError> {
+        const OPERATION: &str = "index Parasolid coedge loop evidence";
+        let mut last = BTreeMap::new();
+        let mut owned_heads = BTreeSet::new();
+        for record in ctx.admit_iter(loops, OPERATION)? {
+            storage
+                .with_storage(|| ctx.insert_btree_map(&mut last, record.attr, record, OPERATION))?;
+            if loop_is_owned(ctx, record, bridges)? {
+                storage.with_storage(|| {
+                    ctx.insert_btree_set(&mut owned_heads, (record.attr, record.refs[1]), OPERATION)
+                })?;
+            }
+        }
+        Ok(Self { last, owned_heads })
+    }
+}
+
+fn loop_is_owned(
+    ctx: &DecodeContext<'_>,
+    record: &Loop,
+    bridges: &BTreeMap<u16, Bridge>,
+) -> Result<bool, CodecError> {
+    Ok(record.refs[2] != 0
+        && ctx.contains_key_btree_map(bridges, &record.refs[2], "find Parasolid loop owners")?)
 }
 
 /// Collect independent graph invariants for one coedge frame. The first four
@@ -755,53 +840,65 @@ fn loop_is_owned(record: &Loop, bridges: &HashMap<u16, Bridge>) -> bool {
 /// and loop-head membership provide additional confirmation. No field is a
 /// byte-position discriminator.
 fn coedge_evidence<'a>(
+    ctx: &DecodeContext<'_>,
     candidate: &Coedge,
-    loops: &'a [Loop],
-    bridges: &HashMap<u16, Bridge>,
-    vertex_uses: &'a HashMap<u16, VertexUse>,
-    edge_candidates: &'a CandidateMap<EdgeUse>,
-    coedge_candidates: &CandidateMap<Coedge>,
-) -> CoedgeEvidence<'a> {
+    loops: &LoopIndex<'a>,
+    bridges: &BTreeMap<u16, Bridge>,
+    vertex_uses: &'a BTreeMap<u16, VertexUse>,
+    edge_candidates: &'a BTreeMap<u16, CandidateRecords<'_, EdgeUse>>,
+    coedge_candidates: &BTreeMap<u16, CandidateRecords<'_, Coedge>>,
+) -> Result<CoedgeEvidence<'a>, CodecError> {
+    const OPERATION: &str = "collect Parasolid coedge evidence";
     let owner = candidate.refs[1];
-    let owner_evidence = loops
-        .iter()
-        .rev()
-        .find(|loop_| loop_.attr == owner)
-        .filter(|loop_| owner != 0 && loop_is_owned(loop_, bridges));
+    let owner_evidence = match ctx.get_btree_map(&loops.last, &owner, OPERATION)? {
+        Some(&record) if owner != 0 && loop_is_owned(ctx, record, bridges)? => Some(record),
+        _ => None,
+    };
     let start = candidate.refs[4];
-    let start_evidence = vertex_uses.get(&start).filter(|_| start != 0);
+    let start_evidence = if start == 0 {
+        None
+    } else {
+        ctx.get_btree_map(vertex_uses, &start, OPERATION)?
+    };
     let edge = candidate.refs[6];
-    let edge_evidence = edge_candidates
-        .get(&edge)
-        .filter(|_| edge != 0)
-        .map(Vec::as_slice);
+    let edge_evidence = if edge == 0 {
+        None
+    } else {
+        ctx.get_btree_map(edge_candidates, &edge, OPERATION)?
+            .map(|candidates| candidates.records.as_slice())
+    };
     let next = candidate.refs[3];
-    let next_owner_valid = coedge_candidates
-        .get(&next)
-        .filter(|_| next != 0)
-        .map(|candidates| {
-            candidates
-                .iter()
-                .any(|next_candidate| next_candidate.refs[1] == owner)
-        });
+    let next_owner_valid = match ctx.get_btree_map(coedge_candidates, &next, OPERATION)? {
+        Some(candidates) if next != 0 => Some(ctx.any_by(
+            &candidates.records,
+            |next_candidate| Ok(next_candidate.refs[1] == owner),
+            "scan Parasolid coedge successor evidence",
+        )?),
+        _ => None,
+    };
     let previous = candidate.refs[2];
     let previous_valid = previous == 0
-        || coedge_candidates.get(&previous).is_some_and(|candidates| {
-            candidates.iter().any(|previous_candidate| {
-                previous_candidate.refs[3] == candidate.attr && previous_candidate.refs[1] == owner
-            })
-        });
-    let loop_head_valid = loops.iter().rev().any(|loop_| {
-        loop_.attr == owner && loop_is_owned(loop_, bridges) && loop_.refs[1] == candidate.attr
-    });
-    CoedgeEvidence {
+        || match ctx.get_btree_map(coedge_candidates, &previous, OPERATION)? {
+            Some(candidates) => ctx.any_by(
+                &candidates.records,
+                |previous_candidate| {
+                    Ok(previous_candidate.refs[3] == candidate.attr
+                        && previous_candidate.refs[1] == owner)
+                },
+                "scan Parasolid coedge predecessor evidence",
+            )?,
+            None => false,
+        };
+    let loop_head_valid =
+        ctx.contains_btree_set(&loops.owned_heads, &(owner, candidate.attr), OPERATION)?;
+    Ok(CoedgeEvidence {
         owner: owner_evidence,
         start: start_evidence,
         edge: edge_evidence,
         next_owner: next_owner_valid,
         previous: previous_valid,
         loop_head: loop_head_valid,
-    }
+    })
 }
 
 fn evidence_dominates(left: CoedgeEvidence<'_>, right: CoedgeEvidence<'_>) -> bool {
@@ -812,84 +909,100 @@ fn evidence_dominates(left: CoedgeEvidence<'_>, right: CoedgeEvidence<'_>) -> bo
     at_least_as_supported && strictly_more_supported
 }
 
+/// Select the frame reading whose evidence no other reading dominates, when
+/// exactly one such reading exists. One offset yields at most two readings.
 fn select_coedge(
     ctx: &DecodeContext<'_>,
     candidates: &[Coedge],
-    loops: &[Loop],
-    bridges: &HashMap<u16, Bridge>,
-    vertex_uses: &HashMap<u16, VertexUse>,
-    edge_candidates: &CandidateMap<EdgeUse>,
-    coedge_candidates: &CandidateMap<Coedge>,
+    loops: &LoopIndex<'_>,
+    bridges: &BTreeMap<u16, Bridge>,
+    vertex_uses: &BTreeMap<u16, VertexUse>,
+    edge_candidates: &BTreeMap<u16, CandidateRecords<'_, EdgeUse>>,
+    coedge_candidates: &BTreeMap<u16, CandidateRecords<'_, Coedge>>,
 ) -> Result<Option<Coedge>, CodecError> {
-    if candidates.len() == 1 {
-        return Ok(candidates.first().cloned());
-    }
+    let mut evidence_storage = ctx.reserve_scoped(0, "collect Parasolid coedge evidence")?;
     let mut evidence = Vec::new();
-    ctx.reserve_vec(
-        &mut evidence,
-        candidates.len(),
-        "collect Parasolid coedge evidence",
-    )?;
-    for candidate in candidates {
-        evidence.push(coedge_evidence(
+    for candidate in ctx.admit_iter(candidates, "collect Parasolid coedge evidence")? {
+        let found = coedge_evidence(
+            ctx,
             candidate,
             loops,
             bridges,
             vertex_uses,
             edge_candidates,
             coedge_candidates,
-        ));
+        )?;
+        ctx.push_scoped_vec(
+            &mut evidence_storage,
+            &mut evidence,
+            found,
+            "collect Parasolid coedge evidence",
+        )?;
     }
-    let mut maximal = Vec::new();
-    let comparisons = u64::try_from(candidates.len()).map_err(|_| {
-        ctx.refuse_codec_limit("compare Parasolid coedge evidence", u64::MAX - 1, u64::MAX)
-    })?;
-    for index in 0..candidates.len() {
-        ctx.charge_work(comparisons, "compare Parasolid coedge evidence")?;
-        if !evidence.iter().enumerate().any(|(other, other_evidence)| {
-            other != index && evidence_dominates(*other_evidence, evidence[index])
-        }) {
-            ctx.reserve_vec(&mut maximal, 1, "collect maximal Parasolid coedges")?;
-            maximal.push(index);
+    let mut maximal = None;
+    let mut maximal_count = 0_usize;
+    for (index, own) in ctx
+        .admit_iter(&evidence, "select maximal Parasolid coedges")?
+        .enumerate()
+    {
+        if !ctx.any_by(
+            evidence.iter().enumerate(),
+            |(other, other_evidence)| {
+                Ok(other != index && evidence_dominates(*other_evidence, *own))
+            },
+            "select maximal Parasolid coedges",
+        )? {
+            maximal = Some(index);
+            maximal_count += 1;
         }
     }
-    if maximal.len() == 1 {
-        Ok(candidates.get(maximal[0]).cloned())
-    } else {
-        Ok(None)
-    }
+    Ok(match maximal {
+        Some(index) if maximal_count == 1 => candidates.get(index).cloned(),
+        _ => None,
+    })
 }
 
 fn edge_candidate_is_valid(
+    ctx: &DecodeContext<'_>,
     candidate: &EdgeUse,
-    coedges: &HashMap<u16, Coedge>,
-    curve_attrs: Option<&HashSet<u16>>,
-) -> bool {
-    let canonical = candidate.references.canonical();
+    coedges: &BTreeMap<u16, Coedge>,
+    curve_attrs: Option<&BTreeSet<u16>>,
+) -> Result<bool, CodecError> {
+    const OPERATION: &str = "select Parasolid edge-use readings";
+    let canonical_valid = match candidate.references.canonical() {
+        None | Some(0) => true,
+        Some(canonical) => ctx.contains_key_btree_map(coedges, &canonical, OPERATION)?,
+    };
     let curve = candidate.references.curve();
-    let canonical_valid =
-        canonical.is_none_or(|canonical| canonical == 0 || coedges.contains_key(&canonical));
-    let curve_valid = curve == 0 || curve_attrs.is_none_or(|attrs| attrs.contains(&curve));
-    canonical_valid && curve_valid
+    let curve_valid = match curve_attrs {
+        Some(attrs) if curve != 0 => ctx.contains_btree_set(attrs, &curve, OPERATION)?,
+        _ => true,
+    };
+    Ok(canonical_valid && curve_valid)
 }
 
+/// Select the one valid edge-use reading at an offset. One offset yields at
+/// most seventeen readings.
 fn select_edge_use(
+    ctx: &DecodeContext<'_>,
     candidates: &[EdgeUse],
-    coedges: &HashMap<u16, Coedge>,
-    curve_attrs: Option<&HashSet<u16>>,
-) -> Option<EdgeUse> {
+    coedges: &BTreeMap<u16, Coedge>,
+    curve_attrs: Option<&BTreeSet<u16>>,
+) -> Result<Option<EdgeUse>, CodecError> {
     if candidates.len() == 1 {
-        return candidates.first().cloned();
+        return Ok(candidates.first().cloned());
     }
-    let mut valid = candidates
-        .iter()
-        .filter(|candidate| edge_candidate_is_valid(candidate, coedges, curve_attrs));
-    let first = valid.next()?.clone();
-    if valid.next().is_none() {
-        Some(first)
-    } else {
-        None
+    let mut valid = None;
+    for candidate in ctx.admit_iter(candidates, "select Parasolid edge-use readings")? {
+        if !edge_candidate_is_valid(ctx, candidate, coedges, curve_attrs)? {
+            continue;
+        }
+        if valid.is_some() {
+            return Ok(None);
+        }
+        valid = Some(candidate);
     }
+    Ok(valid.cloned())
 }
 
 fn xyz_bytes(xyz_m: [f64; 3]) -> [u8; 24] {
@@ -921,18 +1034,15 @@ pub(crate) fn patch_point_values(
 
 /// Replace one world-point record while preserving its framing.
 pub(crate) fn patch_point(buf: &mut [u8], attr: u16, xyz_m: [f64; 3]) -> bool {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        buf,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    ) else {
-        return false;
-    };
-    let Ok(mut tables) = scan(&ctx, buf) else {
-        return false;
-    };
-    let Some(record) = tables.points.remove(&attr) else {
+    let mut selected = None;
+    for offset in 0..buf.len().checked_sub(13).map_or(0, |end| end) {
+        if let Some(point) = parse_point(buf, offset, false) {
+            if point.attr == attr {
+                selected = Some(point);
+            }
+        }
+    }
+    let Some(record) = selected else {
         return false;
     };
     patch_point_values(buf, record.xyz_offset, record.xyz_m, xyz_m)
@@ -955,8 +1065,8 @@ pub(crate) fn scan(ctx: &DecodeContext<'_>, body: &[u8]) -> Result<Tables, Codec
 pub(super) fn scan_with_curve_attrs_excluding(
     ctx: &DecodeContext<'_>,
     body: &[u8],
-    curve_attrs: &HashSet<u16>,
-    excluded_bridge_offsets: &HashSet<usize>,
+    curve_attrs: &BTreeSet<u16>,
+    excluded_bridge_offsets: &BTreeSet<usize>,
 ) -> Result<Tables, CodecError> {
     scan_with_point_framing(
         ctx,
@@ -971,8 +1081,8 @@ pub(super) fn scan_with_curve_attrs_excluding(
 pub(super) fn scan_deltas_with_curve_attrs_excluding(
     ctx: &DecodeContext<'_>,
     body: &[u8],
-    curve_attrs: &HashSet<u16>,
-    excluded_bridge_offsets: &HashSet<usize>,
+    curve_attrs: &BTreeSet<u16>,
+    excluded_bridge_offsets: &BTreeSet<usize>,
 ) -> Result<Tables, CodecError> {
     scan_with_point_framing(
         ctx,
@@ -987,67 +1097,66 @@ fn scan_with_point_framing(
     ctx: &DecodeContext<'_>,
     body: &[u8],
     prefixed_points: bool,
-    curve_attrs: Option<&HashSet<u16>>,
-    excluded_bridge_offsets: Option<&HashSet<usize>>,
+    curve_attrs: Option<&BTreeSet<u16>>,
+    excluded_bridge_offsets: Option<&BTreeSet<usize>>,
 ) -> Result<Tables, CodecError> {
     let mut t = Tables::default();
+    let mut storage = ctx.reserve_scoped(0, "hold Parasolid topology candidates")?;
     let mut loop_candidates = Vec::new();
-    let mut edge_candidates = CandidateMap::new();
-    let mut coedge_candidates = CandidateMap::new();
-    let scan_len = u64::try_from(body.len()).map_err(|_| {
-        ctx.refuse_codec_limit("scan Parasolid typed topology", u64::MAX - 1, u64::MAX)
-    })?;
-    ctx.charge_work(scan_len, "scan Parasolid typed topology")?;
-    let mut i = 0usize;
-    while i + 14 <= body.len() {
-        if body[i] != 0x00 {
-            i += 1;
+    let mut edge_candidates = BTreeMap::new();
+    let mut coedge_candidates = BTreeMap::new();
+    let starts = 0..body.len().checked_sub(13).map_or(0, |end| end);
+    for i in ctx.admit_iter(starts, "scan Parasolid typed topology")? {
+        if body.get(i) != Some(&0x00) {
             continue;
         }
-        match body[i + 1] {
-            0x0e => {
+        match body.get(i + 1) {
+            Some(0x0e) => {
                 if let Some(record) = parse_bridge(body, i) {
-                    let excluded =
-                        excluded_bridge_offsets.is_some_and(|offsets| offsets.contains(&i));
+                    let excluded = match excluded_bridge_offsets {
+                        Some(offsets) => {
+                            ctx.contains_btree_set(offsets, &i, "exclude typed FACE offsets")?
+                        }
+                        None => false,
+                    };
                     let carries_loop = record.refs[2] > 1;
                     if !excluded || carries_loop {
                         t.insert_bridge(ctx, record)?;
                     }
                 }
             }
-            0x0f => {
+            Some(0x0f) => {
                 if let Some(record) = parse_loop(body, i) {
-                    ctx.reserve_vec(
+                    ctx.push_scoped_vec(
+                        &mut storage,
                         &mut loop_candidates,
-                        1,
+                        record,
                         "collect Parasolid topology loop candidates",
                     )?;
-                    loop_candidates.push(record);
                 }
             }
-            0x10 => insert_candidates(
+            Some(0x10) => insert_candidates(
                 ctx,
+                &mut storage,
                 &mut edge_candidates,
-                parse_edge_use_candidates(body, i),
+                parse_edge_use_candidates(ctx, body, i)?,
             )?,
-            0x11 => insert_candidates(
+            Some(0x11) => insert_candidates(
                 ctx,
+                &mut storage,
                 &mut coedge_candidates,
-                parse_coedge_candidates(body, i),
+                parse_coedge_candidates(ctx, body, i)?,
             )?,
-            0x12 => {
+            Some(0x12) => {
                 if let Some(record) = parse_vertex_use(body, i) {
                     t.insert_vertex_use(ctx, record)?;
                 }
             }
-            0x1d => {
+            Some(0x1d) => {
                 let record = if prefixed_points {
-                    match parse_point(ctx, body, i, true)? {
-                        Some(record) => Some(record),
-                        None => parse_point(ctx, body, i, false)?,
-                    }
+                    parse_point(body, i, true).or_else(|| parse_point(body, i, false))
                 } else {
-                    parse_point(ctx, body, i, false)?
+                    parse_point(body, i, false)
                 };
                 if let Some(record) = record {
                     t.insert_point(ctx, record)?;
@@ -1055,33 +1164,50 @@ fn scan_with_point_framing(
             }
             _ => {}
         }
-        i += 1;
     }
 
-    for candidates in coedge_candidates.values() {
-        if let Some(record) = select_coedge(
-            ctx,
-            candidates,
-            &loop_candidates,
-            &t.bridges,
-            &t.vertex_uses,
-            &edge_candidates,
-            &coedge_candidates,
-        )? {
+    // Coedge readings are compared only at an offset with several readings;
+    // the loop evidence index is built for the first such offset.
+    let mut loop_index = None;
+    for (_, candidates) in ctx.admit_iter(&coedge_candidates, "select Parasolid coedge readings")? {
+        let record = if candidates.records.len() == 1 {
+            candidates.records.first().cloned()
+        } else {
+            let loops = match &mut loop_index {
+                Some(loops) => loops,
+                None => loop_index.insert(LoopIndex::new(
+                    ctx,
+                    &loop_candidates,
+                    &t.bridges,
+                    &mut storage,
+                )?),
+            };
+            select_coedge(
+                ctx,
+                &candidates.records,
+                loops,
+                &t.bridges,
+                &t.vertex_uses,
+                &edge_candidates,
+                &coedge_candidates,
+            )?
+        };
+        if let Some(record) = record {
             t.insert_coedge(ctx, record)?;
         }
     }
-    for candidates in edge_candidates.into_values() {
-        if let Some(record) = select_edge_use(&candidates, &t.coedges, curve_attrs) {
+    drop(loop_index);
+    for (_, candidates) in ctx.admit_iter(&edge_candidates, "select Parasolid edge-use readings")? {
+        if let Some(record) = select_edge_use(ctx, &candidates.records, &t.coedges, curve_attrs)? {
             t.insert_edge_use(ctx, record)?;
         }
     }
-    for record in loop_candidates {
+    for record in ctx.admit_iter(loop_candidates, "select Parasolid topology loops")? {
         let owner = record.refs[2];
         let first = record.refs[1];
-        if t.bridges.contains_key(&owner)
-            && t.coedges
-                .get(&first)
+        if ctx.contains_key_btree_map(&t.bridges, &owner, "select Parasolid topology loops")?
+            && ctx
+                .get_btree_map(&t.coedges, &first, "select Parasolid topology loops")?
                 .is_some_and(|coedge| coedge.refs[1] == record.attr)
         {
             t.insert_loop(ctx, record)?;
@@ -1094,12 +1220,99 @@ fn scan_with_point_framing(
 mod tests {
     use super::{
         parse_bridge, parse_point, parse_vertex_use, patch_point, patch_point_values, scan,
-        scan_deltas_with_curve_attrs_excluding, scan_with_curve_attrs_excluding, EdgeReferences,
-        MAGIC,
+        scan_deltas_with_curve_attrs_excluding, scan_with_curve_attrs_excluding, Bridge,
+        EdgeReferences, MergeSource, Tables, MAGIC,
     };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_ir::topology::Sense;
-    use std::collections::HashSet;
+    use std::collections::BTreeSet;
+
+    fn btree_node_storage_bound<K, V>() -> u64 {
+        let alignment = std::mem::align_of::<K>()
+            .max(std::mem::align_of::<V>())
+            .max(std::mem::align_of::<usize>());
+        let bytes = std::mem::size_of::<K>()
+            .checked_add(std::mem::size_of::<V>())
+            .and_then(|bytes| bytes.checked_mul(11))
+            .and_then(|bytes| {
+                16_usize
+                    .checked_mul(std::mem::size_of::<usize>())
+                    .and_then(|metadata| bytes.checked_add(metadata))
+            })
+            .and_then(|bytes| {
+                2_usize
+                    .checked_mul(alignment)
+                    .and_then(|padding| bytes.checked_add(padding))
+            })
+            .expect("bounded test node size");
+        u64::try_from(bytes).expect("bounded test node size")
+    }
+
+    #[test]
+    fn duplicate_stream_topology_tables_release_source_map_storage() {
+        let body = topology_bridge(10, 20);
+        let node_bytes = btree_node_storage_bound::<u16, Bridge>();
+        let cap = node_bytes.checked_mul(2).expect("two live bridge maps");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy).expect("root");
+        let mut target_storage = ctx
+            .reserve_scoped(0, "hold test topology target")
+            .expect("target storage");
+        let mut target = target_storage
+            .with_storage(|| scan(&ctx, &body))
+            .expect("base table");
+
+        for _ in 0..32 {
+            let source = MergeSource::scan(&ctx, || scan(&ctx, &body))
+                .expect("source table fits beside target");
+            target_storage
+                .with_storage(|| source.merge_into(&ctx, &mut target, None))
+                .expect("duplicate bridges are ignored");
+        }
+
+        assert_eq!(target.bridges.len(), 1);
+        drop((target, target_storage));
+        ctx.finish_session().expect("all table storage released");
+    }
+
+    #[test]
+    fn empty_target_bridge_merge_recharges_destination_after_source_drop() {
+        let body = topology_bridge(10, 20);
+        let node_bytes = btree_node_storage_bound::<u16, Bridge>();
+        let cap = node_bytes
+            .checked_mul(2)
+            .expect("source and destination maps");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy).expect("root");
+        let mut target_storage = ctx
+            .reserve_scoped(0, "hold test topology target")
+            .expect("target storage");
+        let mut target = Tables::default();
+        let source = MergeSource::scan(&ctx, || scan(&ctx, &body)).expect("source table");
+
+        target_storage
+            .with_storage(|| source.merge_into(&ctx, &mut target, None))
+            .expect("empty target receives the bridge");
+        assert_eq!(target.bridges.len(), 1);
+
+        let destination_probe = ctx
+            .reserve_scoped(node_bytes, "verify destination table remains charged")
+            .expect("source charge released, destination charge retained");
+        assert!(matches!(
+            ctx.reserve_scoped(node_bytes, "verify destination table remains charged"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::MaterializedBytes
+                    && limit.used == cap
+                    && limit.additional == node_bytes
+        ));
+        drop((destination_probe, target, target_storage));
+    }
 
     #[test]
     fn topology_scan_refuses_collection_limit() {
@@ -1122,23 +1335,13 @@ mod tests {
     #[test]
     fn topology_scan_refuses_work_limit() {
         let bytes = topology_bridge(10, 20);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = u64::try_from(bytes.len()).expect("fixture length") - 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = scan(&ctx, &bytes)
-            .err()
-            .expect("topology scan exceeds work limit");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "scan Parasolid typed topology"
-        ));
+        crate::test_support::work_refusal_at("scan Parasolid typed topology", |ctx| {
+            scan(ctx, &bytes).map(|tables| tables.bridges.len())
+        });
     }
 
     #[test]
-    fn bare_parasolid_point_references_refuse_before_copy() {
+    fn bare_point_reads_four_adjacent_references() {
         let mut bytes = vec![0, 0x1d];
         bytes.extend(60_u16.to_be_bytes());
         bytes.extend(0_u32.to_be_bytes());
@@ -1148,29 +1351,13 @@ mod tests {
         for value in [1.0_f64, 2.0, 3.0] {
             bytes.extend(value.to_be_bytes());
         }
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 3;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error =
-            parse_point(&ctx, &bytes, 0, false).expect_err("four references exceed three items");
-        assert!(matches!(error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "copy Parasolid point references"));
-        let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
-        assert_eq!(
-            parse_point(&ctx, &bytes, 0, false)
-                .expect("service parse")
-                .map(|point| point.refs.len()),
-            Some(4)
-        );
+        let point = parse_point(&bytes, 0, false).expect("bare world point");
+        assert_eq!(point.xyz_m, [1.0, 2.0, 3.0]);
+        assert_eq!(point.xyz_offset, 16);
     }
 
     #[test]
-    fn prefixed_parasolid_point_references_refuse_before_insertion() {
+    fn prefixed_point_reads_reference_triples() {
         let mut bytes = vec![0, 0x1d];
         bytes.extend(60_u16.to_be_bytes());
         bytes.extend(0_u32.to_be_bytes());
@@ -1181,16 +1368,11 @@ mod tests {
         for value in [1.0_f64, 2.0, 3.0] {
             bytes.extend(value.to_be_bytes());
         }
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 3;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error =
-            parse_point(&ctx, &bytes, 0, true).expect_err("four references exceed three items");
-        assert!(matches!(error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "copy Parasolid point references"));
+        let point = parse_point(&bytes, 0, true).expect("prefixed world point");
+        assert_eq!(point.xyz_m, [1.0, 2.0, 3.0]);
+        assert_eq!(point.xyz_offset, 20);
+        bytes[8] = 2;
+        assert!(parse_point(&bytes, 0, true).is_none());
     }
 
     #[test]
@@ -1292,9 +1474,9 @@ mod tests {
         )
         .unwrap();
         let body = bridge_with_refs(&[1, 2, 3, 7, 8], false);
-        let excluded = HashSet::from([0]);
+        let excluded = BTreeSet::from([0]);
 
-        let tables = scan_with_curve_attrs_excluding(&ctx, &body, &HashSet::new(), &excluded)
+        let tables = scan_with_curve_attrs_excluding(&ctx, &body, &BTreeSet::new(), &excluded)
             .expect("topology scan");
 
         assert_eq!(
@@ -1313,9 +1495,9 @@ mod tests {
         )
         .unwrap();
         let body = bridge_with_refs(&[1, 2, 0, 7, 8], false);
-        let excluded = HashSet::from([0]);
+        let excluded = BTreeSet::from([0]);
 
-        let tables = scan_with_curve_attrs_excluding(&ctx, &body, &HashSet::new(), &excluded)
+        let tables = scan_with_curve_attrs_excluding(&ctx, &body, &BTreeSet::new(), &excluded)
             .expect("topology scan");
 
         assert!(tables.bridges.is_empty());
@@ -1451,22 +1633,34 @@ mod tests {
                 .is_empty(),
             "ambiguous without a carrier set"
         );
-        let curve_attrs = HashSet::from([0x0103]);
+        let curve_attrs = BTreeSet::from([0x0103]);
         let tables =
-            scan_deltas_with_curve_attrs_excluding(&ctx, &bytes, &curve_attrs, &HashSet::new())
+            scan_deltas_with_curve_attrs_excluding(&ctx, &bytes, &curve_attrs, &BTreeSet::new())
                 .expect("topology scan");
         assert_eq!(tables.edge_uses[&40].references.curve(), 0x0103);
     }
 
     #[test]
+    fn patch_point_selects_the_last_matching_record() {
+        let mut bytes = crate::test_support::parasolid::world_point(60, [1.0, 2.0, 3.0]);
+        let last = bytes.len();
+        bytes.extend(crate::test_support::parasolid::world_point(
+            60,
+            [7.0, 8.0, 9.0],
+        ));
+        assert!(patch_point(&mut bytes, 60, [4.0, 5.0, 6.0]));
+        assert_eq!(
+            parse_point(&bytes, 0, false).unwrap().xyz_m,
+            [1.0, 2.0, 3.0]
+        );
+        assert_eq!(
+            parse_point(&bytes, last, false).unwrap().xyz_m,
+            [4.0, 5.0, 6.0]
+        );
+    }
+
+    #[test]
     fn patch_point_uses_parsed_adjacent_coordinate_offset() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
         let mut bytes = vec![0, 0x1d];
         bytes.extend(60_u16.to_be_bytes());
         bytes.extend(0_u32.to_be_bytes());
@@ -1485,11 +1679,91 @@ mod tests {
         ));
         assert!(patch_point(&mut bytes, 60, [4.0, 5.0, 6.0]));
 
-        let point = parse_point(&ctx, &bytes, 0, false)
-            .expect("point parse")
-            .expect("adjacent world point");
-        assert_eq!(point.refs, vec![0, 0x0102, 0, 0]);
+        let point = parse_point(&bytes, 0, false).expect("adjacent world point");
         assert_eq!(point.xyz_m, [4.0, 5.0, 6.0]);
         assert_eq!(point.xyz_offset, 16);
+    }
+
+    #[test]
+    fn edge_candidate_storage_refusal_preserves_the_scoped_fuse() {
+        let bytes = crate::test_support::parasolid::edge_use(40, 70);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            super::parse_edge_use_candidates(&ctx, &bytes, 0)
+        else {
+            panic!("candidate backing must refuse scoped storage");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+        assert_eq!(limit.operation, "collect SLDPRT decoded vector items");
+        assert!(limit.additional > 0);
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
+        let candidates =
+            super::parse_edge_use_candidates(&ctx, &bytes, 0).expect("service candidates");
+        assert_eq!(candidates.records.len(), 1);
+        assert_eq!(candidates.records[0].attr, 40);
+        assert_eq!(
+            candidates.records[0].references,
+            EdgeReferences::Bare([0, 0, 0, 70, 0, 0])
+        );
+    }
+
+    #[test]
+    fn candidate_replacement_releases_the_previous_scoped_backing() {
+        let first = crate::test_support::parasolid::edge_use(40, 70);
+        let mut replacement = vec![0xff];
+        replacement.extend(crate::test_support::parasolid::edge_use(40, 80));
+        let third = crate::test_support::parasolid::edge_use(41, 90);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        let capacity = 1 << 16;
+        policy.limits.max_materialized_bytes = capacity;
+        let (ctx, _) = DecodeContext::from_root_bytes(&first, &arena, &policy).expect("root");
+        let mut storage = ctx
+            .reserve_scoped(0, "test candidate index")
+            .expect("storage");
+        let mut candidates = std::collections::BTreeMap::new();
+        super::insert_candidates(
+            &ctx,
+            &mut storage,
+            &mut candidates,
+            super::parse_edge_use_candidates(&ctx, &first, 0).expect("first candidates"),
+        )
+        .expect("first transfer");
+        super::insert_candidates(
+            &ctx,
+            &mut storage,
+            &mut candidates,
+            super::parse_edge_use_candidates(&ctx, &replacement, 1)
+                .expect("replacement candidates"),
+        )
+        .expect("replacement transfer");
+        super::insert_candidates(
+            &ctx,
+            &mut storage,
+            &mut candidates,
+            super::parse_edge_use_candidates(&ctx, &third, 0).expect("third candidates"),
+        )
+        .expect("third transfer");
+        assert_eq!(candidates[&40].records[0].offset, 1);
+        assert_eq!(
+            candidates[&40].records[0].references,
+            EdgeReferences::Bare([0, 0, 0, 80, 0, 0])
+        );
+        assert_eq!(
+            candidates[&41].records[0].references,
+            EdgeReferences::Bare([0, 0, 0, 90, 0, 0])
+        );
+        drop((candidates, storage));
+        let _storage = ctx
+            .reserve_scoped(capacity, "verify released candidate storage")
+            .expect("dropping the map releases both candidate vectors");
+        assert_eq!(ctx.resource_refusal(), None);
     }
 }

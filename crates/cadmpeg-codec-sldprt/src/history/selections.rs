@@ -18,13 +18,15 @@ use cadmpeg_ir::{
 };
 use std::collections::{BTreeMap, HashMap};
 
-use crate::history::literals::{parse_point3_mm, parse_vector3};
+use crate::history::literals::{named_literal, parse_point3_mm, parse_vector3};
 use crate::records::FeatureSource;
 
 const EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E9: f64 = 1e-9;
 const EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E8: f64 = 1e-8;
 
-type SurfaceSelectionFaceBindings = HashMap<(String, String), Option<cadmpeg_ir::ids::FaceId>>;
+/// Faces bound to surface selections, by owning feature and native selection value.
+type SurfaceSelectionFaceBindings =
+    HashMap<String, HashMap<String, Option<cadmpeg_ir::ids::FaceId>>>;
 
 struct FaceSelectionContext<'a> {
     ids: &'a HashMap<&'a str, Option<&'a cadmpeg_ir::ids::FaceId>>,
@@ -43,6 +45,8 @@ pub(crate) struct TopologySelectionInputs<'a> {
         &'a [(cadmpeg_ir::ids::FaceId, crate::brep::PersistentFaceIdentity)],
 }
 
+const SELECTION_IDENTITY: &str = "retain SLDPRT topology selection identity";
+
 const SURFACE_COMPONENT_SELECTION_PREFIX: &str = "sldprt:feature-input:surface-component-ids";
 
 /// Resolve the support origin represented by a frame-backed offset reference.
@@ -50,31 +54,30 @@ const SURFACE_COMPONENT_SELECTION_PREFIX: &str = "sldprt:feature-input:surface-c
 /// selection stores the resulting plane origin, so its support is one signed
 /// `D1` displacement along the stored normal.
 fn offset_plane_support_origin(
+    ctx: &DecodeContext<'_>,
     source_properties: &BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     native: Option<&str>,
     fallback_origin: Point3,
     normal: Vector3,
     distance: Length,
-) -> Point3 {
-    if let Some(origin) = source_properties
-        .get("ReferenceFaceOrigin")
-        .and_then(|value| parse_point3_mm(value))
-        .map(cadmpeg_ir::features::FinitePoint3::get)
+) -> Result<Point3, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT offset plane support origin";
+    if let Some(origin) = named_literal(ctx, source_properties, "ReferenceFaceOrigin", OPERATION)?
+        .and_then(parse_point3_mm)
     {
-        return origin;
+        return Ok(origin.get());
     }
-    let origin = source_properties
-        .get("Origin")
-        .and_then(|value| parse_point3_mm(value))
+    let origin = named_literal(ctx, source_properties, "Origin", OPERATION)?
+        .and_then(parse_point3_mm)
         .map_or(fallback_origin, cadmpeg_ir::features::FinitePoint3::get);
     if native.is_some_and(|native| native.starts_with(SURFACE_COMPONENT_SELECTION_PREFIX)) {
-        return Point3::new(
+        return Ok(Point3::new(
             origin.x + normal.x * distance.get(),
             origin.y + normal.y * distance.get(),
             origin.z + normal.z * distance.get(),
-        );
+        ));
     }
-    origin
+    Ok(origin)
 }
 
 fn surface_selection_face_bindings<'a>(
@@ -83,47 +86,90 @@ fn surface_selection_face_bindings<'a>(
     feature_sources: &HashMap<&str, Option<FeatureSourceId>>,
     face_identities: &[(cadmpeg_ir::ids::FaceId, crate::brep::PersistentFaceIdentity)],
 ) -> Result<SurfaceSelectionFaceBindings, CodecError> {
+    const OPERATION: &str = "index SLDPRT topology selections";
     let mut faces_by_identity = HashMap::new();
-    for (target, identity) in face_identities {
-        reserve_selection_map(ctx, &mut faces_by_identity)?;
-        let entry = faces_by_identity
-            .entry((identity.feature_source_id, identity.local_id))
-            .or_insert(Some(target));
-        if entry.as_ref().is_some_and(|existing| *existing != target) {
-            *entry = None;
+    for (target, identity) in ctx.admit_iter(
+        face_identities,
+        "scan SLDPRT surface_selection_face_bindings values",
+    )? {
+        let key = (identity.feature_source_id, identity.local_id);
+        match ctx.get_mut_hash_map(&mut faces_by_identity, &key, OPERATION)? {
+            Some(entry) => {
+                if let Some(existing) = *entry {
+                    if !ctx.equal(existing, target, "compare SLDPRT topology selections")? {
+                        *entry = None;
+                    }
+                }
+            }
+            None => {
+                ctx.insert_hash_map(&mut faces_by_identity, key, Some(target), OPERATION)?;
+            }
         }
     }
     let mut bindings = SurfaceSelectionFaceBindings::new();
-    for selection in selections {
-        ctx.charge_work(1, "bind SLDPRT topology selections")?;
+    let mut selections = selections.into_iter();
+    while let Some(selection) =
+        ctx.next_charged(&mut selections, "bind SLDPRT topology selections")?
+    {
         let candidate = selection
             .components
             .last()
-            .and_then(|component| {
-                let feature_source_id = match selection.terminal_feature_ref.as_deref() {
-                    Some(terminal) => feature_sources.get(terminal).copied().flatten(),
+            .map(|component| {
+                let Some(feature_source_id) = (match selection.terminal_feature_ref.as_deref() {
+                    Some(terminal) => ctx
+                        .get_hash_map(feature_sources, terminal, "look up SLDPRT hash key")?
+                        .copied()
+                        .flatten(),
                     None => View::u32_le_at(&component.type_signature, 4)
                         .and_then(|source| FeatureSourceId::try_from(source).ok()),
-                }?;
-                faces_by_identity
-                    .get(&(feature_source_id, component.local_id?))
+                }) else {
+                    return Ok::<_, cadmpeg_core::CodecError>(None);
+                };
+                let Some(local_id) = component.local_id else {
+                    return Ok::<_, cadmpeg_core::CodecError>(None);
+                };
+                Ok::<_, cadmpeg_core::CodecError>(
+                    ctx.get_hash_map(
+                        &faces_by_identity,
+                        &(feature_source_id, local_id),
+                        "look up SLDPRT hash key",
+                    )?
                     .copied()
-                    .flatten()
+                    .flatten(),
+                )
             })
-            .map(|face| copy_selection_id(ctx, face.as_str()))
+            .transpose()?
+            .flatten()
+            .map(|face| face.try_clone_for_decode(ctx, "retain SLDPRT topology selection identity"))
             .transpose()?;
         let native = crate::resolved_features::terminations::compact_surface_selection_value(
             ctx,
             &selection.components,
         )?;
-        let key = (copy_selection_text(ctx, &selection.feature_ref)?, native);
-        reserve_selection_map(ctx, &mut bindings)?;
-        match bindings.entry(key) {
+        let owner_bindings = match ctx.get_mut_hash_map(
+            &mut bindings,
+            selection.feature_ref.as_str(),
+            "index SLDPRT topology selections",
+        )? {
+            Some(owner_bindings) => owner_bindings,
+            None => ctx
+                .entry_hash_map(
+                    &mut bindings,
+                    ctx.copy_retained_text(&selection.feature_ref, SELECTION_IDENTITY)?,
+                    "index SLDPRT topology selections",
+                )?
+                .or_default(),
+        };
+        match ctx.entry_hash_map(owner_bindings, native, "index SLDPRT topology selections")? {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(candidate);
             }
             std::collections::hash_map::Entry::Occupied(mut entry) => {
-                if entry.get() != &candidate {
+                if !ctx.equal(
+                    entry.get(),
+                    &candidate,
+                    "compare SLDPRT topology selections",
+                )? {
                     entry.insert(None);
                 }
             }
@@ -132,10 +178,10 @@ fn surface_selection_face_bindings<'a>(
     Ok(bindings)
 }
 
-fn extrude_extent_sides_mut(extent: &mut ExtrudeExtent) -> Vec<&mut ExtrudeSide> {
+fn extrude_extent_sides_mut(extent: &mut ExtrudeExtent) -> [Option<&mut ExtrudeSide>; 2] {
     match extent {
-        ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => vec![side],
-        ExtrudeExtent::TwoSided { first, second } => vec![first, second],
+        ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => [Some(side), None],
+        ExtrudeExtent::TwoSided { first, second } => [Some(first), Some(second)],
     }
 }
 
@@ -145,6 +191,7 @@ pub(crate) fn bind_topology_selections(
     histories: &[FeatureHistory],
     inputs: &TopologySelectionInputs<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    const OPERATION: &str = "bind SLDPRT topology selections";
     let bodies = inputs.bodies;
     let faces = inputs.faces;
     let surfaces = inputs.surfaces;
@@ -152,61 +199,70 @@ pub(crate) fn bind_topology_selections(
     let curves = inputs.curves;
     let lanes = inputs.lanes;
     let face_identities = inputs.face_identities;
-    let body_ids = selection_ids(
-        ctx,
-        bodies
-            .iter()
-            .map(|body| (body.id.as_str(), body.name.as_deref(), &body.id)),
-    )?;
-    let face_ids = selection_ids(
-        ctx,
-        faces
-            .iter()
-            .map(|face| (face.id.as_str(), face.name.as_deref(), &face.id)),
-    )?;
-    let edge_ids = selection_ids(
-        ctx,
-        edges.iter().map(|edge| (edge.id.as_str(), None, &edge.id)),
-    )?;
-    let curve_ids = selection_ids(
-        ctx,
-        curves
-            .iter()
-            .map(|curve| (curve.id.as_str(), None, &curve.id)),
-    )?;
-    let mut surfaces_by_id = HashMap::new();
-    for surface in surfaces {
-        reserve_selection_map(ctx, &mut surfaces_by_id)?;
-        surfaces_by_id.insert(&surface.id, surface);
-    }
-    let feature_sources = history_feature_sources(ctx, histories, lanes)?;
-    let surface_selection_faces = surface_selection_face_bindings(
-        ctx,
-        lanes.iter().flat_map(|lane| lane.surface_selections.iter()),
-        &feature_sources,
-        face_identities,
-    )?;
-    for feature in features {
-        ctx.charge_work(1, "bind SLDPRT topology selections")?;
-        for history in histories {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(history.features.len()),
-                "find SLDPRT topology selection scope",
-            )?;
-        }
-        if let Some(scope) = feature
-            .native_ref
-            .as_deref()
-            .and_then(|native_ref| {
-                histories
-                    .iter()
-                    .flat_map(|history| &history.features)
-                    .find(|record| record.id == native_ref)
-            })
-            .and_then(|record| record.properties.get("Scope"))
-        {
+    let mut scratch = ctx.reserve_scoped(0, "index SLDPRT topology selections")?;
+    let (body_ids, face_ids, edge_ids, curve_ids, surfaces_by_id, records) =
+        scratch.with_storage(|| {
+            let body_ids = selection_ids(ctx, bodies, |body| {
+                (body.id.as_str(), body.name.as_deref(), &body.id)
+            })?;
+            let face_ids = selection_ids(ctx, faces, |face| {
+                (face.id.as_str(), face.name.as_deref(), &face.id)
+            })?;
+            let edge_ids = selection_ids(ctx, edges, |edge| (edge.id.as_str(), None, &edge.id))?;
+            let curve_ids =
+                selection_ids(ctx, curves, |curve| (curve.id.as_str(), None, &curve.id))?;
+            let mut surfaces_by_id = HashMap::new();
+            for surface in ctx.admit_iter(surfaces, "scan SLDPRT surfaces values")? {
+                ctx.insert_hash_map(
+                    &mut surfaces_by_id,
+                    &surface.id,
+                    surface,
+                    "index SLDPRT topology selections",
+                )?;
+            }
+            // The first native record bearing each identity.
+            let mut records = HashMap::new();
+            for history in ctx.admit_iter(histories, "scan SLDPRT topology selection histories")? {
+                for record in
+                    ctx.admit_iter(&history.features, "scan SLDPRT topology selection records")?
+                {
+                    if !ctx.contains_key_hash_map(&records, record.id.as_str(), OPERATION)? {
+                        ctx.insert_hash_map(&mut records, record.id.as_str(), record, OPERATION)?;
+                    }
+                }
+            }
+            Ok::<_, CodecError>((
+                body_ids,
+                face_ids,
+                edge_ids,
+                curve_ids,
+                surfaces_by_id,
+                records,
+            ))
+        })?;
+    let surface_selection_faces = scratch.with_storage(|| {
+        let feature_sources = history_feature_sources(ctx, histories, lanes)?;
+        surface_selection_face_bindings(
+            ctx,
+            ctx.admit_iter(lanes, OPERATION)?
+                .flat_map(|lane| lane.surface_selections.iter()),
+            &feature_sources,
+            face_identities,
+        )
+    })?;
+    for feature in ctx.admit_iter(features, OPERATION)? {
+        let scope = match feature.native_ref.as_deref() {
+            Some(native_ref) => match ctx.get_hash_map(&records, native_ref, OPERATION)? {
+                Some(record) => ctx.get_btree_map(&record.properties, "Scope", OPERATION)?,
+                None => None,
+            },
+            None => None,
+        };
+        if let Some(scope) = scope {
             if let Some(outputs) =
-                resolve_ids(ctx, scope, &body_ids, cadmpeg_ir::ids::BodyId::as_str)?
+                resolve_ids(ctx, scope, &body_ids, |id: &cadmpeg_ir::ids::BodyId| {
+                    id.try_clone_for_decode(ctx, SELECTION_IDENTITY)
+                })?
             {
                 feature
                     .evaluation
@@ -240,20 +296,25 @@ pub(crate) fn bind_topology_selections(
                             Some(DatumPlaneReference::ResolvedPlane { frame }) => {
                                 let origin = frame.origin();
                                 let normal = frame.normal().get();
-                                let native = source_properties
-                                    .get("ReferenceFaceNative")
+                                let native = ctx
+                                    .get_btree_map(
+                                        source_properties,
+                                        "ReferenceFaceNative",
+                                        OPERATION,
+                                    )?
                                     .map(String::as_str);
                                 let support_origin = offset_plane_support_origin(
+                                    ctx,
                                     source_properties,
                                     native,
                                     origin.get(),
                                     normal,
                                     *distance,
-                                );
+                                )?;
                                 let mut face = match native {
-                                    Some(native) => {
-                                        FaceSelection::Native(copy_selection_text(ctx, native)?)
-                                    }
+                                    Some(native) => FaceSelection::Native(
+                                        ctx.copy_retained_text(native, SELECTION_IDENTITY)?,
+                                    ),
                                     None => FaceSelection::Unresolved,
                                 };
                                 resolve_offset_plane_face_selection(
@@ -270,16 +331,16 @@ pub(crate) fn bind_topology_selections(
                                 }
                             }
                             None => {
-                                let Some(origin) = source_properties
-                                    .get("Origin")
-                                    .and_then(|value| parse_point3_mm(value))
-                                    .map(cadmpeg_ir::features::FinitePoint3::get)
+                                let Some(origin) =
+                                    named_literal(ctx, source_properties, "Origin", OPERATION)?
+                                        .and_then(parse_point3_mm)
+                                        .map(cadmpeg_ir::features::FinitePoint3::get)
                                 else {
                                     break 'feature_edit;
                                 };
-                                let Some(normal) = source_properties
-                                    .get("Normal")
-                                    .and_then(|value| parse_vector3(value))
+                                let Some(normal) =
+                                    named_literal(ctx, source_properties, "Normal", OPERATION)?
+                                        .and_then(parse_vector3)
                                 else {
                                     break 'feature_edit;
                                 };
@@ -304,7 +365,7 @@ pub(crate) fn bind_topology_selections(
                             ..
                         }) => {
                             resolve_profile_ref(ctx, profile, &face_ids)?;
-                            for side in extrude_extent_sides_mut(extent) {
+                            for side in extrude_extent_sides_mut(extent).into_iter().flatten() {
                                 if let LinearTermination::ToFace { face, .. }
                                 | LinearTermination::OffsetFromFace { face, .. } =
                                     &mut side.termination
@@ -346,7 +407,7 @@ pub(crate) fn bind_topology_selections(
                             guidance,
                             ..
                         }) => {
-                            for section in sections {
+                            for section in ctx.admit_iter(&mut sections[..], OPERATION)? {
                                 if let cadmpeg_ir::features::LoftSection::Profile(profile) = section
                                 {
                                     resolve_profile_ref(ctx, profile, &face_ids)?;
@@ -354,7 +415,7 @@ pub(crate) fn bind_topology_selections(
                             }
                             match guidance {
                                 cadmpeg_ir::features::LoftGuidance::Guides(guides) => {
-                                    for path in guides {
+                                    for path in ctx.admit_iter(&mut guides[..], OPERATION)? {
                                         resolve_path_ref(ctx, path, &edge_ids, &curve_ids)?;
                                     }
                                 }
@@ -364,14 +425,14 @@ pub(crate) fn bind_topology_selections(
                             }
                         }
                         FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) => {
-                            for group in groups {
+                            for group in ctx.admit_iter(&mut groups[..], OPERATION)? {
                                 resolve_edge_selection(ctx, &mut group.edges, &edge_ids)?;
                             }
                         }
                         FeatureDefinition::Operation(FeatureOperation::Chamfer {
                             groups, ..
                         }) => {
-                            for group in groups {
+                            for group in ctx.admit_iter(&mut groups[..], OPERATION)? {
                                 resolve_edge_selection(ctx, &mut group.edges, &edge_ids)?;
                             }
                         }
@@ -549,7 +610,7 @@ pub(crate) fn bind_topology_selections(
                             segments,
                             ..
                         }) => {
-                            for segment in segments {
+                            for segment in ctx.admit_iter(&mut segments[..], OPERATION)? {
                                 resolve_path_ref(ctx, segment, &edge_ids, &curve_ids)?;
                             }
                         }
@@ -573,6 +634,7 @@ fn resolve_planar_face_selection(
     faces: &[Face],
     surfaces: &HashMap<&cadmpeg_ir::ids::SurfaceId, &Surface>,
 ) -> Result<(), CodecError> {
+    const OPERATION: &str = "match SLDPRT planar selection faces";
     let has_native = match selection {
         FaceSelection::Unresolved => false,
         FaceSelection::Native(_) => true,
@@ -582,21 +644,23 @@ fn resolve_planar_face_selection(
     if !normal_length.is_finite() || normal_length <= f64::EPSILON {
         return Ok(());
     }
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(faces.len()),
-        "match SLDPRT planar selection faces",
-    )?;
-    let candidates = faces.iter().filter_map(|face| {
+    let mut matching = Vec::new();
+    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut faces = faces.iter();
+    while let Some(face) = ctx.next_charged(&mut faces, OPERATION)? {
+        let Some(surface) = ctx.get_hash_map(surfaces, &face.surface, OPERATION)? else {
+            continue;
+        };
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
-            &surfaces.get(&face.surface)?.geometry
+            &surface.geometry
         else {
-            return None;
+            continue;
         };
         let candidate_origin = plane_surface.origin();
         let candidate_normal = plane_surface.frame().axis().as_raw();
         let candidate_length = candidate_normal.norm();
         if !candidate_length.is_finite() || candidate_length <= f64::EPSILON {
-            return None;
+            continue;
         }
         let alignment = (normal.x * candidate_normal.x
             + normal.y * candidate_normal.y
@@ -611,20 +675,21 @@ fn resolve_planar_face_selection(
             + displacement.y * candidate_normal.y
             + displacement.z * candidate_normal.z)
             / candidate_length;
-        ((alignment.abs() - 1.0).abs() <= EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E9
-            && separation.abs() <= EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E8)
-            .then_some(&face.id)
-    });
-    let mut matching = Vec::new();
-    for face in candidates {
-        ctx.reserve_vec(
-            &mut matching,
-            1,
-            "collect SLDPRT topology selection identities",
-        )?;
-        matching.push(copy_selection_id(ctx, face.as_str())?);
+        if (alignment.abs() - 1.0).abs() <= EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E9
+            && separation.abs() <= EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E8
+        {
+            if !has_native && !matching.is_empty() {
+                return Ok(());
+            }
+            ctx.push_scoped_vec(&mut storage, &mut matching, &face.id, OPERATION)?;
+        }
     }
-    if (has_native && !matching.is_empty()) || (!has_native && matching.len() == 1) {
+    if !matching.is_empty() {
+        let matching = ctx.try_collect_retained_with(
+            matching,
+            "collect SLDPRT topology selection identities",
+            |id| clone_face(ctx, id),
+        )?;
         let old = std::mem::replace(selection, FaceSelection::Unresolved);
         *selection = match old {
             FaceSelection::Native(native) => FaceSelection::Resolved {
@@ -656,14 +721,20 @@ fn resolve_offset_plane_face_selection(
     resolve_planar_face_selection(ctx, selection, origin, normal, faces, surfaces)
 }
 
+fn clone_face(
+    ctx: &DecodeContext<'_>,
+    id: &cadmpeg_ir::ids::FaceId,
+) -> Result<cadmpeg_ir::ids::FaceId, CodecError> {
+    id.try_clone_for_decode(ctx, SELECTION_IDENTITY)
+}
+
 fn resolve_planar_profile_ref(
     ctx: &DecodeContext<'_>,
     profile: &mut PlanarProfileRef,
     faces: &HashMap<&str, Option<&cadmpeg_ir::ids::FaceId>>,
 ) -> Result<(), CodecError> {
-    ctx.charge_work(1, "bind SLDPRT topology selections")?;
     if let PlanarProfileRef::Native(native) = profile {
-        if let Some(ids) = resolve_ids(ctx, native, faces, cadmpeg_ir::ids::FaceId::as_str)? {
+        if let Some(ids) = resolve_ids(ctx, native, faces, |id| clone_face(ctx, id))? {
             *profile = PlanarProfileRef::Faces(ids);
         }
     }
@@ -675,7 +746,6 @@ fn resolve_profile_ref(
     profile: &mut ProfileRef,
     faces: &HashMap<&str, Option<&cadmpeg_ir::ids::FaceId>>,
 ) -> Result<(), CodecError> {
-    ctx.charge_work(1, "bind SLDPRT topology selections")?;
     if let ProfileRef::Planar(profile) = profile {
         resolve_planar_profile_ref(ctx, profile, faces)?;
     }
@@ -688,35 +758,37 @@ fn resolve_path_ref(
     edges: &HashMap<&str, Option<&cadmpeg_ir::ids::EdgeId>>,
     curves: &HashMap<&str, Option<&cadmpeg_ir::ids::CurveId>>,
 ) -> Result<(), CodecError> {
-    ctx.charge_work(1, "bind SLDPRT topology selections")?;
     if let PathRef::Native(native) = path {
-        if let Some(ids) = resolve_ids(ctx, native, edges, cadmpeg_ir::ids::EdgeId::as_str)? {
+        if let Some(ids) = resolve_ids(ctx, native, edges, |id| {
+            id.try_clone_for_decode(ctx, SELECTION_IDENTITY)
+        })? {
             *path = PathRef::Edges(ids);
-        } else if let Some(ids) =
-            resolve_ids(ctx, native, curves, cadmpeg_ir::ids::CurveId::as_str)?
-        {
+        } else if let Some(ids) = resolve_ids(ctx, native, curves, |id| {
+            id.try_clone_for_decode(ctx, SELECTION_IDENTITY)
+        })? {
             *path = PathRef::Curves(ids);
         }
     }
     Ok(())
 }
 
-fn selection_ids<'a, Id: 'a>(
+/// Each entity's identity, and its name when no other entity bears that name,
+/// as selection tokens.
+fn selection_ids<'a, T, Id: 'a>(
     ctx: &DecodeContext<'_>,
-    values: impl Iterator<Item = (&'a str, Option<&'a str>, &'a Id)>,
+    values: &'a [T],
+    project: impl Fn(&'a T) -> (&'a str, Option<&'a str>, &'a Id),
 ) -> Result<HashMap<&'a str, Option<&'a Id>>, CodecError> {
+    const OPERATION: &str = "index SLDPRT topology selections";
     let mut ids = HashMap::new();
-    for (id, name, value) in values {
-        reserve_selection_map(ctx, &mut ids)?;
-        ids.insert(id, Some(value));
+    for value in ctx.admit_iter(values, OPERATION)? {
+        let (id, name, value) = project(value);
+        ctx.insert_hash_map(&mut ids, id, Some(value), OPERATION)?;
         if let Some(name) = name.filter(|name| !name.is_empty()) {
-            reserve_selection_map(ctx, &mut ids)?;
-            match ids.entry(name) {
-                std::collections::hash_map::Entry::Vacant(entry) => {
-                    entry.insert(Some(value));
-                }
-                std::collections::hash_map::Entry::Occupied(mut entry) => {
-                    entry.insert(None);
+            match ctx.get_mut_hash_map(&mut ids, name, OPERATION)? {
+                Some(entry) => *entry = None,
+                None => {
+                    ctx.insert_hash_map(&mut ids, name, Some(value), OPERATION)?;
                 }
             }
         }
@@ -724,34 +796,48 @@ fn selection_ids<'a, Id: 'a>(
     Ok(ids)
 }
 
-fn resolve_ids<Id: TryFrom<String, Error = cadmpeg_ir::ids::IdentityError>>(
+/// The entities a comma-separated native selection names, when every token
+/// names exactly one entity.
+fn resolve_ids<Id>(
     ctx: &DecodeContext<'_>,
     native: &str,
     ids: &HashMap<&str, Option<&Id>>,
-    as_str: impl Fn(&Id) -> &str,
+    clone: impl Fn(&Id) -> Result<Id, CodecError>,
 ) -> Result<Option<Vec<Id>>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(native.len()),
-        "resolve SLDPRT topology selection tokens",
-    )?;
-    let mut resolved = Vec::new();
-    for token in native
-        .split(',')
-        .map(str::trim)
-        .filter(|token| !token.is_empty())
-    {
-        ctx.charge_work(1, "resolve SLDPRT topology selection tokens")?;
-        let Some(Some(id)) = ids.get(token) else {
-            return Ok(None);
-        };
-        ctx.reserve_vec(
-            &mut resolved,
-            1,
-            "collect SLDPRT topology selection identities",
+    const OPERATION: &str = "resolve SLDPRT topology selection tokens";
+    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut candidates = Vec::new();
+    let mut rest = native;
+    loop {
+        let end = ctx.find_map(
+            rest.char_indices(),
+            |(at, character)| Ok((character == ',').then_some(at)),
+            OPERATION,
         )?;
-        resolved.push(copy_selection_id(ctx, as_str(id))?);
+        let (token, tail) = match end {
+            Some(end) => (&rest[..end], Some(&rest[end + 1..])),
+            None => (rest, None),
+        };
+        let token = ctx.trim_text(token, OPERATION)?;
+        if !token.is_empty() {
+            let Some(Some(id)) = ctx.get_hash_map(ids, token, OPERATION)? else {
+                return Ok(None);
+            };
+            ctx.push_scoped_vec(&mut storage, &mut candidates, *id, OPERATION)?;
+        }
+        let Some(tail) = tail else {
+            break;
+        };
+        rest = tail;
     }
-    Ok((!resolved.is_empty()).then_some(resolved))
+    if candidates.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(ctx.try_collect_retained_with(
+        candidates,
+        "collect SLDPRT topology selection identities",
+        clone,
+    )?))
 }
 
 fn resolve_face_selection(
@@ -759,39 +845,35 @@ fn resolve_face_selection(
     selection: &mut FaceSelection,
     context: &FaceSelectionContext<'_>,
 ) -> Result<(), CodecError> {
-    ctx.charge_work(1, "bind SLDPRT topology selections")?;
-    if let FaceSelection::Native(native) = selection {
-        let mut faces = resolve_ids(ctx, native, context.ids, cadmpeg_ir::ids::FaceId::as_str)?;
-        if faces.is_none() {
-            if let Some(feature_ref) = context.feature_ref {
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(context.surface_selection_faces.len()),
-                    "resolve SLDPRT surface selection owner",
+    const OPERATION: &str = "resolve SLDPRT surface selection owner";
+    let FaceSelection::Native(native) = selection else {
+        return Ok(());
+    };
+    let mut faces = resolve_ids(ctx, native, context.ids, |id| clone_face(ctx, id))?;
+    if faces.is_none() {
+        if let Some(feature_ref) = context.feature_ref {
+            let face =
+                match ctx.get_hash_map(context.surface_selection_faces, feature_ref, OPERATION)? {
+                    Some(owner_bindings) => {
+                        ctx.get_hash_map(owner_bindings, native.as_str(), OPERATION)?
+                    }
+                    None => None,
+                };
+            if let Some(Some(face)) = face {
+                let mut copied = Vec::new();
+                ctx.push_vec(
+                    &mut copied,
+                    clone_face(ctx, face)?,
+                    "collect SLDPRT topology selection identities",
                 )?;
-                if let Some(Some(face)) =
-                    context
-                        .surface_selection_faces
-                        .iter()
-                        .find_map(|((owner, key), value)| {
-                            (owner == feature_ref && key == native).then_some(value)
-                        })
-                {
-                    let mut copied = Vec::new();
-                    ctx.reserve_vec(
-                        &mut copied,
-                        1,
-                        "collect SLDPRT topology selection identities",
-                    )?;
-                    copied.push(copy_selection_id(ctx, face.as_str())?);
-                    faces = Some(copied);
-                }
+                faces = Some(copied);
             }
         }
-        if let Some(faces) = faces {
-            let old = std::mem::replace(selection, FaceSelection::Unresolved);
-            if let FaceSelection::Native(native) = old {
-                *selection = FaceSelection::Resolved { faces, native };
-            }
+    }
+    if let Some(faces) = faces {
+        let old = std::mem::replace(selection, FaceSelection::Unresolved);
+        if let FaceSelection::Native(native) = old {
+            *selection = FaceSelection::Resolved { faces, native };
         }
     }
     Ok(())
@@ -802,40 +884,54 @@ fn history_feature_sources<'a>(
     histories: &'a [FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
 ) -> Result<HashMap<&'a str, Option<FeatureSourceId>>, CodecError> {
+    const OPERATION: &str = "index SLDPRT topology selections";
     let mut sources = HashMap::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(lanes.len()),
-            "resolve SLDPRT topology feature sources",
-        )?;
-        for lane in lanes {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(lane.names.len()),
-                "resolve SLDPRT topology feature sources",
-            )?;
-        }
-        let mut source = feature.source_id;
-        if source.is_none() {
-            let mut candidates = lanes.iter().filter_map(|lane| {
-                crate::resolved_features::scalars::feature_object_name(feature, lane)?
-                    .object_id?
-                    .value()
-            });
-            if let Some(first) = candidates.next() {
-                if candidates.all(|candidate| candidate == first) {
-                    source = FeatureSource::from_value(first);
+    let mut name_storage = ctx.reserve_scoped(0, OPERATION)?;
+    let mut lane_names = Vec::new();
+    for history in ctx.admit_iter(histories, "scan SLDPRT feature histories")? {
+        for feature in ctx.admit_iter(&history.features, "scan SLDPRT topology history features")? {
+            let mut source = feature.source_id;
+            if source.is_none() {
+                let mut first = None;
+                let mut lanes = lanes.iter().enumerate();
+                while let Some((index, lane)) =
+                    ctx.next_charged(&mut lanes, "resolve SLDPRT topology source candidates")?
+                {
+                    if index == lane_names.len() {
+                        let names = ctx.unique_index(
+                            lane.names.iter().map(|name| (name.value.as_str(), name)),
+                            "index SLDPRT object names by text",
+                        )?;
+                        ctx.push_scoped_vec(&mut name_storage, &mut lane_names, names, OPERATION)?;
+                    }
+                    let Some(candidate) = ctx
+                        .get_hash_map(
+                            &lane_names[index].0,
+                            feature.name.as_str(),
+                            "find SLDPRT object name by text",
+                        )?
+                        .and_then(Option::as_ref)
+                        .and_then(|name| name.object_id?.value())
+                    else {
+                        continue;
+                    };
+                    if first.is_some_and(|known| known != candidate) {
+                        first = None;
+                        break;
+                    }
+                    first = Some(candidate);
                 }
+                source = first.and_then(FeatureSource::from_value);
             }
-        }
-        let source = source.and_then(FeatureSource::id);
-        reserve_selection_map(ctx, &mut sources)?;
-        match sources.entry(feature.id.as_str()) {
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(source);
-            }
-            std::collections::hash_map::Entry::Occupied(mut entry) => {
-                if entry.get() != &source {
-                    entry.insert(None);
+            let source = source.and_then(FeatureSource::id);
+            match ctx.get_mut_hash_map(&mut sources, feature.id.as_str(), OPERATION)? {
+                Some(existing) => {
+                    if *existing != source {
+                        *existing = None;
+                    }
+                }
+                None => {
+                    ctx.insert_hash_map(&mut sources, feature.id.as_str(), source, OPERATION)?;
                 }
             }
         }
@@ -848,9 +944,10 @@ fn resolve_edge_selection(
     selection: &mut EdgeSelection,
     ids: &HashMap<&str, Option<&cadmpeg_ir::ids::EdgeId>>,
 ) -> Result<(), CodecError> {
-    ctx.charge_work(1, "bind SLDPRT topology selections")?;
     if let EdgeSelection::Native(native) = selection {
-        if let Some(edges) = resolve_ids(ctx, native, ids, cadmpeg_ir::ids::EdgeId::as_str)? {
+        if let Some(edges) = resolve_ids(ctx, native, ids, |id| {
+            id.try_clone_for_decode(ctx, SELECTION_IDENTITY)
+        })? {
             let old = std::mem::replace(selection, EdgeSelection::Unresolved);
             if let EdgeSelection::Native(native) = old {
                 *selection = EdgeSelection::Resolved { edges, native };
@@ -865,9 +962,10 @@ fn resolve_body_selection(
     selection: &mut BodySelection,
     ids: &HashMap<&str, Option<&cadmpeg_ir::ids::BodyId>>,
 ) -> Result<(), CodecError> {
-    ctx.charge_work(1, "bind SLDPRT topology selections")?;
     if let BodySelection::Native(native) = selection {
-        let bodies = match resolve_ids(ctx, native, ids, cadmpeg_ir::ids::BodyId::as_str)? {
+        let bodies = match resolve_ids(ctx, native, ids, |id| {
+            id.try_clone_for_decode(ctx, SELECTION_IDENTITY)
+        })? {
             Some(bodies) => match cadmpeg_ir::features::DistinctMembers::try_from(bodies, ctx) {
                 Ok(bodies) => Some(bodies),
                 Err(error @ cadmpeg_ir::features::FeatureCollectionError::Resource(_)) => {
@@ -885,47 +983,6 @@ fn resolve_body_selection(
         }
     }
     Ok(())
-}
-
-fn copy_selection_text(ctx: &DecodeContext<'_>, value: &str) -> Result<String, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(value.len()),
-        "retain SLDPRT topology selection identity",
-    )?;
-    ctx.format_retained(
-        format_args!("{value}"),
-        "retain SLDPRT topology selection identity",
-    )
-}
-
-fn copy_selection_id<Id: TryFrom<String, Error = cadmpeg_ir::ids::IdentityError>>(
-    ctx: &DecodeContext<'_>,
-    id: &str,
-) -> Result<Id, CodecError> {
-    let work = cadmpeg_core::decode::u64_from_index(id.len())
-        .checked_mul(4)
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "retain SLDPRT topology selection identity",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?;
-    ctx.charge_work(work, "retain SLDPRT topology selection identity")?;
-    let text = ctx.format_retained(
-        format_args!("{id}"),
-        "retain SLDPRT topology selection identity",
-    )?;
-    Id::try_from(text).map_err(CodecError::malformed)
-}
-
-fn reserve_selection_map<K: Eq + std::hash::Hash + cadmpeg_core::decode::cost::DecodeCost, V>(
-    ctx: &DecodeContext<'_>,
-    values: &mut HashMap<K, V>,
-) -> Result<(), CodecError> {
-    const OPERATION: &str = "index SLDPRT topology selections";
-    ctx.charge_work(1, OPERATION)?;
-    ctx.reserve_map(values, 1, OPERATION)
 }
 
 #[cfg(test)]
@@ -997,12 +1054,12 @@ mod tests {
             ],
         )
         .unwrap();
-        let key = (
-            "feature".to_string(),
-            "sldprt:feature-input:surface-component-ids:8,5".to_string(),
-        );
+        let key = ("feature", "sldprt:feature-input:surface-component-ids:8,5");
         assert_eq!(
-            bindings.get(&key).cloned(),
+            bindings
+                .get(key.0)
+                .and_then(|owner| owner.get(key.1))
+                .cloned(),
             Some(Some(
                 cadmpeg_ir::ids::FaceId::mint("test:model:entity#terminal-face")
                     .expect("identity grammar")
@@ -1040,11 +1097,14 @@ mod tests {
             ],
         )
         .unwrap();
-        let key = (
-            "feature".to_string(),
-            "sldprt:feature-input:surface-component-ids:5".to_string(),
+        let key = ("feature", "sldprt:feature-input:surface-component-ids:5");
+        assert_eq!(
+            bindings
+                .get(key.0)
+                .and_then(|owner| owner.get(key.1))
+                .cloned(),
+            Some(None)
         );
-        assert_eq!(bindings.get(&key).cloned(), Some(None));
     }
 
     #[test]
@@ -1067,16 +1127,151 @@ mod tests {
             )],
         )
         .unwrap();
-        let key = (
-            "feature".to_string(),
-            "sldprt:feature-input:surface-component-ids:8,5".to_string(),
-        );
+        let key = ("feature", "sldprt:feature-input:surface-component-ids:8,5");
         assert_eq!(
-            bindings.get(&key).cloned(),
+            bindings
+                .get(key.0)
+                .and_then(|owner| owner.get(key.1))
+                .cloned(),
             Some(Some(
                 cadmpeg_ir::ids::FaceId::mint("test:model:entity#terminal-face")
                     .expect("identity grammar")
             ))
         );
+    }
+}
+
+#[cfg(test)]
+mod source_index_tests {
+    use super::history_feature_sources;
+    use crate::history::tests::{feature, feature_input_lane};
+    use crate::records::{FeatureHistory, FeatureInputName, ObjectId};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn topology_source_indexes_preserve_unique_names_and_cross_lane_conflicts() {
+        let mut first = feature_input_lane("first", None);
+        let mut second = feature_input_lane("second", None);
+        let name = |value: &str, source| FeatureInputName {
+            id: value.into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            object_id: ObjectId::from_value(source),
+            value: value.into(),
+        };
+        first.names = vec![
+            name("unique", 10),
+            name("repeated", 11),
+            name("repeated", 12),
+            name("conflict", 13),
+        ];
+        second.names = vec![name("unique", 10), name("conflict", 14)];
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![
+                feature("unique", None, 0),
+                feature("repeated", None, 1),
+                feature("conflict", None, 2),
+                feature("explicit", Some("15"), 3),
+            ],
+        };
+        let histories = [history];
+        let lanes = [first, second];
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let sources = history_feature_sources(&ctx, &histories, &lanes).unwrap();
+        let source = |name| {
+            sources
+                .get(name)
+                .copied()
+                .flatten()
+                .map(super::FeatureSourceId::value)
+        };
+        assert_eq!(source("unique"), Some(10));
+        assert_eq!(source("repeated"), None);
+        assert_eq!(source("conflict"), None);
+        assert_eq!(source("explicit"), Some(15));
+    }
+
+    #[test]
+    fn missing_source_resolution_builds_only_the_text_index() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let mut lane = feature_input_lane("lane", None);
+        lane.names.push(FeatureInputName {
+            id: "name".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            object_id: ObjectId::from_value(10),
+            value: "named".into(),
+        });
+        let histories = [FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![feature("named", None, 0)],
+        }];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            "index SLDPRT object names by id",
+            None,
+        );
+        let sources = history_feature_sources(&ctx, &histories, &[lane]).unwrap();
+        assert_eq!(
+            sources
+                .get("named")
+                .copied()
+                .flatten()
+                .map(super::FeatureSourceId::value),
+            Some(10)
+        );
+        assert!(ctx.resource_refusal().is_none());
+    }
+
+    #[test]
+    fn source_conflict_leaves_unvisited_lane_names_unindexed() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let name = |source| FeatureInputName {
+            id: "conflict".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            object_id: ObjectId::from_value(source),
+            value: "conflict".into(),
+        };
+        let mut first = feature_input_lane("first", None);
+        first.names.push(name(10));
+        let mut second = feature_input_lane("second", None);
+        second.names.push(name(11));
+        let mut tail = feature_input_lane("unvisited", None);
+        tail.names.extend(std::iter::repeat_n(name(12), 4096));
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![feature("conflict", None, 0)],
+        };
+        let histories = [history];
+        let lanes = [first, second, tail];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // The tail alone needs 4096 visits, in addition to the visited prefix.
+        policy.limits.max_work_units = 4096;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let sources = history_feature_sources(&ctx, &histories, &lanes).unwrap();
+        assert_eq!(sources.get("conflict"), Some(&None));
+        assert!(ctx.resource_refusal().is_none());
     }
 }

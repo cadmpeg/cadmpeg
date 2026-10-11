@@ -1,7 +1,7 @@
 //! Draft-operation plane and face operands.
 
 use super::is_class_token;
-use super::scalars::feature_object_name;
+use super::scalars::ObjectNames;
 use super::selections::{
     compact_mixed_component_path, component_vector_path_at, is_component_vector_selector,
     COMPACT_EDGE_VECTOR_MARKER,
@@ -37,32 +37,47 @@ pub(super) enum DraftAnchor {
     PartingTool(Vec<Vec<FeatureInputComponentPathEntry>>),
 }
 
-pub(super) fn same_draft_operands(left: &DraftOperands, right: &DraftOperands) -> bool {
+pub(super) fn same_draft_operands(
+    ctx: &DecodeContext<'_>,
+    left: &DraftOperands,
+    right: &DraftOperands,
+) -> Result<bool, CodecError> {
     let left_direction = left.pull_direction.get();
     let right_direction = right.pull_direction.get();
-    same_draft_anchor(&left.anchor, &right.anchor)
-        && left.faces.len() == right.faces.len()
-        && left
-            .faces
-            .iter()
-            .zip(&right.faces)
-            .all(|(left, right)| same_component_path_semantics(left, right))
-        && (left_direction.x - right_direction.x).abs() <= EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12
-        && (left_direction.y - right_direction.y).abs() <= EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12
-        && (left_direction.z - right_direction.z).abs() <= EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12
+    if !same_draft_anchor(ctx, &left.anchor, &right.anchor)?
+        || left.faces.len() != right.faces.len()
+    {
+        return Ok(false);
+    }
+    if !ctx.all_by(
+        left.faces.iter().zip(&right.faces),
+        |(left, right)| same_component_path_semantics(ctx, left, right),
+        "compare SLDPRT draft faces",
+    )? {
+        return Ok(false);
+    }
+    Ok(
+        (left_direction.x - right_direction.x).abs() <= EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12
+            && (left_direction.y - right_direction.y).abs() <= EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12
+            && (left_direction.z - right_direction.z).abs() <= EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12,
+    )
 }
 
 fn draft_operands(
     ctx: &DecodeContext<'_>,
     feature: &crate::records::Feature,
     lane: &FeatureInputLane,
+    plane_reference_token: Option<[u8; 2]>,
     object_start: usize,
     object_end: usize,
 ) -> Result<Option<DraftOperands>, CodecError> {
     if classify(feature) != Some(FeatureClass::Draft) || object_start >= object_end {
         return Ok(None);
     }
-    if let Some(operands) = declared_draft_operands(ctx, lane, object_start, object_end)? {
+    if let Some(operands) = match plane_reference_token {
+        Some(token) => declared_draft_operands(ctx, lane, token, object_start, object_end)?,
+        None => None,
+    } {
         return Ok(Some(operands));
     }
     compact_parting_line_draft_operands(ctx, lane, object_start, object_end)
@@ -71,13 +86,11 @@ fn draft_operands(
 fn declared_draft_operands(
     ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
+    token: [u8; 2],
     object_start: usize,
     object_end: usize,
 ) -> Result<Option<DraftOperands>, CodecError> {
     const OPERATION: &str = "collect SLDPRT declared draft references";
-    let Some(token) = unique_declared_plane_reference_token(lane) else {
-        return Ok(None);
-    };
     let Some(end) = super::DeclaredEnd::of(object_end, lane.native_payload.len()) else {
         return Ok(None);
     };
@@ -85,15 +98,19 @@ fn declared_draft_operands(
     let Some(final_record_start) = end.checked_sub(draft_plane::LEN) else {
         return Ok(None);
     };
+    let mut records_storage = ctx.reserve_scoped(0, "SLDPRT declared draft reference workspace")?;
     let mut records = Vec::new();
-    for offset in object_start..=final_record_start {
-        ctx.charge_work(1, "scan SLDPRT declared draft references")?;
+    for offset in ctx.admit_iter(
+        &(object_start..=final_record_start),
+        "scan SLDPRT declared draft references",
+    )? {
         if lane.native_payload.get(offset..offset + 2) != Some(token.as_slice()) {
             continue;
         }
-        if let Some(record) = draft_plane_reference_at(ctx, &lane.native_payload, offset, end)? {
-            ctx.reserve_vec(&mut records, 1, OPERATION)?;
-            records.push(record);
+        if let Some(record) = records_storage
+            .with_storage(|| draft_plane_reference_at(ctx, &lane.native_payload, offset, end))?
+        {
+            records_storage.with_storage(|| ctx.push_vec(&mut records, record, OPERATION))?;
         }
     }
     let mut records = records.into_iter();
@@ -101,25 +118,35 @@ fn declared_draft_operands(
         return Ok(None);
     };
     let Some(pull_direction) = unique_draft_direction(
+        ctx,
         &lane.native_payload,
         neutral_end,
         records.as_slice().first().map_or(end, |record| record.0),
-    ) else {
+    )?
+    else {
         return Ok(None);
     };
     let mut faces = Vec::<Vec<FeatureInputComponentPathEntry>>::new();
-    for path in records.map(|(_, path, _)| path) {
-        if !faces
-            .iter()
-            .any(|existing| same_component_path_semantics(existing, &path))
-        {
-            ctx.reserve_vec(&mut faces, 1, "collect SLDPRT declared draft faces")?;
-            faces.push(path);
-        }
+    while let Some((_, path, _)) = ctx.next_charged(&mut records, OPERATION)? {
+        records_storage.with_storage(|| {
+            push_distinct_face(ctx, &mut faces, path, "collect SLDPRT declared draft faces")
+        })?;
     }
-    Ok((!faces.is_empty()).then_some(DraftOperands {
+    if faces.is_empty() {
+        return Ok(None);
+    }
+    let neutral_plane = ctx.collect_vec(neutral_plane.iter().cloned(), OPERATION)?;
+    let mut retained_faces = Vec::new();
+    for face in ctx.admit_iter(&faces, OPERATION)? {
+        ctx.push_vec(
+            &mut retained_faces,
+            ctx.collect_vec(face.iter().cloned(), OPERATION)?,
+            OPERATION,
+        )?;
+    }
+    Ok(Some(DraftOperands {
         anchor: DraftAnchor::NeutralPlane(neutral_plane),
-        faces,
+        faces: retained_faces,
         pull_direction,
     }))
 }
@@ -141,9 +168,12 @@ fn compact_parting_line_draft_operands(
     let Some(first_marker) = object_start.checked_add(12) else {
         return Ok(None);
     };
+    let mut storage = ctx.reserve_scoped(0, "SLDPRT compact draft workspace")?;
     let mut records = Vec::new();
-    for marker in first_marker..=final_marker {
-        ctx.charge_work(1, "scan SLDPRT compact draft records")?;
+    for marker in ctx.admit_iter(
+        &(first_marker..=final_marker),
+        "scan SLDPRT compact draft records",
+    )? {
         if lane
             .native_payload
             .get(marker..marker + COMPACT_EDGE_VECTOR_MARKER.len())
@@ -152,36 +182,61 @@ fn compact_parting_line_draft_operands(
             continue;
         }
         if let Some(CompactDraftSelection(role, paths, selection_end)) =
-            compact_draft_selection_at(ctx, &lane.native_payload, marker, OPERATION)?
+            storage.with_storage(|| {
+                compact_draft_selection_at(ctx, &lane.native_payload, marker, OPERATION)
+            })?
         {
-            ctx.reserve_vec(&mut records, 1, OPERATION)?;
-            records.push((marker, role, paths, selection_end));
+            storage.with_storage(|| {
+                ctx.push_vec(
+                    &mut records,
+                    (marker, role, paths, selection_end),
+                    OPERATION,
+                )
+            })?;
         }
     }
-    let mut parting_records = records
-        .iter()
-        .enumerate()
-        .filter(|(_, (_, role, _, _))| *role == CompactDraftSelectionRole::PartingTool);
-    let Some((parting_index, parting_record)) = parting_records.next() else {
+    let is_parting = |record: &(usize, CompactDraftSelectionRole, _, usize)| {
+        record.1 == CompactDraftSelectionRole::PartingTool
+    };
+    let mut remaining = records.iter();
+    let Some(parting_index) = ctx.position_by(
+        &mut remaining,
+        |record| Ok(is_parting(record)),
+        "find SLDPRT draft parting tool",
+    )?
+    else {
         return Ok(None);
     };
-    if parting_records.next().is_some() {
+    if ctx.any_by(
+        &mut remaining,
+        |record| Ok(is_parting(record)),
+        "find SLDPRT draft parting tool",
+    )? {
         return Ok(None);
     }
-    let Some(first_face) = records.iter().find(|(marker, role, _, _)| {
-        *role == CompactDraftSelectionRole::DraftedFace && *marker > parting_record.0
-    }) else {
+    let parting_record = &records[parting_index];
+    let Some(first_face) = ctx.find_by(
+        &records,
+        |(marker, role, _, _)| {
+            Ok(*role == CompactDraftSelectionRole::DraftedFace && *marker > parting_record.0)
+        },
+        "find SLDPRT drafted face",
+    )?
+    else {
         return Ok(None);
     };
     let Some(pull_direction) =
-        unique_draft_direction(&lane.native_payload, parting_record.3, first_face.0)
+        unique_draft_direction(ctx, &lane.native_payload, parting_record.3, first_face.0)?
     else {
         return Ok(None);
     };
     let parting_start = parting_record.0;
     let mut parting_paths = None;
     let mut faces = Vec::<Vec<FeatureInputComponentPathEntry>>::new();
-    for (index, (marker, role, paths, _)) in records.into_iter().enumerate() {
+    for (index, (marker, role, paths, _)) in ctx
+        .admit_iter(records, "collect SLDPRT compact draft faces")?
+        .enumerate()
+    {
         if index == parting_index {
             parting_paths = Some(paths);
             continue;
@@ -189,22 +244,37 @@ fn compact_parting_line_draft_operands(
         if role != CompactDraftSelectionRole::DraftedFace || marker <= parting_start {
             continue;
         }
-        for path in paths {
-            if !faces
-                .iter()
-                .any(|existing| same_component_path_semantics(existing, &path))
-            {
-                ctx.reserve_vec(&mut faces, 1, "collect SLDPRT compact draft faces")?;
-                faces.push(path);
-            }
+        for path in ctx.admit_iter(paths, "collect SLDPRT compact draft faces")? {
+            storage.with_storage(|| {
+                push_distinct_face(ctx, &mut faces, path, "collect SLDPRT compact draft faces")
+            })?;
         }
     }
     let Some(parting_paths) = parting_paths else {
         return Ok(None);
     };
-    Ok((!faces.is_empty()).then_some(DraftOperands {
-        anchor: DraftAnchor::PartingTool(parting_paths),
-        faces,
+    if faces.is_empty() {
+        return Ok(None);
+    }
+    let mut retained_tools = Vec::new();
+    for path in ctx.admit_iter(&parting_paths, OPERATION)? {
+        ctx.push_vec(
+            &mut retained_tools,
+            ctx.collect_vec(path.iter().cloned(), OPERATION)?,
+            OPERATION,
+        )?;
+    }
+    let mut retained_faces = Vec::new();
+    for path in ctx.admit_iter(&faces, OPERATION)? {
+        ctx.push_vec(
+            &mut retained_faces,
+            ctx.collect_vec(path.iter().cloned(), OPERATION)?,
+            OPERATION,
+        )?;
+    }
+    Ok(Some(DraftOperands {
+        anchor: DraftAnchor::PartingTool(retained_tools),
+        faces: retained_faces,
         pull_direction,
     }))
 }
@@ -259,15 +329,10 @@ fn compact_draft_selection_at(
     }
     let mut cursor = header + compact_sel::LEN;
     let mut paths = Vec::new();
-    let candidate_trials = u64::try_from(MAX_PATH_CELLS).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "scan SLDPRT compact draft path lengths",
-            u64::MAX - 1,
-            u64::MAX,
-        )
-    })?;
     loop {
-        ctx.charge_work(candidate_trials, "scan SLDPRT compact draft path lengths")?;
+        // Each record tries a fixed set of path lengths; each trial charges
+        // the cells it reads.
+        ctx.charge_work(1, "visit SLDPRT compact draft path record")?;
         let mut candidate = None;
         for length in 1..=MAX_PATH_CELLS {
             let Some((path, path_end)) = compact_mixed_component_path(
@@ -294,52 +359,92 @@ fn compact_draft_selection_at(
         let Some((path, path_end)) = candidate else {
             return Ok((!paths.is_empty()).then_some(CompactDraftSelection(role, paths, cursor)));
         };
-        ctx.reserve_vec(&mut paths, 1, reserve_operation)?;
-        paths.push(path);
+        ctx.push_vec(&mut paths, path, reserve_operation)?;
         cursor = path_end + 8;
     }
 }
 
-fn same_draft_anchor(left: &DraftAnchor, right: &DraftAnchor) -> bool {
+fn same_draft_anchor(
+    ctx: &DecodeContext<'_>,
+    left: &DraftAnchor,
+    right: &DraftAnchor,
+) -> Result<bool, CodecError> {
     match (left, right) {
         (DraftAnchor::NeutralPlane(left), DraftAnchor::NeutralPlane(right)) => {
-            same_component_path_semantics(left, right)
+            same_component_path_semantics(ctx, left, right)
         }
-        (DraftAnchor::PartingTool(left), DraftAnchor::PartingTool(right)) => {
-            left.len() == right.len()
-                && left
-                    .iter()
-                    .zip(right)
-                    .all(|(left, right)| same_component_path_semantics(left, right))
-        }
-        _ => false,
+        (DraftAnchor::PartingTool(left), DraftAnchor::PartingTool(right)) => Ok(left.len()
+            == right.len()
+            && ctx.all_by(
+                left.iter().zip(right),
+                |(left, right)| same_component_path_semantics(ctx, left, right),
+                "compare SLDPRT parting tools",
+            )?),
+        _ => Ok(false),
     }
 }
 
 fn same_component_path_semantics(
+    ctx: &DecodeContext<'_>,
     left: &[FeatureInputComponentPathEntry],
     right: &[FeatureInputComponentPathEntry],
-) -> bool {
-    left.len() == right.len()
-        && left.iter().zip(right).all(|(left, right)| {
-            left.type_signature[4..8] == right.type_signature[4..8]
-                && left.local_id == right.local_id
-        })
+) -> Result<bool, CodecError> {
+    Ok(left.len() == right.len()
+        && ctx.all_by(
+            left.iter().zip(right),
+            |(left, right)| {
+                Ok(left.type_signature[4..8] == right.type_signature[4..8]
+                    && left.local_id == right.local_id)
+            },
+            "compare SLDPRT draft component path",
+        )?)
 }
 
-fn unique_declared_plane_reference_token(lane: &FeatureInputLane) -> Option<[u8; 2]> {
-    let mut tokens = lane.classes.iter().filter_map(|class| {
-        if class.name != "moPlaneRef_w" {
-            return None;
+/// Adds a face path unless an equal path is already present.
+fn push_distinct_face(
+    ctx: &DecodeContext<'_>,
+    faces: &mut Vec<Vec<FeatureInputComponentPathEntry>>,
+    path: Vec<FeatureInputComponentPathEntry>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if ctx.any_by(
+        &*faces,
+        |existing| same_component_path_semantics(ctx, existing, &path),
+        operation,
+    )? {
+        return Ok(());
+    }
+    ctx.push_vec(faces, path, operation)
+}
+
+fn unique_declared_plane_reference_token(
+    ctx: &DecodeContext<'_>,
+    lane: &FeatureInputLane,
+) -> Result<Option<[u8; 2]>, CodecError> {
+    const OPERATION: &str = "scan SLDPRT declared plane tokens";
+    let token = |class: &crate::records::FeatureInputClass| -> Result<Option<[u8; 2]>, CodecError> {
+        if !ctx.equal(class.name.as_str(), "moPlaneRef_w", OPERATION)? {
+            return Ok(None);
         }
-        let body = usize::try_from(class.offset)
-            .ok()?
-            .checked_add(6 + class.name.len())?;
-        let value = View::u16_le_at(&lane.native_payload, body)?;
-        is_class_token(value).then_some(value.to_le_bytes())
-    });
-    let first = tokens.next()?;
-    tokens.all(|token| token == first).then_some(first)
+        Ok((|| {
+            let body = usize::try_from(class.offset)
+                .ok()?
+                .checked_add(6 + class.name.len())?;
+            let value = View::u16_le_at(&lane.native_payload, body)?;
+            is_class_token(value).then_some(value.to_le_bytes())
+        })())
+    };
+    let mut classes = lane.classes.iter();
+    let Some(first) = ctx.find_map(&mut classes, token, "scan SLDPRT declared plane tokens")?
+    else {
+        return Ok(None);
+    };
+    let disagrees = ctx.any_by(
+        &mut classes,
+        |class| Ok(token(class)?.is_some_and(|candidate| candidate != first)),
+        "scan SLDPRT declared plane tokens",
+    )?;
+    Ok((!disagrees).then_some(first))
 }
 
 fn draft_plane_reference_at(
@@ -348,7 +453,6 @@ fn draft_plane_reference_at(
     offset: usize,
     object_end: usize,
 ) -> Result<Option<(usize, Vec<FeatureInputComponentPathEntry>, usize)>, CodecError> {
-    ctx.charge_work(256, "decode SLDPRT draft plane reference")?;
     let header = (|| {
         let header = payload.get(offset..offset.checked_add(draft_plane::COMPONENT_MARKER)?)?;
         if offset + draft_plane::COMPONENT_MARKER > object_end
@@ -401,52 +505,75 @@ fn draft_plane_reference_at(
     Ok((path_start <= object_end).then_some((offset, components, path_start)))
 }
 
-fn unique_draft_direction(payload: &[u8], start: usize, end: usize) -> Option<FeatureDirection3> {
+fn unique_draft_direction(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Result<Option<FeatureDirection3>, CodecError> {
     const HANDLES: [u8; 8] = [0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
-    let final_frame_start = end
+    let Some(final_frame_start) = end
         .checked_sub(aligned_dir::LEN)
-        .filter(|end| *end >= start)?;
-    let mut candidates = (start..=final_frame_start)
-        .filter(|offset| payload.get(*offset..*offset + HANDLES.len()) == Some(HANDLES.as_slice()))
-        .filter_map(|offset| {
-            let frame = payload.get(offset..end)?;
-            if frame[aligned_dir::ZERO_AT_8..aligned_dir::ADDRESS] != [0; 4]
-                || frame[aligned_dir::ADDRESS..aligned_dir::ADDRESS + 4] == [0; 4]
-                || frame[16..DIRECTION_FRAME_PREFIX_LEN] != [0; 8]
-            {
-                return None;
-            }
-            let scalar = |relative: usize| {
-                let value = View::f64_le_at(frame, relative)?;
-                value.is_finite().then_some(value)
-            };
-            if !(DIRECTION_FRAME_PREFIX_LEN..aligned_dir::LEN)
-                .step_by(8)
-                .all(|relative| scalar(relative).is_some())
-            {
-                return None;
-            }
-            let direction_at = |relative: usize| {
-                let direction = Vector3::new(
-                    View::f64_le_at(frame, relative)?,
-                    View::f64_le_at(frame, relative + 8)?,
-                    View::f64_le_at(frame, relative + 16)?,
-                );
-                UnitVector3::new(direction)
-                    .map(FeatureDirection3::from_unit_without_small_components)
-            };
-            direction_at(aligned_dir::PULL_DIRECTION).or_else(|| {
-                (frame.len() >= extended_dir::LEN
-                    && frame[aligned_dir::LEN..extended_dir::PULL_DIRECTION] == [0; 9])
-                    .then(|| direction_at(extended_dir::PULL_DIRECTION))
-                    .flatten()
-            })
-        });
-    let direction = candidates.next()?;
-    if candidates.any(|candidate| candidate != direction) {
-        return None;
+        .filter(|end| *end >= start)
+    else {
+        return Ok(None);
+    };
+    if payload.get(start..=final_frame_start).is_none() {
+        return Ok(None);
     }
-    Some(direction)
+    let direction_at_offset = |offset: usize| {
+        if payload.get(offset..offset + HANDLES.len()) != Some(HANDLES.as_slice()) {
+            return None;
+        }
+        let frame = payload.get(offset..end)?;
+        if frame[aligned_dir::ZERO_AT_8..aligned_dir::ADDRESS] != [0; 4]
+            || frame[aligned_dir::ADDRESS..aligned_dir::ADDRESS + 4] == [0; 4]
+            || frame[16..DIRECTION_FRAME_PREFIX_LEN] != [0; 8]
+        {
+            return None;
+        }
+        let scalar = |relative: usize| {
+            let value = View::f64_le_at(frame, relative)?;
+            value.is_finite().then_some(value)
+        };
+        if !(DIRECTION_FRAME_PREFIX_LEN..aligned_dir::LEN)
+            .step_by(8)
+            .all(|relative| scalar(relative).is_some())
+        {
+            return None;
+        }
+        let direction_at = |relative: usize| {
+            let direction = Vector3::new(
+                View::f64_le_at(frame, relative)?,
+                View::f64_le_at(frame, relative + 8)?,
+                View::f64_le_at(frame, relative + 16)?,
+            );
+            UnitVector3::new(direction).map(FeatureDirection3::from_unit_without_small_components)
+        };
+        direction_at(aligned_dir::PULL_DIRECTION).or_else(|| {
+            (frame.len() >= extended_dir::LEN
+                && frame[aligned_dir::LEN..extended_dir::PULL_DIRECTION] == [0; 9])
+                .then(|| direction_at(extended_dir::PULL_DIRECTION))
+                .flatten()
+        })
+    };
+    // Each offset reads one bounded frame; the search charges the offsets it
+    // visits and stops at the first disagreeing direction.
+    let mut offsets = start..=final_frame_start;
+    let Some(direction) = ctx.find_map(
+        &mut offsets,
+        |offset| Ok(direction_at_offset(offset)),
+        "scan SLDPRT draft directions",
+    )?
+    else {
+        return Ok(None);
+    };
+    let disagrees = ctx.any_by(
+        &mut offsets,
+        |offset| Ok(direction_at_offset(offset).is_some_and(|candidate| candidate != direction)),
+        "scan SLDPRT draft directions",
+    )?;
+    Ok((!disagrees).then_some(direction))
 }
 
 pub(super) fn draft_operand_candidates(
@@ -455,24 +582,22 @@ pub(super) fn draft_operand_candidates(
     lane: &FeatureInputLane,
 ) -> Result<Vec<(String, DraftOperands)>, CodecError> {
     const OPERATION: &str = "collect SLDPRT draft operand candidates";
-    const NAME_OPERATION: &str = "scan SLDPRT draft feature names";
-    let name_scan_work = u64::try_from(lane.names.len())
-        .ok()
-        .and_then(|count| count.checked_mul(2))
-        .ok_or_else(|| ctx.refuse_codec_limit(NAME_OPERATION, u64::MAX - 1, u64::MAX))?;
+    let object_names = ObjectNames::new(ctx, lane)?;
+    let mut storage = ctx.reserve_scoped(0, OPERATION)?;
     let mut objects = Vec::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        ctx.charge_work(1, OPERATION)?;
-        ctx.charge_work(name_scan_work, NAME_OPERATION)?;
-        if let Some(name) = feature_object_name(feature, lane) {
-            ctx.reserve_vec(&mut objects, 1, OPERATION)?;
-            objects.push((name.offset, feature));
+    for history in ctx.admit_iter(histories, OPERATION)? {
+        for feature in ctx.admit_iter(&history.features, OPERATION)? {
+            if let Some(name) = object_names.of(ctx, feature)? {
+                storage.with_storage(|| {
+                    ctx.push_vec(&mut objects, (name.offset, feature), OPERATION)
+                })?;
+            }
         }
     }
     ctx.sort_unstable_by(&mut objects, |value| &value.0, Ord::cmp, OPERATION)?;
+    let plane_reference_token = unique_declared_plane_reference_token(ctx, lane)?;
     let mut candidates = Vec::new();
-    for (index, (start, feature)) in objects.iter().enumerate() {
-        ctx.charge_work(1, OPERATION)?;
+    for (index, (start, feature)) in ctx.admit_iter(&objects, OPERATION)?.enumerate() {
         let Ok(start) = usize::try_from(*start) else {
             continue;
         };
@@ -480,12 +605,11 @@ pub(super) fn draft_operand_candidates(
             .get(index + 1)
             .and_then(|(offset, _)| usize::try_from(*offset).ok())
             .unwrap_or(lane.native_payload.len());
-        if let Some(operands) = draft_operands(ctx, feature, lane, start, end)? {
-            let mut id = String::new();
-            ctx.try_reserve_retained_text(&mut id, feature.id.len(), OPERATION)?;
-            id.push_str(&feature.id);
-            ctx.reserve_vec(&mut candidates, 1, OPERATION)?;
-            candidates.push((id, operands));
+        if let Some(operands) =
+            draft_operands(ctx, feature, lane, plane_reference_token, start, end)?
+        {
+            let id = ctx.copy_retained_text(&feature.id, OPERATION)?;
+            ctx.push_vec(&mut candidates, (id, operands), OPERATION)?;
         }
     }
     Ok(candidates)
@@ -496,7 +620,7 @@ mod tests {
     use super::super::selections::COMPACT_EDGE_VECTOR_MARKER;
     use super::{
         compact_draft_selection_at, draft_operands, draft_plane_reference_at,
-        unique_draft_direction as typed_unique_draft_direction, DraftAnchor,
+        unique_draft_direction, DraftAnchor,
     };
     use crate::layout::draft_extended_direction_frame as extended_dir;
     use crate::records::FeatureInputLane;
@@ -505,13 +629,32 @@ mod tests {
     use crate::records::{Feature, FeatureHistory, FeatureInputClass, FeatureInputName};
     use cadmpeg_core::decode::u64_from_index;
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureId, FeatureOperation};
+
+    fn collection_refusal_at(
+        operation: &str,
+        history: &FeatureHistory,
+        lane: &FeatureInputLane,
+    ) -> cadmpeg_core::CodecError {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                    &lane.native_payload,
+                    &arena,
+                    &policy,
+                )
+                .unwrap();
+                super::draft_operand_candidates(&ctx, std::slice::from_ref(history), lane)
+            },
+        )
+    }
+
     use cadmpeg_ir::math::Vector3;
     use std::collections::BTreeMap;
-
-    fn unique_draft_direction(payload: &[u8], start: usize, end: usize) -> Option<Vector3> {
-        typed_unique_draft_direction(payload, start, end)
-            .map(cadmpeg_ir::features::FeatureDirection3::get)
-    }
 
     fn component(instance: u16, source: u32, identity: u32, local_id: u32) -> Vec<u8> {
         let mut bytes = instance.to_le_bytes().to_vec();
@@ -603,46 +746,24 @@ mod tests {
 
     #[test]
     fn draft_operand_candidates_refuses_collection_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
         let (history, lane) = named_draft_fixture();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy)
-            .expect("test context");
-        let error = super::draft_operand_candidates(&ctx, &[history], &lane)
-            .expect_err("draft object index exceeds collection limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "collect SLDPRT draft operand candidates")
-        );
+        collection_refusal_at("collect SLDPRT draft operand candidates", &history, &lane);
     }
 
     #[test]
-    fn draft_operand_candidates_refuses_name_scan_work_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
-        let (history, lane) = named_draft_fixture();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy)
-            .expect("test context");
-        let error = super::draft_operand_candidates(&ctx, &[history], &lane)
-            .expect_err("draft name scan exceeds work limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "scan SLDPRT draft feature names")
-        );
+    fn draft_operand_candidates_refuses_name_index_work_limit() {
+        let (mut history, lane) = named_draft_fixture();
+        crate::test_support::work_refusal_at("index SLDPRT object names by id", |ctx| {
+            super::draft_operand_candidates(ctx, std::slice::from_ref(&history), &lane)
+        });
+        history.features[0].source_id = None;
+        crate::test_support::work_refusal_at("index SLDPRT object names by text", |ctx| {
+            super::draft_operand_candidates(ctx, std::slice::from_ref(&history), &lane)
+        });
     }
 
     #[test]
     fn draft_operand_candidates_refuses_declared_reference_collection_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
         let token = 0x8096;
         let mut payload = vec![0; 64];
         let object_start = payload.len();
@@ -690,18 +811,7 @@ mod tests {
             configurations: Vec::new(),
             features: vec![draft_feature()],
         };
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy)
-            .expect("test context");
-        let error = super::draft_operand_candidates(&ctx, &[history], &lane)
-            .expect_err("declared draft references exceed collection limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "collect SLDPRT declared draft references")
-        );
+        collection_refusal_at("collect SLDPRT declared draft references", &history, &lane);
     }
 
     fn compact_selection(role: u8, paths: &[&[(u16, u32, u32, u32)]]) -> Vec<u8> {
@@ -748,34 +858,23 @@ mod tests {
 
     #[test]
     fn compact_draft_selection_refuses_path_scan_work_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
         let mut payload = vec![0; 64];
         let marker = payload.len() + 12;
         payload.extend(compact_selection(2, &[&[(0x8083, 80, 900, 1)]]));
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 64;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("test context");
-        let error = compact_draft_selection_at(
-            &ctx,
-            &payload,
-            marker,
-            "collect SLDPRT compact draft paths",
-        )
-        .expect_err("compact draft path scan exceeds work limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "scan SLDPRT compact draft path lengths")
-        );
+        let error =
+            crate::test_support::work_refusal_at("decode SLDPRT mixed component path", |ctx| {
+                compact_draft_selection_at(
+                    ctx,
+                    &payload,
+                    marker,
+                    "collect SLDPRT compact draft paths",
+                )
+            });
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
     }
 
     #[test]
     fn draft_operand_candidates_refuses_compact_record_collection_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
         let mut payload = vec![0; 64];
         let object_start = payload.len();
         payload.extend(compact_selection(2, &[&[(0x8083, 80, 900, 1)]]));
@@ -810,18 +909,7 @@ mod tests {
             configurations: Vec::new(),
             features: vec![draft_feature()],
         };
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy)
-            .expect("test context");
-        let error = super::draft_operand_candidates(&ctx, &[history], &lane)
-            .expect_err("compact draft records exceed collection limit");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "collect SLDPRT compact draft records")
-        );
+        collection_refusal_at("collect SLDPRT compact draft records", &history, &lane);
     }
 
     fn aligned_direction(direction: [f64; 3]) -> Vec<u8> {
@@ -871,8 +959,17 @@ mod tests {
             extended_dir::LEN,
             "named fields define the fixed frame length"
         );
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &payload,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("test context");
         assert_eq!(
-            unique_draft_direction(&payload, frame, end),
+            unique_draft_direction(&ctx, &payload, frame, end)
+                .expect("draft direction query")
+                .map(cadmpeg_ir::features::FeatureDirection3::get),
             Some(Vector3::new(0.0, -1.0, 0.0))
         );
     }
@@ -938,7 +1035,9 @@ mod tests {
         assert_eq!(parting_paths.len(), 2);
         assert_eq!(parsed_parting_end, parting_selection_end);
         assert_eq!(
-            unique_draft_direction(&lane.native_payload, parsed_parting_end, face_marker),
+            unique_draft_direction(&ctx, &lane.native_payload, parsed_parting_end, face_marker)
+                .expect("draft direction query")
+                .map(cadmpeg_ir::features::FeatureDirection3::get),
             Some(Vector3::new(0.0, -1.0, 0.0))
         );
         assert_eq!(
@@ -955,9 +1054,16 @@ mod tests {
             2
         );
 
-        let operands = draft_operands(&ctx, &feature, &lane, object_start, object_end)
-            .expect("draft parse")
-            .expect("compact parting-line draft operands");
+        let operands = draft_operands(
+            &ctx,
+            &feature,
+            &lane,
+            super::unique_declared_plane_reference_token(&ctx, &lane).unwrap(),
+            object_start,
+            object_end,
+        )
+        .expect("draft parse")
+        .expect("compact parting-line draft operands");
         assert!(matches!(operands.anchor, DraftAnchor::PartingTool(ref paths) if paths.len() == 2));
         assert_eq!(operands.faces.len(), 2);
         assert_eq!(operands.pull_direction.get(), Vector3::new(0.0, -1.0, 0.0));
@@ -1029,12 +1135,21 @@ mod tests {
                 .expect("neutral-plane parse")
                 .expect("neutral-plane record");
         assert_eq!(
-            unique_draft_direction(&lane.native_payload, neutral.2, first_face),
+            unique_draft_direction(&ctx, &lane.native_payload, neutral.2, first_face)
+                .expect("draft direction query")
+                .map(cadmpeg_ir::features::FeatureDirection3::get),
             Some(Vector3::new(0.0, 0.0, 1.0))
         );
-        let operands = draft_operands(&ctx, &feature, &lane, object_start, class_offset)
-            .expect("draft parse")
-            .expect("complete draft operands");
+        let operands = draft_operands(
+            &ctx,
+            &feature,
+            &lane,
+            super::unique_declared_plane_reference_token(&ctx, &lane).unwrap(),
+            object_start,
+            class_offset,
+        )
+        .expect("draft parse")
+        .expect("complete draft operands");
         assert!(matches!(
             operands.anchor,
             DraftAnchor::NeutralPlane(ref path) if path.last().unwrap().local_id == Some(3)
@@ -1046,11 +1161,16 @@ mod tests {
         let mut malformed = lane.clone();
         malformed.native_payload[object_start + 15..object_start + 19]
             .copy_from_slice(&103u32.to_le_bytes());
-        assert!(
-            draft_operands(&ctx, &feature, &malformed, object_start, class_offset)
-                .expect("malformed draft parse")
-                .is_none()
-        );
+        assert!(draft_operands(
+            &ctx,
+            &feature,
+            &malformed,
+            super::unique_declared_plane_reference_token(&ctx, &malformed).unwrap(),
+            object_start,
+            class_offset,
+        )
+        .expect("malformed draft parse")
+        .is_none());
 
         let history = FeatureHistory {
             id: "history".into(),

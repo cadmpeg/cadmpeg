@@ -1,43 +1,150 @@
 //! Boolean operation codes for extrusion, revolution and sweep.
 
 use super::is_class_token;
-use super::scalars::feature_object_name;
+use super::scalars::{lane_object_names, NameLookup, ObjectNames};
+use super::{classes_within, sorted_classes};
 use crate::classification::{classify, FeatureClass};
 use crate::layout::extrusion_sparse_operation_trailer as sparse_tr;
 use crate::records::ObjectId;
-use crate::records::{Feature, FeatureInputLane, FeatureInputName};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use crate::records::{
+    Feature, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
+};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureOperation};
 use std::collections::HashMap;
-use std::hash::Hash;
 
-fn collect_index<K: Eq + Hash + cadmpeg_core::decode::cost::DecodeCost, V>(
+/// Each history feature by id; a repeated id keeps its last feature.
+fn history_features_by_id<'h>(
     ctx: &DecodeContext<'_>,
-    items: impl IntoIterator<Item = (K, V)>,
+    storage: &mut ScopedReservation<'_>,
+    histories: &'h [FeatureHistory],
     operation: &'static str,
-) -> Result<HashMap<K, V>, CodecError> {
+) -> Result<HashMap<&'h str, &'h Feature>, CodecError> {
     let mut index = HashMap::new();
-    for (key, value) in items {
-        ctx.charge_work(1, operation)?;
-        ctx.insert_hash_map(&mut index, key, value, operation)?;
+    for history in ctx.admit_iter(histories, operation)? {
+        for feature in ctx.admit_iter(&history.features, operation)? {
+            storage.with_storage(|| {
+                ctx.insert_hash_map(&mut index, feature.id.as_str(), feature, operation)
+            })?;
+        }
     }
     Ok(index)
 }
 
-fn copy_retained_string(
+/// One lane's class declarations by the offset of the object name that
+/// directly follows each; the first declaration at an offset wins.
+type DirectClasses<'l> = HashMap<u64, &'l FeatureInputClass>;
+
+fn direct_classes<'l>(
     ctx: &DecodeContext<'_>,
-    value: &str,
+    storage: &mut ScopedReservation<'_>,
+    lanes: &'l [FeatureInputLane],
+) -> Result<Vec<DirectClasses<'l>>, CodecError> {
+    const OPERATION: &str = "index SLDPRT operation classes";
+    let mut indexes = Vec::new();
+    for lane in ctx.admit_iter(lanes, OPERATION)? {
+        let mut index = HashMap::new();
+        for class in ctx.admit_iter(&lane.classes, OPERATION)? {
+            let Some(name_offset) = class
+                .offset
+                .checked_add(6)
+                .and_then(|offset| offset.checked_add(u64_from_index(class.name.len())))
+            else {
+                continue;
+            };
+            storage.with_storage(|| {
+                ctx.entry_hash_map(&mut index, name_offset, OPERATION)
+                    .map(|slot| {
+                        slot.or_insert(class);
+                    })
+            })?;
+        }
+        storage.with_storage(|| ctx.push_vec(&mut indexes, index, OPERATION))?;
+    }
+    Ok(indexes)
+}
+
+/// The indexes every operation binder reads, built once per call.
+struct OperationIndexes<'h, 'l, 'ctx> {
+    history_by_id: HashMap<&'h str, &'h Feature>,
+    direct_classes: Vec<DirectClasses<'l>>,
+    object_names: Vec<ObjectNames<'l, 'ctx>>,
+}
+
+impl<'h, 'l, 'ctx> OperationIndexes<'h, 'l, 'ctx> {
+    fn new(
+        ctx: &'ctx DecodeContext<'_>,
+        storage: &mut ScopedReservation<'_>,
+        histories: &'h [FeatureHistory],
+        lanes: &'l [FeatureInputLane],
+    ) -> Result<Self, CodecError> {
+        Ok(Self {
+            history_by_id: history_features_by_id(
+                ctx,
+                storage,
+                histories,
+                "index SLDPRT operation history",
+            )?,
+            direct_classes: direct_classes(ctx, storage, lanes)?,
+            object_names: lane_object_names(ctx, storage, lanes)?,
+        })
+    }
+
+    fn history(
+        &self,
+        ctx: &DecodeContext<'_>,
+        native_ref: Option<&str>,
+    ) -> Result<Option<&'h Feature>, CodecError> {
+        let Some(native) = native_ref else {
+            return Ok(None);
+        };
+        Ok(ctx
+            .get_hash_map(
+                &self.history_by_id,
+                native,
+                "find SLDPRT operation history feature",
+            )?
+            .copied())
+    }
+}
+
+/// The one operation every lane that projects one agrees on. `project`
+/// receives each lane with its direct classes and the lane name of `feature`.
+fn agreed_lane_operation<T: Copy + PartialEq>(
+    ctx: &DecodeContext<'_>,
+    lanes: &[FeatureInputLane],
+    indexes: &OperationIndexes<'_, '_, '_>,
+    feature: &Feature,
+    mut project: impl FnMut(
+        &FeatureInputLane,
+        &DirectClasses<'_>,
+        &FeatureInputName,
+    ) -> Result<Option<T>, CodecError>,
     operation: &'static str,
-) -> Result<String, CodecError> {
-    let copy_work = cadmpeg_core::decode::u64_from_index(value.len())
-        .checked_mul(4)
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    ctx.charge_work(copy_work, operation)?;
-    let mut copy = String::new();
-    ctx.try_reserve_retained_text(&mut copy, value.len(), operation)?;
-    copy.push_str(value);
-    Ok(copy)
+) -> Result<Option<T>, CodecError> {
+    let mut step = |((lane, direct), names): (
+        (&FeatureInputLane, &DirectClasses<'_>),
+        &ObjectNames<'_, '_>,
+    )| {
+        match names.of(ctx, feature)? {
+            Some(name) => project(lane, direct, name),
+            None => Ok(None),
+        }
+    };
+    let mut remaining = lanes
+        .iter()
+        .zip(&indexes.direct_classes)
+        .zip(&indexes.object_names);
+    let Some(first) = ctx.find_map(&mut remaining, &mut step, operation)? else {
+        return Ok(None);
+    };
+    let disagrees = ctx.any_by(
+        &mut remaining,
+        |lane| Ok(step(lane)?.is_some_and(|candidate| candidate != first)),
+        operation,
+    )?;
+    Ok((!disagrees).then_some(first))
 }
 
 pub(crate) const SPLIT_LINE_MODE_PROPERTY: &str = "SplitLineMode";
@@ -65,17 +172,51 @@ fn consistent_operation_code(
     Some(first)
 }
 
+#[cfg(test)]
 fn feature_operation_code(
     lane: &FeatureInputLane,
     name: &FeatureInputName,
     class: Option<&str>,
     form_padding: Option<usize>,
 ) -> Option<u32> {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut storage = ctx.reserve_scoped(0, "test operation classes").unwrap();
+    let direct = direct_classes(&ctx, &mut storage, std::slice::from_ref(lane)).unwrap();
+    operation_code(&ctx, lane, &direct[0], name, class, form_padding).unwrap()
+}
+
+fn operation_code(
+    ctx: &DecodeContext<'_>,
+    lane: &FeatureInputLane,
+    direct_classes: &DirectClasses<'_>,
+    name: &FeatureInputName,
+    class: Option<&str>,
+    form_padding: Option<usize>,
+) -> Result<Option<u32>, CodecError> {
+    let direct_class = ctx
+        .get_hash_map(
+            direct_classes,
+            &name.offset,
+            "find SLDPRT operation direct class",
+        )?
+        .copied();
+    Ok(direct_operation_code(
+        lane,
+        direct_class,
+        name,
+        class,
+        form_padding,
+    ))
+}
+
+fn direct_operation_code(
+    lane: &FeatureInputLane,
+    direct_class: Option<&FeatureInputClass>,
+    name: &FeatureInputName,
+    class: Option<&str>,
+    form_padding: Option<usize>,
+) -> Option<u32> {
     let name_offset = usize::try_from(name.offset).ok()?;
-    let direct_class = lane
-        .classes
-        .iter()
-        .find(|class| class.offset + 6 + u64_from_index(class.name.len()) == name.offset);
     if let Some(class) = direct_class {
         let class_offset = usize::try_from(class.offset).ok()?;
         if lane
@@ -162,62 +303,70 @@ fn extrusion_operation(class: Option<&str>, code: u32) -> Option<BooleanOp> {
 pub(crate) fn bind_feature_operations(
     ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
-    histories: &[crate::records::FeatureHistory],
+    histories: &[FeatureHistory],
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
 ) -> Result<(), CodecError> {
-    bind_extrusion_operations(ctx, features, histories, lanes, form_padding)?;
-    bind_revolution_operations(ctx, features, histories, lanes, form_padding)?;
-    bind_sweep_operations(ctx, features, histories, lanes, form_padding)
+    let mut storage = ctx.reserve_scoped(0, "SLDPRT operation indexes")?;
+    let indexes = OperationIndexes::new(ctx, &mut storage, histories, lanes)?;
+    bind_extrusion_operations_with(ctx, features, &indexes, lanes, form_padding)?;
+    bind_revolution_operations_with(ctx, features, &indexes, lanes, form_padding)?;
+    bind_sweep_operations_with(ctx, features, &indexes, lanes, form_padding)
 }
 
 /// Project revolution Boolean form words from declared and compact objects.
 pub(crate) fn bind_revolution_operations(
     ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
-    histories: &[crate::records::FeatureHistory],
+    histories: &[FeatureHistory],
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
 ) -> Result<(), CodecError> {
-    let history_features = collect_index(
-        ctx,
-        histories
-            .iter()
-            .flat_map(|history| &history.features)
-            .map(|feature| (feature.id.as_str(), feature)),
-        "index SLDPRT revolution history",
-    )?;
-    for feature in features {
-        let native_ref = feature.native_ref.as_deref();
-        feature.evaluation.edit(|definition, _| 'feature_edit: {
-            let FeatureDefinition::Operation(FeatureOperation::Revolve { op, .. }) = definition
-            else {
-                break 'feature_edit;
-            };
-            if *op != BooleanOp::Unresolved {
-                break 'feature_edit;
-            }
-            let Some(history) = native_ref.and_then(|native| history_features.get(native).copied())
-            else {
-                break 'feature_edit;
-            };
-            let mut operations = lanes.iter().filter_map(|lane| {
-                let name = feature_object_name(history, lane)?;
-                revolution_operation(
-                    history.input_class.as_deref(),
-                    feature_operation_code(
-                        lane,
-                        name,
-                        history.input_class.as_deref(),
-                        form_padding,
-                    )?,
+    let mut storage = ctx.reserve_scoped(0, "SLDPRT operation indexes")?;
+    let indexes = OperationIndexes::new(ctx, &mut storage, histories, lanes)?;
+    bind_revolution_operations_with(ctx, features, &indexes, lanes, form_padding)
+}
+
+fn bind_revolution_operations_with(
+    ctx: &DecodeContext<'_>,
+    features: &mut [cadmpeg_ir::features::Feature],
+    indexes: &OperationIndexes<'_, '_, '_>,
+    lanes: &[FeatureInputLane],
+    form_padding: Option<usize>,
+) -> Result<(), CodecError> {
+    for feature in ctx.admit_iter(features, "bind SLDPRT revolution operations")? {
+        if !matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Revolve {
+                op: BooleanOp::Unresolved,
+                ..
+            })
+        ) {
+            continue;
+        }
+        let Some(history) = indexes.history(ctx, feature.native_ref.as_deref())? else {
+            continue;
+        };
+        let class = history.input_class.as_deref();
+        let Some(resolved) = agreed_lane_operation(
+            ctx,
+            lanes,
+            indexes,
+            history,
+            |lane, direct, name| {
+                Ok(
+                    operation_code(ctx, lane, direct, name, class, form_padding)?
+                        .and_then(|code| revolution_operation(class, code)),
                 )
-            });
-            let Some(first) = operations.next() else {
-                break 'feature_edit;
-            };
-            if operations.all(|operation| operation == first) {
-                *op = first;
+            },
+            "bind SLDPRT revolution operations",
+        )?
+        else {
+            continue;
+        };
+        feature.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::Revolve { op, .. }) = definition {
+                *op = resolved;
             }
         });
     }
@@ -228,77 +377,78 @@ pub(crate) fn bind_revolution_operations(
 pub(crate) fn bind_sweep_operations(
     ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
-    histories: &[crate::records::FeatureHistory],
+    histories: &[FeatureHistory],
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
 ) -> Result<(), CodecError> {
-    let history_features = collect_index(
-        ctx,
-        histories
-            .iter()
-            .flat_map(|history| &history.features)
-            .map(|feature| (feature.id.as_str(), feature)),
-        "index SLDPRT sweep history",
-    )?;
-    for feature in features {
-        let native_ref = feature.native_ref.as_deref();
-        feature.evaluation.edit(|definition, _| 'feature_edit: {
+    let mut storage = ctx.reserve_scoped(0, "SLDPRT operation indexes")?;
+    let indexes = OperationIndexes::new(ctx, &mut storage, histories, lanes)?;
+    bind_sweep_operations_with(ctx, features, &indexes, lanes, form_padding)
+}
+
+fn bind_sweep_operations_with(
+    ctx: &DecodeContext<'_>,
+    features: &mut [cadmpeg_ir::features::Feature],
+    indexes: &OperationIndexes<'_, '_, '_>,
+    lanes: &[FeatureInputLane],
+    form_padding: Option<usize>,
+) -> Result<(), CodecError> {
+    for feature in ctx.admit_iter(features, "bind SLDPRT sweep operations")? {
+        let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) =
+            feature.evaluation.definition()
+        else {
+            continue;
+        };
+        if !matches!(
+            shape.mode(),
+            cadmpeg_ir::features::SweepMode::Unresolved { .. }
+        ) {
+            continue;
+        }
+        let Some(history) = indexes.history(ctx, feature.native_ref.as_deref())? else {
+            continue;
+        };
+        let class = history.input_class.as_deref();
+        let Some(resolved) = agreed_lane_operation(
+            ctx,
+            lanes,
+            indexes,
+            history,
+            |lane, direct, name| {
+                Ok(
+                    match (
+                        class,
+                        operation_code(ctx, lane, direct, name, class, form_padding)?,
+                    ) {
+                        (Some("moSweep_c"), Some(15)) => Some(BooleanOp::Join),
+                        _ => None,
+                    },
+                )
+            },
+            "bind SLDPRT sweep operations",
+        )?
+        else {
+            continue;
+        };
+        let op = match resolved {
+            BooleanOp::Join => cadmpeg_ir::features::SolidSweepOperation::Join,
+            BooleanOp::Cut => cadmpeg_ir::features::SolidSweepOperation::Cut,
+            BooleanOp::Intersect => cadmpeg_ir::features::SolidSweepOperation::Intersect,
+            BooleanOp::NewBody => cadmpeg_ir::features::SolidSweepOperation::NewBody,
+            BooleanOp::Unresolved => continue,
+        };
+        feature.evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) = definition
             else {
-                break 'feature_edit;
+                return;
             };
-            'sweep_mode: {
-                if !matches!(
-                    shape.mode(),
-                    cadmpeg_ir::features::SweepMode::Unresolved { .. }
-                ) {
-                    break 'sweep_mode;
-                }
-                let Some(history) =
-                    native_ref.and_then(|native| history_features.get(native).copied())
-                else {
-                    break 'sweep_mode;
-                };
-                let mut operations = lanes.iter().filter_map(|lane| {
-                    let name = feature_object_name(history, lane)?;
-                    match (
-                        history.input_class.as_deref(),
-                        feature_operation_code(
-                            lane,
-                            name,
-                            history.input_class.as_deref(),
-                            form_padding,
-                        )?,
-                    ) {
-                        (Some("moSweep_c"), 15) => Some(BooleanOp::Join),
-                        _ => None,
-                    }
-                });
-                let Some(first) = operations.next() else {
-                    break 'sweep_mode;
-                };
-                if operations.all(|operation| operation == first) {
-                    let op = match first {
-                        BooleanOp::Join => cadmpeg_ir::features::SolidSweepOperation::Join,
-                        BooleanOp::Cut => cadmpeg_ir::features::SolidSweepOperation::Cut,
-                        BooleanOp::Intersect => {
-                            cadmpeg_ir::features::SolidSweepOperation::Intersect
-                        }
-                        BooleanOp::NewBody => cadmpeg_ir::features::SolidSweepOperation::NewBody,
-                        BooleanOp::Unresolved => break 'sweep_mode,
-                    };
-                    // The lane always names a solid result, which admits every
-                    // cross-section, so the shape is built once from the
-                    // sections it already holds.
-                    let (section, sections) = std::mem::replace(
-                        shape,
-                        cadmpeg_ir::features::SweepShape::unresolved(None),
-                    )
+            // The lane always names a solid result, which admits every
+            // cross-section, so the shape is built once from the sections it
+            // already holds.
+            let (section, sections) =
+                std::mem::replace(shape, cadmpeg_ir::features::SweepShape::unresolved(None))
                     .into_sections();
-                    *shape =
-                        cadmpeg_ir::features::SweepShape::solid_sections(op, section, sections);
-                }
-            }
+            *shape = cadmpeg_ir::features::SweepShape::solid_sections(op, section, sections);
         });
     }
     Ok(())
@@ -306,19 +456,25 @@ pub(crate) fn bind_sweep_operations(
 
 /// Inline extrusion trailer fields: the family word and operation byte.
 pub(super) fn feature_inline_operation_fields(
+    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     name: &FeatureInputName,
-) -> Option<(u16, u8)> {
-    let name_offset = usize::try_from(name.offset).ok()?;
-    let name_bytes = name.value.encode_utf16().count().checked_mul(2)?;
-    let trailer = name_offset.checked_add(6 + name_bytes)?;
-    let bytes = lane.native_payload.get(trailer..trailer + 19)?;
-    let terminated = bytes[sparse_tr::SPARSE_ZERO_PREFIX..19] == [0xff, 0xfe, 0xff]
-        || lane
-            .native_payload
-            .get(trailer + sparse_tr::SPARSE_ZERO_PREFIX..trailer + sparse_tr::LEN)
-            .is_some_and(|suffix| {
-                (suffix[..sparse_tr::SPARSE_MARKER - sparse_tr::SPARSE_ZERO_PREFIX] == [0; 6]
+) -> Result<Option<(u16, u8)>, CodecError> {
+    let name_units = ctx
+        .admit_iter(name.value.as_str(), "measure SLDPRT inline operation name")?
+        .encode_utf16()
+        .count();
+    Ok((|| {
+        let name_offset = usize::try_from(name.offset).ok()?;
+        let name_bytes = name_units.checked_mul(2)?;
+        let trailer = name_offset.checked_add(6 + name_bytes)?;
+        let bytes = lane.native_payload.get(trailer..trailer + 19)?;
+        let terminated = bytes[sparse_tr::SPARSE_ZERO_PREFIX..19] == [0xff, 0xfe, 0xff]
+            || lane
+                .native_payload
+                .get(trailer + sparse_tr::SPARSE_ZERO_PREFIX..trailer + sparse_tr::LEN)
+                .is_some_and(|suffix| {
+                    (suffix[..sparse_tr::SPARSE_MARKER - sparse_tr::SPARSE_ZERO_PREFIX] == [0; 6]
                     && suffix[sparse_tr::SPARSE_MARKER - sparse_tr::SPARSE_ZERO_PREFIX
                         ..sparse_tr::FIRST_TOKEN - sparse_tr::SPARSE_ZERO_PREFIX]
                         == [1, 0]
@@ -354,81 +510,92 @@ pub(super) fn feature_inline_operation_fields(
                         && suffix[8..18] == [0; 10]
                         && suffix[18..20] != [0, 0]
                         && suffix[20..24] == [0; 4])
-            });
-    if bytes[sparse_tr::ZERO_HEADER..sparse_tr::FAMILY] != [0; 4]
-        || bytes[sparse_tr::OBJECT_ID..sparse_tr::ZERO_AFTER_OBJECT]
-            != name.object_id.and_then(ObjectId::value)?.to_le_bytes()
-        || bytes[sparse_tr::ZERO_AFTER_OBJECT..sparse_tr::SPARSE_ZERO_PREFIX] != [0; 4]
-        || !terminated
-        || !matches!(bytes[sparse_tr::OPERATION], 0 | 2)
-    {
-        return None;
-    }
-    Some((
-        View::u16_le_at(bytes, sparse_tr::FAMILY)?,
-        bytes[sparse_tr::OPERATION],
-    ))
+                });
+        if bytes[sparse_tr::ZERO_HEADER..sparse_tr::FAMILY] != [0; 4]
+            || bytes[sparse_tr::OBJECT_ID..sparse_tr::ZERO_AFTER_OBJECT]
+                != name.object_id.and_then(ObjectId::value)?.to_le_bytes()
+            || bytes[sparse_tr::ZERO_AFTER_OBJECT..sparse_tr::SPARSE_ZERO_PREFIX] != [0; 4]
+            || !terminated
+            || !matches!(bytes[sparse_tr::OPERATION], 0 | 2)
+        {
+            return None;
+        }
+        Some((
+            View::u16_le_at(bytes, sparse_tr::FAMILY)?,
+            bytes[sparse_tr::OPERATION],
+        ))
+    })())
 }
 
 /// Project an inline Boolean operation from a recognized complete family.
-fn feature_inline_operation(lane: &FeatureInputLane, name: &FeatureInputName) -> Option<BooleanOp> {
-    match feature_inline_operation_fields(lane, name)? {
-        (0x0140, 0) => Some(BooleanOp::Join),
-        (0x01ca, 0 | 2) => Some(BooleanOp::Cut),
+fn feature_inline_operation(
+    ctx: &DecodeContext<'_>,
+    lane: &FeatureInputLane,
+    name: &FeatureInputName,
+) -> Result<Option<BooleanOp>, CodecError> {
+    Ok(match feature_inline_operation_fields(ctx, lane, name)? {
+        Some((0x0140, 0)) => Some(BooleanOp::Join),
+        Some((0x01ca, 0 | 2)) => Some(BooleanOp::Cut),
         _ => None,
-    }
+    })
 }
 
 /// Project the feature-input operation discriminator onto typed extrusions.
 pub(crate) fn bind_extrusion_operations(
     ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
-    histories: &[crate::records::FeatureHistory],
+    histories: &[FeatureHistory],
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
 ) -> Result<(), CodecError> {
-    let history_by_id = collect_index(
-        ctx,
-        histories
-            .iter()
-            .flat_map(|history| &history.features)
-            .map(|feature| (feature.id.as_str(), feature)),
-        "index SLDPRT extrusion history",
-    )?;
-    for feature in features {
-        let native_ref = feature.native_ref.as_deref();
-        feature.evaluation.edit(|definition, _| 'feature_edit: {
-            let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) = definition
-            else {
-                break 'feature_edit;
-            };
-            if *op != BooleanOp::Unresolved {
-                break 'feature_edit;
-            }
-            let Some(history) = native_ref.and_then(|native| history_by_id.get(native).copied())
-            else {
-                break 'feature_edit;
-            };
-            let mut operations = lanes.iter().filter_map(|lane| {
-                let name = feature_object_name(history, lane)?;
-                if let Some(operation) = feature_inline_operation(lane, name) {
-                    return Some(operation);
+    let mut storage = ctx.reserve_scoped(0, "SLDPRT operation indexes")?;
+    let indexes = OperationIndexes::new(ctx, &mut storage, histories, lanes)?;
+    bind_extrusion_operations_with(ctx, features, &indexes, lanes, form_padding)
+}
+
+fn bind_extrusion_operations_with(
+    ctx: &DecodeContext<'_>,
+    features: &mut [cadmpeg_ir::features::Feature],
+    indexes: &OperationIndexes<'_, '_, '_>,
+    lanes: &[FeatureInputLane],
+    form_padding: Option<usize>,
+) -> Result<(), CodecError> {
+    for feature in ctx.admit_iter(features, "bind SLDPRT extrusion operations")? {
+        if !matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                op: BooleanOp::Unresolved,
+                ..
+            })
+        ) {
+            continue;
+        }
+        let Some(history) = indexes.history(ctx, feature.native_ref.as_deref())? else {
+            continue;
+        };
+        let class = history.input_class.as_deref();
+        let Some(resolved) = agreed_lane_operation(
+            ctx,
+            lanes,
+            indexes,
+            history,
+            |lane, direct, name| {
+                if let Some(operation) = feature_inline_operation(ctx, lane, name)? {
+                    return Ok(Some(operation));
                 }
-                extrusion_operation(
-                    history.input_class.as_deref(),
-                    feature_operation_code(
-                        lane,
-                        name,
-                        history.input_class.as_deref(),
-                        form_padding,
-                    )?,
+                Ok(
+                    operation_code(ctx, lane, direct, name, class, form_padding)?
+                        .and_then(|code| extrusion_operation(class, code)),
                 )
-            });
-            let Some(first) = operations.next() else {
-                break 'feature_edit;
-            };
-            if operations.all(|operation| operation == first) {
-                *op = first;
+            },
+            "bind SLDPRT extrusion operations",
+        )?
+        else {
+            continue;
+        };
+        feature.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) = definition {
+                *op = resolved;
             }
         });
     }
@@ -447,136 +614,159 @@ pub(crate) fn inherit_configuration_operations(
     ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     base_features: &[cadmpeg_ir::features::Feature],
-    histories: &[crate::records::FeatureHistory],
+    histories: &[FeatureHistory],
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
 ) -> Result<(), CodecError> {
-    let history_by_id = collect_index(
-        ctx,
-        histories
-            .iter()
-            .flat_map(|history| &history.features)
-            .map(|feature| (feature.id.as_str(), feature)),
-        "index SLDPRT configuration history",
-    )?;
-    let base_definitions = collect_index(
-        ctx,
-        base_features
-            .iter()
-            .map(|feature| (&feature.id, feature.evaluation.definition())),
-        "index SLDPRT base definitions",
-    )?;
-    for feature in features {
-        let native_ref = feature.native_ref.as_deref();
-        let feature_id = &feature.id;
-        feature.evaluation.edit(|definition, _| 'feature_edit: {
-            let Some(base_definition) = base_definitions.get(feature_id) else {
-                break 'feature_edit;
-            };
-            let Some(history) = native_ref.and_then(|native| history_by_id.get(native).copied())
-            else {
-                break 'feature_edit;
-            };
-            let operation_kind = match (&*definition, *base_definition) {
-                (
-                    FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }),
-                    FeatureDefinition::Operation(FeatureOperation::Extrude { op: base_op, .. }),
-                ) if *op == BooleanOp::Unresolved && *base_op != BooleanOp::Unresolved => {
-                    OperationKind::Extrusion
-                }
-                (
-                    FeatureDefinition::Operation(FeatureOperation::Revolve { op, .. }),
-                    FeatureDefinition::Operation(FeatureOperation::Revolve { op: base_op, .. }),
-                ) if *op == BooleanOp::Unresolved && *base_op != BooleanOp::Unresolved => {
-                    OperationKind::Revolution
-                }
-                _ => break 'feature_edit,
-            };
-            if lanes
-                .iter()
-                .any(|lane| operation_carrier_present(operation_kind, history, lane, form_padding))
+    const OPERATION: &str = "inherit SLDPRT configuration operations";
+    let mut storage = ctx.reserve_scoped(0, "SLDPRT operation indexes")?;
+    let indexes = OperationIndexes::new(ctx, &mut storage, histories, lanes)?;
+    let mut base_operations = HashMap::new();
+    for feature in ctx.admit_iter(base_features, "index SLDPRT base definitions")? {
+        let base = match feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. })
+                if *op != BooleanOp::Unresolved =>
             {
-                break 'feature_edit;
+                Some((OperationKind::Extrusion, *op))
             }
-            match (definition, operation_kind, *base_definition) {
+            FeatureDefinition::Operation(FeatureOperation::Revolve { op, .. })
+                if *op != BooleanOp::Unresolved =>
+            {
+                Some((OperationKind::Revolution, *op))
+            }
+            _ => None,
+        };
+        storage.with_storage(|| {
+            ctx.insert_hash_map(
+                &mut base_operations,
+                &feature.id,
+                base,
+                "index SLDPRT base definitions",
+            )
+        })?;
+    }
+    for feature in ctx.admit_iter(features, OPERATION)? {
+        let Some(&Some((kind, base_op))) =
+            ctx.get_hash_map(&base_operations, &feature.id, OPERATION)?
+        else {
+            continue;
+        };
+        let unresolved = match (kind, feature.evaluation.definition()) {
+            (
+                OperationKind::Extrusion,
+                FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }),
+            )
+            | (
+                OperationKind::Revolution,
+                FeatureDefinition::Operation(FeatureOperation::Revolve { op, .. }),
+            ) => *op == BooleanOp::Unresolved,
+            _ => false,
+        };
+        if !unresolved {
+            continue;
+        }
+        let Some(history) = indexes.history(ctx, feature.native_ref.as_deref())? else {
+            continue;
+        };
+        if ctx.any_by(
+            lanes
+                .iter()
+                .zip(&indexes.direct_classes)
+                .zip(&indexes.object_names),
+            |((lane, direct), names)| {
+                operation_carrier_present(ctx, kind, history, lane, direct, names, form_padding)
+            },
+            OPERATION,
+        )? {
+            continue;
+        }
+        feature
+            .evaluation
+            .edit(|definition, _| match (kind, definition) {
                 (
-                    FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }),
                     OperationKind::Extrusion,
-                    FeatureDefinition::Operation(FeatureOperation::Extrude { op: base_op, .. }),
+                    FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }),
                 )
                 | (
-                    FeatureDefinition::Operation(FeatureOperation::Revolve { op, .. }),
                     OperationKind::Revolution,
-                    FeatureDefinition::Operation(FeatureOperation::Revolve { op: base_op, .. }),
-                ) if *op == BooleanOp::Unresolved && *base_op != BooleanOp::Unresolved => {
-                    *op = *base_op;
-                }
+                    FeatureDefinition::Operation(FeatureOperation::Revolve { op, .. }),
+                ) => *op = base_op,
                 _ => {}
-            }
-        });
+            });
     }
     Ok(())
 }
 
 fn operation_carrier_present(
+    ctx: &DecodeContext<'_>,
     kind: OperationKind,
     feature: &Feature,
     lane: &FeatureInputLane,
+    direct_classes: &DirectClasses<'_>,
+    object_names: &ObjectNames<'_, '_>,
     form_padding: Option<usize>,
-) -> bool {
-    let source_id = feature.source_value();
-    let mut source_matches = lane.names.iter().filter(|name| {
-        source_id
-            .is_some_and(|source_id| name.object_id.and_then(ObjectId::value) == Some(source_id))
-    });
-    let name = if let Some(first) = source_matches.next() {
-        if source_matches.next().is_some() {
-            return true;
-        }
-        first
-    } else {
-        let mut name_matches = lane.names.iter().filter(|name| name.value == feature.name);
-        let Some(first) = name_matches.next() else {
-            return false;
-        };
-        if name_matches.next().is_some() {
-            return true;
-        }
-        first
+) -> Result<bool, CodecError> {
+    let name = match object_names.lookup(ctx, feature)? {
+        NameLookup::Absent => return Ok(false),
+        NameLookup::Repeated => return Ok(true),
+        NameLookup::One(name) => name,
     };
     if matches!(kind, OperationKind::Extrusion)
-        && feature_inline_operation_fields(lane, name).is_some()
+        && feature_inline_operation_fields(ctx, lane, name)?.is_some()
     {
-        return true;
+        return Ok(true);
     }
-    let Some(code) =
-        feature_operation_code(lane, name, feature.input_class.as_deref(), form_padding)
+    let Some(code) = operation_code(
+        ctx,
+        lane,
+        direct_classes,
+        name,
+        feature.input_class.as_deref(),
+        form_padding,
+    )?
     else {
-        return false;
+        return Ok(false);
     };
-    matches!(kind, OperationKind::Revolution)
+    Ok(matches!(kind, OperationKind::Revolution)
         || !(code == 11
             && matches!(
                 feature.input_class.as_deref(),
                 Some("moExtrusion_c" | "moICE_c" | "moCut_c")
-            ))
+            )))
 }
 
 /// Establish projected split-line mode and source sketch from each
 /// `moPLine_c` feature-input object while native dimension values remain raw.
 pub(crate) fn enrich_history_split_lines(
     ctx: &DecodeContext<'_>,
-    histories: &mut [crate::records::FeatureHistory],
+    histories: &mut [FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
+    const OBSERVATION: &str = "index SLDPRT split-line observations";
+    let mut storage = ctx.reserve_scoped(0, "SLDPRT split-line workspace")?;
     let mut observations = HashMap::<String, (bool, bool)>::new();
-    for lane in lanes {
+    for lane in ctx.admit_iter(lanes, "scan SLDPRT split-line lanes")? {
+        let mut lane_storage = ctx.reserve_scoped(0, "SLDPRT split-line lane workspace")?;
+        let project_classes = sorted_classes(
+            ctx,
+            &mut lane_storage,
+            lane,
+            "moPLineProject_c",
+            "index SLDPRT split-line projection classes",
+        )?;
+        let object_names = ObjectNames::new(ctx, lane)?;
         let mut objects = Vec::new();
-        for feature in histories.iter().flat_map(|history| &history.features) {
-            ctx.charge_work(1, "scan SLDPRT split-line objects")?;
-            if let Some(name) = feature_object_name(feature, lane) {
-                ctx.reserve_vec(&mut objects, 1, "collect SLDPRT split-line objects")?;
-                objects.push((name.offset, feature));
+        for history in ctx.admit_iter(&*histories, "scan SLDPRT split-line objects")? {
+            for feature in ctx.admit_iter(&history.features, "scan SLDPRT split-line objects")? {
+                if let Some(name) = object_names.of(ctx, feature)? {
+                    lane_storage.with_storage(|| {
+                        ctx.push_vec(
+                            &mut objects,
+                            (name.offset, feature),
+                            "collect SLDPRT split-line objects",
+                        )
+                    })?;
+                }
             }
         }
         ctx.sort_unstable_by(
@@ -585,7 +775,10 @@ pub(crate) fn enrich_history_split_lines(
             Ord::cmp,
             "sort SLDPRT split-line objects",
         )?;
-        for (index, (start, feature)) in objects.iter().enumerate() {
+        for (index, (start, feature)) in ctx
+            .admit_iter(&objects, "scan SLDPRT split-line objects")?
+            .enumerate()
+        {
             if feature.input_class.as_deref() != Some("moPLine_c") {
                 continue;
             }
@@ -594,110 +787,135 @@ pub(crate) fn enrich_history_split_lines(
                 .map_or(u64_from_index(lane.native_payload.len()), |(offset, _)| {
                     *offset
                 });
-            let project_classes = lane
-                .classes
-                .iter()
-                .filter(|class| {
-                    class.name == "moPLineProject_c" && class.offset >= *start && class.offset < end
-                })
-                .count();
-            if let Some(observation) = observations.get_mut(&feature.id) {
-                if project_classes == 1 {
+            let projected = classes_within(
+                ctx,
+                &project_classes,
+                *start,
+                end,
+                "find SLDPRT split-line projection classes",
+            )?
+            .len()
+                == 1;
+            if let Some(observation) =
+                ctx.get_mut_hash_map(&mut observations, feature.id.as_str(), OBSERVATION)?
+            {
+                if projected {
                     observation.0 = true;
                 } else {
                     observation.1 = true;
                 }
             } else {
-                ctx.reserve_map(&mut observations, 1, "index SLDPRT split-line observations")?;
-                let key = copy_retained_string(
-                    ctx,
-                    &feature.id,
-                    "retain SLDPRT split-line observation ID",
-                )?;
-                observations.insert(key, (project_classes == 1, project_classes != 1));
+                let key =
+                    storage.with_storage(|| ctx.copy_retained_text(&feature.id, OBSERVATION))?;
+                storage.with_storage(|| {
+                    ctx.insert_hash_map(
+                        &mut observations,
+                        key,
+                        (projected, !projected),
+                        OBSERVATION,
+                    )
+                })?;
             }
         }
     }
-    let mut tools = HashMap::new();
-    for history in histories.iter() {
-        for feature in &history.features {
-            if observations.get(&feature.id) != Some(&(true, false)) {
+    let projected = |ctx: &DecodeContext<'_>, feature: &Feature| {
+        Ok::<_, CodecError>(
+            ctx.get_hash_map(&observations, feature.id.as_str(), OBSERVATION)?
+                == Some(&(true, false)),
+        )
+    };
+    let mut tools = HashMap::<String, String>::new();
+    for history in ctx.admit_iter(&*histories, "resolve SLDPRT split-line sources")? {
+        for feature in ctx.admit_iter(&history.features, "resolve SLDPRT split-line sources")? {
+            if !projected(ctx, feature)? {
                 continue;
             }
-            ctx.charge_work(
-                u64::try_from(history.features.len()).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "resolve SLDPRT split-line source",
-                        u64::MAX - 1,
-                        u64::MAX,
-                    )
-                })?,
-                "resolve SLDPRT split-line source",
-            )?;
-            let Some(tool) = split_line_source_sketch(feature, &history.features) else {
+            let Some(tool) = split_line_source_sketch(ctx, feature, &history.features)? else {
                 continue;
             };
-            let value = copy_retained_string(ctx, &tool.id, "retain SLDPRT split-line tool ID")?;
-            if let Some(existing) = tools.get_mut(&feature.id) {
+            let value = storage.with_storage(|| {
+                ctx.copy_retained_text(&tool.id, "retain SLDPRT split-line tool ID")
+            })?;
+            if let Some(existing) = ctx.get_mut_hash_map(
+                &mut tools,
+                feature.id.as_str(),
+                "index SLDPRT split-line tools",
+            )? {
                 *existing = value;
             } else {
-                ctx.reserve_map(&mut tools, 1, "index SLDPRT split-line tools")?;
-                let key =
-                    copy_retained_string(ctx, &feature.id, "retain SLDPRT split-line tool key")?;
-                tools.insert(key, value);
+                let key = storage.with_storage(|| {
+                    ctx.copy_retained_text(&feature.id, "retain SLDPRT split-line tool key")
+                })?;
+                storage.with_storage(|| {
+                    ctx.insert_hash_map(&mut tools, key, value, "index SLDPRT split-line tools")
+                })?;
             }
         }
     }
-    for feature in histories
-        .iter_mut()
-        .flat_map(|history| &mut history.features)
-    {
-        if observations.get(&feature.id) == Some(&(true, false)) {
-            let mode_key = cadmpeg_core::nonblank_const!(SPLIT_LINE_MODE_PROPERTY);
-            ctx.admit_btree_entry(
-                &feature.properties,
-                &mode_key,
+    for history in ctx.admit_iter(&mut *histories, "bind SLDPRT split-line mode")? {
+        for feature in ctx.admit_iter(&mut history.features, "bind SLDPRT split-line mode")? {
+            if !projected(ctx, feature)? {
+                continue;
+            }
+            ctx.insert_btree_map(
+                &mut feature.properties,
+                cadmpeg_core::nonblank_const!(SPLIT_LINE_MODE_PROPERTY),
+                SPLIT_LINE_PROJECTION_MODE.into(),
                 "bind SLDPRT split-line mode",
             )?;
-            feature
-                .properties
-                .insert(mode_key, SPLIT_LINE_PROJECTION_MODE.into());
-            if let Some(tool) = tools.get(&feature.id) {
-                let tool_key = cadmpeg_core::nonblank_const!(SPLIT_LINE_TOOL_PROPERTY);
-                ctx.admit_btree_entry(
-                    &feature.properties,
-                    &tool_key,
+            if let Some(tool) =
+                ctx.get_hash_map(&tools, feature.id.as_str(), "find SLDPRT split-line tool")?
+            {
+                let tool =
+                    ctx.copy_retained_text(tool, "retain SLDPRT split-line tool property")?;
+                ctx.insert_btree_map(
+                    &mut feature.properties,
+                    cadmpeg_core::nonblank_const!(SPLIT_LINE_TOOL_PROPERTY),
+                    tool,
                     "bind SLDPRT split-line tool",
                 )?;
-                feature.properties.insert(
-                    tool_key,
-                    copy_retained_string(ctx, tool, "retain SLDPRT split-line tool property")?,
-                );
             }
         }
     }
     Ok(())
 }
 
+/// The one earlier profile sketch in the same history that repeats a split
+/// line's parameters.
 fn split_line_source_sketch<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     feature: &Feature,
     history_features: &'a [Feature],
-) -> Option<&'a Feature> {
+) -> Result<Option<&'a Feature>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "find SLDPRT split line source sketch";
     if feature.parameters.is_empty() {
-        return None;
+        return Ok(None);
     }
-    let source = feature.source_value()?;
-    let mut candidates = history_features.iter().filter(|candidate| {
-        candidate.parent == feature.parent
-            && classify(candidate) == Some(FeatureClass::Sketch)
+    let Some(source) = feature.source_value() else {
+        return Ok(None);
+    };
+    let candidate_matches = |candidate: &&'a Feature| {
+        Ok(classify(candidate) == Some(FeatureClass::Sketch)
             && candidate.input_class.as_deref() == Some("moProfileFeature_c")
-            && candidate.parameters == feature.parameters
             && candidate
                 .source_value()
                 .is_some_and(|candidate_source| candidate_source > 0 && candidate_source < source)
-    });
-    let tool = candidates.next()?;
-    candidates.next().is_none().then_some(tool)
+            && ctx.equal(&candidate.parent, &feature.parent, OPERATION)?
+            && crate::records::equal_text_maps(
+                ctx,
+                &candidate.parameters,
+                &feature.parameters,
+                OPERATION,
+            )?)
+    };
+    let mut candidates = history_features.iter();
+    let Some(tool) = ctx.find_by(&mut candidates, &candidate_matches, OPERATION)? else {
+        return Ok(None);
+    };
+    Ok(ctx
+        .find_by(&mut candidates, &candidate_matches, OPERATION)?
+        .is_none()
+        .then_some(tool))
 }
 
 #[cfg(test)]

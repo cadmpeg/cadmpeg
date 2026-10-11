@@ -83,14 +83,7 @@ fn brep_merge_admits_destination_arena_storage_and_moves() {
             panic!("arena merge must retain the caller refusal");
         };
         assert_eq!(limit.dimension, dimension);
-        assert_eq!(
-            limit.operation,
-            if dimension == ResourceDimension::WorkUnits {
-                "merge SLDPRT B-rep arena moves"
-            } else {
-                "merge SLDPRT B-rep arena"
-            }
-        );
+        assert_eq!(limit.operation, "merge SLDPRT B-rep arena");
         assert!(target.points.is_empty());
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
