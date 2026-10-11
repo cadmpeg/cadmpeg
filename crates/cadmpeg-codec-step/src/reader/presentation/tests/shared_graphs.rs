@@ -106,9 +106,8 @@ fn style_domain_query_preserves_collection_refusal() {
     policy.limits.max_collection_items = 3;
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
         let mut index = super::super::StyleDomainIndex::new(ctx).expect("stage index");
-        let error = match index.domain(1, &exchange) {
-            Err(error) => error,
-            Ok(_) => panic!("the second child needs a fourth collection slot"),
+        let Err(error) = index.domain(1, &exchange) else {
+            panic!("the second child needs a fourth collection slot")
         };
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -281,13 +280,10 @@ fn color_resolution_reuses_warning_free_queries_across_styles() {
         let mut claims = std::collections::BTreeSet::new();
         let mut claim_storage = ctx.reserve_scoped(0, "claim fixture").expect("scope");
         for _ in 0..128 {
-            let storage =
-                std::cell::RefCell::new(ctx.reserve_scoped(0, "query fixture").expect("scope"));
             let (query, cached) = shared
                 .resolve(
                     &[2],
                     super::super::StyleDomain::Surface,
-                    &storage,
                     (&mut losses, &reports),
                 )
                 .expect("shared color query");
@@ -360,13 +356,10 @@ fn shared_color_cache_keeps_depth_cutoffs_and_per_style_warnings() {
             assert_eq!(result.is_some(), has_color);
         }
         for _ in 0..2 {
-            let storage =
-                std::cell::RefCell::new(ctx.reserve_scoped(0, "query fixture").expect("scope"));
             assert!(shared
                 .resolve(
                     &[4],
                     super::super::StyleDomain::Surface,
-                    &storage,
                     (&mut losses, &reports),
                 )
                 .expect("invalid side query")
@@ -412,14 +405,11 @@ fn shared_style_color_query_keeps_ordered_local_cache_history() {
                 storage: ctx.reserve_scoped(0, "shared fixture").expect("scope"),
             };
             for references in [[2, 10], [10, 2], [2, 10], [10, 2]] {
-                let storage =
-                    std::cell::RefCell::new(ctx.reserve_scoped(0, "query fixture").expect("scope"));
                 let mut losses = Vec::new();
                 let result = &shared
                     .resolve(
                         &references,
                         super::super::StyleDomain::Surface,
-                        &storage,
                         (&mut losses, &reports),
                     )
                     .expect("ordered query")
@@ -500,13 +490,10 @@ fn distinct_color_roots_reuse_a_shared_subgraph_and_claims() {
         let mut claims = std::collections::BTreeSet::new();
         let mut claim_storage = ctx.reserve_scoped(0, "color claims").expect("scope");
         for id in 100..228 {
-            let storage =
-                std::cell::RefCell::new(ctx.reserve_scoped(0, "query scratch").expect("scope"));
             let (query, cached) = shared
                 .resolve(
                     &[id],
                     super::super::StyleDomain::Surface,
-                    &storage,
                     (&mut losses, &reports),
                 )
                 .expect("distinct root query");
@@ -576,13 +563,10 @@ fn distinct_color_roots_preserve_warnings_and_cycles() {
             )
             .expect("direct query");
             let mut losses = Vec::new();
-            let storage =
-                std::cell::RefCell::new(ctx.reserve_scoped(0, "shared query").expect("scope"));
             let cached = &shared
                 .resolve(
                     &[id],
                     super::super::StyleDomain::Surface,
-                    &storage,
                     (&mut losses, &reports),
                 )
                 .expect("shared query")
@@ -656,13 +640,10 @@ fn distinct_color_roots_share_safe_branches_inside_cycles_and_warnings() {
             let mut claim_storage = ctx.reserve_scoped(0, "claims").expect("scope");
             for id in 100..228 {
                 let mut losses = Vec::new();
-                let storage =
-                    std::cell::RefCell::new(ctx.reserve_scoped(0, "query").expect("scope"));
                 let (query, cached) = shared
                     .resolve(
                         &[id],
                         super::super::StyleDomain::Surface,
-                        &storage,
                         (&mut losses, &reports),
                     )
                     .expect("shared safe branch");
@@ -679,7 +660,7 @@ fn distinct_color_roots_share_safe_branches_inside_cycles_and_warnings() {
                     ),
                     (1.0, 0.0, 0.0)
                 );
-                assert_eq!(candidate.name.as_deref(), Some("red"));
+                assert_eq!(candidate.name, Some(1));
                 assert!(candidate.rank == super::super::SurfaceSideRank::NoUsage);
                 assert_eq!(losses.len(), usize::from(warning));
                 if warning {
@@ -732,10 +713,8 @@ fn distinct_non_surface_queries_preserve_surface_fallback_claim_exclusions() {
             let mut claim_storage = ctx.reserve_scoped(0, "claims").expect("scope");
             for id in [2, 4] {
                 let mut losses = Vec::new();
-                let storage =
-                    std::cell::RefCell::new(ctx.reserve_scoped(0, "query").expect("scope"));
                 let (query, cached) = shared
-                    .resolve(&[id], domain, &storage, (&mut losses, &reports))
+                    .resolve(&[id], domain, (&mut losses, &reports))
                     .expect("curve fallback");
                 assert!(cached.color.is_none());
                 assert_eq!(losses.len(), 1);
@@ -778,10 +757,8 @@ fn complex_non_surface_queries_preserve_surface_fallback_claim_exclusions() {
             let mut claim_storage = ctx.reserve_scoped(0, "claims").expect("scope");
             for id in [3, 4] {
                 let mut losses = Vec::new();
-                let storage =
-                    std::cell::RefCell::new(ctx.reserve_scoped(0, "query").expect("scope"));
                 let (query, cached) = shared
-                    .resolve(&[id], domain, &storage, (&mut losses, &reports))
+                    .resolve(&[id], domain, (&mut losses, &reports))
                     .expect("complex fallback");
                 assert!(cached.color.is_none());
                 assert_eq!(losses.len(), 1);

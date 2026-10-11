@@ -107,7 +107,6 @@ fn clone_drawing_identities(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeSet<String>, CodecError> {
     let mut copy = BTreeSet::new();
-    ctx.charge_work(0, "STEP clone drawing identities traversal")?;
     let mut identity_source = source.iter();
     for _ in 0..identity_source.len() {
         let Some(identity) = ctx.next_charged(
@@ -132,7 +131,6 @@ fn visit_drawing_references(
     match value {
         Value::Reference(id) => visitor(*id)?,
         Value::List(values) => {
-            ctx.charge_work(0, "STEP visit drawing references value traversal")?;
             let mut reference_source = values.iter();
             for _ in 0..reference_source.len() {
                 let Some(value) = ctx.next_charged(
@@ -187,7 +185,6 @@ pub(super) fn decode<'ctx>(
     let mut scratch_storage = ctx.reserve_scoped(0, "STEP decode scratch")?;
     let mut losses = Vec::new();
     let mut candidates = Vec::new();
-    ctx.charge_work(0, "STEP decode traversal")?;
     let mut drawing_record_source = exchange.records().iter();
     for _ in 0..drawing_record_source.len() {
         let Some((&id, record)) =
@@ -240,7 +237,6 @@ pub(super) fn decode<'ctx>(
     }
 
     let mut drawing_ids = BTreeSet::new();
-    ctx.charge_work(0, "STEP decode traversal")?;
     let mut drawing_id_source = candidates.iter();
     for _ in 0..drawing_id_source.len() {
         let Some(candidate) = ctx.next_charged(&mut drawing_id_source, "STEP decode traversal")?
@@ -252,7 +248,6 @@ pub(super) fn decode<'ctx>(
         })?;
     }
     let mut hidden_drawing_ids = BTreeSet::new();
-    ctx.charge_work(0, "STEP decode map traversal")?;
     let mut hidden_record_source = exchange.records().values();
     for _ in 0..hidden_record_source.len() {
         let Some(record) =
@@ -291,7 +286,6 @@ pub(super) fn decode<'ctx>(
             )
         })?;
     let mut target_identities = target_identities_buffer;
-    ctx.charge_work(0, "STEP decode traversal")?;
     let mut candidate_target_source = candidates.iter();
     for _ in 0..candidate_target_source.len() {
         let Some(candidate) =
@@ -322,7 +316,6 @@ pub(super) fn decode<'ctx>(
     // DR-01: a drawing association scoped by PRODUCT_DEFINITION_SHAPE targets
     // that shape's one owning product-definition view, not a product-wide
     // identity set.
-    ctx.charge_work(0, "STEP decode traversal")?;
     let mut shape_target_source = product_definition_ids_by_shape.iter();
     for _ in 0..shape_target_source.len() {
         let Some((&shape_id, product_definition_id)) =
@@ -366,7 +359,6 @@ pub(super) fn decode<'ctx>(
         ctx,
     )?;
     let mut external_documents = BTreeMap::new();
-    ctx.charge_work(0, "STEP decode borrowed traversal")?;
     let mut external_document_source = exchange.references().iter();
     for _ in 0..external_document_source.len() {
         let Some(entry) = ctx.next_charged(
@@ -396,7 +388,6 @@ pub(super) fn decode<'ctx>(
     };
 
     let mut drawings = BTreeMap::<u64, Drawing>::new();
-    ctx.charge_work(0, "STEP drawing candidate traversal")?;
     let mut candidate_source = candidates.into_iter().enumerate();
     for _ in 0..candidate_source.len() {
         let Some((order, candidate)) =
@@ -424,7 +415,6 @@ pub(super) fn decode<'ctx>(
             ctx.copy_retained_text(name, "STEP drawing source type")?,
             "step_drawing_stored_parameters",
         )?;
-        ctx.charge_work(0, "STEP drawing inherited parameter traversal")?;
         let mut inherited_name = parameters.inherited_name;
         let mut direct_parameters = parameters.direct.iter();
         for index in 0..parameters.len() {
@@ -531,7 +521,6 @@ pub(super) fn decode<'ctx>(
     )?;
 
     let mut typed_records = BTreeSet::new();
-    ctx.charge_work(0, "STEP decode map traversal")?;
     let mut drawing_claim_source = drawings.keys();
     for _ in 0..drawing_claim_source.len() {
         let Some(&id) = ctx.next_charged(&mut drawing_claim_source, "STEP decode map traversal")?
@@ -542,7 +531,6 @@ pub(super) fn decode<'ctx>(
             ctx.insert_btree_set(&mut typed_records, id, "step_drawing_typed_claims")
         })?;
     }
-    ctx.charge_work(0, "step_drawing_typed_claims")?;
     let mut association_claim_source = association_ids.into_iter();
     for _ in 0..association_claim_source.len() {
         let Some(id) =
@@ -592,7 +580,6 @@ fn referenced_target_ids(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeSet<u64>, CodecError> {
     let mut ids = BTreeSet::new();
-    ctx.charge_work(0, "STEP referenced target ids traversal")?;
     let mut referenced_candidate_source = candidates.iter();
     for _ in 0..referenced_candidate_source.len() {
         let Some(candidate) = ctx.next_charged(
@@ -676,7 +663,6 @@ fn add_source_typed_targets(
     // proofs separate from identity summaries until the target map is settled.
     let mut probe_storage = ctx.reserve_scoped(0, "STEP drawing wrapper probe scratch")?;
     let mut proven = BTreeSet::new();
-    ctx.charge_work(0, "STEP add source typed targets traversal")?;
     let mut source_target_source = referenced_ids.iter();
     for _ in 0..source_target_source.len() {
         let Some(&id) = ctx.next_charged(
@@ -1014,8 +1000,12 @@ fn add_sheet_revision_usages(
         let Some(revision_id) = parameters.get(1).and_then(ValueExt::reference) else {
             continue;
         };
-        let sheet_target = target_context.resolve(revision_id)?;
-        let revision_target = target_context.resolve(sheet_id)?;
+        let mut sheet_target_storage = ctx.reserve_scoped(0, "STEP sheet usage target")?;
+        let sheet_target =
+            sheet_target_storage.with_storage(|| target_context.resolve(revision_id))?;
+        let mut revision_target_storage = ctx.reserve_scoped(0, "STEP revision usage target")?;
+        let revision_target =
+            revision_target_storage.with_storage(|| target_context.resolve(sheet_id))?;
         if let Some(sheet) =
             ctx.get_mut_btree_map(drawings, &sheet_id, "STEP drawing drawings get_mut")?
         {
@@ -1024,7 +1014,7 @@ fn add_sheet_revision_usages(
                     .push_btree_group(
                         &mut sheet.relationships,
                         cadmpeg_core::nonblank_literal!("drawing_revision"),
-                        target,
+                        sheet_target_storage.commit_value(target)?,
                         "step_drawing_relationship_groups",
                         "step_drawing_relationship_members",
                     )?,
@@ -1083,7 +1073,7 @@ fn add_sheet_revision_usages(
                     .push_btree_group(
                         &mut revision.relationships,
                         cadmpeg_core::nonblank_literal!("sheet_revision"),
-                        target,
+                        revision_target_storage.commit_value(target)?,
                         "step_drawing_relationship_groups",
                         "step_drawing_relationship_members",
                     )?,
@@ -1433,17 +1423,27 @@ enum WrapperTargetResolution<'ctx> {
     Ambiguous((BTreeSet<String>, ScopedReservation<'ctx>)),
 }
 
-struct WrapperSummary {
+// Descendant edges remain shared. Only the selected singleton needs a source
+// leaf; ambiguity identities are collected for the requested result.
+#[derive(Clone, Copy)]
+enum WrapperTargets {
+    Empty,
+    Singleton { source: u64, identity: usize },
+    Ambiguous,
+}
+
+struct WrapperSummary<'ctx> {
     cycle: bool,
     complete: bool,
-    alias: Option<u64>,
-    identities: BTreeSet<String>,
+    targets: WrapperTargets,
     children: Vec<u64>,
+    _edge_storage: ScopedReservation<'ctx>,
 }
 
 struct WrapperCache<'ctx, 'arena> {
-    values: std::cell::RefCell<BTreeMap<u64, WrapperSummary>>,
+    values: std::cell::RefCell<BTreeMap<u64, WrapperSummary<'ctx>>>,
     parents: std::cell::RefCell<BTreeMap<u64, BTreeSet<u64>>>,
+    identities: std::cell::RefCell<BTreeMap<String, usize>>,
     ctx: &'ctx DecodeContext<'arena>,
     storage: std::cell::RefCell<ScopedReservation<'ctx>>,
 }
@@ -1453,6 +1453,7 @@ impl<'ctx, 'arena> WrapperCache<'ctx, 'arena> {
         Ok(Self {
             values: std::cell::RefCell::new(BTreeMap::new()),
             parents: std::cell::RefCell::new(BTreeMap::new()),
+            identities: std::cell::RefCell::new(BTreeMap::new()),
             ctx,
             storage: std::cell::RefCell::new(
                 ctx.reserve_scoped(0, "STEP drawing wrapper cache scratch")?,
@@ -1476,7 +1477,6 @@ impl<'ctx, 'arena> WrapperCache<'ctx, 'arena> {
         }
         self.ctx
             .contains_btree_set(proven, &root, "STEP drawing wrapper probe result")
-            .map_err(Into::into)
     }
 
     fn remember_parents(&self, id: u64, children: &[u64]) -> Result<(), CodecError> {
@@ -1583,26 +1583,15 @@ impl<'ctx, 'arena> WrapperCache<'ctx, 'arena> {
         {
             if node.complete {
                 if let Some((proven, probe_storage)) = probe.as_mut() {
-                    if !node.cycle {
-                        let summary = ctx
-                            .get_btree_map(
-                                &values,
-                                &node.alias.unwrap_or(root),
-                                "STEP drawing wrapper summary lookup",
-                            )?
-                            .ok_or_else(|| {
-                                CodecError::malformed("STEP drawing wrapper summary missing")
-                            })?;
-                        if !summary.identities.is_empty() {
-                            drop(values);
-                            probe_storage.with_storage(|| {
-                                ctx.insert_btree_set(
-                                    proven,
-                                    root,
-                                    "STEP drawing wrapper proven targets",
-                                )
-                            })?;
-                        }
+                    if !node.cycle && !matches!(node.targets, WrapperTargets::Empty) {
+                        drop(values);
+                        probe_storage.with_storage(|| {
+                            ctx.insert_btree_set(
+                                proven,
+                                root,
+                                "STEP drawing wrapper proven targets",
+                            )
+                        })?;
                     }
                 }
                 return Ok(());
@@ -1686,8 +1675,7 @@ impl<'ctx, 'arena> WrapperCache<'ctx, 'arena> {
                     continue;
                 }
                 let mut cycle = node.cycle;
-                let mut first = None;
-                let mut same = true;
+                let mut targets = WrapperTargets::Empty;
                 let mut children = node.children.iter();
                 for _ in 0..children.len() {
                     let child_id = ctx
@@ -1697,59 +1685,23 @@ impl<'ctx, 'arena> WrapperCache<'ctx, 'arena> {
                         .get_btree_map(&values, child_id, "STEP drawing wrapper cache lookup")?
                         .ok_or_else(|| CodecError::malformed("STEP wrapper child incomplete"))?;
                     cycle |= child.cycle;
-                    let summary = child.alias.unwrap_or(*child_id);
-                    same &= first.is_none_or(|first| first == summary);
-                    first.get_or_insert(summary);
-                }
-                // A unary tail keeps the same completed summary. Equal child
-                // summaries also share it without copying its identity set.
-                let alias = first.filter(|_| same && !cycle);
-                let mut identities = BTreeSet::new();
-                if alias.is_none() && !cycle {
-                    let mut children = node.children.iter();
-                    for _ in 0..children.len() {
-                        let child_id = ctx
-                            .next_charged(&mut children, "STEP drawing wrapper child traversal")?
-                            .ok_or_else(|| CodecError::malformed("STEP wrapper child missing"))?;
-                        let child = ctx
-                            .get_btree_map(&values, child_id, "STEP drawing wrapper cache lookup")?
-                            .ok_or_else(|| {
-                                CodecError::malformed("STEP wrapper child incomplete")
-                            })?;
-                        let child = match child.alias {
-                            Some(id) => ctx
-                                .get_btree_map(&values, &id, "STEP drawing wrapper summary lookup")?
-                                .ok_or_else(|| {
-                                    CodecError::malformed("STEP wrapper summary missing")
-                                })?,
-                            None => child,
-                        };
-                        let mut targets = child.identities.iter();
-                        for _ in 0..targets.len() {
-                            let target = ctx
-                                .next_charged(&mut targets, "STEP drawing targets traversal")?
-                                .ok_or_else(|| {
-                                    CodecError::malformed("STEP wrapper target missing")
-                                })?;
-                            if !ctx.contains_btree_set(
-                                &identities,
-                                target,
-                                "STEP identities membership",
-                            )? {
-                                self.storage.borrow_mut().with_storage(|| {
-                                    let copy = ctx.copy_retained_text(
-                                        target,
-                                        "step_drawing_wrapper_identity_text",
-                                    )?;
-                                    ctx.insert_btree_set(
-                                        &mut identities,
-                                        copy,
-                                        "step_drawing_wrapper_identities",
-                                    )
-                                })?;
-                            }
-                        }
-                    }
+                    targets = match (targets, child.targets) {
+                        (WrapperTargets::Empty, next) => next,
+                        (current, WrapperTargets::Empty) => current,
+                        (
+                            WrapperTargets::Singleton {
+                                source,
+                                identity: left,
+                            },
+                            WrapperTargets::Singleton {
+                                identity: right, ..
+                            },
+                        ) if left == right => WrapperTargets::Singleton {
+                            source,
+                            identity: left,
+                        },
+                        _ => WrapperTargets::Ambiguous,
+                    };
                 }
                 drop(values);
                 let mut values = self.values.borrow_mut();
@@ -1758,8 +1710,7 @@ impl<'ctx, 'arena> WrapperCache<'ctx, 'arena> {
                     .ok_or_else(|| CodecError::malformed("STEP wrapper node missing"))?;
                 node.complete = true;
                 node.cycle = cycle;
-                node.alias = alias;
-                node.identities = identities;
+                node.targets = targets;
                 continue;
             }
             if let Some((proven, _)) = probe.as_ref() {
@@ -1800,13 +1751,7 @@ impl<'ctx, 'arena> WrapperCache<'ctx, 'arena> {
                     return Ok(());
                 }
                 if let Some((proven, probe_storage)) = probe.as_mut() {
-                    let summary_id = node.alias.unwrap_or(id);
-                    let summary = ctx
-                        .get_btree_map(&values, &summary_id, "STEP drawing wrapper summary lookup")?
-                        .ok_or_else(|| {
-                            CodecError::malformed("STEP drawing wrapper summary missing")
-                        })?;
-                    if !summary.identities.is_empty() {
+                    if !matches!(node.targets, WrapperTargets::Empty) {
                         drop(values);
                         probe_storage.with_storage(|| {
                             ctx.insert_btree_set(proven, id, "STEP drawing wrapper proven targets")
@@ -1827,22 +1772,40 @@ impl<'ctx, 'arena> WrapperCache<'ctx, 'arena> {
                         continue;
                     }
                 }
-                let mut identities = BTreeSet::new();
-                let mut targets = targets.iter();
-                for _ in 0..targets.len() {
-                    let target = ctx
-                        .next_charged(&mut targets, "STEP drawing targets traversal")?
-                        .ok_or_else(|| CodecError::malformed("STEP wrapper target missing"))?;
-                    self.storage.borrow_mut().with_storage(|| {
-                        let copy =
-                            ctx.copy_retained_text(target, "step_drawing_wrapper_identity_text")?;
-                        ctx.insert_btree_set(
-                            &mut identities,
-                            copy,
-                            "step_drawing_wrapper_identities",
-                        )
-                    })?;
-                }
+                let targets = match targets.len() {
+                    0 => WrapperTargets::Empty,
+                    1 => {
+                        let target = targets.first().ok_or_else(|| {
+                            CodecError::malformed("STEP wrapper singleton target missing")
+                        })?;
+                        let cached = {
+                            let identities = self.identities.borrow();
+                            ctx.get_btree_map(&identities, target, "STEP wrapper identity lookup")?
+                                .copied()
+                        };
+                        let identity = if let Some(identity) = cached {
+                            identity
+                        } else {
+                            let identity = self.identities.borrow().len();
+                            self.storage.borrow_mut().with_storage(|| {
+                                let key =
+                                    ctx.copy_retained_text(target, "STEP wrapper identity key")?;
+                                ctx.insert_btree_map(
+                                    &mut self.identities.borrow_mut(),
+                                    key,
+                                    identity,
+                                    "STEP wrapper identity classes",
+                                )
+                            })?;
+                            identity
+                        };
+                        WrapperTargets::Singleton {
+                            source: id,
+                            identity,
+                        }
+                    }
+                    _ => WrapperTargets::Ambiguous,
+                };
                 self.storage.borrow_mut().with_storage(|| {
                     ctx.insert_btree_map(
                         &mut self.values.borrow_mut(),
@@ -1850,15 +1813,16 @@ impl<'ctx, 'arena> WrapperCache<'ctx, 'arena> {
                         WrapperSummary {
                             cycle: false,
                             complete: true,
-                            alias: None,
-                            identities,
+                            targets,
                             children: Vec::new(),
+                            _edge_storage: ctx.reserve_scoped(0, "STEP wrapper edge storage")?,
                         },
                         "step_drawing_wrapper_complete",
                     )
                 })?;
                 continue;
             }
+            let mut edge_storage = ctx.reserve_scoped(0, "STEP wrapper edge storage")?;
             let mut children = Vec::new();
             if let Some(record) =
                 ctx.get_btree_map(exchange.records(), &id, "STEP drawing record get")?
@@ -1869,7 +1833,7 @@ impl<'ctx, 'arena> WrapperCache<'ctx, 'arena> {
                     .and_then(ValueExt::reference)
                 {
                     ctx.push_scoped_vec(
-                        &mut self.storage.borrow_mut(),
+                        &mut edge_storage,
                         &mut children,
                         plane,
                         "STEP drawing wrapper edges",
@@ -1891,7 +1855,7 @@ impl<'ctx, 'arena> WrapperCache<'ctx, 'arena> {
                                 })?;
                             if let Some(item) = value.reference() {
                                 ctx.push_scoped_vec(
-                                    &mut self.storage.borrow_mut(),
+                                    &mut edge_storage,
                                     &mut children,
                                     item,
                                     "STEP drawing wrapper edges",
@@ -1911,9 +1875,9 @@ impl<'ctx, 'arena> WrapperCache<'ctx, 'arena> {
                     WrapperSummary {
                         cycle: false,
                         complete: false,
-                        alias: None,
-                        identities: BTreeSet::new(),
+                        targets: WrapperTargets::Empty,
                         children,
+                        _edge_storage: edge_storage,
                     },
                     "step_drawing_wrapper_active",
                 )
@@ -1967,28 +1931,90 @@ impl<'ctx, 'arena> WrapperCache<'ctx, 'arena> {
         if summary.cycle {
             return Ok(None);
         }
-        let summary = match summary.alias {
-            Some(id) => ctx
-                .get_btree_map(&values, &id, "STEP drawing wrapper summary lookup")?
-                .ok_or_else(|| CodecError::malformed("STEP drawing wrapper summary missing"))?,
-            None => summary,
-        };
-        if summary.identities.is_empty() {
-            return Ok(None);
+        match summary.targets {
+            WrapperTargets::Empty => Ok(None),
+            WrapperTargets::Singleton { source, .. } => {
+                let identity = ctx
+                    .get_btree_map(target_identities, &source, "STEP wrapper singleton source")?
+                    .and_then(|targets| targets.first())
+                    .ok_or_else(|| {
+                        CodecError::malformed("STEP wrapper singleton target missing")
+                    })?;
+                Ok(Some(WrapperTargetResolution::Singleton(
+                    ctx.copy_retained_text(identity, "step_drawing_wrapper_identity_text")?,
+                )))
+            }
+            WrapperTargets::Ambiguous => {
+                let result = ctx.with_scoped_storage("STEP drawing ambiguity scratch", || {
+                    // The result owns only the identity set. Traversal storage
+                    // is released after the pending and visited values drop.
+                    let mut walk_storage = ctx.reserve_scoped(0, "STEP wrapper identity walk")?;
+                    let mut pending = Vec::new();
+                    let mut visited = BTreeSet::new();
+                    let mut identities = BTreeSet::new();
+                    ctx.push_scoped_vec(
+                        &mut walk_storage,
+                        &mut pending,
+                        id,
+                        "STEP wrapper identity pending",
+                    )?;
+                    while let Some(id) = pending.pop() {
+                        ctx.charge_work(1, "STEP wrapper identity step")?;
+                        if !walk_storage.with_storage(|| {
+                            ctx.insert_btree_set(&mut visited, id, "STEP wrapper identity visited")
+                        })? {
+                            continue;
+                        }
+                        if let Some(targets) = ctx.get_btree_map(
+                            target_identities,
+                            &id,
+                            "STEP wrapper identity targets",
+                        )? {
+                            for target in
+                                ctx.admit_iter(targets, "STEP wrapper identity members")?
+                            {
+                                if !ctx.contains_btree_set(
+                                    &identities,
+                                    target,
+                                    "STEP identities membership",
+                                )? {
+                                    let copy = ctx.copy_retained_text(
+                                        target,
+                                        "step_drawing_wrapper_identity_text",
+                                    )?;
+                                    ctx.insert_btree_set(
+                                        &mut identities,
+                                        copy,
+                                        "step_drawing_wrapper_identities",
+                                    )?;
+                                }
+                            }
+                        } else {
+                            let node = ctx
+                                .get_btree_map(&values, &id, "STEP wrapper identity node")?
+                                .ok_or_else(|| {
+                                    CodecError::malformed("STEP wrapper identity node missing")
+                                })?;
+                            for child in
+                                ctx.admit_iter(&node.children, "STEP wrapper identity edges")?
+                            {
+                                ctx.push_scoped_vec(
+                                    &mut walk_storage,
+                                    &mut pending,
+                                    *child,
+                                    "STEP wrapper identity pending",
+                                )?;
+                            }
+                        }
+                    }
+                    drop(pending);
+                    drop(visited);
+                    drop(walk_storage);
+                    Ok::<_, CodecError>(identities)
+                })?;
+                Ok(Some(WrapperTargetResolution::Ambiguous(result)))
+            }
         }
-        if summary.identities.len() == 1 {
-            let identity = summary
-                .identities
-                .first()
-                .ok_or_else(|| CodecError::malformed("STEP drawing singleton wrapper missing"))?;
-            return Ok(Some(WrapperTargetResolution::Singleton(
-                ctx.copy_retained_text(identity, "step_drawing_wrapper_identity_text")?,
-            )));
-        }
-        let copy = ctx.with_scoped_storage("STEP drawing ambiguity scratch", || {
-            clone_drawing_identities(&summary.identities, ctx)
-        })?;
-        Ok(Some(WrapperTargetResolution::Ambiguous(copy)))
     }
 }
 
