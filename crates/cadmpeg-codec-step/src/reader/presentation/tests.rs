@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 mod collection_limits;
 mod name_storage;
+mod path_work;
 mod stage_caches;
 mod string_limits;
 mod style_indices;

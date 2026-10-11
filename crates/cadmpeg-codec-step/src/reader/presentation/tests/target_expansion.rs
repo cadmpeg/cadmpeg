@@ -20,7 +20,7 @@ fn style_target_expansion_keeps_order_duplicates_cycles_and_depth_bound() {
                 &exchange,
                 (&mut typed, &mut claim_storage),
                 (&mut active, &mut active_storage),
-                (0, graph_limit),
+                (0, graph_limit, None),
                 &mut |id| ctx.push_vec(&mut targets, id, "target fixture"),
                 ctx,
             )
@@ -41,7 +41,7 @@ fn style_target_expansion_keeps_order_duplicates_cycles_and_depth_bound() {
             &exchange,
             (&mut typed, &mut claim_storage),
             (&mut active, &mut active_storage),
-            (0, 64),
+            (0, 64, None),
             &mut |id| ctx.push_vec(&mut targets, id, "missing target fixture"),
             ctx,
         )

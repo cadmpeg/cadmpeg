@@ -113,7 +113,7 @@ fn ambiguous_wrapper_result_retains_only_its_live_identity_owner() {
     policy.limits.max_materialized_bytes = 64 * 1024;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("context");
     let Some(super::super::WrapperTargetResolution::Ambiguous((identity_buffer, identity_storage))) =
-        super::super::wrapper_target_resolution(1, &targets, &exchange, &ctx).expect("ambiguous wrapper")
+        super::super::wrapper_target_resolution(1, &targets, &exchange, true, &ctx).expect("ambiguous wrapper")
     else {
         panic!("two distinct target identities");
     };

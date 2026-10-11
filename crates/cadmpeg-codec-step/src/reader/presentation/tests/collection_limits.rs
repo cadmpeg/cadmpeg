@@ -122,7 +122,7 @@ fn style_target_refuses(operation: &str, depth_limit: bool) {
                 &mut claim_storage,
             ),
             (&mut BTreeSet::new(), &mut active_storage),
-            (0, 128),
+            (0, 128, None),
             &mut |_| Ok(()),
             &ctx,
         );
@@ -244,7 +244,7 @@ fn presentation_style_target_visits_first_child_before_large_set_suffix() {
         &exchange,
         (&mut BTreeSet::new(), &mut claim_storage),
         (&mut BTreeSet::new(), &mut active_storage),
-        (0, 128),
+        (0, 128, None),
         &mut |_| Ok(()),
         &ctx,
     );
@@ -581,7 +581,7 @@ fn presentation_null_style_visited_refuses_collection_limit() {
             super::super::contains_null_style(
                 &crate::parse::Value::Reference(5),
                 exchange,
-                &mut BTreeSet::new(),
+                (&mut BTreeSet::new(), &mut std::collections::BTreeMap::new(), &mut ctx.reserve_scoped(0, "test null completions").expect("scope")),
                 0,
                 ctx,
             )
@@ -599,7 +599,7 @@ fn presentation_null_style_walk_refuses_depth_limit() {
             super::super::contains_null_style(
                 &crate::parse::Value::Reference(5),
                 exchange,
-                &mut BTreeSet::new(),
+                (&mut BTreeSet::new(), &mut std::collections::BTreeMap::new(), &mut ctx.reserve_scoped(0, "test null completions").expect("scope")),
                 0,
                 ctx,
             )
@@ -880,7 +880,7 @@ fn scalar_candidate_refuses(operation: &str, retained: bool) {
     let result = super::super::push_scalar_candidate(
         &mut std::array::from_fn(|_| std::collections::BTreeMap::new()),
         &cadmpeg_ir::appearance::AppearanceTarget::Body(body),
-        (1, 0),
+        (1, (0, 0, 0)),
         color,
         &ctx,
     );
