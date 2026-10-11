@@ -19,12 +19,21 @@ fn e5_ownership_refuses_each_counted_collection_limit() {
                 serialized_index: 0,
                 reversed: false,
             }]),
-            outer: Some(true),
-            orientation_hint: None,
+            outer: true,
+            absolute_orientation: crate::families::e5::graph::Sign::Positive,
         }],
     };
     let topology = E5Topology {
-        bodies: Vec::new(),
+        bodies: vec![crate::families::e5::graph::E5Body {
+            record_id: 99,
+            faces: [1, 2]
+                .into_iter()
+                .map(|record_id| crate::families::e5::graph::E5BodyFace {
+                    record_id,
+                    orientation: crate::families::e5::graph::Sign::Positive,
+                })
+                .collect(),
+        }],
         faces: vec![face(1), face(2)],
         edges: [(
             10,

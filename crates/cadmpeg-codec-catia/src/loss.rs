@@ -87,8 +87,6 @@ pub(crate) enum CatiaLossCode {
     TopologyFbbRowsWithheld,
     /// B-rep topology graph was not built for this file.
     TopologyGraphNotBuilt,
-    /// E5 reference graph is closed; orientation uses an incidence-derived gauge.
-    TopologyE5GaugeSubstituted,
     /// E5 carriers decoded, but the reference graph did not close.
     TopologyE5GraphUnclosed,
     /// B5 reference graph is closed; face sense and body kind use a topology gauge.
@@ -141,7 +139,6 @@ impl CatiaLossCode {
         Self::TopologyBoundaryGraphNotEmitted,
         Self::TopologyFbbRowsWithheld,
         Self::TopologyGraphNotBuilt,
-        Self::TopologyE5GaugeSubstituted,
         Self::TopologyE5GraphUnclosed,
         Self::TopologyB5GaugeSubstituted,
         Self::TopologyB5SubsetIncomplete,
@@ -181,7 +178,6 @@ impl CatiaLossCode {
             Self::TopologyBoundaryGraphNotEmitted => "topology.boundary-graph-not-emitted",
             Self::TopologyFbbRowsWithheld => "topology.fbb-rows-withheld",
             Self::TopologyGraphNotBuilt => "topology.graph-not-built",
-            Self::TopologyE5GaugeSubstituted => "topology.e5-gauge-substituted",
             Self::TopologyE5GraphUnclosed => "topology.e5-graph-unclosed",
             Self::TopologyB5GaugeSubstituted => "topology.b5-gauge-substituted",
             Self::TopologyB5SubsetIncomplete => "topology.b5-subset-incomplete",
@@ -249,7 +245,6 @@ impl CatiaLossCode {
             Self::TopologyBoundaryGraphNotEmitted
             | Self::TopologyFbbRowsWithheld
             | Self::TopologyGraphNotBuilt
-            | Self::TopologyE5GaugeSubstituted
             | Self::TopologyE5GraphUnclosed
             | Self::TopologyB5GaugeSubstituted
             | Self::TopologyB5SubsetIncomplete
@@ -340,7 +335,6 @@ mod tests {
                 "topology.boundary-graph-not-emitted",
                 "topology.fbb-rows-withheld",
                 "topology.graph-not-built",
-                "topology.e5-gauge-substituted",
                 "topology.e5-graph-unclosed",
                 "topology.b5-gauge-substituted",
                 "topology.b5-subset-incomplete",

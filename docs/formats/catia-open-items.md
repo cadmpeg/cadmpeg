@@ -502,21 +502,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 6. E5 `0D 03`
 
-### E5-03. Plane-cap digon orientation
+### E5-05. Higher-topology root signs
 
-**Question.** Which fields orient a plane-cap digon?
+**Question.** Which higher-topology relation does `H_root` encode, and how does a root with `H_root=−1` or `S_root=+1` compose orientation?
 
-**Known.** `catia.md` §9 "**E5 orientation** is" defines the E5 incidence graph and the non-degenerate orientation equations.
+**Known.** The lane is `H_root, R_face[0..face_count], S_root`. The face-aligned word starts at index one. The rooted production with `H_root=+1, S_root=−1` gives `g_loop=q_loop×F_face×R_face×S_root`; `H_root` does not enter that product.
 
-**Need.** We must know the fields to orient the cap when its boundary is a digon.
-
-### E5-05. Root orientation signs
-
-**Question.** What does each of the two root `extra_orientation_signs` control?
-
-**Known.** `catia.md` §9 "**E5 orientation** is" defines the other body, shell, face, and use orientation factors.
-
-**Need.** We must know both roles to complete the source body and shell orientation equation.
+**Need.** We must identify the higher-topology relation and its other endpoint-sign productions.
 
 ### E5-06. Curve-support mode
 
@@ -533,14 +525,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** The decoder retains these bytes inside the bounded record.
 
 **Need.** We must know the fields to read and write the complete support record.
-
-### E5-10. Component orientation gauge
-
-**Question.** Which field gives the global sign of a connected parity component?
-
-**Known.** `catia.md` §9 "**E5 orientation** is" gives "its global sign follows majority `face_trailer_sign` alignment, with the first serialized loop as the stable gauge when the alignment count ties." That rule is a decoder procedure and names no field. Two decoded sign populations are unread: the loop trailer holds `3*edge_count+4` signed ternary words and only `ref_aligned_signs[1]` is used, and the root `0x08` tape holds one sign for each face and no code reads it.
-
-**Need.** The sign reverses the cyclic member order of every loop in the component and toggles every member sense, which gives an inverted shell. The result stays radially coherent, so no gate rejects it, and the transfer loss note affirms that face and loop orientation transfer. We must know the field to fix the sign without a vote.
 
 ### E5-11. NURBS carrier trailing lanes
 

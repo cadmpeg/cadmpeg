@@ -393,6 +393,15 @@ current levels require those matrices and representative fixtures.
   nonzero component of the `u_axis` to be positive. A missing or ambiguous
   normal, non-finite endpoint, non-orthonormal fit, or residual above the
   tolerance leaves the plane carrier unresolved.
+- Rooted E5 loop traversal uses the complete loop relation and the face-aligned
+  root sign at roster position plus one. Every member must yield the same
+  nonzero loop-local sign. The admitted root endpoints are `H=+1, S=−1`;
+  other endpoint signs abstain. Shared-edge parity checks the resulting
+  traversal; a missing body root or conflicting relation abstains.
+- Analytic E5 face orientation composes the face and root relations. Plane
+  faces use the signed area of their oriented line/circle boundaries in the
+  fitted chart. Outer and inner loops must give the same face sense; an
+  unsupported boundary carrier, zero area, or disagreement abstains.
 - E5 edges require five object references followed by exactly one allocation
   terminal. The admitted terminal values are `01`, `02`, `21`, `22`, `25`,
   `29`, and `2a`; value and addressing form remain separate from endpoint

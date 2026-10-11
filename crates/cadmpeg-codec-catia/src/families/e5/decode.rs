@@ -380,23 +380,13 @@ refusal,
             }
         }
         let mut losses = Vec::new();
-        let (loss_code, message) = if topology_transferred {
-            let message = if topology
-                .as_ref()
-                .is_some_and(|topology| topology.bodies.is_empty())
-            {
-                "The E5 reference graph is closed; body ownership and shell orientation use an incidence-derived gauge because the stream has no class-0x01 body root."
-            } else {
-                "The E5 reference graph is closed; face and loop orientation transfer, but body/shell orientation uses an incidence-derived gauge because the root's two trailing orientation signs remain unresolved."
-            };
-            (CatiaLossCode::TopologyE5GaugeSubstituted, message)
-        } else {
-            (CatiaLossCode::TopologyE5GraphUnclosed,
-                "E5 carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding.")
-        };
-        if let Err(error) = crate::resource::push_loss(ctx, &mut losses, loss_code,
-            format_args!("{message}"), "catia_e5_topology_loss") {
-            return Some(Err(error));
+        if !topology_transferred {
+            if let Err(error) = crate::resource::push_loss(ctx, &mut losses,
+                CatiaLossCode::TopologyE5GraphUnclosed,
+                format_args!("E5 carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding."),
+                "catia_e5_topology_loss") {
+                return Some(Err(error));
+            }
         }
         if let Err(error) = insert_unresolved_carrier_loss(ctx, &ir, &mut losses) {
             return Some(Err(error));
@@ -1244,6 +1234,7 @@ struct E5BoundaryPlan<'a> {
 struct E5FacePlan<'a> {
     source: &'a crate::families::e5::graph::E5Face,
     loops: Vec<E5LoopPlan<'a>>,
+    sense: Sense,
 }
 
 struct E5LoopPlan<'a> {
@@ -1371,11 +1362,56 @@ fn transfer_e5_topology(
         )?;
     }
 
-    let Some(boundary) =
+    let Some(mut boundary) =
         plan_e5_boundary(ctx, topology, &surface_for_ref, &point_for_ref, refusal)?
     else {
         return Ok(false);
     };
+    for face in &mut boundary.faces {
+        for body in &topology.bodies {
+            ctx.charge_work(u64_from_index(body.faces.len()), "catia_e5_face_root_scan")?;
+        }
+        let Some(root) = topology
+            .bodies
+            .iter()
+            .flat_map(|body| &body.faces)
+            .find(|occurrence| occurrence.record_id == face.source.record_id)
+        else {
+            return Ok(false);
+        };
+        if root.orientation == crate::families::e5::graph::Sign::Negative {
+            face.sense = match face.sense {
+                Sense::Forward => Sense::Reversed,
+                Sense::Reversed => Sense::Forward,
+            };
+        }
+        let Some((_, decoded_surface)) = surface_for_ref.get(&face.source.surface) else {
+            return Ok(false);
+        };
+        if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) =
+            &decoded_surface.geometry
+        {
+            let mut face_sense = None;
+            for loop_ in &face.loops {
+                ctx.charge_work(
+                    u64_from_index(loop_.members.len()),
+                    "catia_e5_plane_boundary_area",
+                )?;
+                let Some(sense) = e5_plane_boundary_sense(plane, loop_, &boundary.edge_curves)
+                else {
+                    return Ok(false);
+                };
+                if face_sense.is_some_and(|existing| existing != sense) {
+                    return Ok(false);
+                }
+                face_sense = Some(sense);
+            }
+            let Some(sense) = face_sense else {
+                return Ok(false);
+            };
+            face.sense = sense;
+        }
+    }
     prune_e5_unused_surfaces(
         ctx,
         ir,
@@ -1479,6 +1515,11 @@ fn plan_e5_boundary<'a>(
             E5FacePlan {
                 source: face,
                 loops,
+                sense: if face.trailer_sign == crate::families::e5::graph::Sign::Positive {
+                    Sense::Forward
+                } else {
+                    Sense::Reversed
+                },
             },
             "catia_e5_boundary_face_plans",
         )?;
@@ -1928,6 +1969,77 @@ fn plan_e5_boundary<'a>(
     }))
 }
 
+/// Orient a plane face from its exact line/circle boundary area.
+fn e5_plane_boundary_sense(
+    plane: &cadmpeg_ir::geometry::analytic::PlaneSurface,
+    loop_: &E5LoopPlan<'_>,
+    curves: &BTreeMap<u32, (CurveGeometry, [f64; 2])>,
+) -> Option<Sense> {
+    let origin = plane.origin().get();
+    let normal = *plane.frame().axis().as_raw();
+    let mut area: f64 = 0.0;
+    let mut magnitude: f64 = 0.0;
+    for member in &loop_.members {
+        let (curve, range) = curves.get(&member.source.edge_use)?;
+        let range = if member.orientation.reversed {
+            [range[1], range[0]]
+        } else {
+            *range
+        };
+        let integral = match curve {
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) => {
+                let start = line
+                    .origin()
+                    .get()
+                    .translated(*line.direction().as_raw(), range[0]);
+                let end = line
+                    .origin()
+                    .get()
+                    .translated(*line.direction().as_raw(), range[1]);
+                start
+                    .vector_from(origin)
+                    .cross(end.vector_from(origin))
+                    .dot(normal)
+            }
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) => {
+                let center = circle.center().get();
+                let x = *circle.frame().reference().as_raw();
+                let axis = *circle.frame().axis().as_raw();
+                let y = axis.cross(x);
+                let radius = circle.radius().get();
+                let at = |t: f64| {
+                    center
+                        .translated(x, radius * t.cos())
+                        .translated(y, radius * t.sin())
+                };
+                center
+                    .vector_from(origin)
+                    .cross(at(range[1]).vector_from(at(range[0])))
+                    .dot(normal)
+                    + radius * radius * (range[1] - range[0]) * axis.dot(normal)
+            }
+            _ => return None,
+        };
+        if !integral.is_finite() {
+            return None;
+        }
+        area += integral;
+        magnitude += integral.abs();
+    }
+    if !area.is_finite()
+        || !magnitude.is_finite()
+        || area.abs() <= EPS_E5_DECODE_EXACT_GEOMETRY * magnitude
+    {
+        return None;
+    }
+    let outer = loop_.source.outer;
+    Some(if (area > 0.0) == outer {
+        Sense::Forward
+    } else {
+        Sense::Reversed
+    })
+}
+
 /// Drops surfaces no face, intersection side, or surface curve references.
 fn prune_e5_unused_surfaces(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -1975,21 +2087,16 @@ fn resolve_e5_ownership(
     topology: &crate::families::e5::graph::E5Topology,
 ) -> Result<Option<E5Ownership>, cadmpeg_core::CodecError> {
     let mut body_faces = Vec::new();
-    if topology.bodies.is_empty() {
+    for body in &topology.bodies {
         let mut faces = Vec::new();
-        for face in &topology.faces {
+        for face in &body.faces {
             ctx.push_vec(&mut faces, face.record_id, "catia_e5_ownership_faces")?;
         }
-        ctx.push_vec(&mut body_faces, (None, faces), "catia_e5_ownership_bodies")?;
-    } else {
-        for body in &topology.bodies {
-            let faces = ctx.copy_slice(&body.faces, "catia_e5_ownership_faces")?;
-            ctx.push_vec(
-                &mut body_faces,
-                (Some(body.record_id), faces),
-                "catia_e5_ownership_bodies",
-            )?;
-        }
+        ctx.push_vec(
+            &mut body_faces,
+            (body.record_id, faces),
+            "catia_e5_ownership_bodies",
+        )?;
     }
     let Some(bodies) = e5_ownership_plan(ctx, topology, &body_faces)? else {
         return Ok(None);
@@ -2355,16 +2462,10 @@ fn emit_e5_bodies(
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for (body_index, plan) in bodies.iter().enumerate() {
-        let body_id = BodyId::mint(match plan.record_id {
-            Some(record_id) => ctx.format_retained(
-                format_args!("catia:e5:body#{record_id}"),
-                "catia_e5_body_id",
-            )?,
-            None => ctx.format_retained(
-                format_args!("catia:e5:body#inferred-{body_index}"),
-                "catia_e5_body_id",
-            )?,
-        })
+        let body_id = BodyId::mint(ctx.format_retained(
+            format_args!("catia:e5:body#{}", plan.record_id),
+            "catia_e5_body_id",
+        )?)
         .map_err(cadmpeg_core::CodecError::malformed)?;
         let mut region_ids = Vec::new();
         ctx.reserve_vec(
@@ -2388,11 +2489,7 @@ fn emit_e5_bodies(
             "e5_0d_03",
             0,
             "01_body",
-            if plan.record_id.is_some() {
-                Exactness::ByteExact
-            } else {
-                Exactness::Inferred
-            },
+            Exactness::ByteExact,
         )?;
         crate::resource::derived_annotation(
             ctx,
@@ -2630,11 +2727,7 @@ fn emit_e5_faces_loops_coedges(
             surface: surface_for_ref[&face.surface]
                 .0
                 .try_clone_for_decode(ctx, "catia_e5_face_surface_id")?,
-            sense: if face.trailer_sign == crate::families::e5::graph::Sign::Positive {
-                Sense::Forward
-            } else {
-                Sense::Reversed
-            },
+            sense: face_plan.sense,
             loops: match loop_ids.split_first() {
                 // The source states the outer boundary first.
                 Some((outer, inner)) => cadmpeg_ir::topology::FaceLoops::classified(
@@ -3747,7 +3840,7 @@ fn e5_surface_uv(
 }
 
 struct E5BodyPlan {
-    record_id: Option<u32>,
+    record_id: u32,
     kind: BodyKind,
     components: Vec<Vec<u32>>,
 }
@@ -3755,7 +3848,7 @@ struct E5BodyPlan {
 fn e5_ownership_plan(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     topology: &crate::families::e5::graph::E5Topology,
-    body_faces: &[(Option<u32>, Vec<u32>)],
+    body_faces: &[(u32, Vec<u32>)],
 ) -> Result<Option<Vec<E5BodyPlan>>, cadmpeg_core::CodecError> {
     if body_faces.is_empty() || body_faces.iter().any(|(_, faces)| faces.is_empty()) {
         return Ok(None);
@@ -3935,6 +4028,69 @@ mod route_tests {
 
     use crate::test_support::test_b5::{finite, finite_lane, finite_pair, point, positive};
     use std::collections::{BTreeMap, HashMap};
+
+    #[test]
+    fn e5_plane_boundary_area_composes_traversal_and_role() {
+        let origin = Point3::new(1.0e12, -1.0e12, 0.0);
+        let plane = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            origin,
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("plane frame");
+        let curve = || {
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                    origin,
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                )
+                .expect("circle frame"),
+            ))
+        };
+        let curves = BTreeMap::from([
+            (10, (curve(), [0.0, std::f64::consts::PI])),
+            (11, (curve(), [std::f64::consts::PI, std::f64::consts::TAU])),
+        ]);
+        for (outer, reversed, expected) in [
+            (true, false, cadmpeg_ir::topology::Sense::Forward),
+            (true, true, cadmpeg_ir::topology::Sense::Reversed),
+            (false, false, cadmpeg_ir::topology::Sense::Reversed),
+            (false, true, cadmpeg_ir::topology::Sense::Forward),
+        ] {
+            let loop_ = E5Loop {
+                record_id: 1,
+                surface: 2,
+                members: e5_loop_members(&[20, 21], &[10, 11], &[false; 2]),
+                oriented_members: Some(
+                    (0..2)
+                        .map(|serialized_index| E5OrientedMember {
+                            serialized_index,
+                            reversed,
+                        })
+                        .collect(),
+                ),
+                outer,
+                absolute_orientation: crate::families::e5::graph::Sign::Positive,
+            };
+            let plan = crate::test_support::with_service_context(|ctx| {
+                super::E5LoopPlan::admit(ctx, &loop_)
+            })
+            .expect("service budget")
+            .expect("oriented loop");
+            assert_eq!(
+                super::e5_plane_boundary_sense(&plane, &plan, &curves),
+                Some(expected)
+            );
+            let degenerate =
+                BTreeMap::from([(10, (curve(), [0.0, 0.0])), (11, (curve(), [0.0, 0.0]))]);
+            assert_eq!(
+                super::e5_plane_boundary_sense(&plane, &plan, &degenerate),
+                None
+            );
+        }
+    }
 
     #[test]
     fn e5_unused_surface_stash_refuses_before_collection_growth() {
@@ -4221,8 +4377,8 @@ mod route_tests {
                     surface: 100,
                     members: e5_loop_members(&pcurve_refs, &edge_refs, &vec![false; segment_count]),
                     oriented_members: None,
-                    outer: Some(true),
-                    orientation_hint: None,
+                    outer: true,
+                    absolute_orientation: crate::families::e5::graph::Sign::Positive,
                 }],
             }],
             edges,
@@ -4267,8 +4423,8 @@ mod route_tests {
                     surface: 100,
                     members: e5_loop_members(&[20, 21], &[10, 11], &[false, false]),
                     oriented_members: None,
-                    outer: Some(true),
-                    orientation_hint: None,
+                    outer: true,
+                    absolute_orientation: crate::families::e5::graph::Sign::Positive,
                 }],
             }],
             edges: BTreeMap::from([
@@ -4526,8 +4682,8 @@ mod route_tests {
                         serialized_index: 0,
                         reversed: false,
                     }]),
-                    outer: Some(true),
-                    orientation_hint: None,
+                    outer: true,
+                    absolute_orientation: crate::families::e5::graph::Sign::Positive,
                 }],
             }],
             edges: BTreeMap::from([(
@@ -4713,8 +4869,8 @@ mod route_tests {
                             serialized_index: 0,
                             reversed: false,
                         }]),
-                        outer: Some(true),
-                        orientation_hint: None,
+                        outer: true,
+                        absolute_orientation: crate::families::e5::graph::Sign::Positive,
                     }],
                 },
                 E5Face {
@@ -4729,8 +4885,8 @@ mod route_tests {
                             serialized_index: 0,
                             reversed: false,
                         }]),
-                        outer: Some(true),
-                        orientation_hint: None,
+                        outer: true,
+                        absolute_orientation: crate::families::e5::graph::Sign::Positive,
                     }],
                 },
             ],
@@ -4809,7 +4965,7 @@ mod route_tests {
 
     #[test]
     fn e5_coedge_pcurve_use_composes_native_and_edge_direction() {
-        let topology = E5Topology {
+        let mut topology = E5Topology {
             bodies: Vec::new(),
             faces: vec![E5Face {
                 record_id: 1,
@@ -4823,8 +4979,8 @@ mod route_tests {
                         serialized_index: 0,
                         reversed: false,
                     }]),
-                    outer: Some(true),
-                    orientation_hint: None,
+                    outer: true,
+                    absolute_orientation: crate::families::e5::graph::Sign::Positive,
                 }],
             }],
             edges: BTreeMap::from([(
@@ -4858,6 +5014,57 @@ mod route_tests {
             )]),
             vertex_refs: vec![10, 11],
         };
+        for (edge, start, end, pcurve, origin, direction) in [
+            (21, 11, 12, 31, [1.0, 0.0], [-1.0, 1.0]),
+            (22, 12, 10, 32, [0.0, 1.0], [0.0, -1.0]),
+        ] {
+            topology.edges.insert(
+                edge,
+                E5Edge {
+                    support: pcurve + 10,
+                    start_vertex: start,
+                    end_vertex: end,
+                    parameter_start: 0,
+                    parameter_end: 0,
+                },
+            );
+            topology.pcurves.insert(
+                pcurve,
+                E5Pcurve::Line {
+                    surface: 100,
+                    origin: finite_pair(origin),
+                    direction: finite_pair(direction),
+                    range: finite_pair([0.0, 1.0]),
+                },
+            );
+            topology.curve_supports.insert(
+                pcurve + 10,
+                E5CurveSupport {
+                    kind: E5CurveSupportKind::Boundary(pcurve),
+                    mode: 0,
+                    range: finite_pair([0.0, 1.0]),
+                    tail: Vec::new(),
+                },
+            );
+        }
+        topology.bodies.push(crate::families::e5::graph::E5Body {
+            record_id: 99,
+            faces: vec![crate::families::e5::graph::E5BodyFace {
+                record_id: 1,
+                orientation: crate::families::e5::graph::Sign::Positive,
+            }],
+        });
+        topology.vertex_refs.push(12);
+        topology.faces[0].loops[0].members =
+            e5_loop_members(&[30, 31, 32], &[20, 21, 22], &[false; 3]);
+        topology.faces[0].loops[0].oriented_members = Some(
+            (0..3)
+                .map(|serialized_index| E5OrientedMember {
+                    serialized_index,
+                    reversed: false,
+                })
+                .collect(),
+        );
         let mut ir = CadIr::empty();
         ir.model.points.extend([
             Point::new(
@@ -4889,6 +5096,18 @@ mod route_tests {
                 tolerance: None,
             },
         ]);
+        ir.model.points.push(Point::new(
+            PointId::mint("catia:test:point#point-12".to_string()).expect("identity grammar"),
+            point([0.0, 1.0, 0.0]),
+            None,
+        ));
+        ir.model.vertices.push(Vertex {
+            id: VertexId::mint("catia:test:vertex#vertex-12".to_string())
+                .expect("identity grammar"),
+            point: PointId::mint("catia:test:point#point-12".to_string())
+                .expect("identity grammar"),
+            tolerance: None,
+        });
         let surface = crate::families::e5::records::E5Surface {
             pos: 0,
             record_id: 100,
@@ -4922,9 +5141,9 @@ mod route_tests {
                 .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
             Some([1.0, 0.0])
         );
-        let [vertex_use] = ir.model.loops[0].anchored_vertex_uses() else {
-            panic!("E5 edge emission must retain one vertex use");
-        };
+        let vertex_uses = ir.model.loops[0].anchored_vertex_uses();
+        assert_eq!(vertex_uses.len(), 3);
+        let vertex_use = &vertex_uses[0];
         assert_eq!(
             vertex_use.vertex,
             VertexId::mint("catia:e5:v#1".to_string()).expect("identity grammar")
@@ -4950,8 +5169,8 @@ mod route_tests {
                     serialized_index: 0,
                     reversed: false,
                 }]),
-                outer: Some(true),
-                orientation_hint: None,
+                outer: true,
+                absolute_orientation: crate::families::e5::graph::Sign::Positive,
             }],
         };
         let edge = || E5Edge {
@@ -4977,7 +5196,7 @@ mod route_tests {
         let plan = e5_ownership_plan(
             &ctx,
             &topology(vec![face(1, 10)], vec![10]),
-            &[(None, vec![1])],
+            &[(1, vec![1])],
         )
         .expect("service resource budget")
         .expect("required invariant");
@@ -4987,7 +5206,7 @@ mod route_tests {
         let plan = e5_ownership_plan(
             &ctx,
             &topology(vec![face(1, 10), face(2, 10)], vec![10]),
-            &[(None, vec![1, 2])],
+            &[(1, vec![1, 2])],
         )
         .expect("service resource budget")
         .expect("required invariant");
@@ -4997,7 +5216,7 @@ mod route_tests {
         let plan = e5_ownership_plan(
             &ctx,
             &topology(vec![face(1, 10), face(2, 11)], vec![10, 11]),
-            &[(None, vec![1, 2])],
+            &[(1, vec![1, 2])],
         )
         .expect("service resource budget")
         .expect("required invariant");
@@ -5007,7 +5226,7 @@ mod route_tests {
         let plan = e5_ownership_plan(
             &ctx,
             &topology(vec![face(1, 10), face(2, 10), face(3, 11)], vec![10, 11]),
-            &[(None, vec![1, 2, 3])],
+            &[(1, vec![1, 2, 3])],
         )
         .expect("service resource budget")
         .expect("required invariant");
@@ -5017,14 +5236,14 @@ mod route_tests {
         assert!(e5_ownership_plan(
             &ctx,
             &topology(vec![face(1, 10), face(2, 10)], vec![10]),
-            &[(Some(1), vec![1]), (Some(2), vec![2])],
+            &[(1, vec![1]), (2, vec![2])],
         )
         .expect("service resource budget")
         .is_none());
         assert!(e5_ownership_plan(
             &ctx,
             &topology(vec![face(1, 10)], vec![10, 11]),
-            &[(None, vec![1])],
+            &[(1, vec![1])],
         )
         .expect("service resource budget")
         .is_none());

@@ -253,18 +253,17 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         0x87, 0x18, 144, 1, 0x08, 100, 0x18, 145, 1, 0x08, 101, 0x18, 146, 1, 0x08, 102, 0x18, 244,
         1, 0x83,
     ];
-    for _ in 0..13 {
-        loop_payload.extend_from_slice(&1i16.to_le_bytes());
+    for sign in [1_i16, 1, -1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0] {
+        loop_payload.extend_from_slice(&sign.to_le_bytes());
     }
     append_e5_record(&mut bytes, 0x09, 300, &loop_payload);
     let mut reverse_loop_payload = vec![
         0x87, 0x18, 154, 1, 0x08, 100, 0x18, 156, 1, 0x08, 102, 0x18, 155, 1, 0x08, 101, 0x18, 245,
         1, 0x83,
     ];
-    for _ in 0..12 {
-        reverse_loop_payload.extend_from_slice(&1i16.to_le_bytes());
+    for sign in [1_i16, 1, -1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0] {
+        reverse_loop_payload.extend_from_slice(&sign.to_le_bytes());
     }
-    reverse_loop_payload.extend_from_slice(&0i16.to_le_bytes());
     append_e5_record(&mut bytes, 0x09, 301, &reverse_loop_payload);
     append_e5_record(&mut bytes, 0xcc, 500, &[]);
     append_e5_record(&mut bytes, 0xcc, 501, &[]);
@@ -284,7 +283,9 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         &mut bytes,
         0x08,
         700,
-        &[0x82, 0x18, 88, 2, 0x18, 89, 2, 0x82, 1, 0, 1, 0, 1, 0, 1, 0],
+        &[
+            0x82, 0x18, 88, 2, 0x18, 89, 2, 0x82, 1, 0, 255, 255, 1, 0, 255, 255,
+        ],
     );
     append_e5_record(&mut bytes, 0x01, 800, &[0x81, 0x18, 188, 2]);
 
@@ -309,7 +310,7 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
             .collect::<Vec<_>>(),
         vec![false, false, false]
     );
-    assert_eq!(topology.faces[0].loops[0].outer, Some(true));
+    assert!(topology.faces[0].loops[0].outer);
     assert_eq!(
         topology.faces[0].loops[0]
             .resolved_members()
@@ -328,7 +329,14 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
             .collect::<Vec<_>>(),
         vec![(0, true), (1, true), (2, true)]
     );
-    assert_eq!(topology.bodies[0].faces, vec![600, 601]);
+    assert_eq!(
+        topology.bodies[0]
+            .faces
+            .iter()
+            .map(|face| face.record_id)
+            .collect::<Vec<_>>(),
+        vec![600, 601]
+    );
     assert_eq!(topology.pcurves.len(), 7);
     assert!(matches!(
         topology.pcurves[&400],
@@ -650,7 +658,7 @@ fn e5_decode_route_propagates_orientation_collection_refusal() {
             Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
                 limit,
             ))) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "catia e5 orientation locations" =>
+                && limit.operation == "catia e5 orientation edge occurrence keys" =>
             {
                 found = true;
                 break;
@@ -661,7 +669,7 @@ fn e5_decode_route_propagates_orientation_collection_refusal() {
     }
     assert!(
         found,
-        "E5 orientation locations must propagate their collection refusal"
+        "E5 orientation occurrences must propagate their collection refusal"
     );
 }
 
@@ -979,11 +987,11 @@ fn decode_e5_stream_transfers_reference_closed_torus_topology() {
         loss.code.category() != cadmpeg_ir::report::loss::LossCategory::Topology
             || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Topology
-            && loss.severity == cadmpeg_ir::report::Severity::Warning
-            && loss.message.contains("two trailing orientation signs")
-    }));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(|loss| { loss.code.category() != cadmpeg_ir::report::loss::LossCategory::Topology }));
 
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
         .expect("resource allocation did not fail");

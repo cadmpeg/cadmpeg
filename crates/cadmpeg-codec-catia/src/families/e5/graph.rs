@@ -22,9 +22,7 @@ const EPS_ARC_LOCAL_BOUND: f64 = 1.0e-9;
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct E5Topology {
     /// Class-`0x01` body records with their resolved face rosters and
-    /// orientation-sign tapes. Empty when the stream carries no `0x01`
-    /// records (bodies are optional; face/loop/edge resolution does not
-    /// require them).
+    /// orientation-sign relations. A transferred graph requires body roots.
     pub(super) bodies: Vec<E5Body>,
     /// Class-`0x00` advanced-face records, each resolved to its surface and
     /// loops.
@@ -283,7 +281,16 @@ pub(in crate::families::e5) struct E5Body {
     /// This class-`0x01` body's stream-assigned `record_id`.
     pub(super) record_id: u32,
     /// Faces in root-record order.
-    pub(super) faces: Vec<u32>,
+    pub(super) faces: Vec<E5BodyFace>,
+}
+
+/// One face occurrence in a class-`0x08` root roster.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct E5BodyFace {
+    /// Referenced class-`0x00` face identity.
+    pub(super) record_id: u32,
+    /// Face-aligned root sign composed with the final root sign.
+    pub(super) orientation: Sign,
 }
 
 /// An orientation sign.
@@ -320,16 +327,14 @@ impl Sign {
 }
 
 /// A resolved class-`0x00` advanced-face record: its surface, loops, and
-/// root sign-tape entry ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
+/// face-local orientation sign ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct E5Face {
     /// This face record's `record_id`.
     pub(super) record_id: u32,
     /// `record_id` of the face's surface carrier.
     pub(super) surface: u32,
-    /// This face's entry in the class-`0x08` root sign tape (`+1` or
-    /// `-1`), used by [`solve_absolute_orientation`] to fix each loop's
-    /// global sense.
+    /// The final signed word of this class-`0x00` face record.
     pub(super) trailer_sign: Sign,
     /// The face's loops, first entry outer-bounded, remaining entries
     /// holes.
@@ -365,16 +370,11 @@ pub(super) struct E5Loop {
     /// the loop's global orientation sign. `None` when the radial parity
     /// system is frustrated or ambiguous.
     pub(super) oriented_members: Option<Vec<E5OrientedMember>>,
-    /// Loop role bit from the trailing sign tape: `Some(true)` =
-    /// `FACE_OUTER_BOUND`, `Some(false)` = `FACE_BOUND`, `None` when the
-    /// loop carries no trailing role tape.
-    pub(super) outer: Option<bool>,
-    /// Exact global-sense anchor for a closed plane-cap split circle. This is
-    /// present only when the two-edge loop has a complete role sign, two
-    /// complementary intersection-support ranges, and occurrence parameter
-    /// directions that determine one native-UV winding. Other loops use the
-    /// shared-edge parity component anchor.
-    pub(super) orientation_hint: Option<Sign>,
+    /// Loop role from the complete trailing sign tape: true for an outer
+    /// boundary, false for an inner boundary.
+    pub(super) outer: bool,
+    /// Absolute traversal sign from the loop, face and owning root relation.
+    pub(super) absolute_orientation: Sign,
 }
 
 impl E5Loop {
@@ -429,12 +429,13 @@ struct RawFace {
 }
 
 #[derive(Debug)]
-struct RawLoop {
+struct RawLoop<'a> {
     id: u32,
     surface: u32,
     pcurves: Vec<u32>,
     edges: Vec<u32>,
-    outer: Option<bool>,
+    outer: bool,
+    trailer: &'a [u8],
 }
 
 /// Resolve E5 face→loop→edge-use references and determine each serialized
@@ -575,6 +576,27 @@ pub(crate) fn parse_topology(
             return None;
         }
 
+        let bodies = match parse_bodies(ctx, &records, &by_id) {
+            Ok(Some(bodies)) => bodies,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        let mut root_orientation = HashMap::new();
+        for body in &bodies {
+            for face in &body.faces {
+                if root_orientation.contains_key(&face.record_id) {
+                    return None;
+                }
+                if let Err(error) = ctx.insert_hash_map(
+                    &mut root_orientation,
+                    face.record_id,
+                    face.orientation,
+                    "catia_e5_root_face_orientations",
+                ) {
+                    return Some(Err(error));
+                }
+            }
+        }
         let mut faces = Vec::new();
         let mut reachable_edges = HashSet::new();
         for face in raw_faces {
@@ -590,7 +612,7 @@ pub(crate) fn parse_topology(
                 if raw.surface != face.surface {
                     return None;
                 }
-                if raw.outer.is_some_and(|outer| outer != (loop_position == 0)) {
+                if raw.outer != (loop_position == 0) {
                     return None;
                 }
                 if raw.pcurves.len() != raw.edges.len() {
@@ -663,20 +685,24 @@ pub(crate) fn parse_topology(
                         return Some(Err(error));
                     }
                 }
-                let orientation_hint = plane_digon_orientation_hint(
-                    crate::families::e5::graph::PlaneDigonOrientationHintInputs {
-                        face_trailer_sign: face.trailer_sign,
-                        surface_class: by_id.get(&face.surface).map(|record| record.class),
-                        pcurve_ids: &raw.pcurves,
-                        edge_ids: &raw.edges,
-                        reversed: &reversed,
-                        outer: raw.outer,
-                        edges: &edges,
-                        pcurves: &pcurves,
-                        curve_supports: &curve_supports,
-                        bounds: &bounds,
-                    },
-                );
+                let root_sign = *root_orientation.get(&face.id)?;
+                let mut local_orientation = None;
+                for (index, &reversed) in reversed.iter().enumerate() {
+                    let local_sign = View::i16_le_at(raw.trailer, 1 + 2 * (3 + 3 * index))
+                        .and_then(Sign::from_i16)?;
+                    let candidate = if reversed {
+                        local_sign.flipped()
+                    } else {
+                        local_sign
+                    };
+                    if local_orientation.is_some_and(|existing| existing != candidate) {
+                        return None;
+                    }
+                    local_orientation = Some(candidate);
+                }
+                let absolute_orientation = local_orientation?
+                    .combine(face.trailer_sign)
+                    .combine(root_sign);
                 let mut members = Vec::new();
                 for ((&pcurve, &edge_use), &reversed) in
                     raw.pcurves.iter().zip(&raw.edges).zip(&reversed)
@@ -701,7 +727,7 @@ pub(crate) fn parse_topology(
                         members,
                         oriented_members: None,
                         outer: raw.outer,
-                        orientation_hint,
+                        absolute_orientation,
                     },
                     "catia_e5_resolved_loops",
                 ) {
@@ -721,7 +747,7 @@ pub(crate) fn parse_topology(
                 return Some(Err(error));
             }
         }
-        let oriented = match solve_absolute_orientation(ctx, &mut faces) {
+        let oriented = match resolve_absolute_orientation(ctx, &mut faces) {
             Ok(oriented) => oriented,
             Err(error) => return Some(Err(error)),
         };
@@ -746,40 +772,33 @@ pub(crate) fn parse_topology(
             return Some(Err(error));
         }
         vertex_refs.dedup();
-        let bodies = match parse_bodies(ctx, &records, &by_id) {
-            Ok(Some(bodies)) => bodies,
-            Ok(None) => return None,
-            Err(error) => return Some(Err(error)),
-        };
-        if !bodies.is_empty() {
-            let mut roster = Vec::new();
-            for body in &bodies {
-                for &face in &body.faces {
-                    if let Err(error) = ctx.push_vec(&mut roster, face, "catia_e5_body_face_roster")
-                    {
-                        return Some(Err(error));
-                    }
-                }
-            }
-            let mut roster_set = HashSet::new();
-            for &face in &roster {
+        let mut roster = Vec::new();
+        for body in &bodies {
+            for face in &body.faces {
                 if let Err(error) =
-                    ctx.insert_hash_set(&mut roster_set, face, "catia_e5_body_face_set")
+                    ctx.push_vec(&mut roster, face.record_id, "catia_e5_body_face_roster")
                 {
                     return Some(Err(error));
                 }
             }
-            let mut face_set = HashSet::new();
-            for face in &faces {
-                if let Err(error) =
-                    ctx.insert_hash_set(&mut face_set, face.record_id, "catia_e5_topology_face_set")
-                {
-                    return Some(Err(error));
-                }
+        }
+        let mut roster_set = HashSet::new();
+        for &face in &roster {
+            if let Err(error) = ctx.insert_hash_set(&mut roster_set, face, "catia_e5_body_face_set")
+            {
+                return Some(Err(error));
             }
-            if roster.len() != roster_set.len() || roster_set != face_set {
-                return None;
+        }
+        let mut face_set = HashSet::new();
+        for face in &faces {
+            if let Err(error) =
+                ctx.insert_hash_set(&mut face_set, face.record_id, "catia_e5_topology_face_set")
+            {
+                return Some(Err(error));
             }
+        }
+        if roster.len() != roster_set.len() || roster_set != face_set {
+            return None;
         }
         Some(Ok(E5Topology {
             bodies,
@@ -1451,437 +1470,63 @@ fn parse_jet_pcurve(
     }))
 }
 
-/// Derive the exact global-sense anchor for a plane-cap split circle.
-///
-/// A two-member plane-cap loop has two possible vertex-chain closures. The
-/// class-`0x09` role sign identifies outer versus inner boundary, but it does
-/// not choose between those closures. A strict source relation supplies the
-/// missing sign: both members must be degree-5 jets on one plane, their
-/// intersection supports must carry equal adjacent parameter intervals, and
-/// the paired `0x0e` bounds must give a signed occurrence direction. The
-/// start tangent of each jet then gives the native-UV winding of the canonical
-/// chain. The face sign and boundary role convert that winding to the loop's
-/// global sign.
-///
-/// This helper returns `None` for every incomplete or non-circular relation.
-/// Such a loop remains on the shared-edge parity path instead of receiving a
-/// geometric guess.
-#[derive(Clone, Copy)]
-struct PlaneDigonOrientationHintInputs<
-    'input0,
-    'input1,
-    'input2,
-    'input3,
-    'input4,
-    'input5,
-    'input6,
-> {
-    face_trailer_sign: Sign,
-    surface_class: Option<u8>,
-    pcurve_ids: &'input0 [u32],
-    edge_ids: &'input1 [u32],
-    reversed: &'input2 [bool],
-    outer: Option<bool>,
-    edges: &'input3 BTreeMap<u32, E5Edge>,
-    pcurves: &'input4 BTreeMap<u32, E5Pcurve>,
-    curve_supports: &'input5 BTreeMap<u32, E5CurveSupport>,
-    bounds: &'input6 BTreeMap<u32, E5Bounds>,
-}
-
-fn plane_digon_orientation_hint(
-    inputs: PlaneDigonOrientationHintInputs<'_, '_, '_, '_, '_, '_, '_>,
-) -> Option<Sign> {
-    const EPS_PLANE_DIGON: f64 = 1.0e-8;
-
-    let PlaneDigonOrientationHintInputs {
-        face_trailer_sign,
-        surface_class,
-        pcurve_ids,
-        edge_ids,
-        reversed,
-        outer,
-        edges,
-        pcurves,
-        curve_supports,
-        bounds,
-    } = inputs;
-
-    if surface_class != Some(0xc8)
-        || pcurve_ids.len() != 2
-        || edge_ids.len() != 2
-        || reversed.len() != 2
-        || !matches!(outer, Some(true | false))
-    {
-        return None;
-    }
-    let [first_pcurve_id, second_pcurve_id] = *pcurve_ids else {
-        return None;
-    };
-    let [first_edge_id, second_edge_id] = *edge_ids else {
-        return None;
-    };
-    let first_edge = edges.get(&first_edge_id)?;
-    let second_edge = edges.get(&second_edge_id)?;
-    let same_endpoints = (first_edge.start_vertex == second_edge.start_vertex
-        && first_edge.end_vertex == second_edge.end_vertex)
-        || (first_edge.start_vertex == second_edge.end_vertex
-            && first_edge.end_vertex == second_edge.start_vertex);
-    if !same_endpoints || first_edge.support == second_edge.support {
-        return None;
-    }
-
-    let [first_pcurve, second_pcurve] = [
-        pcurves.get(&first_pcurve_id)?,
-        pcurves.get(&second_pcurve_id)?,
-    ];
-    let [E5Pcurve::Jet {
-        surface: first_surface,
-        sites: first_sites,
-        range: first_range,
-    }, E5Pcurve::Jet {
-        surface: second_surface,
-        sites: second_sites,
-        range: second_range,
-    }] = [first_pcurve, second_pcurve]
-    else {
-        return None;
-    };
-    if first_surface != second_surface || first_sites.len() < 2 || second_sites.len() < 2 {
-        return None;
-    }
-
-    let close = |left: f64, right: f64| {
-        left.is_finite()
-            && right.is_finite()
-            && (left - right).abs() <= EPS_PLANE_DIGON * (1.0 + left.abs().max(right.abs()))
-    };
-    let close_point =
-        |left: [f64; 2], right: [f64; 2]| close(left[0], right[0]) && close(left[1], right[1]);
-    let first_start = first_sites.first()?.point.map(FiniteReal::get);
-    let first_end = first_sites.last()?.point.map(FiniteReal::get);
-    let second_start = second_sites.first()?.point.map(FiniteReal::get);
-    let second_end = second_sites.last()?.point.map(FiniteReal::get);
-    let same_endpoint_pair = (close_point(first_start, second_start)
-        && close_point(first_end, second_end))
-        || (close_point(first_start, second_end) && close_point(first_end, second_start));
-    if !same_endpoint_pair {
-        return None;
-    }
-    let center = [
-        (first_start[0] + first_end[0]) * 0.5,
-        (first_start[1] + first_end[1]) * 0.5,
-    ];
-    let first_start_radius = (first_start[0] - center[0]).hypot(first_start[1] - center[1]);
-    let first_end_radius = (first_end[0] - center[0]).hypot(first_end[1] - center[1]);
-    let second_center = [
-        (second_start[0] + second_end[0]) * 0.5,
-        (second_start[1] + second_end[1]) * 0.5,
-    ];
-    let second_start_radius =
-        (second_start[0] - second_center[0]).hypot(second_start[1] - second_center[1]);
-    let second_end_radius =
-        (second_end[0] - second_center[0]).hypot(second_end[1] - second_center[1]);
-    if !close_point(center, second_center)
-        || !first_start_radius.is_finite()
-        || !first_end_radius.is_finite()
-        || !second_start_radius.is_finite()
-        || !second_end_radius.is_finite()
-        || first_start_radius <= EPS_PLANE_DIGON
-        || !close(first_start_radius, first_end_radius)
-        || !close(first_start_radius, second_start_radius)
-        || !close(first_start_radius, second_end_radius)
-    {
-        return None;
-    }
-    let first_radius = first_start_radius;
-    for site in first_sites.iter().chain(second_sites.iter()) {
-        if !close(
-            (site.point[0].get() - center[0]).hypot(site.point[1].get() - center[1]),
-            first_radius,
-        ) {
-            return None;
-        }
-    }
-    let native_arc_sign = |start: [f64; 2], derivative: [f64; 2]| {
-        let radial = [start[0] - center[0], start[1] - center[1]];
-        let derivative_norm = derivative[0].hypot(derivative[1]);
-        let radial_norm = radial[0].hypot(radial[1]);
-        let cross = radial[0] * derivative[1] - radial[1] * derivative[0];
-        (derivative_norm.is_finite()
-            && radial_norm.is_finite()
-            && derivative_norm > EPS_PLANE_DIGON
-            && radial_norm > EPS_PLANE_DIGON
-            && cross.is_finite()
-            && cross.abs() > EPS_PLANE_DIGON * radial_norm * derivative_norm)
-            .then_some(if cross > 0.0 {
-                Sign::Positive
-            } else {
-                Sign::Negative
-            })
-    };
-    let signed_parameter_direction = |edge: &E5Edge, pcurve_id: u32, native_range: [f64; 2]| {
-        let start =
-            bound_representation_parameter(bounds, pcurves, edge.parameter_start, pcurve_id)?;
-        let end = bound_representation_parameter(bounds, pcurves, edge.parameter_end, pcurve_id)?;
-        let bound_span = end.get() - start.get();
-        let native_span = native_range[1] - native_range[0];
-        if bound_span.abs() <= EPS_PLANE_DIGON || native_span.abs() <= EPS_PLANE_DIGON {
-            return None;
-        }
-        Some(if bound_span * native_span > 0.0 {
-            Sign::Positive
-        } else {
-            Sign::Negative
-        })
-    };
-    let first_direction = signed_parameter_direction(
-        first_edge,
-        first_pcurve_id,
-        first_range.map(FiniteReal::get),
-    )?
-    .combine(if reversed[0] {
-        Sign::Negative
-    } else {
-        Sign::Positive
-    });
-    let second_direction = signed_parameter_direction(
-        second_edge,
-        second_pcurve_id,
-        second_range.map(FiniteReal::get),
-    )?
-    .combine(if reversed[1] {
-        Sign::Negative
-    } else {
-        Sign::Positive
-    });
-    let first_winding = native_arc_sign(
-        first_start,
-        first_sites.first()?.first_derivatives.map(FiniteReal::get),
-    )?
-    .combine(first_direction);
-    let second_winding = native_arc_sign(
-        second_start,
-        second_sites.first()?.first_derivatives.map(FiniteReal::get),
-    )?
-    .combine(second_direction);
-    if first_winding != second_winding {
-        return None;
-    }
-
-    let first_support = curve_supports.get(&first_edge.support)?;
-    let second_support = curve_supports.get(&second_edge.support)?;
-    if !first_support.is_intersection()
-        || !second_support.is_intersection()
-        || !first_support.pcurves().contains(&first_pcurve_id)
-        || !second_support.pcurves().contains(&second_pcurve_id)
-    {
-        return None;
-    }
-    let mut intervals =
-        [first_support.range, second_support.range].map(|range| range.map(FiniteReal::get));
-    for interval in &mut intervals {
-        if interval[0] == interval[1] {
-            return None;
-        }
-        if interval[0] > interval[1] {
-            interval.swap(0, 1);
-        }
-    }
-    if intervals[0][0] > intervals[1][0] {
-        intervals.swap(0, 1);
-    }
-    let first_span = intervals[0][1] - intervals[0][0];
-    let second_span = intervals[1][1] - intervals[1][0];
-    if !close(first_span, second_span) || !close(intervals[0][1], intervals[1][0]) {
-        return None;
-    }
-
-    let role_sign = if outer == Some(true) {
-        Sign::Positive
-    } else {
-        Sign::Negative
-    };
-    Some(face_trailer_sign.combine(role_sign).combine(first_winding))
-}
-
-fn solve_absolute_orientation(
+/// Apply explicit root-context loop signs and verify every paired edge use.
+fn resolve_absolute_orientation(
     ctx: &DecodeContext<'_>,
     faces: &mut [E5Face],
 ) -> Result<bool, CodecError> {
-    let location_count = faces
-        .iter()
-        .flat_map(|face| &face.loops)
-        .filter(|loop_| !loop_.members.is_empty())
-        .count();
-    let mut locations = Vec::new();
-    ctx.reserve_vec(
-        &mut locations,
-        location_count,
-        "catia e5 orientation locations",
-    )?;
-    for (face_index, face) in faces.iter().enumerate() {
-        for (loop_index, loop_) in face.loops.iter().enumerate() {
-            if !loop_.members.is_empty() {
-                locations.push((face_index, loop_index));
+    let mut occurrences = HashMap::<u32, Vec<Sign>>::new();
+    for face in faces.iter() {
+        for loop_ in &face.loops {
+            for member in &loop_.members {
+                let sign = if member.reversed {
+                    loop_.absolute_orientation.flipped()
+                } else {
+                    loop_.absolute_orientation
+                };
+                ctx.admit_hash_map_entry(
+                    &mut occurrences,
+                    &member.edge_use,
+                    "catia e5 orientation edge occurrence keys",
+                )?;
+                ctx.push_vec(
+                    occurrences.entry(member.edge_use).or_default(),
+                    sign,
+                    "catia e5 orientation edge occurrences",
+                )?;
             }
         }
     }
-    let mut occurrences = HashMap::<u32, Vec<(usize, Sign)>>::new();
-    for (node, &(face_index, loop_index)) in locations.iter().enumerate() {
-        let loop_ = &faces[face_index].loops[loop_index];
-        for member in &loop_.members {
-            ctx.admit_hash_map_entry(
-                &mut occurrences,
-                &member.edge_use,
-                "catia e5 orientation edge occurrence keys",
-            )?;
-            ctx.push_vec(
-                occurrences.entry(member.edge_use).or_default(),
-                (
-                    node,
-                    if member.reversed {
-                        Sign::Negative
-                    } else {
-                        Sign::Positive
-                    },
-                ),
-                "catia e5 orientation edge occurrences",
-            )?;
-        }
-    }
-    let mut adjacency = ctx.alloc_filled(
-        locations.len(),
-        Vec::<(usize, Sign)>::new(),
-        "catia e5 orientation adjacency",
-    )?;
-    for [(left, left_r), (right, right_r)] in occurrences
+    if occurrences
         .values()
-        .filter_map(|uses| <&[_; 2]>::try_from(uses.as_slice()).ok())
+        .any(|uses| uses.len() == 2 && uses[0] == uses[1])
     {
-        let relation = left_r.flipped().combine(*right_r);
-        ctx.push_vec(
-            &mut adjacency[*left],
-            (*right, relation),
-            "catia e5 orientation adjacent edges",
-        )?;
-        ctx.push_vec(
-            &mut adjacency[*right],
-            (*left, relation),
-            "catia e5 orientation adjacent edges",
-        )?;
+        return Ok(false);
     }
-    let mut solved = ctx.alloc_filled(locations.len(), None, "catia e5 orientation assignments")?;
-    for root in 0..locations.len() {
-        if solved[root].is_some() {
-            continue;
-        }
-        solved[root] = Some(Sign::Positive);
-        let mut component = Vec::new();
-        ctx.push_vec(
-            &mut component,
-            (root, Sign::Positive),
-            "catia e5 orientation component",
-        )?;
-        let mut cursor = 0;
-        let mut consistent = true;
-        while cursor < component.len() {
-            let (node, value) = component[cursor];
-            cursor += 1;
-            for &(neighbor, relation) in &adjacency[node] {
-                let expected = value.combine(relation);
-                match solved[neighbor] {
-                    Some(actual) if actual != expected => consistent = false,
-                    Some(_) => {}
-                    None => {
-                        solved[neighbor] = Some(expected);
-                        ctx.push_vec(
-                            &mut component,
-                            (neighbor, expected),
-                            "catia e5 orientation component",
-                        )?;
-                    }
-                }
+    for face in faces {
+        for loop_ in &mut face.loops {
+            let flip = loop_.absolute_orientation == Sign::Negative;
+            let mut oriented = Vec::new();
+            ctx.reserve_vec(
+                &mut oriented,
+                loop_.members.len(),
+                "catia e5 oriented members",
+            )?;
+            for index in 0..loop_.members.len() {
+                let serialized_index = if flip {
+                    loop_.members.len() - 1 - index
+                } else {
+                    index
+                };
+                oriented.push(E5OrientedMember {
+                    serialized_index,
+                    reversed: loop_.members[serialized_index].reversed ^ flip,
+                });
             }
-        }
-        if !consistent {
-            for &(node, _) in &component {
-                solved[node] = None;
-            }
-            continue;
-        }
-        let mut exact_flip = None;
-        for &(node, value) in &component {
-            let (face_index, loop_index) = locations[node];
-            let Some(hint) = faces[face_index].loops[loop_index].orientation_hint else {
-                continue;
-            };
-            let candidate = hint.combine(value);
-            match exact_flip {
-                Some(existing) if existing != candidate => {
-                    for &(component_node, _) in &component {
-                        solved[component_node] = None;
-                    }
-                    consistent = false;
-                    break;
-                }
-                Some(_) => {}
-                None => exact_flip = Some(candidate),
-            }
-        }
-        if !consistent {
-            continue;
-        }
-        if let Some(flip) = exact_flip {
-            for &(node, value) in &component {
-                solved[node] = Some(value.combine(flip));
-            }
-        } else {
-            let plus_matches = component
-                .iter()
-                .filter(|&&(node, value)| {
-                    let (face, _) = locations[node];
-                    value == faces[face].trailer_sign
-                })
-                .count();
-            let minus_matches = component.len() - plus_matches;
-            if minus_matches > plus_matches {
-                for &(node, value) in &component {
-                    solved[node] = Some(value.flipped());
-                }
-            }
+            loop_.oriented_members = Some(oriented);
         }
     }
-    for (node, &(face_index, loop_index)) in locations.iter().enumerate() {
-        let Some(g) = solved[node] else {
-            continue;
-        };
-        let loop_ = &mut faces[face_index].loops[loop_index];
-        let flip = g == Sign::Negative;
-        let mut indices = Vec::new();
-        ctx.reserve_vec(
-            &mut indices,
-            loop_.members.len(),
-            "catia e5 orientation member indices",
-        )?;
-        indices.extend(0..loop_.members.len());
-        if flip {
-            indices.reverse();
-        }
-        let mut oriented_members = Vec::new();
-        ctx.reserve_vec(
-            &mut oriented_members,
-            loop_.members.len(),
-            "catia e5 oriented members",
-        )?;
-        for serialized_index in indices {
-            oriented_members.push(E5OrientedMember {
-                serialized_index,
-                reversed: loop_.members[serialized_index].reversed ^ flip,
-            });
-        }
-        loop_.oriented_members = Some(oriented_members);
-    }
-    Ok(solved.into_iter().all(|value| value.is_some()))
+    Ok(true)
 }
 
 fn parse_bodies(
@@ -1910,10 +1555,11 @@ fn parse_bodies(
         let Some(faces) = parse_body_root(ctx, root.payload)? else {
             return Ok(None);
         };
-        if faces
-            .iter()
-            .any(|face| by_id.get(face).is_none_or(|target| target.class != 0x00))
-        {
+        if faces.iter().any(|face| {
+            by_id
+                .get(&face.record_id)
+                .is_none_or(|target| target.class != 0x00)
+        }) {
             return Ok(None);
         }
         ctx.push_vec(
@@ -1925,13 +1571,13 @@ fn parse_bodies(
             "catia_e5_bodies",
         )?;
     }
-    Ok(Some(bodies))
+    Ok((!bodies.is_empty()).then_some(bodies))
 }
 
 fn parse_body_root(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
-) -> Result<Option<Vec<u32>>, CodecError> {
+) -> Result<Option<Vec<E5BodyFace>>, CodecError> {
     let (count, mut position, narrow) = if payload.first() == Some(&0x08) {
         let Some(count) = payload.get(1) else {
             return Ok(None);
@@ -1956,9 +1602,10 @@ fn parse_body_root(
     let Some(count) = u8::try_from(faces.len()).ok() else {
         return Ok(None);
     };
-    if payload.get(position..position + 2) == Some(&[0x08, count]) {
+    if narrow && payload.get(position..position + 2) == Some(&[0x08, count]) {
         position += 2;
-    } else if faces.len() <= 0x7f
+    } else if !narrow
+        && faces.len() <= 0x7f
         && 0x80u8
             .checked_add(count)
             .is_some_and(|head| payload.get(position) == Some(&head))
@@ -1973,12 +1620,27 @@ fn parse_body_root(
     if sign_bytes.len() != (faces.len() + 2) * 2 {
         return Ok(None);
     }
-    for bytes in sign_bytes.chunks_exact(2) {
-        if View::i16_le_at(bytes, 0).and_then(Sign::from_i16).is_none() {
-            return Ok(None);
-        }
+    if View::i16_le_at(sign_bytes, 0) != Some(1)
+        || View::i16_le_at(sign_bytes, 2 * (faces.len() + 1)) != Some(-1)
+    {
+        return Ok(None);
     }
-    Ok(Some(faces))
+    let mut occurrences = Vec::new();
+    for (index, record_id) in faces.into_iter().enumerate() {
+        let Some(sign) = View::i16_le_at(sign_bytes, 2 * (index + 1)).and_then(Sign::from_i16)
+        else {
+            return Ok(None);
+        };
+        ctx.push_vec(
+            &mut occurrences,
+            E5BodyFace {
+                record_id,
+                orientation: sign.flipped(),
+            },
+            "catia_e5_body_root_occurrences",
+        )?;
+    }
+    Ok(Some(occurrences))
 }
 
 fn records(bytes: &[u8]) -> impl Iterator<Item = Record<'_>> + '_ {
@@ -2045,7 +1707,10 @@ fn parse_face(ctx: &DecodeContext<'_>, record: &Record<'_>) -> Result<Option<Raw
     }))
 }
 
-fn parse_loop(ctx: &DecodeContext<'_>, record: &Record<'_>) -> Result<Option<RawLoop>, CodecError> {
+fn parse_loop<'a>(
+    ctx: &DecodeContext<'_>,
+    record: &Record<'a>,
+) -> Result<Option<RawLoop<'a>>, CodecError> {
     let Some(member_count) = record
         .payload
         .first()
@@ -2086,6 +1751,7 @@ fn parse_loop(ctx: &DecodeContext<'_>, record: &Record<'_>) -> Result<Option<Raw
         pcurves,
         edges,
         outer,
+        trailer: &record.payload[position..],
     }))
 }
 
@@ -2096,16 +1762,21 @@ enum LoopSignError {
     Sign,
 }
 
-fn parse_loop_signs(trailing: &[u8], edge_count: usize) -> Result<Option<bool>, LoopSignError> {
-    if trailing.is_empty() {
-        return Ok(None);
-    }
+fn parse_loop_signs(trailing: &[u8], edge_count: usize) -> Result<bool, LoopSignError> {
     let expected_head = u8::try_from(edge_count)
         .ok()
         .and_then(|n| 0x80u8.checked_add(n))
         .ok_or(LoopSignError::Count)?;
     if trailing.first() != Some(&expected_head) || trailing.len() != 1 + 2 * (3 * edge_count + 4) {
         return Err(LoopSignError::Frame);
+    }
+    if View::i16_le_at(trailing, 1)
+        .and_then(Sign::from_i16)
+        .is_none()
+        || View::i16_le_at(trailing, 5) != Some(-1)
+        || View::i16_le_at(trailing, trailing.len() - 2) != Some(0)
+    {
+        return Err(LoopSignError::Sign);
     }
     let mut outer = None;
     for (index, bytes) in trailing[1..].chunks_exact(2).enumerate() {
@@ -2121,7 +1792,7 @@ fn parse_loop_signs(trailing: &[u8], edge_count: usize) -> Result<Option<bool>, 
     if !matches!(outer, -1 | 1) {
         return Err(LoopSignError::Sign);
     }
-    Ok(Some(outer == 1))
+    Ok(outer == 1)
 }
 
 pub(super) fn parse_edge(payload: &[u8]) -> Option<E5Edge> {
@@ -2228,10 +1899,9 @@ fn solve_loop_chain(
 mod tests {
     use super::{
         curve_support_reference_closes, parse_body_root, parse_jet_pcurve, parse_nurbs_pcurve,
-        parse_pcurve, parse_topology, plane_digon_orientation_hint, records,
-        solve_absolute_orientation, solve_loop_chain, E5BoundEntry, E5Bounds, E5CurveSupport,
-        E5CurveSupportKind, E5Edge, E5Face, E5Loop, E5LoopMember, E5Pcurve, E5PcurveJetSite,
-        E5Topology, Record, Sign,
+        parse_pcurve, parse_topology, records, resolve_absolute_orientation, solve_loop_chain,
+        E5BoundEntry, E5Bounds, E5CurveSupport, E5CurveSupportKind, E5Edge, E5Face, E5Loop,
+        E5LoopMember, E5Pcurve, E5PcurveJetSite, E5Topology, Record, Sign,
     };
     use crate::families::e5::tests::e5_loop_members;
     use crate::test_support::test_b5::{finite, finite_lane, finite_pair};
@@ -2296,8 +1966,8 @@ mod tests {
             loop_payload.extend_from_slice(&[0x08, reference]);
         }
         loop_payload.extend_from_slice(&[0x18, 0x02, 0x01, 0x83]);
-        for _ in 0..13 {
-            loop_payload.extend_from_slice(&1_i16.to_le_bytes());
+        for sign in [1_i16, 1, -1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0] {
+            loop_payload.extend_from_slice(&sign.to_le_bytes());
         }
         assert_eq!(loop_payload.len(), 43);
         append_e5_record(&mut bytes, 0x09, 40, &loop_payload);
@@ -2308,6 +1978,20 @@ mod tests {
             60,
             &[0x82, 0x18, 0x02, 0x01, 0x08, 40, 0x01, 0x00],
         );
+
+        assert!(
+            parse_topology(&ctx, &bytes)
+                .expect("service decode")
+                .is_none(),
+            "a face-local relation supplies no absolute body traversal without its root"
+        );
+        append_e5_record(
+            &mut bytes,
+            0x08,
+            70,
+            &[0x81, 0xbc, 0x81, 1, 0, 255, 255, 255, 255],
+        );
+        append_e5_record(&mut bytes, 0x01, 71, &[0x81, 0xc6]);
 
         let topology = parse_topology(&ctx, &bytes)
             .expect("service decode")
@@ -2321,7 +2005,36 @@ mod tests {
                 .collect::<Vec<_>>(),
             [110, 111, 112]
         );
-        assert_eq!(topology.faces[0].loops[0].outer, Some(true));
+        assert!(topology.faces[0].loops[0].outer);
+        assert_eq!(
+            topology.faces[0].loops[0].absolute_orientation,
+            Sign::Positive
+        );
+        let root = bytes
+            .windows(4)
+            .position(|window| window == [0xe5, 0x0d, 0x03, 0x08])
+            .expect("root record");
+        let mut flipped = bytes.clone();
+        flipped[root + 18..root + 20].copy_from_slice(&1_i16.to_le_bytes());
+        let flipped = parse_topology(&ctx, &flipped)
+            .expect("service decode")
+            .expect("flipped root relation");
+        assert_eq!(
+            flipped.faces[0].loops[0].absolute_orientation,
+            Sign::Negative
+        );
+        assert!(flipped.faces[0].loops[0]
+            .resolved_members()
+            .expect("rooted orientation")
+            .iter()
+            .all(|member| member.reversed));
+        for (offset, sign) in [(16, -1_i16), (20, 1_i16)] {
+            let mut unknown = bytes.clone();
+            unknown[root + offset..root + offset + 2].copy_from_slice(&sign.to_le_bytes());
+            assert!(parse_topology(&ctx, &unknown)
+                .expect("service decode")
+                .is_none());
+        }
     }
 
     #[test]
@@ -2527,7 +2240,24 @@ mod tests {
         let faces = crate::test_support::with_service_context(|ctx| parse_body_root(ctx, &payload))
             .expect("service resource budget")
             .expect("widened body root");
-        assert_eq!(faces, [0x1600, 0x1601]);
+        assert_eq!(
+            faces.iter().map(|face| face.record_id).collect::<Vec<_>>(),
+            [0x1600, 0x1601]
+        );
+        assert_eq!(
+            faces
+                .iter()
+                .map(|face| face.orientation)
+                .collect::<Vec<_>>(),
+            [Sign::Positive, Sign::Negative]
+        );
+        let mut mixed_frame = payload.clone();
+        mixed_frame.splice(7..9, [0x82]);
+        assert!(crate::test_support::with_service_context(|ctx| {
+            parse_body_root(ctx, &mixed_frame)
+        })
+        .expect("service resource budget")
+        .is_none());
     }
 
     #[test]
@@ -2669,209 +2399,6 @@ mod tests {
             crate::test_support::with_service_context(|ctx| solve_loop_chain(ctx, &[1, 2], &edges))
                 .expect("service resource budget"),
             Some(vec![false, false])
-        );
-    }
-
-    #[test]
-    fn plane_digon_winding_anchors_absolute_orientation() {
-        e5_test_context!(ctx);
-        let jet = |points: Vec<[f64; 2]>, first_derivatives: Vec<[f64; 2]>| E5Pcurve::Jet {
-            surface: 500,
-            sites: points
-                .into_iter()
-                .zip(first_derivatives)
-                .enumerate()
-                .map(|(index, (point, first_derivatives))| E5PcurveJetSite {
-                    knot: finite(
-                        cadmpeg_core::convert::f64_from_index(index)
-                            .expect("fixture index is exactly representable"),
-                    ),
-                    multiplicity: 6,
-                    point: finite_pair(point),
-                    first_derivatives: finite_pair(first_derivatives),
-                    second_derivatives: finite_pair([0.0, 0.0]),
-                })
-                .collect(),
-            range: finite_pair([0.0, 1.0]),
-        };
-        let pcurves = BTreeMap::from([
-            (
-                10,
-                jet(
-                    vec![[0.0, -1.0], [-1.0, 0.0], [0.0, 1.0]],
-                    vec![[-1.0, 0.0], [-1.0, 0.0], [-1.0, 0.0]],
-                ),
-            ),
-            (
-                11,
-                jet(
-                    vec![[0.0, 1.0], [1.0, 0.0], [0.0, -1.0]],
-                    vec![[1.0, 0.0], [1.0, 0.0], [1.0, 0.0]],
-                ),
-            ),
-        ]);
-        let edges = BTreeMap::from([
-            (
-                1,
-                E5Edge {
-                    support: 100,
-                    start_vertex: 20,
-                    end_vertex: 21,
-                    parameter_start: 30,
-                    parameter_end: 31,
-                },
-            ),
-            (
-                2,
-                E5Edge {
-                    support: 101,
-                    start_vertex: 21,
-                    end_vertex: 20,
-                    parameter_start: 32,
-                    parameter_end: 33,
-                },
-            ),
-        ]);
-        let supports = BTreeMap::from([
-            (
-                100,
-                E5CurveSupport {
-                    kind: E5CurveSupportKind::Intersection([10, 12]),
-                    mode: 0,
-                    range: finite_pair([0.0, 1.0]),
-                    tail: Vec::new(),
-                },
-            ),
-            (
-                101,
-                E5CurveSupport {
-                    kind: E5CurveSupportKind::Intersection([11, 13]),
-                    mode: 0,
-                    range: finite_pair([1.0, 2.0]),
-                    tail: Vec::new(),
-                },
-            ),
-        ]);
-        let bounds = BTreeMap::from([
-            (
-                30,
-                E5Bounds {
-                    entries: vec![E5BoundEntry {
-                        representation: 10,
-                        parameter: crate::test_support::test_b5::finite(0.0),
-                        code: 1,
-                    }],
-                },
-            ),
-            (
-                31,
-                E5Bounds {
-                    entries: vec![E5BoundEntry {
-                        representation: 10,
-                        parameter: crate::test_support::test_b5::finite(1.0),
-                        code: 1,
-                    }],
-                },
-            ),
-            (
-                32,
-                E5Bounds {
-                    entries: vec![E5BoundEntry {
-                        representation: 11,
-                        parameter: crate::test_support::test_b5::finite(0.0),
-                        code: 1,
-                    }],
-                },
-            ),
-            (
-                33,
-                E5Bounds {
-                    entries: vec![E5BoundEntry {
-                        representation: 11,
-                        parameter: crate::test_support::test_b5::finite(1.0),
-                        code: 1,
-                    }],
-                },
-            ),
-        ]);
-        let hint = plane_digon_orientation_hint(
-            crate::families::e5::graph::PlaneDigonOrientationHintInputs {
-                face_trailer_sign: Sign::Positive,
-                surface_class: Some(0xc8),
-                pcurve_ids: &[10, 11],
-                edge_ids: &[1, 2],
-                reversed: &[false, false],
-                outer: Some(true),
-                edges: &edges,
-                pcurves: &pcurves,
-                curve_supports: &supports,
-                bounds: &bounds,
-            },
-        );
-        assert_eq!(hint, Some(Sign::Negative));
-
-        let mut wide_pcurves = pcurves.clone();
-        for pcurve in wide_pcurves.values_mut() {
-            if let E5Pcurve::Jet { range, sites, .. } = pcurve {
-                *range = finite_pair([-f64::MAX, f64::MAX]);
-                for (site, knot) in sites.iter_mut().zip([-f64::MAX, 0.0, f64::MAX]) {
-                    site.knot = finite(knot);
-                }
-            }
-        }
-        let mut wide_bounds = bounds.clone();
-        for (id, bound) in &mut wide_bounds {
-            let start = matches!(*id, 30 | 32);
-            bound.entries[0].parameter = finite(if start { 0.0 } else { f64::MAX });
-            bound.entries[0].code = if start { 1 } else { 2 };
-        }
-        assert_eq!(
-            plane_digon_orientation_hint(
-                crate::families::e5::graph::PlaneDigonOrientationHintInputs {
-                    face_trailer_sign: Sign::Positive,
-                    surface_class: Some(0xc8),
-                    pcurve_ids: &[10, 11],
-                    edge_ids: &[1, 2],
-                    reversed: &[false, false],
-                    outer: Some(true),
-                    edges: &edges,
-                    pcurves: &wide_pcurves,
-                    curve_supports: &supports,
-                    bounds: &wide_bounds
-                }
-            ),
-            hint
-        );
-
-        let mut faces = vec![E5Face {
-            record_id: 1,
-            surface: 500,
-            trailer_sign: crate::families::e5::graph::Sign::Positive,
-            loops: vec![E5Loop {
-                record_id: 2,
-                surface: 500,
-                members: e5_loop_members(&[10, 11], &[1, 2], &[false, false]),
-                oriented_members: None,
-                outer: Some(true),
-                orientation_hint: hint,
-            }],
-        }];
-        assert!(solve_absolute_orientation(&ctx, &mut faces).expect("service decode"));
-        let members = faces[0].loops[0]
-            .resolved_members()
-            .expect("exact digon anchor resolves the component");
-        assert_eq!(
-            members,
-            [
-                super::E5OrientedMember {
-                    serialized_index: 1,
-                    reversed: true,
-                },
-                super::E5OrientedMember {
-                    serialized_index: 0,
-                    reversed: true,
-                },
-            ]
         );
     }
 
@@ -3064,8 +2591,8 @@ mod tests {
                 })
                 .collect(),
             oriented_members: None,
-            outer: Some(true),
-            orientation_hint: None,
+            outer: true,
+            absolute_orientation: Sign::Positive,
         };
         let mut faces = vec![
             E5Face {
@@ -3088,7 +2615,7 @@ mod tests {
             },
         ];
 
-        assert!(!solve_absolute_orientation(&ctx, &mut faces).expect("service decode"));
+        assert!(!resolve_absolute_orientation(&ctx, &mut faces).expect("service decode"));
         assert!(faces
             .iter()
             .flat_map(|face| &face.loops)
@@ -3108,7 +2635,9 @@ mod tests {
                 loops: vec![loop_(12, vec![1, 3])],
             },
         ];
-        assert!(solve_absolute_orientation(&ctx, &mut faces).expect("service decode"));
+        assert!(!resolve_absolute_orientation(&ctx, &mut faces).expect("equal paired signs reject"));
+        faces[1].loops[0].absolute_orientation = Sign::Negative;
+        assert!(resolve_absolute_orientation(&ctx, &mut faces).expect("service decode"));
         let second = faces[1].loops[0]
             .resolved_members()
             .expect("required invariant");
@@ -3253,18 +2782,12 @@ mod tests {
     #[test]
     fn e5_loop_sign_scan_preserves_role_and_rejection() {
         let mut trailing = vec![0x82];
-        for sign in [0_i16, 1, 0, 0, 0, 0, 0, 0, 0, 0] {
+        for sign in [1_i16, 1, -1, 1, 1, 1, 1, 1, 1, 0] {
             trailing.extend_from_slice(&sign.to_le_bytes());
         }
-        assert!(matches!(
-            super::parse_loop_signs(&trailing, 2),
-            Ok(Some(true))
-        ));
+        assert!(matches!(super::parse_loop_signs(&trailing, 2), Ok(true)));
         trailing[3..5].copy_from_slice(&(-1_i16).to_le_bytes());
-        assert!(matches!(
-            super::parse_loop_signs(&trailing, 2),
-            Ok(Some(false))
-        ));
+        assert!(matches!(super::parse_loop_signs(&trailing, 2), Ok(false)));
         trailing[9..11].copy_from_slice(&2_i16.to_le_bytes());
         assert!(matches!(
             super::parse_loop_signs(&trailing, 2),
@@ -3300,7 +2823,7 @@ mod tests {
     }
 
     #[test]
-    fn e5_orientation_refuses_before_location_collection() {
+    fn e5_orientation_refuses_before_occurrence_collection() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
 
@@ -3313,28 +2836,30 @@ mod tests {
                 surface: 2,
                 members: e5_loop_members(&[4], &[5], &[false]),
                 oriented_members: None,
-                outer: Some(true),
-                orientation_hint: None,
+                outer: true,
+                absolute_orientation: Sign::Positive,
             }],
         }];
         e5_test_context!(service_ctx);
-        assert!(solve_absolute_orientation(&service_ctx, &mut faces.clone())
-            .expect("orientation fits the service profile"));
+        assert!(
+            resolve_absolute_orientation(&service_ctx, &mut faces.clone())
+                .expect("orientation fits the service profile")
+        );
 
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
             .expect("fixture fits the input limit");
-        let error = solve_absolute_orientation(&ctx, &mut faces.clone())
+        let error = resolve_absolute_orientation(&ctx, &mut faces.clone())
             .expect_err("one orientation location exceeds the collection limit");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "catia e5 orientation locations"));
+                && limit.operation == "catia e5 orientation edge occurrence keys"));
     }
 
     #[test]
-    fn e5_orientation_charges_adjacency_and_assignment_arrays() {
+    fn e5_orientation_charges_occurrence_and_member_collections() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
         use std::collections::BTreeSet;
@@ -3348,8 +2873,8 @@ mod tests {
                 surface: 2,
                 members: e5_loop_members(&[4], &[5], &[false]),
                 oriented_members: None,
-                outer: Some(true),
-                orientation_hint: None,
+                outer: true,
+                absolute_orientation: Sign::Positive,
             }],
         }];
         let mut operations = BTreeSet::new();
@@ -3360,7 +2885,7 @@ mod tests {
             policy.limits.max_collection_items = limit;
             let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
                 .expect("fixture fits the input limit");
-            match solve_absolute_orientation(&ctx, &mut faces.clone()) {
+            match resolve_absolute_orientation(&ctx, &mut faces.clone()) {
                 Err(CodecError::ResourceLimit(error)) => {
                     assert_eq!(error.dimension, ResourceDimension::CollectionItems);
                     operations.insert(error.operation);
@@ -3377,12 +2902,8 @@ mod tests {
             completed,
             "collection limit 16 must admit the orientation fixture"
         );
-        assert!(operations.contains("catia e5 orientation adjacency"));
-        assert!(operations.contains("catia e5 orientation assignments"));
         assert!(operations.contains("catia e5 orientation edge occurrence keys"));
         assert!(operations.contains("catia e5 orientation edge occurrences"));
-        assert!(operations.contains("catia e5 orientation component"));
-        assert!(operations.contains("catia e5 orientation member indices"));
         assert!(operations.contains("catia e5 oriented members"));
     }
 }

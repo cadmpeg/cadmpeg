@@ -310,10 +310,18 @@ pub(crate) fn e5_torus_topology_stream() -> Vec<u8> {
     for index in 0..4 {
         loop_payload.extend_from_slice(&[0xbc + index, 0xd0 + index]);
     }
-    loop_payload.push(0xb2);
+    loop_payload.extend_from_slice(&[0xb2, 0x84]);
+    for sign in [1_i16, 1, -1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0] {
+        loop_payload.extend_from_slice(&sign.to_le_bytes());
+    }
     append_e5_record(&mut bytes, 0x09, 90, &loop_payload);
     append_e5_record(&mut bytes, 0x00, 91, &[0x82, 0xb2, 0xda, 1, 0]);
-    append_e5_record(&mut bytes, 0x08, 92, &[0x81, 0xdb, 0x81, 1, 0, 1, 0, 1, 0]);
+    append_e5_record(
+        &mut bytes,
+        0x08,
+        92,
+        &[0x81, 0xdb, 0x81, 1, 0, 255, 255, 255, 255],
+    );
     append_e5_record(&mut bytes, 0x01, 93, &[0x81, 0xdc]);
 
     for xyz in [
