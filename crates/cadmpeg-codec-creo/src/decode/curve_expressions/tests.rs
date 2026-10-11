@@ -696,19 +696,21 @@ fn curve_expression_helix_identities_refuse_retained_limit_at_each_copy() {
                 &crate::identity::DEPDB_CURVE_EXPRESSION_CURVE,
                 format_args!("{}-{}", record.entity_id, record.offset),
                 "creo curve-expression curve identity",
-            ).map(|(id, storage)| {
+            )
+            .map(|(id, storage)| {
                 assert_eq!(id.as_str(), expected_curve_id);
                 drop(id);
                 drop(storage);
             })
         },
     );
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
         && limit.used == 0
         && limit.additional == cadmpeg_core::decode::u64_from_index(expected_curve_id.len())
-        && limit.operation == "creo curve-expression curve identity"));
-
+        && limit.operation == "creo curve-expression curve identity")
+    );
 }
 
 fn dependency_keys_with_limits(

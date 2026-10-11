@@ -107,8 +107,8 @@ fn nonlinear_smooth_expression_stops_before_unneeded_tail() {
             Ok(())
         } else {
             let Err(CodecError::ResourceLimit(original)) = result else {
-                    panic!("expected first work refusal");
-                };
+                panic!("expected first work refusal");
+            };
             assert_eq!(
                 (
                     original.dimension,

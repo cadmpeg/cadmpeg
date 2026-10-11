@@ -216,7 +216,8 @@ fn duplicate_curve_index_probes_add_no_work() {
         .expect("fixed duplicate probe is free");
     assert_eq!(index.len(), 1);
     assert_eq!(index.get(&7), Some(&None));
-    let refusal = ctx.charge_work_limit(1, "after duplicate curve index")
+    let refusal = ctx
+        .charge_work_limit(1, "after duplicate curve index")
         .expect_err("exact work admitted");
     assert_eq!((refusal.used, refusal.additional), (work, 1));
 }

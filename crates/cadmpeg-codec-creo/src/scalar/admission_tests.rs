@@ -52,7 +52,8 @@ fn duplicate_scalar_image_probes_add_no_work() {
     let (ctx, _) = DecodeContext::from_root_bytes(&images, &arena, &policy).expect("root");
     let cache = ScalarCache::from_section_checked(&ctx, &images).expect("duplicate probe is free");
     assert_eq!(cache.entries.len(), 1);
-    let refusal = ctx.charge_work_limit(1, "after scalar duplicate discovery")
+    let refusal = ctx
+        .charge_work_limit(1, "after scalar duplicate discovery")
         .expect_err("exact work admitted");
     assert_eq!((refusal.used, refusal.additional), (work, 1));
 }
@@ -62,9 +63,7 @@ fn scalar_cache_tail_collision_probes_add_no_work() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let images = [
-        0x46, 0x08, 1, 2, 3, 4, 5, 6,
-        0x46, 0x13, 1, 2, 3, 4, 5, 6,
-        0x46, 0x13, 1, 2, 3, 4, 5, 6,
+        0x46, 0x08, 1, 2, 3, 4, 5, 6, 0x46, 0x13, 1, 2, 3, 4, 5, 6, 0x46, 0x13, 1, 2, 3, 4, 5, 6,
     ];
     // The two first table growths each admit four eight-byte buckets,
     // four control bytes, sixteen trailing bytes and fifteen alignment bytes.
@@ -76,12 +75,20 @@ fn scalar_cache_tail_collision_probes_add_no_work() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = work;
     let (ctx, _) = DecodeContext::from_root_bytes(&images, &arena, &policy).expect("root");
-    let cache = ScalarCache::from_section_checked(&ctx, &images).expect("fixed collision probes are free");
+    let cache =
+        ScalarCache::from_section_checked(&ctx, &images).expect("fixed collision probes are free");
     assert_eq!(cache.entries.len(), 2);
     assert_eq!(cache.paired_byte_1(&[1, 2, 3, 4, 5, 6]), None);
-    assert_eq!(super::decode_in_lane(&[0x9e, 1, 2, 3, 4, 5, 6], 0, &cache), None);
-    assert_eq!(super::decode_in_lane(&[0xa3, 1, 2, 3, 4, 5, 6], 0, &cache), None);
-    let refusal = ctx.charge_work_limit(1, "after scalar tail collision")
+    assert_eq!(
+        super::decode_in_lane(&[0x9e, 1, 2, 3, 4, 5, 6], 0, &cache),
+        None
+    );
+    assert_eq!(
+        super::decode_in_lane(&[0xa3, 1, 2, 3, 4, 5, 6], 0, &cache),
+        None
+    );
+    let refusal = ctx
+        .charge_work_limit(1, "after scalar tail collision")
         .expect_err("exact work admitted");
     assert_eq!((refusal.used, refusal.additional), (work, 1));
 }

@@ -25,9 +25,7 @@ fn at_zero_budget<T>(run: impl FnOnce(&DecodeContext<'_>) -> Result<T, CodecErro
 
 #[test]
 fn empty_solve_synchronization_is_free() {
-    at_zero_budget(|ctx| {
-        synchronize_solve_blocks(ctx, &mut [], &[], &BTreeMap::new())
-    });
+    at_zero_budget(|ctx| synchronize_solve_blocks(ctx, &mut [], &[], &BTreeMap::new()));
 }
 
 #[test]
@@ -65,10 +63,13 @@ fn invalid_relation_identifier_start_is_free() {
 fn first_conditional_frame_is_free() {
     at_zero_budget(|ctx| {
         let mut stack = ConditionalStack::default();
-        let result = stack.push(ctx, ConditionalFrame {
-            parent: CurveExpressionActivation::Active,
-            condition: Some(true),
-        });
+        let result = stack.push(
+            ctx,
+            ConditionalFrame {
+                parent: CurveExpressionActivation::Active,
+                condition: Some(true),
+            },
+        );
         if result.is_err() {
             assert!(matches!(stack, ConditionalStack::Empty));
         } else {
@@ -108,9 +109,8 @@ fn zero_relation_formatting_is_free() {
 #[test]
 fn absent_declared_relation_unit_is_free() {
     at_zero_budget(|ctx| {
-        let value = CurveExpressionValue::Number(
-            cadmpeg_ir::scalar::FiniteReal::new(7.0).expect("finite"),
-        );
+        let value =
+            CurveExpressionValue::Number(cadmpeg_ir::scalar::FiniteReal::new(7.0).expect("finite"));
         let result = apply_declared_relation_unit(ctx, value.clone(), None)?;
         assert_eq!(result, Some(value));
         Ok(result)
@@ -126,12 +126,23 @@ fn unsupported_helix_control_is_free() {
             local_system: None,
             lines: Vec::new(),
             assignments: Vec::new(),
-            solve_blocks: if route == 1 { vec![CurveExpressionSolveBlock {
-                equations: Vec::new(), assignments: Vec::new(), unknowns: Vec::new(),
-                offset: 0, for_offset: 1,
-            }] } else { Vec::new() },
+            solve_blocks: if route == 1 {
+                vec![CurveExpressionSolveBlock {
+                    equations: Vec::new(),
+                    assignments: Vec::new(),
+                    unknowns: Vec::new(),
+                    offset: 0,
+                    for_offset: 1,
+                }]
+            } else {
+                Vec::new()
+            },
             unresolved_solve_control: route == 2,
-            prohibited_constructs: if route == 0 { vec!["abs".into()] } else { Vec::new() },
+            prohibited_constructs: if route == 0 {
+                vec!["abs".into()]
+            } else {
+                Vec::new()
+            },
             offset: 0,
             expression_offset: 1,
         };
@@ -158,7 +169,15 @@ fn invalid_curve_terminator_range_is_free() {
 fn invalid_curve_frame_range_is_free() {
     for bounds in [(2, 1), (0, 2), (2, 3)] {
         at_zero_budget(|ctx| {
-            let result = crate::curve::framed_segment_with_face_ids(ctx, &[0], 0, bounds, false, None, None)?;
+            let result = crate::curve::framed_segment_with_face_ids(
+                ctx,
+                &[0],
+                0,
+                bounds,
+                false,
+                None,
+                None,
+            )?;
             assert!(result.is_none());
             Ok(result)
         });
@@ -169,7 +188,14 @@ fn invalid_curve_frame_range_is_free() {
 fn missing_two_chart_extent_is_free() {
     let cache = crate::scalar::ScalarCache::default();
     at_zero_budget(|ctx| {
-        let result = crate::curve::complete_two_chart_samples(ctx, &[], 1, None, "unused chart samples", &cache)?;
+        let result = crate::curve::complete_two_chart_samples(
+            ctx,
+            &[],
+            1,
+            None,
+            "unused chart samples",
+            &cache,
+        )?;
         assert!(result.is_none());
         Ok(result)
     });
@@ -179,7 +205,14 @@ fn missing_two_chart_extent_is_free() {
 fn undersized_two_chart_count_is_free() {
     let cache = crate::scalar::ScalarCache::default();
     at_zero_budget(|ctx| {
-        let result = crate::curve::complete_two_chart_samples(ctx, &[0; 7], 0, Some(2), "unused chart samples", &cache)?;
+        let result = crate::curve::complete_two_chart_samples(
+            ctx,
+            &[0; 7],
+            0,
+            Some(2),
+            "unused chart samples",
+            &cache,
+        )?;
         assert!(result.is_none());
         Ok(result)
     });
@@ -188,9 +221,21 @@ fn undersized_two_chart_count_is_free() {
 #[test]
 fn fewer_than_two_chart_samples_is_free() {
     let cache = crate::scalar::ScalarCache::default();
-    for (body, count) in [(b"".as_slice(), None), (&[0; 3], None), (&[0; 4], Some(1)), (&[0; 8], Some(0))] {
+    for (body, count) in [
+        (b"".as_slice(), None),
+        (&[0; 3], None),
+        (&[0; 4], Some(1)),
+        (&[0; 8], Some(0)),
+    ] {
         at_zero_budget(|ctx| {
-            let result = crate::curve::complete_two_chart_samples(ctx, body, 0, count, "unused chart samples", &cache)?;
+            let result = crate::curve::complete_two_chart_samples(
+                ctx,
+                body,
+                0,
+                count,
+                "unused chart samples",
+                &cache,
+            )?;
             assert!(result.is_none());
             Ok(result)
         });
@@ -209,7 +254,12 @@ fn missing_topology_suffix_is_free() {
 #[test]
 fn empty_topology_candidates_are_free() {
     at_zero_budget(|ctx| {
-        let result = crate::curve::topology_suffix_with_face_ids(ctx, &[crate::psb::token::COMPOUND_CLOSE], None, None)?;
+        let result = crate::curve::topology_suffix_with_face_ids(
+            ctx,
+            &[crate::psb::token::COMPOUND_CLOSE],
+            None,
+            None,
+        )?;
         assert!(result.is_none());
         Ok(result)
     });
@@ -218,7 +268,12 @@ fn empty_topology_candidates_are_free() {
 #[test]
 fn unique_fixed_topology_suffix_is_free() {
     at_zero_budget(|ctx| {
-        let result = crate::curve::topology_suffix_with_face_ids(ctx, &[1, 2, 3, 4, 0, 0, crate::psb::token::COMPOUND_CLOSE], None, None)?;
+        let result = crate::curve::topology_suffix_with_face_ids(
+            ctx,
+            &[1, 2, 3, 4, 0, 0, crate::psb::token::COMPOUND_CLOSE],
+            None,
+            None,
+        )?;
         let candidate = result.expect("one exact suffix");
         assert_eq!(candidate.start, 0);
         assert_eq!(candidate.stored_references(), [1, 2, 3, 4]);
@@ -249,9 +304,16 @@ fn empty_dependency_scan_is_free() {
         let mut dependencies = Vec::new();
         let mut seen = HashSet::new();
         for _ in 0..2 {
-            assert_eq!(crate::curve::extend_expression_dependencies(
-                ctx, &mut dependencies, &mut seen, &mut storage, ""
-            )?, Some(()));
+            assert_eq!(
+                crate::curve::extend_expression_dependencies(
+                    ctx,
+                    &mut dependencies,
+                    &mut seen,
+                    &mut storage,
+                    ""
+                )?,
+                Some(())
+            );
             assert!(dependencies.is_empty());
             assert!(seen.is_empty());
             assert_eq!(dependencies.capacity(), 0);
@@ -272,7 +334,11 @@ fn empty_separator_scan_is_free() {
 
 #[test]
 fn empty_counted_row_linkage_is_free() {
-    for bytes in [b"".as_slice(), &[crate::psb::token::ARRAY_OPEN, 0], &[0, 0, 0, 0]] {
+    for bytes in [
+        b"".as_slice(),
+        &[crate::psb::token::ARRAY_OPEN, 0],
+        &[0, 0, 0, 0],
+    ] {
         at_zero_budget(|ctx| {
             let result = crate::curve::complete_curve_row_linkage(ctx, bytes)?;
             assert!(result);
