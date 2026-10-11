@@ -220,3 +220,65 @@ fn pending_shell_face_traversal_refuses_before_pop() {
         }]
     );
 }
+
+#[test]
+fn shell_seed_projection_preserves_sorted_unique_component_order() {
+    let shells = crate::test_support::assert_work_boundaries(
+        &["creo B-rep shell seed projection", "creo B-rep shell component face visits", "creo B-rep shell component face removal"],
+        |ctx| split_neutral_component_shells(
+            ctx,
+            &[4, 3, 1, 3, 2],
+            &BTreeSet::new(),
+            &BTreeMap::from([(1, BTreeSet::from([3])), (3, BTreeSet::from([1]))]),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+        ),
+    );
+    assert_eq!(shells, [vec![1, 3], vec![2], vec![4]].map(|faces| NeutralShellSpec { faces, wire_curves: BTreeSet::new() }));
+}
+
+#[test]
+fn shell_seed_storage_admits_only_unique_face_slots() {
+    let shells = crate::test_support::assert_refusal_order(
+        ResourceDimension::CollectionItems,
+        &["creo B-rep shell seed storage"],
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let result = split_neutral_component_shells(&ctx, &[3, 1, 3, 2], &BTreeSet::new(), &BTreeMap::new(), &BTreeMap::new(), &BTreeMap::new());
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                if limit.operation == "creo B-rep shell seed storage" {
+                    assert_eq!((limit.used, limit.additional), (3, 3));
+                }
+            }
+            result
+        },
+    );
+    assert_eq!(shells, [1, 2, 3].map(|face| NeutralShellSpec { faces: vec![face], wire_curves: BTreeSet::new() }));
+}
+
+#[test]
+fn shell_seed_storage_is_scoped_and_admits_its_exact_backing() {
+    let seed_bytes = u64::try_from(3 * std::mem::size_of::<u32>()).expect("three face IDs");
+    crate::test_support::assert_refusal_order(
+        ResourceDimension::MaterializedBytes,
+        &["creo B-rep shell seed storage"],
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            policy.limits.max_retained_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let mut storage = ctx.reserve_scoped(0, "test shell planning storage")?;
+            let result = storage.with_storage(|| split_neutral_component_shells(&ctx, &[3, 1, 3, 2], &BTreeSet::new(), &BTreeMap::new(), &BTreeMap::new(), &BTreeMap::new()));
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                if limit.operation == "creo B-rep shell seed storage" {
+                    assert_eq!(limit.additional, seed_bytes);
+                }
+            }
+            result.map(|shells| assert_eq!(shells, [1, 2, 3].map(|face| NeutralShellSpec { faces: vec![face], wire_curves: BTreeSet::new() })))
+        },
+    );
+}
