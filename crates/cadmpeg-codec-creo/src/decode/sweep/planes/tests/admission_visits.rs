@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::super::{
-    agreed_generated_cylinder_extent, feature_outline_plane, generated_cap_plane_extent,
+    agreed_generated_cylinder_extent, feature_outline_plane, feature_outline_planes,
+    feature_plane_equations, generated_arc_cylinder_extent, generated_cap_plane_extent,
+    unique_available_positional_cylinder_frame_records,
 };
 use super::{plane_outline, plane_row};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use std::collections::BTreeSet;
 
@@ -29,6 +32,46 @@ fn transform() -> crate::placement::FeatureSectionTransform {
 }
 
 #[test]
+fn empty_plane_queries_are_free_at_zero_budget() {
+    let scan = crate::test_support::empty_container_scan();
+    let ir = CadIr::empty();
+    let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
+    let parameters = crate::surface::SurfaceParameters::from_rows(Vec::new());
+    let transform = transform();
+    let mut definition = crate::feature::definitions::FeatureDefinition {
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: None, owner_feature_id: None,
+        },
+        body: Vec::new(), parameter_frames: Vec::new(), outlines: Vec::new(),
+        variables: None, segments: None, trim_entities: None, trim_vertices: None,
+        order_table: None, section_3d: None, dimensions: None, relations: None,
+        saved_section: None, offset: 0,
+    };
+    for owner in [None, Some(7)] {
+        definition.identity = crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: None, owner_feature_id: owner,
+        };
+        let arena = DecodeArena::new();
+        let policy = work_policy(0);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let queries = [
+            feature_outline_plane(&ctx, &scan, 7, 31).map(|value| value.is_none()),
+            feature_outline_planes(&ctx, &scan, 7).map(|value| value.expect("empty planes").0.is_empty()),
+            feature_plane_equations(&ctx, &scan, &ir, &carriers, 7)
+                .map(|value| value.expect("empty equations").0.is_empty()),
+            generated_arc_cylinder_extent(&ctx, &scan, &ir, &carriers, &definition, &transform)
+                .map(|value| value.is_none()),
+            generated_cap_plane_extent(&ctx, &scan, &ir, &carriers, 7).map(|value| value.is_none()),
+            unique_available_positional_cylinder_frame_records(&ctx, &BTreeSet::new(), &parameters)
+                .map(|value| value.expect("empty frames").is_empty()),
+            agreed_generated_cylinder_extent(&ctx, &transform, [].iter()).map(|value| value.is_none()),
+        ];
+        for result in queries { assert!(result.expect("empty query")); }
+        assert_eq!(ctx.resource_refusal(), None);
+    }
+}
+
+#[test]
 fn outline_plane_queries_visit_present_carriers_and_stop_at_second_match() {
     let mut duplicate = vec![31, 31];
     duplicate.extend(std::iter::repeat_n(99, 128));
@@ -46,14 +89,8 @@ fn outline_plane_queries_visit_present_carriers_and_stop_at_second_match() {
     ] {
         let mut scan = crate::test_support::empty_container_scan();
         scan.surfaces.rows.push(plane_row(31));
-        scan.planes.outlines = outlines
-            .into_iter()
-            .map(|id| plane_outline(id, 2.0))
-            .collect();
-        scan.planes.positional_frames = positional
-            .into_iter()
-            .map(|id| plane_outline(id, 2.0))
-            .collect();
+        scan.planes.outlines = outlines.into_iter().map(|id| plane_outline(id, 2.0)).collect();
+        scan.planes.positional_frames = positional.into_iter().map(|id| plane_outline(id, 2.0)).collect();
         let mut operations = Vec::new();
         if !scan.planes.outlines.is_empty() {
             operations.push("creo feature outline plane search");
@@ -65,40 +102,39 @@ fn outline_plane_queries_visit_present_carriers_and_stop_at_second_match() {
             if visits == 0 { &[] } else { &operations },
             |ctx| feature_outline_plane(ctx, &scan, 917, 31),
         );
-        let arena = DecodeArena::new();
-        let policy = work_policy(visits);
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let result = feature_outline_plane(&ctx, &scan, 917, 31);
-        let expected = present.then_some((31, [0.0, 0.0, 2.0], [0.0, 0.0, 1.0]));
-        assert_eq!(result.expect("source visits admitted"), expected);
-        assert_eq!(ctx.resource_refusal(), None);
+        for cap in 0..=visits {
+            let arena = DecodeArena::new();
+            let policy = work_policy(cap);
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let result = feature_outline_plane(&ctx, &scan, 917, 31);
+            if cap == visits {
+                let expected = present.then_some((31, [0.0, 0.0, 2.0], [0.0, 0.0, 1.0]));
+                assert_eq!(result.expect("source visits admitted"), expected);
+                assert_eq!(ctx.resource_refusal(), None);
+            } else {
+                let Err(CodecError::ResourceLimit(original)) = result else { panic!("visit limit"); };
+                assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+                assert_eq!((original.used, original.additional), (cap, 1));
+                assert_eq!(original.operation, if cap < u64::try_from(scan.planes.outlines.len()).expect("fixture outline count") { "creo feature outline plane search" } else { "creo feature positional plane search" });
+            }
+        }
     }
 }
 
 #[test]
 fn cylinder_frame_agreement_counts_present_frames_and_stops_at_first_disagreement() {
     let transform = transform();
-    let frame = |length| {
-        crate::surface::PositionalCylinderFrame::new(
-            [0.0; 3],
-            [0.0, 1.0, 0.0],
-            [1.0, 0.0, 0.0],
-            0.75,
-            length,
-        )
-        .expect("cylinder frame")
-    };
+    let frame = |length| crate::surface::PositionalCylinderFrame::new(
+        [0.0; 3], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0], 0.75, length,
+    ).expect("cylinder frame");
     let valid = frame(Some(8.0));
     let mut missing_length = vec![frame(None)];
     missing_length.extend(std::iter::repeat_n(valid, 128));
     let mut mismatch = vec![valid, frame(Some(7.0))];
     mismatch.extend(std::iter::repeat_n(valid, 128));
     for (frames, visits, present) in [
-        (Vec::new(), 0, false),
-        (vec![valid], 1, true),
-        (vec![valid, valid], 2, true),
-        (missing_length, 1, false),
-        (mismatch, 2, false),
+        (Vec::new(), 0, false), (vec![valid], 1, true), (vec![valid, valid], 2, true),
+        (missing_length, 1, false), (mismatch, 2, false),
     ] {
         crate::test_support::assert_work_boundaries(
             match visits {
@@ -111,24 +147,28 @@ fn cylinder_frame_agreement_counts_present_frames_and_stops_at_first_disagreemen
             },
             |ctx| agreed_generated_cylinder_extent(ctx, &transform, frames.iter()),
         );
-        let arena = DecodeArena::new();
-        let policy = work_policy(visits);
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let result = agreed_generated_cylinder_extent(&ctx, &transform, frames.iter());
-        let expected = present.then_some((
-            cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(8.0)
-                            .expect("nonzero length"),
+        for cap in 0..=visits {
+            let arena = DecodeArena::new();
+            let policy = work_policy(cap);
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let result = agreed_generated_cylinder_extent(&ctx, &transform, frames.iter());
+            if cap == visits {
+                let expected = present.then_some((cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                    side: cadmpeg_ir::features::ExtrudeSide {
+                        termination: cadmpeg_ir::features::LinearTermination::Blind {
+                            length: cadmpeg_ir::scalar::NonZeroLength::new(8.0).expect("nonzero length"),
+                        }, draft: None,
                     },
-                    draft: None,
-                },
-            },
-            [0.0, 1.0, 0.0],
-        ));
-        assert_eq!(result.expect("source visits admitted"), expected);
-        assert_eq!(ctx.resource_refusal(), None);
+                }, [0.0, 1.0, 0.0]));
+                assert_eq!(result.expect("source visits admitted"), expected);
+                assert_eq!(ctx.resource_refusal(), None);
+            } else {
+                let Err(CodecError::ResourceLimit(original)) = result else { panic!("visit limit"); };
+                assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+                assert_eq!((original.used, original.additional), (cap, 1));
+                assert_eq!(original.operation, if cap == 0 { "creo generated cylinder frame scan" } else { "creo generated cylinder frame agreement" });
+            }
+        }
     }
 }
 

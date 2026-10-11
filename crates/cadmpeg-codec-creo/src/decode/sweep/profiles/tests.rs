@@ -1069,8 +1069,10 @@ fn circular_pcurve_refuses_projection_work_before_each_pass() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = budget;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        ctx.charge_work(prior_work, "caller work")
-            .expect("caller work admitted");
+        if prior_work > 0 {
+            ctx.charge_work(prior_work, "caller work")
+                .expect("caller work admitted");
+        }
         let result = super::circular_pcurve(
             &ctx,
             [0.0, 0.0],
