@@ -94,7 +94,10 @@ fn recovered_reference_cycle_keeps_independent_memo_entries() {
             );
         }
         assert_eq!(resolver.memo.len(), 3);
-        assert!(resolver.memo.iter().all(|node| matches!(node, crate::parse::ReferenceNode::Ready(_))));
+        assert!(resolver
+            .memo
+            .iter()
+            .all(|node| matches!(node, crate::parse::ReferenceNode::Ready(_))));
     });
 }
 
@@ -233,8 +236,8 @@ fn terminal_reference_uri_is_classified_once() {
 
 #[test]
 fn discarded_reference_target_releases_its_backing() {
-    // An entity occurrence cannot bind to an enumeration value. The candidate is
-    // checked under scratch ownership and the replacement is an omitted node.
+    // An entity occurrence cannot bind to an enumeration value. Classification
+    // omits that target before copying its text.
     let anchors = BTreeMap::from([("a".into(), Value::Enumeration("x".repeat(128)))]);
     let references = [ReferenceEntry {
         name: ReferenceName::Entity(1),
@@ -255,26 +258,48 @@ fn discarded_reference_target_releases_its_backing() {
 }
 
 fn cyclic_alias_work(count: u64, aggregate: bool) -> u64 {
-    let anchors = (1..=count).map(|id| (format!("a{id}"),
-        if aggregate && id == count {
-            Value::List(vec![Value::ExternalReference(1), Value::Integer(7)])
-        } else { Value::ExternalReference(if id == count { 1 } else { id + 1 }) }
-    )).collect::<BTreeMap<_, _>>();
-    let references = (1..=count).map(|id| ReferenceEntry {
-        name: ReferenceName::Value(id), uri: format!("#a{id}"),
-    }).collect::<Vec<_>>();
+    let anchors = (1..=count)
+        .map(|id| {
+            (
+                format!("a{id}"),
+                if aggregate && id == count {
+                    Value::List(vec![Value::ExternalReference(1), Value::Integer(7)])
+                } else {
+                    Value::ExternalReference(if id == count { 1 } else { id + 1 })
+                },
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let references = (1..=count)
+        .map(|id| ReferenceEntry {
+            name: ReferenceName::Value(id),
+            uri: format!("#a{id}"),
+        })
+        .collect::<Vec<_>>();
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 1024;
     crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
         let mut resolver = ReferenceResolver::new(&references, &anchors, ctx).unwrap();
         for id in 1..=count {
-            let expected = if aggregate { Value::List(vec![Value::Omitted, Value::Integer(7)]) }
-                else { Value::Omitted };
-            assert_eq!(resolver.resolve_value(&Value::ExternalReference(id), 0).unwrap(), expected);
+            let expected = if aggregate {
+                Value::List(vec![Value::Omitted, Value::Integer(7)])
+            } else {
+                Value::Omitted
+            };
+            assert_eq!(
+                resolver
+                    .resolve_value(&Value::ExternalReference(id), 0)
+                    .unwrap(),
+                expected
+            );
         }
         assert_eq!(resolver.memo.len(), usize::try_from(count).unwrap());
-        let CodecError::ResourceLimit(refusal) = ctx.charge_work(u64::MAX, "test cyclic alias work").unwrap_err()
-        else { panic!("work probe"); };
+        let CodecError::ResourceLimit(refusal) = ctx
+            .charge_work(u64::MAX, "test cyclic alias work")
+            .unwrap_err()
+        else {
+            panic!("work probe");
+        };
         refusal.used
     })
 }
@@ -294,23 +319,44 @@ fn reference_cycle_closes_at_first_active_alias() {
     let anchors = BTreeMap::from([
         ("a".into(), Value::ExternalReference(2)),
         ("b".into(), Value::ExternalReference(3)),
-        ("c".into(), Value::List(vec![Value::ExternalReference(1), Value::Integer(7)])),
+        (
+            "c".into(),
+            Value::List(vec![Value::ExternalReference(1), Value::Integer(7)]),
+        ),
     ]);
     let references = [
-        ReferenceEntry { name: ReferenceName::Value(1), uri: "#a".into() },
-        ReferenceEntry { name: ReferenceName::Value(2), uri: "#b".into() },
-        ReferenceEntry { name: ReferenceName::Value(3), uri: "#c".into() },
+        ReferenceEntry {
+            name: ReferenceName::Value(1),
+            uri: "#a".into(),
+        },
+        ReferenceEntry {
+            name: ReferenceName::Value(2),
+            uri: "#b".into(),
+        },
+        ReferenceEntry {
+            name: ReferenceName::Value(3),
+            uri: "#c".into(),
+        },
     ];
     for id in [1, 3] {
         for cap in [4, 5] {
             let mut policy = DecodePolicy::service();
             policy.limits.max_recursion_depth = cap;
             crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-                let result = ReferenceResolver::new(&references, &anchors, ctx).unwrap()
+                let result = ReferenceResolver::new(&references, &anchors, ctx)
+                    .unwrap()
                     .resolve_value(&Value::ExternalReference(id), 0);
-                if cap == 5 { assert_eq!(result.unwrap(), Value::List(vec![Value::Omitted, Value::Integer(7)])); }
-                else { assert!(matches!(result, Err(ResolveError::Resource(CodecError::ResourceLimit(refusal)))
-                    if refusal.operation == "step_reference_depth_limit")); }
+                if cap == 5 {
+                    assert_eq!(
+                        result.unwrap(),
+                        Value::List(vec![Value::Omitted, Value::Integer(7)])
+                    );
+                } else {
+                    assert!(
+                        matches!(result, Err(ResolveError::Resource(CodecError::ResourceLimit(refusal)))
+                    if refusal.operation == "step_reference_depth_limit")
+                    );
+                }
             });
         }
     }
@@ -322,40 +368,82 @@ fn reference_cycle_uses_the_common_alias_ancestor() {
         ("a".into(), Value::ExternalReference(3)),
         ("b".into(), Value::ExternalReference(3)),
         ("c".into(), Value::ExternalReference(4)),
-        ("d".into(), Value::List(vec![Value::ExternalReference(2), Value::Integer(7)])),
+        (
+            "d".into(),
+            Value::List(vec![Value::ExternalReference(2), Value::Integer(7)]),
+        ),
     ]);
     let references = [
-        ReferenceEntry { name: ReferenceName::Value(1), uri: "#a".into() },
-        ReferenceEntry { name: ReferenceName::Value(2), uri: "#b".into() },
-        ReferenceEntry { name: ReferenceName::Value(3), uri: "#c".into() },
-        ReferenceEntry { name: ReferenceName::Value(4), uri: "#d".into() },
+        ReferenceEntry {
+            name: ReferenceName::Value(1),
+            uri: "#a".into(),
+        },
+        ReferenceEntry {
+            name: ReferenceName::Value(2),
+            uri: "#b".into(),
+        },
+        ReferenceEntry {
+            name: ReferenceName::Value(3),
+            uri: "#c".into(),
+        },
+        ReferenceEntry {
+            name: ReferenceName::Value(4),
+            uri: "#d".into(),
+        },
     ];
     for (id, cap, accepted) in [(1, 5, false), (1, 6, true), (2, 5, true)] {
         let mut policy = DecodePolicy::service();
         policy.limits.max_recursion_depth = cap;
         crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-            let result = ReferenceResolver::new(&references, &anchors, ctx).unwrap()
+            let result = ReferenceResolver::new(&references, &anchors, ctx)
+                .unwrap()
                 .resolve_value(&Value::ExternalReference(id), 0);
-            if accepted { assert_eq!(result.unwrap(), Value::List(vec![Value::Omitted, Value::Integer(7)])); }
-            else { assert!(matches!(result, Err(ResolveError::Resource(CodecError::ResourceLimit(refusal)))
-                if refusal.operation == "step_reference_depth_limit")); }
+            if accepted {
+                assert_eq!(
+                    result.unwrap(),
+                    Value::List(vec![Value::Omitted, Value::Integer(7)])
+                );
+            } else {
+                assert!(
+                    matches!(result, Err(ResolveError::Resource(CodecError::ResourceLimit(refusal)))
+                if refusal.operation == "step_reference_depth_limit")
+                );
+            }
         });
     }
 }
 
 #[test]
 fn distinct_bindings_to_one_list_keep_cycle_output() {
-    let anchors = BTreeMap::from([("a".into(), Value::List(vec![Value::ExternalReference(1), Value::Integer(7)]))]);
+    let anchors = BTreeMap::from([(
+        "a".into(),
+        Value::List(vec![Value::ExternalReference(1), Value::Integer(7)]),
+    )]);
     let references = [
-        ReferenceEntry { name: ReferenceName::Value(1), uri: "#a".into() },
-        ReferenceEntry { name: ReferenceName::Value(2), uri: "#a".into() },
+        ReferenceEntry {
+            name: ReferenceName::Value(1),
+            uri: "#a".into(),
+        },
+        ReferenceEntry {
+            name: ReferenceName::Value(2),
+            uri: "#a".into(),
+        },
     ];
     crate::test_support::with_service_context(b"", |_, ctx| {
         let mut resolver = ReferenceResolver::new(&references, &anchors, ctx).unwrap();
         let inner = Value::List(vec![Value::Omitted, Value::Integer(7)]);
-        assert_eq!(resolver.resolve_value(&Value::ExternalReference(1), 0).unwrap(), inner);
-        assert_eq!(resolver.resolve_value(&Value::ExternalReference(2), 0).unwrap(),
-            Value::List(vec![inner, Value::Integer(7)]));
+        assert_eq!(
+            resolver
+                .resolve_value(&Value::ExternalReference(1), 0)
+                .unwrap(),
+            inner
+        );
+        assert_eq!(
+            resolver
+                .resolve_value(&Value::ExternalReference(2), 0)
+                .unwrap(),
+            Value::List(vec![inner, Value::Integer(7)])
+        );
     });
 }
 
@@ -367,11 +455,26 @@ fn reference_templates_keep_cross_class_and_forwarded_resource_results() {
         ("c".into(), Value::Reference(5)),
     ]);
     let references = [
-        ReferenceEntry { name: ReferenceName::Value(1), uri: "#a".into() },
-        ReferenceEntry { name: ReferenceName::Value(2), uri: "#b".into() },
-        ReferenceEntry { name: ReferenceName::Entity(3), uri: "#a".into() },
-        ReferenceEntry { name: ReferenceName::Value(4), uri: "#c".into() },
-        ReferenceEntry { name: ReferenceName::Entity(5), uri: "#b".into() },
+        ReferenceEntry {
+            name: ReferenceName::Value(1),
+            uri: "#a".into(),
+        },
+        ReferenceEntry {
+            name: ReferenceName::Value(2),
+            uri: "#b".into(),
+        },
+        ReferenceEntry {
+            name: ReferenceName::Entity(3),
+            uri: "#a".into(),
+        },
+        ReferenceEntry {
+            name: ReferenceName::Value(4),
+            uri: "#c".into(),
+        },
+        ReferenceEntry {
+            name: ReferenceName::Entity(5),
+            uri: "#b".into(),
+        },
     ];
     crate::test_support::with_service_context(b"", |_, ctx| {
         let mut resolver = ReferenceResolver::new(&references, &anchors, ctx).unwrap();
@@ -380,7 +483,9 @@ fn reference_templates_keep_cross_class_and_forwarded_resource_results() {
             (Value::Reference(3), Value::Omitted),
             (Value::ExternalReference(4), Value::Omitted),
             (Value::Reference(5), Value::Reference(5)),
-        ] { assert_eq!(resolver.resolve_value(&input, 0).unwrap(), output); }
+        ] {
+            assert_eq!(resolver.resolve_value(&input, 0).unwrap(), output);
+        }
     });
 }
 
@@ -388,12 +493,24 @@ fn reference_templates_keep_cross_class_and_forwarded_resource_results() {
 fn rejected_reference_target_does_not_visit_its_text() {
     let work = |len| {
         let anchors = BTreeMap::from([("a".into(), Value::Enumeration("X".repeat(len)))]);
-        let references = [ReferenceEntry { name: ReferenceName::Entity(1), uri: "#a".into() }];
+        let references = [ReferenceEntry {
+            name: ReferenceName::Entity(1),
+            uri: "#a".into(),
+        }];
         crate::test_support::with_service_context(b"", |_, ctx| {
-            assert_eq!(ReferenceResolver::new(&references, &anchors, ctx).unwrap()
-                .resolve_value(&Value::Reference(1), 0).unwrap(), Value::Omitted);
-            let CodecError::ResourceLimit(refusal) = ctx.charge_work(u64::MAX, "test rejected target work").unwrap_err()
-            else { panic!("work probe"); };
+            assert_eq!(
+                ReferenceResolver::new(&references, &anchors, ctx)
+                    .unwrap()
+                    .resolve_value(&Value::Reference(1), 0)
+                    .unwrap(),
+                Value::Omitted
+            );
+            let CodecError::ResourceLimit(refusal) = ctx
+                .charge_work(u64::MAX, "test rejected target work")
+                .unwrap_err()
+            else {
+                panic!("work probe");
+            };
             refusal.used
         })
     };
