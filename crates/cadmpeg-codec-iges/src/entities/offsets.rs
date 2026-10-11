@@ -1477,7 +1477,8 @@ pub(super) fn project<'ctx>(
             )?;
             continue;
         };
-        let mut attachment_identity_storage = ctx.reserve_scoped(0, "iges offset attachment identity")?;
+        let mut attachment_identity_storage =
+            ctx.reserve_scoped(0, "iges offset attachment identity")?;
         let curve_id = attachment_identity_storage.with_storage(|| {
             crate::ids::curve_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)
         })?;
