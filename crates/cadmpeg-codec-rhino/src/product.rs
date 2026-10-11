@@ -12,7 +12,7 @@ use serde::Serialize;
 
 use crate::container::Scan;
 use crate::instances::{hex, DefinitionKind, LinkSource, UnitDetail};
-use crate::loss::{RhinoLossCode, ScratchVec};
+use crate::loss::RhinoLossCode;
 use crate::settings::UnitBinding;
 use crate::wire::Uuid;
 
@@ -201,16 +201,20 @@ fn external_record<'a>(
 /// Installs the source product graph without requiring occurrence expansion.
 pub(crate) fn install<'ctx>(
     ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+    loss_storage: &mut cadmpeg_core::decode::ScopedReservation<'ctx>,
     scan: &Scan<'_>,
     ir: &mut CadIr,
-) -> Result<ScratchVec<'ctx, LossNote>, CodecError> {
-    let mut losses = ScratchVec::new(ctx, "Rhino product loss Vec")?;
+) -> Result<Vec<LossNote>, CodecError> {
+    let mut losses = Vec::new();
     let mut object_workspace = ctx.reserve_scoped(0, "Rhino product object workspace")?;
     let mut object_records = HashMap::<Uuid, Option<usize>>::new();
     let mut object_source = scan.objects.iter().enumerate();
     for _ in 0..object_source.len() {
-        let (source_order, object) = ctx.next_charged(&mut object_source, "Rhino install traversal")?
-            .ok_or_else(|| CodecError::Malformed("Rhino product traversal source ended early".into()))?;
+        let (source_order, object) = ctx
+            .next_charged(&mut object_source, "Rhino install traversal")?
+            .ok_or_else(|| {
+                CodecError::Malformed("Rhino product traversal source ended early".into())
+            })?;
         if let Some(identity) = object.identity() {
             object_workspace.with_storage(|| -> Result<(), CodecError> {
                 match ctx.entry_hash_map(
@@ -236,8 +240,11 @@ pub(crate) fn install<'ctx>(
     staging.with_storage(|| -> Result<(), CodecError> {
         let mut definition_source = scan.definitions.definitions().iter();
         for _ in 0..definition_source.len() {
-            let definition = ctx.next_charged(&mut definition_source, "Rhino install borrowed traversal")?
-                .ok_or_else(|| CodecError::Malformed("Rhino product traversal source ended early".into()))?;
+            let definition = ctx
+                .next_charged(&mut definition_source, "Rhino install borrowed traversal")?
+                .ok_or_else(|| {
+                    CodecError::Malformed("Rhino product traversal source ended early".into())
+                })?;
             let external_reference = external_record(ctx, definition.id(), &definition.link)?;
             let external_id = external_reference
                 .as_ref()
@@ -253,8 +260,11 @@ pub(crate) fn install<'ctx>(
             let mut member_seen = HashSet::new();
             let mut member_source = definition.members.iter();
             for _ in 0..member_source.len() {
-                let member = ctx.next_charged(&mut member_source, "Rhino install traversal")?
-                    .ok_or_else(|| CodecError::Malformed("Rhino product traversal source ended early".into()))?;
+                let member = ctx
+                    .next_charged(&mut member_source, "Rhino install traversal")?
+                    .ok_or_else(|| {
+                        CodecError::Malformed("Rhino product traversal source ended early".into())
+                    })?;
                 if let Some(Some(source_order)) =
                     ctx.get_hash_map(&object_records, member, "Rhino definition member lookup")?
                 {
@@ -287,8 +297,11 @@ pub(crate) fn install<'ctx>(
             let mut member_object_ids = Vec::new();
             let mut member_id_source = definition.members.iter();
             for _ in 0..member_id_source.len() {
-                let id = ctx.next_charged(&mut member_id_source, "Rhino install traversal")?
-                    .ok_or_else(|| CodecError::Malformed("Rhino product traversal source ended early".into()))?;
+                let id = ctx
+                    .next_charged(&mut member_id_source, "Rhino install traversal")?
+                    .ok_or_else(|| {
+                        CodecError::Malformed("Rhino product traversal source ended early".into())
+                    })?;
                 ctx.reserve_vec(&mut member_object_ids, 1, "Rhino definition member UUIDs")?;
                 member_object_ids.push(
                     ctx.format_retained(format_args!("{id}"), "Rhino definition member UUID text")?,
@@ -328,8 +341,11 @@ pub(crate) fn install<'ctx>(
     let mut definition_ids = HashSet::new();
     let mut definition_source = scan.definitions.definitions().iter();
     for _ in 0..definition_source.len() {
-        let definition = ctx.next_charged(&mut definition_source, "Rhino install borrowed traversal")?
-            .ok_or_else(|| CodecError::Malformed("Rhino product traversal source ended early".into()))?;
+        let definition = ctx
+            .next_charged(&mut definition_source, "Rhino install borrowed traversal")?
+            .ok_or_else(|| {
+                CodecError::Malformed("Rhino product traversal source ended early".into())
+            })?;
         definition_workspace.with_storage(|| -> Result<(), CodecError> {
             ctx.insert_hash_set(
                 &mut definition_ids,
@@ -338,8 +354,11 @@ pub(crate) fn install<'ctx>(
             )?;
             let mut member_source = definition.members.iter();
             for _ in 0..member_source.len() {
-                let member = ctx.next_charged(&mut member_source, "Rhino install traversal")?
-                    .ok_or_else(|| CodecError::Malformed("Rhino product traversal source ended early".into()))?;
+                let member = ctx
+                    .next_charged(&mut member_source, "Rhino install traversal")?
+                    .ok_or_else(|| {
+                        CodecError::Malformed("Rhino product traversal source ended early".into())
+                    })?;
                 let parents = ctx
                     .entry_hash_map(
                         &mut member_definitions,
@@ -355,8 +374,11 @@ pub(crate) fn install<'ctx>(
     let mut occurrences = Vec::new();
     let mut object_source = scan.objects.iter().enumerate();
     for _ in 0..object_source.len() {
-        let (source_order, object) = ctx.next_charged(&mut object_source, "Rhino install traversal")?
-            .ok_or_else(|| CodecError::Malformed("Rhino product traversal source ended early".into()))?;
+        let (source_order, object) = ctx
+            .next_charged(&mut object_source, "Rhino install traversal")?
+            .ok_or_else(|| {
+                CodecError::Malformed("Rhino product traversal source ended early".into())
+            })?;
         let Some(object) = object.framed() else {
             continue;
         };
@@ -390,8 +412,9 @@ pub(crate) fn install<'ctx>(
                     ),
                     "Rhino product occurrence loss tag",
                 )?;
-                losses.push_admitted(
-                    ctx,
+                ctx.push_scoped_vec(
+                    loss_storage,
+                    &mut losses,
                     loss.with_provenance(
                         SourceProvenance::root(
                             "rhino",
@@ -423,8 +446,13 @@ pub(crate) fn install<'ctx>(
                 )?;
                 let mut parent_source = source_parents.iter();
                 for _ in 0..parent_source.len() {
-                    let parent = ctx.next_charged(&mut parent_source, "Rhino install borrowed traversal")?
-                        .ok_or_else(|| CodecError::Malformed("Rhino product traversal source ended early".into()))?;
+                    let parent = ctx
+                        .next_charged(&mut parent_source, "Rhino install borrowed traversal")?
+                        .ok_or_else(|| {
+                            CodecError::Malformed(
+                                "Rhino product traversal source ended early".into(),
+                            )
+                        })?;
                     parents.push(ctx.format_retained(
                         format_args!("{parent}"),
                         "Rhino occurrence parent UUID",
@@ -502,7 +530,6 @@ pub(crate) fn install<'ctx>(
 #[cfg(test)]
 mod tests {
     mod budget_repairs;
-    use super::install;
     use crate::test_support::test_dump::{
         object_record_with_payload, scan_with_objects, INSTANCE_REFERENCE_CLASS,
     };
@@ -563,6 +590,15 @@ mod tests {
             &[],
         ))
         .expect("linked definition document is framed")
+    }
+
+    fn install(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        scan: &crate::container::Scan<'_>,
+        ir: &mut CadIr,
+    ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
+        let mut storage = ctx.reserve_scoped(0, "test product loss backing")?;
+        super::install(ctx, &mut storage, scan, ir)
     }
 
     #[test]
@@ -834,12 +870,8 @@ mod tests {
             .clone();
         let mut ir = CadIr::empty();
         let service_context = cadmpeg_test_support::service_decode_context();
-        let losses = install(
-            &service_context,
-            &scan,
-            &mut ir,
-        )
-        .expect("other product records remain transferable");
+        let losses = install(&service_context, &scan, &mut ir)
+            .expect("other product records remain transferable");
         assert_eq!(losses.len(), 1);
         let message = &losses[0].message;
         assert!(message.contains(&source_id));

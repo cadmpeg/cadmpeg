@@ -4,8 +4,8 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
-use super::{record, ArchiveVersion, Diagnostics, EmbeddedGeometry, MillimeterScale, Uuid, Value};
 use super::super::{ProjectionContext, ProjectionError};
+use super::{record, ArchiveVersion, Diagnostics, EmbeddedGeometry, MillimeterScale, Uuid, Value};
 
 fn cloud_source(bytes: &[u8]) -> super::HistoryRecord {
     let mut source = record(3, 4, &[], &[]);
@@ -19,8 +19,8 @@ fn cloud_source(bytes: &[u8]) -> super::HistoryRecord {
 
 #[test]
 fn history_geometry_metadata_and_point_slots_use_the_same_collection_limit() {
-    let bytes = crate::test_support::test_archive::point_cloud_payload(
-        &[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]);
+    let bytes =
+        crate::test_support::test_archive::point_cloud_payload(&[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]);
     let source = cloud_source(&bytes);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -46,13 +46,15 @@ fn history_geometry_metadata_and_point_slots_use_the_same_collection_limit() {
     assert_eq!((limit.used, limit.additional), (6, 2));
     assert!(ir.model.features.is_empty());
     assert!(warnings.is_empty());
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+    );
 }
 
 #[test]
 fn history_geometry_preserves_coordinates_and_native_identity_in_one_session() {
-    let bytes = crate::test_support::test_archive::point_cloud_payload(
-        &[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]);
+    let bytes =
+        crate::test_support::test_archive::point_cloud_payload(&[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]);
     let source = cloud_source(&bytes);
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
@@ -65,20 +67,33 @@ fn history_geometry_preserves_coordinates_and_native_identity_in_one_session() {
     };
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let mut warnings = Diagnostics::new();
-    assert_eq!(super::super::project(context, &[source], &mut ir, &mut warnings)
-        .expect("history projection"), (1, 0, 0, 0));
+    assert_eq!(
+        super::super::project(context, &[source], &mut ir, &mut warnings)
+            .expect("history projection"),
+        (1, 0, 0, 0)
+    );
     assert_eq!(ir.model.features.len(), 1);
     let feature = &ir.model.features[0];
-    assert_eq!(feature.id.as_str(), "rhino:history:feature#00000000-0000-0000-0000-000000000003");
-    assert_eq!(feature.native_ref.as_deref(),
-        Some("rhino:history:record#00000000-0000-0000-0000-000000000003"));
-    let points: serde_json::Value = serde_json::from_str(
-        &feature.source_properties["value_7.0.geometry"]).expect("point coordinates");
-    assert_eq!(points, serde_json::json!([
-        {"x":0.0,"y":0.0,"z":0.0}, {"x":1.0,"y":0.0,"z":0.0}
-    ]));
+    assert_eq!(
+        feature.id.as_str(),
+        "rhino:history:feature#00000000-0000-0000-0000-000000000003"
+    );
+    assert_eq!(
+        feature.native_ref.as_deref(),
+        Some("rhino:history:record#00000000-0000-0000-0000-000000000003")
+    );
+    let points: serde_json::Value =
+        serde_json::from_str(&feature.source_properties["value_7.0.geometry"])
+            .expect("point coordinates");
+    assert_eq!(
+        points,
+        serde_json::json!([
+            {"x":0.0,"y":0.0,"z":0.0}, {"x":1.0,"y":0.0,"z":0.0}
+        ])
+    );
     assert!(warnings.is_empty());
-    ctx.finish_session().expect("original session remains admitted");
+    ctx.finish_session()
+        .expect("original session remains admitted");
 }
 
 #[test]
@@ -87,7 +102,8 @@ fn history_geometry_empty_source_keeps_its_original_context_refusal() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, root) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("context");
-    let original = ctx.charge_work(1, "history geometry original refusal")
+    let original = ctx
+        .charge_work(1, "history geometry original refusal")
         .expect_err("original fuse");
     let context = ProjectionContext::Geometry {
         expand: crate::mesh::MeshExpand::new(&ctx, root),
@@ -98,8 +114,45 @@ fn history_geometry_empty_source_keeps_its_original_context_refusal() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let error = super::super::project(context, &[], &mut ir, &mut Diagnostics::new())
         .expect_err("empty projection uses the original geometry session");
-    let ProjectionError::Codec(error) = error else { panic!("original refusal"); };
+    let ProjectionError::Codec(error) = error else {
+        panic!("original refusal");
+    };
     assert_eq!(error.to_string(), original.to_string());
     assert!(ir.model.features.is_empty());
-    assert_eq!(ctx.finish_session().expect_err("original fuse").to_string(), original.to_string());
+    assert_eq!(
+        ctx.finish_session().expect_err("original fuse").to_string(),
+        original.to_string()
+    );
+}
+
+#[test]
+fn scan_history_diagnostics_stay_scoped_until_report_construction() {
+    const SCRATCH_BYTES: u64 = 1 << 20;
+    let records = vec![crate::container::Record::short(0x2000_8071, 0..0, 0); 32];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = SCRATCH_BYTES;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut warnings = Diagnostics::new();
+    let parsed = super::super::parse_records(
+        &ctx,
+        &[],
+        &records,
+        ArchiveVersion::V8,
+        &mut warnings,
+        0x1000_0026,
+    )
+    .expect("scan messages and staging consume no retained storage");
+    assert_eq!(warnings.len(), records.len());
+    assert_eq!(parsed.opaque_records.len(), records.len());
+    assert!(warnings.iter().all(|note| note.message
+        == "history record at 0 degraded: framing error at 0: invalid history table record"));
+    drop(warnings);
+    drop(parsed);
+    let reusable = ctx
+        .reserve_scoped(SCRATCH_BYTES, "next scan diagnostics")
+        .expect("scan storage released");
+    drop(reusable);
+    ctx.finish_session().unwrap();
 }

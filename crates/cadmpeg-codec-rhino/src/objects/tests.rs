@@ -1495,8 +1495,10 @@ fn scoped_class_userdata_uses_materialized_storage_and_keeps_diagnostics_retaine
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&wrapper, &arena, &policy)
         .expect("root bytes admitted");
+    let mut storage = ctx.reserve_scoped(0, "test class userdata").unwrap();
     let (class, staged) = crate::objects::parse_class_wrapper_with_scoped_userdata(
         &ctx,
+        &mut storage,
         &wrapper,
         0..wrapper.len(),
         archive,
@@ -1511,8 +1513,10 @@ fn scoped_class_userdata_uses_materialized_storage_and_keeps_diagnostics_retaine
     policy.limits.max_materialized_bytes = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&wrapper, &arena, &policy)
         .expect("root bytes admitted");
+    let mut storage = ctx.reserve_scoped(0, "test class userdata").unwrap();
     let error = crate::objects::parse_class_wrapper_with_scoped_userdata(
         &ctx,
+        &mut storage,
         &wrapper,
         0..wrapper.len(),
         archive,

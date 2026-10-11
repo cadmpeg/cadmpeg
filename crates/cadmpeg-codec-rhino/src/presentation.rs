@@ -2514,7 +2514,7 @@ fn parse_texture(
             data,
             &mut reader,
             archive,
-            &mut diagnostics,
+            &mut |code, message| diagnostics.push_coded_admitted(ctx, code, message),
         ) {
             Ok(value) => value,
             Err(error) => {
