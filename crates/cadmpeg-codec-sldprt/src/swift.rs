@@ -1983,13 +1983,13 @@ fn project_datum<'index, 'feature: 'index>(
     else {
         return Ok(None);
     };
+    let Some(targets) = targets(ctx, entity, feature_index()?, geometry)? else {
+        return Ok(None);
+    };
     let identification = ctx.format_retained(
         format_args!("{identification}"),
         "copy SWIFT datum identifier",
     )?;
-    let Some(targets) = targets(ctx, entity, feature_index()?, geometry)? else {
-        return Ok(None);
-    };
     let name = object_name(ctx, entity)?;
     Ok(
         (short_class(ctx, &entity.class)? == "GdtDatum").then_some(PmiAnnotation {
@@ -4206,6 +4206,7 @@ fn targets(
     feature_index: &BTreeMap<&str, &Entity>,
     geometry: &ProjectionGeometry<'_, '_, '_>,
 ) -> Result<Option<Vec<PmiTarget>>, CodecError> {
+    let (targets, storage) = ctx.with_scoped_storage("SWIFT target candidate workspace", || -> Result<_, CodecError> {
     let mut seen_storage = ctx.reserve_scoped(0, "SWIFT target identity workspace")?;
     let mut seen = BTreeSet::new();
     let mut targets = Vec::new();
@@ -4271,6 +4272,8 @@ fn targets(
         }
     }
     Ok(Some(targets))
+    })?;
+    targets.map(|targets| storage.commit_value(targets)).transpose()
 }
 
 fn shape_aspect_target(ctx: &DecodeContext<'_>, source_id: &str) -> Result<PmiTarget, CodecError> {

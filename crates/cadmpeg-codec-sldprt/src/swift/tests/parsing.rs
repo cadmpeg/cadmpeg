@@ -1772,7 +1772,7 @@ fn swift_root_marker_search_skips_unvisited_tails() {
     for tail in [0, 96] {
         let name = format!("SWIFT/Schema{}", "x".repeat(tail));
         let mut payload = crate::swift::ROOT_CLASS.as_bytes().to_vec();
-        payload.extend(vec![0; tail * 128]);
+        payload.extend(vec![0; tail.checked_mul(128).expect("test tail fits usize")]);
         let mut source = crate::test_support::container::synthetic_sldprt();
         source.extend(crate::test_support::container::make_block(0x40, &name, &payload));
         let scan = crate::test_support::container::scan(&source);
@@ -1819,4 +1819,26 @@ fn swift_ambiguous_annotation_fallback_skips_unvisited_tails() {
         if let Some(expected) = prefix_work { assert_eq!(limit.used, expected); }
         else { prefix_work = Some(limit.used); }
     }
+}
+
+#[test]
+fn swift_rejected_targets_release_partial_output_and_skip_datum_copy() {
+    let mut datum = super::entity("GdtDatum");
+    datum.strings.insert("DatumIdentifier".into(), "A".repeat(128));
+    datum.features.references = vec![super::reference("F10", "GdtPlane"), super::reference(" ", "GdtPlane")];
+    let features = BTreeMap::new();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 1024 * 1024;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let geometry = crate::swift::ProjectionGeometry::new(&ctx, None, None, None);
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits, "copy SWIFT datum identifier", None,
+    );
+    assert!(crate::swift::project_datum(&ctx, pmi_id("A10").unwrap(), &datum, || Ok(&features), &geometry).unwrap().is_none());
+    let reuse = ctx.reserve_scoped(policy.limits.max_materialized_bytes, "reuse rejected target storage").unwrap();
+    drop(reuse);
+    drop(geometry);
+    ctx.finish_session().unwrap();
 }
