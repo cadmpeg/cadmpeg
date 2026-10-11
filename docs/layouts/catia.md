@@ -591,6 +591,48 @@ Parsed by:
 | 0 | 8 | `local_parameter` | `f64` | little | spec | the local parameter occupies bytes `0..8` |
 | 8 | 4 | `arc_number_bits` | `u32` | little | spec | the arc-number bits occupy bytes `8..12` |
 
+## `e5_nurbs_pcurve_limits`
+
+Spec §9 · layout: byte offsets · size: 37 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/e5/graph.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `lower_arc` | `u16` | little | spec | \| `+0` \| `u16le` \| lower arc number \| |
+| 2 | 2 | `upper_arc` | `u16` | little | spec | \| `+2` \| `u16le` \| upper arc number \| |
+| 4 | 8 | `lower_local` | `f64` | little | spec | \| `+4` \| `f64le` \| lower arc-local parameter \| |
+| 12 | 8 | `upper_local` | `f64` | little | spec | \| `+12` \| `f64le` \| upper arc-local parameter \| |
+| 20 | 8 | `coefficient` | `f64` | little | spec | \| `+20` \| `f64le` \| original-to-active coefficient \| |
+| 28 | 8 | `shift` | `f64` | little | spec | \| `+28` \| `f64le` \| original-to-active shift \| |
+| 36 | 1 | `extrapolation` | `u8` | little | spec | \| `+36` \| `u8` \| extrapolation control \| |
+
+## `e5_nurbs_surface_limits`
+
+Spec §9 · layout: byte offsets · size: 148 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/e5/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `lower_u_patch` | `u16` | little | spec | \| `+0` \| `u16le` \| lower U patch number \| |
+| 2 | 2 | `upper_u_patch` | `u16` | little | spec | \| `+2` \| `u16le` \| upper U patch number \| |
+| 4 | 2 | `lower_v_patch` | `u16` | little | spec | \| `+4` \| `u16le` \| lower V patch number \| |
+| 6 | 2 | `upper_v_patch` | `u16` | little | spec | \| `+6` \| `u16le` \| upper V patch number \| |
+| 8 | 8 | `lower_u_local` | `f64` | little | spec | \| `+8` \| `f64le` \| lower U patch-local parameter \| |
+| 16 | 8 | `upper_u_local` | `f64` | little | spec | \| `+16` \| `f64le` \| upper U patch-local parameter \| |
+| 24 | 8 | `lower_v_local` | `f64` | little | spec | \| `+24` \| `f64le` \| lower V patch-local parameter \| |
+| 32 | 8 | `upper_v_local` | `f64` | little | spec | \| `+32` \| `f64le` \| upper V patch-local parameter \| |
+| 40 | 8 | `u_coefficient` | `f64` | little | spec | \| `+40` \| `f64le` \| U original-to-active coefficient \| |
+| 48 | 8 | `u_shift` | `f64` | little | spec | \| `+48` \| `f64le` \| U original-to-active shift \| |
+| 56 | 8 | `v_coefficient` | `f64` | little | spec | \| `+56` \| `f64le` \| V original-to-active coefficient \| |
+| 64 | 8 | `v_shift` | `f64` | little | spec | \| `+64` \| `f64le` \| V original-to-active shift \| |
+| 72 | 6 | `extrapolation_flags` | `u16[3]` | little | spec | \| `+72` \| `3×u16le` \| extrapolation flags \| |
+| 78 | 64 | `extrapolation_continuation` | `f64[8]` | little | spec | \| `+78` \| `8×f64le` \| extrapolation continuation scalars \| |
+| 142 | 6 | `extrapolation_suffix` | `u8[6]` | little | spec | \| `+142` \| `6×u8` \| extrapolation suffix controls \| |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

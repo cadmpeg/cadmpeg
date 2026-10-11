@@ -774,3 +774,5 @@ Zero-entity face terminals assign positive (`05`) or negative (`03`)
 face-to-surface orientation. Complete loop binding requires the matching outer
 class (`41` or `c1`); contradictory orientation retains the native face without
 binding its loop roster.
+
+E5 NURBS current-limit programs admit the identity parameterization with disabled extrapolation. AA pcurves use the two tail-defined arc-local limits, including an inset lower limit. E7 surfaces require a current rectangle equal to the complete knot domain. Nonidentity parameterizations, active extrapolation, malformed limits and unadmitted surface subdomains retain native bytes and abstain from this geometry route.

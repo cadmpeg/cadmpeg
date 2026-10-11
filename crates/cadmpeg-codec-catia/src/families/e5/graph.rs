@@ -13,7 +13,6 @@ use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use crate::wire;
 
 const EPS_PARAMETER_ENDPOINT: f64 = 1.0e-9;
-const EPS_ARC_LOCAL_BOUND: f64 = 1.0e-9;
 
 /// Resolved graph of an E5 `0D 03` record stream: bodies, faces, edges, and
 /// the geometry records they reference. Produced by [`parse_topology`], which
@@ -252,7 +251,7 @@ pub(super) enum E5Pcurve {
         knots: Vec<FiniteReal>,
         /// `(u, v)` control points in parameter order.
         control_points: Vec<[FiniteReal; 2]>,
-        /// Effective parameter domain of the expanded knot vector.
+        /// Current parameter interval from the arc-local limit program.
         range: [FiniteReal; 2],
     },
 }
@@ -933,13 +932,7 @@ fn bound_representation_parameter(
             return (entry.code == 1).then_some(entry.parameter);
         }
     };
-    let local = entry.parameter.get();
-    let width = end - start;
-    let tolerance = EPS_ARC_LOCAL_BOUND * (1.0 + local.abs());
-    if width <= 0.0 || local < -tolerance || local > width + tolerance {
-        return None;
-    }
-    FiniteReal::new(start + local)
+    super::parameters::arc_local_parameter(start, end, entry.parameter.get())
 }
 
 fn parse_curve_support(
@@ -1212,18 +1205,36 @@ fn parse_nurbs_pcurve(
     if view.remaining() != E5_NURBS_PCURVE_TAIL_BYTES {
         return Ok(None);
     }
-    let Some(range) = usize::try_from(degree).ok().and_then(|degree| {
-        Some([
-            *expanded_knots.get(degree)?,
-            *expanded_knots.get(control_count)?,
-        ])
+    let Some((arcs, locals, coefficient, shift, extrapolation)) = (|| {
+        Some((
+            [view.u16_le()?, view.u16_le()?],
+            [view.f64_le()?, view.f64_le()?],
+            view.f64_le()?,
+            view.f64_le()?,
+            view.u8()?,
+        ))
+    })() else {
+        return Ok(None);
+    };
+    if coefficient != 1.0 || shift != 0.0 || extrapolation != 0 {
+        return Ok(None);
+    }
+    let Some(range) = super::parameters::current_limits(arcs, locals, |arc| {
+        Some([knots.get(arc)?.get(), knots.get(arc.checked_add(1)?)?.get()])
     }) else {
         return Ok(None);
     };
-    if range[0] >= range[1] {
+    let Some(degree_index) = usize::try_from(degree).ok() else {
         return Ok(None);
-    }
-    if view.skip(E5_NURBS_PCURVE_TAIL_BYTES).is_none() {
+    };
+    let domain_start = expanded_knots[degree_index].get();
+    let domain_end = expanded_knots[control_count].get();
+    let tolerance = EPS_PARAMETER_ENDPOINT * (1.0 + (domain_end - domain_start).abs());
+    if domain_start >= domain_end
+        || !tolerance.is_finite()
+        || range[0].get() < domain_start - tolerance
+        || range[1].get() > domain_end + tolerance
+    {
         return Ok(None);
     }
     Ok(view.is_empty().then_some(E5Pcurve::Nurbs {
@@ -2117,7 +2128,12 @@ mod tests {
                 payload.extend_from_slice(&value.to_le_bytes());
             }
         }
-        payload.extend_from_slice(&[0; 37]);
+        payload.extend_from_slice(&1_u16.to_le_bytes());
+        payload.extend_from_slice(&1_u16.to_le_bytes());
+        for value in [0.0_f64, 1.0, 1.0, 0.0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        payload.push(0);
         let mut truncated = payload.clone();
         truncated.pop();
         assert!(
@@ -2150,6 +2166,34 @@ mod tests {
             [finite_pair([0.0, 0.0]), finite_pair([1.0, 1.0])]
         );
         assert_eq!(range, finite_pair([0.0, 1.0]));
+        let tail = payload.len() - super::E5_NURBS_PCURVE_TAIL_BYTES;
+        let mut inset = payload.clone();
+        inset[tail + 4..tail + 12].copy_from_slice(&0.125_f64.to_le_bytes());
+        let decoded =
+            crate::test_support::with_service_context(|ctx| parse_nurbs_pcurve(ctx, &inset, 2, 7))
+                .expect("service resource budget")
+                .expect("inset current limits");
+        assert!(
+            matches!(decoded, E5Pcurve::Nurbs { range, .. } if range == finite_pair([0.125, 1.0]))
+        );
+        for (offset, bytes) in [
+            (0, vec![0, 0]),
+            (2, vec![2, 0]),
+            (4, f64::NAN.to_le_bytes().to_vec()),
+            (4, (-0.25_f64).to_le_bytes().to_vec()),
+            (12, 1.25_f64.to_le_bytes().to_vec()),
+            (20, 2.0_f64.to_le_bytes().to_vec()),
+            (28, 0.5_f64.to_le_bytes().to_vec()),
+            (36, vec![1]),
+        ] {
+            let mut invalid = payload.clone();
+            invalid[tail + offset..tail + offset + bytes.len()].copy_from_slice(&bytes);
+            assert!(crate::test_support::with_service_context(|ctx| {
+                parse_nurbs_pcurve(ctx, &invalid, 2, 7)
+            })
+            .expect("service resource budget")
+            .is_none());
+        }
     }
 
     #[test]
@@ -2169,7 +2213,12 @@ mod tests {
                 payload.extend_from_slice(&value.to_le_bytes());
             }
         }
-        payload.extend_from_slice(&[0; 37]);
+        payload.extend_from_slice(&1_u16.to_le_bytes());
+        payload.extend_from_slice(&1_u16.to_le_bytes());
+        for value in [0.0_f64, 1.0, 1.0, 0.0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        payload.push(0);
         for (cap, operation) in [
             (0, "catia_e5_pcurve_knots"),
             (2, "catia_e5_pcurve_multiplicities"),

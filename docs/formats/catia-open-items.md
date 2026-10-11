@@ -526,13 +526,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the fields to read and write the complete support record.
 
-### E5-11. NURBS carrier trailing lanes
+### E5-11. Active extrapolation continuation
 
-**Question.** What fields do the fixed trailing lanes of class-`0xaa` p-curves and class-`0xe7` surface carriers encode?
+**Question.** What scalar roles and control values define an active E5 NURBS extrapolation branch?
 
-**Known.** `catia.md` §9 defines the complete NURBS knot, multiplicity, control-point, degree, mode, and weight productions. Class `0xaa` retains a fixed 37-byte trailing lane. Class `0xe7` retains a fixed 148-byte trailing lane. The lanes are required for record admission but are not assigned to topology, geometry, or parameter semantics.
+**Known.** `catia.md` §9 "The E5 `0xaa` current-limit program" defines the limit and affine fields. Class `0xaa` has one extrapolation control. The E7 surface program has three flags, eight continuation scalars and six suffix controls. Zero controls disable extrapolation.
 
-**Need.** We must identify the fields in both lanes before decoding or writing their internal values.
+**Need.** We must identify an active branch before interpreting its continuation fields.
 
 ## 7. FBB-only and float-packed variants
 

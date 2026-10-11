@@ -1610,3 +1610,175 @@ offset = 8
 type = "u32"
 source = "spec"
 anchor = "the arc-number bits occupy bytes `8..12`"
+
+[[record]]
+name = "e5_nurbs_pcurve_limits"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/e5/graph.rs"
+kind = "byte"
+section = "9"
+anchor = "The E5 `0xaa` current-limit program"
+size = 37
+endianness = "little"
+
+[[record.field]]
+name = "lower_arc"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "| `+0` | `u16le` | lower arc number |"
+
+[[record.field]]
+name = "upper_arc"
+offset = 2
+type = "u16"
+source = "spec"
+anchor = "| `+2` | `u16le` | upper arc number |"
+
+[[record.field]]
+name = "lower_local"
+offset = 4
+type = "f64"
+source = "spec"
+anchor = "| `+4` | `f64le` | lower arc-local parameter |"
+
+[[record.field]]
+name = "upper_local"
+offset = 12
+type = "f64"
+source = "spec"
+anchor = "| `+12` | `f64le` | upper arc-local parameter |"
+
+[[record.field]]
+name = "coefficient"
+offset = 20
+type = "f64"
+source = "spec"
+anchor = "| `+20` | `f64le` | original-to-active coefficient |"
+
+[[record.field]]
+name = "shift"
+offset = 28
+type = "f64"
+source = "spec"
+anchor = "| `+28` | `f64le` | original-to-active shift |"
+
+[[record.field]]
+name = "extrapolation"
+offset = 36
+type = "u8"
+source = "spec"
+anchor = "| `+36` | `u8` | extrapolation control |"
+
+[[record]]
+name = "e5_nurbs_surface_limits"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/e5/records.rs"
+kind = "byte"
+section = "9"
+anchor = "The E5 `0xe7` current-limit program"
+size = 148
+endianness = "little"
+
+[[record.field]]
+name = "lower_u_patch"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "| `+0` | `u16le` | lower U patch number |"
+
+[[record.field]]
+name = "upper_u_patch"
+offset = 2
+type = "u16"
+source = "spec"
+anchor = "| `+2` | `u16le` | upper U patch number |"
+
+[[record.field]]
+name = "lower_v_patch"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "| `+4` | `u16le` | lower V patch number |"
+
+[[record.field]]
+name = "upper_v_patch"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "| `+6` | `u16le` | upper V patch number |"
+
+[[record.field]]
+name = "lower_u_local"
+offset = 8
+type = "f64"
+source = "spec"
+anchor = "| `+8` | `f64le` | lower U patch-local parameter |"
+
+[[record.field]]
+name = "upper_u_local"
+offset = 16
+type = "f64"
+source = "spec"
+anchor = "| `+16` | `f64le` | upper U patch-local parameter |"
+
+[[record.field]]
+name = "lower_v_local"
+offset = 24
+type = "f64"
+source = "spec"
+anchor = "| `+24` | `f64le` | lower V patch-local parameter |"
+
+[[record.field]]
+name = "upper_v_local"
+offset = 32
+type = "f64"
+source = "spec"
+anchor = "| `+32` | `f64le` | upper V patch-local parameter |"
+
+[[record.field]]
+name = "u_coefficient"
+offset = 40
+type = "f64"
+source = "spec"
+anchor = "| `+40` | `f64le` | U original-to-active coefficient |"
+
+[[record.field]]
+name = "u_shift"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "| `+48` | `f64le` | U original-to-active shift |"
+
+[[record.field]]
+name = "v_coefficient"
+offset = 56
+type = "f64"
+source = "spec"
+anchor = "| `+56` | `f64le` | V original-to-active coefficient |"
+
+[[record.field]]
+name = "v_shift"
+offset = 64
+type = "f64"
+source = "spec"
+anchor = "| `+64` | `f64le` | V original-to-active shift |"
+
+[[record.field]]
+name = "extrapolation_flags"
+offset = 72
+type = "u16[3]"
+source = "spec"
+anchor = "| `+72` | `3×u16le` | extrapolation flags |"
+
+[[record.field]]
+name = "extrapolation_continuation"
+offset = 78
+type = "f64[8]"
+source = "spec"
+anchor = "| `+78` | `8×f64le` | extrapolation continuation scalars |"
+
+[[record.field]]
+name = "extrapolation_suffix"
+offset = 142
+type = "u8[6]"
+source = "spec"
+anchor = "| `+142` | `6×u8` | extrapolation suffix controls |"

@@ -2,6 +2,7 @@
 
 pub(super) mod decode;
 pub(crate) mod graph;
+mod parameters;
 pub(super) mod records;
 
 #[cfg(test)]

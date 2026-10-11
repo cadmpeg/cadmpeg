@@ -149,6 +149,7 @@ const _: () = assert!(
 );
 
 const E5_NURBS_SURFACE_TAIL_BYTES: usize = 148;
+const EPS_CURRENT_LIMIT_DOMAIN: f64 = 1.0e-9;
 const E5_D8_TAIL_BYTES: usize = 63;
 const E5_D8_ARC_TOLERANCE: f64 = 1e-8;
 const E5_D8_RADIUS_TOLERANCE: f64 = 1e-8;
@@ -716,12 +717,12 @@ fn e5_nurbs_surface(
     let Some((v_degree, v_knots, v_multiplicities)) = read_nurbs_axis(ctx, &mut view)? else {
         return Ok(None);
     };
-    let Some((u_knots, u_count)) =
+    let Some((u_expanded_knots, u_count)) =
         expand_nurbs_axis(ctx, u_degree, &u_knots, &u_multiplicities, record.size)?
     else {
         return Ok(None);
     };
-    let Some((v_knots, v_count)) =
+    let Some((v_expanded_knots, v_count)) =
         expand_nurbs_axis(ctx, v_degree, &v_knots, &v_multiplicities, record.size)?
     else {
         return Ok(None);
@@ -778,9 +779,80 @@ fn e5_nurbs_surface(
     if view.remaining() != E5_NURBS_SURFACE_TAIL_BYTES {
         return Ok(None);
     }
-    if view.skip(E5_NURBS_SURFACE_TAIL_BYTES).is_none() || !view.is_empty() {
+    let Some((arcs, locals, affine)) = (|| {
+        Some((
+            [
+                view.u16_le()?,
+                view.u16_le()?,
+                view.u16_le()?,
+                view.u16_le()?,
+            ],
+            [
+                view.f64_le()?,
+                view.f64_le()?,
+                view.f64_le()?,
+                view.f64_le()?,
+            ],
+            [
+                view.f64_le()?,
+                view.f64_le()?,
+                view.f64_le()?,
+                view.f64_le()?,
+            ],
+        ))
+    })() else {
+        return Ok(None);
+    };
+    if affine != [1.0, 0.0, 1.0, 0.0] {
         return Ok(None);
     }
+    let Some((u_limits, v_limits)) = (|| {
+        Some((
+            super::parameters::current_limits([arcs[0], arcs[1]], [locals[0], locals[1]], |arc| {
+                Some([*u_knots.get(arc)?, *u_knots.get(arc.checked_add(1)?)?])
+            })?,
+            super::parameters::current_limits([arcs[2], arcs[3]], [locals[2], locals[3]], |arc| {
+                Some([*v_knots.get(arc)?, *v_knots.get(arc.checked_add(1)?)?])
+            })?,
+        ))
+    })() else {
+        return Ok(None);
+    };
+    for (limits, knots, degree, count) in [
+        (u_limits, &u_expanded_knots, u_degree, u_count),
+        (v_limits, &v_expanded_knots, v_degree, v_count),
+    ] {
+        let Some(degree) = usize::try_from(degree).ok() else {
+            return Ok(None);
+        };
+        let low_error = limits[0].get() - knots[degree];
+        let high_error = limits[1].get() - knots[count];
+        let domain_span = knots[count] - knots[degree];
+        let tolerance = EPS_CURRENT_LIMIT_DOMAIN * (1.0 + domain_span.abs());
+        if !tolerance.is_finite() || low_error.abs() > tolerance || high_error.abs() > tolerance {
+            return Ok(None);
+        }
+    }
+    for _ in 0..3 {
+        if view.u16_le() != Some(0) {
+            return Ok(None);
+        }
+    }
+    for _ in 0..8 {
+        if view.f64_le() != Some(0.0) {
+            return Ok(None);
+        }
+    }
+    for _ in 0..6 {
+        if view.u8() != Some(0) {
+            return Ok(None);
+        }
+    }
+    if !view.is_empty() {
+        return Ok(None);
+    }
+    let u_knots = u_expanded_knots;
+    let v_knots = v_expanded_knots;
     let mut point_rows = Vec::new();
     for row in control_points.chunks(v_count) {
         let copied = ctx.copy_slice(row, "catia_e5_nurbs_point_row")?;
@@ -1178,7 +1250,13 @@ mod tests {
                 payload.extend_from_slice(&weight.to_le_bytes());
             }
         }
-        payload.extend_from_slice(&[0; 148]);
+        for arc in [1_u16; 4] {
+            payload.extend_from_slice(&arc.to_le_bytes());
+        }
+        for value in [0.0_f64, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        payload.extend_from_slice(&[0; 76]);
         payload
     }
 
@@ -1231,6 +1309,38 @@ mod tests {
         ))
         .expect("service resource budget")
         .is_empty());
+    }
+
+    #[test]
+    fn e7_nurbs_surface_abstains_on_unadmitted_limit_programs() {
+        let payload = nurbs_surface_payload(0);
+        let tail = payload.len() - super::E5_NURBS_SURFACE_TAIL_BYTES;
+        for (offset, bytes) in [
+            (0, vec![0, 0]),
+            (6, vec![2, 0]),
+            (8, 0.25_f64.to_le_bytes().to_vec()),
+            (16, f64::NAN.to_le_bytes().to_vec()),
+            (40, 2.0_f64.to_le_bytes().to_vec()),
+            (48, 0.5_f64.to_le_bytes().to_vec()),
+            (72, vec![1]),
+            (74, vec![1]),
+            (76, vec![1]),
+            (78, 0.5_f64.to_le_bytes().to_vec()),
+            (142, vec![1]),
+            (147, vec![1]),
+        ] {
+            let mut invalid = payload.clone();
+            invalid[tail + offset..tail + offset + bytes.len()].copy_from_slice(&bytes);
+            let mut bytes = Vec::new();
+            append_e5_record(&mut bytes, 0xe7, 116, &invalid);
+            assert!(crate::test_support::with_service_context(|ctx| e5_surfaces(
+                ctx,
+                &bytes,
+                &mut crate::nurbs::LaneRefusals::new()
+            ))
+            .expect("service resource budget")
+            .is_empty());
+        }
     }
 
     #[test]
