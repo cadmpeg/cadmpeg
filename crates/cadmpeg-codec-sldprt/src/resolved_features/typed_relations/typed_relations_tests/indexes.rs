@@ -404,9 +404,18 @@ fn unlocated_unrecognized_curves_leave_geometry_unbuilt() {
         let index = CurveMarkers::new(&ctx, &roster).unwrap();
         let mut cache = None;
         let endpoints = marker_curve_endpoint_markers_in(
-            &ctx, &[], &curve, &by_id, &index,
-            CurveEndpointGeometry::Cached { ctx: &ctx, payload: &[], cache: &mut cache },
-        ).unwrap();
+            &ctx,
+            &[],
+            &curve,
+            &by_id,
+            &index,
+            CurveEndpointGeometry::Cached {
+                ctx: &ctx,
+                payload: &[],
+                cache: &mut cache,
+            },
+        )
+        .unwrap();
         assert!(endpoints.is_empty());
         assert!(cache.is_none());
     }
@@ -420,7 +429,10 @@ fn endpoint_geometry_cache_reuses_its_first_index() {
     let marker = point("point", 0, Some("feature"));
     for (dimension, operation) in [
         (ResourceDimension::WorkUnits, "index SLDPRT marker geometry"),
-        (ResourceDimension::MaterializedBytes, "allocate SLDPRT marker prefix index"),
+        (
+            ResourceDimension::MaterializedBytes,
+            "allocate SLDPRT marker prefix index",
+        ),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -428,16 +440,25 @@ fn endpoint_geometry_cache_reuses_its_first_index() {
         policy.limits.max_materialized_bytes = u64::MAX;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut cache = None;
-        let mut provider = CurveEndpointGeometry::Cached { ctx: &ctx, payload: &[], cache: &mut cache };
+        let mut provider = CurveEndpointGeometry::Cached {
+            ctx: &ctx,
+            payload: &[],
+            cache: &mut cache,
+        };
         let original = std::ptr::from_ref(provider.get(&[&marker]).unwrap());
         let _probe = RefusalProbe::arm(dimension, operation, None);
-        assert_eq!(std::ptr::from_ref(provider.get(&[&marker]).unwrap()), original);
+        assert_eq!(
+            std::ptr::from_ref(provider.get(&[&marker]).unwrap()),
+            original
+        );
         let error = match dimension {
             ResourceDimension::WorkUnits => ctx.charge_work(1, operation).unwrap_err(),
             ResourceDimension::MaterializedBytes => ctx.reserve_scoped(1, operation).unwrap_err(),
             _ => unreachable!(),
         };
-        let CodecError::ResourceLimit(limit) = error else { panic!("geometry cache must leave the constructor probe armed"); };
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("geometry cache must leave the constructor probe armed");
+        };
         assert_eq!(limit.additional, 1);
         assert_eq!(limit.operation, operation);
     }

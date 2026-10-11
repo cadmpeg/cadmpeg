@@ -238,27 +238,61 @@ fn solved_line_fallback_rosters_only_collect_queried_features() {
 
 #[test]
 fn existing_native_spatial_constraint_has_no_candidate_storage() {
-    use cadmpeg_ir::sketches::{SketchConstraintId, SpatialSketchConstraint, SpatialSketchConstraintDefinition, SpatialSketchConstraintDefinitionInput};
+    use cadmpeg_ir::sketches::{
+        SketchConstraintId, SpatialSketchConstraint, SpatialSketchConstraintDefinition,
+        SpatialSketchConstraintDefinitionInput,
+    };
     let sketch = SpatialSketch {
         id: SpatialSketchId::mint("synthetic:test:id#spatial-sketch").unwrap(),
-        name: None, configuration: None, visible: None, profiles: Vec::new(), native_ref: Some("lane".into()),
+        name: None,
+        configuration: None,
+        visible: None,
+        profiles: Vec::new(),
+        native_ref: Some("lane".into()),
     };
     let feature = Feature {
-        id: FeatureId::mint("synthetic:test:id#feature").unwrap(), ordinal: 0,
-        name: None, suppressed: Some(false), dependencies: DistinctMembers::default(), source_properties: BTreeMap::new(), source_tag: None, source_text: None, source_content: FeatureContent::default(),
-        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: Some(sketch.id.clone()) })),
+        id: FeatureId::mint("synthetic:test:id#feature").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        dependencies: DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::SpatialSketch {
+                sketch: Some(sketch.id.clone()),
+            },
+        )),
         native_ref: Some("feature".into()),
     };
     let mut lane = relation_lane();
     lane.relation_instances[0].operands = vec![FeatureInputOperand {
-        offset: 0, reference_ref: "reference".into(), kind: FeatureInputOperandKind::D6,
-        entity_index: 0, entity_ref: Some("native-operand".repeat(128)),
+        offset: 0,
+        reference_ref: "reference".into(),
+        kind: FeatureInputOperandKind::D6,
+        entity_index: 0,
+        entity_ref: Some("native-operand".repeat(128)),
     }];
     let existing = SpatialSketchConstraint {
-        id: SketchConstraintId::mint("synthetic:test:id#constraint").unwrap(), sketch: sketch.id.clone(),
-        definition: SpatialSketchConstraintDefinition::try_from(SpatialSketchConstraintDefinitionInput::Native {
-            native_kind: cadmpeg_core::nonblank_literal!("circle-diameter"), native_state: None, parameter: None, operands: vec![cadmpeg_ir::sketches::SketchNativeOperand { native_kind: cadmpeg_core::nonblank_literal!("D6"), field: None, object_index: Some(0), native_ref: lane.relation_instances[0].operands[0].entity_ref.clone() }],
-        }).unwrap(), native_ref: Some(lane.relation_instances[0].id.clone()),
+        id: SketchConstraintId::mint("synthetic:test:id#constraint").unwrap(),
+        sketch: sketch.id.clone(),
+        definition: SpatialSketchConstraintDefinition::try_from(
+            SpatialSketchConstraintDefinitionInput::Native {
+                native_kind: cadmpeg_core::nonblank_literal!("circle-diameter"),
+                native_state: None,
+                parameter: None,
+                operands: vec![cadmpeg_ir::sketches::SketchNativeOperand {
+                    native_kind: cadmpeg_core::nonblank_literal!("D6"),
+                    field: None,
+                    object_index: Some(0),
+                    native_ref: lane.relation_instances[0].operands[0].entity_ref.clone(),
+                }],
+            },
+        )
+        .unwrap(),
+        native_ref: Some(lane.relation_instances[0].id.clone()),
     };
     let mut constraints = vec![existing.clone()];
     let mut entities = Vec::new();
@@ -267,9 +301,22 @@ fn existing_native_spatial_constraint_has_no_candidate_storage() {
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_materialized_bytes = 16 * 1024 * 1024;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    project_spatial_relation_bindings(&ctx, &mut constraints, &mut entities, &[sketch], &[feature], &[], &[lane]).unwrap();
+    project_spatial_relation_bindings(
+        &ctx,
+        &mut constraints,
+        &mut entities,
+        &[sketch],
+        &[feature],
+        &[],
+        &[lane],
+    )
+    .unwrap();
     assert_eq!(constraints, vec![existing]);
     assert!(entities.is_empty());
-    ctx.reserve_scoped(policy.limits.max_materialized_bytes, "reuse rejected spatial candidate workspace").unwrap();
+    ctx.reserve_scoped(
+        policy.limits.max_materialized_bytes,
+        "reuse rejected spatial candidate workspace",
+    )
+    .unwrap();
     ctx.finish_session().unwrap();
 }

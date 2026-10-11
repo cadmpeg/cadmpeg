@@ -62,15 +62,18 @@ fn current_wide_arc_uses_direct_point_ids_with_an_arc_center_carrier() {
             &ctx,
             &payload,
             &entities[0],
-            &mut crate::resolved_features::typed_relations::CurveEndpointGeometry::Borrowed(&crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
-                &ctx,
-                &markers,
-                crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
-                    &ctx, &payload,
+            &mut crate::resolved_features::typed_relations::CurveEndpointGeometry::Borrowed(
+                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+                    &ctx,
+                    &markers,
+                    crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
+                        &ctx, &payload,
+                    )
+                    .unwrap(),
                 )
                 .unwrap(),
-            )
-            .unwrap()), &[],
+            ),
+            &[],
         );
         result
     }
