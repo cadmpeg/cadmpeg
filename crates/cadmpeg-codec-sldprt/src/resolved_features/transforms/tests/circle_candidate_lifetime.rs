@@ -185,9 +185,8 @@ fn circle_candidates_refuse_scored_vector_copy_overlap() {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_materialized_bytes = limit;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                let result = dimensioned_circle_surface_transforms(
-                    &ctx, &sketch, &surfaces, &CIRCLES, 1.0,
-                );
+                let result =
+                    dimensioned_circle_surface_transforms(&ctx, &sketch, &surfaces, &CIRCLES, 1.0);
                 match result {
                     Err(CodecError::ResourceLimit(refusal)) if cap == u64::MAX => {
                         assert_eq!(refusal.dimension, ResourceDimension::MaterializedBytes);

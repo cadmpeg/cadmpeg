@@ -97,13 +97,11 @@ fn declared_handle_owner_admits_class_name() {
 fn declared_slot_handle_admits_slot_class_name() {
     let (lanes, operand) = handle_fixture();
     let operation = "match SLDPRT slot-handle class";
-    let CodecError::ResourceLimit(limit) =
-        crate::test_support::work_refusal_at(operation, |ctx| {
-            declared_slot_handle_dimension_center(ctx, &lanes, "feature", &operand, |_, _| {
-                Ok(Some([0, 0]))
-            })
+    let CodecError::ResourceLimit(limit) = crate::test_support::work_refusal_at(operation, |ctx| {
+        declared_slot_handle_dimension_center(ctx, &lanes, "feature", &operand, |_, _| {
+            Ok(Some([0, 0]))
         })
-    else {
+    }) else {
         panic!("slot class name must refuse");
     };
     assert_eq!(limit.operation, operation);
@@ -136,12 +134,22 @@ fn declared_slot_handle_reuses_selected_reference_and_class() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut probe = None;
         assert!(declared_slot_handle_dimension_center(
-            &ctx, &lanes, "feature", &operand, |lane, _| {
+            &ctx,
+            &lanes,
+            "feature",
+            &operand,
+            |lane, _| {
                 assert!(std::ptr::eq(lane, &raw const lanes[0]));
-                probe = Some(RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None));
+                probe = Some(RefusalProbe::arm(
+                    ResourceDimension::WorkUnits,
+                    operation,
+                    None,
+                ));
                 Ok(Some([0, 0]))
             },
-        ).unwrap().is_none());
+        )
+        .unwrap()
+        .is_none());
         assert!(probe.is_some());
         let CodecError::ResourceLimit(limit) = ctx.charge_work(1, operation).unwrap_err() else {
             panic!("the ownership proof must not run a second time");
