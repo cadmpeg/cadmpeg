@@ -1004,9 +1004,9 @@ fn clamp_endpoint<'ctx>(
             )
         })?;
         let mut indices = (step + 1..=tail).rev();
-        let blend_count = tail.checked_sub(step).ok_or_else(|| {
-            ctx.refuse_codec_limit("Rhino endpoint blend count", 0, 1)
-        })?;
+        let blend_count = tail
+            .checked_sub(step)
+            .ok_or_else(|| ctx.refuse_codec_limit("Rhino endpoint blend count", 0, 1))?;
         for _ in 0..blend_count {
             let index = ctx
                 .next_charged(&mut indices, "Rhino knot insertion blends")?
@@ -1293,9 +1293,9 @@ fn elevate_to_degree(
             // A full knot break starts a new polygon without a shared pole.
             0
         } else {
-            degree.checked_sub(multiplicity).ok_or_else(|| {
-                ctx.refuse_codec_limit("Rhino next Bezier pole index", 0, 1)
-            })?
+            degree
+                .checked_sub(multiplicity)
+                .ok_or_else(|| ctx.refuse_codec_limit("Rhino next Bezier pole index", 0, 1))?
         };
         for index in ctx
             .admit_iter(first..=degree, "Rhino next Bezier pole copy")
