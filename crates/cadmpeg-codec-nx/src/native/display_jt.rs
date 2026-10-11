@@ -89,10 +89,11 @@ fn retain_jt_tessellation_id(
         )?,
         None => {
             use std::fmt::Write;
-            let length = "nx:display-jt:tessellation#".len()
-                + offset.checked_ilog10().unwrap_or(0) as usize
-                + object_id.checked_ilog10().unwrap_or(0) as usize
-                + 3;
+            let key_length =
+                offset.checked_ilog10().unwrap_or(0) + object_id.checked_ilog10().unwrap_or(0) + 3;
+            let key_length = usize::try_from(key_length)
+                .map_err(|_| CodecError::malformed("display-jt identity length exceeds usize"))?;
+            let length = "nx:display-jt:tessellation#".len() + key_length;
             let mut id = ctx.retained_string(length, operation)?;
             write!(id, "nx:display-jt:tessellation#{offset}-{object_id}").map_err(|_| {
                 CodecError::malformed("display-jt tessellation identity formatting")
