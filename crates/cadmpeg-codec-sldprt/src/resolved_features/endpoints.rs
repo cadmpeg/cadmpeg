@@ -502,32 +502,6 @@ fn roster_curve_endpoint_markers_for_route<'a>(
             SketchInputKind::Point | SketchInputKind::ConstrainedPoint
         )
     };
-    if let Some(offsets) = match curve_markers {
-        Some(index) => index.reverse_endpoint_offsets(ctx, payload, curve)?,
-        None => current_reverse_incidence_endpoint_offsets(ctx, payload, curve, markers)?,
-    } {
-        let (endpoints_storage, endpoints);
-        (endpoints, endpoints_storage) = ctx.with_scoped_storage(OPERATION, || {
-            let mut endpoints = Vec::new();
-            for offset in offsets {
-                if let Some(endpoint) = ctx.find_by(
-                    markers.iter().copied(),
-                    |marker| {
-                        Ok(marker.offset() == offset
-                            && marker.coordinates_m.is_some()
-                            && is_point(marker))
-                    },
-                    OPERATION,
-                )? {
-                    ctx.push_vec(&mut endpoints, endpoint, OPERATION)?;
-                }
-            }
-            Ok::<_, CodecError>(endpoints)
-        })?;
-        if endpoints.len() == 2 {
-            return endpoints_storage.commit_value(endpoints);
-        }
-    }
     if let Some(endpoints) =
         legacy_compact_92_profile_object_endpoint_markers(ctx, payload, curve,
             &mut geometry, markers)?
@@ -577,6 +551,32 @@ fn roster_curve_endpoint_markers_for_route<'a>(
         let (endpoints_storage, endpoints);
         (endpoints, endpoints_storage) = ctx.with_scoped_storage(OPERATION, || {
             coordinate_roster_curve_endpoint_markers(ctx, payload, curve, geometry.get(markers)?)
+        })?;
+        if endpoints.len() == 2 {
+            return endpoints_storage.commit_value(endpoints);
+        }
+    }
+    if let Some(offsets) = match curve_markers {
+        Some(index) => index.reverse_endpoint_offsets(ctx, payload, curve)?,
+        None => current_reverse_incidence_endpoint_offsets(ctx, payload, curve, markers)?,
+    } {
+        let (endpoints_storage, endpoints);
+        (endpoints, endpoints_storage) = ctx.with_scoped_storage(OPERATION, || {
+            let mut endpoints = Vec::new();
+            for offset in offsets {
+                if let Some(endpoint) = ctx.find_by(
+                    markers.iter().copied(),
+                    |marker| {
+                        Ok(marker.offset() == offset
+                            && marker.coordinates_m.is_some()
+                            && is_point(marker))
+                    },
+                    OPERATION,
+                )? {
+                    ctx.push_vec(&mut endpoints, endpoint, OPERATION)?;
+                }
+            }
+            Ok::<_, CodecError>(endpoints)
         })?;
         if endpoints.len() == 2 {
             return endpoints_storage.commit_value(endpoints);
@@ -1581,19 +1581,16 @@ fn compact_complete_marker_roster_pair<'a>(
     let Some(raw) = raw else {
         return Ok(None);
     };
+    let indices = raw.map(|raw| {
+        let index = usize::from(raw);
+        if one_based { index.checked_sub(1) } else { Some(index) }
+    });
+    let [Some(first), Some(second)] = indices else {
+        return Ok(None);
+    };
     let geometry = geometry.get(markers)?;
     let owned = geometry.roster(curve, MarkerRoster::All)?;
-    Ok((|| {
-        let index = |raw: u16| {
-            let index = usize::from(raw);
-            if one_based {
-                index.checked_sub(1)
-            } else {
-                Some(index)
-            }
-        };
-        Some([*owned.get(index(raw[0])?)?, *owned.get(index(raw[1])?)?])
-    })())
+    Ok((|| Some([*owned.get(first)?, *owned.get(second)?]))())
 }
 
 fn compact_terminal_84_record(payload: &[u8], offset: usize) -> bool {
