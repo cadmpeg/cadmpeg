@@ -817,7 +817,6 @@ pub(super) fn decode<'ctx>(
     }
     let mut usage_instances = BTreeMap::<u64, usize>::new();
     let mut missing_placement_reports = BTreeSet::new();
-    let mut child_ordinals = BTreeMap::<OccurrenceId, u32>::new();
     let mut usages_by_parent = BTreeMap::<u64, Vec<u64>>::new();
     let mut usage_parent_source = usages.iter();
     for _ in 0..usage_parent_source.len() {
@@ -845,6 +844,9 @@ pub(super) fn decode<'ctx>(
         let Some((parent_definition, parent)) = pending_occurrences.pop_front() else {
             break;
         };
+        // Each unique parent occurrence is queued once. Its children share
+        // this counter only while this worklist item is processed.
+        let mut ordinal = 0_u32;
         let child_usages = ctx
             .get_btree_map(
                 &usages_by_parent,
@@ -858,222 +860,211 @@ pub(super) fn decode<'ctx>(
             child_usages,
             (),
             |(), &usage_id| {
-            if ctx.contains_key_btree_map(
-                &ambiguous_placements,
-                &usage_id,
-                "STEP product ambiguous_placements contains_key",
-            )? {
-                return Ok(());
-            }
-            let usage = ctx
-                .get_btree_map(&usages, &usage_id, "STEP child usage lookup")?
-                .ok_or_else(|| CodecError::malformed("STEP child usage was not indexed"))?;
-            let Some(prototype) = ctx.get_btree_map(
-                &definition_prototypes,
-                &usage.child_definition,
-                "STEP product definition_prototypes get",
-            )?
-            else {
-                slot_storage
-                    .borrow_mut()
-                    .with_storage(|| ctx.reserve_vec(&mut losses, 1, "step_product_losses"))?;
-                losses.push(StepLossCode::DecodeWarning.note(ctx.format_retained(
-                    format_args!("NAUO #{usage_id} references an unresolved child definition"),
-                    "step_product_loss_text",
-                )?));
-                return Ok(());
-            };
-            let parent_path = ctx.get_btree_map(
-                &occurrence_paths,
-                &parent,
-                "STEP product occurrence_paths get",
-            )?;
-            let depth_limit = assembly_depth_limit(ctx);
-            if parent_path.is_some_and(|path| path.len() >= depth_limit) {
-                return Err(ctx.refuse_codec_limit(
-                    "step_assembly_depth_limit",
-                    u64_from_index(depth_limit),
-                    u64_from_index(depth_limit) + 1,
-                ));
-            }
-            if parent_path
-                .map(|path| {
-                    ctx.contains_btree_set(
-                        path,
-                        &usage.child_definition,
-                        "STEP assembly path membership",
-                    )
-                })
-                .transpose()?
-                .unwrap_or(false)
-            {
-                slot_storage
-                    .borrow_mut()
-                    .with_storage(|| ctx.reserve_vec(&mut losses, 1, "step_product_losses"))?;
-                losses.push(StepLossCode::DecodeWarning.note(ctx.format_retained(
-                    format_args!("NAUO #{usage_id} closes an assembly definition cycle"),
-                    "step_product_loss_text",
-                )?));
-                return Ok(());
-            }
-
-            let instance = scratch_storage
-                .with_storage(|| {
-                    ctx.entry_btree_map(
-                        &mut usage_instances,
-                        usage_id,
-                        "step_usage_instance_counts",
-                    )
-                })?
-                .or_default();
-            *instance += 1;
-            let suffix = if *instance == 1 {
-                IdentityKeyTail::empty()
-            } else {
-                IdentityKeyTail::empty()
-                    .dash(key_word!("instance"))
-                    .dash(*instance)
-            };
-            let id = OccurrenceId::from(ids::product(
-                kind!("occurrence"),
-                IdentityKey::from(usage_id).with_tail(&suffix),
-            ));
-            let occurrence_cap = occurrence_limit(ctx);
-            if ir.model.occurrences.len() >= occurrence_cap {
-                return Err(ctx.refuse_codec_limit(
-                    "step_assembly_occurrence_limit",
-                    u64_from_index(occurrence_cap),
-                    u64_from_index(ir.model.occurrences.len()) + 1,
-                ));
-            }
-
-            if !ctx.contains_key_btree_map(
-                &child_ordinals,
-                &parent,
-                "step_child_occurrence_ordinals",
-            )? {
-                let key = occurrence_index_copy_storage.with_storage(|| {
-                    parent.try_clone_for_decode(ctx, "step_product_occurrence_index_identity_copy")
-                })?;
-                scratch_storage.with_storage(|| {
-                    ctx.insert_btree_map(&mut child_ordinals, key, 0_u32, "step_child_occurrence_ordinals")
-                })?;
-            }
-            let ordinal = ctx.get_mut_btree_map(
-                &mut child_ordinals,
-                &parent,
-                "step_child_occurrence_ordinals",
-            )?.ok_or_else(|| CodecError::malformed("STEP child ordinal was not indexed"))?;
-            let transform = if let Some(transform) = ctx
-                .get_btree_map(&placements, &usage_id, "STEP product placements get")?
-                .copied()
-            {
-                transform
-            } else {
-                if scratch_storage.with_storage(|| {
-                    ctx.insert_btree_set(
-                        &mut missing_placement_reports,
-                        usage_id,
-                        "step_missing_placement_reports",
-                    )
-                })? {
+                if ctx.contains_key_btree_map(
+                    &ambiguous_placements,
+                    &usage_id,
+                    "STEP product ambiguous_placements contains_key",
+                )? {
+                    return Ok(());
+                }
+                let usage = ctx
+                    .get_btree_map(&usages, &usage_id, "STEP child usage lookup")?
+                    .ok_or_else(|| CodecError::malformed("STEP child usage was not indexed"))?;
+                let Some(prototype) = ctx.get_btree_map(
+                    &definition_prototypes,
+                    &usage.child_definition,
+                    "STEP product definition_prototypes get",
+                )?
+                else {
                     slot_storage
                         .borrow_mut()
                         .with_storage(|| ctx.reserve_vec(&mut losses, 1, "step_product_losses"))?;
-                    losses.push(
-                        StepLossCode::NauoPlacementUnresolved.note(ctx.format_retained(
-                            format_args!(
-                                "NAUO #{usage_id} has no resolved occurrence transform; \
-                             identity placement was used"
-                            ),
-                            "step_product_loss_text",
-                        )?),
-                    );
+                    losses.push(StepLossCode::DecodeWarning.note(ctx.format_retained(
+                        format_args!("NAUO #{usage_id} references an unresolved child definition"),
+                        "step_product_loss_text",
+                    )?));
+                    return Ok(());
+                };
+                let parent_path = ctx.get_btree_map(
+                    &occurrence_paths,
+                    &parent,
+                    "STEP product occurrence_paths get",
+                )?;
+                let depth_limit = assembly_depth_limit(ctx);
+                if parent_path.is_some_and(|path| path.len() >= depth_limit) {
+                    return Err(ctx.refuse_codec_limit(
+                        "step_assembly_depth_limit",
+                        u64_from_index(depth_limit),
+                        u64_from_index(depth_limit) + 1,
+                    ));
                 }
-                Transform::identity()
-            };
-            ctx.reserve_vec(&mut ir.model.occurrences, 1, "step_child_occurrence_items")?;
-            ir.model.occurrences.push(Occurrence {
-                id: id.try_clone_for_decode(ctx, "step_product_identity_copy")?,
-                prototype: PrototypeReference::Local {
-                    definition: prototype
-                        .try_clone_for_decode(ctx, "step_product_definition_identity_copy")?,
-                },
-                parent: OccurrenceParent::Occurrence {
-                    occurrence: parent.try_clone_for_decode(ctx, "step_product_identity_copy")?,
-                },
-                ordinal: *ordinal,
-                transform,
-                linked_prototype: None,
-                scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-                name: usage
-                    .name
-                    .as_deref()
-                    .map(|text| ctx.copy_retained_text(text, "step_product_occurrence_name_copy"))
-                    .transpose()?,
-                visible: None,
-                link: None,
-                native_ref: Some(ctx.format_retained(
-                    format_args!("#{usage_id}"),
-                    "step_product_native_reference",
-                )?),
-            });
-            ctx.admit_entities(
-                u64_from_index(ir.model.entity_count()),
-                admitted_ir_entities,
-                "step_assembly_occurrence",
-            )?;
-            *ordinal = ordinal.checked_add(1).ok_or_else(|| {
-                CodecError::malformed("STEP child occurrence ordinal exceeds u32")
-            })?;
-            let mut path = BTreeSet::new();
-            if let Some(parent_path) = parent_path {
-                let mut parent_path_source = parent_path.iter();
-                for _ in 0..parent_path_source.len() {
-                    let Some(&definition) = ctx.next_charged(
-                        &mut parent_path_source,
-                        "STEP product parent_path traversal",
-                    )?
-                    else {
-                        break;
-                    };
-                    scratch_storage.with_storage(|| {
-                        ctx.insert_btree_set(
-                            &mut path,
-                            definition,
-                            "step_child_occurrence_path_members",
+                if parent_path
+                    .map(|path| {
+                        ctx.contains_btree_set(
+                            path,
+                            &usage.child_definition,
+                            "STEP assembly path membership",
                         )
-                    })?;
+                    })
+                    .transpose()?
+                    .unwrap_or(false)
+                {
+                    slot_storage
+                        .borrow_mut()
+                        .with_storage(|| ctx.reserve_vec(&mut losses, 1, "step_product_losses"))?;
+                    losses.push(StepLossCode::DecodeWarning.note(ctx.format_retained(
+                        format_args!("NAUO #{usage_id} closes an assembly definition cycle"),
+                        "step_product_loss_text",
+                    )?));
+                    return Ok(());
                 }
-            }
-            scratch_storage.with_storage(|| {
-                ctx.insert_btree_set(
-                    &mut path,
-                    usage.child_definition,
-                    "step_child_occurrence_path_members",
-                )
-            })?;
 
-            scratch_storage.with_storage(|| {
-                ctx.insert_btree_map(
-                    &mut occurrence_paths,
-                    occurrence_index_copy_storage.with_storage(|| {
-                        id.try_clone_for_decode(ctx, "step_product_occurrence_index_identity_copy")
-                    })?,
-                    path,
-                    "step_child_occurrence_path_map",
-                )
-            })?;
-            scratch_storage.with_storage(|| {
-                ctx.push_back(
-                    &mut pending_occurrences,
-                    (usage.child_definition, id),
-                    "step_pending_occurrence",
-                )
-            })?;
-            claim_storage.with_storage(|| {
-                ctx.insert_btree_set(&mut typed, usage_id, "step_product_typed_claims")
-            })?;
+                let instance = scratch_storage
+                    .with_storage(|| {
+                        ctx.entry_btree_map(
+                            &mut usage_instances,
+                            usage_id,
+                            "step_usage_instance_counts",
+                        )
+                    })?
+                    .or_default();
+                *instance += 1;
+                let suffix = if *instance == 1 {
+                    IdentityKeyTail::empty()
+                } else {
+                    IdentityKeyTail::empty()
+                        .dash(key_word!("instance"))
+                        .dash(*instance)
+                };
+                let id = OccurrenceId::from(ids::product(
+                    kind!("occurrence"),
+                    IdentityKey::from(usage_id).with_tail(&suffix),
+                ));
+                let occurrence_cap = occurrence_limit(ctx);
+                if ir.model.occurrences.len() >= occurrence_cap {
+                    return Err(ctx.refuse_codec_limit(
+                        "step_assembly_occurrence_limit",
+                        u64_from_index(occurrence_cap),
+                        u64_from_index(ir.model.occurrences.len()) + 1,
+                    ));
+                }
+
+                let transform = if let Some(transform) = ctx
+                    .get_btree_map(&placements, &usage_id, "STEP product placements get")?
+                    .copied()
+                {
+                    transform
+                } else {
+                    if scratch_storage.with_storage(|| {
+                        ctx.insert_btree_set(
+                            &mut missing_placement_reports,
+                            usage_id,
+                            "step_missing_placement_reports",
+                        )
+                    })? {
+                        slot_storage.borrow_mut().with_storage(|| {
+                            ctx.reserve_vec(&mut losses, 1, "step_product_losses")
+                        })?;
+                        losses.push(StepLossCode::NauoPlacementUnresolved.note(
+                            ctx.format_retained(
+                                format_args!(
+                                    "NAUO #{usage_id} has no resolved occurrence transform; \
+                             identity placement was used"
+                                ),
+                                "step_product_loss_text",
+                            )?,
+                        ));
+                    }
+                    Transform::identity()
+                };
+                ctx.reserve_vec(&mut ir.model.occurrences, 1, "step_child_occurrence_items")?;
+                ir.model.occurrences.push(Occurrence {
+                    id: id.try_clone_for_decode(ctx, "step_product_identity_copy")?,
+                    prototype: PrototypeReference::Local {
+                        definition: prototype
+                            .try_clone_for_decode(ctx, "step_product_definition_identity_copy")?,
+                    },
+                    parent: OccurrenceParent::Occurrence {
+                        occurrence: parent
+                            .try_clone_for_decode(ctx, "step_product_identity_copy")?,
+                    },
+                    ordinal,
+                    transform,
+                    linked_prototype: None,
+                    scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+                    name: usage
+                        .name
+                        .as_deref()
+                        .map(|text| {
+                            ctx.copy_retained_text(text, "step_product_occurrence_name_copy")
+                        })
+                        .transpose()?,
+                    visible: None,
+                    link: None,
+                    native_ref: Some(ctx.format_retained(
+                        format_args!("#{usage_id}"),
+                        "step_product_native_reference",
+                    )?),
+                });
+                ctx.admit_entities(
+                    u64_from_index(ir.model.entity_count()),
+                    admitted_ir_entities,
+                    "step_assembly_occurrence",
+                )?;
+                ordinal = ordinal.checked_add(1).ok_or_else(|| {
+                    CodecError::malformed("STEP child occurrence ordinal exceeds u32")
+                })?;
+                let mut path = BTreeSet::new();
+                if let Some(parent_path) = parent_path {
+                    let mut parent_path_source = parent_path.iter();
+                    for _ in 0..parent_path_source.len() {
+                        let Some(&definition) = ctx.next_charged(
+                            &mut parent_path_source,
+                            "STEP product parent_path traversal",
+                        )?
+                        else {
+                            break;
+                        };
+                        scratch_storage.with_storage(|| {
+                            ctx.insert_btree_set(
+                                &mut path,
+                                definition,
+                                "step_child_occurrence_path_members",
+                            )
+                        })?;
+                    }
+                }
+                scratch_storage.with_storage(|| {
+                    ctx.insert_btree_set(
+                        &mut path,
+                        usage.child_definition,
+                        "step_child_occurrence_path_members",
+                    )
+                })?;
+
+                scratch_storage.with_storage(|| {
+                    ctx.insert_btree_map(
+                        &mut occurrence_paths,
+                        occurrence_index_copy_storage.with_storage(|| {
+                            id.try_clone_for_decode(
+                                ctx,
+                                "step_product_occurrence_index_identity_copy",
+                            )
+                        })?,
+                        path,
+                        "step_child_occurrence_path_map",
+                    )
+                })?;
+                scratch_storage.with_storage(|| {
+                    ctx.push_back(
+                        &mut pending_occurrences,
+                        (usage.child_definition, id),
+                        "step_pending_occurrence",
+                    )
+                })?;
+                claim_storage.with_storage(|| {
+                    ctx.insert_btree_set(&mut typed, usage_id, "step_product_typed_claims")
+                })?;
                 Ok(())
             },
             "STEP child usage traversal",
@@ -1359,7 +1350,10 @@ fn apply_body_placements(
                                 "step_body_placement_groups",
                             )
                         })?
-                        .or_insert((Vec::new(), ctx.reserve_scoped(0, "STEP body placement group")?));
+                        .or_insert((
+                            Vec::new(),
+                            ctx.reserve_scoped(0, "STEP body placement group")?,
+                        ));
                     grouped.1.with_storage(|| {
                         ctx.reserve_vec(&mut grouped.0, 1, "step_body_placement_group_members")
                     })?;
@@ -1952,7 +1946,8 @@ fn occurrence_placements(
         else {
             continue;
         };
-        let mut candidate_storage = ctx.reserve_scoped(0, "STEP occurrence placement candidates")?;
+        let mut candidate_storage =
+            ctx.reserve_scoped(0, "STEP occurrence placement candidates")?;
         let mut candidates = Vec::new();
         ctx.fold(
             representations,
