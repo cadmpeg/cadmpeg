@@ -534,8 +534,12 @@ pub(super) fn decode<'ctx>(
         let color = match &resolved.color {
             Some(ColorResolution::Candidate(candidate)) => candidate,
             Some(ColorResolution::Ambiguous { .. }) => {
-                ctx.push_scoped_vec(&mut scratch_storage, &mut scalar_loss_order,
-                    (losses.len(), (style.span.start, 0, 0)), "STEP scalar conflict source positions")?;
+                ctx.push_scoped_vec(
+                    &mut scratch_storage,
+                    &mut scalar_loss_order,
+                    (losses.len(), (style.span.start, 0, 0)),
+                    "STEP scalar conflict source positions",
+                )?;
                 ctx.push_scoped_vec(&mut slot_storage.borrow_mut(), &mut losses, StepLossCode::ConflictingScalarColors.note(ctx.format_retained(format_args!(
                     "STYLED_ITEM #{style_id} has distinct equal-precedence colors; no scalar color is selected and the source style graph remains retained"
                 ), "step_presentation_loss_text")?), "step_presentation_losses")?;
@@ -544,7 +548,14 @@ pub(super) fn decode<'ctx>(
             None => {
                 let mut visited = BTreeSet::new();
                 if !style_storage.with_storage(|| {
-                    contains_null_style(parts.styles, exchange, (&mut visited, &mut no_null_styles, &mut scratch_storage), 0, ctx).map(|(found, _)| found)
+                    contains_null_style(
+                        parts.styles,
+                        exchange,
+                        (&mut visited, &mut no_null_styles, &mut scratch_storage),
+                        0,
+                        ctx,
+                    )
+                    .map(|(found, _)| found)
                 })? {
                     ctx.push_scoped_vec(
                         &mut slot_storage.borrow_mut(),
@@ -630,7 +641,11 @@ pub(super) fn decode<'ctx>(
             exchange,
             (&mut typed, &mut claim_storage),
             (&mut active, &mut active_storage),
-            (0, graph_limit, Some((&mut empty_style_targets, &mut scratch_storage))),
+            (
+                0,
+                graph_limit,
+                Some((&mut empty_style_targets, &mut scratch_storage)),
+            ),
             &mut |target| {
                 ctx.push_scoped_vec(
                     &mut target_storage,
@@ -835,62 +850,70 @@ pub(super) fn decode<'ctx>(
     }
     for lane in scalar_color_candidates {
         let mut groups = lane.into_values();
-        while let Some(ScalarGroup { source_order, target, colors: candidates }) =
-            ctx.next_charged(&mut groups, "STEP scalar color group traversal")? {
-        let mut selected = None::<Color>;
-        let mut conflicting = false;
-        // The candidate vector is a complete, infallible reduction. It is
-        // fully consumed before any lookup, formatting, or output admission.
-        for (_, color) in
-            ctx.admit_iter(&candidates, "STEP scalar color candidate traversal")?
+        while let Some(ScalarGroup {
+            source_order,
+            target,
+            colors: candidates,
+        }) = ctx.next_charged(&mut groups, "STEP scalar color group traversal")?
         {
-            match selected {
-                None => selected = Some(*color),
-                Some(existing)
-                    if existing.r() != color.r()
-                        || existing.g() != color.g()
-                        || existing.b() != color.b() =>
-                {
-                    conflicting = true;
+            let mut selected = None::<Color>;
+            let mut conflicting = false;
+            // The candidate vector is a complete, infallible reduction. It is
+            // fully consumed before any lookup, formatting, or output admission.
+            for (_, color) in
+                ctx.admit_iter(&candidates, "STEP scalar color candidate traversal")?
+            {
+                match selected {
+                    None => selected = Some(*color),
+                    Some(existing)
+                        if existing.r() != color.r()
+                            || existing.g() != color.g()
+                            || existing.b() != color.b() =>
+                    {
+                        conflicting = true;
+                    }
+                    Some(existing) if color.a() < existing.a() => selected = Some(*color),
+                    Some(_) => {}
                 }
-                Some(existing) if color.a() < existing.a() => selected = Some(*color),
-                Some(_) => {}
+            }
+            if let Some(color) = selected.filter(|_| !conflicting) {
+                match target {
+                    AppearanceTarget::Face(face) => {
+                        if let Some(&index) = ctx.get_btree_map(
+                            &face_indices,
+                            face.as_str(),
+                            "STEP presentation face_indices get",
+                        )? {
+                            ir.model.faces[index].color = Some(color);
+                        }
+                    }
+                    AppearanceTarget::Body(body) => {
+                        if let Some(&index) = ctx.get_btree_map(
+                            &body_indices,
+                            body.as_str(),
+                            "STEP presentation body_indices get",
+                        )? {
+                            ir.model.bodies[index].color = Some(color);
+                        }
+                    }
+                    _ => {}
+                }
+            } else {
+                let message = scalar_conflict_message(&candidates, &target, ctx)?;
+                ctx.push_scoped_vec(
+                    &mut scratch_storage,
+                    &mut scalar_loss_order,
+                    (losses.len(), source_order),
+                    "STEP scalar conflict source positions",
+                )?;
+                ctx.push_scoped_vec(
+                    &mut slot_storage.borrow_mut(),
+                    &mut losses,
+                    StepLossCode::ConflictingScalarColors.note(message),
+                    "step_presentation_losses",
+                )?;
             }
         }
-        if let Some(color) = selected.filter(|_| !conflicting) {
-            match target {
-                AppearanceTarget::Face(face) => {
-                    if let Some(&index) = ctx.get_btree_map(
-                        &face_indices,
-                        face.as_str(),
-                        "STEP presentation face_indices get",
-                    )? {
-                        ir.model.faces[index].color = Some(color);
-                    }
-                }
-                AppearanceTarget::Body(body) => {
-                    if let Some(&index) = ctx.get_btree_map(
-                        &body_indices,
-                        body.as_str(),
-                        "STEP presentation body_indices get",
-                    )? {
-                        ir.model.bodies[index].color = Some(color);
-                    }
-                }
-                _ => {}
-            }
-        } else {
-            let message = scalar_conflict_message(&candidates, &target, ctx)?;
-            ctx.push_scoped_vec(&mut scratch_storage, &mut scalar_loss_order,
-                (losses.len(), source_order), "STEP scalar conflict source positions")?;
-            ctx.push_scoped_vec(
-                &mut slot_storage.borrow_mut(),
-                &mut losses,
-                StepLossCode::ConflictingScalarColors.note(message),
-                "step_presentation_losses",
-            )?;
-        }
-    }
     }
     order_scalar_conflicts(&mut losses, &scalar_loss_order, ctx)?;
     Ok(StageOutcome {
@@ -1154,7 +1177,10 @@ fn collect_invisible_body_ids_uncached(
     })
 }
 
-type EmptyStyleTargets<'a, 'ctx> = (&'a mut BTreeMap<u64, usize>, &'a mut ScopedReservation<'ctx>);
+type EmptyStyleTargets<'a, 'ctx> = (
+    &'a mut BTreeMap<u64, usize>,
+    &'a mut ScopedReservation<'ctx>,
+);
 
 fn expand_style_targets<F: FnMut(u64) -> Result<(), CodecError>>(
     id: u64,
@@ -1225,18 +1251,26 @@ fn expand_style_targets<F: FnMut(u64) -> Result<(), CodecError>>(
                 exchange,
                 (typed, claim_storage),
                 (active, active_storage),
-                (depth + 1, graph_limit, empty.as_mut().map(|(complete, storage)| (&mut **complete, &mut **storage))),
+                (
+                    depth + 1,
+                    graph_limit,
+                    empty
+                        .as_mut()
+                        .map(|(complete, storage)| (&mut **complete, &mut **storage)),
+                ),
                 visit,
                 ctx,
             )?;
-            empty_height = empty_height.zip(height).and_then(|(current, child)| {
-                child.checked_add(1).map(|child| current.max(child))
-            });
+            empty_height = empty_height
+                .zip(height)
+                .and_then(|(current, child)| child.checked_add(1).map(|child| current.max(child)));
         }
     }
     ctx.remove_btree_set(active, &id, "STEP presentation active remove")?;
     if let (Some(height), Some((complete, storage))) = (empty_height, empty) {
-        storage.with_storage(|| ctx.insert_btree_map(complete, id, height, "STEP empty style targets"))?;
+        storage.with_storage(|| {
+            ctx.insert_btree_map(complete, id, height, "STEP empty style targets")
+        })?;
     }
     Ok(empty_height)
 }
@@ -1725,20 +1759,41 @@ fn order_scalar_conflicts(
     let (notes_buffer, mut storage) = ctx.temporary_vec(0, "STEP ordered scalar conflict notes")?;
     let mut notes = notes_buffer;
     let mut positions_source = positions.iter();
-    while let Some(&(index, source_order)) = ctx.next_charged(&mut positions_source, "STEP scalar conflict extraction")? {
-        let slot = losses.get_mut(index).ok_or_else(|| CodecError::malformed("STEP scalar conflict position missing"))?;
-        let note = std::mem::replace(slot, StepLossCode::ConflictingScalarColors.note(String::new()));
-        ctx.push_scoped_vec(&mut storage, &mut notes, (source_order, note), "STEP ordered scalar conflict notes")?;
+    while let Some(&(index, source_order)) =
+        ctx.next_charged(&mut positions_source, "STEP scalar conflict extraction")?
+    {
+        let slot = losses
+            .get_mut(index)
+            .ok_or_else(|| CodecError::malformed("STEP scalar conflict position missing"))?;
+        let note = std::mem::replace(
+            slot,
+            StepLossCode::ConflictingScalarColors.note(String::new()),
+        );
+        ctx.push_scoped_vec(
+            &mut storage,
+            &mut notes,
+            (source_order, note),
+            "STEP ordered scalar conflict notes",
+        )?;
     }
-    ctx.stable_sort_by(&mut notes, |note| &note.0, Ord::cmp, "STEP scalar conflict source order")?;
+    ctx.stable_sort_by(
+        &mut notes,
+        |note| &note.0,
+        Ord::cmp,
+        "STEP scalar conflict source order",
+    )?;
     let mut notes = notes.into_iter();
     let mut positions_source = positions.iter();
     for _ in 0..positions.len() {
-        let &(index, _) = ctx.next_charged(&mut positions_source, "STEP scalar conflict placement")?
+        let &(index, _) = ctx
+            .next_charged(&mut positions_source, "STEP scalar conflict placement")?
             .ok_or_else(|| CodecError::malformed("STEP scalar conflict position ended early"))?;
-        let (_, note) = ctx.next_charged(&mut notes, "STEP scalar conflict note placement")?
+        let (_, note) = ctx
+            .next_charged(&mut notes, "STEP scalar conflict note placement")?
             .ok_or_else(|| CodecError::malformed("STEP scalar conflict notes ended early"))?;
-        *losses.get_mut(index).ok_or_else(|| CodecError::malformed("STEP scalar conflict position missing"))? = note;
+        *losses
+            .get_mut(index)
+            .ok_or_else(|| CodecError::malformed("STEP scalar conflict position missing"))? = note;
     }
     Ok(())
 }
@@ -1786,7 +1841,11 @@ fn push_scalar_candidate(
     };
     let group = ctx
         .entry_btree_map(candidates, key, "step_presentation_scalar_color_groups")?
-        .or_insert(ScalarGroup { source_order, target, colors: Vec::new() });
+        .or_insert(ScalarGroup {
+            source_order,
+            target,
+            colors: Vec::new(),
+        });
     ctx.push_vec(
         &mut group.colors,
         (style_id, color),
@@ -2196,8 +2255,17 @@ impl<'ctx> ColorCompletions<'ctx> {
             return Ok(());
         }
         let mut values = self.values.iter();
-        while let Some((&key, node)) = ctx.next_charged(&mut values, "STEP color dependency nodes")? {
-            register_color_parents((key, node.height), exchange, &self.values, &mut self.parents, &mut self.storage, ctx)?;
+        while let Some((&key, node)) =
+            ctx.next_charged(&mut values, "STEP color dependency nodes")?
+        {
+            register_color_parents(
+                (key, node.height),
+                exchange,
+                &self.values,
+                &mut self.parents,
+                &mut self.storage,
+                ctx,
+            )?;
         }
         self.parents_ready = true;
         Ok(())
@@ -2214,21 +2282,41 @@ impl<'ctx> ColorCompletions<'ctx> {
         let mut storage = ctx.reserve_scoped(0, "STEP shared color history scratch")?;
         let mut pending = Vec::new();
         let mut visited = BTreeSet::new();
-        ctx.push_scoped_vec(&mut storage, &mut pending, key, "STEP shared color history pending")?;
+        ctx.push_scoped_vec(
+            &mut storage,
+            &mut pending,
+            key,
+            "STEP shared color history pending",
+        )?;
         while !pending.is_empty() {
             ctx.charge_work(1, "STEP shared color history step")?;
-            let key = pending.pop().ok_or_else(|| CodecError::malformed("STEP shared color history node missing"))?;
-            if ctx.get_btree_map(&cache.values, &key, "STEP shared color history local")?
-                .is_some_and(|entry| matches!(entry.source, ColorCacheSource::Shared)) {
+            let key = pending
+                .pop()
+                .ok_or_else(|| CodecError::malformed("STEP shared color history node missing"))?;
+            if ctx
+                .get_btree_map(&cache.values, &key, "STEP shared color history local")?
+                .is_some_and(|entry| matches!(entry.source, ColorCacheSource::Shared))
+            {
                 return Ok(true);
             }
-            if !storage.with_storage(|| ctx.insert_btree_set(&mut visited, key, "STEP shared color history visited"))? {
+            if !storage.with_storage(|| {
+                ctx.insert_btree_set(&mut visited, key, "STEP shared color history visited")
+            })? {
                 continue;
             }
-            if let Some(parents) = ctx.get_btree_map(&self.parents, &key, "STEP shared color history parents")? {
+            if let Some(parents) =
+                ctx.get_btree_map(&self.parents, &key, "STEP shared color history parents")?
+            {
                 let mut parents = parents.iter();
-                while let Some(&parent) = ctx.next_charged(&mut parents, "STEP shared color history edge")? {
-                    ctx.push_scoped_vec(&mut storage, &mut pending, parent, "STEP shared color history pending")?;
+                while let Some(&parent) =
+                    ctx.next_charged(&mut parents, "STEP shared color history edge")?
+                {
+                    ctx.push_scoped_vec(
+                        &mut storage,
+                        &mut pending,
+                        parent,
+                        "STEP shared color history pending",
+                    )?;
                 }
             }
         }
@@ -2246,17 +2334,35 @@ impl<'ctx> ColorCompletions<'ctx> {
         self.ensure_parents(exchange, ctx)?;
         let mut pending_storage = ctx.reserve_scoped(0, "STEP contextual color scratch")?;
         let mut pending = Vec::new();
-        ctx.push_scoped_vec(&mut pending_storage, &mut pending, key, "STEP contextual color pending")?;
+        ctx.push_scoped_vec(
+            &mut pending_storage,
+            &mut pending,
+            key,
+            "STEP contextual color pending",
+        )?;
         while !pending.is_empty() {
             ctx.charge_work(1, "STEP contextual color ancestor step")?;
-            let key = pending.pop().ok_or_else(|| CodecError::malformed("STEP contextual color node missing"))?;
-            if !storage.borrow_mut().with_storage(|| ctx.insert_btree_set(blocked, key, "STEP contextual color ancestors"))? {
+            let key = pending
+                .pop()
+                .ok_or_else(|| CodecError::malformed("STEP contextual color node missing"))?;
+            if !storage.borrow_mut().with_storage(|| {
+                ctx.insert_btree_set(blocked, key, "STEP contextual color ancestors")
+            })? {
                 continue;
             }
-            if let Some(parents) = ctx.get_btree_map(&self.parents, &key, "STEP contextual color parents")? {
+            if let Some(parents) =
+                ctx.get_btree_map(&self.parents, &key, "STEP contextual color parents")?
+            {
                 let mut parents = parents.iter();
-                while let Some(&parent) = ctx.next_charged(&mut parents, "STEP contextual color edge")? {
-                    ctx.push_scoped_vec(&mut pending_storage, &mut pending, parent, "STEP contextual color pending")?;
+                while let Some(&parent) =
+                    ctx.next_charged(&mut parents, "STEP contextual color edge")?
+                {
+                    ctx.push_scoped_vec(
+                        &mut pending_storage,
+                        &mut pending,
+                        parent,
+                        "STEP contextual color pending",
+                    )?;
                 }
             }
         }
@@ -2348,16 +2454,27 @@ fn register_color_parents(
     if height == 0 {
         return Ok(());
     }
-    let record = ctx.get_btree_map(exchange.records(), &key.0, "STEP color dependency record")?
+    let record = ctx
+        .get_btree_map(exchange.records(), &key.0, "STEP color dependency record")?
         .ok_or_else(|| CodecError::malformed("STEP completed color record missing"))?;
     let mut partials = record.partials.iter();
     while let Some(partial) = ctx.next_charged(&mut partials, "STEP color dependency partials")? {
         let mut parameters = partial.parameters.iter();
-        while let Some(value) = ctx.next_charged(&mut parameters, "STEP color dependency parameters")? {
+        while let Some(value) =
+            ctx.next_charged(&mut parameters, "STEP color dependency parameters")?
+        {
             for child in references(value, ctx) {
                 let child = (child?, key.1);
                 if ctx.contains_key_btree_map(values, &child, "STEP color dependency completion")? {
-                    storage.with_storage(|| ctx.insert_btree_group_set(parents, child, key, "STEP color dependency groups", "STEP color dependency parents"))?;
+                    storage.with_storage(|| {
+                        ctx.insert_btree_group_set(
+                            parents,
+                            child,
+                            key,
+                            "STEP color dependency groups",
+                            "STEP color dependency parents",
+                        )
+                    })?;
                 }
             }
         }
@@ -2806,12 +2923,18 @@ fn begin_color_visit<'exchange, 'ctx, 'arena>(
     let mut had_completion = false;
     if let Some(completed) = completed.as_deref_mut() {
         let blocked = !cache.blocked_shared.is_empty()
-            && ctx.contains_btree_set(&cache.blocked_shared, &(id, domain), "STEP contextual color completion lookup")?;
-        let result = ctx.get_btree_map(
-            &completed.values,
-            &(id, domain),
-            "STEP completed color lookup",
-        )?.copied();
+            && ctx.contains_btree_set(
+                &cache.blocked_shared,
+                &(id, domain),
+                "STEP contextual color completion lookup",
+            )?;
+        let result = ctx
+            .get_btree_map(
+                &completed.values,
+                &(id, domain),
+                "STEP completed color lookup",
+            )?
+            .copied();
         had_completion = result.is_some();
         if let Some(result) = result.filter(|_| !blocked) {
             // An earlier shared root represents its descendants in this
@@ -3253,7 +3376,11 @@ fn finish_color(
             // An active parent cannot acquire a completion from a child walk.
             // Reuse the result from its admitted initial lookup.
             let cached = if had_completion {
-                ctx.get_btree_map(&completed.values, &(id, domain), "STEP completed color lookup")?
+                ctx.get_btree_map(
+                    &completed.values,
+                    &(id, domain),
+                    "STEP completed color lookup",
+                )?
             } else {
                 None
             };
@@ -3261,7 +3388,14 @@ fn finish_color(
                 shared = Some(cached.color);
             } else {
                 if completed.parents_ready {
-                    register_color_parents(((id, domain), height), exchange, &completed.values, &mut completed.parents, &mut completed.storage, ctx)?;
+                    register_color_parents(
+                        ((id, domain), height),
+                        exchange,
+                        &completed.values,
+                        &mut completed.parents,
+                        &mut completed.storage,
+                        ctx,
+                    )?;
                 }
                 let index = completed.colors.len();
                 completed.storage.with_storage(|| {
@@ -3283,7 +3417,13 @@ fn finish_color(
     }
     if had_completion && shared.is_none() && result.height.is_none() {
         if let Some(completed) = completed {
-            completed.block_ancestors((id, domain), &mut cache.blocked_shared, storage, exchange, ctx)?;
+            completed.block_ancestors(
+                (id, domain),
+                &mut cache.blocked_shared,
+                storage,
+                exchange,
+                ctx,
+            )?;
         }
     }
     let (color, source) = if let Some(index) = shared {
@@ -3810,23 +3950,41 @@ fn contains_null_style(
     match value {
         Value::Typed(name, _) if name == "NULL_STYLE" => Ok((true, Some(0))),
         Value::Typed(_, value) => {
-            let (found, height) = contains_null_style(value, exchange, (visited, no_null, cache_storage), depth + 1, ctx)?;
+            let (found, height) = contains_null_style(
+                value,
+                exchange,
+                (visited, no_null, cache_storage),
+                depth + 1,
+                ctx,
+            )?;
             Ok((found, height.and_then(|height| height.checked_add(1))))
         }
         Value::List(values) => {
             let mut height = Some(0_usize);
             let mut values = values.iter();
-            while let Some(value) = ctx.next_charged(&mut values, "STEP contains null style value traversal")? {
-                let (found, child) = contains_null_style(value, exchange, (visited, no_null, cache_storage), depth + 1, ctx)?;
+            while let Some(value) =
+                ctx.next_charged(&mut values, "STEP contains null style value traversal")?
+            {
+                let (found, child) = contains_null_style(
+                    value,
+                    exchange,
+                    (visited, no_null, cache_storage),
+                    depth + 1,
+                    ctx,
+                )?;
                 if found {
                     return Ok((true, None));
                 }
-                height = height.zip(child).and_then(|(height, child)| child.checked_add(1).map(|child| height.max(child)));
+                height = height.zip(child).and_then(|(height, child)| {
+                    child.checked_add(1).map(|child| height.max(child))
+                });
             }
             Ok((false, height))
         }
         Value::Reference(id) => {
-            if let Some(&height) = ctx.get_btree_map(no_null, id, "STEP null style completion lookup")? {
+            if let Some(&height) =
+                ctx.get_btree_map(no_null, id, "STEP null style completion lookup")?
+            {
                 if height < 256 - depth {
                     return Ok((false, Some(height)));
                 }
@@ -3835,23 +3993,39 @@ fn contains_null_style(
                 return Ok((false, None));
             }
             let mut height = Some(0_usize);
-            if let Some(record) = ctx.get_btree_map(exchange.records(), id, "STEP presentation record get")? {
+            if let Some(record) =
+                ctx.get_btree_map(exchange.records(), id, "STEP presentation record get")?
+            {
                 let mut partials = record.partials.iter();
-                while let Some(partial) = ctx.next_charged(&mut partials, "STEP contains null style traversal")? {
+                while let Some(partial) =
+                    ctx.next_charged(&mut partials, "STEP contains null style traversal")?
+                {
                     let mut parameters = partial.parameters.iter();
-                    while let Some(value) = ctx.next_charged(&mut parameters, "STEP record parameter traversal")? {
-                        let (found, child) = contains_null_style(value, exchange, (visited, no_null, cache_storage), depth + 1, ctx)?;
+                    while let Some(value) =
+                        ctx.next_charged(&mut parameters, "STEP record parameter traversal")?
+                    {
+                        let (found, child) = contains_null_style(
+                            value,
+                            exchange,
+                            (visited, no_null, cache_storage),
+                            depth + 1,
+                            ctx,
+                        )?;
                         if found {
                             return Ok((true, None));
                         }
-                        height = height.zip(child).and_then(|(height, child)| child.checked_add(1).map(|child| height.max(child)));
+                        height = height.zip(child).and_then(|(height, child)| {
+                            child.checked_add(1).map(|child| height.max(child))
+                        });
                     }
                 }
             }
             // A completion excludes cycles and cutoffs. It can be reused only
             // when its complete value tree fits below the current cutoff.
             if let Some(height) = height {
-                cache_storage.with_storage(|| ctx.insert_btree_map(no_null, *id, height, "STEP null style completions"))?;
+                cache_storage.with_storage(|| {
+                    ctx.insert_btree_map(no_null, *id, height, "STEP null style completions")
+                })?;
             }
             Ok((false, height))
         }

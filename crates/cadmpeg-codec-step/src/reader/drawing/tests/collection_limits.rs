@@ -457,7 +457,8 @@ fn drawing_wrapper_identity_text_refuses_retained_limit() {
             policy.limits.max_retained_bytes = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
                 .expect("root fits retained policy");
-            (super::super::wrapper_target_resolution(1, &targets, &exchange, true, &ctx)).map(|_| ())
+            (super::super::wrapper_target_resolution(1, &targets, &exchange, true, &ctx))
+                .map(|_| ())
         },
     );
     assert!(
