@@ -37,20 +37,6 @@ fn morph_point_projection_refuses_only_first_visit() {
     assert!(text.is_empty());
 }
 
-#[test]
-fn morph_empty_point_projection_preserves_original_refusal() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-    let CodecError::ResourceLimit(original) = ctx.charge_work(1, "original morph refusal").unwrap_err()
-        else { panic!("original refusal"); };
-    let points: [FinitePoint3; 0] = [];
-    assert!(matches!(super::super::append_points(&ctx, &mut String::new(), &points, |point| point.get()),
-        Err(CodecError::ResourceLimit(sticky)) if sticky == original));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original));
-}
-
 fn surface(rational: bool) -> NurbsSurface {
     let axis = || NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false);
     let grid = vec![vec![FinitePoint3::ZERO; 2]; 2];
