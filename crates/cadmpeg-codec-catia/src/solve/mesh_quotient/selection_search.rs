@@ -4,11 +4,13 @@
 use cadmpeg_core::decode::{u64_from_index, work_units};
 use std::ops::ControlFlow;
 
+use super::orientation::admit_orientation_option;
+
 use super::{
-    admit_orientation_option, canonical_mesh_boundary_directions, changed_quotient_edges,
-    common_supported_corner_equations, copy_mesh_assignment, copy_mesh_boundary_directions,
-    copy_mesh_edge_rows, distinct_domain_matching_with_budget, domain_contains, edge_end,
-    edge_start, initial_mesh_quotient, least_rotation, mesh_candidates_equivalent_with_context,
+    canonical_mesh_boundary_directions, changed_quotient_edges, common_supported_corner_equations,
+    copy_mesh_assignment, copy_mesh_boundary_directions, copy_mesh_edge_rows,
+    distinct_domain_matching_with_budget, domain_contains, edge_end, edge_start,
+    initial_mesh_quotient, least_rotation, mesh_candidates_equivalent_with_context,
     mesh_candidates_identical_with_context, orient_face_cycles, reconstruct_mesh_selection,
     same_unordered_pair, BTreeMap, BTreeSet, BoundaryDraft, CachedFaceEquations, CodecError,
     CoedgeUse, DecodeContext, EdgeRow, FaceTopologyDraft, HashMap, HashSet,
@@ -284,32 +286,24 @@ impl<'storage> MeshSelectionSearch<'storage, '_> {
                 }
             }
         }
-        if roots.len() <= 2 {
-            roots.sort_unstable();
-        } else {
-            self.ctx.sort_unstable_by(
-                &mut roots,
-                |value| value,
-                Ord::cmp,
-                "catia_face_projection_root_order_sort",
-            )?;
-        }
+        self.ctx.sort_unstable_by(
+            &mut roots,
+            |value| value,
+            Ord::cmp,
+            "catia_face_projection_root_order_sort",
+        )?;
         ctx.dedup_vec(&mut roots, "catia_face_projection_root_order")?;
         let mut signature =
             ctx.collection_vec(roots.len(), "catia_face_projection_signature_rows")?;
         for &root in ctx.admit_iter(&roots, "catia_face_projection_signature_rows")? {
             let mut members =
                 ctx.copy_slice(quotient.members(root), "catia_face_projection_member_nodes")?;
-            if members.len() <= 2 {
-                members.sort_unstable();
-            } else {
-                self.ctx.sort_unstable_by(
-                    &mut members,
-                    |node| node,
-                    Ord::cmp,
-                    "catia_face_projection_member_order",
-                )?;
-            }
+            self.ctx.sort_unstable_by(
+                &mut members,
+                |node| node,
+                Ord::cmp,
+                "catia_face_projection_member_order",
+            )?;
             signature.push((
                 members,
                 ctx.copy_slice(

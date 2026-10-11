@@ -41,11 +41,7 @@ fn edge_point_supports(
         supports.push([left, right]);
         supports.push([right, left]);
     }
-    if supports.len() <= 2 {
-        supports.sort_unstable();
-    } else {
-        ctx.sort_unstable_by(&mut supports, |pair| pair, Ord::cmp, operation)?;
-    }
+    ctx.sort_unstable_by(&mut supports, |pair| pair, Ord::cmp, operation)?;
     ctx.dedup_vec(&mut supports, operation)?;
     Ok(supports)
 }
@@ -292,16 +288,12 @@ fn enforce_sparse_endpoint_membership(
     let mut scratch = ctx.reserve_scoped(0, "catia_enforce_sparse_endpoint_membership_scratch")?;
     scratch.with_storage(|| {
         let mut ordered = ctx.collect_vec(0..edges.len(), "catia_sparse_ordered_edges")?;
-        if ordered.len() <= 2 {
-            ordered.sort_unstable_by_key(|value| edge_candidates[edge_ids[*value]].len());
-        } else {
-            ctx.sort_unstable_by_key(
-                &mut ordered,
-                |value| edge_candidates[edge_ids[*value]].len(),
-                Ord::cmp,
-                "catia_sparse_ordered_edges_sort",
-            )?;
-        }
+        ctx.sort_unstable_by_key(
+            &mut ordered,
+            |value| edge_candidates[edge_ids[*value]].len(),
+            Ord::cmp,
+            "catia_sparse_ordered_edges_sort",
+        )?;
         let mut admitted_visits = (ordered).into_iter();
         while let Some(edge) =
             ctx.next_charged(&mut admitted_visits, "catia_sparse_ordered_edges")?
@@ -1281,16 +1273,12 @@ fn refine_coordinate_domains<'next>(
                             )?;
                         }
                     }
-                    if affected_edges.len() <= 2 {
-                        affected_edges.sort_unstable();
-                    } else {
-                        ctx.sort_unstable_by(
-                            &mut affected_edges,
-                            |value| value,
-                            Ord::cmp,
-                            "catia_quotient_refine_affected_edges_sort",
-                        )?;
-                    }
+                    ctx.sort_unstable_by(
+                        &mut affected_edges,
+                        |value| value,
+                        Ord::cmp,
+                        "catia_quotient_refine_affected_edges_sort",
+                    )?;
                     ctx.dedup_vec(
                         &mut affected_edges,
                         "catia_quotient_refine_affected_edges_dedup",
@@ -1619,16 +1607,12 @@ impl<'storage> MeshQuotient<'storage> {
                     )
                 })?;
             }
-            if singletons.len() <= 2 {
-                singletons.sort_unstable();
-            } else {
-                ctx.sort_unstable_by(
-                    &mut singletons,
-                    |entry| entry,
-                    Ord::cmp,
-                    "catia_singleton_points_sort",
-                )?;
-            }
+            ctx.sort_unstable_by(
+                &mut singletons,
+                |entry| entry,
+                Ord::cmp,
+                "catia_singleton_points_sort",
+            )?;
             let mut merged_nodes = Vec::new();
             let mut admitted_visits = singletons.iter().enumerate();
             while let Some((index, &(point, root))) =
@@ -2292,16 +2276,12 @@ fn partial_compact_assignment_viable(
                         ctx.push_vec(&mut edges, use_.edge, "catia coordinate relevant edges")?;
                     }
                 }
-                if edges.len() <= 2 {
-                    edges.sort_unstable();
-                } else {
-                    ctx.sort_unstable_by(
-                        &mut edges,
-                        |value| value,
-                        Ord::cmp,
-                        "catia coordinate relevant edges sort",
-                    )?;
-                }
+                ctx.sort_unstable_by(
+                    &mut edges,
+                    |value| value,
+                    Ord::cmp,
+                    "catia coordinate relevant edges sort",
+                )?;
                 ctx.dedup_vec(&mut edges, "catia coordinate relevant edges")?;
                 edges
             }
