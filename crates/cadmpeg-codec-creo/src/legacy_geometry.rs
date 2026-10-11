@@ -2104,20 +2104,37 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
     #[test]
     fn legacy_pcurves_deduplication_refuses_work() {
         let mut persistence = topology_persistence();
-        persistence.real_values.rows.push(real_array("curve_11",
-            [[8.0, 9.0, 10.0, 11.0], [12.0, 13.0, 14.0, 15.0]], 811));
+        persistence.real_values.rows.push(real_array(
+            "curve_11",
+            [[8.0, 9.0, 10.0, 11.0], [12.0, 13.0, 14.0, 15.0]],
+            811,
+        ));
         let admitted = scan(&persistence);
-        assert_eq!(admitted.pcurves, [crate::curve::PcurveEndpoints {
-            curve_id: 10,
-            faces: [std::num::NonZeroU32::new(100), std::num::NonZeroU32::new(200)],
-            face_0_endpoints: [[0.0, 1.0], [4.0, 5.0]],
-            face_1_endpoints: [[2.0, 3.0], [6.0, 7.0]], offset: 810,
-        }, crate::curve::PcurveEndpoints {
-            curve_id: 11,
-            faces: [std::num::NonZeroU32::new(100), std::num::NonZeroU32::new(200)],
-            face_0_endpoints: [[8.0, 9.0], [12.0, 13.0]],
-            face_1_endpoints: [[10.0, 11.0], [14.0, 15.0]], offset: 811,
-        }]);
+        assert_eq!(
+            admitted.pcurves,
+            [
+                crate::curve::PcurveEndpoints {
+                    curve_id: 10,
+                    faces: [
+                        std::num::NonZeroU32::new(100),
+                        std::num::NonZeroU32::new(200)
+                    ],
+                    face_0_endpoints: [[0.0, 1.0], [4.0, 5.0]],
+                    face_1_endpoints: [[2.0, 3.0], [6.0, 7.0]],
+                    offset: 810,
+                },
+                crate::curve::PcurveEndpoints {
+                    curve_id: 11,
+                    faces: [
+                        std::num::NonZeroU32::new(100),
+                        std::num::NonZeroU32::new(200)
+                    ],
+                    face_0_endpoints: [[8.0, 9.0], [12.0, 13.0]],
+                    face_1_endpoints: [[10.0, 11.0], [14.0, 15.0]],
+                    offset: 811,
+                }
+            ]
+        );
         let error = crate::test_support::last_refusal_at(
             &[],
             cadmpeg_core::decode::ResourceDimension::WorkUnits,

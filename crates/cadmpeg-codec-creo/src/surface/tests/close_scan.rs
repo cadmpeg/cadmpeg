@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{
+    u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+};
 use cadmpeg_core::CodecError;
 
 use crate::scalar::ScalarCache;
@@ -26,18 +28,24 @@ fn assert_work_bound(
         policy.limits.max_recursion_depth = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(body, &arena, &policy).expect("root");
         let original = if cap < work {
-            let CodecError::ResourceLimit(limit) = run(&ctx).expect_err("scan refuses before step") else {
+            let CodecError::ResourceLimit(limit) = run(&ctx).expect_err("scan refuses before step")
+            else {
                 panic!("resource refusal required");
             };
-            assert_eq!((limit.dimension, limit.used, limit.additional),
-                (ResourceDimension::WorkUnits, cap, 1));
+            assert_eq!(
+                (limit.dimension, limit.used, limit.additional),
+                (ResourceDimension::WorkUnits, cap, 1)
+            );
             limit
         } else {
             assert_eq!(run(&ctx).expect("exact scan bound"), expected);
-            let limit = ctx.charge_work_limit(cap - work + 1, "after close scan")
+            let limit = ctx
+                .charge_work_limit(cap - work + 1, "after close scan")
                 .expect_err("scan consumed exactly its source-derived bound");
-            assert_eq!((limit.dimension, limit.used, limit.additional),
-                (ResourceDimension::WorkUnits, work, cap - work + 1));
+            assert_eq!(
+                (limit.dimension, limit.used, limit.additional),
+                (ResourceDimension::WorkUnits, work, cap - work + 1)
+            );
             limit
         };
         assert_eq!(original.dimension, ResourceDimension::WorkUnits);
@@ -96,9 +104,12 @@ fn outline_pair_close_scan_preserves_precedence_and_exact_visited_window_bound()
         body.extend_from_slice(&[0, 0x0c, 0x98, 0xe3, 0xe3]);
         // The window scan visits prefix+1 starts. The token scan visits the
         // prefix, two one-byte integers, the two-byte 98 e3 integer, and e3.
-        assert_work_bound(&body, u64_from_index(2 * prefix + 5), Some(prefix + 3), |ctx| {
-            first_compound_close(ctx, &body, 0, body.len())
-        });
+        assert_work_bound(
+            &body,
+            u64_from_index(2 * prefix + 5),
+            Some(prefix + 3),
+            |ctx| first_compound_close(ctx, &body, 0, body.len()),
+        );
     }
 }
 
@@ -125,14 +136,24 @@ fn absent_surface_close_routes_are_free() {
             Ok(cone_half_angle_before_close(ctx, &body[..count])?.map(|layout| layout.end))
         });
     }
-    for kind in [SurfaceKind::Plane, SurfaceKind::Cylinder, SurfaceKind::Cone,
-        SurfaceKind::TorusOrSphere, SurfaceKind::Spline, SurfaceKind::Fillet,
+    for kind in [
+        SurfaceKind::Plane,
+        SurfaceKind::Cylinder,
+        SurfaceKind::Cone,
+        SurfaceKind::TorusOrSphere,
+        SurfaceKind::Spline,
+        SurfaceKind::Fillet,
         SurfaceKind::Extrusion(ExtrusionVariant::Linear),
-        SurfaceKind::Extrusion(ExtrusionVariant::TabulatedCylinder)] {
-        assert_work_bound(&[], 0, None, |ctx| surface_body_compound_close(ctx, kind, &[], &cache));
+        SurfaceKind::Extrusion(ExtrusionVariant::TabulatedCylinder),
+    ] {
+        assert_work_bound(&[], 0, None, |ctx| {
+            surface_body_compound_close(ctx, kind, &[], &cache)
+        });
     }
     for (start, end) in [(0, 0), (1, 0), (0, 1)] {
-        assert_work_bound(&[], 0, None, |ctx| first_compound_close(ctx, &[], start, end));
+        assert_work_bound(&[], 0, None, |ctx| {
+            first_compound_close(ctx, &[], start, end)
+        });
     }
     assert_work_bound(&[], 0, None, |ctx| {
         plane_local_system_compound_close(ctx, &[], 0, 0, &cache)

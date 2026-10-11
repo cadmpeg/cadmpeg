@@ -163,8 +163,10 @@ fn edge_vertex_pairs_reject_duplicate_side_without_a_temporary_vector() {
 fn one_incident_vertex() -> (Vec<TopologicalVertex>, Vec<HalfEdge>) {
     let edge = orphan_edge();
     (
-        vec![crate::topology::TopologicalVertex::new_for_test(1, vec![edge.id])
-        .expect("valid vertex fixture")],
+        vec![
+            crate::topology::TopologicalVertex::new_for_test(1, vec![edge.id])
+                .expect("valid vertex fixture"),
+        ],
         vec![edge],
     )
 }
@@ -674,18 +676,19 @@ fn vertex_incident_faces_include_both_sides_of_each_orbit_edge() {
             next: None,
         },
     ];
-    let vertex = crate::topology::TopologicalVertex::new_for_test(1,
-            vec![
-                HalfEdgeId {
-                    curve_id: 7,
-                    side: crate::topology::Side::Zero,
-                },
-                HalfEdgeId {
-                    curve_id: 8,
-                    side: crate::topology::Side::Zero,
-                },
-            ],
-        )
+    let vertex = crate::topology::TopologicalVertex::new_for_test(
+        1,
+        vec![
+            HalfEdgeId {
+                curve_id: 7,
+                side: crate::topology::Side::Zero,
+            },
+            HalfEdgeId {
+                curve_id: 8,
+                side: crate::topology::Side::Zero,
+            },
+        ],
+    )
     .expect("valid vertex fixture");
 
     let incident_faces = with_service_context(|ctx| {

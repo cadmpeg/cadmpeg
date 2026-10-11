@@ -13,20 +13,21 @@ fn exact_work<T>(
     run: impl Fn(&DecodeContext<'_>) -> Result<T, CodecError>,
 ) -> T {
     let expected = u64::try_from(expected).expect("fixture work");
-    let required = crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        if !storage {
-            policy.limits.max_materialized_bytes = 0;
-            policy.limits.max_retained_bytes = 0;
-            policy.limits.max_collection_items = 0;
-        }
-        policy.limits.max_entities = 0;
-        policy.limits.max_recursion_depth = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        run(&ctx)
-    });
+    let required =
+        crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            if !storage {
+                policy.limits.max_materialized_bytes = 0;
+                policy.limits.max_retained_bytes = 0;
+                policy.limits.max_collection_items = 0;
+            }
+            policy.limits.max_entities = 0;
+            policy.limits.max_recursion_depth = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            run(&ctx)
+        });
     assert_eq!(required, expected, "source-derived work bound");
     super::work_output(run)
 }
@@ -82,7 +83,9 @@ fn primitive_scalar_parsing_admits_actual_token_groups_and_leaves_absent_slots_f
         (&[0x46, 0x80, 0, 0][..], None, 1),
     ] {
         let bytes = named("p1", body, 3);
-        let arrays = exact_work(bytes.len() - 4 + attempts, true, |ctx| scalar_arrays(ctx, &bytes));
+        let arrays = exact_work(bytes.len() - 4 + attempts, true, |ctx| {
+            scalar_arrays(ctx, &bytes)
+        });
         match expected {
             None => assert!(arrays.is_empty()),
             Some(values) => {
@@ -111,7 +114,9 @@ fn primitive_strip_boundary_scan_stops_before_the_following_record_body() {
     bytes.extend([0xff; 128]);
     let work = bytes.len() - RECORD.len() + 1 // Global discovery.
         + 1 // First following-record boundary.
-        + RECORD.len() - ACCUM.len() + 2; // Missing cumulative label and end probe.
+        + RECORD.len()
+        - ACCUM.len()
+        + 2; // Missing cumulative label and end probe.
     let scan = exact_work(work, false, |ctx| triangle_strips(ctx, &bytes));
     assert!(scan.strips.is_empty());
     assert_eq!(scan.conflicting_representation_count, 0);
@@ -180,11 +185,13 @@ fn primitive_geometry_projects_present_points_and_stops_at_first_representation_
             (true, false) => 2 + 3 + 3 + 3 + 3,
             (true, true) => 2 + 3 + 1,
         };
-        let geometry = exact_work(work, true, |ctx| match triangle_strip_geometry(ctx, &arrays, 3) {
-            Ok(geometry) => Ok(Some(geometry)),
-            Err(TriangleStripGeometryError::Conflicting) if conflict => Ok(None),
-            Err(TriangleStripGeometryError::Resource(error)) => Err(error),
-            other => panic!("unexpected geometry result: {other:?}"),
+        let geometry = exact_work(work, true, |ctx| {
+            match triangle_strip_geometry(ctx, &arrays, 3) {
+                Ok(geometry) => Ok(Some(geometry)),
+                Err(TriangleStripGeometryError::Conflicting) if conflict => Ok(None),
+                Err(TriangleStripGeometryError::Resource(error)) => Err(error),
+                other => panic!("unexpected geometry result: {other:?}"),
+            }
         });
         if conflict {
             assert!(geometry.is_none());
@@ -208,8 +215,12 @@ fn primitive_geometry_projects_present_points_and_stops_at_first_representation_
 
 #[test]
 fn primitive_shaded_pairing_refuses_at_the_actual_projection_without_a_second_bulk_fee() {
-    let bytes = super::strip_visits::strip_geometry_input(17, &[3],
-        &[[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], Some(&[[0.0, 0.0, 1.0]; 3]));
+    let bytes = super::strip_visits::strip_geometry_input(
+        17,
+        &[3],
+        &[[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        Some(&[[0.0, 0.0, 1.0]; 3]),
+    );
     let record_len = bytes.len() - 17;
     let tail_len = record_len - RECORD.len();
     let work = bytes.len() - RECORD.len() + 1 // Global record discovery.
@@ -219,10 +230,24 @@ fn primitive_shaded_pairing_refuses_at_the_actual_projection_without_a_second_bu
         + record_len - 4 + 18 // Scalar windows and dispatches.
         + 1 + 3; // Lane selection and one shaded vertex projection.
     let scan = exact_work(work, true, |ctx| triangle_strips(ctx, &bytes));
-    let [strip] = scan.strips.as_slice() else { panic!("one complete shaded strip"); };
-    assert_eq!(strip.positions().map(|point| point.get()).collect::<Vec<_>>(),
-        [[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]);
-    assert_eq!(strip.normals().expect("shaded vertices").map(|normal| normal.get()).collect::<Vec<_>>(), [[0.0, 0.0, 1.0]; 3]);
+    let [strip] = scan.strips.as_slice() else {
+        panic!("one complete shaded strip");
+    };
+    assert_eq!(
+        strip
+            .positions()
+            .map(|point| point.get())
+            .collect::<Vec<_>>(),
+        [[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
+    );
+    assert_eq!(
+        strip
+            .normals()
+            .expect("shaded vertices")
+            .map(|normal| normal.get())
+            .collect::<Vec<_>>(),
+        [[0.0, 0.0, 1.0]; 3]
+    );
     let error = crate::test_support::last_refusal_at(
         &bytes,
         ResourceDimension::WorkUnits,

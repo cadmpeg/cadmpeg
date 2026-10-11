@@ -64,7 +64,7 @@ fn one_carrier_vertex_collection_error(operation: &'static str) -> CodecError {
             };
             scan.topology.vertices.push(
                 crate::topology::TopologicalVertex::new_for_test(1, vec![half_edge])
-                .expect("valid vertex fixture"),
+                    .expect("valid vertex fixture"),
             );
             scan.topology.half_edges.push(crate::topology::HalfEdge {
                 id: half_edge,
@@ -203,7 +203,7 @@ fn solve_topological_vertices_refuses_carrier_point_node() {
     }
     scan.topology.vertices.push(
         crate::topology::TopologicalVertex::new_for_test(1, half_edges)
-        .expect("valid vertex fixture"),
+            .expect("valid vertex fixture"),
     );
     let error = crate::test_support::last_refusal_at(
         &[],
@@ -262,7 +262,7 @@ fn pcurve_vertex_case() -> (
     for (vertex_id, id, face_id, end_vertex_id) in [(1, side_zero, 10, 2), (2, side_one, 11, 1)] {
         scan.topology.vertices.push(
             crate::topology::TopologicalVertex::new_for_test(vertex_id, vec![id])
-            .expect("valid vertex fixture"),
+                .expect("valid vertex fixture"),
         );
         scan.topology.half_edges.push(crate::topology::HalfEdge {
             id,
@@ -348,9 +348,10 @@ fn analytic_vertex_result(
         };
         let mut members = scan.topology.vertices[0].half_edges().to_vec();
         members.push(id);
-        scan.topology.vertices[0] = crate::topology::TopologicalVertex::new_for_test(scan.topology.vertices[0].id.get(),
-                members,
-            )
+        scan.topology.vertices[0] = crate::topology::TopologicalVertex::new_for_test(
+            scan.topology.vertices[0].id.get(),
+            members,
+        )
         .expect("ordered orbit fixture");
         scan.topology.half_edges.push(crate::topology::HalfEdge {
             id,
@@ -420,9 +421,10 @@ fn ambiguous_vertex_result(limit: u64) -> Result<super::SolvedTopologicalVertice
     {
         let mut members = scan.topology.vertices[vertex_index].half_edges().to_vec();
         members.push(id);
-        scan.topology.vertices[vertex_index] = crate::topology::TopologicalVertex::new_for_test(scan.topology.vertices[vertex_index].id.get(),
-                members,
-            )
+        scan.topology.vertices[vertex_index] = crate::topology::TopologicalVertex::new_for_test(
+            scan.topology.vertices[vertex_index].id.get(),
+            members,
+        )
         .expect("ordered orbit fixture");
         scan.topology.half_edges.push(crate::topology::HalfEdge {
             id,

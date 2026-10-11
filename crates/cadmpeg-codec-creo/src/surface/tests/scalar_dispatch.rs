@@ -14,7 +14,9 @@ fn surface_scalar_dispatch_admits_only_visited_unknown_offsets_and_no_terminal_p
             let body = vec![0xed; count]; // No row-lane scalar or layout opener.
             let marker_work = if kind == SurfaceKind::TorusOrSphere && count >= 2 {
                 cadmpeg_core::decode::u64_from_index(count) // Windows plus the search end probe.
-            } else { 0 };
+            } else {
+                0
+            };
             let work = cadmpeg_core::decode::u64_from_index(count) + marker_work;
             for cap in 0..=work + 1 {
                 let arena = DecodeArena::new();
@@ -28,17 +30,24 @@ fn surface_scalar_dispatch_admits_only_visited_unknown_offsets_and_no_terminal_p
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
                 let run = || scalar_tokens(&ctx, kind, &body, &ScalarCache::default());
                 let original = if cap < work {
-                    let CodecError::ResourceLimit(refusal) = run().expect_err("dispatch Work cap") else {
+                    let CodecError::ResourceLimit(refusal) = run().expect_err("dispatch Work cap")
+                    else {
                         panic!("resource refusal");
                     };
-                    assert_eq!(refusal.operation, if cap < marker_work {
-                        "creo torus radius marker search"
-                    } else { "creo surface scalar token dispatch" });
+                    assert_eq!(
+                        refusal.operation,
+                        if cap < marker_work {
+                            "creo torus radius marker search"
+                        } else {
+                            "creo surface scalar token dispatch"
+                        }
+                    );
                     assert_eq!((refusal.used, refusal.additional), (cap, 1));
                     refusal
                 } else {
                     assert!(run().expect("every visited offset fits").is_empty());
-                    let refusal = ctx.charge_work_limit(cap - work + 1, "after scalar dispatch")
+                    let refusal = ctx
+                        .charge_work_limit(cap - work + 1, "after scalar dispatch")
                         .expect_err("exact remaining Work proves no terminal probe");
                     assert_eq!((refusal.used, refusal.additional), (work, cap - work + 1));
                     refusal
@@ -79,10 +88,13 @@ fn surface_scalar_dispatch_skips_scalar_interior_bytes_and_keeps_raw_identity() 
             assert_eq!(tokens[0].value, Some(expected));
             assert_eq!(tokens[0].raw, raw);
             assert_eq!(tokens[0].offset, prefix);
-            let original = ctx.charge_work_limit(1, "after scalar-owned interior")
+            let original = ctx
+                .charge_work_limit(1, "after scalar-owned interior")
                 .expect_err("only dispatches and the copy consumed Work");
-            assert_eq!((original.dimension, original.used, original.additional),
-                (ResourceDimension::WorkUnits, work, 1));
+            assert_eq!(
+                (original.dimension, original.used, original.additional),
+                (ResourceDimension::WorkUnits, work, 1)
+            );
         }
     }
 }
@@ -94,7 +106,10 @@ fn surface_scalar_dispatch_refuses_before_copy_or_token_storage() {
         let mut body = vec![0xed; prefix];
         body.extend_from_slice(&raw);
         crate::test_support::assert_work_boundaries(
-            &["creo surface scalar token dispatch", "creo surface scalar token bytes"],
+            &[
+                "creo surface scalar token dispatch",
+                "creo surface scalar token bytes",
+            ],
             |ctx| scalar_tokens(ctx, SurfaceKind::Cylinder, &body, &ScalarCache::default()),
         );
         let arena = DecodeArena::new();
@@ -108,11 +123,15 @@ fn surface_scalar_dispatch_refuses_before_copy_or_token_storage() {
         policy.limits.max_recursion_depth = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let run = || scalar_tokens(&ctx, SurfaceKind::Cylinder, &body, &ScalarCache::default());
-        let CodecError::ResourceLimit(original) = run().expect_err("scalar dispatch precedes copying") else {
+        let CodecError::ResourceLimit(original) =
+            run().expect_err("scalar dispatch precedes copying")
+        else {
             panic!("resource refusal");
         };
-        assert_eq!((original.dimension, original.used, original.additional),
-            (ResourceDimension::WorkUnits, cap, 1));
+        assert_eq!(
+            (original.dimension, original.used, original.additional),
+            (ResourceDimension::WorkUnits, cap, 1)
+        );
         assert_eq!(original.operation, "creo surface scalar token dispatch");
     }
 }

@@ -119,7 +119,10 @@ pub(crate) struct Loop {
 impl Loop {
     #[cfg(test)]
     pub(crate) fn new_for_test(face_id: Option<NonZeroU32>, half_edges: Vec<HalfEdgeId>) -> Self {
-        Self { face_id, half_edges }
+        Self {
+            face_id,
+            half_edges,
+        }
     }
 
     pub(crate) fn face_id(&self) -> Option<NonZeroU32> {
@@ -151,7 +154,10 @@ impl FaceComponent {
     }
     #[cfg(test)]
     pub(crate) fn new_for_test(face_ids: Vec<u32>, curve_ids: Vec<u32>) -> Self {
-        Self { face_ids, curve_ids }
+        Self {
+            face_ids,
+            curve_ids,
+        }
     }
 }
 

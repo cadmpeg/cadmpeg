@@ -25,18 +25,19 @@ fn exact_work<T>(
     retained: u64,
     run: impl Fn(&DecodeContext<'_>) -> Result<T, CodecError>,
 ) {
-    let required = crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        policy.limits.max_collection_items = items;
-        policy.limits.max_retained_bytes = retained;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_entities = 0;
-        policy.limits.max_recursion_depth = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        run(&ctx)
-    });
+    let required =
+        crate::test_support::allocation_limit_at(ResourceDimension::WorkUnits, None, |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            policy.limits.max_collection_items = items;
+            policy.limits.max_retained_bytes = retained;
+            policy.limits.max_materialized_bytes = 0;
+            policy.limits.max_entities = 0;
+            policy.limits.max_recursion_depth = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            run(&ctx)
+        });
     assert_eq!(required, expected, "source-derived work bound");
 }
 
@@ -160,7 +161,9 @@ fn pcurve_endpoints_visit_compressed_runs_without_expanding_middle_samples() {
         (object.offset, geometry_field(name).expect("known field")),
         UniqueRecord::One(&record),
     )]);
-    exact_work(6, 0, 0, |ctx| curve_pcurve(ctx, &object, &topology, &records));
+    exact_work(6, 0, 0, |ctx| {
+        curve_pcurve(ctx, &object, &topology, &records)
+    });
     work_boundaries(
         &[
             "creo legacy pcurve first endpoint runs",
@@ -190,7 +193,16 @@ fn legacy_root_uniqueness_stops_at_second_witness() {
         object("root2", "Sld_VisGeom", None, ObjectPayload::Arrow),
         object("tail", "Sld_VisGeom", None, ObjectPayload::Arrow),
     ];
-    exact_work(3, 0, 0, |ctx| geometry_array_elements(ctx, &objects, &BTreeMap::new(), "Sld_VisGeom", "active_geom", "srf_array"));
+    exact_work(3, 0, 0, |ctx| {
+        geometry_array_elements(
+            ctx,
+            &objects,
+            &BTreeMap::new(),
+            "Sld_VisGeom",
+            "active_geom",
+            "srf_array",
+        )
+    });
     work_boundaries(
         &["creo legacy geometry root search"],
         |ctx| {
@@ -216,7 +228,16 @@ fn legacy_branch_uniqueness_visits_root_pass_and_stops_at_second_branch() {
         object("branch2", "active_geom", Some("root"), ObjectPayload::Arrow),
         object("tail", "active_geom", Some("root"), ObjectPayload::Arrow),
     ];
-    exact_work(9, 0, 0, |ctx| geometry_array_elements(ctx, &objects, &BTreeMap::new(), "Sld_VisGeom", "active_geom", "srf_array"));
+    exact_work(9, 0, 0, |ctx| {
+        geometry_array_elements(
+            ctx,
+            &objects,
+            &BTreeMap::new(),
+            "Sld_VisGeom",
+            "active_geom",
+            "srf_array",
+        )
+    });
     work_boundaries(
         &[
             "creo legacy geometry root search",
@@ -250,7 +271,16 @@ fn legacy_array_uniqueness_stops_after_second_complete_extent() {
         object("array2", "srf_array", Some("branch"), empty_array()),
         object("tail", "srf_array", Some("branch"), empty_array()),
     ];
-    exact_work(14, 0, 0, |ctx| geometry_array_elements(ctx, &objects, &BTreeMap::new(), "Sld_VisGeom", "active_geom", "srf_array"));
+    exact_work(14, 0, 0, |ctx| {
+        geometry_array_elements(
+            ctx,
+            &objects,
+            &BTreeMap::new(),
+            "Sld_VisGeom",
+            "active_geom",
+            "srf_array",
+        )
+    });
     work_boundaries(
         &[
             "creo legacy geometry root search",
@@ -318,8 +348,25 @@ fn legacy_array_element_admits_missing_key_lookup_after_present_element_visit() 
         ),
     ];
     let object_ids = BTreeMap::from([("other".to_string(), &objects[0])]);
-    let ObjectPayload::Array { elements, .. } = &objects[2].payload else { panic!("array fixture"); };
-    exact_work(10 + u64::try_from(elements[0].len()).expect("query bytes"), 1, u64::try_from(4 * std::mem::size_of::<&crate::legacy::ObjectRecord>()).expect("candidate backing"), |ctx| geometry_array_elements(ctx, &objects, &object_ids, "Sld_VisGeom", "active_geom", "srf_array"));
+    let ObjectPayload::Array { elements, .. } = &objects[2].payload else {
+        panic!("array fixture");
+    };
+    exact_work(
+        10 + u64::try_from(elements[0].len()).expect("query bytes"),
+        1,
+        u64::try_from(4 * std::mem::size_of::<&crate::legacy::ObjectRecord>())
+            .expect("candidate backing"),
+        |ctx| {
+            geometry_array_elements(
+                ctx,
+                &objects,
+                &object_ids,
+                "Sld_VisGeom",
+                "active_geom",
+                "srf_array",
+            )
+        },
+    );
     work_boundaries(
         &[
             "creo legacy geometry root search",
@@ -372,8 +419,20 @@ fn object_index_refuses_visit_before_id_copy_and_retained_storage() {
     let Err(CodecError::ResourceLimit(refusal)) = object_id_index(&ctx, &objects) else {
         panic!("object visit must precede identity storage");
     };
-    assert_eq!((refusal.dimension, refusal.used, refusal.additional, refusal.operation),
-        (ResourceDimension::WorkUnits, 0, 1, "creo legacy object index rows"));
+    assert_eq!(
+        (
+            refusal.dimension,
+            refusal.used,
+            refusal.additional,
+            refusal.operation
+        ),
+        (
+            ResourceDimension::WorkUnits,
+            0,
+            1,
+            "creo legacy object index rows"
+        )
+    );
     let id_bytes = "creo:legacy_ascii:object#".len() + objects[0].offset.to_string().len();
     let error = crate::test_support::last_refusal_at(
         &[],
@@ -404,7 +463,12 @@ fn real_vector_expansion_has_one_output_buffer_and_visits_all_actual_runs_and_va
         (parent, geometry_field(name).expect("known field")),
         UniqueRecord::One(&record),
     )]);
-    exact_work(14, 3, u64::try_from(4 * std::mem::size_of::<[f64; 3]>()).expect("vector backing"), |ctx| real_vector_array(ctx, &records, parent, name));
+    exact_work(
+        14,
+        3,
+        u64::try_from(4 * std::mem::size_of::<[f64; 3]>()).expect("vector backing"),
+        |ctx| real_vector_array(ctx, &records, parent, name),
+    );
     work_boundaries(
         &[
             "creo legacy real vector run traversal",
@@ -425,7 +489,12 @@ fn real_scalar_expansion_visits_zero_runs_and_each_produced_value() {
         (parent, geometry_field(name).expect("known field")),
         UniqueRecord::One(&record),
     )]);
-    exact_work(8, 3, u64::try_from(4 * std::mem::size_of::<f64>()).expect("scalar backing"), |ctx| real_scalar_array(ctx, &records, parent, name));
+    exact_work(
+        8,
+        3,
+        u64::try_from(4 * std::mem::size_of::<f64>()).expect("scalar backing"),
+        |ctx| real_scalar_array(ctx, &records, parent, name),
+    );
     work_boundaries(
         &[
             "creo legacy real array runs",

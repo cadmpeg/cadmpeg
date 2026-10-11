@@ -35,7 +35,7 @@ fn scan() -> crate::container::ContainerScan<'static> {
     ));
     scan.topology.vertices.push(
         crate::topology::TopologicalVertex::new_for_test(1, vec![half_edge])
-        .expect("valid vertex fixture"),
+            .expect("valid vertex fixture"),
     );
     scan.topology
         .half_edge_vertex_incidence
@@ -44,9 +44,12 @@ fn scan() -> crate::container::ContainerScan<'static> {
             start_vertex_id: std::num::NonZeroU32::new(1).expect("one-based vertex fixture"),
             end_vertex_id: std::num::NonZeroU32::new(1),
         });
-    scan.topology.face_components.push(
-        crate::topology::FaceComponent::new_for_test(vec![1], vec![8]),
-    );
+    scan.topology
+        .face_components
+        .push(crate::topology::FaceComponent::new_for_test(
+            vec![1],
+            vec![8],
+        ));
     scan.loop_arrays.frames.push(LoopArrayFrame {
         offset: 17,
         variant: None,
