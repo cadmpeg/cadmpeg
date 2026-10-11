@@ -213,6 +213,8 @@ pub(in super::super) fn section_skamp_locus(
     sketch: &SketchId,
     item: &crate::feature::definitions::FeatureSkampItem,
 ) -> Result<Option<SketchLocus>, cadmpeg_core::CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "creo SKAMP locus candidate storage")?;
+    let build_locus = || -> Result<Option<SketchLocus>, cadmpeg_core::CodecError> {
     let Some(entity) = admitted_entity(ctx, refusal, sketch, item.entity_id) else {
         return Ok(None);
     };
@@ -303,6 +305,10 @@ pub(in super::super) fn section_skamp_locus(
         ) => Some(SketchLocus::Center(entity)),
         _ => None,
     })
+    };
+    let locus = storage.with_storage(build_locus)?;
+    locus.map(|value| storage.commit_value(value)).transpose()
+
 }
 
 fn section_incidence_curve_locus(
@@ -442,23 +448,33 @@ pub(super) fn section_skamp_tangent_loci(
             Ok(None)
         }
     };
-    if let (Some(first), Some(second)) = (selected_locus(first)?, selected_locus(second)?) {
-        return Ok(Some([first, second]));
+    let mut pair_storage = ctx.reserve_scoped(0, "creo SKAMP tangent endpoint pair storage")?;
+    let pair = pair_storage.with_storage(|| {
+        Ok::<_, cadmpeg_core::CodecError>((selected_locus(first)?, selected_locus(second)?))
+    })?;
+    if let (Some(first), Some(second)) = pair {
+        return Ok(Some(pair_storage.commit_value([first, second])?));
     }
+    drop(pair);
+    drop(pair_storage);
     for (entity, selected) in [(first, second), (second, first)] {
-        let Some(shared) =
-            section_skamp_shared_endpoint(ctx, refusal, definition, sketch, entity, selected)?
-        else {
-            continue;
+        let mut shared_storage = ctx.reserve_scoped(0, "creo SKAMP shared tangent storage")?;
+        let build_shared = || {
+            let Some(shared) = section_skamp_shared_endpoint(ctx, refusal, definition, sketch, entity, selected)? else {
+                return Ok(None);
+            };
+            let Some(selected) = selected_locus(selected)? else {
+                return Ok(None);
+            };
+            Ok::<_, cadmpeg_core::CodecError>(Some(if first.sense == 0 {
+                [shared, selected]
+            } else {
+                [selected, shared]
+            }))
         };
-        let Some(selected) = selected_locus(selected)? else {
-            continue;
-        };
-        return Ok(Some(if first.sense == 0 {
-            [shared, selected]
-        } else {
-            [selected, shared]
-        }));
+        if let Some(loci) = shared_storage.with_storage(build_shared)? {
+            return Ok(Some(shared_storage.commit_value(loci)?));
+        }
     }
     Ok(None)
 }
@@ -487,6 +503,8 @@ pub(in super::super) fn section_skamp_incidence_locus(
     item: &crate::feature::definitions::FeatureSkampItem,
     geometry: Option<&BTreeMap<SketchEntityId, SketchGeometry>>,
 ) -> Result<Option<SketchLocus>, cadmpeg_core::CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "creo SKAMP incidence candidate storage")?;
+    let build_locus = || -> Result<Option<SketchLocus>, cadmpeg_core::CodecError> {
     if let Some(locus) = section_skamp_point_locus(ctx, refusal, definition, sketch, item)? {
         return Ok(Some(locus));
     }
@@ -512,6 +530,10 @@ pub(in super::super) fn section_skamp_incidence_locus(
         3 => Some(SketchLocus::End(entity)),
         _ => None,
     })
+    };
+    let locus = storage.with_storage(build_locus)?;
+    locus.map(|value| storage.commit_value(value)).transpose()
+
 }
 
 pub(super) fn section_skamp_line_pair(
@@ -549,6 +571,8 @@ pub(super) fn section_skamp_oriented_line(
     if item.sense != 0 {
         return Ok(None);
     }
+    let mut storage = ctx.reserve_scoped(0, "creo SKAMP oriented line candidate storage")?;
+    let build_locus = || -> Result<Option<SketchEntityId>, cadmpeg_core::CodecError> {
     let Some(entity) = admitted_entity(ctx, refusal, sketch, item.entity_id) else {
         return Ok(None);
     };
@@ -571,6 +595,8 @@ pub(super) fn section_skamp_oriented_line(
     }
     let line_role_evidence = matches!(
         visit_section_skamps(ctx, definition, false, |skamp| {
+            let mut evidence_storage = ctx.reserve_scoped(0, "creo SKAMP line role evidence storage")?;
+            let inspect_evidence = || {
             let endpoint_role = ctx.any_by(
                 &skamp.items,
                 |candidate| {
@@ -599,6 +625,8 @@ pub(super) fn section_skamp_oriented_line(
             } else {
                 ControlFlow::Continue(())
             })
+            };
+            evidence_storage.with_storage(inspect_evidence)
         })?,
         ControlFlow::Break(())
     );
@@ -620,6 +648,10 @@ pub(super) fn section_skamp_oriented_line(
         return Ok(None);
     }
     Ok(Some(entity))
+    };
+    let locus = storage.with_storage(build_locus)?;
+    locus.map(|value| storage.commit_value(value)).transpose()
+
 }
 
 pub(super) fn section_skamp_same_coordinate(
@@ -924,6 +956,8 @@ pub(in super::super) fn section_skamp_midpoint(
         Option<SketchEntityId>,
         cadmpeg_core::CodecError,
     > {
+        let mut storage = ctx.reserve_scoped(0, "creo SKAMP midpoint target storage")?;
+        let build_target = || -> Result<Option<SketchEntityId>, cadmpeg_core::CodecError> {
         if item.sense == 4 && unique_centered_line_segment(definition, item.entity_id).is_some() {
             return Ok(admitted_entity(ctx, refusal, sketch, item.entity_id));
         }
@@ -949,6 +983,8 @@ pub(in super::super) fn section_skamp_midpoint(
             return Ok(None);
         };
         Ok(section_skamp_line_without_type35_target(ctx, definition, item)?.then_some(line))
+        };
+        storage.with_storage(build_target)?.map(|value| storage.commit_value(value)).transpose()
     };
     let point = |item: &crate::feature::definitions::FeatureSkampItem| -> Result<
         Option<SketchLocus>,
@@ -971,27 +1007,32 @@ pub(in super::super) fn section_skamp_midpoint(
             if !centered_target(target_item) || point_item.sense != 0 {
                 continue;
             }
-            let Some(point) = point(point_item)? else {
-                continue;
+            let mut storage = ctx.reserve_scoped(0, "creo SKAMP centered midpoint candidate storage")?;
+            let build_candidate = || {
+                let Some(point) = point(point_item)? else { return Ok(None); };
+                let Some(target) = target(target_item)? else { return Ok(None); };
+                Ok::<_, cadmpeg_core::CodecError>(Some((point, target)))
             };
-            let Some(target) = target(target_item)? else {
-                continue;
-            };
-            if candidate.is_some() {
-                return Ok(None);
-            }
-            candidate = Some((point, target));
+            let Some(value) = storage.with_storage(build_candidate)? else { continue; };
+            if candidate.is_some() { return Ok(None); }
+            candidate = Some((value, storage));
         }
-        return Ok(candidate);
+        return candidate.map(|(value, storage)| storage.commit_value(value)).transpose();
     }
-    let first_target = target(first)?;
-    let second_point = point(second)?;
-    let first_candidate = second_point.zip(first_target);
-    let second_target = target(second)?;
-    let first_point = point(first)?;
-    let second_candidate = first_point.zip(second_target);
+    let mut first_storage = ctx.reserve_scoped(0, "creo SKAMP first midpoint direction storage")?;
+    let first_candidate = first_storage.with_storage(|| {
+        let first_target = target(first)?;
+        let second_point = point(second)?;
+        Ok::<_, cadmpeg_core::CodecError>(second_point.zip(first_target))
+    })?.map(|value| (value, first_storage));
+    let mut second_storage = ctx.reserve_scoped(0, "creo SKAMP second midpoint direction storage")?;
+    let second_candidate = second_storage.with_storage(|| {
+        let second_target = target(second)?;
+        let first_point = point(first)?;
+        Ok::<_, cadmpeg_core::CodecError>(first_point.zip(second_target))
+    })?.map(|value| (value, second_storage));
     match (first_candidate, second_candidate) {
-        (Some(candidate), None) | (None, Some(candidate)) => Ok(Some(candidate)),
+        (Some((value, storage)), None) | (None, Some((value, storage))) => Ok(Some(storage.commit_value(value)?)),
         _ => Ok(None),
     }
 }
@@ -1410,6 +1451,7 @@ pub(in super::super) fn with_test_locus<T>(
 #[cfg(test)]
 mod tests {
     mod saved_entity;
+    mod storage;
     mod admission_visits;
 
     use super::{
@@ -1492,7 +1534,7 @@ mod tests {
     }
 
     #[test]
-    fn unresolved_skamp_locus_refuses_below_entity_identity_limit() {
+    fn unresolved_skamp_locus_refuses_below_temporary_identity_limit() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
         let definition = crate::feature::definitions::FeatureDefinition {
@@ -1520,12 +1562,13 @@ mod tests {
             sense: 0,
         };
         let need = crate::test_support::allocation_limit_at(
-            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
             None,
             |cap| {
                 let trial_arena = cadmpeg_core::decode::DecodeArena::new();
                 let mut trial_policy = cadmpeg_core::decode::DecodePolicy::service();
-                trial_policy.limits.max_retained_bytes = cap;
+                trial_policy.limits.max_materialized_bytes = cap;
+                trial_policy.limits.max_retained_bytes = 0;
                 let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
                     &[],
                     &trial_arena,
@@ -1542,20 +1585,16 @@ mod tests {
         );
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = need - 1;
+        policy.limits.max_materialized_bytes = need - 1;
+        policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let refusal = std::cell::Cell::new(None);
-        assert!(
-            section_skamp_locus(&ctx, &refusal, &definition, &sketch, &item)
-                .expect("test locus evaluation succeeds")
-                .is_none()
-        );
-        assert!(
-            matches!(refusal.into_inner(), Some(cadmpeg_core::CodecError::ResourceLimit(resource))
-            if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo sketch entity identity")
-        );
-        policy.limits.max_retained_bytes = need;
+        let error = section_skamp_locus(&ctx, &refusal, &definition, &sketch, &item)
+            .expect_err("temporary identity exceeds its materialized limit");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::MaterializedBytes
+                && resource.operation == "creo sketch entity identity"));
+        policy.limits.max_materialized_bytes = need;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let refusal = std::cell::Cell::new(None);
         assert!(
