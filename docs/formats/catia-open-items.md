@@ -20,11 +20,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### DI-01. Compact schema-program semantics
 
-**Question.** What operation does each compact schema-program record represent?
+**Question.** Which record boundaries and operations occur in a compact schema program?
 
-**Known.** `catia.md` §7.1 "A legacy schema catalog opens with" defines the program boundary, identity run, schema text fields, role selectors, and typed relation fields. The decoder retains their exact framing and identities.
+**Known.** `catia.md` §7.1 "A legacy schema catalog opens with" defines the program's outer boundary. The decoder retains the complete span and identifier candidates. The candidate scan does not establish records or operations inside that span. Identity intervals and typed fields before the catalog opener are separate structures.
 
-**Need.** We must know the record semantics to transfer the complete design program.
+**Need.** A CATIA-authored compact program and an independent behavior check must establish its record boundaries and operations before semantic transfer.
+
+**Note.** The 79-file reference population contains zero exact legacy catalog openers. Its 319 plain `CATCatalogManager` strings do not establish that production. Constructed `Foo` fixtures test opaque retention and identifier detection only.
 
 ### DI-02. Unresolved schema-role selectors
 
@@ -32,7 +34,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `catia.md` §7.1 "Within an identity interval, `<inclusive-length:u8> <name:utf8> <selector>`" defines the byte production and its target selector. A literal role name assigns its role directly. An unresolved selector byte does not.
 
-**Need.** We must know the selected role to assign field semantics.
+**Need.** A real legacy specimen and a schema-local role mapping must identify the selected role before assigning field semantics.
+
+**Note.** The 79-file reference population has no required legacy catalog opener and therefore no legacy role-selector population. The selector bytes in constructed framing tests remain unnamed; their following field codes do not supply a role mapping.
 
 ### DI-03. Part-container object-graph ownership
 
