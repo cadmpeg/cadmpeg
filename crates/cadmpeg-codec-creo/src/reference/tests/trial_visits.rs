@@ -13,14 +13,23 @@ fn arc_trials_admit_two_present_offset_passes_without_a_terminal_visit() {
                 arc_z_fields(ctx, body, &cache, 7)
             });
 
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 2 * u64::try_from(body.len()).expect("two source passes");
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let exact = arc_z_fields(&ctx, body, &cache, 7).expect("two complete trial passes");
-    assert_eq!(exact, circle);
-    let refusal = ctx.charge_work_limit(1, "after exact owner work").expect_err("exact cap exhausted");
-    assert_eq!((refusal.dimension, refusal.used, refusal.additional), (ResourceDimension::WorkUnits, 2 * u64::try_from(body.len()).expect("two source passes"), 1));
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 2 * u64::try_from(body.len()).expect("two source passes");
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let exact = arc_z_fields(&ctx, body, &cache, 7).expect("two complete trial passes");
+        assert_eq!(exact, circle);
+        let refusal = ctx
+            .charge_work_limit(1, "after exact owner work")
+            .expect_err("exact cap exhausted");
+        assert_eq!(
+            (refusal.dimension, refusal.used, refusal.additional),
+            (
+                ResourceDimension::WorkUnits,
+                2 * u64::try_from(body.len()).expect("two source passes"),
+                1
+            )
+        );
         if valid {
             let circle = circle.expect("diameter image");
             assert_eq!(circle.entity_id, 7);
@@ -70,15 +79,23 @@ fn singleton_reference_ellipse_admits_only_its_source_visit() {
         crate::test_support::assert_work_boundaries(&["creo reference conic traversal"], |ctx| {
             super::super::ellipse_carriers(ctx, std::slice::from_ref(&conic))
         });
-    assert_eq!(actual, [expected.clone()]);
+    assert_eq!(actual.as_slice(), std::slice::from_ref(&expected));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    assert_eq!(super::super::ellipse_carriers(&ctx, std::slice::from_ref(&conic)).expect("one conic visit"), [expected]);
-    let refusal = ctx.charge_work_limit(1, "after exact owner work").expect_err("exact cap exhausted");
-    assert_eq!((refusal.dimension, refusal.used, refusal.additional), (ResourceDimension::WorkUnits, 1, 1));
-
+    assert_eq!(
+        super::super::ellipse_carriers(&ctx, std::slice::from_ref(&conic))
+            .expect("one conic visit"),
+        [expected]
+    );
+    let refusal = ctx
+        .charge_work_limit(1, "after exact owner work")
+        .expect_err("exact cap exhausted");
+    assert_eq!(
+        (refusal.dimension, refusal.used, refusal.additional),
+        (ResourceDimension::WorkUnits, 1, 1)
+    );
 }
 
 #[test]
@@ -106,17 +123,17 @@ fn empty_reference_outputs_are_free() {
     policy.limits.max_collection_items = 0;
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let results = [
-            super::super::named_conics(&ctx, &[]).map(|v| v.is_empty()),
-            super::super::positional_conics(&ctx, &[]).map(|v| v.is_empty()),
-            super::super::lines(&ctx, &[]).map(|v| v.is_empty()),
-            super::super::line3d_lines(&ctx, &[]).map(|v| v.is_empty()),
-            super::super::arc_z_circles(&ctx, &[]).map(|v| v.is_empty()),
-            super::super::ellipse_carriers(&ctx, &[]).map(|v| v.is_empty()),
-        ];
-        for result in results {
-            assert!(result.expect("empty output"));
-        }
+    let results = [
+        super::super::named_conics(&ctx, &[]).map(|v| v.is_empty()),
+        super::super::positional_conics(&ctx, &[]).map(|v| v.is_empty()),
+        super::super::lines(&ctx, &[]).map(|v| v.is_empty()),
+        super::super::line3d_lines(&ctx, &[]).map(|v| v.is_empty()),
+        super::super::arc_z_circles(&ctx, &[]).map(|v| v.is_empty()),
+        super::super::ellipse_carriers(&ctx, &[]).map(|v| v.is_empty()),
+    ];
+    for result in results {
+        assert!(result.expect("empty output"));
+    }
 }
 
 #[test]
@@ -130,7 +147,10 @@ fn reference_searches_preserve_bounded_marker_ends() {
         let mut repeated = marker.to_vec();
         repeated.extend_from_slice(b"\xe0\x00");
         repeated.extend_from_slice(marker);
-        for payload in (0..=marker.len()).map(|end| &marker[..end]).chain(std::iter::once(repeated.as_slice())) {
+        for payload in (0..=marker.len())
+            .map(|end| &marker[..end])
+            .chain(std::iter::once(repeated.as_slice()))
+        {
             let empty = crate::decode::with_test_decode_ctx(|ctx| {
                 Ok::<_, cadmpeg_core::CodecError>([
                     super::super::named_conics(ctx, payload)?.is_empty(),
@@ -139,7 +159,8 @@ fn reference_searches_preserve_bounded_marker_ends() {
                     super::super::line3d_lines(ctx, payload)?.is_empty(),
                     super::super::arc_z_circles(ctx, payload)?.is_empty(),
                 ])
-            }).expect("marker ends remain within the payload");
+            })
+            .expect("marker ends remain within the payload");
             assert_eq!(empty, [true; 5]);
         }
     }

@@ -34,11 +34,19 @@ fn section_framing_admits_two_present_pairs_and_no_terminal_visit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let mut storage = ctx.reserve_scoped(0, "test section roster storage").expect("empty storage");
-    assert!(super::super::scan_sections(&ctx, &mut storage, b"abc", 0).expect("two visits").is_empty());
-    let refusal = ctx.charge_work_limit(1, "after exact owner work").expect_err("exact cap exhausted");
-    assert_eq!((refusal.dimension, refusal.used, refusal.additional), (ResourceDimension::WorkUnits, 2, 1));
-
+    let mut storage = ctx
+        .reserve_scoped(0, "test section roster storage")
+        .expect("empty storage");
+    assert!(super::super::scan_sections(&ctx, &mut storage, b"abc", 0)
+        .expect("two visits")
+        .is_empty());
+    let refusal = ctx
+        .charge_work_limit(1, "after exact owner work")
+        .expect_err("exact cap exhausted");
+    assert_eq!(
+        (refusal.dimension, refusal.used, refusal.additional),
+        (ResourceDimension::WorkUnits, 2, 1)
+    );
 }
 
 #[test]
@@ -142,34 +150,42 @@ fn singleton_section_aggregate_admits_source_and_relocation_without_ordering() {
     policy.limits.max_work_units = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let run = |ctx: &DecodeContext<'_>| {
-            let sections =
-                ctx.admit_iter(std::slice::from_ref(&section), "fixture aggregate source")?;
-            super::super::collect_section_records_result(
-                ctx,
-                sections.map(Ok),
-                |bytes| {
-                    assert_eq!(bytes, source);
-                    let mut records = Vec::new();
-                    ctx.reserve_vec(&mut records, 1, "fixture aggregate record")?;
-                    records.push(7u32);
-                    Ok(records)
-                },
-                |value, base| {
-                    assert_eq!(base, 0);
-                    assert_eq!(*value, 7);
-                    Ok(())
-                },
-                |_| panic!("singleton order projection cannot execute"),
-            )
-        };
+        let sections =
+            ctx.admit_iter(std::slice::from_ref(&section), "fixture aggregate source")?;
+        super::super::collect_section_records_result(
+            ctx,
+            sections.map(Ok),
+            |bytes| {
+                assert_eq!(bytes, source);
+                let mut records = Vec::new();
+                ctx.reserve_vec(&mut records, 1, "fixture aggregate record")?;
+                records.push(7u32);
+                Ok(records)
+            },
+            |value, base| {
+                assert_eq!(base, 0);
+                assert_eq!(*value, 7);
+                Ok(())
+            },
+            |_| panic!("singleton order projection cannot execute"),
+        )
+    };
     let records = crate::test_support::assert_work_boundaries(
-        &["fixture aggregate source", "creo section record relocation traversal"], &run,
+        &[
+            "fixture aggregate source",
+            "creo section record relocation traversal",
+        ],
+        run,
     );
     assert_eq!(records, [7]);
     assert_eq!(run(&ctx).expect("two aggregate visits"), [7]);
-    let refusal = ctx.charge_work_limit(1, "after exact owner work").expect_err("exact cap exhausted");
-    assert_eq!((refusal.dimension, refusal.used, refusal.additional), (ResourceDimension::WorkUnits, 2, 1));
-
+    let refusal = ctx
+        .charge_work_limit(1, "after exact owner work")
+        .expect_err("exact cap exhausted");
+    assert_eq!(
+        (refusal.dimension, refusal.used, refusal.additional),
+        (ResourceDimension::WorkUnits, 2, 1)
+    );
 }
 
 #[test]
@@ -280,28 +296,28 @@ fn empty_container_rosters_are_free() {
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let ids = std::collections::BTreeSet::new();
-        let results = [
-            super::super::loop_array_sections(&ctx, &[], &[], &[]).map(|v| v.is_empty()),
-            super::super::loop_array_scan(&ctx, &[])
-                .map(|v| v.frames.is_empty() && v.records.is_empty()),
-            super::super::feature_rows(&ctx, &[], &ids).map(|v| v.is_empty()),
-            super::super::feature_definitions(&ctx, &[]).map(|v| v.is_empty()),
-            super::super::feature_row_definitions(&ctx, &[]).map(|v| v.is_empty()),
-            super::super::feature_geometry_tables(&ctx, &[], &[]).map(|v| v.is_empty()),
-            super::super::feature_affected_ids(&ctx, &[], &[]).map(|v| v.is_empty()),
-            super::super::feature_revolution_extents(&ctx, &[], &[], &[]).map(|v| v.is_empty()),
-            super::super::feature_operations(&ctx, &[]).map(|v| v.is_empty()),
-            super::super::depdb_recipe_rows(&ctx, &[]).map(|v| v.is_empty()),
-            super::super::collect_section_records_result::<u32>(
-                &ctx,
-                std::iter::empty(),
-                |_| panic!("absent section decoder"),
-                |_, _| panic!("absent relocation"),
-                |_| panic!("absent ordering"),
-            )
-            .map(|v| v.is_empty()),
-        ];
-        for result in results {
-            assert!(result.expect("empty output"));
-        }
+    let results = [
+        super::super::loop_array_sections(&ctx, &[], &[], &[]).map(|v| v.is_empty()),
+        super::super::loop_array_scan(&ctx, &[])
+            .map(|v| v.frames.is_empty() && v.records.is_empty()),
+        super::super::feature_rows(&ctx, &[], &ids).map(|v| v.is_empty()),
+        super::super::feature_definitions(&ctx, &[]).map(|v| v.is_empty()),
+        super::super::feature_row_definitions(&ctx, &[]).map(|v| v.is_empty()),
+        super::super::feature_geometry_tables(&ctx, &[], &[]).map(|v| v.is_empty()),
+        super::super::feature_affected_ids(&ctx, &[], &[]).map(|v| v.is_empty()),
+        super::super::feature_revolution_extents(&ctx, &[], &[], &[]).map(|v| v.is_empty()),
+        super::super::feature_operations(&ctx, &[]).map(|v| v.is_empty()),
+        super::super::depdb_recipe_rows(&ctx, &[]).map(|v| v.is_empty()),
+        super::super::collect_section_records_result::<u32>(
+            &ctx,
+            std::iter::empty(),
+            |_| panic!("absent section decoder"),
+            |_, _| panic!("absent relocation"),
+            |_| panic!("absent ordering"),
+        )
+        .map(|v| v.is_empty()),
+    ];
+    for result in results {
+        assert!(result.expect("empty output"));
+    }
 }
