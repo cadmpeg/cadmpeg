@@ -72,11 +72,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### DI-07. Compound relation-program result binding
 
-**Question.** Which compound relation-program frame slot selects the `paramout` result entity?
+**Question.** Does the trailing `d` incidence of a lead-`54` compound relation-program frame select its result when the selected class is `paramout`?
 
-**Known.** `catia.md` §7.3 "A compact compound relation-program instance is" and `catia.md` §7.3 "A separator-form compound relation-program instance is" defines lead-`12` and lead-`54` relation-program frames. A complete typed expression and its source symbols give the ordered inputs. The program identity, repeated reference, lead-`12` `ref(h)` context identity, and lead-`54` trailing identity remain distinct incidences. A selected entity class does not by itself assign a result.
+**Known.** `catia.md` §7.3 "A compact compound relation-program instance is" and `catia.md` §7.3 "A separator-form compound relation-program instance is" defines lead-`12` and lead-`54` relation-program frames. Lead-`12` selects `ref(h)` at decoded field 13 as its result when the exact same-graph class is `paramout`. The program identity, repeated reference, context identity, and lead-`54` trailing identity remain distinct incidences. The lead-`54` `d` atom is decoded field 15. A complete typed expression and its source symbols give the ordered inputs.
 
-**Need.** We must know the result slot to transfer a relation with an output.
+**Need.** We must establish the lead-`54` result incidence independently of its current class predicate before transferring a separator-form result.
+
+**Note.** The 79-file byte census has nine lead-`12` frames whose `h` selects entity 272, class `paramout`, and three lead-`54` frames whose `d` selects entities 60, 52, and 100, class `Volume`. No other incidence in those frames selects `paramout`. The existing positive lead-`54` fixture is synthetic; the real frames establish its trailing incidence and rejection of `Volume`, but not a positive result assignment.
 
 ### DI-08. Legacy relation `body` selector
 
