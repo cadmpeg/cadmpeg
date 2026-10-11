@@ -31,6 +31,7 @@ const EPS_PLACED_OFFSET: f64 = 1.0e-12;
 
 mod index_sources;
 mod raw_controls;
+mod batch_attachment;
 
 fn assert_offset_collection_refusal(bytes: &[u8], operation: &str) {
     cadmpeg_test_support::refusal::resource_limit_at(
