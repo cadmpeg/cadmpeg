@@ -27,7 +27,9 @@ fn assert_rejected_without_storage(bytes: &[u8], legacy: bool) {
     } else {
         super::super::super::toc_sections(&ctx, &mut section_storage, bytes, 0)
     };
-    assert!(sections.expect("rejected borrowed directory row").is_empty());
+    assert!(sections
+        .expect("rejected borrowed directory row")
+        .is_empty());
 }
 
 #[test]
