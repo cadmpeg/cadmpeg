@@ -14,7 +14,7 @@ fn section_component_loops_refuse_before_traversal() {
     crate::test_support::assert_work_boundaries(
         &[
             "creo section coordinate graph visits",
-            "creo section coordinate components",
+            "creo section coordinate component columns",
         ],
         |ctx| super::solve_section_coordinate_equations(ctx, &equations, &BTreeMap::new()),
     );
@@ -24,7 +24,7 @@ fn section_component_loops_refuse_before_traversal() {
 fn unsigned_component_loop_refuses_before_component_work() {
     let equations = [SectionEquationFixture::point_value(1, SectionAxis::U, 1.0)];
     let distances = [(1, 2, SectionAxis::U, 1.0)];
-    crate::test_support::assert_work_boundaries(&["creo unsigned coordinate components"], |ctx| {
+    crate::test_support::assert_work_boundaries(&["creo unsigned component memberships"], |ctx| {
         super::solve_unsigned_dimension_coordinates(ctx, &equations, &BTreeMap::new(), &distances)
     });
 }
