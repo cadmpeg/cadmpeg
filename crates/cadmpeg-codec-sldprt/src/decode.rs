@@ -4016,9 +4016,15 @@ fn build_geometry_ir(
         }
         let _appearance_storage;
         let resolved;
-        (resolved, _appearance_storage) = ctx
-            .with_scoped_storage("SLDPRT resolved display appearance workspace", || {
-                crate::appearance::resolve_display_appearances(ctx, scan, &feature_appearances, display, &display_faces)
+        (resolved, _appearance_storage) =
+            ctx.with_scoped_storage("SLDPRT resolved display appearance workspace", || {
+                crate::appearance::resolve_display_appearances(
+                    ctx,
+                    scan,
+                    &feature_appearances,
+                    display,
+                    &display_faces,
+                )
             })?;
         for source in ctx.admit_iter(
             resolved.matched_feature_sources,
@@ -4160,10 +4166,10 @@ fn build_geometry_ir(
             display_links,
         ));
     }
-    let (feature_appearance_sources, feature_sources_storage) = ctx.with_scoped_storage(
-        "SLDPRT feature_appearance_sources workspace",
-        || feature_appearances.into_source_ids(ctx, scan),
-    )?;
+    let (feature_appearance_sources, feature_sources_storage) = ctx
+        .with_scoped_storage("SLDPRT feature_appearance_sources workspace", || {
+            feature_appearances.into_source_ids(ctx, scan)
+        })?;
     if let Some(message) = appearance_assignment_loss_message(
         ctx,
         &feature_appearance_sources,

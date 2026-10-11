@@ -812,12 +812,28 @@ fn swift_disagreement_scans_do_not_admit_unused_reference_tails() {
                 if operation == "scan SWIFT applied measurement features" {
                     crate::swift::measurement_from_applied_geometry(ctx, &annotation, |id| {
                         assert!(id == "low" || id == "high");
-                        Ok(crate::swift::PositiveReal::new(if id == "low" { 1.0 } else { 2.0 }))
-                    }).map(|_| ())
+                        Ok(crate::swift::PositiveReal::new(if id == "low" {
+                            1.0
+                        } else {
+                            2.0
+                        }))
+                    })
+                    .map(|_| ())
                 } else {
-                    crate::swift::measurement_from_direct_features(ctx, &annotation, &index, "Leaf", |feature| {
-                        Ok(feature.doubles.get("value").copied().and_then(crate::swift::PositiveReal::new))
-                    }).map(|_| ())
+                    crate::swift::measurement_from_direct_features(
+                        ctx,
+                        &annotation,
+                        &index,
+                        "Leaf",
+                        |feature| {
+                            Ok(feature
+                                .doubles
+                                .get("value")
+                                .copied()
+                                .and_then(crate::swift::PositiveReal::new))
+                        },
+                    )
+                    .map(|_| ())
                 }
             });
             let arena = DecodeArena::new();
