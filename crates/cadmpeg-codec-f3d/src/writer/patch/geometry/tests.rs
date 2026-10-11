@@ -8,7 +8,8 @@ use std::collections::BTreeMap;
 #[test]
 fn body_transform_reference_refuses_32_bit_wrap() {
     let records = [
-        cadmpeg_asm::test_support::sab::record(0, "transform".to_owned(), Vec::new().into(), 0, 0),
+        cadmpeg_asm::test_support::sab::record(0, "transform".to_owned(), Vec::new().into(), 0, 0)
+            .expect("indexed record fixture"),
         cadmpeg_asm::test_support::sab::record(
             1,
             "body".to_owned(),
@@ -23,7 +24,8 @@ fn body_transform_reference_refuses_32_bit_wrap() {
             .into(),
             0,
             0,
-        ),
+        )
+        .expect("indexed record fixture"),
     ];
     let transforms = BTreeMap::from([("f3d:brep:entity#1".to_owned(), Transform::identity())]);
     let mut bytes = Vec::new();

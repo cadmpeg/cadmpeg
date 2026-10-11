@@ -9,27 +9,23 @@ fn subtype_admission_walks_shared_definition_once_per_stream() {
     let mut tokens = vec![Token::SubtypeOpen, Token::Ident("node".into())];
     tokens.extend((0..count).map(|_| Token::False));
     tokens.push(Token::SubtypeClose);
-    let mut records = vec![crate::test_support::sab::record(
-        0,
-        "node".into(),
-        tokens.into(),
-        0,
-        0,
-    )];
+    let mut records = vec![crate::test_support::sab::record(0, "node".into(), tokens.into(), 0, 0)
+            .expect("indexed record fixture")];
     for index in 1..=count {
         records.push(crate::test_support::sab::record(
-            index,
-            "ref".into(),
-            vec![
-                Token::SubtypeOpen,
-                Token::Ident("ref".into()),
-                Token::Long(0),
-                Token::SubtypeClose,
-            ]
-            .into(),
-            0,
-            0,
-        ));
+                index,
+                "ref".into(),
+                vec![
+                    Token::SubtypeOpen,
+                    Token::Ident("ref".into()),
+                    Token::Long(0),
+                    Token::SubtypeClose,
+                ]
+                .into(),
+                0,
+                0,
+            )
+            .expect("indexed record fixture"));
     }
     let table = super::super::super::SubtypeTable::from_records(
         &cadmpeg_test_support::service_decode_context(),

@@ -1431,6 +1431,7 @@ mod analytic_surface_tests {
 
     fn surface_record(head: &str, tokens: Vec<Token>) -> Record<'static> {
         crate::test_support::sab::record(1, format!("{head}-surface"), Arc::from(tokens), 0, 0)
+            .expect("indexed record fixture")
     }
 
     #[test]
@@ -1512,7 +1513,8 @@ mod sense_tests {
                 .into(),
                 0,
                 0,
-            );
+            )
+            .expect("indexed record fixture");
             assert_eq!(
                 record_reversed(&cadmpeg_test_support::service_decode_context(), &record).unwrap(),
                 expected

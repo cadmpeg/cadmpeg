@@ -113,6 +113,7 @@ fn records() -> [Record<'static>; 3] {
             0,
             0,
         )
+        .expect("indexed record fixture")
     })
 }
 
@@ -208,7 +209,8 @@ fn analytic_carrier_allocation_refuses_after_one_record_without_visiting_the_tai
         vec![Token::Position([0.0, 0.0, 0.0])].into(),
         0,
         0,
-    );
+    )
+    .expect("indexed record fixture");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     // One record visit, then one analytic carrier token visit.

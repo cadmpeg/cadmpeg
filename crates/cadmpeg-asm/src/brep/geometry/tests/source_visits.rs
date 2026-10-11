@@ -8,6 +8,7 @@ use cadmpeg_core::CodecError;
 
 fn record(tokens: Vec<Token>) -> Record<'static> {
     crate::test_support::sab::record(1, "carrier".into(), tokens.into(), 0, 0)
+        .expect("indexed record fixture")
 }
 
 #[test]

@@ -218,6 +218,7 @@ fn records() -> [Record<'static>; 3] {
     // complete source scan. No output payload or index insertion is executed.
     std::array::from_fn(|index| {
         crate::test_support::sab::record(index, "straight".into(), Vec::<Token>::new().into(), 0, 0)
+            .expect("indexed record fixture")
     })
 }
 

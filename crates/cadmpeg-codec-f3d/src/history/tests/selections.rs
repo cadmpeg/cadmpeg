@@ -1287,6 +1287,7 @@ fn materialized_record_table_normalizes_revision_references() {
         .enumerate()
         .map(|(index, name)| {
             cadmpeg_asm::test_support::sab::record(index, name.into(), Vec::new().into(), 0, 0)
+                .expect("indexed record fixture")
         })
         .collect::<Vec<_>>();
 
@@ -1389,6 +1390,7 @@ fn qualified_history_marker_remains_an_archived_record() {
         .enumerate()
         .map(|(index, name)| {
             cadmpeg_asm::test_support::sab::record(index, name.into(), Vec::new().into(), 0, 0)
+                .expect("indexed record fixture")
         })
         .collect::<Vec<_>>();
 

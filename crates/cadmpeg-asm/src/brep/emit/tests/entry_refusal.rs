@@ -87,13 +87,8 @@ fn asm_attribute_shell_index_refuses_first_source_visit() {
 
 #[test]
 fn asm_record_reference_indices_refuse_first_source_visit() {
-    let records = [crate::test_support::sab::record(
-        0,
-        "body".into(),
-        Vec::new().into(),
-        0,
-        0,
-    )];
+    let records = [crate::test_support::sab::record(0, "body".into(), Vec::new().into(), 0, 0)
+            .expect("indexed record fixture")];
     index_source_refusal(AsmBrep::default(), &records, "ASM record reference scan");
 }
 
@@ -117,11 +112,16 @@ fn asm_record_reference_indices_keep_transform_and_intcurve_membership() {
         Token::Ref(3),
     ];
     let records = [
-        crate::test_support::sab::record(0, "body".into(), body.to_vec().into(), 0, 0),
-        crate::test_support::sab::record(1, "opaque-transform".into(), Vec::new().into(), 0, 0),
-        crate::test_support::sab::record(2, "opaque-pcurve".into(), pcurve.to_vec().into(), 0, 0),
-        crate::test_support::sab::record(3, "opaque-intcurve".into(), Vec::new().into(), 0, 0),
-        crate::test_support::sab::record(4, "opaque-other".into(), Vec::new().into(), 0, 0),
+        crate::test_support::sab::record(0, "body".into(), body.to_vec().into(), 0, 0)
+            .expect("indexed record fixture"),
+        crate::test_support::sab::record(1, "opaque-transform".into(), Vec::new().into(), 0, 0)
+            .expect("indexed record fixture"),
+        crate::test_support::sab::record(2, "opaque-pcurve".into(), pcurve.to_vec().into(), 0, 0)
+            .expect("indexed record fixture"),
+        crate::test_support::sab::record(3, "opaque-intcurve".into(), Vec::new().into(), 0, 0)
+            .expect("indexed record fixture"),
+        crate::test_support::sab::record(4, "opaque-other".into(), Vec::new().into(), 0, 0)
+            .expect("indexed record fixture"),
     ];
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
@@ -143,7 +143,6 @@ fn asm_record_reference_indices_keep_transform_and_intcurve_membership() {
 
 #[test]
 fn asm_absent_loft_member_keeps_support_type_one() {
-
     use crate::nurbs::proc_surface::LoftProfileData;
     use cadmpeg_ir::geometry::{LoftMemberForm, LoftSubdata};
     crate::test_support::with_zero_context(|ctx| {
@@ -153,31 +152,30 @@ fn asm_absent_loft_member_keeps_support_type_one() {
             row: [0.0, 1.0],
         };
         let data = LoftProfileData::RevisionSupport {
-                endpoints: [None; 2],
-                type_code: std::num::NonZeroI64::new(1).expect("nonzero support discriminator"),
-                surface: None,
-                support_bounds: [None; 4],
-                pcurve: None,
-                first_flag: false,
-                asm_extension: None,
-                subdata,
-                direction: None,
-            };
+            endpoints: [None; 2],
+            type_code: std::num::NonZeroI64::new(1).expect("nonzero support discriminator"),
+            surface: None,
+            support_bounds: [None; 4],
+            pcurve: None,
+            first_flag: false,
+            asm_extension: None,
+            subdata,
+            direction: None,
+        };
         let result = super::super::emit_loft_member_form(ctx, &mut out, data, || {
             panic!("absent or refused support executes no identity factory")
         });
         assert!(matches!(
-                result,
-                Ok(LoftMemberForm::Support {
-                    type_code: 1,
-                    surface: None,
-                    pcurve: None,
-                    ..
-                })
-            ));
+            result,
+            Ok(LoftMemberForm::Support {
+                type_code: 1,
+                surface: None,
+                pcurve: None,
+                ..
+            })
+        ));
         assert!(out.surfaces.is_empty() && out.curves.is_empty());
     });
-
 }
 
 #[test]
@@ -201,11 +199,11 @@ fn asm_absent_rolling_ball_side_keeps_zero_curve_kind() {
             || panic!("absent or refused rolling side skips identity"),
             side,
         );
-        
-                let side = result.expect("absent side is free");
-                assert!(side.surface.is_none() && side.curve.is_none() && side.pcurve.is_none());
-                assert_eq!(side.support_kind, VariableBlendSupportKind::ZeroCurve);
-            
+
+        let side = result.expect("absent side is free");
+        assert!(side.surface.is_none() && side.curve.is_none() && side.pcurve.is_none());
+        assert_eq!(side.support_kind, VariableBlendSupportKind::ZeroCurve);
+
         assert!(out.surfaces.is_empty() && out.curves.is_empty());
     });
 }
@@ -224,8 +222,8 @@ fn asm_spring_support_keeps_exact_ranges() {
             crate::nurbs::proc_curve::EmbeddedSpringSupport::Ranges(ranges),
         );
         assert!(
-                matches!(result, Ok(cadmpeg_ir::geometry::SpringSupport::Ranges(value)) if value == ranges)
-            );
+            matches!(result, Ok(cadmpeg_ir::geometry::SpringSupport::Ranges(value)) if value == ranges)
+        );
         assert!(out.surfaces.is_empty() && out.curves.is_empty());
     });
 }

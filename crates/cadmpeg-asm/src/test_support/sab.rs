@@ -126,20 +126,18 @@ pub fn payload_token_offsets(
 
 /// Build an indexed record fixture with the service decode policy.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics when the fixture exceeds the service policy.
+/// Returns the decode error when the fixture exceeds the service policy.
 pub fn record(
     index: usize,
     name: String,
     tokens: std::sync::Arc<[crate::sab::Token]>,
     offset: usize,
     len: usize,
-) -> Record<'static> {
+) -> Result<Record<'static>, cadmpeg_core::CodecError> {
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("record fixture context");
-    Record::new(&ctx, index, name, tokens, offset, len)
-        .expect("indexed record fixture")
-        .into_fixture()
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())?;
+    let record = Record::new(&ctx, index, name, tokens, offset, len)?;
+    Ok(record.into_fixture())
 }

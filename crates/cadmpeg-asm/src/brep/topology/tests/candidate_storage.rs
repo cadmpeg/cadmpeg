@@ -23,34 +23,35 @@ fn normalization_rejection_releases_explicit_pcurve_storage() {
     }
     for index in 0..count {
         records.push(crate::test_support::sab::record(
-            4 + count + index,
-            "pcurve".into(),
-            vec![
-                Token::Ref(-1),
-                Token::Ref(-1),
-                Token::Ref(-1),
-                Token::Long(0),
-                Token::True,
-                Token::SubtypeOpen,
-                Token::Ident("exp_par_cur".into()),
-                Token::Ident("nubs".into()),
-                Token::Long(1),
-                Token::Enum(0),
-                Token::Long(2),
-                Token::Double(0.0),
-                Token::Long(1),
-                Token::Double(1.0),
-                Token::Long(1),
-                Token::Double(1.0e308),
-                Token::Double(0.0),
-                Token::Double(1.0),
-                Token::Double(0.0),
-                Token::SubtypeClose,
-            ]
-            .into(),
-            0,
-            0,
-        ));
+                4 + count + index,
+                "pcurve".into(),
+                vec![
+                    Token::Ref(-1),
+                    Token::Ref(-1),
+                    Token::Ref(-1),
+                    Token::Long(0),
+                    Token::True,
+                    Token::SubtypeOpen,
+                    Token::Ident("exp_par_cur".into()),
+                    Token::Ident("nubs".into()),
+                    Token::Long(1),
+                    Token::Enum(0),
+                    Token::Long(2),
+                    Token::Double(0.0),
+                    Token::Long(1),
+                    Token::Double(1.0),
+                    Token::Long(1),
+                    Token::Double(1.0e308),
+                    Token::Double(0.0),
+                    Token::Double(1.0),
+                    Token::Double(0.0),
+                    Token::SubtypeClose,
+                ]
+                .into(),
+                0,
+                0,
+            )
+            .expect("indexed record fixture"));
     }
     let service = cadmpeg_test_support::service_decode_context();
     let span = nurbs::toks::payload_subtype_toks(&service, &records[4 + count], 5, "exp_par_cur")

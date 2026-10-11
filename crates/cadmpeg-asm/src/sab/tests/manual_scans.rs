@@ -2,7 +2,7 @@
 
 use super::super::{frame, frame_history, scan_history_boundary};
 use crate::kernel_header::RefWidth;
-use crate::sab::{payload_token, payload_subtype_range, Record};
+use crate::sab::{payload_subtype_range, payload_token, Record};
 use crate::stream_error::StreamFailure;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
@@ -83,7 +83,8 @@ fn manual_sab_framing_keeps_strict_and_history_eof_semantics() {
 
 #[test]
 fn sab_empty_framing_and_overflow_payload_ranges_are_free() {
-    let empty = crate::test_support::sab::record(0, String::new(), Vec::new().into(), 0, 0);
+    let empty = crate::test_support::sab::record(0, String::new(), Vec::new().into(), 0, 0)
+        .expect("indexed record fixture");
     let invalid = Record {
         offset: usize::MAX,
         len: 1,
@@ -100,27 +101,26 @@ fn sab_empty_framing_and_overflow_payload_ranges_are_free() {
         policy.limits.max_recursion_depth = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
 
-            for record in [&empty, &invalid] {
-                assert!(payload_token(&ctx, &[], record, RefWidth::Four, 0)
-                    .unwrap()
-                    .is_none());
-                assert!(
-                    payload_subtype_range(&ctx, &[], record, 0, RefWidth::Four, "x")
-                        .unwrap()
-                        .is_none()
-                );
-            }
-            assert!(scan_history_boundary(&ctx, &[], 0, RefWidth::Four, None)
+        for record in [&empty, &invalid] {
+            assert!(payload_token(&ctx, &[], record, RefWidth::Four, 0)
                 .unwrap()
                 .is_none());
-            assert!(frame(&ctx, &[], 0, 0, RefWidth::Four, None)
-                .unwrap()
-                .is_empty());
-            assert!(frame_history(&ctx, &[], 0, 0, RefWidth::Four, None)
-                .unwrap()
-                .is_empty());
-            ctx.finish_session().unwrap();
-        
+            assert!(
+                payload_subtype_range(&ctx, &[], record, 0, RefWidth::Four, "x")
+                    .unwrap()
+                    .is_none()
+            );
+        }
+        assert!(scan_history_boundary(&ctx, &[], 0, RefWidth::Four, None)
+            .unwrap()
+            .is_none());
+        assert!(frame(&ctx, &[], 0, 0, RefWidth::Four, None)
+            .unwrap()
+            .is_empty());
+        assert!(frame_history(&ctx, &[], 0, 0, RefWidth::Four, None)
+            .unwrap()
+            .is_empty());
+        ctx.finish_session().unwrap();
     }
 }
 

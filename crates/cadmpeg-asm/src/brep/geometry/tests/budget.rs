@@ -6,6 +6,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 
 fn record(tokens: Vec<Token>) -> Record<'static> {
     crate::test_support::sab::record(1, "tcoedge".into(), tokens.into(), 0, 0)
+        .expect("indexed record fixture")
 }
 
 #[test]
@@ -140,6 +141,7 @@ fn record_sense_search_admits_raw_tokens_and_keeps_scope_precedence() {
             base.offset,
             base.len,
         )
+        .expect("indexed record fixture")
     };
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::WorkUnits,
@@ -174,6 +176,7 @@ fn record_sense_search_admits_raw_tokens_and_keeps_scope_precedence() {
             base.offset,
             base.len,
         )
+        .expect("indexed record fixture")
     };
     assert!(record_reversed(&ctx, &plain).unwrap());
     let spline = {
@@ -185,6 +188,7 @@ fn record_sense_search_admits_raw_tokens_and_keeps_scope_precedence() {
             base.offset,
             base.len,
         )
+        .expect("indexed record fixture")
     };
     assert!(!record_reversed(&ctx, &spline).unwrap());
 }

@@ -62,7 +62,8 @@ fn transform_decodes_column_major_basis_and_scaled_translation() {
         .into(),
         0,
         0,
-    );
+    )
+    .expect("indexed record fixture");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],

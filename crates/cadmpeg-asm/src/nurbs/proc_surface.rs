@@ -5035,7 +5035,8 @@ mod reference_allocation_tests {
             .into(),
             0,
             0,
-        );
+        )
+        .expect("indexed record fixture");
         SubtypeTable::from_records(&ctx, &[record]).unwrap()
     }
 

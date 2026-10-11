@@ -13,7 +13,8 @@ fn wire_member_collector_admits_each_member_without_source_preadmission() {
     wire_tokens[7] = Token::True;
     let records = [
         ref_record(0, "shell", &[-1, -1, -1, -1, -1, -1, 1]),
-        crate::test_support::sab::record(1, "wire".into(), wire_tokens.into(), 0, 0),
+        crate::test_support::sab::record(1, "wire".into(), wire_tokens.into(), 0, 0)
+            .expect("indexed record fixture"),
         ref_record(2, "coedge", &[-1, -1, -1, 2, -1, -1, 3]),
         ref_record(3, "edge", &[]),
     ];
