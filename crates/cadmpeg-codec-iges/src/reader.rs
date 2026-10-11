@@ -12,6 +12,7 @@ use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::hash::{document_local_sha256, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::report::{
+    check::Check,
     decode::{TransferLedger, TransferOutcome},
     loss::LossNote,
     Severity,
@@ -924,7 +925,7 @@ fn decode_with_occurrence_limits(
             cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
             "iges_semantic_validation",
         )?;
-        reject_invalid_semantic_ir(&ir)?;
+        reject_invalid_semantic_ir(ctx, &ir)?;
         attributed
     };
     let mut transfer_ledger = TransferLedger::default();
@@ -1029,13 +1030,16 @@ fn decode_with_occurrence_limits(
         )?;
     }
     let verification_index = cadmpeg_ir::index::ModelIndex::build(&ir, ctx)?;
-    transfer_ledger
-        .verify(&verification_index)
-        .map_err(|message| {
-            CodecError::malformed(format_args!(
-                "IGES transfer ledger is inconsistent: {message}"
-            ))
-        })?;
+    let mut verification_storage = ctx.reserve_scoped(0, "iges transfer verification")?;
+    if let Err(message) = verification_storage
+        .with_storage(|| transfer_ledger.verify_for_decode(ctx, &verification_index))?
+    {
+        return Err(CodecError::Malformed(ctx.format_retained(
+            format_args!("IGES transfer ledger is inconsistent: {message}"),
+            "iges transfer ledger error",
+        )?));
+    }
+    drop(verification_storage);
     let (notes, note_storage) = directory::summary_notes(&parse.directory, ctx)?;
     let mut notes = note_storage.commit_value(notes)?;
     append_summary_notes(
@@ -1080,28 +1084,52 @@ fn decode_with_occurrence_limits(
     })
 }
 
-/// Fail the decode when the projected IR has any error-severity finding.
-///
-/// Keeps full [`cadmpeg_ir::validate_neutral`]: `DRAFT_CORE_CHECKS` error
-/// outcomes match full validation on every IGES golden fixture, so the route
-/// stays on the full validator.
-fn reject_invalid_semantic_ir(ir: &CadIr) -> Result<(), CodecError> {
-    let validation = cadmpeg_ir::validate_neutral(ir, Vec::new())?;
-    let Some(finding) = validation
-        .findings
-        .iter()
-        .find(|finding| finding.severity >= Severity::Error)
-    else {
+/// Checks that can reject the IGES semantic projection.
+const IGES_SEMANTIC_CHECKS: &[Check] = &[
+    Check::Identity,
+    Check::Pmi,
+    Check::Presentation,
+    Check::ArenaOrder,
+    Check::ReferentialIntegrity,
+    Check::CoedgePairing,
+    Check::WireTopology,
+    Check::ShellTopology,
+    Check::CarrierReachability,
+    Check::Annotations,
+    Check::NativeLinks,
+    Check::ParameterDomain,
+    Check::Tolerances,
+    Check::PayloadIntegrity,
+    Check::Tessellation,
+    Check::GeometricConsistency,
+    Check::Counts,
+];
+
+/// Validate the projected IR under the decode session and reject its first error.
+/// Every full-validation check can reject; the report is temporary storage.
+fn reject_invalid_semantic_ir(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecError> {
+    let mut validation_storage = ctx.reserve_scoped(0, "iges semantic validation")?;
+    let validation = validation_storage.with_storage(|| {
+        cadmpeg_ir::validate::admit::admit(ctx, ir, IGES_SEMANTIC_CHECKS, Vec::new())
+    })?;
+    let Some(finding) = ctx.find_by(
+        &validation.findings,
+        |finding| Ok(finding.severity >= Severity::Error),
+        "iges semantic error finding",
+    )? else {
         return Ok(());
     };
-    let entity = finding
-        .entity
-        .as_deref()
-        .map_or(String::new(), |entity| format!(" for {entity}"));
-    Err(CodecError::malformed(format_args!(
-        "IGES semantic projection produced invalid CADIR: {}{entity}: {}",
-        finding.check, finding.message
-    )))
+    let entity = validation_storage.with_storage(|| match finding.entity.as_deref() {
+        Some(entity) => ctx.format_retained(format_args!(" for {entity}"), "iges semantic error entity"),
+        None => Ok(String::new()),
+    })?;
+    Err(CodecError::Malformed(ctx.format_retained(
+        format_args!(
+            "IGES semantic projection produced invalid CADIR: {}{entity}: {}",
+            finding.check, finding.message
+        ),
+        "iges semantic error message",
+    )?))
 }
 
 #[cfg(test)]

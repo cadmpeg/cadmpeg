@@ -103,18 +103,17 @@ fn ruled_pairing_releases_consumed_rows_before_output_knots() {
 #[test]
 fn closure_extraction_releases_source_points_and_weights_before_bezier_working_lanes() {
     let curve = rail(0.0, Some(vec![1.0, 0.5]));
-    // Positive controls use two exact slots. Bezier working controls, span
-    // slots and each span's controls grow from empty to the core minimum
-    // of four slots. Both four-knot copies remain live at the last span
-    // allocation. Source point and weight copies have already been destroyed.
+    // Positive controls use two exact slots. The working controls and each
+    // span's controls use the four-slot minimum. One four-knot copy remains
+    // live when the span vector grows. Source point and weight copies have
+    // already been destroyed, so they do not contribute to that peak.
     let used = u64_from_index(
         2 * size_of::<[f64; 4]>()
             + 4 * size_of::<f64>()
             + 4 * size_of::<[f64; 4]>()
-            + 4 * size_of::<f64>()
-            + 4 * size_of::<HomogeneousBezierSpan>(),
+            + 4 * size_of::<[f64; 4]>(),
     );
-    let additional = u64_from_index(4 * size_of::<[f64; 4]>());
+    let additional = u64_from_index(4 * size_of::<HomogeneousBezierSpan>());
     let peak = used + additional;
     for cap in [peak - 1, peak] {
         let arena = DecodeArena::new();
@@ -127,7 +126,7 @@ fn closure_extraction_releases_source_points_and_weights_before_bezier_working_l
                 panic!("expected actual Bezier span allocation refusal");
             };
             assert_eq!(first.dimension, ResourceDimension::MaterializedBytes);
-            assert_eq!(first.operation, "Bezier span controls");
+            assert_eq!(first.operation, "Bezier spans");
             assert_eq!(
                 (first.limit, first.used, first.additional),
                 (cap, used, additional)
