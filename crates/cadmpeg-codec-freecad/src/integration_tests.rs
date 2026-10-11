@@ -2,6 +2,8 @@
 #![allow(clippy::unwrap_used)]
 //! Integration contracts over synthesized `FCStd` archives and application graphs.
 
+mod admission_paths;
+
 use super::FcstdCodec;
 use crate::test_support::test_archive::{
     archive, archive_entries, assert_valid_document, rewrite_schema_version, streaming_archive,
@@ -804,5 +806,85 @@ fn native_validation_propagates_design_census_collection_refusal() {
         &[],
         "FreeCAD design census feature index",
         |ctx| super::validate_native(ctx, result.ir()),
+    );
+}
+
+#[test]
+fn gui_entry_lookup_propagates_the_original_work_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::codec::CodecBackend;
+
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera settings=""/></Document>"#;
+    for entries in [
+        vec![("Document.xml", document.as_slice())],
+        vec![
+            ("Document.xml", document.as_slice()),
+            ("GuiDocument.xml", gui.as_slice()),
+        ],
+    ] {
+        let bytes = archive_entries(&entries);
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "FCStd GUI entry lookup",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::default();
+                policy.limits.max_work_units = cap;
+                let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)?;
+                let result = FcstdCodec.decode_impl(&ctx, root).map(|_| ());
+                if let Err(CodecError::ResourceLimit(limit)) = &result {
+                    assert_eq!(ctx.resource_refusal(), Some(*limit));
+                }
+                result
+            },
+        );
+        let decoded = decode(bytes);
+        assert_eq!(decoded.ir().model.bodies.len(), 0);
+    }
+}
+
+#[test]
+fn negative_detection_does_not_charge_unvisited_input() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let bytes = vec![b'x'; 64 * 1024];
+    for prefix in [&bytes[..0], &bytes[..3], bytes.as_slice()] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_work_units = 0;
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(prefix, &arena, &policy).expect("root admission");
+        assert_eq!(
+            FcstdCodec.detect(&ctx, root).expect("fixed magic"),
+            Confidence::No
+        );
+        assert_eq!(ctx.resource_refusal(), None);
+    }
+}
+
+#[test]
+fn positive_detection_admits_the_marker_search() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let bytes = b"PK\x03\x04Document.xml";
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "detect FreeCAD document marker",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_work_units = cap;
+            let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy)?;
+            let result = FcstdCodec.detect(&ctx, root).map(|confidence| {
+                assert_eq!(confidence, Confidence::Medium);
+            });
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(ctx.resource_refusal(), Some(*limit));
+            }
+            result
+        },
     );
 }
