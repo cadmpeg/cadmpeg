@@ -104,7 +104,7 @@ fn empty_table() -> nurbs::toks::SubtypeTable {
     nurbs::toks::SubtypeTable::from_records(&ctx, &[]).unwrap()
 }
 
-fn records() -> [Record; 3] {
+fn records() -> [Record<'static>; 3] {
     std::array::from_fn(|index| {
         crate::test_support::sab::record(
             index,
@@ -132,10 +132,10 @@ fn source_refusal(pass: SourcePass) {
     assert_eq!(first.dimension, ResourceDimension::WorkUnits);
     assert_eq!(first.operation, pass.operation());
     assert_eq!((first.limit, first.used, first.additional), (0, 0, 1));
-    for replay in [source.as_slice(), &[]] {
-        assert!(matches!(pass.run(&ctx, replay, &token_table, &mut scratch),
-            Err(CodecError::ResourceLimit(last)) if last == first));
-    }
+    assert!(
+        matches!(pass.run(&ctx, source.as_slice(), &token_table, &mut scratch),
+            Err(CodecError::ResourceLimit(last)) if last == first)
+    );
     drop(scratch);
     assert!(matches!(ctx.finish_session(),
         Err(CodecError::ResourceLimit(last)) if last == first));
@@ -224,12 +224,10 @@ fn analytic_carrier_allocation_refuses_after_one_record_without_visiting_the_tai
     assert_eq!(first.dimension, ResourceDimension::CollectionItems);
     assert_eq!(first.operation, "ASM carrier positions");
     assert_eq!((first.limit, first.used, first.additional), (0, 0, 1));
-    for replay in [source.as_slice(), &[]] {
-        assert!(
-            matches!(SourcePass::Analytic.run(&ctx, replay, &token_table, &mut scratch),
+    assert!(
+        matches!(SourcePass::Analytic.run(&ctx, source.as_slice(), &token_table, &mut scratch),
             Err(CodecError::ResourceLimit(last)) if last == first)
-        );
-    }
+    );
     drop(scratch);
     assert!(matches!(ctx.finish_session(),
         Err(CodecError::ResourceLimit(last)) if last == first));
@@ -260,10 +258,10 @@ fn first_index_refusal(pass: SourcePass) {
         (first.limit, first.used, first.additional),
         (limit, limit, 1)
     );
-    for replay in [source.as_slice(), &[]] {
-        assert!(matches!(pass.run(&ctx, replay, &token_table, &mut scratch),
-            Err(CodecError::ResourceLimit(last)) if last == first));
-    }
+    assert!(
+        matches!(pass.run(&ctx, source.as_slice(), &token_table, &mut scratch),
+            Err(CodecError::ResourceLimit(last)) if last == first)
+    );
     drop(scratch);
     assert!(matches!(ctx.finish_session(),
         Err(CodecError::ResourceLimit(last)) if last == first));

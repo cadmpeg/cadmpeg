@@ -673,9 +673,6 @@ pub(super) fn nullable_embedded_pcurve(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<Nullable<PcurveNurbs>, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let saved = cur.pos();
     if cur.take_ident() == Some("nullbs") {
         return Some(Ok(Nullable::Null));
@@ -690,9 +687,6 @@ fn g2_side(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<EmbeddedG2Side, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let label = propagate_resource!(ctx.copy_retained_text(cur.take_str()?, "ASM G2 side label"));
     let surface = propagate_resource!(embedded_surface(ctx, cur)?);
     let (curve, curve_end) = propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
@@ -715,9 +709,6 @@ fn bridge_token(
 ) -> Option<Result<cadmpeg_ir::geometry::LoftBridgeToken, cadmpeg_core::CodecError>> {
     use cadmpeg_ir::geometry::LoftBridgeToken;
 
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     match cur.peek()? {
         Token::True | Token::False => Some(Ok(LoftBridgeToken::Boolean(cur.take_bool()?))),
         Token::Long(_) => Some(Ok(LoftBridgeToken::Integer(cur.take_long()?))),
@@ -1668,9 +1659,6 @@ fn compound_loft_scale(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<Nullable<EmbeddedCompoundLoftScale>, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     if matches!(cur.peek(), Some(Token::True | Token::False)) {
         return Some(Ok(Nullable::Null));
     }
@@ -1681,7 +1669,7 @@ fn compound_loft_scale(
     let mut members =
         propagate_resource!(ctx.collection_vec(count, "ASM compound loft scale members"));
     let mut visits = 0..count;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some())
+    while !visits.is_empty()
         && propagate_resource!(ctx.next_charged(&mut visits, "ASM compound loft scale entries"))
             .is_some()
     {
@@ -1701,7 +1689,7 @@ fn compound_loft_scale(
         ctx.collection_vec(auxiliary_count, "ASM compound loft scale auxiliaries")
     );
     let mut visits = 0..auxiliary_count;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some())
+    while !visits.is_empty()
         && propagate_resource!(ctx.next_charged(&mut visits, "ASM compound loft scale entries"))
             .is_some()
     {
@@ -1726,9 +1714,6 @@ pub(super) fn ellipse_to_nurbs(
     major: [f64; 3],
     ratio: f64,
 ) -> Option<Result<NurbsCurve, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let length = major[0].hypot(major[1]).hypot(major[2]);
     (length.is_finite() && length > 0.0).then_some(())?;
     let minor_direction = [
@@ -1868,9 +1853,6 @@ fn revision_loft_section(
     table: &SubtypeTable,
     asm_extension_present: bool,
 ) -> Option<Result<Vec<EmbeddedLoftSectionEntry>, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let count = usize::try_from(cur.take_long()?).ok()?;
     // Each entry consumes at least one double token for its parameter.
     let count = bounded_len(
@@ -1883,7 +1865,7 @@ fn revision_loft_section(
         Err(error) => return Some(Err(error)),
     };
     let mut visits = 0..count;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some())
+    while !visits.is_empty()
         && propagate_resource!(ctx.next_charged(&mut visits, "ASM revision loft section entries"))
             .is_some()
     {
@@ -1900,7 +1882,7 @@ fn revision_loft_section(
             Err(error) => return Some(Err(error)),
         };
         let mut visits = 0..member_count;
-        while (!visits.is_empty() || ctx.resource_refusal().is_some())
+        while !visits.is_empty()
             && propagate_resource!(
                 ctx.next_charged(&mut visits, "ASM revision loft section entries")
             )
@@ -1953,7 +1935,7 @@ fn revision_loft_section(
             Err(error) => return Some(Err(error)),
         };
         let mut visits = 0..auxiliary_count;
-        while (!visits.is_empty() || ctx.resource_refusal().is_some())
+        while !visits.is_empty()
             && propagate_resource!(
                 ctx.next_charged(&mut visits, "ASM revision loft section entries")
             )
@@ -1992,9 +1974,6 @@ fn loft_subdata_form(
 ) -> Option<Result<cadmpeg_ir::geometry::LoftSubdata, cadmpeg_core::CodecError>> {
     use cadmpeg_ir::geometry::{LoftSubdata, LoftSubdataRow};
 
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let type_code = cur.take_long()?;
     let row_count = cur.take_long()?;
     let column_count = cur.take_long()?;
@@ -2018,7 +1997,7 @@ fn loft_subdata_form(
     )?;
     let mut rows = propagate_resource!(ctx.collection_vec(rows_to_read, "ASM loft subdata rows"));
     let mut visits = 0..rows_to_read;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some())
+    while !visits.is_empty()
         && propagate_resource!(ctx.next_charged(&mut visits, "ASM loft subdata form entries"))
             .is_some()
     {
@@ -2026,7 +2005,7 @@ fn loft_subdata_form(
         let mut columns =
             propagate_resource!(ctx.collection_vec(columns_to_read, "ASM loft subdata columns"));
         let mut visits = 0..columns_to_read;
-        while (!visits.is_empty() || ctx.resource_refusal().is_some())
+        while !visits.is_empty()
             && propagate_resource!(ctx.next_charged(&mut visits, "ASM loft subdata columns"))
                 .is_some()
         {
@@ -2085,9 +2064,6 @@ fn loft_section(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<Vec<EmbeddedLoftSectionEntry>, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let count = usize::try_from(cur.take_long()?).ok()?;
     // Each entry consumes at least one double token for its parameter.
     let count = bounded_len(
@@ -2097,7 +2073,7 @@ fn loft_section(
     )?;
     let mut entries = propagate_resource!(ctx.collection_vec(count, "ASM legacy loft sections"));
     let mut visits = 0..count;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some())
+    while !visits.is_empty()
         && propagate_resource!(ctx.next_charged(&mut visits, "ASM loft section entries")).is_some()
     {
         let parameter = cur.take_f64()?;
@@ -2112,7 +2088,7 @@ fn loft_section(
             ctx.collection_vec(member_count, "ASM legacy loft profile members")
         );
         let mut visits = 0..member_count;
-        while (!visits.is_empty() || ctx.resource_refusal().is_some())
+        while !visits.is_empty()
             && propagate_resource!(ctx.next_charged(&mut visits, "ASM loft section entries"))
                 .is_some()
         {
@@ -2138,7 +2114,7 @@ fn loft_section(
             ctx.collection_vec(auxiliary_count, "ASM legacy loft auxiliary curves")
         );
         let mut visits = 0..auxiliary_count;
-        while (!visits.is_empty() || ctx.resource_refusal().is_some())
+        while !visits.is_empty()
             && propagate_resource!(ctx.next_charged(&mut visits, "ASM loft section entries"))
                 .is_some()
         {
@@ -2167,9 +2143,6 @@ fn revision_loft(
     position: usize,
     resolver: Option<&SubtypeTable>,
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let table = resolver?;
     let mut cur = Cur::at(span, position);
     let revision = PositiveI64::new(cur.take_long()?)?;
@@ -2301,9 +2274,6 @@ fn revision_cl_scale(
     table: &SubtypeTable,
     asm_extension_present: bool,
 ) -> Option<Result<(Vec<EmbeddedLoftProfileMember>, EmbeddedLoftPath), cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let member_count = usize::try_from(cur.take_long()?).ok()?;
     // Each member consumes at least its type-code token.
     let member_count = bounded_len(
@@ -2317,7 +2287,7 @@ fn revision_cl_scale(
             Err(error) => return Some(Err(error)),
         };
     let mut visits = 0..member_count;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some())
+    while !visits.is_empty()
         && propagate_resource!(ctx.next_charged(&mut visits, "ASM revision cl scale entries"))
             .is_some()
     {
@@ -2370,7 +2340,7 @@ fn revision_cl_scale(
         Err(error) => return Some(Err(error)),
     };
     let mut visits = 0..auxiliary_count;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some())
+    while !visits.is_empty()
         && propagate_resource!(ctx.next_charged(&mut visits, "ASM revision cl scale entries"))
             .is_some()
     {
@@ -2395,9 +2365,6 @@ fn revision_compound_loft(
     span: &[Token],
     resolver: Option<&SubtypeTable>,
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let table = resolver?;
     let mut cur = Cur::at(span, 2);
     let revision = PositiveI64::new(cur.take_long()?)?;
@@ -2424,7 +2391,7 @@ fn revision_compound_loft(
         Err(error) => return Some(Err(error)),
     };
     let mut visits = 0..entry_count;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some())
+    while !visits.is_empty()
         && propagate_resource!(ctx.next_charged(&mut visits, "ASM revision compound loft entries"))
             .is_some()
     {
@@ -2758,9 +2725,6 @@ fn sweep_law_expression(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<EmbeddedLawExpression, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     if matches!(cur.peek(), Some(Token::Str(_))) {
         let source = cur.take_str()?;
         return Some(Ok(EmbeddedLawExpression::Text(propagate_resource!(
@@ -2914,9 +2878,6 @@ fn law_formula_resolving(
     cur: &mut Cur<'_>,
     resolver: Option<&SubtypeTable>,
 ) -> Option<Result<EmbeddedLawFormula, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let name = cur.take_str()?;
     if name == "null_law" {
         return Some(Ok(EmbeddedLawFormula::Null));
@@ -2933,7 +2894,7 @@ fn law_formula_resolving(
     }
     let mut variables = propagate_resource!(ctx.collection_vec(count, "ASM law formula variables"));
     let mut visits = 0..count;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some())
+    while !visits.is_empty()
         && propagate_resource!(ctx.next_charged(&mut visits, "ASM law formula resolving entries"))
             .is_some()
     {
@@ -2983,7 +2944,7 @@ fn skin_spl_sur(
         let mut profiles =
             propagate_resource!(ctx.collection_vec(profile_count, "ASM skin surface profiles"));
         let mut visits = 0..profile_count;
-        while (!visits.is_empty() || ctx.resource_refusal().is_some())
+        while !visits.is_empty()
             && propagate_resource!(ctx.next_charged(&mut visits, "ASM skin spl sur entries"))
                 .is_some()
         {
@@ -3069,7 +3030,7 @@ pub(super) fn law_spl_sur(
     let mut additional =
         propagate_resource!(ctx.collection_vec(count, "ASM law surface additional formulas"));
     let mut visits = 0..count;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some())
+    while !visits.is_empty()
         && propagate_resource!(ctx.next_charged(&mut visits, "ASM law spl sur entries")).is_some()
     {
         additional.push(propagate_resource!(law_formula(ctx, &mut cur)?));
@@ -3484,9 +3445,6 @@ fn revision_sweep_sur(
     position: usize,
     table: &SubtypeTable,
 ) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let mut cur = Cur::at(span, position);
     let revision = PositiveI64::new(cur.take_long()?)?;
     let primary_flag = cur.take_bool()?;
@@ -3820,9 +3778,6 @@ fn comp_spl_sur(
     let mut components = propagate_resource!(
         ctx.collection_vec(parameters.len(), "ASM compound surface components")
     );
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let mut source_values = IntoIterator::into_iter(parameters);
     while source_values.len() != 0 {
         let Some(parameter) = propagate_resource!(
@@ -3887,9 +3842,6 @@ pub fn revision_surface_tail(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<RevisionSurfaceTail, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let enumeration = cur.take_enum()?;
     let cache = match enumeration {
         0 => {
@@ -4640,7 +4592,7 @@ fn defm_spl_sur(
                 ctx.collection_vec(count, "ASM deformable surface parameter triples")
             );
             let mut visits = 0..count;
-            while (!visits.is_empty() || ctx.resource_refusal().is_some())
+            while !visits.is_empty()
                 && propagate_resource!(ctx.next_charged(&mut visits, "ASM defm spl sur entries"))
                     .is_some()
             {
@@ -4680,7 +4632,7 @@ fn defm_spl_sur(
                 ctx.collection_vec(count, "ASM deformable surface curve parameter triples")
             );
             let mut visits = 0..count;
-            while (!visits.is_empty() || ctx.resource_refusal().is_some())
+            while !visits.is_empty()
                 && propagate_resource!(ctx.next_charged(&mut visits, "ASM defm spl sur entries"))
                     .is_some()
             {
@@ -4913,9 +4865,6 @@ fn t_spline_subtransform(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<EmbeddedTSplineSubtransform, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     match cur.take_ident()? {
         "t_spl_subtrans_object" => {
             let program_text = cur.take_str()?;
@@ -5863,6 +5812,3 @@ mod ellipse_tests {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

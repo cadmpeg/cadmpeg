@@ -1656,7 +1656,7 @@ fn a_non_finite_attribute_double_is_refused() {
         .expect_err("a NaN attribute double is refused");
     assert_eq!(
         error.to_string(),
-        "malformed container: attribute record 1 (real-st-attrib) holds a non-finite number"
+        "malformed container: attribute record holds a non-finite number"
     );
 }
 

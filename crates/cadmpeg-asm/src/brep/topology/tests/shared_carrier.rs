@@ -8,7 +8,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
-fn carrier(name: &str) -> Record {
+fn carrier(name: &str) -> Record<'static> {
     let mut tokens = vec![Token::SubtypeOpen, Token::Ident(name.into())];
     if name == "exact_spl_sur" {
         tokens.extend([

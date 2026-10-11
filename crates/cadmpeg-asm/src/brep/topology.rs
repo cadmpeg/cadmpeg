@@ -35,9 +35,6 @@ pub(super) fn decode_analytic_carriers(
     let mut surface_geo: HashMap<i64, SurfaceGeometry> = HashMap::new();
     let mut inward_normal_surfaces = HashSet::new();
     let mut curve_geo: HashMap<i64, CurveGeometry> = HashMap::new();
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(records);
     while source_values.len() != 0 {
         let Some(r) = ctx.next_charged(&mut source_values, "ASM topology record pass")? else {
@@ -106,7 +103,7 @@ pub(super) fn decode_analytic_carriers(
 #[derive(Clone, Copy)]
 pub(super) struct TopologyContext<'a, 'ctx, 'record> {
     pub(super) ctx: &'a cadmpeg_core::decode::DecodeContext<'ctx>,
-    pub(super) by_index: &'a HashMap<i64, &'record Record>,
+    pub(super) by_index: &'a HashMap<i64, &'record Record<'record>>,
     pub(super) token_table: &'a nurbs::toks::SubtypeTable,
     pub(super) purpose: DecodePurpose,
     pub(super) format: IdFormat,
@@ -143,9 +140,6 @@ pub(super) fn keep_faces_and_carriers(
         undecoded_carriers,
         ..
     } = &mut *reach;
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(records);
     while source_values.len() != 0 {
         let Some(r) = ctx.next_charged(&mut source_values, "ASM topology record pass")? else {
@@ -427,6 +421,7 @@ pub(super) fn walk_reachable_topology(
         curve_geo,
         procedural_curve_defs,
         pcurve_geo,
+        pcurve_decodes,
         pcurve_parameter_ranges,
         ..
     } = &mut *carriers;
@@ -445,9 +440,6 @@ pub(super) fn walk_reachable_topology(
     // Source order makes shared carrier resolution deterministic.
     let mut walked_face_storage = ctx.reserve_scoped(0, "ASM visited faces")?;
     let mut walked_faces = HashSet::new();
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(records);
     while source_values.len() != 0 {
         let Some(face) = ctx.next_charged(&mut source_values, "ASM reachable face walk")? else {
@@ -527,45 +519,15 @@ pub(super) fn walk_reachable_topology(
                                         "ASM topology kept_pcurves",
                                     )
                                 })?;
-                            } else if let Some(PcurveGeometry::Nurbs { nurbs }) =
-                                pcurve_geo.get(&super::PcurveRecordIndex(pc))
-                            {
-                                let edge =
-                                    ce.ref_at(6).and_then(|edge| by_index.get(&edge)).copied();
-                                if let Some(parameter_range) = pcurve_ranges_on_domain(nurbs, edge)
-                                    .and_then(|ranges| ranges.into_iter().next())
-                                {
-                                    scratch.with_storage(|| {
-                                        ctx.insert_hash_map(
-                                            pcurve_parameter_ranges,
-                                            super::CoedgeRecordIndex(ci),
-                                            parameter_range,
-                                            "ASM topology pcurve_parameter_ranges",
-                                        )
-                                    })?;
-                                    scratch.with_storage(|| {
-                                        ctx.insert_hash_set(
-                                            kept_pcurves,
-                                            pc,
-                                            "ASM topology kept_pcurves",
-                                        )
-                                    })?;
-                                } else {
-                                    count_kind(
-                                        ctx,
-                                        &mut out.stats.undecoded_pcurve_kinds,
-                                        prec.head(),
-                                    )?;
-                                }
                             } else {
                                 // An inline `exp_par_cur` owns its first BS2 field.
                                 // A wrapped subtype ref resolves that same typed
                                 // field. A nonzero-discriminator ref form names one
                                 // of the target intcurve's two pcurve slots; its
                                 // sign composes with the intcurve sense bit.
-                                let mut attempt =
-                                    ctx.reserve_scoped(0, "ASM explicit pcurve attempt")?;
-                                let decoded = attempt.with_storage(|| {
+                                let key = super::PcurveRecordIndex(pc);
+                                if !pcurve_decodes.contains_key(&key) {
+                                    let decoded = scratch.with_storage(|| {
                                 let decoded = match (prec.chunk(3), prec.chunk(4)) {
                                     (Some(Token::Long(0)), Some(Token::True | Token::False)) => {
                                         if let Some(span) = nurbs::toks::payload_subtype_toks(
@@ -618,6 +580,25 @@ pub(super) fn walk_reachable_topology(
                                     }
                                     _ => None,
                                 }.transpose()?;
+                                        Ok::<_, cadmpeg_core::CodecError>(decoded)
+                                    })?;
+                                    scratch.with_storage(|| {
+                                        ctx.insert_hash_map(
+                                            pcurve_decodes,
+                                            key,
+                                            decoded,
+                                            "ASM pcurve decode cache",
+                                        )
+                                    })?;
+                                }
+                                let mut attempt =
+                                    ctx.reserve_scoped(0, "ASM explicit pcurve attempt")?;
+                                let decoded = attempt.with_storage(|| {
+                                    let decoded = pcurve_decodes.get(&key).and_then(Option::as_ref)
+                                        .map(|(curve, native_chart)| {
+                                            curve.try_clone_for_decode(ctx, "ASM pcurve face candidate")
+                                                .map(|curve| (curve, *native_chart))
+                                        }).transpose()?;
                                 let edge =
                                     ce.ref_at(6).and_then(|edge| by_index.get(&edge)).copied();
                                 Ok::<_, cadmpeg_core::CodecError>(decoded.map(|(mut decoded, native_chart)| -> Result<_, cadmpeg_core::CodecError> {
@@ -839,9 +820,6 @@ pub(super) fn collect_wire_topology(
     let mut shell_edge_membership = HashSet::new();
     let mut shell_vertex_membership = HashSet::new();
     if let Some(limit) = saved_entity_limit {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut source_values = IntoIterator::into_iter(records);
         while source_values.len() != 0 {
             let Some(edge) = ctx.next_charged(&mut source_values, "ASM saved edge record pass")?
@@ -882,9 +860,6 @@ pub(super) fn collect_wire_topology(
         let mut wire_guard = HashSet::new();
         let mut roots_storage = ctx.reserve_scoped(0, "ASM shell wire root storage")?;
         let roots = roots_storage.with_storage(|| shell_wire_roots(ctx, shell, by_index))?;
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut source_values = IntoIterator::into_iter(roots);
         while source_values.len() != 0 {
             let Some(root) = ctx.next_charged(&mut source_values, "ASM shell wire roots")? else {
@@ -1075,9 +1050,6 @@ fn keep_wire_edge(
         purpose,
         format,
     } = inputs;
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Carriers {
         curve_geo,
         procedural_curve_defs,
@@ -1264,9 +1236,6 @@ pub(super) fn classify_edge_curve_senses(
     } = reach;
     let mut reversed_curve_refs: HashSet<i64> = HashSet::new();
     let mut forward_curve_refs: HashSet<i64> = HashSet::new();
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(records);
     while source_values.len() != 0 {
         let Some(r) = ctx.next_charged(&mut source_values, "ASM topology record pass")? else {
@@ -1311,9 +1280,6 @@ pub(super) fn ring_coedges(
     kept: &HashSet<i64>,
     format: IdFormat,
 ) -> Result<Vec<CoedgeId>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let id = |i: i64| CoedgeId::from(super::id(format, i));
     let mut out = Vec::new();
     let Some(first) = loop_rec.ref_at(4) else {

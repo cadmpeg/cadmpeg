@@ -124,7 +124,7 @@ pub(super) fn model_root(
 
 /// Classifies all F3D members and attaches each nested layer to its archive path.
 pub(super) fn classify_members<'a>(
-    ctx: &DecodeContext<'a>,
+    ctx: &'a DecodeContext<'a>,
     scan: &ContainerScan<'a>,
 ) -> Result<ArchiveSession<'a>, CodecError> {
     let mut members = BTreeMap::new();

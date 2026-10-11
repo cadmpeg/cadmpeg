@@ -11,7 +11,6 @@
 use crate::kernel_header::RefWidth;
 use crate::nurbs::reader::{finish_knot_layout, BsplineMarker, Nullable};
 use crate::sab::Token;
-use cadmpeg_core::decode::admission::Admission;
 
 /// A cursor over one record's payload tokens.
 ///
@@ -160,9 +159,6 @@ impl<'a> Cur<'a> {
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Option<Result<Vec<f64>, cadmpeg_core::CodecError>> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Some(Err(refusal.into()));
-        }
         let mark = self.pos;
         let Some(count) = self.take_long().and_then(|c| usize::try_from(c).ok()) else {
             self.pos = mark;
@@ -392,9 +388,6 @@ pub(super) fn find_owned_subtype_marker<'n>(
     toks: &[Token],
     names: &[&'n str],
 ) -> Option<Result<(usize, &'n str), cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     if names.is_empty() {
         return None;
     }
@@ -553,9 +546,6 @@ pub(super) fn find_owned_intcurve_subtype(
     toks: &[Token],
     modern: &str,
 ) -> Option<Result<usize, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     if modern.is_empty() {
         return None;
     }
@@ -644,10 +634,7 @@ pub(super) fn subtype_span<'a>(
     start: usize,
 ) -> Result<Option<SubtypeScope<'a>>, cadmpeg_core::CodecError> {
     if !matches!(toks.get(start), Some(Token::SubtypeOpen)) {
-        return match Admission::resource_refusal(ctx) {
-            Some(refusal) => Err(refusal.into()),
-            None => Ok(None),
-        };
+        return Ok(None);
     }
     let mut depth = 0usize;
     let mut tokens = toks[start..].iter();
@@ -693,9 +680,6 @@ pub fn payload_subtype_toks<'r>(
     chunk_index: usize,
     expected: &str,
 ) -> Result<Option<SubtypeScope<'r>>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = Admission::resource_refusal(ctx) {
-        return Err(refusal.into());
-    }
     let mut chunk = 0usize;
     let mut open = None;
     let mut tokens = record.tokens.iter();
@@ -758,9 +742,6 @@ impl SubtypeTable {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         records: &[crate::sab::Record],
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(cadmpeg_core::CodecError::from(refusal));
-        }
         let mut defs: Vec<SubtypeDefinition> = Vec::new();
         let mut source_index_entries = records.iter();
         while source_index_entries.len() != 0 {
@@ -839,6 +820,108 @@ impl SubtypeTable {
     }
 }
 
+enum AdmittedSubtype<'ctx> {
+    Active,
+    Complete(usize),
+    Cyclic {
+        references: Vec<usize>,
+        _storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+    },
+}
+
+struct SubtypeReferenceFrame<'tokens, 'ctx> {
+    tokens: &'tokens [Token],
+    position: usize,
+    definition: Option<usize>,
+    depth: usize,
+    cyclic: bool,
+    references: Vec<usize>,
+    reference_storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
+    _guard: Option<cadmpeg_core::decode::DepthGuard<'ctx>>,
+}
+
+fn admit_cached_subtype_depth(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    depth: usize,
+) -> Result<(), cadmpeg_core::CodecError> {
+    if depth == 0 {
+        return Ok(());
+    }
+    let mut storage = ctx.reserve_scoped(0, "walk ASM admitted subtype depth")?;
+    let mut guards = Vec::new();
+    let mut levels = 0..depth;
+    while !levels.is_empty() {
+        ctx.next_charged(&mut levels, "walk ASM admitted subtype depth")?;
+        let guard = ctx.enter_nested("follow admitted ASM subtype reference")?;
+        ctx.push_scoped_vec(
+            &mut storage,
+            &mut guards,
+            guard,
+            "walk ASM admitted subtype depth",
+        )?;
+    }
+    Ok(())
+}
+
+/// A cycle's depth depends on the active path. Walk cached reference indices
+/// without reading any definition's payload again; each path stops at a repeat.
+fn admit_cyclic_subtype_paths(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    admitted: &std::collections::HashMap<usize, AdmittedSubtype<'_>>,
+    index: usize,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let Some(AdmittedSubtype::Cyclic { references, .. }) = admitted.get(&index) else {
+        return Ok(());
+    };
+    let mut storage = ctx.reserve_scoped(0, "walk ASM cyclic subtype paths")?;
+    let mut path = std::collections::HashSet::new();
+    storage
+        .with_storage(|| ctx.insert_hash_set(&mut path, index, "walk ASM cyclic subtype path"))?;
+    let guard = ctx.enter_nested("follow cyclic ASM subtype reference")?;
+    let mut pending = Vec::new();
+    ctx.push_scoped_vec(
+        &mut storage,
+        &mut pending,
+        (index, references.as_slice(), 0usize, guard),
+        "walk ASM cyclic subtype stack",
+    )?;
+    while let Some((_, references, position, _)) = pending.last_mut() {
+        if *position == references.len() {
+            if let Some((index, _, _, _guard)) = pending.pop() {
+                path.remove(&index);
+            }
+            continue;
+        }
+        let mut source = references.get(*position..).unwrap_or_default().iter();
+        let Some(&target) = ctx.next_charged(&mut source, "walk ASM cyclic subtype references")?
+        else {
+            break;
+        };
+        *position += 1;
+        if path.contains(&target) {
+            continue;
+        }
+        match admitted.get(&target) {
+            Some(AdmittedSubtype::Complete(depth)) => admit_cached_subtype_depth(ctx, *depth)?,
+            Some(AdmittedSubtype::Cyclic { references, .. }) => {
+                let guard = ctx.enter_nested("follow cyclic ASM subtype reference")?;
+                storage.with_storage(|| {
+                    ctx.insert_hash_set(&mut path, target, "walk ASM cyclic subtype path")
+                })?;
+                ctx.push_scoped_vec(
+                    &mut storage,
+                    &mut pending,
+                    (target, references.as_slice(), 0usize, guard),
+                    "walk ASM cyclic subtype stack",
+                )?;
+            }
+            // Active definitions already have guards on the enclosing path.
+            Some(AdmittedSubtype::Active) | None => {}
+        }
+    }
+    Ok(())
+}
+
 /// Admit every subtype-reference walk before semantic candidates read the
 /// table. The stack holds policy depth guards for the active reference path.
 pub(crate) fn admit_subtype_references(
@@ -846,31 +929,64 @@ pub(crate) fn admit_subtype_references(
     records: &[crate::sab::Record],
     table: &SubtypeTable,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut scratch = ctx.reserve_scoped(0, "walk ASM subtype references")?;
-    let mut visited = std::collections::BTreeSet::new();
-    let mut source_values = IntoIterator::into_iter(records);
+    let mut admitted_depths = std::collections::HashMap::new();
+    let mut source_values = records.iter();
     while source_values.len() != 0 {
         let Some(record) = ctx.next_charged(&mut source_values, "walk ASM subtype records")? else {
             break;
         };
         let mut stack_storage = ctx.reserve_scoped(0, "walk ASM subtype references")?;
         let mut pending = Vec::new();
-        let root = (record.tokens.as_ref(), 0usize, None);
+        let root = SubtypeReferenceFrame {
+            tokens: record.tokens.as_ref(),
+            position: 0,
+            definition: None,
+            depth: 0,
+            cyclic: false,
+            references: Vec::new(),
+            reference_storage: ctx.reserve_scoped(0, "ASM subtype reference targets")?,
+            _guard: None,
+        };
         ctx.push_scoped_vec(
             &mut stack_storage,
             &mut pending,
             root,
             "walk ASM subtype stack",
         )?;
-        while let Some((tokens, position, _guard)) = pending.last_mut() {
+        while let Some(SubtypeReferenceFrame {
+            tokens,
+            position,
+            definition,
+            depth,
+            cyclic,
+            references,
+            reference_storage,
+            ..
+        }) = pending.last_mut()
+        {
             if *position < tokens.len() {
                 ctx.charge_work(1, "scan ASM subtype references")?;
             }
             let Some(token) = tokens.get(*position) else {
-                pending.pop();
+                if let Some(frame) = pending.pop() {
+                    if let Some(index) = frame.definition {
+                        if let Some(admitted) = admitted_depths.get_mut(&index) {
+                            *admitted = if frame.cyclic {
+                                AdmittedSubtype::Cyclic {
+                                    references: frame.references,
+                                    _storage: frame.reference_storage,
+                                }
+                            } else {
+                                AdmittedSubtype::Complete(frame.depth)
+                            };
+                        }
+                        if let Some(parent) = pending.last_mut() {
+                            parent.cyclic |= frame.cyclic;
+                            parent.depth = parent.depth.max(frame.depth + 1);
+                        }
+                    }
+                }
                 continue;
             };
             let pos = *position;
@@ -889,22 +1005,54 @@ pub(crate) fn admit_subtype_references(
                 }
                 _ => None,
             };
-            let Some(index) = index else {
-                continue;
-            };
-            if !ctx.insert_scoped_btree_value(
-                &mut scratch,
-                &mut visited,
-                index,
-                "visit ASM subtype reference",
-            )? {
+            let Some(index) = index else { continue };
+            if definition.is_some() {
+                ctx.push_scoped_vec(
+                    reference_storage,
+                    references,
+                    index,
+                    "ASM subtype reference targets",
+                )?;
+            }
+            if let Some(admitted) = admitted_depths.get(&index) {
+                match admitted {
+                    AdmittedSubtype::Active => *cyclic = true,
+                    AdmittedSubtype::Complete(admitted) => {
+                        admit_cached_subtype_depth(ctx, *admitted)?;
+                        *depth = (*depth).max(admitted + 1);
+                    }
+                    AdmittedSubtype::Cyclic { .. } => {
+                        *cyclic = true;
+                        admit_cyclic_subtype_paths(ctx, &admitted_depths, index)?;
+                    }
+                }
                 continue;
             }
-            let Some(target) = table.span(index) else {
-                continue;
-            };
+            let target = table.span(index);
+            scratch.with_storage(|| {
+                ctx.insert_hash_map(
+                    &mut admitted_depths,
+                    index,
+                    if target.is_some() {
+                        AdmittedSubtype::Active
+                    } else {
+                        AdmittedSubtype::Complete(0)
+                    },
+                    "visit ASM subtype reference",
+                )
+            })?;
+            let Some(target) = target else { continue };
             let guard = ctx.enter_nested("follow ASM subtype reference")?;
-            let frame = (target.tokens(), 0usize, Some(guard));
+            let frame = SubtypeReferenceFrame {
+                tokens: target.tokens(),
+                position: 0,
+                definition: Some(index),
+                depth: 1,
+                cyclic: false,
+                references: Vec::new(),
+                reference_storage: ctx.reserve_scoped(0, "ASM subtype reference targets")?,
+                _guard: Some(guard),
+            };
             ctx.push_scoped_vec(
                 &mut stack_storage,
                 &mut pending,
@@ -970,8 +1118,8 @@ pub fn test_table(
 
 #[cfg(test)]
 mod tests {
-    mod entry_routes;
     mod index_sources;
+    mod reference_depth;
     use super::{
         cache_scope as cache_scope_ctx, lex_test_span, marker_at,
         owned_construction_subtype as owned_construction_subtype_ctx,
@@ -1512,42 +1660,6 @@ mod tests {
     }
 
     #[test]
-    fn subtype_span_no_open_is_fixed_work_and_does_not_hide_a_fused_refusal() {
-        use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
-
-        let toks = [ident("x"), Token::SubtypeClose];
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("test decode context");
-        assert!(subtype_span_ctx(&ctx, &toks, 0)
-            .expect("no scan occurs")
-            .is_none());
-        ctx.finish_session().expect("no-open is a fixed O(1) check");
-
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("test decode context");
-        let error = ctx
-            .charge_work(1, "ASM prior scan refusal")
-            .expect_err("the first positive charge is refused");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            panic!("expected work refusal: {error:?}");
-        };
-        assert!(matches!(
-            subtype_span_ctx(&ctx, &toks, 0),
-            Err(cadmpeg_core::CodecError::ResourceLimit(actual)) if actual == limit
-        ));
-        assert!(matches!(
-            ctx.finish_session(),
-            Err(cadmpeg_core::CodecError::ResourceLimit(actual)) if actual == limit
-        ));
-    }
-
-    #[test]
     fn payload_subtype_lookup_charges_payload_prefix_and_matching_scope() {
         use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
 
@@ -1605,43 +1717,6 @@ mod tests {
         assert_eq!(limit.operation, "ASM subtype span token scan");
         assert_eq!(limit.used, 11);
         assert_eq!(limit.additional, 1);
-        assert!(matches!(
-            ctx.finish_session(),
-            Err(cadmpeg_core::CodecError::ResourceLimit(actual)) if actual == limit
-        ));
-    }
-
-    #[test]
-    fn payload_subtype_lookup_preserves_a_fused_refusal_when_no_chunk_exists() {
-        use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
-
-        let record = crate::test_support::sab::record(0, "pcurve".into(), Vec::new().into(), 0, 0);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("test decode context");
-        assert!(super::payload_subtype_toks(&ctx, &record, 0, "exp_par_cur")
-            .expect("empty lookup does not scan")
-            .is_none());
-        ctx.finish_session().expect("empty lookup uses no work");
-
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("test decode context");
-        let error = ctx
-            .charge_work(1, "ASM prior scan refusal")
-            .expect_err("the first positive charge is refused");
-        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
-            panic!("expected work refusal: {error:?}");
-        };
-
-        assert!(matches!(
-            super::payload_subtype_toks(&ctx, &record, 0, "exp_par_cur"),
-            Err(cadmpeg_core::CodecError::ResourceLimit(actual)) if actual == limit
-        ));
         assert!(matches!(
             ctx.finish_session(),
             Err(cadmpeg_core::CodecError::ResourceLimit(actual)) if actual == limit

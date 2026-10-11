@@ -4,7 +4,7 @@ use super::super::{collect_carrier, pcurve_tail_metadata, tolerant_coedge_extens
 use crate::sab::{Record, Token};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-fn record(tokens: Vec<Token>) -> Record {
+fn record(tokens: Vec<Token>) -> Record<'static> {
     crate::test_support::sab::record(1, "tcoedge".into(), tokens.into(), 0, 0)
 }
 
@@ -22,7 +22,7 @@ fn analytic_carrier_storage_is_scoped_and_released() {
     }
 }
 
-fn embedded_coedge() -> Record {
+fn embedded_coedge() -> Record<'static> {
     let mut tokens = (0..13).map(|_| Token::Ref(-1)).collect::<Vec<_>>();
     tokens.extend([
         Token::Ref(2),

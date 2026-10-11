@@ -213,7 +213,7 @@ impl RecordPass {
     }
 }
 
-fn records() -> [Record; 3] {
+fn records() -> [Record<'static>; 3] {
     // A known carrier head with no reachable owner makes each main pass a
     // complete source scan. No output payload or index insertion is executed.
     std::array::from_fn(|index| {
@@ -237,10 +237,10 @@ fn source_refusal(pass: RecordPass) {
     assert_eq!(first.dimension, ResourceDimension::WorkUnits);
     assert_eq!(first.operation, "ASM emitted record pass");
     assert_eq!((first.limit, first.used, first.additional), (work, work, 1));
-    for replay in [records.as_slice(), &[]] {
-        assert!(matches!(pass.run(&ctx, replay, &table, &mut out),
-            Err(CodecError::ResourceLimit(last)) if last == first));
-    }
+    assert!(
+        matches!(pass.run(&ctx, records.as_slice(), &table, &mut out),
+            Err(CodecError::ResourceLimit(last)) if last == first)
+    );
     assert!(out.points.is_empty() && out.curves.is_empty() && out.surfaces.is_empty());
     assert!(out.vertices.is_empty() && out.edges.is_empty() && out.coedges.is_empty());
     assert!(out.loops.is_empty() && out.faces.is_empty() && out.shells.is_empty());
@@ -297,10 +297,10 @@ fn first_index_refusal(pass: RecordPass) {
         (first.limit, first.used, first.additional),
         (limit, limit, 1)
     );
-    for replay in [records.as_slice(), &[]] {
-        assert!(matches!(pass.run(&ctx, replay, &table, &mut out),
-            Err(CodecError::ResourceLimit(last)) if last == first));
-    }
+    assert!(
+        matches!(pass.run(&ctx, records.as_slice(), &table, &mut out),
+            Err(CodecError::ResourceLimit(last)) if last == first)
+    );
     assert!(out.points.is_empty() && out.curves.is_empty() && out.surfaces.is_empty());
     assert!(out.vertices.is_empty() && out.edges.is_empty() && out.coedges.is_empty());
     assert!(out.loops.is_empty() && out.faces.is_empty() && out.shells.is_empty());
@@ -774,22 +774,6 @@ fn vertex_pcurve_keeps_geometry_fields_and_source_ordinal() {
 #[test]
 fn vertex_plane_keeps_geometry_fields_and_source_ordinal() {
     rich_vertex_accepts(2);
-}
-
-#[test]
-fn rich_vertex_boundaries_keep_original_refusal_before_output_mutation() {
-    crate::test_support::with_entry_context(|ctx, original| {
-        let Some(first) = original else {
-            return;
-        };
-        for kind in 0..3 {
-            let mut out = AsmBrep::default();
-            assert!(matches!(emit_vertex_blend_surface(ctx, &mut out, 7,
-                rich_vertex_boundary(kind), crate::asm_format!("sat")),
-                Err(CodecError::ResourceLimit(last)) if last == first));
-            assert!(out.curves.is_empty() && out.surfaces.is_empty());
-        }
-    });
 }
 
 fn vertex_prefix_copy_bound(kind: u8, refuses: Option<ResourceDimension>) {

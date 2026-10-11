@@ -103,9 +103,6 @@ impl Stats {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         other: Self,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         macro_rules! add_counts {
             ($($field:ident),+ $(,)?) => {
                 $(self.$field += other.$field;)+
@@ -135,7 +132,9 @@ impl Stats {
         ] {
             let mut source_values = IntoIterator::into_iter(source);
             while source_values.len() != 0 {
-                let Some((kind, count)) = ctx.next_charged(&mut source_values, "ASM merge loss kind traversal")? else {
+                let Some((kind, count)) =
+                    ctx.next_charged(&mut source_values, "ASM merge loss kind traversal")?
+                else {
                     break;
                 };
                 ctx.admit_btree_entry(target, &kind, "ASM merge loss kinds")?;
@@ -336,50 +335,6 @@ mod tests {
                 .unwrap(),
             5
         );
-    }
-
-    #[test]
-    fn stats_merge_preserves_original_refusal_before_scalar_mutation() {
-        use cadmpeg_core::CodecError;
-        let mut target = Stats {
-            mesh_surface_faces: 2,
-            nurbs_surfaces: 3,
-            nurbs_curves: 5,
-            partial_procedural_supports: 7,
-            ..Stats::default()
-        };
-        let mut successes = 0;
-        crate::test_support::with_entry_context(|ctx, original| {
-            let before = serde_json::to_value(&target).expect("stats wire");
-            let result = target.merge(ctx, Stats {
-                mesh_surface_faces: 11,
-                nurbs_surfaces: 13,
-                nurbs_curves: 17,
-                partial_procedural_supports: 19,
-                ..Stats::default()
-            });
-            match original {
-                Some(first) => {
-                    assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first));
-                    assert_eq!(serde_json::to_value(&target).expect("unchanged stats wire"), before);
-                }
-                None => {
-                    result.expect("fixed counts and empty maps are free");
-                    successes += 1;
-                    assert_eq!([
-                        target.mesh_surface_faces, target.nurbs_surfaces,
-                        target.nurbs_curves, target.partial_procedural_supports,
-                    ], [2 + 11 * successes, 3 + 13 * successes,
-                        5 + 17 * successes, 7 + 19 * successes]);
-                    assert!(target.missing_face_surface_kinds.is_empty());
-                    assert!(target.unknown_surface_kinds.is_empty());
-                    assert!(target.procedural_curve_kinds.is_empty());
-                    assert!(target.undecoded_pcurve_kinds.is_empty());
-                    assert!(target.other_record_kinds.is_empty());
-                }
-            }
-        });
-        assert_eq!(successes, 64);
     }
 
     #[test]

@@ -5,7 +5,7 @@ use crate::sab::{Record, Token};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
-fn records() -> [Record; 3] {
+fn records() -> [Record<'static>; 3] {
     std::array::from_fn(|index| {
         crate::test_support::sab::record(
             index,
@@ -40,10 +40,8 @@ fn source_boundary(cap: u64, operation: &'static str, dimension: ResourceDimensi
     } else {
         assert_eq!((first.limit, first.used), (0, 0));
     }
-    for replay in [&records[..], &[][..]] {
-        assert!(matches!(SubtypeTable::from_records(&ctx, replay),
+    assert!(matches!(SubtypeTable::from_records(&ctx, &records[..]),
             Err(CodecError::ResourceLimit(last)) if last == first));
-    }
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
 }
 

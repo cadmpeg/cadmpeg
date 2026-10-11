@@ -112,7 +112,7 @@ pub fn final_pcurve_patch_layout(
                 let control_start = pos;
                 let components = if rational { 3 } else { 2 };
                 let mut visits = 0..control_count * components;
-                while (!visits.is_empty() || ctx.resource_refusal().is_some())
+                while !visits.is_empty()
                     && propagate_resource!(
                         ctx.next_charged(&mut visits, "ASM pcurve patch control components")
                     )
@@ -286,7 +286,7 @@ pub(super) fn pcurve_block_with_end(
                 };
             }
             let mut visits = 0..n_poles;
-            while (!visits.is_empty() || ctx.resource_refusal().is_some())
+            while !visits.is_empty()
                 && propagate_resource!(
                     ctx.next_charged(&mut visits, "ASM pcurve block with end entries")
                 )
@@ -361,9 +361,6 @@ pub fn explicit_pcurve_cache_from_subtype_ref(
     index: i64,
     table: &toks::SubtypeTable,
 ) -> Option<Result<PcurveNurbs, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let index = usize::try_from(index).ok()?;
     explicit_pcurve_cache(ctx, table.span(index)?)
 }

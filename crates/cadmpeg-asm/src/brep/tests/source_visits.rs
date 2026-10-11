@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::{collect_entity_adjacency, collect_owned_ids, collect_references,
-    remap_owned_ids, retain_root_entities};
+use super::super::{
+    collect_entity_adjacency, collect_owned_ids, collect_references, remap_owned_ids,
+    retain_root_entities,
+};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use serde_value::Value;
@@ -25,6 +27,7 @@ fn boundary(
     mut value: Value,
     mut empty: Value,
     operation: &'static str,
+    empty_route_refuses: bool,
     mut run: impl FnMut(&DecodeContext<'_>, &mut Value) -> Result<(), CodecError>,
 ) {
     let arena = DecodeArena::new();
@@ -40,8 +43,10 @@ fn boundary(
     assert_eq!(first.operation, operation);
     assert_eq!((first.limit, first.used, first.additional), (1, 1, 1));
     assert_eq!(value, original);
-    for replay in [&mut value, &mut empty] {
-        assert!(matches!(run(&ctx, replay),
+    assert!(matches!(run(&ctx, &mut value),
+        Err(CodecError::ResourceLimit(last)) if last == first));
+    if empty_route_refuses {
+        assert!(matches!(run(&ctx, &mut empty),
             Err(CodecError::ResourceLimit(last)) if last == first));
     }
     assert!(matches!(ctx.finish_session(),
@@ -61,38 +66,68 @@ fn boundary(
 
 #[test]
 fn owned_id_sequence_admits_only_actual_members_and_no_end_probe() {
-    boundary(sequence(), Value::Seq(Vec::new()), "ASM serialized sequence items",
-        |ctx, value| collect_owned_ids(ctx, value, &mut HashSet::new()));
+    boundary(
+        sequence(),
+        Value::Seq(Vec::new()),
+        "ASM serialized sequence items",
+        true,
+        |ctx, value| collect_owned_ids(ctx, value, &mut HashSet::new()),
+    );
 }
 
 #[test]
 fn reference_sequence_admits_only_actual_members_and_no_end_probe() {
-    boundary(sequence(), Value::Seq(Vec::new()), "ASM serialized sequence items",
-        |ctx, value| collect_references(ctx, value, &HashSet::new(), &mut BTreeSet::new()));
+    boundary(
+        sequence(),
+        Value::Seq(Vec::new()),
+        "ASM serialized sequence items",
+        true,
+        |ctx, value| collect_references(ctx, value, &HashSet::new(), &mut BTreeSet::new()),
+    );
 }
 
 #[test]
 fn reference_map_admits_only_actual_fields_and_no_end_probe() {
-    boundary(fields(), Value::Map(BTreeMap::new()), "ASM serialized map fields",
-        |ctx, value| collect_references(ctx, value, &HashSet::new(), &mut BTreeSet::new()));
+    boundary(
+        fields(),
+        Value::Map(BTreeMap::new()),
+        "ASM serialized map fields",
+        true,
+        |ctx, value| collect_references(ctx, value, &HashSet::new(), &mut BTreeSet::new()),
+    );
 }
 
 #[test]
 fn adjacency_root_admits_only_actual_fields_and_no_end_probe() {
-    boundary(fields(), Value::Map(BTreeMap::new()), "ASM adjacency root fields",
-        |ctx, value| collect_entity_adjacency(ctx, value, &HashSet::new(), &mut HashMap::new()));
+    boundary(
+        fields(),
+        Value::Map(BTreeMap::new()),
+        "ASM adjacency root fields",
+        false,
+        |ctx, value| collect_entity_adjacency(ctx, value, &HashSet::new(), &mut HashMap::new()),
+    );
 }
 
 #[test]
 fn retained_root_admits_only_actual_fields_and_no_end_probe() {
-    boundary(fields(), Value::Map(BTreeMap::new()), "ASM retained root fields",
-        |ctx, value| retain_root_entities(ctx, value, &HashSet::new()));
+    boundary(
+        fields(),
+        Value::Map(BTreeMap::new()),
+        "ASM retained root fields",
+        false,
+        |ctx, value| retain_root_entities(ctx, value, &HashSet::new()),
+    );
 }
 
 #[test]
 fn remapped_sequence_admits_only_actual_members_and_no_end_probe() {
-    boundary(sequence(), Value::Seq(Vec::new()), "ASM serialized sequence items",
-        |ctx, value| remap_owned_ids(ctx, value, &HashMap::new()));
+    boundary(
+        sequence(),
+        Value::Seq(Vec::new()),
+        "ASM serialized sequence items",
+        true,
+        |ctx, value| remap_owned_ids(ctx, value, &HashMap::new()),
+    );
 }
 
 #[test]
@@ -116,8 +151,10 @@ fn owned_id_map_refuses_one_field_after_the_matching_id_probe() {
     assert_eq!(first.operation, "ASM serialized map fields");
     assert_eq!((first.limit, first.used, first.additional), (1, 1, 1));
     assert!(owned.is_empty());
-    assert!(matches!(collect_owned_ids(&ctx, &Value::Map(BTreeMap::new()), &mut owned),
-        Err(CodecError::ResourceLimit(last)) if last == first));
+    assert!(
+        matches!(collect_owned_ids(&ctx, &Value::Map(BTreeMap::new()), &mut owned),
+        Err(CodecError::ResourceLimit(last)) if last == first)
+    );
     assert!(matches!(ctx.finish_session(),
         Err(CodecError::ResourceLimit(last)) if last == first));
 }

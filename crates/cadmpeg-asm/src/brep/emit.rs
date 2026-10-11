@@ -120,16 +120,10 @@ fn map_law_formula(
         EmbeddedLawExpression,
     ) -> Result<cadmpeg_ir::geometry::LawExpression, cadmpeg_core::CodecError>,
 ) -> Result<cadmpeg_ir::geometry::LawFormula, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     match formula {
         EmbeddedLawFormula::Null => Ok(cadmpeg_ir::geometry::LawFormula::Null {}),
         EmbeddedLawFormula::Named { name, variables } => {
             let mut mapped = ctx.collection_vec(variables.len(), "ASM law formula variables")?;
-            if let Some(refusal) = ctx.resource_refusal() {
-                return Err(refusal.into());
-            }
             let mut source_values = IntoIterator::into_iter(variables).enumerate();
             while source_values.len() != 0 {
                 let Some((index, expression)) =
@@ -179,9 +173,6 @@ fn emit_carrier_surface(
     reach: &Reachable,
     format: IdFormat,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let (carriers, scratch, purpose) = carrier_scratch;
     let Carriers {
         surface_geo,
@@ -646,9 +637,6 @@ fn emit_carrier_surface(
             )?,
         };
         if purpose == super::DecodePurpose::Model {
-            if let Some(refusal) = ctx.resource_refusal() {
-                return Err(refusal.into());
-            }
             let mut source_values = IntoIterator::into_iter(&out.surfaces[support_start..]);
             while source_values.len() != 0 {
                 let Some(surface) =
@@ -664,9 +652,6 @@ fn emit_carrier_surface(
                     surface.id.as_str(),
                     "ASM procedural support sources",
                 )?;
-            }
-            if let Some(refusal) = ctx.resource_refusal() {
-                return Err(refusal.into());
             }
             let mut source_values = IntoIterator::into_iter(&out.curves[curve_start..]);
             while source_values.len() != 0 {
@@ -942,9 +927,6 @@ fn emit_loft_member_form(
     data: LoftProfileData,
     support_id: impl FnOnce() -> Result<SurfaceId, cadmpeg_core::CodecError>,
 ) -> Result<cadmpeg_ir::geometry::LoftMemberForm, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     match data {
         LoftProfileData::Classic(data) => {
             let (type_code, data) = emit_classic_loft_data(ctx, out, data, support_id()?)?;
@@ -1021,9 +1003,6 @@ fn emit_loft_path_curve(
     layout: EmbeddedLoftPathLayout,
     id: impl FnOnce() -> Result<CurveId, cadmpeg_core::CodecError>,
 ) -> Result<Option<LoftPathCurve>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let (geometry, endpoints) = match layout {
         EmbeddedLoftPathLayout::Legacy(curve) => (curve, None),
         EmbeddedLoftPathLayout::Revision(curve) => {
@@ -1222,9 +1201,6 @@ fn emit_compound_loft_surface(
     embedded: EmbeddedCompoundLoft,
     format: IdFormat,
 ) -> Result<ProceduralSurfaceDefinition, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let map_scale = |out: &mut AsmBrep,
                      name: cadmpeg_ir::ids::IdentityKey,
                      scale: EmbeddedCompoundLoftScale|
@@ -1836,9 +1812,6 @@ fn map_law_expression(
     path: cadmpeg_ir::ids::IdentityKey,
     expression: EmbeddedLawExpression,
 ) -> Result<cadmpeg_ir::geometry::LawExpression, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     Ok(match expression {
         EmbeddedLawExpression::Null => cadmpeg_ir::geometry::LawExpression::Null {},
         EmbeddedLawExpression::Text(value) => cadmpeg_ir::geometry::LawExpression::Text { value },
@@ -1926,9 +1899,6 @@ fn map_law_expression(
         },
         EmbeddedLawExpression::Algebraic { operator, operands } => {
             let mut mapped = ctx.collection_vec(operands.len(), "ASM law expression operands")?;
-            if let Some(refusal) = ctx.resource_refusal() {
-                return Err(refusal.into());
-            }
             let mut source_values = IntoIterator::into_iter(operands).enumerate();
             while source_values.len() != 0 {
                 let Some((index, operand)) =
@@ -2876,9 +2846,6 @@ fn emit_rolling_ball_side(
     prefix: impl FnOnce() -> Result<cadmpeg_ir::ids::IdentityKey, cadmpeg_core::CodecError>,
     side: RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>,
 ) -> Result<RollingBallSide, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let (surface, curve) = match (side.surface, side.curve) {
         (None, None) => (None, None),
         (surface, curve) => {
@@ -3390,9 +3357,6 @@ fn emit_vertex_blend_surface(
         construction.boundaries.len(),
         "ASM emitted vertex blend boundaries",
     )?;
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(construction.boundaries).enumerate();
     while source_values.len() != 0 {
         let Some((boundary_index, boundary)) =
@@ -3533,9 +3497,6 @@ fn emit_blend_surface(
     parts: BlendSurfaceParts,
     format: IdFormat,
 ) -> Result<ProceduralSurfaceDefinition, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let BlendSurfaceParts {
         supports,
         spine,
@@ -3807,10 +3768,6 @@ fn emit_carrier_curve(
     use cadmpeg_ir::geometry::curve_payloads::{
         DeformableCurveConstruction, TwoSidedOffsetCurveConstruction, VectorOffsetCurveConstruction,
     };
-
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
 
     let Carriers {
         curve_geo,
@@ -4300,9 +4257,6 @@ fn emit_surface_curve_layout<F>(
 > {
     use crate::nurbs::proc_curve::EmbeddedSurfaceCurveLayout;
 
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let (embedded, tail) = match layout {
         EmbeddedSurfaceCurveLayout::ContextFirst(context) => (context, None),
         EmbeddedSurfaceCurveLayout::CacheFirst { context, flags } => {
@@ -4371,9 +4325,6 @@ fn emit_surface_curve_family(
 ) -> Result<cadmpeg_ir::geometry::SurfaceCurveFamily, CarrierCurveError> {
     use crate::nurbs::proc_curve::EmbeddedSurfaceCurve;
 
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     Ok(match family {
         EmbeddedSurfaceCurve::Blend(layout) => {
             let (context, tail) =
@@ -4469,9 +4420,6 @@ fn emit_surface_offset_curve(
     format: IdFormat,
     solved_domain: Option<[f64; 2]>,
 ) -> Result<cadmpeg_ir::geometry::ProceduralCurveDefinition, CarrierCurveError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let (context, discontinuity_flag, base_endpoints, cache_first) = match embedded.layout {
         EmbeddedSurfaceOffsetLayout::ContextFirst {
             context,
@@ -4580,9 +4528,6 @@ fn emit_spring_support(
     side: usize,
     support: EmbeddedSpringSupport,
 ) -> Result<cadmpeg_ir::geometry::SpringSupport, CarrierCurveError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     Ok(match support {
         EmbeddedSpringSupport::Surface(geometry) => cadmpeg_ir::geometry::SpringSupport::Surface(
             emit_spring_surface(ctx, out, i, format, side, geometry)?,
@@ -4602,9 +4547,6 @@ fn emit_spring_curve(
     format: IdFormat,
     solved_domain: Option<[f64; 2]>,
 ) -> Result<cadmpeg_ir::geometry::ProceduralCurveDefinition, CarrierCurveError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let emit_pcurve = |nurbs| PcurveGeometry::Nurbs { nurbs };
     let layout = match embedded.layout {
         EmbeddedSpringLayout::ContextFirst {
@@ -4741,9 +4683,6 @@ fn emit_law_curve(
     format: IdFormat,
     solved_domain: Option<[f64; 2]>,
 ) -> Result<cadmpeg_ir::geometry::ProceduralCurveDefinition, CarrierCurveError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let (parameter_range, version) = match embedded.layout {
         EmbeddedLawCurveLayout::Legacy(range) => (range, None),
         EmbeddedLawCurveLayout::Version {
@@ -4853,9 +4792,6 @@ pub(super) fn emit_carrier_records(
         reversed_curve_refs,
         forward_curve_refs,
     } = senses;
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(records);
     while source_values.len() != 0 {
         let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
@@ -4918,9 +4854,6 @@ pub(super) fn emit_pcurves(
         pcurves: kept_pcurves,
         ..
     } = reach;
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(records);
     while source_values.len() != 0 {
         let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
@@ -5016,9 +4949,6 @@ pub(super) fn emit_points(
         points: kept_points,
         ..
     } = reach;
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(records);
     while source_values.len() != 0 {
         let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
@@ -5064,9 +4994,6 @@ pub(super) fn emit_vertices(
         points: kept_points,
         ..
     } = reach;
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(records);
     while source_values.len() != 0 {
         let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
@@ -5234,9 +5161,6 @@ pub(super) fn emit_edges(
             CurveId::from(id(format, c))
         }
     };
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(records);
     while source_values.len() != 0 {
         let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
@@ -5427,9 +5351,6 @@ pub(super) fn emit_coedges(
         pcurves: kept_pcurves,
         ..
     } = reach;
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(records);
     while source_values.len() != 0 {
         let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
@@ -5599,9 +5520,6 @@ pub(super) fn emit_loops(
         coedges: kept_coedges,
         ..
     } = reach;
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(records);
     while source_values.len() != 0 {
         let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
@@ -5657,9 +5575,6 @@ pub(super) fn emit_faces(
         subshell_storage.with_storage(|| subshell_ancestor_shells(ctx, records, by_index))?;
     let attribute_color = |entity: &Record| attribute_chain_color(ctx, entity, by_index);
     let attribute_name = |entity: &Record| attribute_chain_name(ctx, entity, by_index);
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(records);
     while source_values.len() != 0 {
         let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
@@ -5765,8 +5680,8 @@ pub(super) fn emit_faces(
 /// Source records and decode settings for emitting shell containers.
 #[derive(Clone, Copy)]
 pub(super) struct ContainerInputs<'a, 'record> {
-    pub(super) records: &'record [Record],
-    pub(super) by_index: &'a HashMap<i64, &'record Record>,
+    pub(super) records: &'record [Record<'record>],
+    pub(super) by_index: &'a HashMap<i64, &'record Record<'record>>,
     pub(super) reach: &'a Reachable,
     pub(super) wire: &'a WireShellTopology,
     pub(super) stream: &'a str,
@@ -5798,9 +5713,6 @@ pub(super) fn emit_containers(
     } = wire;
     let attribute_color = |entity: &Record| attribute_chain_color(ctx, entity, by_index);
     let attribute_name = |entity: &Record| attribute_chain_name(ctx, entity, by_index);
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(records);
     while source_values.len() != 0 {
         let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
@@ -5962,9 +5874,6 @@ pub(super) fn emit_containers(
             _ => {}
         }
     }
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(saved_free_edges);
     while source_values.len() != 0 {
         let Some(&edge) = ctx.next_charged(&mut source_values, "ASM saved edge containers")? else {
@@ -6073,9 +5982,6 @@ pub(super) fn emit_attributes(
         })?;
     }
     let mut region_bodies = HashMap::new();
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(&out.regions);
     while source_values.len() != 0 {
         let Some(region) = ctx.next_charged(&mut source_values, "ASM attribute region owners")?
@@ -6096,9 +6002,6 @@ pub(super) fn emit_attributes(
                 )
             })?;
         }
-    }
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
     }
     let mut source_values = IntoIterator::into_iter(records);
     while source_values.len() != 0 {
@@ -6180,9 +6083,6 @@ pub(super) fn emit_attributes(
         }
     }
 
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(records);
     while source_values.len() != 0 {
         let Some(record) = ctx.next_charged(&mut source_values, "ASM attribute record pass")?
@@ -6241,9 +6141,6 @@ pub(super) fn emit_passthrough_unknowns(
         cached_unknown_procedural_surfaces,
         ..
     } = reach;
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(records);
     while source_values.len() != 0 {
         let Some(r) = ctx.next_charged(&mut source_values, "ASM emitted record pass")? else {
@@ -6332,9 +6229,6 @@ pub(super) fn count_other_records(
                 })?;
             }
         }
-    }
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
     }
     let mut source_values = IntoIterator::into_iter(records);
     while source_values.len() != 0 {

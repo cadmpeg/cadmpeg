@@ -269,9 +269,6 @@ pub fn collect_owned_ids(
             if let Some(id) = entity_id(ctx, value)? {
                 ctx.insert_string_set(out, id, "ASM owned ids")?;
             }
-            if let Some(refusal) = ctx.resource_refusal() {
-                return Err(refusal.into());
-            }
             let mut source_values = IntoIterator::into_iter(fields);
             while source_values.len() != 0 {
                 let Some((key, value)) =
@@ -284,9 +281,6 @@ pub fn collect_owned_ids(
             }
         }
         Value::Seq(items) => {
-            if let Some(refusal) = ctx.resource_refusal() {
-                return Err(refusal.into());
-            }
             let mut source_values = IntoIterator::into_iter(items);
             while source_values.len() != 0 {
                 let Some(item) =
@@ -308,9 +302,6 @@ pub fn value_string<'value>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     mut value: &'value Value,
 ) -> Result<Option<&'value str>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     while let Value::Newtype(inner) = value {
         ctx.charge_work(1, "ASM serialized newtype walk")?;
         value = inner;
@@ -329,15 +320,9 @@ pub fn collect_entity_adjacency(
     owned: &HashSet<String, std::collections::hash_map::RandomState>,
     out: &mut HashMap<String, BTreeSet<String>, std::collections::hash_map::RandomState>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Value::Map(fields) = value else {
         return Ok(());
     };
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(fields);
     while source_values.len() != 0 {
         let Some((_, value)) = ctx.next_charged(&mut source_values, "ASM adjacency root fields")?
@@ -347,9 +332,6 @@ pub fn collect_entity_adjacency(
         let Value::Seq(items) = value else {
             continue;
         };
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut source_values = IntoIterator::into_iter(items);
         while source_values.len() != 0 {
             let Some(item) =
@@ -366,9 +348,6 @@ pub fn collect_entity_adjacency(
             reference_storage
                 .with_storage(|| collect_references(ctx, item, owned, &mut references))?;
             ctx.remove_btree_set(&mut references, id, "ASM adjacency self reference")?;
-            if let Some(refusal) = ctx.resource_refusal() {
-                return Err(refusal.into());
-            }
             let mut source_values = IntoIterator::into_iter(references);
             while source_values.len() != 0 {
                 let Some(reference) =
@@ -409,9 +388,6 @@ pub fn entity_id<'value>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     value: &'value Value,
 ) -> Result<Option<&'value str>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Value::Map(fields) = value else {
         return Ok(None);
     };
@@ -444,9 +420,6 @@ pub fn collect_references(
             }
         }
         Value::Seq(items) => {
-            if let Some(refusal) = ctx.resource_refusal() {
-                return Err(refusal.into());
-            }
             let mut source_values = IntoIterator::into_iter(items);
             while source_values.len() != 0 {
                 let Some(item) =
@@ -458,9 +431,6 @@ pub fn collect_references(
             }
         }
         Value::Map(fields) => {
-            if let Some(refusal) = ctx.resource_refusal() {
-                return Err(refusal.into());
-            }
             let mut source_values = IntoIterator::into_iter(fields);
             while source_values.len() != 0 {
                 let Some((key, value)) =
@@ -487,15 +457,9 @@ pub fn retain_root_entities(
     value: &mut Value,
     reachable: &HashSet<String, std::collections::hash_map::RandomState>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Value::Map(fields) = value else {
         return Ok(());
     };
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(fields);
     while source_values.len() != 0 {
         let Some((_, value)) = ctx.next_charged(&mut source_values, "ASM retained root fields")?
@@ -532,9 +496,6 @@ pub fn remap_owned_ids(
             }
         }
         Value::Seq(items) => {
-            if let Some(refusal) = ctx.resource_refusal() {
-                return Err(refusal.into());
-            }
             let mut source_values = IntoIterator::into_iter(items);
             while source_values.len() != 0 {
                 let Some(item) =
@@ -547,9 +508,6 @@ pub fn remap_owned_ids(
         }
         Value::Map(fields) => {
             let entries = std::mem::take(fields);
-            if let Some(refusal) = ctx.resource_refusal() {
-                return Err(refusal.into());
-            }
             let mut source_values = IntoIterator::into_iter(entries);
             while source_values.len() != 0 {
                 let Some((mut key, mut item)) =
@@ -654,6 +612,8 @@ struct Carriers {
     curve_geo: HashMap<i64, CurveGeometry>,
     procedural_curve_defs: HashMap<i64, ProceduralCurveSource>,
     pcurve_geo: HashMap<PcurveRecordIndex, PcurveGeometry>,
+    pcurve_decodes:
+        HashMap<PcurveRecordIndex, Option<(cadmpeg_ir::geometry::pcurve::PcurveNurbs, bool)>>,
     pcurve_parameter_ranges: HashMap<CoedgeRecordIndex, [f64; 2]>,
 }
 
@@ -961,75 +921,6 @@ fn inherited_attribute_target(
 mod tests;
 
 #[cfg(test)]
-mod serialized_id_tests {
-    #[test]
-    fn asm_non_map_entity_id_preserves_original_refusal() {
-        let values = [
-            serde_value::Value::Unit,
-            serde_value::Value::Bool(true),
-            serde_value::Value::U64(7),
-            serde_value::Value::Seq(Vec::new()),
-        ];
-        crate::test_support::with_entry_context(|ctx, original| {
-            for value in &values {
-                let result = super::entity_id(ctx, value);
-                match original {
-                    Some(first) => assert!(matches!(result,
-                        Err(cadmpeg_core::CodecError::ResourceLimit(last)) if last == first)),
-                    None => assert!(result
-                        .expect("fixed non-map identity recovery is free")
-                        .is_none()),
-                }
-            }
-        });
-    }
-
-    #[test]
-    fn asm_scalar_value_string_preserves_original_refusal() {
-        let value = serde_value::Value::String("sat:brep:entity#7".into());
-        crate::test_support::with_entry_context(|ctx, original| {
-            let result = super::value_string(ctx, &value);
-            match original {
-                Some(first) => assert!(matches!(result,
-                    Err(cadmpeg_core::CodecError::ResourceLimit(last)) if last == first)),
-                None => assert_eq!(
-                    result.expect("borrowed string is free"),
-                    Some("sat:brep:entity#7")
-                ),
-            }
-        });
-    }
-
-    #[test]
-    fn asm_non_map_adjacency_preserves_original_refusal() {
-        let value = serde_value::Value::Unit;
-        let owned = std::collections::HashSet::new();
-        crate::test_support::with_entry_context(|ctx, original| {
-            let mut out = std::collections::HashMap::new();
-            let result = super::collect_entity_adjacency(ctx, &value, &owned, &mut out);
-            match original {
-                Some(first) => assert!(matches!(result,
-                    Err(cadmpeg_core::CodecError::ResourceLimit(last)) if last == first)),
-                None => result.expect("non-map adjacency is free"),
-            }
-            assert!(out.is_empty());
-        });
-    }
-
-    #[test]
-    fn asm_non_map_root_retention_preserves_original_refusal() {
-        let reachable = std::collections::HashSet::new();
-        crate::test_support::with_entry_context(|ctx, original| {
-            let mut value = serde_value::Value::Unit;
-            let result = super::retain_root_entities(ctx, &mut value, &reachable);
-            match original {
-                Some(first) => assert!(matches!(result,
-                    Err(cadmpeg_core::CodecError::ResourceLimit(last)) if last == first)),
-                None => result.expect("non-map retention is free"),
-            }
-            assert_eq!(value, serde_value::Value::Unit);
-        });
-    }
-}
+mod serialized_id_tests {}
 
 mod identity_rewrite;
