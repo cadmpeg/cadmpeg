@@ -197,20 +197,25 @@ fn empty_selection_lane_builds_no_history_tables() {
 fn first_selected_id_refuses_before_table_allocation() {
     let input = profiled_history("11");
     let lanes = [lane(&["hole"])];
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, ID_ENTRIES, |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut history = input.clone();
-        enrich(&ctx, &mut history, &lanes)
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        ID_ENTRIES,
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut history = input.clone();
+            enrich(&ctx, &mut history, &lanes)
+        },
+    );
     let mut history = input.clone();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let (result, allocations) = crate::test_support::allocation::count_allocations(|| enrich(&ctx, &mut history, &lanes));
+    let (result, allocations) =
+        crate::test_support::allocation::count_allocations(|| enrich(&ctx, &mut history, &lanes));
     let Err(CodecError::ResourceLimit(limit)) = result else {
         panic!("first ID slot refusal");
     };
@@ -220,22 +225,28 @@ fn first_selected_id_refuses_before_table_allocation() {
     assert_eq!(allocations, 0);
     assert_eq!(history, input);
     assert_eq!(ctx.resource_refusal(), Some(limit));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
+    );
 }
 
 #[test]
 fn first_id_hash_growth_has_the_exact_typed_workspace_boundary() {
     let features = [feature("thread", Some(12), "moCosmeticThread_c")];
     let bytes = hash_bytes::<(&str, &Feature)>();
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::MaterializedBytes, ID_ENTRIES, |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = cap;
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut lookups = ThreadHistoryLookups::new(&ctx, &features).unwrap();
-        lookups.by_id("thread").map(|_| ())
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        ID_ENTRIES,
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            policy.limits.max_retained_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut lookups = ThreadHistoryLookups::new(&ctx, &features).unwrap();
+            lookups.by_id("thread").map(|_| ())
+        },
+    );
     for accepted in [false, true] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -568,7 +579,10 @@ fn thread_selection_preserves_an_original_refusal_without_allocation() {
 #[test]
 fn thread_history_single_id_insertion_has_its_own_work_and_slot_boundary() {
     let features = [feature("thread", Some(12), "moCosmeticThread_c")];
-    for dimension in [ResourceDimension::WorkUnits, ResourceDimension::CollectionItems] {
+    for dimension in [
+        ResourceDimension::WorkUnits,
+        ResourceDimension::CollectionItems,
+    ] {
         cadmpeg_test_support::refusal::resource_limit_at(dimension, ID_ENTRIES, |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -587,17 +601,29 @@ fn thread_history_single_id_insertion_has_its_own_work_and_slot_boundary() {
 #[test]
 fn thread_diameter_publication_has_its_own_collection_boundary() {
     const PUBLICATION: &str = "publish SLDPRT cosmetic thread diameter";
-    let input = history(vec![direct_hole("hole", "3mm"), feature("thread", Some(12), "moCosmeticThread_c")]);
+    let input = history(vec![
+        direct_hole("hole", "3mm"),
+        feature("thread", Some(12), "moCosmeticThread_c"),
+    ]);
     let lanes = [lane(&["hole"])];
     let mut admitted = input.clone();
-    enrich(&cadmpeg_test_support::service_decode_context(), &mut admitted, &lanes).unwrap();
+    enrich(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut admitted,
+        &lanes,
+    )
+    .unwrap();
     assert_eq!(admitted.features[1].parameters["D2"], "<MOD-DIAM>3mm");
-    cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, PUBLICATION, |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-        let mut history = input.clone();
-        enrich(&ctx, &mut history, &lanes)
-    });
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        PUBLICATION,
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let mut history = input.clone();
+            enrich(&ctx, &mut history, &lanes)
+        },
+    );
 }

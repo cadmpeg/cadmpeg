@@ -132,14 +132,27 @@ fn revolution_index_entries_admit_collection_slots() {
         let mut histories = single_revolution_history();
         histories[0].features[0].input_class = Some("moProfileFeature_c".into());
         let sketches = [sketch()];
-        cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::CollectionItems, operation, |cap| {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-            let mut targets = revolution_binding_consumer_targets(&histories[0].features[0].id);
-            if feature_profile { select_feature_profile(&mut targets); }
-            super::bind_profile_revolution_axes(&ctx, &mut targets, &histories, &[], &sketches, &[])
-        });
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::CollectionItems,
+            operation,
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                let mut targets = revolution_binding_consumer_targets(&histories[0].features[0].id);
+                if feature_profile {
+                    select_feature_profile(&mut targets);
+                }
+                super::bind_profile_revolution_axes(
+                    &ctx,
+                    &mut targets,
+                    &histories,
+                    &[],
+                    &sketches,
+                    &[],
+                )
+            },
+        );
     }
 }

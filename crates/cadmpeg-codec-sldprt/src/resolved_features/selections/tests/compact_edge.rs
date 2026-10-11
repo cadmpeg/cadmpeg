@@ -1458,7 +1458,9 @@ fn variable_fillet_control_names_require_canonical_unsigned_indices() {
         content: Vec::new(),
     };
     crate::test_support::work_refusal_at("compare SLDPRT variable fillet control name", |ctx| {
-        crate::resolved_features::selections::variable_fillet_dimension_index_for_feature(ctx, &feature, "D1")
+        crate::resolved_features::selections::variable_fillet_dimension_index_for_feature(
+            ctx, &feature, "D1",
+        )
     });
     let index = |feature: &Feature, name: &str| {
         crate::resolved_features::selections::variable_fillet_dimension_index_for_feature(
@@ -1487,7 +1489,9 @@ fn variable_fillet_control_names_require_canonical_unsigned_indices() {
     assert_eq!(index(&feature, "D1"), None);
     assert_eq!(index(&feature, "D01"), Some(1));
     crate::test_support::work_refusal_at("compare SLDPRT variable fillet control name", |ctx| {
-        crate::resolved_features::selections::variable_fillet_dimension_index_for_feature(ctx, &feature, "D012")
+        crate::resolved_features::selections::variable_fillet_dimension_index_for_feature(
+            ctx, &feature, "D012",
+        )
     });
 }
 

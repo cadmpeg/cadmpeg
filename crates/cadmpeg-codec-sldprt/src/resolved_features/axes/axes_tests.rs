@@ -1425,8 +1425,12 @@ fn omitted_origin_and_principal_axes_use_unique_maximum_incidence_support_lines(
     let roster = super::LaneMarkerIndex::new(&ctx, markers.iter().copied()).unwrap();
     let owned = roster.by_feature["profile-native"].as_slice();
     let mut queries = super::ProfileEndpointQueries::new(&ctx, &lane, &markers).unwrap();
-    let mut endpoint_ids_storage = ctx.reserve_scoped(0, "hold test indexed endpoints").unwrap();
-    let curve_endpoints = queries.ids(&ctx, &mut endpoint_ids_storage, owned, true).unwrap();
+    let mut endpoint_ids_storage = ctx
+        .reserve_scoped(0, "hold test indexed endpoints")
+        .unwrap();
+    let curve_endpoints = queries
+        .ids(&ctx, &mut endpoint_ids_storage, owned, true)
+        .unwrap();
 
     assert_eq!(
         profile_roster_origin_axis_endpoints(
