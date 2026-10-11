@@ -2424,16 +2424,17 @@ mod consolidated_analytic_limit_tests {
     fn native_revolution_refuses_profile_map_output_and_id_limits() {
         let bytes = crate::test_support::test_b2::b2_resolved_revolution_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
-        let limited = crate::test_support::with_collection_limit(6, |ctx| {
+        let refused_at = |limit| match crate::test_support::with_collection_limit(limit, |ctx| {
             consolidated_revolutions(ctx, &bytes, &records, &[])
-        });
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_revolution_profile_index"));
-        let limited = crate::test_support::with_collection_limit(7, |ctx| {
-            consolidated_revolutions(ctx, &bytes, &records, &[])
-        });
-        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
-            if error.operation == "catia_native_revolutions"));
+        }) {
+            Err(CodecError::ResourceLimit(error)) => Some(error.operation),
+            _ => None,
+        };
+        // The profile index is the last collection before the one output slot.
+        let profile = (0..64)
+            .find(|&limit| refused_at(limit) == Some("catia_native_revolution_profile_index"))
+            .expect("a collection limit reaches the profile index");
+        assert_eq!(refused_at(profile + 1), Some("catia_native_revolutions"));
         let limited = crate::test_support::with_retained_limit(0, |ctx| {
             consolidated_revolutions(ctx, &bytes, &records, &[])
         });
