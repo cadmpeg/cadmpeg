@@ -613,7 +613,10 @@ struct Carriers<'ctx> {
     procedural_curve_defs: HashMap<i64, ProceduralCurveSource>,
     pcurve_geo: HashMap<
         PcurveRecordIndex,
-        (PcurveGeometry, Option<cadmpeg_core::decode::ScopedReservation<'ctx>>),
+        (
+            PcurveGeometry,
+            Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
+        ),
     >,
     pcurve_decodes:
         HashMap<PcurveRecordIndex, Option<(cadmpeg_ir::geometry::pcurve::PcurveNurbs, bool)>>,
@@ -900,7 +903,7 @@ fn inherited_attribute_target(
             break None;
         };
         owner = parent;
-        if cycle.advance(Some(owner)) {
+        if cycle.advance(Some(owner))? {
             break None;
         }
     };

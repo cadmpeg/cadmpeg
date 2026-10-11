@@ -627,7 +627,10 @@ pub(super) fn walk_reachable_topology<'ctx>(
                                         ctx.insert_hash_map(
                                             pcurve_geo,
                                             super::PcurveRecordIndex(pc),
-                                            (PcurveGeometry::Nurbs { nurbs: decoded }, Some(attempt)),
+                                            (
+                                                PcurveGeometry::Nurbs { nurbs: decoded },
+                                                Some(attempt),
+                                            ),
                                             "ASM topology pcurve_geo",
                                         )
                                     })?;
@@ -1418,7 +1421,7 @@ pub(super) fn subshell_ancestor_shells(
                     "ASM subshell ancestor path",
                 )?;
                 owner = parent.ref_at(3);
-                if cycle.advance(owner) {
+                if cycle.advance(owner)? {
                     break None;
                 }
             };
