@@ -315,7 +315,10 @@ fn unnamed_sketch_index_admits_every_filtered_source_visit() {
 #[test]
 fn output_identity_constructor_preserves_copy_refusals() {
     const OPERATION: &str = "retain SLDPRT feature output body";
-    for dimension in [ResourceDimension::MaterializedBytes, ResourceDimension::WorkUnits] {
+    for dimension in [
+        ResourceDimension::MaterializedBytes,
+        ResourceDimension::WorkUnits,
+    ] {
         let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, OPERATION, |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -328,8 +331,10 @@ fn output_identity_constructor_preserves_copy_refusals() {
             super::super::output_body_id(&ctx, "synthetic:test:body#output")?;
             ctx.finish_session()
         });
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == dimension && limit.operation == OPERATION));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == dimension && limit.operation == OPERATION)
+        );
     }
 }
 
@@ -341,24 +346,35 @@ fn rejected_output_identity_releases_candidate_storage() {
     policy.limits.max_materialized_bytes = 4096;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert_eq!(super::super::output_body_id(&ctx, "invalid").unwrap(), None);
-    ctx.reserve_scoped(4096, "released output candidate").unwrap();
+    ctx.reserve_scoped(4096, "released output candidate")
+        .unwrap();
     ctx.finish_session().unwrap();
 }
 
 #[test]
 fn output_identity_constructor_preserves_visited_grammar_refusal() {
     const OPERATION: &str = "retain SLDPRT feature output body";
-    let error = cadmpeg_test_support::refusal::resource_limit_at(ResourceDimension::WorkUnits, OPERATION, |cap| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-        // Grammar admits one unit per visited character. The identity copy
-        // has a larger byte count, and its initial growth relocates no bytes.
-        let _grammar = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(ResourceDimension::WorkUnits, OPERATION, Some(1));
-        super::super::output_body_id(&ctx, "synthetic:test:body#output")?;
-        ctx.finish_session()
-    });
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits && limit.operation == OPERATION && limit.additional == 1));
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        OPERATION,
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            // Grammar admits one unit per visited character. The identity copy
+            // has a larger byte count, and its initial growth relocates no bytes.
+            let _grammar = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+                ResourceDimension::WorkUnits,
+                OPERATION,
+                Some(1),
+            );
+            super::super::output_body_id(&ctx, "synthetic:test:body#output")?;
+            ctx.finish_session()
+        },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits && limit.operation == OPERATION && limit.additional == 1)
+    );
 }
