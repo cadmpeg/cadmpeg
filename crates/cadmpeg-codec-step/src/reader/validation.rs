@@ -610,11 +610,7 @@ fn mesh_properties(
             "STEP validation selected meshes",
         )?;
         if origin.is_none() {
-            origin = mesh.triangles().first().and_then(|triangle| {
-                mesh.vertices()
-                    .get(cadmpeg_core::decode::index_from_u32(triangle[0]))
-                    .copied()
-            });
+            origin = mesh::origin(mesh);
         }
     }
     let Some(origin) = origin else {
@@ -625,14 +621,7 @@ fn mesh_properties(
     for _ in 0..extent_source.len() {
         let mesh = ctx.next_charged(&mut extent_source, "STEP validation mesh extent traversal")?
             .ok_or_else(|| CodecError::malformed("STEP validation traversal source ended early"))?;
-        extent = ctx
-            .admit_iter(&mesh.vertices(), "STEP validation vertex extent traversal")?
-            .fold(extent, |scale, point| {
-                scale
-                    .max((point.x - origin.x).abs())
-                    .max((point.y - origin.y).abs())
-                    .max((point.z - origin.z).abs())
-            });
+        extent = extent.max(mesh::extent(mesh, origin, ctx)?);
     }
     let Some(exponent) = cadmpeg_ir::math::power_of_two_bound(extent) else {
         return Ok(None);
@@ -650,18 +639,7 @@ fn mesh_properties(
             .ok_or_else(|| CodecError::malformed("STEP validation traversal source ended early"))?;
         let mut edge_storage = ctx.reserve_scoped(0, "STEP mesh edge scratch")?;
         let mut edge_uses = BTreeMap::<(u32, u32), usize>::new();
-        let mut triangle_source = mesh.triangles().into_iter();
-        for _ in 0..triangle_source.len() {
-            let triangle = ctx.next_charged(&mut triangle_source, "step_validation_mesh_triangles")?
-                .ok_or_else(|| CodecError::malformed("STEP validation traversal source ended early"))?;
-            let [a, b, c] = triangle.map(|index| {
-                mesh.vertices()
-                    .get(cadmpeg_core::decode::index_from_u32(index))
-                    .copied()
-            });
-            let (Some(a), Some(b), Some(c)) = (a, b, c) else {
-                return Ok(None);
-            };
+        let complete = mesh::triangles(mesh, ctx, |triangle, [a, b, c]| {
             for [first, second] in [
                 [triangle[0], triangle[1]],
                 [triangle[1], triangle[2]],
@@ -686,7 +664,7 @@ fn mesh_properties(
                 ))
             };
             let [Some(a), Some(b), Some(c)] = [a, b, c].map(relative) else {
-                return Ok(None);
+                return Ok(false);
             };
             coordinate_scale = coordinate_scale
                 .max(a.x.abs())
@@ -721,7 +699,9 @@ fn mesh_properties(
                     tetra_volume * [a.x + b.x + c.x, a.y + b.y + c.y, a.z + b.z + c.z][axis] / 4.0;
             }
             triangles += 1;
-        }
+            Ok(true)
+        })?;
+        if !complete { return Ok(None); }
         watertight &= !edge_uses.is_empty()
             && ctx.all_by(
                 edge_uses.values(),
@@ -821,6 +801,8 @@ fn collect_validation_references(
     }
     Ok(())
 }
+
+mod mesh;
 
 #[cfg(test)]
 mod tests;
