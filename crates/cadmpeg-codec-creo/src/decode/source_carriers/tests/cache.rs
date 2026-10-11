@@ -346,3 +346,28 @@ fn owned_sketch_nurbs_scaling_preserves_source_and_refuses_overflow_before_inser
         }
     }
 }
+
+#[test]
+fn replacement_feature_fixed_path_is_free() {
+    let datum = |distance| FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+        reference: None,
+        distance: cadmpeg_ir::scalar::Length::new(distance).expect("finite source distance"),
+    });
+    for scale in [None, PositiveReal::new(2.0)] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let carriers = SourceUnitCarriers::for_decode(&ctx, scale);
+        let mut feature = source_feature(FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}));
+        let mut expected = feature.clone();
+        expected.evaluation.set_definition(datum(scale.map_or(1.0, PositiveReal::get)));
+        carriers.replace_feature_definition(&ctx, &mut feature, datum(1.0)).expect("fixed replacement is free");
+        assert_eq!(feature, expected);
+        assert_eq!(ctx.resource_refusal(), None);
+    }
+}

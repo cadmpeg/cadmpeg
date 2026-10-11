@@ -1362,4 +1362,21 @@ mod tests {
             legacy::object_node_id(fixture_offset("value"))
         );
     }
+
+#[test]
+    fn empty_family_index_is_free() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let persistence = Persistence::default();
+        let index = super::Index::build(&ctx, &persistence)
+            .expect("empty index has no variable work or backing")
+            .expect("empty index is structurally valid");
+        assert!(index.object_by_offset.is_empty());
+    }
+
 }

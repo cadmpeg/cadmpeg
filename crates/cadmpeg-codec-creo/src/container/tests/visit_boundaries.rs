@@ -26,7 +26,19 @@ fn section_framing_admits_two_present_pairs_and_no_terminal_visit() {
         };
         refusal
     };
-    assert_ne!(refusal(b"ab"), refusal(b"abc"));
+    let pair = refusal(b"ab");
+    let pairs = refusal(b"abc");
+    assert_eq!((pair.used, pair.additional), (0, 1));
+    assert_eq!((pairs.used, pairs.additional), (1, 1));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut storage = ctx.reserve_scoped(0, "test section roster storage").expect("empty storage");
+    assert!(super::super::scan_sections(&ctx, &mut storage, b"abc", 0).expect("two visits").is_empty());
+    let refusal = ctx.charge_work_limit(1, "after exact owner work").expect_err("exact cap exhausted");
+    assert_eq!((refusal.dimension, refusal.used, refusal.additional), (ResourceDimension::WorkUnits, 2, 1));
+
 }
 
 #[test]
@@ -125,12 +137,11 @@ fn singleton_section_aggregate_admits_source_and_relocation_without_ordering() {
     let section =
         super::super::Section::scan_for_test("Body".into(), 0, source.len(), None, source)
             .expect("complete section");
-    let records = crate::test_support::assert_work_boundaries(
-        &[
-            "fixture aggregate source",
-            "creo section record relocation traversal",
-        ],
-        |ctx| {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let run = |ctx: &DecodeContext<'_>| {
             let sections =
                 ctx.admit_iter(std::slice::from_ref(&section), "fixture aggregate source")?;
             super::super::collect_section_records_result(
@@ -150,9 +161,15 @@ fn singleton_section_aggregate_admits_source_and_relocation_without_ordering() {
                 },
                 |_| panic!("singleton order projection cannot execute"),
             )
-        },
+        };
+    let records = crate::test_support::assert_work_boundaries(
+        &["fixture aggregate source", "creo section record relocation traversal"], &run,
     );
     assert_eq!(records, [7]);
+    assert_eq!(run(&ctx).expect("two aggregate visits"), [7]);
+    let refusal = ctx.charge_work_limit(1, "after exact owner work").expect_err("exact cap exhausted");
+    assert_eq!((refusal.dimension, refusal.used, refusal.additional), (ResourceDimension::WorkUnits, 2, 1));
+
 }
 
 #[test]
@@ -194,4 +211,97 @@ fn singleton_topology_and_pcurve_ordering_executes_no_scan_or_move() {
         .expect("no witness append or ordering work");
     assert_eq!(rows, [row]);
     assert_eq!(pcurves, [pcurve]);
+}
+
+#[test]
+fn section_absent_pairs_and_legacy_rows_are_free() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let mut section_storage = ctx
+        .reserve_scoped(0, "test section roster storage")
+        .expect("empty storage");
+    for source in [b"".as_slice(), b"x".as_slice()] {
+        assert!(
+            super::super::scan_sections(&ctx, &mut section_storage, source, 0)
+                .expect("no framing pair or header")
+                .is_empty()
+        );
+    }
+    let persistence = crate::legacy::Persistence::default();
+    assert_eq!(
+        super::super::legacy_first_quilt_ptr(&ctx, &persistence).expect("no legacy value rows"),
+        None
+    );
+}
+
+#[test]
+fn invalid_section_extents_are_free() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    for (offset, end) in [(1, 0), (0, 2)] {
+        assert!(
+            super::super::Section::scan(&ctx, "Body".to_owned(), offset, end, None, &[0])
+                .expect("invalid extent precedes name parsing")
+                .is_none()
+        );
+    }
+}
+
+#[test]
+fn wrong_container_signature_is_fixed() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    assert!(
+        matches!(super::super::scan_bytes(&ctx, b"wrong".as_slice()),
+        Err(CodecError::WrongFormat(message)) if message == "missing Creo #UGC:2 signature")
+    );
+}
+
+#[test]
+fn empty_container_rosters_are_free() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let ids = std::collections::BTreeSet::new();
+        let results = [
+            super::super::loop_array_sections(&ctx, &[], &[], &[]).map(|v| v.is_empty()),
+            super::super::loop_array_scan(&ctx, &[])
+                .map(|v| v.frames.is_empty() && v.records.is_empty()),
+            super::super::feature_rows(&ctx, &[], &ids).map(|v| v.is_empty()),
+            super::super::feature_definitions(&ctx, &[]).map(|v| v.is_empty()),
+            super::super::feature_row_definitions(&ctx, &[]).map(|v| v.is_empty()),
+            super::super::feature_geometry_tables(&ctx, &[], &[]).map(|v| v.is_empty()),
+            super::super::feature_affected_ids(&ctx, &[], &[]).map(|v| v.is_empty()),
+            super::super::feature_revolution_extents(&ctx, &[], &[], &[]).map(|v| v.is_empty()),
+            super::super::feature_operations(&ctx, &[]).map(|v| v.is_empty()),
+            super::super::depdb_recipe_rows(&ctx, &[]).map(|v| v.is_empty()),
+            super::super::collect_section_records_result::<u32>(
+                &ctx,
+                std::iter::empty(),
+                |_| panic!("absent section decoder"),
+                |_, _| panic!("absent relocation"),
+                |_| panic!("absent ordering"),
+            )
+            .map(|v| v.is_empty()),
+        ];
+        for result in results {
+            assert!(result.expect("empty output"));
+        }
 }
