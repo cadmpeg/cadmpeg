@@ -2784,7 +2784,7 @@ mod tests {
             |ctx| {
                 let mut ir = ir.clone();
                 let transfer = ctx.work_budget(10000);
-                let geometry = GeometryWorkBudget::from_context(ctx, 100000);
+                let geometry = GeometryWorkBudget::from_context(ctx, 100_000);
                 let mut storage = ctx.reserve_scoped(0, "nx test witnesses")?;
                 let mut witnesses = EndpointWitnesses::new();
                 emit_topology(

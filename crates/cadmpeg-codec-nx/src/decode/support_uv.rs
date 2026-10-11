@@ -397,7 +397,7 @@ pub(super) fn assign_ext11_support_uv_to_surfaces(
         &geometry_budget,
     )
     .expect("evaluator allocation succeeds")
-    .map(|assigned| assigned.map(|lane| lane.cloned()))
+    .map(|assigned| assigned.map(Option::<&SupportUvLane>::cloned))
 }
 
 fn assign_ext11_support_uv_to_surfaces_with_index<'lanes>(
