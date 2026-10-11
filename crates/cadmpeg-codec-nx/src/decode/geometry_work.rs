@@ -219,8 +219,8 @@ mod tests {
         crate::test_support::with_decode_context(|ctx| {
             let count = points.len();
             let mut knots = vec![0.0];
-            knots.extend((0..count).map(|i| i as f64));
-            knots.push((count - 1) as f64);
+            knots.extend((0..count).map(|i| cadmpeg_core::convert::f64_from_index(i).unwrap()));
+            knots.push(cadmpeg_core::convert::f64_from_index(count - 1).unwrap());
             super::PcurveGeometry::Nurbs {
                 nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                     ctx, 1, knots, points, None, false,

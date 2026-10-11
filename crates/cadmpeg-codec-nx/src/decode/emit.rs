@@ -2715,6 +2715,109 @@ fn insert_source_attribute(
 #[cfg(test)]
 mod tests {
     #[test]
+    fn endpoint_proof_admits_comparison_after_the_carrier_lookup() {
+        use super::*;
+        use crate::test_support::test_prt::prt_with_streams;
+        use crate::test_support::test_streams::charted_intersection_with_edge_endpoint_witnesses_stream;
+        use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+        let stream = charted_intersection_with_edge_endpoint_witnesses_stream();
+        let decoded = crate::NxCodec
+            .decode(
+                &mut std::io::Cursor::new(prt_with_streams(&[&stream])),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let mut ir = decoded.ir().clone();
+        let procedural = &ir.model.procedural_curves[0];
+        let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
+        else {
+            panic!("charted intersection");
+        };
+        let support = context.sides()[0].surface.clone().unwrap();
+        let range = context.parameter_range().endpoints();
+        let geometry = context.sides()[0].pcurve.as_ref().unwrap().geometry.clone();
+        let curve = ir
+            .model
+            .procedural_curve_owner(&procedural.id)
+            .unwrap()
+            .clone();
+        let points = BTreeMap::from([
+            (11, ir.model.points[0].id.clone()),
+            (15, ir.model.points[1].id.clone()),
+        ]);
+        let surfaces = BTreeMap::from([(6, support.clone())]);
+        let curves = BTreeMap::from([(12, curve)]);
+        let id = PcurveId::mint("test:model:pcurve#carrier").unwrap();
+        let pcurves = BTreeMap::from([(12, id.clone())]);
+        ir.model.pcurves = vec![Pcurve {
+            id,
+            geometry,
+            metadata: PcurveMetadata::general(
+                None,
+                Some(cadmpeg_ir::units::FiniteVector::new(range).unwrap()),
+                None,
+            ),
+        }];
+        ir.model.bodies.clear();
+        ir.model.regions.clear();
+        ir.model.shells.clear();
+        ir.model.faces.clear();
+        ir.model.loops.clear();
+        ir.model.coedges.clear();
+        ir.model.edges.clear();
+        ir.model.vertices.clear();
+        let graph =
+            crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
+        let source_stream = crate::test_support::with_decode_context(|ctx| {
+            cadmpeg_ir::annotations::StreamHandle::new(
+                ctx,
+                cadmpeg_ir::stream_name!("nx:test"),
+                "fixture stream",
+            )
+        })
+        .unwrap();
+        crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "nx endpoint proof pcurve comparison",
+            |ctx| {
+                let mut ir = ir.clone();
+                let transfer = ctx.work_budget(10000);
+                let geometry = GeometryWorkBudget::from_context(ctx, 100000);
+                let mut storage = ctx.reserve_scoped(0, "nx test witnesses")?;
+                let mut witnesses = EndpointWitnesses::new();
+                emit_topology(
+                    ctx,
+                    &mut ir,
+                    &TopologyStream {
+                        stream_index: 0,
+                        graph: &graph,
+                        points: &points,
+                        surfaces: &surfaces,
+                        curves: &curves,
+                        pcurves: &pcurves,
+                        pcurve_supports: &BTreeMap::from([(12, support.clone())]),
+                        trim_ranges: &BTreeMap::new(),
+                        source_stream: &source_stream,
+                        intersection_starts: IntersectionEntityStarts::default(),
+                        procedural_start: 0,
+                    },
+                    (&mut AnnotationBuilder::new(), &mut Vec::new()),
+                    &mut IntersectionIncidenceIndex::default(),
+                    &TopologyBudgets {
+                        exact_transfer: &transfer,
+                        completion_transfer: &transfer,
+                        adaptive_geometry: &geometry,
+                        completion_geometry: &geometry,
+                    },
+                    &mut EndpointWitnessSink::new(&mut witnesses, &mut storage),
+                )
+            },
+        );
+    }
+
+    #[test]
     fn endpoint_proofs_keep_geometry_and_duplicate_keys_in_scratch() {
         use super::{EndpointWitnessOperations, EndpointWitnessSink};
         use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
