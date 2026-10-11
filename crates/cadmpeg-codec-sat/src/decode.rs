@@ -77,7 +77,7 @@ fn decode_asm_binary(
         };
         let records = framed.map_err(|failure| {
             failure.into_codec_error(ctx, |error| {
-                CodecError::malformed(format_args!("SAB framing failed: {error}"))
+                ctx.format_retained(format_args!("SAB framing failed: {error}"), "SAT SAB framing error text").map(CodecError::Malformed)
             })
         })?;
         let brep = decode_with_header(
@@ -151,7 +151,7 @@ fn decode_acis_binary(
         };
         let records = framed.map_err(|failure| {
             failure.into_codec_error(ctx, |error| {
-                CodecError::malformed(format_args!("ACIS SAB framing failed: {error}"))
+                ctx.format_retained(format_args!("ACIS SAB framing failed: {error}"), "SAT SAB framing error text").map(CodecError::Malformed)
             })
         })?;
         let brep = decode_with_header(
@@ -191,22 +191,22 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
     let (text_header, branch, records) = if ctx.container_only() {
         let (header, branch) = sat::parse_container(ctx, bytes).map_err(|failure| {
             failure.into_codec_error(ctx, |error| {
-                unsupported_unframed(
+                Ok(unsupported_unframed(
                     ctx,
                     &StreamEvidence::Text(None),
                     format_args!("text container does not frame: {error}"),
-                )
+                ))
             })
         })?;
         (header, branch, None)
     } else {
         let stream = sat::parse(ctx, bytes).map_err(|failure| {
             failure.into_codec_error(ctx, |error| {
-                unsupported_unframed(
+                Ok(unsupported_unframed(
                     ctx,
                     &StreamEvidence::Text(None),
                     format_args!("text stream does not frame: {error}"),
-                )
+                ))
             })
         })?;
         (stream.header, stream.terminator, Some(stream.records))
