@@ -396,6 +396,16 @@ Parsed by:
 
 - The enumerated header fields total 14 bytes but the same sentence states the record stride as `payload_size + 13`, which implies a 13-byte header. The parser follows both at once: it advances by `size + 13` yet decodes carrier fields from record `+14`, and checks the `0xff` edge-use lead byte at record `+13`. The spec does not say which of the two numbers is authoritative.
 
+## `sketch_owner_list_prefix`
+
+Spec §7.3 · layout: byte offsets · size: 1 B
+
+The count atom starts at payload offset one. Its variable width and the declared reference count determine the remaining list extent.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `list_marker` | `u8` | little | spec | Its first byte is `3B`; the count atom follows at payload offset one. · value `59` |
+
 ## `value_block_7c0b`
 
 Spec §7.4 · layout: byte offsets · size: 6 B

@@ -108,21 +108,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must identify the document design-configuration production before we can transfer configuration identities or active state.
 
-### DI-15. Sketch instance binding
-
-**Question.** How do numeric tuples and the `2DPoint` and `PRTSketch` schema fields bind to the geometry of one sketch instance?
-
-**Known.** `catia.md` §7.3 "An object graph is preceded by" and `catia.md` §7.3 "All `7C09` records in one graph carrying the same `owner_ref`" defines field framing, object identity, schema selection, and structural ownership. A separator-form owner declaration whose resolved class is `Sketch` establishes the sketch identity. A `PRTSketch` or `Sketch` field class alone does not assign geometry to that identity.
-
-**Need.** We must know the binding to make a neutral sketch with geometry, placement, and profiles.
-
 ### DI-16. Sketch coordinate semantics
 
 **Question.** Which numeric tuple components give the coordinates of a `2DPoint`?
 
-**Known.** The decoder retains complete two-scalar numeric values and their selected field schemas.
+**Known.** The decoder retains complete two-scalar numeric values and their selected field schemas. `catia.md` §7.3 "The initial count-framed reference list" separates the roster-selected child identity from the containing field group. Numeric pairs in that group do not establish a coordinate incidence to the child’s `2DPoint` field.
 
-**Need.** We must know the component order and units to transfer sketch points.
+**Need.** We must establish the pair-to-point incidence, component order, and units to transfer sketch points.
 
 ### DI-17. `PRTSketch` and `Sketch` payload roles
 

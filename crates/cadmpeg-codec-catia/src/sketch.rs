@@ -22,10 +22,11 @@ use crate::native::{
 /// Transfer sketch member records whose source identity is complete but whose
 /// coordinate grammar is not yet typed.
 ///
-/// A Sketch owner record selects child design-object owner records in source
-/// order. A child contributes one native sketch entity only when that exact
-/// owner record resolves to one child design object and that child has exactly
-/// one admitted geometry field. The field remains native geometry; this lane
+/// The initial counted list of a Sketch owner record selects child
+/// design-object owner records in source order. A child contributes one native
+/// sketch entity only when that exact owner record resolves to one child
+/// design object and that child has exactly one admitted geometry field.
+/// The field remains native geometry; this lane
 /// does not infer coordinates, construction state, profiles, or constraints.
 /// The returned object-record identities are the exact fields represented by
 /// the emitted native entities and are used to close design-record accounting.
@@ -705,6 +706,15 @@ fn exact_sketch_member_objects<'a>(
 ) -> Result<Vec<&'a CatiaDesignObject>, cadmpeg_core::CodecError> {
     ctx.collect_vec(
         owner_record.references.iter().filter_map(|reference| {
+            if !matches!(
+                reference.source(),
+                CatiaObjectRecordReferenceSource::ListItem {
+                    list_payload_offset: 0,
+                    ..
+                }
+            ) {
+                return None;
+            }
             let target_id = reference.target()?;
             if reference.is_null() {
                 return None;
@@ -1541,8 +1551,11 @@ mod tests {
             .references
             .push(CatiaObjectRecordReference::from_parts(
                 3,
-                0,
-                CatiaObjectRecordReferenceSource::Field,
+                2,
+                CatiaObjectRecordReferenceSource::ListItem {
+                    list_payload_offset: 0,
+                    item_ordinal: 0,
+                },
                 false,
                 Some("child-owner-record".to_string()),
                 Some("parent-object".to_string()),
@@ -1726,8 +1739,11 @@ mod tests {
             .references
             .push(CatiaObjectRecordReference::from_parts(
                 5,
-                1,
-                CatiaObjectRecordReferenceSource::Field,
+                4,
+                CatiaObjectRecordReferenceSource::ListItem {
+                    list_payload_offset: 0,
+                    item_ordinal: 1,
+                },
                 false,
                 Some("constraint-owner-record".to_string()),
                 Some("parent-object".to_string()),
@@ -1749,6 +1765,34 @@ mod tests {
             ));
 
         (ir, native, transfer, graph_scope)
+    }
+
+    #[test]
+    fn sketch_members_require_the_initial_owner_list() {
+        for source in [
+            CatiaObjectRecordReferenceSource::Field,
+            CatiaObjectRecordReferenceSource::ListItem {
+                list_payload_offset: 6,
+                item_ordinal: 0,
+            },
+        ] {
+            let (mut ir, mut native, transfer, graph_scope) = native_sketch_fixture("2DPoint");
+            native.object_graphs[0].records[0].references[0] =
+                CatiaObjectRecordReference::from_parts(
+                    3,
+                    8,
+                    source,
+                    false,
+                    Some("child-owner-record".to_string()),
+                    Some("parent-object".to_string()),
+                );
+            let transferred = crate::test_support::with_service_context(|ctx| {
+                transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
+            })
+            .expect("source binding fits the service budget");
+            assert!(transferred.is_empty());
+            assert!(ir.model.sketch_entities.is_empty());
+        }
     }
 
     #[test]
@@ -1923,6 +1967,48 @@ mod tests {
         })
         .is_empty());
         assert!(ir.model.sketch_constraints.is_empty());
+    }
+
+    #[test]
+    fn constraint_members_require_the_initial_owner_list() {
+        for source in [
+            CatiaObjectRecordReferenceSource::Field,
+            CatiaObjectRecordReferenceSource::ListItem {
+                list_payload_offset: 6,
+                item_ordinal: 0,
+            },
+        ] {
+            let (mut ir, mut native, transfer, graph_scope) = native_sketch_constraint_fixture();
+            let owner = native.object_graphs[0]
+                .records
+                .iter_mut()
+                .find(|record| record.id == "sketch-owner-record")
+                .expect("sketch owner");
+            let member = owner
+                .references
+                .iter_mut()
+                .find(|reference| reference.entity_id() == 5)
+                .expect("constraint owner incidence");
+            *member = CatiaObjectRecordReference::from_parts(
+                5,
+                8,
+                source,
+                false,
+                Some("constraint-owner-record".to_string()),
+                Some("parent-object".to_string()),
+            );
+            crate::test_support::with_service_context(|ctx| {
+                transfer_native_sketch_entities(ctx, &mut ir, &native, &transfer, &graph_scope)
+            })
+            .expect("source binding fits the service budget");
+            assert_eq!(ir.model.sketch_entities.len(), 1);
+            let transferred = crate::test_support::with_service_context(|ctx| {
+                transfer_native_sketch_constraints(ctx, &mut ir, &native, &transfer, &graph_scope)
+            })
+            .expect("source binding fits the service budget");
+            assert!(transferred.is_empty());
+            assert!(ir.model.sketch_constraints.is_empty());
+        }
     }
 
     #[test]
