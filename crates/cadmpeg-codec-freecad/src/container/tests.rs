@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Archive scan and physical-ledger unit tests.
 
+mod byte_coverage_storage;
+mod numeric_ordinals;
+
 use cadmpeg_test_support::EditableDecodeResult;
 
 use crate::test_support::test_archive::{
@@ -27,7 +30,7 @@ fn unsafe_entry_name_diagnostic_refuses_at_matching_retained_limit() {
 fn document_root_error_refuses_at_retained_limit() {
     let bytes = b"<UnexpectedRoot SchemaVersion=\"4\"/>";
     crate::test_support::assert_retained_refusal_at(&[], "FCStd document root error", |ctx| {
-        super::parse_document(ctx, bytes)
+        super::parse_document(ctx, bytes).map(|(facts, version, _)| (facts, version))
     });
 }
 
@@ -35,7 +38,7 @@ fn document_root_error_refuses_at_retained_limit() {
 fn document_parse_error_refuses_at_retained_limit() {
     let bytes = b"<Document>";
     crate::test_support::assert_retained_refusal_at(&[], "FCStd document parse error", |ctx| {
-        super::parse_document(ctx, bytes)
+        super::parse_document(ctx, bytes).map(|(facts, version, _)| (facts, version))
     });
 }
 
@@ -93,7 +96,31 @@ fn collection_context<T>(limit: u64, f: impl FnOnce(&DecodeContext<'_>) -> T) ->
     f(&ctx)
 }
 
-fn with_scanned_document<T>(f: impl FnOnce(&mut super::Scan<'_>) -> T) -> T {
+fn successful_work_cap(f: impl FnOnce(&DecodeContext<'_>)) -> u64 {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within input limits");
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "FCStd source work oracle boundary",
+        None,
+    );
+    f(&ctx);
+    let error = ctx
+        .charge_work(1, "FCStd source work oracle boundary")
+        .expect_err("the boundary charge measures the successful prefix");
+    drop(probe);
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("the boundary charge measures the successful prefix");
+    };
+    assert_eq!(limit.operation, "FCStd source work oracle boundary");
+    assert_eq!(limit.additional, 1);
+    limit.used
+}
+
+fn with_scanned_document<T>(f: impl FnOnce(&mut super::Scan<'_, '_>) -> T) -> T {
     let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
     let bytes = archive(document);
     let arena = DecodeArena::new();
@@ -125,13 +152,13 @@ fn archive_span_identity_refuses_at_retained_limit() {
             .used
             .checked_add(limit.additional)
             .expect("finite test budget");
-        if limit.operation == "FreeCAD native identity" {
+        if limit.operation == "FCStd archive span identity" {
             policy.limits.max_retained_bytes = threshold - 1;
             let (ctx, root) =
                 DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("archive root");
             assert!(matches!(super::scan(&ctx, root),
                 Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-                    if refusal.operation == "FreeCAD native identity"));
+                    if refusal.operation == "FCStd archive span identity"));
             return;
         }
         policy.limits.max_retained_bytes = threshold;
@@ -193,13 +220,11 @@ fn entry_referencing_property_refuses_at_collection_limit() {
             xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
                 .expect("valid XML span"),
         };
-        collection_context(
-            cadmpeg_core::decode::u64_from_index(scan.entries.len()),
-            |ctx| {
-                assert!(matches!(super::entry_records(ctx, scan, &[property]),
-                Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                    if limit.operation == "FCStd entry referencing properties"));
-            },
+        crate::test_support::refusal_at(
+            ResourceDimension::CollectionItems,
+            &[],
+            "FCStd entry referencing properties",
+            |ctx| super::entry_records(ctx, scan, std::slice::from_ref(&property)),
         );
     });
 }
@@ -261,6 +286,214 @@ fn entry_data_copy_refuses_at_retained_limit() {
     });
 }
 
+#[test]
+fn missing_first_entry_does_not_charge_unvisited_entry_suffix() {
+    with_scanned_document(|scan| {
+        scan.entries[0].name = "missing".to_owned();
+        let work_cap = successful_work_cap(|ctx| {
+            let mut entries = scan.entries.iter();
+            let entry = ctx
+                .next_charged(&mut entries, "FCStd entry records")
+                .expect("the first entry visit is within the oracle budget")
+                .expect("the short-prefix entry exists");
+            assert!(ctx
+                .get_btree_map(&scan.data, entry.name.as_str(), "FCStd archive entry map")
+                .expect("the missing-name lookup is within the oracle budget")
+                .is_none());
+            let diagnostic = ctx
+                .format_retained(
+                    format_args!("entry {} disappeared after scan", entry.name),
+                    "FCStd missing entry error",
+                )
+                .expect("the malformed diagnostic is within the oracle budget");
+            assert_eq!(diagnostic, "entry missing disappeared after scan");
+        });
+        let entry_count = usize::try_from(
+            work_cap
+                .max(128)
+                .checked_add(1)
+                .expect("finite source-derived entry suffix length"),
+        )
+        .expect("finite source-derived entry suffix length");
+        let first = scan.entries[0].clone();
+        scan.entries.extend((1..entry_count).map(|index| {
+            let mut entry = first.clone();
+            entry.name = format!("unvisited-{index}");
+            entry
+        }));
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_work_units = work_cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is within input limits");
+        let error = super::entry_records(&ctx, scan, &[])
+            .expect_err("the first missing entry must be reported before the suffix");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(message)
+            if message.contains("entry missing disappeared after scan")));
+        assert_eq!(ctx.resource_refusal(), None);
+    });
+}
+
+#[test]
+fn duplicate_span_stops_before_unvisited_chain_suffix() {
+    let first = crate::native::ByteSpan::try_new(0, 1).expect("nonempty first span");
+    let valid_second = crate::native::ByteSpan::try_new(1, 2).expect("nonempty second span");
+    let work_cap = successful_work_cap(|ctx| {
+        let mut spans = [&first, &valid_second].into_iter();
+        assert_eq!(
+            ctx.next_charged(&mut spans, "FCStd physical span chain")
+                .expect("the first source visit is within the oracle budget"),
+            Some(&first),
+        );
+        assert_eq!(
+            ctx.next_charged(&mut spans, "FCStd physical span chain")
+                .expect("the second source visit is within the oracle budget"),
+            Some(&valid_second),
+        );
+    });
+    let suffix_count =
+        usize::try_from(work_cap.max(128)).expect("finite source-derived span suffix length");
+
+    let mut duplicate = vec![first, first];
+    duplicate.extend((1..=suffix_count).map(|start| {
+        let start = u64::try_from(start).expect("finite suffix span start");
+        let end = start.checked_add(1).expect("finite suffix span end");
+        crate::native::ByteSpan::try_new(start, end).expect("nonempty suffix span")
+    }));
+    let chain_end = u64::try_from(suffix_count.checked_add(1).expect("finite span endpoint"))
+        .expect("finite span endpoint");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_work_units = work_cap;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within input limits");
+    assert!(!super::chain_is_exact(
+        &ctx,
+        duplicate.iter(),
+        chain_end,
+        "FCStd physical span chain",
+    )
+    .expect("the duplicate span is detected before the suffix"));
+    assert_eq!(ctx.resource_refusal(), None);
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within input limits");
+    assert!(super::chain_is_exact(
+        &ctx,
+        [&first, &valid_second].into_iter(),
+        2,
+        "FCStd physical span chain",
+    )
+    .expect("the exact-size chain ends without a charged terminal probe"));
+    assert_eq!(ctx.resource_refusal(), None);
+}
+
+#[test]
+fn nested_gui_refusal_does_not_charge_unvisited_document_suffix() {
+    let entry = crate::test_support::entry_record(
+        "fcstd:native:entry#GuiDocument.xml".into(),
+        "GuiDocument.xml".into(),
+        cadmpeg_core::container::ContainerRole::GuiDocument,
+        Vec::new(),
+        vec![0; 8],
+    );
+    let graph = |count: usize| crate::gui::Graph {
+        documents: (0..count)
+            .map(|index| crate::native::GuiDocumentRecord {
+                id: format!("fcstd:gui:document#{index}"),
+                schema_version: None,
+                attributes: std::collections::BTreeMap::new(),
+                states: vec![crate::native::GuiStateRecord {
+                    id: format!("fcstd:gui:state#{index}"),
+                    kind: "State".into(),
+                    attributes: std::collections::BTreeMap::new(),
+                    values: Vec::new(),
+                    side_entries: Vec::new(),
+                    xml: crate::native::RetainedXml::from_text("<State/>".into(), 0)
+                        .expect("valid state XML"),
+                }],
+            })
+            .collect(),
+        ..Default::default()
+    };
+
+    let work_cap = successful_work_cap(|ctx| {
+        super::logical_ledger(
+            ctx,
+            std::slice::from_ref(&entry),
+            &[],
+            &graph(1),
+            &[],
+            &[],
+            &[],
+        )
+        .expect("the one-document short prefix succeeds");
+    });
+    let document_count = usize::try_from(
+        work_cap
+            .max(128)
+            .checked_add(1)
+            .expect("finite source-derived document suffix length"),
+    )
+    .expect("finite source-derived document suffix length");
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_work_units = work_cap;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within input limits");
+    let error = super::logical_ledger(
+        &ctx,
+        std::slice::from_ref(&entry),
+        &[],
+        &graph(document_count),
+        &[],
+        &[],
+        &[],
+    )
+    .expect_err("the first state range refuses before the document suffix");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "FCStd logical ranges")
+    );
+}
+
+#[test]
+fn empty_container_sources_are_work_free() {
+    let empty: [crate::native::ByteSpan; 0] = [];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within input limits");
+    assert!(
+        !super::chain_is_exact(&ctx, empty.iter(), 0, "FCStd physical span chain",)
+            .expect("an empty exact-size source has no next step")
+    );
+    assert!(
+        super::logical_ledger(&ctx, &[], &[], &crate::gui::Graph::default(), &[], &[], &[],)
+            .expect("empty logical sources are free")
+            .is_empty()
+    );
+    let coverage =
+        super::byte_coverage(&ctx, &[], &[], &[], 0).expect("empty byte-coverage sources are free");
+    assert_eq!(coverage.id, crate::native::native_id("byte-coverage", "0"));
+    assert_eq!(coverage.physical_span_count, 0);
+    assert_eq!(coverage.logical_entry_count, 0);
+    assert!(!coverage.exact);
+    with_scanned_document(|scan| {
+        scan.entries.clear();
+        assert!(super::entry_records(&ctx, scan, &[])
+            .expect("empty entry sources are free")
+            .is_empty());
+    });
+    assert_eq!(ctx.resource_refusal(), None);
+}
+
 fn resource_entry_record() -> crate::native::EntryRecord {
     crate::test_support::entry_record(
         "fcstd:native:entry#GuiDocument.xml".into(),
@@ -275,9 +508,11 @@ fn resource_entry_record() -> crate::native::EntryRecord {
 fn gui_entry_reference_refuses_at_collection_limit() {
     collection_context(0, |ctx| {
         let mut entry = resource_entry_record();
-        assert!(matches!(entry.add_reference(ctx, "fcstd:native:gui#owner"),
+        assert!(
+            matches!(entry.push_reference(ctx, "fcstd:native:gui#owner"),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "FCStd GUI entry references"));
+                if limit.operation == "FCStd GUI entry references")
+        );
     });
 }
 
@@ -292,7 +527,7 @@ fn gui_entry_reference_identity_refuses_at_retained_limit() {
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
     let mut entry = resource_entry_record();
     assert!(
-        matches!(entry.add_reference(&ctx, "fcstd:native:gui#owner"),
+        matches!(entry.push_reference(&ctx, "fcstd:native:gui#owner"),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "FCStd GUI entry reference identity")
     );
@@ -302,7 +537,7 @@ fn gui_entry_reference_identity_refuses_at_retained_limit() {
 fn document_domain_set_refuses_on_collection_limit() {
     let document = b"<Document SchemaVersion=\"4\"><Objects><Object type=\"Part::Feature\"/></Objects></Document>";
     crate::test_support::assert_collection_refusal_at(&[], "FCStd document domains", |ctx| {
-        super::parse_document(ctx, document)
+        super::parse_document(ctx, document).map(|(facts, version, _)| (facts, version))
     });
 }
 
@@ -372,21 +607,6 @@ fn ordered_physical_span_vector_refuses_on_collection_limit() {
 }
 
 #[test]
-fn coverage_classification_map_refuses_on_collection_limit() {
-    let logical = [crate::native::LogicalSpan {
-        id: "logical".to_owned(),
-        entry: "extra".to_owned(),
-        span: crate::native::ByteSpan::try_new(0, 1).expect("nonempty span"),
-        classification: crate::native::LogicalClassification::Structural,
-    }];
-    let result = collection_context(0, |ctx| super::byte_coverage(ctx, &[], &[], &logical, 0));
-    assert!(
-        matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "FCStd coverage classifications")
-    );
-}
-
-#[test]
 fn summary_schema_note_refuses_on_retained_limit() {
     let bytes = archive("<Document SchemaVersion=\"4\" FileVersion=\"1\"/>");
     let scan_arena = DecodeArena::new();
@@ -435,7 +655,7 @@ fn x62_xml_tree_items_are_admitted_before_allocation() {
 
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::CollectionItems,
-        "FCStd Document.xml node tree",
+        "FreeCAD document XML tree",
         |cap| {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -449,7 +669,7 @@ fn x62_xml_tree_items_are_admitted_before_allocation() {
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "FCStd Document.xml node tree"
+                && limit.operation == "FreeCAD document XML tree"
     ));
 }
 
@@ -479,11 +699,59 @@ fn x62_prefixed_object_envelope_is_admitted_before_the_xml_tree() {
 #[test]
 fn xml_envelope_scan_skips_comments_cdata_and_quoted_brackets() {
     let bytes = br#"<Document SchemaVersion="4"><!-- <Objects><Object/> --><Note attr=">"> <![CDATA[<Object/>]]> </Note><Objects><Object/><Object/></Objects></Document>"#;
-    let (bound, objects) = super::xml_envelope_counts(bytes).expect("lexical XML count");
+    let objects = crate::test_support::with_service_context(&[], |ctx| {
+        super::xml_object_count(ctx, bytes).expect("lexical admission")
+    })
+    .expect("lexical XML count");
     assert_eq!(objects, 2);
-    let parsed = roxmltree::Document::parse(std::str::from_utf8(bytes).expect("UTF-8 XML"))
-        .expect("XML document");
-    assert!(bound >= cadmpeg_core::decode::u64_from_index(parsed.descendants().count()));
+}
+
+#[test]
+fn xml_envelope_scan_admits_each_visited_name_tail_and_markup_step() {
+    let cases = [
+        (
+            format!("<{}:Document/>", "Namespace".repeat(128)),
+            "FCStd Document.xml lexical tag name",
+        ),
+        (
+            format!("<Document attr=\"{}\"   />", ">quoted".repeat(128)),
+            "FCStd Document.xml lexical tag tail",
+        ),
+        (
+            format!("<Document><!--{}--></Document>", "text".repeat(128)),
+            "FCStd Document.xml lexical markup suffix",
+        ),
+        (
+            format!("<Document><![CDATA[{}]]></Document>", "text".repeat(128)),
+            "FCStd Document.xml lexical markup suffix",
+        ),
+    ];
+    for (xml, operation) in cases {
+        crate::test_support::refusal_at(ResourceDimension::WorkUnits, &[], operation, |ctx| {
+            super::xml_object_count(ctx, xml.as_bytes())
+        });
+        crate::test_support::with_service_context(&[], |ctx| {
+            assert!(super::xml_object_count(ctx, xml.as_bytes())
+                .expect("admitted scan")
+                .is_some());
+        });
+    }
+}
+
+#[test]
+fn xml_envelope_scan_does_not_charge_an_unvisited_malformed_tail() {
+    // Dispatch and the empty-name terminator each visit one byte.
+    const WORK_TO_EMPTY_NAME: u64 = 2;
+    let bytes = format!("<>{}", "unvisited".repeat(8192));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_work_units = WORK_TO_EMPTY_NAME;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert_eq!(
+        super::xml_object_count(&ctx, bytes.as_bytes()).expect("early stop"),
+        None
+    );
+    assert_eq!(ctx.resource_refusal(), None);
 }
 
 #[test]
@@ -833,5 +1101,46 @@ fn source_attribute_copies_and_summary_formatting_refuse_work() {
         assert!(
             matches!(super::summary_notes(&ctx, scan), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "FCStd schema note")
         );
+    });
+}
+
+#[test]
+fn source_attributes_admit_document_domain_classification() {
+    with_scanned_document(|scan| {
+        scan.document.object_count = 1;
+        scan.document.domains = (0..128).map(|index| format!("D{index}")).collect();
+        crate::test_support::refusal_at(
+            ResourceDimension::WorkUnits,
+            &[],
+            "FreeCAD document domain visits",
+            |ctx| super::source_attributes(ctx, scan),
+        );
+        crate::test_support::with_service_context(&[], |ctx| {
+            let attributes = super::source_attributes(ctx, scan).unwrap();
+            assert_eq!(
+                attributes.get("document_kind").unwrap(),
+                "application-document"
+            );
+        });
+    });
+}
+
+#[test]
+fn summary_notes_admit_document_domain_classification() {
+    with_scanned_document(|scan| {
+        scan.document.object_count = 1;
+        scan.document.domains = (0..128).map(|index| format!("D{index}")).collect();
+        crate::test_support::refusal_at(
+            ResourceDimension::WorkUnits,
+            &[],
+            "FreeCAD document domain visits",
+            |ctx| super::summary_notes(ctx, scan),
+        );
+        crate::test_support::with_service_context(&[], |ctx| {
+            let notes = super::summary_notes(ctx, scan).unwrap();
+            assert!(notes
+                .iter()
+                .any(|note| note == "document kind=application-document"));
+        });
     });
 }

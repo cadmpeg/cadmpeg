@@ -1291,7 +1291,7 @@ fn deltas_procedural_wrappers_normalize_complete_record_envelopes() {
                 &record.canonical_bytes
             ))
             .unwrap()
-            .get(
+            .node(
                 NodeKind::try_from(u8::try_from(kind).expect("fixture value fits u8")).unwrap(),
                 12
             )
@@ -1413,7 +1413,7 @@ fn merged_deltas_full_record_replaces_partition_node() {
     assert!(
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged))
             .unwrap()
-            .get(NodeKind::Point, 11)
+            .node(NodeKind::Point, 11)
             .is_some()
     );
 }
@@ -1439,7 +1439,7 @@ fn merged_tombstone_preserves_a_topology_referenced_carrier() {
     assert!(
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged))
             .unwrap()
-            .get(NodeKind::Point, 11)
+            .node(NodeKind::Point, 11)
             .is_some()
     );
     assert_eq!(analytic_points(&merged)[0].x, 10.0);
@@ -1518,7 +1518,7 @@ fn merged_exact_key_tombstone_removes_unreferenced_partition_node() {
     assert!(
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged))
             .unwrap()
-            .get(NodeKind::Point, 11)
+            .node(NodeKind::Point, 11)
             .is_none()
     );
 }
@@ -1564,7 +1564,7 @@ fn final_body_revision_scopes_deltas_overlay_events() {
     assert!(
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged))
             .unwrap()
-            .get(NodeKind::Point, 11)
+            .node(NodeKind::Point, 11)
             .is_some()
     );
 
@@ -1577,7 +1577,7 @@ fn final_body_revision_scopes_deltas_overlay_events() {
     assert!(
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged))
             .unwrap()
-            .get(NodeKind::Point, 11)
+            .node(NodeKind::Point, 11)
             .is_none()
     );
 }
@@ -1600,8 +1600,8 @@ fn body_revision_scopes_keep_each_monotonic_sequence_current() {
     let graph =
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged))
             .unwrap();
-    assert!(graph.get(NodeKind::Point, 50).is_some());
-    assert!(graph.get(NodeKind::Point, 51).is_some());
+    assert!(graph.node(NodeKind::Point, 50).is_some());
+    assert!(graph.node(NodeKind::Point, 51).is_some());
     let points = analytic_points(&merged);
     assert!(points
         .iter()
@@ -1635,8 +1635,8 @@ fn body_revision_scopes_accept_reverse_serialized_counter_direction() {
     let graph =
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &merged))
             .unwrap();
-    assert!(graph.get(NodeKind::Point, 50).is_some());
-    assert!(graph.get(NodeKind::Point, 51).is_some());
+    assert!(graph.node(NodeKind::Point, 50).is_some());
+    assert!(graph.node(NodeKind::Point, 51).is_some());
     let points = analytic_points(&merged);
     assert!(points
         .iter()
@@ -1904,7 +1904,10 @@ fn census_accumulates_overlapping_tombstone_and_terminal_trailer_bytes() {
     assert_eq!(census.terminal_null_references.unwrap().offset(), 4);
     assert_eq!(census.bytes_decoded(), 6 + 4);
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| census.covered_spans(ctx)).unwrap(),
+        crate::test_support::with_decode_context(|ctx| census
+            .covered_spans(ctx)
+            .map(|(spans, _storage)| spans))
+        .unwrap(),
         vec![(0, stream.len())]
     );
 }
@@ -1924,7 +1927,10 @@ fn census_accumulator_differs_from_coverage_on_overlapping_events() {
     assert_eq!(record.end, 175);
     assert_eq!((trailer.offset(), trailer.end()), (167, 175));
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| census.covered_spans(ctx)).unwrap(),
+        crate::test_support::with_decode_context(|ctx| census
+            .covered_spans(ctx)
+            .map(|(spans, _storage)| spans))
+        .unwrap(),
         vec![(67, 175)]
     );
     assert_eq!(census.bytes_decoded(), 78 + 30 + 8);
@@ -1949,10 +1955,15 @@ fn census_accumulator_differs_from_coverage_on_overlapping_events() {
         assert_eq!(record.end, 444);
         assert_eq!((tail.offset(), tail.end()), (371, 435));
         assert_eq!(
-            crate::test_support::with_decode_context(|ctx| census.covered_spans(ctx)).unwrap(),
+            crate::test_support::with_decode_context(|ctx| census
+                .covered_spans(ctx)
+                .map(|(spans, _storage)| spans))
+            .unwrap(),
             vec![(67, 444)]
         );
         assert_eq!(census.bytes_decoded(), 236 + 34 + 34 + 73 + 64);
         assert_ne!(census.bytes_decoded(), 444 - 67);
     }
 }
+
+mod resource_budget;

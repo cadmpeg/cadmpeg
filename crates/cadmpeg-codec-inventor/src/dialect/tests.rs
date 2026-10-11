@@ -153,6 +153,62 @@ fn dialect_classification_refuses_retained_limit_before_cfb_value() {
 }
 
 #[test]
+fn dialect_join_does_not_prepay_values_after_the_first_render_error() {
+    for count in [1_usize, 512] {
+        let values = vec![0_u8; count];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 1;
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("dialect join context");
+        assert!(matches!(join(
+            &ctx, &values,
+            |_| Err(cadmpeg_core::CodecError::malformed("invalid declaration")),
+            "visit Inventor test join parts", "retain Inventor test join",
+        ), Err(cadmpeg_core::CodecError::Malformed(detail)) if detail == "invalid declaration"));
+        ctx.finish_session()
+            .expect("unrendered join tail uses no work");
+    }
+}
+
+#[test]
+fn empty_dialect_join_admits_one_source_end_probe() {
+    for allowance in [0_u64, 1] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = allowance;
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty dialect join context");
+        let parts: &[u8] = &[];
+        let result = join(
+            &ctx,
+            parts,
+            |_| panic!("empty join has no render call"),
+            "visit Inventor test join parts",
+            "retain Inventor test join",
+        );
+        if allowance == 0 {
+            let error = result.expect_err("source end probe refuses");
+            assert!(
+                matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "visit Inventor test join parts"
+                    && limit.used == 0 && limit.additional == 1)
+            );
+            assert!(
+                matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if matches!(&error, cadmpeg_core::CodecError::ResourceLimit(original) if original == &limit))
+            );
+        } else {
+            assert_eq!(result.expect("one end probe fits"), "");
+            ctx.finish_session().expect("empty join uses no scratch");
+        }
+    }
+}
+
+#[test]
 fn dialect_join_refuses_collection_and_retained_limits_before_join() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -215,6 +271,79 @@ fn dialect_loss_refuses_materialized_limit_before_absent_schema_reason() {
     assert!(dialect_loss(&setup_ctx, &matched, &recovery)
         .expect("service admission")
         .is_some());
+}
+
+#[test]
+fn dialect_recovery_visits_both_flat_sources_and_their_end_probes() {
+    use crate::rse::{
+        DatabaseDescriptor, DatabaseState, SegmentBulkState, SegmentDescriptor, SegmentKind,
+        SegmentMetaState,
+    };
+    let bytes = primary_envelope_fixture_with(EnvelopeDeclarations::default());
+    for (database_count, segment_count) in [(0_usize, 0_usize), (1, 0), (0, 1), (1, 1), (17, 13)] {
+        for exact in [false, true] {
+            let arena = DecodeArena::new();
+            let (setup, root) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                    .expect("dialect source fixture context");
+            let mut container =
+                InventorContainer::open(&setup, root).expect("dialect source fixture");
+            let database = container.rse.databases.first().expect("fixture database");
+            let databases = (0..database_count)
+                .map(|_| DatabaseDescriptor {
+                    band: database.band,
+                    stream: database.stream,
+                    state: DatabaseState::Unreadable("database".into()),
+                })
+                .collect();
+            let pair = container.rse.segments[0].pair.clone();
+            container.rse.databases = databases;
+            container.rse.segments = (0..segment_count)
+                .map(|_| SegmentDescriptor {
+                    pair: pair.clone(),
+                    registry: None,
+                    kind: SegmentKind::Unresolved,
+                    identity_issues: Vec::new(),
+                    meta: SegmentMetaState::Malformed {
+                        declared: None,
+                        detail: "metadata".into(),
+                    },
+                    bulk: SegmentBulkState::Malformed("bulk".into()),
+                })
+                .collect();
+            // Declaration and unframed inventories each traverse each source.
+            // No descriptor declares a value, so only two visits per item and
+            // the four terminal probes execute.
+            let work =
+                cadmpeg_core::decode::u64_from_index(2 * (database_count + segment_count) + 4);
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = work - u64::from(!exact);
+            policy.limits.max_collection_items = 0;
+            policy.limits.max_retained_bytes = 0;
+            policy.limits.max_materialized_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("dialect source context");
+            match DialectRecovery::of(&ctx, &container) {
+                Ok(recovery) if exact => {
+                    assert!(recovery.schemas.is_empty());
+                    assert!(recovery.unframed_schemas.is_empty());
+                    assert!(recovery.meta_streams.is_empty());
+                    assert!(recovery.unframed_meta_streams.is_empty());
+                    ctx.finish_session()
+                        .expect("both source passes fit exactly");
+                }
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if !exact => {
+                    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+                    assert_eq!(limit.operation, "visit Inventor dialect items");
+                    assert_eq!(limit.used, work - 1);
+                    assert_eq!(limit.additional, 1);
+                    assert!(matches!(ctx.finish_session(),
+                        Err(cadmpeg_core::CodecError::ResourceLimit(sticky)) if sticky == limit));
+                }
+                _ => panic!("dialect inventory must use exactly its source visits"),
+            }
+        }
+    }
 }
 
 #[test]
@@ -719,12 +848,17 @@ fn kernel_layer_refuses_work_limit_before_classification() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
-    assert!(matches!(
-        layers(&ctx, &primary, &container.rse.active_carrier),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+    let error = layers(&ctx, &primary, &container.rse.active_carrier)
+        .expect_err("kernel declaration measurement still requires shared output admission");
+    assert!(matches!(&error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "classify Inventor kernel dialect"
+                && limit.operation == "retain Inventor kernel save major"
     ));
+    assert!(
+        matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if matches!(&error, cadmpeg_core::CodecError::ResourceLimit(original) if original == &limit))
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
     assert!(layers(&ctx, &primary, &container.rse.active_carrier).is_ok());

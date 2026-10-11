@@ -6,12 +6,15 @@ use cadmpeg_core::CodecError;
 
 #[test]
 fn curve_attribute_lookup_preserves_carrier_scan_refusal() {
-    let body = crate::test_support::parasolid::line_carrier(10, [0.0; 3], [1.0, 0.0, 0.0]);
+    let mut body = crate::test_support::parasolid::line_carrier(10, [0.0; 3], [1.0, 0.0, 0.0]);
+    let source = body.clone();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
-    let error = super::curve_by_attr(&ctx, &body, 10).unwrap_err();
+    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let error = super::patch::CompactCurvePatch::new(&ctx, &mut body, 10)
+        .err()
+        .unwrap();
     let CodecError::ResourceLimit(limit) = error else {
         panic!("carrier scan refusal");
     };
@@ -27,7 +30,9 @@ fn compact_attribute_patch_preserves_carrier_scan_refusal() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&original, &arena, &policy).unwrap();
-    let error = super::patch_compact_values(&ctx, &mut body, 10, &[0.0; 6]).unwrap_err();
+    let error = super::patch::CompactCurvePatch::new(&ctx, &mut body, 10)
+        .and_then(|patch| patch.apply(&[0.0; 6]))
+        .unwrap_err();
     let CodecError::ResourceLimit(limit) = error else {
         panic!("carrier scan refusal");
     };
@@ -53,11 +58,32 @@ fn attribute_nurbs_patch_preserves_carrier_scan_refusal() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&original, &arena, &policy).unwrap();
-    let error = super::patch_nurbs_by_attr(&ctx, &mut body, 10, curve).unwrap_err();
+    let error = super::patch::patch_nurbs_by_attr(&ctx, &mut body, 10, curve).unwrap_err();
     let CodecError::ResourceLimit(limit) = error else {
         panic!("carrier scan refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
     assert_eq!(ctx.resource_refusal(), Some(limit));
     assert_eq!(body, original);
+}
+
+#[test]
+fn analytic_marker_candidates_name_both_fixed_framings() {
+    let mut body = vec![0_u8; super::DELTAS_MARKER_OFFSET + 1];
+    body[super::analytic::MARKER] = 0x2b;
+    assert_eq!(
+        super::analytic_marker_candidates(&body, 0),
+        Some([Some(super::analytic::MARKER), None])
+    );
+    for index in 0..super::COMPACT_REF_COUNT {
+        body[super::analytic::REFS + index * super::DELTAS_REF_STRIDE + 2] = 1;
+    }
+    body[super::DELTAS_MARKER_OFFSET] = 0x2d;
+    assert_eq!(
+        super::analytic_marker_candidates(&body, 0),
+        Some([
+            Some(super::analytic::MARKER),
+            Some(super::DELTAS_MARKER_OFFSET)
+        ])
+    );
 }

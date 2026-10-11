@@ -5,7 +5,10 @@ use crate::layout::compact_legacy_96_profile_roster_curve as legacy_96;
 use crate::records::{SketchInputEntity, SketchInputKind, SketchRelationKind};
 use crate::resolved_features::endpoints::compact_legacy_96_profile_roster_curve_uses_complete_roster;
 use crate::resolved_features::endpoints::coordinate_roster_endpoint_offset;
+use crate::resolved_features::endpoints::geometry_index::{MarkerGeometryIndex, MarkerPrefixIndex};
 use crate::resolved_features::endpoints::roster_curve_endpoint_markers;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 
 fn profile_roster_payload(endpoints: [u16; 2]) -> Vec<u8> {
     let mut payload = vec![0; legacy_96::LEN + LEGACY_SKETCH_MARKER.len()];
@@ -130,12 +133,26 @@ fn compact_legacy_96_profile_roster_uses_coordinate_geometry_ordinals() {
     ));
     assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(56));
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &payload,
-            &curve,
-            &markers
-        )
+        {
+            let ctx = cadmpeg_test_support::service_decode_context();
+            let result = roster_curve_endpoint_markers(
+                &ctx,
+                &payload,
+                &curve,
+                &markers,
+                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+                    &ctx,
+                    &markers,
+                    crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
+                        &ctx, &payload,
+                    )
+                    .unwrap(),
+                )
+                .unwrap(),
+                None,
+            );
+            result
+        }
         .unwrap()
         .iter()
         .map(|marker| marker.id())
@@ -151,12 +168,27 @@ fn compact_legacy_96_profile_roster_uses_coordinate_geometry_ordinals() {
         0
     ));
     assert_eq!(
-        roster_curve_endpoint_markers(
-            &cadmpeg_test_support::service_decode_context(),
-            &alternate_header,
-            &curve,
-            &markers
-        )
+        {
+            let ctx = cadmpeg_test_support::service_decode_context();
+            let result = roster_curve_endpoint_markers(
+                &ctx,
+                &alternate_header,
+                &curve,
+                &markers,
+                &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+                    &ctx,
+                    &markers,
+                    crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
+                        &ctx,
+                        &alternate_header,
+                    )
+                    .unwrap(),
+                )
+                .unwrap(),
+                None,
+            );
+            result
+        }
         .unwrap()
         .iter()
         .map(|marker| marker.id())
@@ -166,12 +198,27 @@ fn compact_legacy_96_profile_roster_uses_coordinate_geometry_ordinals() {
 
     let mut equal_endpoints = profile_roster_payload([3, 3]);
     assert!(!compact_legacy_96_profile_roster_curve_uses_complete_roster(&equal_endpoints, 0));
-    assert!(roster_curve_endpoint_markers(
-        &cadmpeg_test_support::service_decode_context(),
-        &equal_endpoints,
-        &curve,
-        &markers
-    )
+    assert!({
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let result = roster_curve_endpoint_markers(
+            &ctx,
+            &equal_endpoints,
+            &curve,
+            &markers,
+            &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+                &ctx,
+                &markers,
+                crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
+                    &ctx,
+                    &equal_endpoints,
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+            None,
+        );
+        result
+    }
     .unwrap()
     .is_empty());
 
@@ -199,12 +246,135 @@ fn compact_legacy_96_profile_roster_uses_coordinate_geometry_ordinals() {
         &out_of_range,
         0
     ));
-    assert!(roster_curve_endpoint_markers(
-        &cadmpeg_test_support::service_decode_context(),
-        &out_of_range,
-        &curve,
-        &markers
-    )
+    assert!({
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let result = roster_curve_endpoint_markers(
+            &ctx,
+            &out_of_range,
+            &curve,
+            &markers,
+            &crate::resolved_features::endpoints::geometry_index::MarkerGeometryIndex::new(
+                &ctx,
+                &markers,
+                crate::resolved_features::endpoints::geometry_index::MarkerPrefixIndex::new(
+                    &ctx,
+                    &out_of_range,
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+            None,
+        );
+        result
+    }
     .unwrap()
     .is_empty());
+}
+
+fn endpoint_storage_entities() -> [SketchInputEntity; 3] {
+    let mut curve = SketchInputEntity::new("curve", "lane", 0, 0, SketchInputKind::LineOrCircle);
+    curve.feature_ref = Some("feature".into());
+    let mut first = SketchInputEntity::new("first", "lane", 1, 10, SketchInputKind::Point);
+    first.feature_ref = Some("feature".into());
+    first.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, 0.0]);
+    let mut second = SketchInputEntity::new("second", "lane", 2, 20, SketchInputKind::Point);
+    second.feature_ref = Some("feature".into());
+    second.coordinates_m = cadmpeg_ir::units::FiniteVector::new([1.0, 0.0]);
+    [curve, first, second]
+}
+
+// collect_vec uses the four-slot minimum for pointer-sized elements. The
+// returned vector owns those slots; its markers remain borrowed native records.
+const ENDPOINT_VECTOR_BYTES: u64 =
+    4 * cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&SketchInputEntity>());
+
+#[test]
+fn compact_legacy_96_profile_roster_publishes_only_endpoint_slots() {
+    let payload = profile_roster_payload([0, 1]);
+    let entities = endpoint_storage_entities();
+    let markers = [&entities[0], &entities[1], &entities[2]];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = ENDPOINT_VECTOR_BYTES;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let geometry = MarkerGeometryIndex::new(
+        &ctx,
+        &markers,
+        MarkerPrefixIndex::new(&ctx, &payload).unwrap(),
+    )
+    .unwrap();
+    let endpoints =
+        roster_curve_endpoint_markers(&ctx, &payload, &entities[0], &markers, &geometry, None)
+            .unwrap();
+    assert_eq!(endpoints.len(), 2);
+    assert!(std::ptr::eq(endpoints[0], &raw const entities[1]));
+    assert!(std::ptr::eq(endpoints[1], &raw const entities[2]));
+    assert_eq!(endpoints[0].coordinates_m.unwrap().get(), [0.0, 0.0]);
+    assert_eq!(endpoints[1].coordinates_m.unwrap().get(), [1.0, 0.0]);
+    assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn compact_legacy_96_profile_roster_charges_each_live_output_once() {
+    let payload = profile_roster_payload([0, 1]);
+    let entities = endpoint_storage_entities();
+    let markers = [&entities[0], &entities[1], &entities[2]];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 2 * ENDPOINT_VECTOR_BYTES;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let geometry = MarkerGeometryIndex::new(
+        &ctx,
+        &markers,
+        MarkerPrefixIndex::new(&ctx, &payload).unwrap(),
+    )
+    .unwrap();
+    let first =
+        roster_curve_endpoint_markers(&ctx, &payload, &entities[0], &markers, &geometry, None)
+            .unwrap();
+    let second =
+        roster_curve_endpoint_markers(&ctx, &payload, &entities[0], &markers, &geometry, None)
+            .unwrap();
+    assert_eq!(first.len(), 2);
+    assert_eq!(second.len(), 2);
+    for endpoints in [&first, &second] {
+        assert!(std::ptr::eq(endpoints[0], &raw const entities[1]));
+        assert!(std::ptr::eq(endpoints[1], &raw const entities[2]));
+    }
+    assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn compact_legacy_96_profile_roster_preserves_publication_refusal() {
+    let payload = profile_roster_payload([0, 1]);
+    let entities = endpoint_storage_entities();
+    let markers = [&entities[0], &entities[1], &entities[2]];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = ENDPOINT_VECTOR_BYTES - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let geometry = MarkerGeometryIndex::new(
+        &ctx,
+        &markers,
+        MarkerPrefixIndex::new(&ctx, &payload).unwrap(),
+    )
+    .unwrap();
+    let decode =
+        || roster_curve_endpoint_markers(&ctx, &payload, &entities[0], &markers, &geometry, None);
+    let CodecError::ResourceLimit(limit) = decode().unwrap_err() else {
+        panic!("expected endpoint publication refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(
+        limit.operation,
+        "resolve SLDPRT compact legacy 96 profile roster endpoint markers"
+    );
+    assert_eq!(limit.limit, ENDPOINT_VECTOR_BYTES - 1);
+    assert_eq!(limit.used, 0);
+    assert_eq!(limit.additional, ENDPOINT_VECTOR_BYTES);
+    assert_eq!(ctx.resource_refusal().as_ref(), Some(&limit));
+    let CodecError::ResourceLimit(repeated) = decode().unwrap_err() else {
+        panic!("expected sticky endpoint refusal");
+    };
+    assert_eq!(repeated, limit);
 }

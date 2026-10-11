@@ -7,66 +7,55 @@ use cadmpeg_core::CodecError;
 fn knot_edit_preserves_original_curve_storage_on_caller_refusal() {
     let original = super::curve();
     let count = original.knots().len();
-    let visits = u64::try_from(count * 4).expect("four passes");
-    for cap in 0..visits {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let mut curve = original.clone();
-        let called = std::cell::Cell::new(false);
-        let result = curve.edit_knots(&ctx, |knots| {
-            called.set(true);
-            for value in knots {
-                *value += 2.;
-            }
-        });
-        // Copy, callback, and finite scans each visit all knots; ordering
-        // visits only the count - 1 adjacent pairs.
-        if cap == visits - 1 {
-            result.expect("all visits fit").expect("valid edit");
-            assert!(called.get());
-            assert_eq!(
-                curve.knots().as_slice(),
-                original
-                    .knots()
-                    .iter()
-                    .map(|knot| knot + 2.)
-                    .collect::<Vec<_>>()
-            );
-            assert_eq!(curve.pole_rows(), original.pole_rows());
-            ctx.finish_session().expect("exact visit budget");
-            continue;
-        }
-        let Err(CodecError::ResourceLimit(limit)) = result else {
-            panic!("every copy/edit/invariant visit needs admission");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(
-            called.get(),
-            cap >= u64::try_from(count * 2).expect("copy and edit")
-        );
-        assert_eq!(curve, original);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+    for operation in [
+        "IR NURBS edited knots",
+        "IR NURBS knot edit",
+        "IR NURBS knot finiteness",
+        "IR NURBS knot order",
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                crate::geometry::tests::budget::with_limit(
+                    ResourceDimension::WorkUnits,
+                    cap,
+                    |ctx| {
+                        let mut curve = original.clone();
+                        let called = std::cell::Cell::new(false);
+                        let result = curve.edit_knots(ctx, |knots| {
+                            called.set(true);
+                            for value in knots {
+                                *value += 2.;
+                            }
+                        });
+                        assert_eq!(curve, original);
+                        assert_eq!(
+                            called.get(),
+                            !matches!(operation, "IR NURBS edited knots" | "IR NURBS knot edit")
+                        );
+                        result
+                    },
+                )
+            },
         );
     }
     for dimension in [
+        ResourceDimension::RetainedBytes,
         ResourceDimension::MaterializedBytes,
         ResourceDimension::CollectionItems,
-        ResourceDimension::RetainedBytes,
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         match dimension {
+            ResourceDimension::RetainedBytes => {
+                policy.limits.max_retained_bytes = u64::try_from(count * 8 - 1).expect("bytes");
+            }
             ResourceDimension::MaterializedBytes => {
                 policy.limits.max_materialized_bytes = u64::try_from(count * 8 - 1).expect("bytes");
             }
             ResourceDimension::CollectionItems => {
                 policy.limits.max_collection_items = u64::try_from(count - 1).expect("slots");
-            }
-            ResourceDimension::RetainedBytes => {
-                policy.limits.max_retained_bytes = u64::try_from(count * 8 - 1).expect("bytes");
             }
             _ => panic!("test dimension"),
         }
@@ -85,7 +74,7 @@ fn knot_edit_preserves_original_curve_storage_on_caller_refusal() {
 }
 
 #[test]
-fn knot_edit_commits_scoped_candidate_once_and_keeps_geometry_error_order() {
+fn knot_edit_copies_validated_candidate_and_keeps_geometry_error_order() {
     let mut curve = super::curve();
     let original = curve.clone();
     let count = curve.knots().len();
@@ -93,7 +82,8 @@ fn knot_edit_commits_scoped_candidate_once_and_keeps_geometry_error_order() {
     policy.limits.max_materialized_bytes = u64::try_from(count * 8).expect("bytes");
     policy.limits.max_retained_bytes = policy.limits.max_materialized_bytes;
     policy.limits.max_collection_items = u64::try_from(count).expect("slots");
-    policy.limits.max_work_units = u64::try_from(count * 4).expect("four passes");
+    // Copy n knots, edit n knots, check n finite values and compare n-1 adjacent pairs.
+    policy.limits.max_work_units = u64::try_from(count * 4 - 1).expect("admitted passes");
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     curve
@@ -148,7 +138,8 @@ fn knot_replacement_moves_admitted_output_without_copying_poles() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_collection_items = 0;
-    policy.limits.max_work_units = u64::try_from(count * 2).expect("two invariant passes");
+    policy.limits.max_work_units =
+        u64::try_from(count * 2 - 1).expect("n finite values and n-1 order pairs");
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let curve = original
@@ -159,18 +150,43 @@ fn knot_replacement_moves_admitted_output_without_copying_poles() {
     assert_eq!(curve.knots().as_slice().as_ptr(), address);
     assert_eq!(curve.pole_rows(), original.pole_rows());
     ctx.finish_session().expect("moved storage");
-    for cap in [0, u64::try_from(count).expect("count")] {
-        let arena = DecodeArena::new();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let Err(CodecError::ResourceLimit(limit)) =
-            original.clone().with_knots(&ctx, original.knots().to_vec())
-        else {
-            panic!("replacement scans use caller account");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+    for operation in ["IR NURBS knot finiteness", "IR NURBS knot order"] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                crate::geometry::tests::budget::with_limit(
+                    ResourceDimension::WorkUnits,
+                    cap,
+                    |ctx| original.clone().with_knots(ctx, original.knots().to_vec()),
+                )
+            },
         );
     }
+}
+
+#[test]
+fn knot_edit_callback_unwind_preserves_original_and_releases_candidate() {
+    let mut curve = super::curve();
+    let original = curve.clone();
+    let count = curve.knots().len();
+    let bytes = cadmpeg_core::decode::u64_from_index(count * std::mem::size_of::<f64>());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = bytes;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _result = curve.edit_knots(&ctx, |knots| {
+            knots.fill(2.0);
+            panic!("knot edit callback unwind");
+        });
+    }));
+    assert!(result.is_err());
+    assert_eq!(curve, original);
+    drop(
+        ctx.reserve_scoped(bytes, "knot unwind candidate released")
+            .unwrap(),
+    );
+    ctx.finish_session().unwrap();
 }

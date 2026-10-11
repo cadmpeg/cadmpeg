@@ -841,7 +841,7 @@ pub(super) fn segment_om_links(
         return Ok(Vec::new());
     };
     let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-    let sections = container.om_sections(ctx)?;
+    let (sections, _sections_storage) = container.om_sections(ctx)?;
     let mut links = Vec::new();
     for (row_ordinal, row) in index.rows().enumerate() {
         ctx.charge_work(1, "NX segment OM index rows")?;
