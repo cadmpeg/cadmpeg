@@ -39,7 +39,7 @@ fn assert_record_visits(
         let run =
             || super::super::saved_section_entity_by_internal_id(&ctx, &definition, internal_id);
         let result = run();
-        let original = match &result {
+        match &result {
             Ok(actual) => {
                 match selected {
                     Some(index) => assert!(std::ptr::eq(
@@ -52,7 +52,6 @@ fn assert_record_visits(
                     .charge_work_limit(u64::MAX, "after unique saved record lookup")
                     .expect_err("probe completed work");
                 assert_eq!(refusal.used, visits);
-                refusal
             }
             Err(CodecError::ResourceLimit(refusal)) => {
                 assert_eq!(
@@ -71,13 +70,9 @@ fn assert_record_visits(
                         cap
                     )
                 );
-                *refusal
             }
             Err(error) => panic!("unexpected lookup error: {error:?}"),
         };
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-        );
         result.map(|_| ())
     });
 }

@@ -575,6 +575,7 @@ pub(super) fn opaque_section_segment_identity_suffix_admitted(
 
 #[cfg(test)]
 mod tests {
+    mod admission_recovery;
     mod record_lookup;
     mod spline_storage;
     use super::{

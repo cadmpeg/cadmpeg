@@ -1232,6 +1232,7 @@ fn sketch_constraint_loci_compatible_with_policy(
 
 #[cfg(test)]
 mod tests {
+    mod admission_recovery;
     use super::sketch_constraint_loci_compatible_with_policy;
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::sketches::{

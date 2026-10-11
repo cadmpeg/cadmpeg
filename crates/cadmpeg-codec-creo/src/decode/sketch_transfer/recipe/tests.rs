@@ -397,3 +397,21 @@ fn first_material_selector_skips_other_operations_when_target_is_absent() {
 fn first_material_selector_skips_other_operations_when_target_is_ambiguous() {
     assert_first_material_without_unique_target(vec![operation(40), operation(40), operation(11)]);
 }
+
+#[test]
+fn schema_fast_operation_class_is_free() {
+    let scan = crate::test_support::empty_container_scan();
+    let selected = operation(40);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_entities = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert_eq!(super::feature_schema_class_with_operation(&ctx, &scan, 40, Some(&selected))
+        .expect("fixed class"), Some(crate::feature::schema::SchemaClass::Protrusion));
+    ctx.finish_session().expect("active fixed route");
+}
