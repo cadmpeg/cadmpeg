@@ -20,7 +20,6 @@ pub(super) fn bspline_span<'ctx, 'arena: 'ctx>(
     t: f64,
 ) -> Result<Option<usize>, ResourceLimit> {
     let admission = admission.into();
-    admission.work(0, "IR B-spline span search")?;
     let Some(required) = count
         .checked_add(degree)
         .and_then(|size| size.checked_add(1))
@@ -101,7 +100,6 @@ pub(super) fn fill_bspline_basis<'ctx, 'arena: 'ctx>(
     values: &mut [f64],
 ) -> Result<Option<()>, ResourceLimit> {
     let admission = admission.into();
-    admission.work(0, "IR B-spline basis work")?;
     if Some(values.len()) != degree.checked_add(1) {
         return Ok(None);
     }
@@ -168,7 +166,6 @@ pub(super) fn fill_bspline_basis<'ctx, 'arena: 'ctx>(
 
 /// Inspect the finite range of a basis, admitting input-sized visits first.
 pub(super) fn all_finite(scratch: &decode::Scratch<'_, '_>, values: &[f64]) -> Option<bool> {
-    scratch.work(0, "IR B-spline finite basis inspection")?;
     for value in values {
         if values.len() > 2 {
             scratch.work(1, "IR B-spline finite basis inspection")?;

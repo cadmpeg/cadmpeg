@@ -4,7 +4,6 @@ use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind,
     FeatureInputReference, SketchInputEntity, SketchInputKind, SketchInputLink,
 };
-use std::collections::HashMap;
 
 #[test]
 fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
@@ -119,16 +118,14 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
         }],
         sketch_entities: vec![center, radial, arc, witness, handle],
     };
-    let markers_by_id = lane
-        .sketch_entities
-        .iter()
-        .map(|marker| (marker.id(), marker))
-        .collect::<HashMap<_, _>>();
 
     let carrier = dimensioned_relation_carrier(
         &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_ref(&lane),
-        &markers_by_id,
+        &crate::resolved_features::dimensions::LaneMarkerIndex::new(
+            &cadmpeg_test_support::service_decode_context(),
+            std::slice::from_ref(&lane),
+        )
+        .unwrap(),
         "feature",
         &operand,
         5.0,
@@ -152,15 +149,13 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
         .unwrap()
         .entries_mut()[1]
         .local_id = 8;
-    let mismatched_markers = mismatched_lane
-        .sketch_entities
-        .iter()
-        .map(|marker| (marker.id(), marker))
-        .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
         &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_ref(&mismatched_lane),
-        &mismatched_markers,
+        &crate::resolved_features::dimensions::LaneMarkerIndex::new(
+            &cadmpeg_test_support::service_decode_context(),
+            std::slice::from_ref(&mismatched_lane)
+        )
+        .unwrap(),
         "feature",
         &operand,
         5.0,
@@ -170,15 +165,13 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
 
     let mut non_arc_lane = lane.clone();
     non_arc_lane.sketch_entities[2].reclassify(SketchInputKind::LineOrCircle);
-    let non_arc_markers = non_arc_lane
-        .sketch_entities
-        .iter()
-        .map(|marker| (marker.id(), marker))
-        .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
         &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_ref(&non_arc_lane),
-        &non_arc_markers,
+        &crate::resolved_features::dimensions::LaneMarkerIndex::new(
+            &cadmpeg_test_support::service_decode_context(),
+            std::slice::from_ref(&non_arc_lane)
+        )
+        .unwrap(),
         "feature",
         &operand,
         5.0,
@@ -227,15 +220,13 @@ fn duplicate_link_declared_entity_handle_selects_valid_arc_carrier() {
     ambiguous_lane
         .sketch_entities
         .extend([second_arc, second_witness, second_handle]);
-    let ambiguous_markers = ambiguous_lane
-        .sketch_entities
-        .iter()
-        .map(|marker| (marker.id(), marker))
-        .collect::<HashMap<_, _>>();
     assert!(dimensioned_relation_carrier(
         &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_ref(&ambiguous_lane),
-        &ambiguous_markers,
+        &crate::resolved_features::dimensions::LaneMarkerIndex::new(
+            &cadmpeg_test_support::service_decode_context(),
+            std::slice::from_ref(&ambiguous_lane)
+        )
+        .unwrap(),
         "feature",
         &operand,
         5.0,

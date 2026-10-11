@@ -226,31 +226,41 @@ fn graph_native_reader_refuses_retained_limit() {
 
 #[test]
 fn display_jt_native_validation_propagates_resource_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
     let namespace: NativeNamespace = serde_json::from_value(graph_wire()).unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.native.0.insert("nx".into(), namespace);
 
-    crate::test_support::with_decode_context_over(
-        &[],
-        |policy| {
-            policy.limits.max_work_units = 0;
-        },
-        |ctx| {
-            let error = crate::NxCodec::validate_native(ctx, &ir).unwrap_err();
-            assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "construct canonical native value"));
-            crate::test_support::with_decode_context(|service| {
-                assert!(crate::NxCodec::validate_native(service, &ir)
-                    .unwrap()
-                    .is_empty());
-            });
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "load typed native record",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("test root is admitted");
+            let result = crate::NxCodec::validate_native(&ctx, &ir);
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert!(matches!(ctx.finish_session(),
+                            Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
+            }
+            result
         },
     );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "load typed native record"));
+    crate::test_support::with_decode_context(|service| {
+        assert!(crate::NxCodec::validate_native(service, &ir)
+            .unwrap()
+            .is_empty());
+    });
 }
 
 #[test]
-fn display_jt_native_arena_refuses_before_value_clone() {
+fn display_jt_native_arena_refuses_scoped_identity_before_reading() {
     let namespace: NativeNamespace = serde_json::from_value(graph_wire()).unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.native.0.insert("nx".into(), namespace);

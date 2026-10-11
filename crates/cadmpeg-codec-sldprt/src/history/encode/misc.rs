@@ -82,9 +82,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            let Some(record) =
-                existing.filter(|record| classify(record) == Some(FeatureClass::CosmeticThread))
-            else {
+            let Some(record) = (match existing {
+                Some(record) if classify(record) == Some(FeatureClass::CosmeticThread) => {
+                    Some(record)
+                }
+                _ => None,
+            }) else {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} adds a cosmetic thread",
                     feature.id
@@ -387,7 +390,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             };
-            if existing.is_some_and(|record| !is_helix(record)) {
+            if match existing {
+                Some(record) => !is_helix(record),
+                None => false,
+            } {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes operation family",
                     feature.id

@@ -149,6 +149,7 @@ pub(in crate::history) fn native_with_configuration_lanes(
 mod equations;
 mod extrusion_profile;
 mod feature_operations;
+mod scene_classes;
 mod sketch_bind;
 mod sketch_relations;
 mod tree_binding;

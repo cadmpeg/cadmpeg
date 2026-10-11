@@ -599,3 +599,62 @@ fn decode_resolves_suffix_prefixed_edge_curve_with_high_byte_one() {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
     )));
 }
+
+#[test]
+fn colour_site_qualifier_character_refusal_reaches_the_decode_caller() {
+    let mut first = face_color_definition();
+    first.extend(entity51(
+        1,
+        700,
+        FACE_COLOR_DEFINITION_ID,
+        &[0, 0, 0, 0, 0, 900],
+    ));
+    first.extend(entity53_color(900, [0.25, 0.5, 0.75]));
+    first.extend(owned_triangle(0, 700, 0.0));
+    let mut second = face_color_definition();
+    second.extend(entity51(
+        1,
+        701,
+        FACE_COLOR_DEFINITION_ID,
+        &[0, 0, 0, 0, 0, 901],
+    ));
+    second.extend(entity53_color(901, [0.75, 0.5, 0.25]));
+    second.extend(owned_triangle(0, 701, 10.0));
+
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x20,
+        "Contents/Config-0-Partition",
+        &parasolid_with_body("first partition", "SCH_SW_33103_11000", &first),
+    ));
+    source.extend(make_block(
+        0x21,
+        "Contents/Config-1-Partition",
+        &parasolid_with_body("second partition", "SCH_SW_33103_11000", &second),
+    ));
+
+    let run = |cap| {
+        let mut options = DecodeOptions::default();
+        options.policy.limits.max_work_units = cap;
+        SldprtCodec
+            .decode(&mut Cursor::new(&source), &options)
+            .map_err(|error| match error {
+                cadmpeg_ir::DecodeFailure::Codec(error) => error,
+                error => panic!("unexpected qualifier refusal: {error:?}"),
+            })
+    };
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "retain SLDPRT colour site qualifier",
+        run,
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("colour qualifier refusal");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits
+    );
+    assert_eq!(limit.operation, "retain SLDPRT colour site qualifier");
+    assert_eq!(limit.additional, 1);
+}

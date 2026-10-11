@@ -25,26 +25,21 @@ impl Clone for PmDcListCloneProbe {
 /// Lowercase hexadecimal digits, the only characters a hex rendering holds.
 const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
 
-/// Append `bytes` to `text` as lowercase hexadecimal digit pairs.
-pub(crate) fn push_hex(
+/// Render a fixed byte array as lowercase hexadecimal digit pairs.
+pub(crate) fn fixed_hex<const N: usize>(
     ctx: &DecodeContext<'_>,
-    text: &mut String,
-    bytes: &[u8],
+    bytes: &[u8; N],
     operation: &'static str,
-) -> Result<(), CodecError> {
-    for byte in ctx.admit_iter(bytes, operation)? {
-        ctx.push_retained_char(
-            text,
-            char::from(HEX_DIGITS[usize::from(byte >> 4)]),
-            operation,
-        )?;
-        ctx.push_retained_char(
-            text,
-            char::from(HEX_DIGITS[usize::from(byte & 0x0f)]),
-            operation,
-        )?;
+) -> Result<String, CodecError> {
+    let length = N
+        .checked_mul(2)
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    let mut text = ctx.retained_string(length, operation)?;
+    for byte in bytes {
+        text.push(char::from(HEX_DIGITS[usize::from(byte >> 4)]));
+        text.push(char::from(HEX_DIGITS[usize::from(byte & 0x0f)]));
     }
-    Ok(())
+    Ok(text)
 }
 
 /// Builds an Inventor type identifier from the `time_low` field of its GUID.
@@ -61,10 +56,7 @@ pub(crate) fn type_id_string(
     value: [u8; 16],
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    let mut result = String::new();
-    ctx.try_reserve_retained_text(&mut result, 32, operation)?;
-    push_hex(ctx, &mut result, &value, operation)?;
-    Ok(result)
+    fixed_hex(ctx, &value, operation)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -130,12 +122,11 @@ impl PmDcReference {
                 qualifiers.len()
             )));
         }
-        let indices = ctx.admit_iter(indices, "visit Inventor PmDc reference indices")?;
-        let qualifiers = ctx.admit_iter(qualifiers, "visit Inventor PmDc reference qualifiers")?;
         ctx.try_collect_vec(
             indices
+                .iter()
                 .copied()
-                .zip(qualifiers.copied())
+                .zip(qualifiers.iter().copied())
                 .map(|(index, qualified)| {
                     Self::new(index, qualified)
                         .ok_or_else(|| CodecError::malformed("reference index exceeds 31 bits"))
@@ -304,10 +295,6 @@ impl<M> PmDcPairedReferenceList<M> {
         let items = match self.items.as_ref() {
             None => None,
             Some((metadata, references)) => {
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<M>()),
-                    operation,
-                )?;
                 Some((*metadata, ctx.copy_slice(references, operation)?))
             }
         };
@@ -595,7 +582,11 @@ pub(crate) fn reference_list(
 ) -> Result<PmDcReferenceList, CodecError> {
     let (count, metadata) = list_preamble(cursor, marker, field)?;
     let mut references = ctx.vector_storage(count, "admit Inventor PmDc references")?;
-    for _ in ctx.admit_iter(&(0..count), "visit Inventor PmDc list entries")? {
+    let mut entry_steps = 0..count;
+    while ctx
+        .next_charged(&mut entry_steps, "visit Inventor PmDc list entries")?
+        .is_some()
+    {
         ctx.push_vec(
             &mut references,
             cursor.reference("reference-list entry")?,
@@ -650,7 +641,11 @@ pub(crate) fn u32_list(
 ) -> Result<PmDcU32List, CodecError> {
     let (count, metadata) = list_preamble(cursor, marker, field)?;
     let mut values = ctx.vector_storage(count, "admit Inventor PmDc integers")?;
-    for _ in ctx.admit_iter(&(0..count), "visit Inventor PmDc list entries")? {
+    let mut entry_steps = 0..count;
+    while ctx
+        .next_charged(&mut entry_steps, "visit Inventor PmDc list entries")?
+        .is_some()
+    {
         ctx.push_vec(
             &mut values,
             cursor.u32("integer-list value")?,
@@ -766,6 +761,52 @@ mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
     use cadmpeg_core::decode::{DecodeContext, View};
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn fixed_type_identifier_admits_only_retained_storage() {
+        let arena = DecodeArena::new();
+        for cap in [0, 31, 32] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = 0;
+            policy.limits.max_retained_bytes = cap;
+            policy.limits.max_materialized_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("fixed identifier context");
+            let result = super::type_id_string(&ctx, [0xaf; 16], "fixed type identifier");
+            if cap < 32 {
+                let error = result.expect_err("fixed identifier needs 32 retained bytes");
+                assert!(matches!(error, CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::RetainedBytes
+                        && limit.operation == "fixed type identifier"
+                        && limit.additional == 32
+                        && Some(limit) == ctx.resource_refusal()));
+            } else {
+                assert_eq!(
+                    result.expect("fixed formatting has no input-sized work"),
+                    "afafafafafafafafafafafafafafafaf"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn paired_reference_copy_does_not_charge_fixed_metadata_work() {
+        let references = vec![super::PmDcReference::from_packed(1)];
+        let list =
+            super::PmDcPairedReferenceList::new(Some([7_u16, 9]), references).expect("paired list");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // copy_slice visits the one reference. Copying the two metadata
+        // words has a fixed extent and needs no source traversal charge.
+        policy.limits.max_work_units = 1;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("paired copy context");
+        let copy = list
+            .try_clone_for_decode(&ctx, "copy paired references")
+            .expect("only reference-sized work");
+        assert_eq!(copy.metadata(), Some(&[7_u16, 9]));
+        assert_eq!(copy.references(), list.references());
+    }
 
     #[test]
     fn pmdc_utf16_local_ceiling_refuses_resources_for_complete_payload() {
@@ -893,6 +934,114 @@ mod tests {
         assert!(
             matches!(super::u32_list(&ctx, &mut Cursor::new(root), 2, "test"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
         );
+    }
+
+    #[test]
+    fn reference_zip_charges_one_source_step_per_pair() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Two pairs plus the collector's end probe: 2 + 1 = 3 work units.
+        policy.limits.max_work_units = 3;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("zip context");
+        let references =
+            super::PmDcReference::zip(&ctx, &[1, 2], &[false, true]).expect("one traversal fits");
+        assert_eq!(references[0].index(), 1);
+        assert_eq!(references[1].index(), 2);
+        assert!(references[1].qualified());
+        assert!(matches!(ctx.charge_work(1, "probe reference zip"),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits && limit.used == 3));
+    }
+
+    #[test]
+    fn pmdc_counted_lists_refuse_only_the_next_item_step() {
+        for count in [1_u32, 512] {
+            let mut bytes = Vec::new();
+            bytes.extend_from_slice(&2_u16.to_le_bytes());
+            bytes.extend_from_slice(&0x3000_u16.to_le_bytes());
+            bytes.extend_from_slice(&count.to_le_bytes());
+            bytes.extend_from_slice(&[0; 8]);
+            bytes.resize(
+                bytes.len() + usize::try_from(count).expect("fixture count") * 4,
+                0,
+            );
+            for integers in [false, true] {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = 0;
+                let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                    .expect("PmDc counted-list context");
+                let result = if integers {
+                    super::u32_list(&ctx, &mut Cursor::new(view), 2, "test").map(|_| ())
+                } else {
+                    reference_list(&ctx, &mut Cursor::new(view), 2, "test").map(|_| ())
+                };
+                let error = result.expect_err("first list step refuses");
+                assert!(matches!(&error, CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::WorkUnits
+                        && limit.operation == "visit Inventor PmDc list entries"
+                        && limit.used == 0
+                        && limit.additional == 1));
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
+                    if matches!(&error, CodecError::ResourceLimit(original) if original == &limit))
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn pmdc_counted_lists_admit_each_item_and_the_end_probe() {
+        for count in [0_u32, 1, 512] {
+            let mut bytes = Vec::new();
+            bytes.extend_from_slice(&2_u16.to_le_bytes());
+            bytes.extend_from_slice(&0x3000_u16.to_le_bytes());
+            bytes.extend_from_slice(&count.to_le_bytes());
+            if count != 0 {
+                bytes.extend_from_slice(&[0; 8]);
+            }
+            bytes.resize(
+                bytes.len() + usize::try_from(count).expect("fixture count") * 4,
+                0,
+            );
+            for integers in [false, true] {
+                for end_probe in [0_u64, 1] {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_materialized_bytes = 0;
+                    policy.limits.max_work_units = u64::from(count) + end_probe;
+                    let (ctx, view) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                        .expect("PmDc counted-list context");
+                    let mut cursor = Cursor::new(view);
+                    let result = if integers {
+                        super::u32_list(&ctx, &mut cursor, 2, "test")
+                            .map(|list| list.values().len())
+                    } else {
+                        reference_list(&ctx, &mut cursor, 2, "test")
+                            .map(|list| list.references().len())
+                    };
+                    if end_probe == 0 {
+                        let error = result.expect_err("list end probe refuses");
+                        assert!(matches!(&error, CodecError::ResourceLimit(limit)
+                            if limit.dimension == ResourceDimension::WorkUnits
+                                && limit.operation == "visit Inventor PmDc list entries"
+                                && limit.used == u64::from(count)
+                                && limit.additional == 1));
+                        assert!(
+                            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
+                            if matches!(&error, CodecError::ResourceLimit(original) if original == &limit))
+                        );
+                    } else {
+                        assert_eq!(
+                            result.expect("items and end probe fit"),
+                            usize::try_from(count).expect("fixture count")
+                        );
+                        cursor.finish("test list").expect("all list bytes consumed");
+                        ctx.finish_session().expect("list work fits exactly");
+                    }
+                }
+            }
+        }
     }
 
     #[test]

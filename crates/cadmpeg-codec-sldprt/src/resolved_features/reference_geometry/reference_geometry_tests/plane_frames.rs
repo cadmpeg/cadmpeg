@@ -67,7 +67,8 @@ fn minimal_reference_plane_validates_its_redundant_offset_tail() {
     }
     payload[root + 56] = 0x80;
     assert_eq!(
-        minimal_reference_plane_frame(&payload),
+        minimal_reference_plane_frame(&cadmpeg_test_support::service_decode_context(), &payload,)
+            .expect("minimal plane frame scan fits service policy"),
         Some((
             Point3::new(0.0, 0.0, -52.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -76,5 +77,9 @@ fn minimal_reference_plane_validates_its_redundant_offset_tail() {
     );
 
     payload[root + 65..root + 73].copy_from_slice(&0.051f64.to_le_bytes());
-    assert_eq!(minimal_reference_plane_frame(&payload), None);
+    assert_eq!(
+        minimal_reference_plane_frame(&cadmpeg_test_support::service_decode_context(), &payload,)
+            .expect("minimal plane frame scan fits service policy"),
+        None
+    );
 }
