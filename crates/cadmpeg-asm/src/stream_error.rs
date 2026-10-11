@@ -259,8 +259,7 @@ mod tests {
         policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty test input fits input limit");
-        let error =
-            StreamFailure::NotImplemented(error).into_malformed(&ctx);
+        let error = StreamFailure::NotImplemented(error).into_malformed(&ctx);
         let CodecError::ResourceLimit(refusal) = error else {
             panic!("expected resource refusal, got {error:?}");
         };
@@ -273,9 +272,20 @@ mod tests {
             let reason = "x".repeat(4096);
             let expected = format!("SAT parse failed at byte 12: {reason}");
             let refusal = crate::test_support::resource_limit_at(
-                &[], ResourceDimension::RetainedBytes, "ASM stream error text", |ctx| {
-                    let error = StreamError { format: StreamFormat::Text, offset: 12, reason: reason.clone() };
-                    let failure = if malformed { StreamFailure::Malformed(error) } else { StreamFailure::Parse(error) };
+                &[],
+                ResourceDimension::RetainedBytes,
+                "ASM stream error text",
+                |ctx| {
+                    let error = StreamError {
+                        format: StreamFormat::Text,
+                        offset: 12,
+                        reason: reason.clone(),
+                    };
+                    let failure = if malformed {
+                        StreamFailure::Malformed(error)
+                    } else {
+                        StreamFailure::Parse(error)
+                    };
                     Err::<(), _>(failure.into_malformed(ctx))
                 },
             );
@@ -285,9 +295,19 @@ mod tests {
             assert_eq!(refusal.limit + 1, refusal.additional);
             {
                 let ctx = cadmpeg_test_support::service_decode_context();
-                let error = StreamError { format: StreamFormat::Text, offset: 12, reason: reason.clone() };
-                let failure = if malformed { StreamFailure::Malformed(error) } else { StreamFailure::Parse(error) };
-                assert!(matches!(failure.into_malformed(&ctx), CodecError::Malformed(message) if message == expected));
+                let error = StreamError {
+                    format: StreamFormat::Text,
+                    offset: 12,
+                    reason: reason.clone(),
+                };
+                let failure = if malformed {
+                    StreamFailure::Malformed(error)
+                } else {
+                    StreamFailure::Parse(error)
+                };
+                assert!(
+                    matches!(failure.into_malformed(&ctx), CodecError::Malformed(message) if message == expected)
+                );
                 ctx.finish_session().unwrap();
             }
         }
@@ -298,11 +318,21 @@ mod tests {
         let reason = "x".repeat(4096);
         let expected = format!("SAB framing failed: SAB framing failed at byte 12: {reason}");
         let refusal = crate::test_support::resource_limit_at(
-            &[], ResourceDimension::RetainedBytes, "test stream callback error text", |ctx| {
+            &[],
+            ResourceDimension::RetainedBytes,
+            "test stream callback error text",
+            |ctx| {
                 let mut output = None;
-                let failure = StreamFailure::Parse(StreamError { format: StreamFormat::Binary, offset: 12, reason: reason.clone() });
+                let failure = StreamFailure::Parse(StreamError {
+                    format: StreamFormat::Binary,
+                    offset: 12,
+                    reason: reason.clone(),
+                });
                 let error = failure.into_codec_error(ctx, |error| {
-                    let message = ctx.format_retained(format_args!("SAB framing failed: {error}"), "test stream callback error text")?;
+                    let message = ctx.format_retained(
+                        format_args!("SAB framing failed: {error}"),
+                        "test stream callback error text",
+                    )?;
                     output = Some(message.clone());
                     Ok(CodecError::Malformed(message))
                 });
@@ -315,5 +345,4 @@ mod tests {
         assert_eq!(refusal.additional, u64::try_from(expected.len()).unwrap());
         assert_eq!(refusal.limit + 1, refusal.additional);
     }
-
 }

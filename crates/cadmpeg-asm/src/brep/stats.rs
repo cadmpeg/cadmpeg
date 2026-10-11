@@ -359,7 +359,7 @@ mod tests {
         assert_eq!(limit.operation, "ASM merge loss kinds");
     }
 
-#[test]
+    #[test]
     fn stats_merge_sums_four_scalar_counts_over_64_merges() {
         let mut target = Stats {
             mesh_surface_faces: 2,
@@ -370,27 +370,38 @@ mod tests {
         };
         let mut successes = 0;
         crate::test_support::with_zero_context(|ctx| {
-            let result = target.merge(ctx, Stats {
-                mesh_surface_faces: 11,
-                nurbs_surfaces: 13,
-                nurbs_curves: 17,
-                partial_procedural_supports: 19,
-                ..Stats::default()
-            });
-            
-                    result.expect("fixed counts and empty maps are free");
-                    successes += 1;
-                    assert_eq!([
-                        target.mesh_surface_faces, target.nurbs_surfaces,
-                        target.nurbs_curves, target.partial_procedural_supports,
-                    ], [2 + 11 * successes, 3 + 13 * successes,
-                        5 + 17 * successes, 7 + 19 * successes]);
-                    assert!(target.missing_face_surface_kinds.is_empty());
-                    assert!(target.unknown_surface_kinds.is_empty());
-                    assert!(target.procedural_curve_kinds.is_empty());
-                    assert!(target.undecoded_pcurve_kinds.is_empty());
-                    assert!(target.other_record_kinds.is_empty());
-                
+            let result = target.merge(
+                ctx,
+                Stats {
+                    mesh_surface_faces: 11,
+                    nurbs_surfaces: 13,
+                    nurbs_curves: 17,
+                    partial_procedural_supports: 19,
+                    ..Stats::default()
+                },
+            );
+
+            result.expect("fixed counts and empty maps are free");
+            successes += 1;
+            assert_eq!(
+                [
+                    target.mesh_surface_faces,
+                    target.nurbs_surfaces,
+                    target.nurbs_curves,
+                    target.partial_procedural_supports,
+                ],
+                [
+                    2 + 11 * successes,
+                    3 + 13 * successes,
+                    5 + 17 * successes,
+                    7 + 19 * successes
+                ]
+            );
+            assert!(target.missing_face_surface_kinds.is_empty());
+            assert!(target.unknown_surface_kinds.is_empty());
+            assert!(target.procedural_curve_kinds.is_empty());
+            assert!(target.undecoded_pcurve_kinds.is_empty());
+            assert!(target.other_record_kinds.is_empty());
         });
         assert_eq!(successes, 64);
     }

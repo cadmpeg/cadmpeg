@@ -49,13 +49,22 @@ pub(crate) fn resource_limit_at<T>(
 /// Exercise a fixed recovery route in fresh and originally refused sessions.
 #[cfg(test)]
 pub(crate) fn with_entry_context(
-    mut run: impl FnMut(&cadmpeg_core::decode::DecodeContext<'_>, Option<cadmpeg_core::decode::ResourceLimit>),
+    mut run: impl FnMut(
+        &cadmpeg_core::decode::DecodeContext<'_>,
+        Option<cadmpeg_core::decode::ResourceLimit>,
+    ),
 ) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
-    for dimension in [None, Some(ResourceDimension::WorkUnits), Some(ResourceDimension::CollectionItems),
-        Some(ResourceDimension::MaterializedBytes), Some(ResourceDimension::RetainedBytes),
-        Some(ResourceDimension::Entities), Some(ResourceDimension::RecursionDepth)] {
+    for dimension in [
+        None,
+        Some(ResourceDimension::WorkUnits),
+        Some(ResourceDimension::CollectionItems),
+        Some(ResourceDimension::MaterializedBytes),
+        Some(ResourceDimension::RetainedBytes),
+        Some(ResourceDimension::Entities),
+        Some(ResourceDimension::RecursionDepth),
+    ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
@@ -68,11 +77,21 @@ pub(crate) fn with_entry_context(
         let original = dimension.map(|dimension| {
             let refused = match dimension {
                 ResourceDimension::WorkUnits => ctx.charge_work(1, "test original entry refusal"),
-                ResourceDimension::CollectionItems => ctx.charge_collection_items(1, "test original entry refusal"),
-                ResourceDimension::MaterializedBytes => ctx.reserve_scoped(1, "test original entry refusal").map(|_| ()),
-                ResourceDimension::RetainedBytes => ctx.charge_retained(1, "test original entry refusal"),
-                ResourceDimension::Entities => ctx.charge_entities(1, "test original entry refusal"),
-                ResourceDimension::RecursionDepth => ctx.enter_nested("test original entry refusal").map(|_| ()),
+                ResourceDimension::CollectionItems => {
+                    ctx.charge_collection_items(1, "test original entry refusal")
+                }
+                ResourceDimension::MaterializedBytes => ctx
+                    .reserve_scoped(1, "test original entry refusal")
+                    .map(|_| ()),
+                ResourceDimension::RetainedBytes => {
+                    ctx.charge_retained(1, "test original entry refusal")
+                }
+                ResourceDimension::Entities => {
+                    ctx.charge_entities(1, "test original entry refusal")
+                }
+                ResourceDimension::RecursionDepth => {
+                    ctx.enter_nested("test original entry refusal").map(|_| ())
+                }
                 _ => panic!("entry refusal dimension"),
             };
             let Err(CodecError::ResourceLimit(first)) = refused else { panic!("original refusal"); };
@@ -99,6 +118,8 @@ pub(crate) fn with_zero_context(mut run: impl FnMut(&DecodeContext<'_>)) {
     policy.limits.max_entities = 0;
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    for _ in 0..64 { run(&ctx); }
+    for _ in 0..64 {
+        run(&ctx);
+    }
     ctx.finish_session().unwrap();
 }
