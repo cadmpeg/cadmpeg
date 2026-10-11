@@ -1417,6 +1417,7 @@ fn counterbore_disagreement_scans_skip_unvisited_candidate_tails() {
         ("low", &low),
         ("high", &high),
     ]);
+    let mut prefix_work = BTreeMap::new();
     for tail in [1, 128] {
         let mut root = entity("GdtAnalysis");
         for index in 0..2 + tail {
@@ -1498,6 +1499,45 @@ fn counterbore_disagreement_scans_skip_unvisited_candidate_tails() {
                         Some(expected)
                     );
                 }
+            }
+            let measure = |repeat| {
+                let error = crate::test_support::work_refusal_at("measure warm counterbore query", |ctx| {
+                    let cached = crate::swift::Counterbores::new(ctx, &root)?;
+                    let context = std::collections::BTreeSet::from(["FP"]);
+                    assert!(cached.visit_in_context(ctx, &features, &context, operation, |_| Ok(true))?);
+                    if repeat {
+                        let value = if operation == "scan SWIFT counterbore diameters" {
+                            crate::swift::hole_diameter_excluding_counterbore(ctx, &cached, &annotation, &features)?
+                        } else {
+                            crate::swift::counterbore_depth_from_sibling(ctx, &cached, &annotation, &features)?
+                        };
+                        assert_eq!(value, None);
+                    }
+                    ctx.copy_retained_text("x", "measure warm counterbore query")
+                });
+                let CodecError::ResourceLimit(limit) = error else { panic!("counterbore query measurement"); };
+                limit.used
+            };
+            let visited_work = measure(true).checked_sub(measure(false)).unwrap();
+            if let Some(expected) = prefix_work.insert(operation, visited_work) {
+                assert_eq!(visited_work, expected, "cached matching skips unused bucket members");
+            }
+            let error = crate::test_support::work_refusal_at(operation, |ctx| query(ctx, &root));
+            let CodecError::ResourceLimit(limit) = error else { panic!("visited counterbore scan boundary"); };
+            assert_eq!(limit.additional, 1);
+            // Warm the group index, then check that matching requests only the
+            // two candidates consumed by a disagreement query.
+            let cached = crate::swift::Counterbores::new(&fixture_ctx, &root).unwrap();
+            let context = std::collections::BTreeSet::from(["FP"]);
+            for _ in 0..2 {
+                let mut visited = 0_usize;
+                assert!(cached.visit_in_context(&fixture_ctx, &features, &context, operation, |candidate| {
+                    assert!(visited < 2, "an unused counterbore reached the consumer");
+                    assert!(std::ptr::eq(candidate, root.annotations.entities.get(visited).expect("counterbore prefix")));
+                    visited = visited.checked_add(1).unwrap();
+                    Ok(visited == 2)
+                }).unwrap());
+                assert_eq!(visited, 2);
             }
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();

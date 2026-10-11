@@ -3965,19 +3965,7 @@ fn build_geometry_ir(
             properties: BTreeMap::new(),
         });
     }
-    let _feature_appearance_sources_storage;
-    let feature_appearance_sources;
-    (
-        feature_appearance_sources,
-        _feature_appearance_sources_storage,
-    ) = ctx.with_scoped_storage("SLDPRT feature_appearance_sources workspace", || {
-        ctx.collect_btree_set(
-            crate::appearance::feature_assignments(ctx, scan)?
-                .into_iter()
-                .map(|assignment| assignment.feature_source_id),
-            "index SLDPRT feature appearance sources",
-        )
-    })?;
+    let feature_appearances = crate::appearance::FeatureAppearances::default();
     let mut matched_storage =
         ctx.reserve_scoped(0, "SLDPRT matched appearance source workspace")?;
     let mut conflict_storage = ctx.reserve_scoped(0, "SLDPRT display conflict workspace")?;
@@ -4030,7 +4018,7 @@ fn build_geometry_ir(
         let resolved;
         (resolved, _appearance_storage) = ctx
             .with_scoped_storage("SLDPRT resolved display appearance workspace", || {
-                crate::appearance::resolve_display_appearances(ctx, scan, display, &display_faces)
+                crate::appearance::resolve_display_appearances(ctx, scan, &feature_appearances, display, &display_faces)
             })?;
         for source in ctx.admit_iter(
             resolved.matched_feature_sources,
@@ -4172,6 +4160,10 @@ fn build_geometry_ir(
             display_links,
         ));
     }
+    let (feature_appearance_sources, feature_sources_storage) = ctx.with_scoped_storage(
+        "SLDPRT feature_appearance_sources workspace",
+        || feature_appearances.into_source_ids(ctx, scan),
+    )?;
     if let Some(message) = appearance_assignment_loss_message(
         ctx,
         &feature_appearance_sources,
@@ -4181,6 +4173,7 @@ fn build_geometry_ir(
         ctx.reserve_vec(&mut pmi_losses, 1, "append SLDPRT appearance loss")?;
         pmi_losses.push(SldprtLossCode::AppearanceAssignmentUnresolved.note(message));
     }
+    drop((feature_appearance_sources, feature_sources_storage));
     let mut assigned_tessellations = crate::tessellation::assign_persistent_owners(
         ctx,
         &mut ir.model,
