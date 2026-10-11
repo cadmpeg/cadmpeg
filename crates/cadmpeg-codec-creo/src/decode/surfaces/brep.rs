@@ -876,22 +876,23 @@ fn split_neutral_component_shells(
             )
         })?;
     }
+    let (mut seeds, seed_storage) =
+        ctx.temporary_vec(remaining_faces.len(), "creo B-rep shell seed storage")?;
+    for face in ctx.admit_iter(&remaining_faces, "creo B-rep shell seed projection")? {
+        seeds.push(*face);
+    }
     let mut shell_specs = Vec::new();
-    while !remaining_faces.is_empty() {
-        let Some(start) = ctx
-            .next_charged(
-                &mut remaining_faces.iter(),
-                "creo B-rep shell component face visits",
-            )?
-            .copied()
-        else {
-            break;
-        };
-        ctx.remove_btree_set(
+    for start in ctx
+        .admit_iter(&seeds, "creo B-rep shell component face visits")?
+        .copied()
+    {
+        if !ctx.remove_btree_set(
             &mut remaining_faces,
             &start,
             "creo B-rep shell component face removal",
-        )?;
+        )? {
+            continue;
+        }
         let mut group_storage = ctx.reserve_scoped(0, "creo shell group workspace")?;
         let mut group = BTreeSet::new();
         group_storage.with_storage(|| {
@@ -948,6 +949,10 @@ fn split_neutral_component_shells(
             wire_curves: BTreeSet::new(),
         });
     }
+    drop(seeds);
+    drop(seed_storage);
+    drop(remaining_faces);
+    drop(remaining_storage);
     let mut unattached_wire_curves = BTreeSet::new();
     for curve_id in ctx.admit_iter(wire_curves, "creo B-rep wire curve traversal")? {
         let curve_vertices = *ctx
