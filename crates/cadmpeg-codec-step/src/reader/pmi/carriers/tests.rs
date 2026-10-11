@@ -104,3 +104,70 @@ fn bounded_carrier_summary_refuses_depth_before_frame_allocation() {
         );
     });
 }
+
+#[test]
+fn carrier_height_overflow_preserves_session_refusal() {
+    for (cyclic, operation) in [
+        (true, "STEP carrier component span overflow"),
+        (false, "STEP carrier graph height overflow"),
+    ] {
+        with_session(&cadmpeg_core::decode::DecodePolicy::service(), |ctx| {
+            let mut graph = CarrierGraph::new(ctx).expect("graph");
+            let error = graph.ensure(1, |id, _, storage| {
+                let mut children = Vec::new();
+                let edge = match id {
+                    1 => Some((2, usize::MAX)),
+                    2 => Some((if cyclic { 1 } else { 3 }, 1)),
+                    _ => None,
+                };
+                if let Some(edge) = edge {
+                    ctx.push_scoped_vec(storage, &mut children, edge, "test height edges")?;
+                }
+                Ok(RecordCarriers { local: [SetId::Empty; 3], children })
+            }).expect_err("height does not fit");
+            let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
+                panic!("height resource refusal");
+            };
+            assert_eq!(refusal.operation, operation);
+            assert_eq!(ctx.resource_refusal(), Some(refusal));
+
+        });
+    }
+}
+
+#[test]
+fn bounded_carrier_edge_beyond_remaining_depth_is_empty() {
+    with_session(&cadmpeg_core::decode::DecodePolicy::service(), |ctx| {
+        let mut graph = CarrierGraph::new(ctx).expect("graph");
+        graph.ensure(1, |id, _, storage| {
+            let mut children = Vec::new();
+            if id == 1 {
+                ctx.push_scoped_vec(storage, &mut children, (2, 5), "test weighted edge")?;
+            }
+            Ok(RecordCarriers {
+                local: if id == 2 { [SetId::Leaf(2); 3] } else { [SetId::Empty; 3] },
+                children,
+            })
+        }).expect("weighted graph");
+        assert_eq!(graph.summary(1, 4).expect("edge exceeds depth"), [SetId::Empty; 3]);
+        assert_eq!(graph.summary(1, 5).expect("edge reaches cutoff"), [SetId::Empty; 3]);
+        assert_eq!(graph.summary(1, 6).expect("edge fits depth"), [SetId::Leaf(2); 3]);
+
+    });
+}
+
+fn with_session<T>(
+    policy: &cadmpeg_core::decode::DecodePolicy,
+    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+) -> T {
+    use cadmpeg_core::{decode::{DecodeArena, DecodeContext}, CodecError};
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, policy).expect("root");
+    let result = run(&ctx);
+    if let Some(refusal) = ctx.resource_refusal() {
+        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == refusal));
+    } else {
+        ctx.finish_session().expect("completed session");
+    }
+    result
+}
