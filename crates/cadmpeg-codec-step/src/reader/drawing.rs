@@ -1426,7 +1426,7 @@ enum WrapperTargetResolution<'ctx> {
 #[derive(Clone, Copy)]
 enum WrapperTargets {
     Empty,
-    Singleton(u64),
+    Singleton { source: u64, identity: usize },
     Ambiguous,
 }
 
@@ -1441,6 +1441,7 @@ struct WrapperSummary<'ctx> {
 struct WrapperCache<'ctx, 'arena> {
     values: std::cell::RefCell<BTreeMap<u64, WrapperSummary<'ctx>>>,
     parents: std::cell::RefCell<BTreeMap<u64, BTreeSet<u64>>>,
+    identities: std::cell::RefCell<BTreeMap<String, usize>>,
     ctx: &'ctx DecodeContext<'arena>,
     storage: std::cell::RefCell<ScopedReservation<'ctx>>,
 }
@@ -1450,6 +1451,7 @@ impl<'ctx, 'arena> WrapperCache<'ctx, 'arena> {
         Ok(Self {
             values: std::cell::RefCell::new(BTreeMap::new()),
             parents: std::cell::RefCell::new(BTreeMap::new()),
+            identities: std::cell::RefCell::new(BTreeMap::new()),
             ctx,
             storage: std::cell::RefCell::new(
                 ctx.reserve_scoped(0, "STEP drawing wrapper cache scratch")?,
@@ -1685,15 +1687,10 @@ impl<'ctx, 'arena> WrapperCache<'ctx, 'arena> {
                     targets = match (targets, child.targets) {
                         (WrapperTargets::Empty, next) => next,
                         (current, WrapperTargets::Empty) => current,
-                        (WrapperTargets::Singleton(left), WrapperTargets::Singleton(right)) => {
-                            let left_identity = wrapper_singleton(left, target_identities, ctx)?;
-                            let right_identity = wrapper_singleton(right, target_identities, ctx)?;
-                            if left == right || ctx.equal(left_identity, right_identity, "STEP wrapper singleton comparison")? {
-                                WrapperTargets::Singleton(left)
-                            } else {
-                                WrapperTargets::Ambiguous
-                            }
-                        }
+                        (
+                            WrapperTargets::Singleton { source, identity: left },
+                            WrapperTargets::Singleton { identity: right, .. },
+                        ) if left == right => WrapperTargets::Singleton { source, identity: left },
                         _ => WrapperTargets::Ambiguous,
                     };
                 }
@@ -1768,7 +1765,24 @@ impl<'ctx, 'arena> WrapperCache<'ctx, 'arena> {
                 }
                 let targets = match targets.len() {
                     0 => WrapperTargets::Empty,
-                    1 => WrapperTargets::Singleton(id),
+                    1 => {
+                        let target = targets.first().ok_or_else(|| CodecError::malformed("STEP wrapper singleton target missing"))?;
+                        let cached = {
+                            let identities = self.identities.borrow();
+                            ctx.get_btree_map(&identities, target, "STEP wrapper identity lookup")?.copied()
+                        };
+                        let identity = if let Some(identity) = cached {
+                            identity
+                        } else {
+                            let identity = self.identities.borrow().len();
+                            self.storage.borrow_mut().with_storage(|| {
+                                let key = ctx.copy_retained_text(target, "STEP wrapper identity key")?;
+                                ctx.insert_btree_map(&mut self.identities.borrow_mut(), key, identity, "STEP wrapper identity classes")
+                            })?;
+                            identity
+                        };
+                        WrapperTargets::Singleton { source: id, identity }
+                    },
                     _ => WrapperTargets::Ambiguous,
                 };
                 self.storage.borrow_mut().with_storage(|| {
@@ -1898,12 +1912,14 @@ impl<'ctx, 'arena> WrapperCache<'ctx, 'arena> {
         }
         match summary.targets {
             WrapperTargets::Empty => Ok(None),
-            WrapperTargets::Singleton(source) => Ok(Some(WrapperTargetResolution::Singleton(
-                ctx.copy_retained_text(
-                    wrapper_singleton(source, target_identities, ctx)?,
-                    "step_drawing_wrapper_identity_text",
-                )?,
-            ))),
+            WrapperTargets::Singleton { source, .. } => {
+                let identity = ctx.get_btree_map(target_identities, &source, "STEP wrapper singleton source")?
+                    .and_then(|targets| targets.first())
+                    .ok_or_else(|| CodecError::malformed("STEP wrapper singleton target missing"))?;
+                Ok(Some(WrapperTargetResolution::Singleton(
+                    ctx.copy_retained_text(identity, "step_drawing_wrapper_identity_text")?,
+                )))
+            }
             WrapperTargets::Ambiguous => {
                 let result = ctx.with_scoped_storage("STEP drawing ambiguity scratch", || {
                     // The result owns only the identity set. Traversal storage
@@ -1942,17 +1958,6 @@ impl<'ctx, 'arena> WrapperCache<'ctx, 'arena> {
             }
         }
     }
-}
-
-fn wrapper_singleton<'a>(
-    source: u64,
-    target_identities: &'a BTreeMap<u64, BTreeSet<String>>,
-    ctx: &DecodeContext<'_>,
-) -> Result<&'a str, CodecError> {
-    ctx.get_btree_map(target_identities, &source, "STEP wrapper singleton source")?
-        .and_then(|targets| targets.first())
-        .map(String::as_str)
-        .ok_or_else(|| CodecError::malformed("STEP wrapper singleton target missing"))
 }
 
 fn wrapper_target_resolution<'ctx>(

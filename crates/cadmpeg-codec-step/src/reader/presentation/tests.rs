@@ -1620,3 +1620,5 @@ mod set_lookups;
 mod color_bindings;
 
 mod shared_graphs;
+
+mod color_context;

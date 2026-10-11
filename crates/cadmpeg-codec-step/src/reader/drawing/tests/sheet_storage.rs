@@ -60,3 +60,64 @@ fn discarded_sheet_usage_selections_do_not_retain_storage() {
         });
     }
 }
+
+#[test]
+fn sheet_usage_refuses_retained_promotion_before_relationship_insertion() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
+
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();#2=ITEM();#3=DRAWING_SHEET_REVISION_USAGE(#1,#2,$);ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner)
+        .expect("sheet usage exchange");
+    let target = "revision-target";
+    let identities = BTreeMap::from([
+        (1, BTreeSet::from(["sheet-target".to_owned()])),
+        (2, BTreeSet::from([target.to_owned()])),
+    ]);
+    let typed = HashSet::new();
+    let documents = BTreeMap::new();
+    let drawing = Drawing {
+        id: DrawingId::from(crate::ids::drawing(crate::ids::kind!("drawing_sheet_revision"), 1)),
+        object: "sheet".to_owned(),
+        kind: DrawingKind::Page,
+        runtime_type: "sheet".to_owned(),
+        order: 0,
+        visible: None,
+        relationships: BTreeMap::new(),
+        template: None,
+        position: None,
+        scale: None,
+        direction: None,
+        rotation_degrees: None,
+        parameters: BTreeMap::new(),
+        assets: Vec::new(),
+        native_ref: "sheet".to_owned(),
+    };
+    let mut drawings = BTreeMap::from([(1, drawing)]);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+        let targets = TargetContext {
+            target_identities: &identities,
+            known_typed: &typed,
+            exchange: &exchange,
+            external_documents: &documents,
+            wrappers: WrapperCache::new(ctx).expect("wrapper cache"),
+        };
+        let reports = RefCell::new(ctx.reserve_scoped(0, "promotion reports").expect("scope"));
+        let mut losses = Vec::new();
+        let CodecError::ResourceLimit(limit) = super::super::add_sheet_revision_usages(
+            &exchange, &mut drawings, &targets, (&mut losses, &reports),
+        ).expect_err("used selection needs retained storage") else {
+            panic!("promotion resource refusal")
+        };
+        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(limit.operation, "STEP sheet usage target");
+        assert_eq!(limit.used, 0);
+        assert_eq!(limit.additional, u64::try_from(target.len()).expect("target length"));
+        assert_eq!(ctx.resource_refusal(), Some(limit));
+        assert!(drawings[&1].relationships.is_empty());
+        assert!(losses.is_empty());
+    });
+}

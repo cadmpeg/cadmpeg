@@ -29,10 +29,6 @@ fn cache_refusal(cached: bool, references: &[u64]) {
             .reserve_scoped(0, "test original shared color")
             .expect("cache scope"),
     };
-    let query_storage = RefCell::new(
-        ctx.reserve_scoped(0, "test color query")
-            .expect("query scope"),
-    );
     let report_storage = RefCell::new(
         ctx.reserve_scoped(0, "test color report")
             .expect("report scope"),
@@ -43,7 +39,6 @@ fn cache_refusal(cached: bool, references: &[u64]) {
             .resolve(
                 references,
                 StyleDomain::Surface,
-                &query_storage,
                 (&mut losses, &report_storage),
             )
             .expect("initial color query");
@@ -58,8 +53,7 @@ fn cache_refusal(cached: bool, references: &[u64]) {
     else {
         panic!("resource refusal");
     };
-    assert!(matches!(shared.resolve(references, StyleDomain::Surface,
-        &query_storage, (&mut losses, &report_storage)),
+    assert!(matches!(shared.resolve(references, StyleDomain::Surface, (&mut losses, &report_storage)),
         Err(CodecError::ResourceLimit(refusal)) if refusal == original));
     assert_eq!(shared.prefixes.len(), prior_prefixes);
     assert_eq!(shared.values.len(), prior_queries);
@@ -67,7 +61,7 @@ fn cache_refusal(cached: bool, references: &[u64]) {
     assert_eq!(ctx.resource_refusal(), Some(original));
     drop(losses);
     drop(report_storage);
-    drop(query_storage);
+
     drop(shared);
     assert!(matches!(ctx.finish_session(),
         Err(CodecError::ResourceLimit(refusal)) if refusal == original));
@@ -109,10 +103,6 @@ fn shared_color_claim_preserves_original_session_refusal() {
             .reserve_scoped(0, "test original shared color")
             .expect("cache scope"),
     };
-    let query_storage = RefCell::new(
-        ctx.reserve_scoped(0, "test color query")
-            .expect("query scope"),
-    );
     let report_storage = RefCell::new(
         ctx.reserve_scoped(0, "test color report")
             .expect("report scope"),
@@ -122,7 +112,6 @@ fn shared_color_claim_preserves_original_session_refusal() {
         .resolve(
             &[1],
             StyleDomain::Surface,
-            &query_storage,
             (&mut losses, &report_storage),
         )
         .expect("initial color query");
@@ -163,7 +152,7 @@ fn shared_color_claim_preserves_original_session_refusal() {
     drop(claim_storage);
     drop(losses);
     drop(report_storage);
-    drop(query_storage);
+
     drop(shared);
     assert!(matches!(ctx.finish_session(),
         Err(CodecError::ResourceLimit(refusal)) if refusal == original));
