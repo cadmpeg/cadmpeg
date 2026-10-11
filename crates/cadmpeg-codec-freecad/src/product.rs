@@ -1568,12 +1568,12 @@ fn neutral_link_target(
             .then_some(PrototypeReference::Unresolved {}));
     };
     Ok(Some(cadmpeg_ir::products::PrototypeReference::Local {
-        definition: ProductDefinitionId::mint(crate::native::model_id_charged(
+        definition: ProductDefinitionId::mint_for_decode(ctx, crate::native::model_id_charged(
             ctx,
             "product_definition",
             object,
             "definition",
-        )?)
+        )?, "FreeCAD model identity grammar")?
         .map_err(CodecError::malformed)?,
     }))
 }

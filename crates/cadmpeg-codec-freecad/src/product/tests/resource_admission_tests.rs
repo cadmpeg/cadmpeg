@@ -385,3 +385,17 @@ fn product_scale_list_rejects_first_invalid_tuple_without_prepaying_suffix() {
         "element_scales: scale vector components must be finite",
     );
 }
+
+#[test]
+fn product_definition_identity_grammar_preserves_resource_refusal() {
+    let reference = serde_json::from_value::<crate::native::LinkTarget>(serde_json::json!({
+        "document": null, "object": "fcstd:native:object#Part", "subelements": []
+    })).expect("local reference");
+    let error = crate::test_support::refusal_at(
+        ResourceDimension::WorkUnits, &[], "FreeCAD model identity grammar",
+        |ctx| super::super::neutral_link_target(ctx, &reference),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+        && limit.operation == "FreeCAD model identity grammar"));
+}
