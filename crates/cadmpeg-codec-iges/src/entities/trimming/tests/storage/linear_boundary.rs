@@ -435,14 +435,13 @@ fn empty_linear_boundary_rings_have_no_boundary_or_work() {
         policy.limits.max_materialized_bytes = 0;
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        
-            assert!(
-                linear_boundary_rings(std::iter::empty(), BoundarySpace::Model, &ctx)
-                    .unwrap()
-                    .is_none()
-            );
-            ctx.finish_session().unwrap();
-        
+
+        assert!(
+            linear_boundary_rings(std::iter::empty(), BoundarySpace::Model, &ctx)
+                .unwrap()
+                .is_none()
+        );
+        ctx.finish_session().unwrap();
     }
 }
 
@@ -464,19 +463,18 @@ fn unsupported_linear_boundary_has_no_rings_or_work() {
         policy.limits.max_materialized_bytes = 0;
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        
-            assert!(linear_boundary_geometry(
-                &[],
-                &index,
-                &unsupported,
-                0.0,
-                0.0,
-                BoundarySurfaceKind::Trimmed,
-                &ctx,
-            )
-            .unwrap()
-            .is_none());
-            ctx.finish_session().unwrap();
-        
+
+        assert!(linear_boundary_geometry(
+            &[],
+            &index,
+            &unsupported,
+            0.0,
+            0.0,
+            BoundarySurfaceKind::Trimmed,
+            &ctx,
+        )
+        .unwrap()
+        .is_none());
+        ctx.finish_session().unwrap();
     }
 }

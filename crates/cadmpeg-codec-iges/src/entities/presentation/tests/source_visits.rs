@@ -434,17 +434,16 @@ fn empty_font_definition_has_no_projection_or_work() {
         let arena = DecodeArena::new();
         let policy = font_policy(0);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        
-            assert!(super::super::text_font_definition(
-                &entry,
-                &record,
-                &BTreeMap::new(),
-                GlobalTable::V5Later,
-                &ctx,
-            )
-            .unwrap()
-            .is_none());
-            ctx.finish_session().unwrap();
-        
+
+        assert!(super::super::text_font_definition(
+            &entry,
+            &record,
+            &BTreeMap::new(),
+            GlobalTable::V5Later,
+            &ctx,
+        )
+        .unwrap()
+        .is_none());
+        ctx.finish_session().unwrap();
     }
 }

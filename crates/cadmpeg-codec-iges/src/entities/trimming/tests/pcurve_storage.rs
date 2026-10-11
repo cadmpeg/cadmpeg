@@ -272,12 +272,13 @@ fn mapped_pcurve_output_knots_refuse_before_retention_and_finish() {
     };
     assert_eq!(first.dimension, ResourceDimension::RetainedBytes);
     assert_eq!(first.operation, "iges pcurve output knots");
-    assert_eq!((first.limit, first.used, first.additional),
-        (0, 0, 4 * u64::try_from(std::mem::size_of::<f64>()).unwrap()));
+    assert_eq!(
+        (first.limit, first.used, first.additional),
+        (0, 0, 4 * u64::try_from(std::mem::size_of::<f64>()).unwrap())
+    );
     for _ in 0..64 {
         assert!(matches!(project_source_pcurve(&ir, &index, &ctx),
             Err(CodecError::ResourceLimit(last)) if last == first));
-
     }
     assert_eq!(serde_json::to_vec(&ir).unwrap(), before);
     assert!(matches!(ctx.finish_session(),
