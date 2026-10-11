@@ -1621,3 +1621,5 @@ mod parameter_index;
 mod transform_semantics;
 
 mod candidate_lifetimes;
+
+mod fixed_routes;

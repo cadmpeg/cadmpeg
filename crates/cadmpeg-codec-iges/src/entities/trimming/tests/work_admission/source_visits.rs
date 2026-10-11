@@ -464,3 +464,251 @@ fn pcurve_knot_last_overflow_recovers_with_exact_visit_admission() {
         knot_interpolation_boundary(degree, true, true);
     }
 }
+
+fn zero_work_trimming_result(run: impl Fn(&DecodeContext<'_>) -> Result<bool, CodecError>) {
+    with_zero_context(|ctx| { assert!(run(ctx).unwrap()); });
+}
+
+fn with_zero_context(mut run: impl FnMut(&cadmpeg_core::decode::DecodeContext<'_>)) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_entities = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    for _ in 0..64 { run(&ctx); }
+    ctx.finish_session().unwrap();
+}
+
+
+#[test]
+fn trimming_absent_support_bounds_needs_no_work() {
+    let id = cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#0").unwrap();
+    zero_work_trimming_result(|ctx| {
+        super::super::super::surface_parameter_bound_intervals(
+            None,
+            &id,
+            &[],
+            &[],
+            crate::global::RealPrecision {
+                single_significance: 7,
+                double_significance: 15,
+            },
+            ctx,
+        )
+        .map(|value| value.is_none())
+    });
+}
+
+#[test]
+fn trimming_constant_ring_relationships_needs_no_work() {
+    use super::super::super::{BoundarySurfaceKind, NonSimpleRing};
+    use cadmpeg_ir::geometry::analytic::PlaneSurface;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::math::Vector3;
+    let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    ));
+    for (non_simple, kind, outer, periodic, bounds, expected) in [
+        (
+            true,
+            BoundarySurfaceKind::Trimmed,
+            true,
+            [false; 2],
+            None,
+            Some(false),
+        ),
+        (
+            false,
+            BoundarySurfaceKind::Bounded,
+            false,
+            [false; 2],
+            None,
+            Some(true),
+        ),
+        (
+            false,
+            BoundarySurfaceKind::Trimmed,
+            true,
+            [false; 2],
+            None,
+            None,
+        ),
+        (
+            false,
+            BoundarySurfaceKind::Trimmed,
+            false,
+            [true, false],
+            None,
+            None,
+        ),
+        (
+            false,
+            BoundarySurfaceKind::Trimmed,
+            false,
+            [false; 2],
+            Some([None; 4]),
+            None,
+        ),
+    ] {
+        zero_work_trimming_result(|ctx| {
+            super::super::super::linear_boundary_relationship_is_valid(
+                if non_simple {
+                    Err(&NonSimpleRing)
+                } else {
+                    Ok(&[])
+                },
+                kind,
+                outer,
+                &plane,
+                bounds,
+                periodic,
+                ctx,
+            )
+            .map(|value| value == expected)
+        });
+    }
+}
+
+#[test]
+fn trimming_empty_or_discontinuous_path_needs_no_work() {
+    for path in [&[][..], &[2_u8][..]] {
+        zero_work_trimming_result(|ctx| {
+            let mut target = vec![1_u8];
+            let result = super::super::super::append_path(&mut target, path, ctx);
+            assert_eq!(target, [1]);
+            result.map(|value| !value)
+        });
+    }
+}
+
+#[test]
+fn trimming_free_edge_range_does_not_match_without_work() {
+    use cadmpeg_ir::ids::{EdgeId, VertexId};
+    use cadmpeg_ir::topology::{Edge, EdgeCarrier};
+    let edge = Edge {
+        id: EdgeId::mint("test:model:edge#0").unwrap(),
+        carrier: EdgeCarrier::unbounded(None),
+        start: VertexId::mint("test:model:vertex#0").unwrap(),
+        end: VertexId::mint("test:model:vertex#1").unwrap(),
+        tolerance: None,
+    };
+    let ir = cadmpeg_ir::CadIr::empty();
+    let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
+    zero_work_trimming_result(|ctx| {
+        super::super::super::edge_range_matches_curve(
+            ctx,
+            &edge,
+            &index,
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            0.0,
+        )
+        .map(|value| !value)
+        .map_err(CodecError::from)
+    });
+}
+
+#[test]
+fn trimming_invalid_homogeneous_span_layout_rejects_without_work() {
+    for (degree, knots, controls) in [
+        (0, vec![0.0, 1.0], vec![[1.0, 0.0, 0.0, 0.0]]),
+        (1, Vec::new(), Vec::new()),
+        (1, vec![0.0, 1.0], vec![[1.0, 0.0, 0.0, 0.0]; 2]),
+    ] {
+        zero_work_trimming_result(|ctx| {
+            super::super::super::homogeneous_pcurve_spans(degree, &knots, controls.clone(), ctx)
+                .map(|value| value.is_none())
+        });
+    }
+}
+
+#[test]
+fn trimming_invalid_knot_insertion_rejects_without_work() {
+    for insertion in [(0.5, 0, 0), (0.5, 1, 2)] {
+        zero_work_trimming_result(|ctx| {
+            super::super::super::insert_homogeneous_pcurve_knot(
+                1,
+                &mut Vec::new(),
+                &mut Vec::new(),
+                insertion,
+                ctx,
+            )
+            .map(|value| value.is_none())
+        });
+    }
+}
+
+#[test]
+fn trimming_invalid_procedural_bounds_rejects_without_work() {
+    use cadmpeg_ir::geometry::{ProceduralSurface, ProceduralSurfaceDefinition, RecordBounds};
+    use cadmpeg_ir::ids::{ProceduralSurfaceId, SurfaceId};
+    let ir = cadmpeg_ir::CadIr::empty();
+    let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
+    for bounds in [
+        None,
+        Some([None; 4]),
+        Some([Some(1.0), Some(0.0), None, None]),
+        Some([Some(1.0), Some(1.0), None, None]),
+    ] {
+        let procedural = ProceduralSurface::new(
+            ProceduralSurfaceId::mint("test:model:procedural-surface#0").unwrap(),
+            ProceduralSurfaceDefinition::CurveBounded {
+                support: SurfaceId::mint("test:model:surface#0").unwrap(),
+                boundaries: Vec::new(),
+                boundary_pcurves: Vec::new(),
+                implicit_outer: false,
+            },
+            bounds.map(|raw| RecordBounds::try_new(raw).unwrap()),
+        );
+        zero_work_trimming_result(|ctx| {
+            super::super::super::procedural_pcurve_parameter_map(&index, &procedural, ctx)
+                .map(|value| value.is_none())
+        });
+    }
+}
+
+#[test]
+fn trimming_invalid_simple_ring_rejects_without_work() {
+    for points in [
+        Vec::new(),
+        vec![[0.0, 0.0]; 3],
+        vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+    ] {
+        zero_work_trimming_result(|ctx| {
+            super::super::super::SimpleRing::new(points.clone(), ctx).map(|value| value.is_err())
+        });
+    }
+}
+
+#[test]
+fn trimming_wrong_native_identity_prefix_has_no_sequence_or_work() {
+    for id in ["", "test:model:curve#0"] {
+        zero_work_trimming_result(|ctx| {
+            super::super::super::native_sequence_from_id(id, "iges:model:curve#D", ctx)
+                .map(|value| value.is_none())
+        });
+    }
+}
+
+#[test]
+fn trimming_non_nurbs_pcurve_has_no_control_points_or_work() {
+    use cadmpeg_ir::geometry::pcurve::{LinePcurve, PcurveGeometry};
+    use cadmpeg_ir::math::Point2;
+    let geometry = PcurveGeometry::Line(
+        LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)).unwrap(),
+    );
+    zero_work_trimming_result(|ctx| {
+        super::super::super::linear_pcurve_points(&geometry, [0.0, 1.0], ctx)
+            .map(|value| value.is_none())
+    });
+}

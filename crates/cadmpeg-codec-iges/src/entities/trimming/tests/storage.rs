@@ -1630,3 +1630,8 @@ fn declared_source_control_allocation_refusal_keeps_original_error() {
 }
 
 mod linear_boundary;
+
+#[test]
+fn native_composite_child_slots_and_ids_refuse_before_allocation() {
+    assert_native_composite_child_storage(3, true);
+}

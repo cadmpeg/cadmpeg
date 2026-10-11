@@ -62,3 +62,17 @@ fn coordinate_quantum_charges_only_actual_first_and_last_points() {
         }
     }
 }
+
+#[test]
+fn empty_coordinate_source_needs_no_work() {
+    let global = global();
+    {
+        let arena = DecodeArena::new();
+        let policy = policy(0);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        
+            assert_eq!(super::super::coordinate_quantum(&global, std::iter::empty(), &ctx).unwrap(), 0.0);
+            ctx.finish_session().unwrap();
+        
+    }
+}

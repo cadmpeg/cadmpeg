@@ -1,11 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::interval_certified_linear_bezier;
+use super::super::{
+    admit_surface_pole_count, angular_basis, equal_arc_length_parameterization,
+    homogeneous_curve_boundary_matches, homogeneous_product_control,
+    interval_certified_linear_bezier, pair_admitted_surface_poles, projectively_shared_weights,
+    ruled_surface_span_lanes, source_parameter_interval, split_homogeneous_bezier_span,
+    SurfaceGridWeight, MAX_SURFACE_POLES,
+};
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
+
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::geometry::nurbs::NurbsCurve;
-use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::geometry::analytic::LineCurve;
+use cadmpeg_ir::geometry::nurbs::bezier::HomogeneousBezierSpan;
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoleGrid};
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::NonZeroReal;
 
 fn rail(degree: u32, knots: Vec<f64>, poles: Vec<Point3>) -> NurbsCurve {
     crate::test_support::with_service_context(&[], |ctx| {
@@ -149,4 +160,218 @@ fn cubic_interval_proof_refuses_one_short_before_source_controls_and_fuses() {
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
         );
     }
+}
+
+fn linear_rail() -> NurbsCurve {
+    rail(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+    )
+}
+
+fn line() -> CurveGeometry {
+    CurveGeometry::Solved(SolvedCurveGeometry::Line(
+        LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
+            .expect("valid line"),
+    ))
+}
+
+fn with_zero_context(mut run: impl FnMut(&cadmpeg_core::decode::DecodeContext<'_>)) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_entities = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    for _ in 0..64 { run(&ctx); }
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn surface_absent_bezier_record_needs_no_work() {
+    let geometry = linear_rail();
+    let record = ParameterRecord::from_test_tokens(1, 1..2, Vec::new(), 0, Vec::new(), Vec::new());
+    let global = global();
+    with_zero_context(|ctx| {
+        let result = interval_certified_linear_bezier(&geometry, &record, &global, ctx);
+         let value = result.expect("fixed recovery is free");
+            assert!(!value);
+        
+    });
+}
+
+#[test]
+fn surface_admitted_pole_count_needs_no_work() {
+    with_zero_context(|ctx| {
+        let result = admit_surface_pole_count(ctx, MAX_SURFACE_POLES);
+        result.expect("pole count admission");
+    });
+}
+
+#[test]
+fn surface_admitted_weight_needs_no_work() {
+    let weight = NonZeroReal::new(1.0).expect("nonzero weight");
+    with_zero_context(|ctx| {
+        let result = weight.admit(0, ctx);
+         let value = result.expect("fixed recovery is free");
+            assert_eq!(value.expect("admitted weight").get(), 1.0);
+        
+    });
+}
+
+#[test]
+fn surface_constant_rail_spans_needs_no_work() {
+    let constant = rail(0, vec![0.0, 1.0], vec![Point3::new(0.0, 0.0, 0.0)]);
+    with_zero_context(|ctx| {
+        let result = ruled_surface_span_lanes(&constant, &constant, ctx);
+         let value = result.expect("fixed recovery is free");
+            assert!(value.is_none());
+        
+    });
+}
+
+#[test]
+fn surface_constant_speed_rails_needs_no_work() {
+    let geometry = line();
+    let global = global();
+    with_zero_context(|ctx| {
+        let result = equal_arc_length_parameterization(
+            [(&geometry, 1), (&geometry, 3)],
+            [0.0, 1.0],
+            [0.0, 1.0],
+            &[],
+            &global,
+            ctx,
+        );
+         let value = result.expect("fixed recovery is free");
+            assert!(value);
+        
+    });
+}
+
+#[test]
+fn surface_empty_product_controls_have_no_product_or_work() {
+    with_zero_context(|ctx| {
+        let result = homogeneous_product_control(&[], &[], 0, ctx);
+         let value = result.expect("fixed recovery is free");
+            assert_eq!(value, None);
+        
+    });
+}
+
+#[test]
+fn surface_invalid_angular_span_rejects_without_work() {
+    with_zero_context(|ctx| {
+        let result = angular_basis(0.0, 0.0, ctx);
+         let value = result.expect("fixed recovery is free");
+            assert!(value.is_none());
+        
+    });
+}
+
+#[test]
+fn surface_invalid_arc_length_interval_rejects_without_work() {
+    let geometry = line();
+    let global = global();
+    with_zero_context(|ctx| {
+        let result = equal_arc_length_parameterization(
+            [(&geometry, 1), (&geometry, 3)],
+            [0.0, 0.0],
+            [0.0, 1.0],
+            &[],
+            &global,
+            ctx,
+        );
+         let value = result.expect("fixed recovery is free");
+            assert!(!value);
+        
+    });
+}
+
+#[test]
+fn surface_invalid_boundary_resolution_rejects_without_work() {
+    let geometry = linear_rail();
+    with_zero_context(|ctx| {
+        let result =
+            homogeneous_curve_boundary_matches(ctx, &geometry, &geometry, [0.0, 1.0], -1.0);
+         let value = result.expect("fixed recovery is free");
+            assert_eq!(value, None);
+        
+    });
+}
+
+#[test]
+fn surface_invalid_span_cut_rejects_without_work() {
+    let span = HomogeneousBezierSpan {
+        domain: [0.0, 1.0],
+        controls: Vec::new(),
+    };
+    with_zero_context(|ctx| {
+        let result = split_homogeneous_bezier_span(&span, 0.0, ctx);
+         let value = result.expect("fixed recovery is free");
+            assert!(value.is_none());
+        
+    });
+}
+
+#[test]
+fn surface_mismatched_weight_counts_have_no_shared_weights_or_work() {
+    let first = linear_rail();
+    let second = rail(
+        1,
+        vec![0.0, 0.0, 0.5, 1.0, 1.0],
+        vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(0.5, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+        ],
+    );
+    with_zero_context(|ctx| {
+        let result = projectively_shared_weights(&first, &second, ctx);
+         let value = result.expect("fixed recovery is free");
+            assert!(value.is_none());
+        
+    });
+}
+
+#[test]
+fn surface_plain_line_interval_is_unit_range_without_work() {
+    let geometry = line();
+    with_zero_context(|ctx| {
+        let result = source_parameter_interval(&geometry, [2.0, 3.0], ctx);
+         let value = result.expect("fixed recovery is free");
+            assert_eq!(value, [0.0, 1.0]);
+        
+    });
+}
+
+#[test]
+fn surface_polynomial_grid_admits_empty_rows_without_work() {
+    with_zero_context(|ctx| {
+        let result = pair_admitted_surface_poles::<NonZeroReal>(
+            ctx,
+            Vec::new(),
+            None,
+            "test row",
+            "test pole",
+        );
+         let value = result.expect("fixed recovery is free");
+            assert!(matches!(value, Ok(NurbsPoleGrid::Polynomial { rows }) if rows.is_empty()));
+        
+    });
+}
+
+#[test]
+fn surface_valid_raw_weight_needs_no_work() {
+    with_zero_context(|ctx| {
+        let result = 1.0_f64.admit(0, ctx);
+         let value = result.expect("fixed recovery is free");
+            assert_eq!(value.expect("valid weight").get(), 1.0);
+        
+    });
 }
