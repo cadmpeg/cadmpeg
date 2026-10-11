@@ -700,9 +700,9 @@ Parsed by:
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 1 | `lead` | `u8` | little | spec | \| `+0` \| `u8` \| compact lead control \| |
-| 1 | 32 | `scalars` | `f64[4]` | little | spec | \| `+1` \| `4×f64le` \| four finite source scalars \| |
-| 33 | 5 | `trailing_controls` | `u8[5]` | little | spec | \| `+33` \| `5×u8` \| remaining compact controls \| |
-| 38 | 24 | `bounds` | `f32[6]` | little | spec | \| `+38` \| `6×f32le` \| six finite source bound values \| |
+| 1 | 32 | `scalars` | `f64[4]` | little | spec | \| `+1` \| `4×f64le` \| local coordinates U0, V0, U1, V1 \| |
+| 33 | 5 | `trailing_controls` | `u8[5]` | little | spec | \| `+33` \| `5×u8` \| patch IDs U0, V0, U1, V1, then compact zero \| |
+| 38 | 24 | `bounds` | `f32[6]` | little | spec | \| `+38` \| `6×f32le` \| Cartesian X low/high, Y low/high, Z low/high \| |
 
 ## Not tabulated
 

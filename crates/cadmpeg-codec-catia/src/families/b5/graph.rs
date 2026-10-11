@@ -832,11 +832,12 @@ pub(in crate::families) struct B5LoopMetadata {
 /// Optional fixed-width numeric extension of a class-`62` loop.
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::families) struct B5LoopMetadataExtension {
-    /// Four finite binary64 fields in serialized order.
+    /// Local rectangle coordinates U0, V0, U1, V1. The paired patch IDs
+    /// occupy controls 1 through 4; coordinates order within each patch.
     scalars: [FiniteReal; 4],
-    /// Six canonical one-byte compact controls in serialized order.
+    /// Canonical compact lead, U0/V0/U1/V1 patch IDs, and compact zero.
     controls: [u8; 6],
-    /// Six finite binary32 fields in serialized order.
+    /// Conservative Cartesian rectangle-image box, as X/Y/Z low/high pairs.
     floats: [f32; 6],
 }
 
@@ -7496,7 +7497,7 @@ fn loop_metadata(ctx: &DecodeContext<'_>, bytes: &[u8], edge_count: usize) -> Lo
                 controls[1..].copy_from_slice(extended.get(
                     b5_loop_numeric_terminal::TRAILING_CONTROLS..b5_loop_numeric_terminal::BOUNDS,
                 )?);
-                if controls.iter().any(|control| control % 4 != 1) {
+                if controls.iter().any(|control| control % 4 != 1) || controls[5] != 0x01 {
                     return None;
                 }
                 let mut view = View::over_retained(extended);
@@ -7507,6 +7508,12 @@ fn loop_metadata(ctx: &DecodeContext<'_>, bytes: &[u8], edge_count: usize) -> Lo
                     FiniteReal::new(view.f64_le()?)?,
                     FiniteReal::new(view.f64_le()?)?,
                 ];
+                // Canonical compact bytes preserve decoded patch-ID order.
+                if (controls[1], scalars[0].get()) > (controls[3], scalars[2].get())
+                    || (controls[2], scalars[1].get()) > (controls[4], scalars[3].get())
+                {
+                    return None;
+                }
                 view.seek(b5_loop_numeric_terminal::BOUNDS)?;
                 let floats = [
                     view.f32_le()?,
@@ -7516,7 +7523,9 @@ fn loop_metadata(ctx: &DecodeContext<'_>, bytes: &[u8], edge_count: usize) -> Lo
                     view.f32_le()?,
                     view.f32_le()?,
                 ];
-                if floats.iter().any(|value| !value.is_finite()) {
+                if floats.iter().any(|value| !value.is_finite())
+                    || floats.chunks_exact(2).any(|pair| pair[0] > pair[1])
+                {
                     return None;
                 }
                 Some(B5LoopMetadataExtension {

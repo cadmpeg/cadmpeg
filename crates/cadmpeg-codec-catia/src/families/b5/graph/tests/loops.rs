@@ -418,7 +418,7 @@ fn loop_metadata_accepts_exact_base_and_extended_forms() {
                     crate::test_support::test_b5::finite(4.25)
                 ],
                 controls: [0x0d, 0x05, 0x05, metadata_control, 0x05, 0x01],
-                floats: [1.0, -2.0, 3.5, 4.25, 5.5, -6.75],
+                floats: [-2.0, 1.0, 3.5, 4.25, -6.75, 5.5],
             })
         );
     }
@@ -535,7 +535,7 @@ fn loop_numeric_terminal_retains_all_six_canonical_controls() {
     for controls in [
         [0x0d, 0x05, 0x05, 0x09, 0x09, 0x01],
         [0x05, 0x05, 0x05, 0x05, 0x05, 0x01],
-        [0x01, 0xfd, 0x09, 0x15, 0x21, 0x01],
+        [0x01, 0x15, 0x09, 0xfd, 0x21, 0x01],
     ] {
         let mut bytes = extended_loop_metadata(0x05);
         let positions = [9, 42, 43, 44, 45, 46];
@@ -562,6 +562,60 @@ fn loop_numeric_terminal_retains_all_six_canonical_controls() {
         bytes.push(0x01);
         assert!(loop_metadata(&bytes, 1).is_none());
     }
+}
+
+#[test]
+fn loop_numeric_terminal_orders_patch_coordinates_and_cartesian_axis_pairs() {
+    let mut bytes = extended_loop_metadata(0x09);
+    bytes[10..18].copy_from_slice(&4.0_f64.to_le_bytes());
+    bytes[26..34].copy_from_slice(&1.0_f64.to_le_bytes());
+    assert!(
+        loop_metadata(&bytes, 1).is_some(),
+        "later U patch permits local reset"
+    );
+    bytes[44] = 0x05;
+    assert!(
+        loop_metadata(&bytes, 1).is_none(),
+        "same U patch rejects local reset"
+    );
+    bytes[42] = 0x09;
+    assert!(
+        loop_metadata(&bytes, 1).is_none(),
+        "U patch must not decrease"
+    );
+
+    let mut bytes = extended_loop_metadata(0x05);
+    bytes[18..26].copy_from_slice(&5.0_f64.to_le_bytes());
+    bytes[34..42].copy_from_slice(&1.0_f64.to_le_bytes());
+    assert!(
+        loop_metadata(&bytes, 1).is_none(),
+        "same V patch rejects local reset"
+    );
+    bytes[45] = 0x09;
+    assert!(
+        loop_metadata(&bytes, 1).is_some(),
+        "later V patch permits local reset"
+    );
+    bytes[43] = 0x0d;
+    assert!(
+        loop_metadata(&bytes, 1).is_none(),
+        "V patch must not decrease"
+    );
+
+    for offset in [47, 55, 63] {
+        let mut bytes = extended_loop_metadata(0x05);
+        bytes[offset..offset + 4].copy_from_slice(&10.0_f32.to_le_bytes());
+        assert!(
+            loop_metadata(&bytes, 1).is_none(),
+            "Cartesian low exceeds high"
+        );
+    }
+    let mut bytes = extended_loop_metadata(0x05);
+    bytes[46] = 0x05;
+    assert!(
+        loop_metadata(&bytes, 1).is_none(),
+        "terminal compact value must be zero"
+    );
 }
 
 #[test]

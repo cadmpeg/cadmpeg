@@ -49,7 +49,7 @@ fn extended_loop_metadata(metadata_control: u8) -> Vec<u8> {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
     bytes.extend_from_slice(&[0x05, 0x05, metadata_control, 0x05, 0x01]);
-    for value in [1.0_f32, -2.0, 3.5, 4.25, 5.5, -6.75] {
+    for value in [-2.0_f32, 1.0, 3.5, 4.25, -6.75, 5.5] {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
     bytes

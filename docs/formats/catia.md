@@ -710,9 +710,11 @@ The numeric object-loop terminal is exactly 62 bytes, relative to the end of the
 | Offset | Type | Field |
 | ---: | --- | --- |
 | `+0` | `u8` | compact lead control |
-| `+1` | `4×f64le` | four finite source scalars |
-| `+33` | `5×u8` | remaining compact controls |
-| `+38` | `6×f32le` | six finite source bound values |
+| `+1` | `4×f64le` | local coordinates U0, V0, U1, V1 |
+| `+33` | `5×u8` | patch IDs U0, V0, U1, V1, then compact zero |
+| `+38` | `6×f32le` | Cartesian X low/high, Y low/high, Z low/high |
+
+The four local coordinates and four compact patch identifiers form two surface-parameter corners: `((PatchU0,U0),(PatchV0,V0))` and `((PatchU1,U1),(PatchV1,V1))`. Each direction orders by patch identifier first, then local scalar within one patch. A local scalar can decrease across an increasing patch identifier. The compact field at `+37` is zero. The six finite binary32 values form three ordered axis pairs for a conservative Cartesian box of the whole limited surface rectangle. Preserve their stored bits; a fresh box requires the actual carrier, patch-aware limits and a conservative full-rectangle bound with outward binary32 rounding. The compact lead remains a separate retained control.
 
 Its first control can differ from `0d`, and its remaining controls can differ from `05 05 <odd> 05 01`. The complete terminal remains part of the selected object-loop frame. Compact construction-domain owners, zero-family A9 loops, E5 loops and trim-derived FBB cycles retain their own substrate grammar.
 

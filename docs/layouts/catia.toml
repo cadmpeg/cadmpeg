@@ -1946,18 +1946,18 @@ name = "scalars"
 offset = 1
 type = "f64[4]"
 source = "spec"
-anchor = "| `+1` | `4×f64le` | four finite source scalars |"
+anchor = "| `+1` | `4×f64le` | local coordinates U0, V0, U1, V1 |"
 
 [[record.field]]
 name = "trailing_controls"
 offset = 33
 type = "u8[5]"
 source = "spec"
-anchor = "| `+33` | `5×u8` | remaining compact controls |"
+anchor = "| `+33` | `5×u8` | patch IDs U0, V0, U1, V1, then compact zero |"
 
 [[record.field]]
 name = "bounds"
 offset = 38
 type = "f32[6]"
 source = "spec"
-anchor = "| `+38` | `6×f32le` | six finite source bound values |"
+anchor = "| `+38` | `6×f32le` | Cartesian X low/high, Y low/high, Z low/high |"

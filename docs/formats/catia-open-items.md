@@ -434,14 +434,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know its role to parse other framing branches.
 
-### OS-08. Class-`0x62` extended-metadata control
-
-**Question.** What does the odd extended-metadata control in a class-`0x62` record select?
-
-**Known.** The decoder retains the control and its bounded metadata.
-
-**Need.** We must know its role to interpret and write the metadata.
-
 ### OS-09. Vertex-incidence terminal controls
 
 **Question.** What is the semantic difference between terminal controls `00` and `04` in an object-stream vertex-incidence record?
@@ -535,14 +527,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** The float-packed decoder retains the control with its loop record.
 
 **Need.** We must know its role to classify and write the loop.
-
-### FV-07. Optional loop metadata
-
-**Question.** What does each of the ten optional numeric metadata fields in a float-packed loop represent?
-
-**Known.** The decoder retains the fields in source order.
-
-**Need.** We must know the roles to interpret and write the metadata.
 
 ### FV-09. External pole-grid ownership
 
