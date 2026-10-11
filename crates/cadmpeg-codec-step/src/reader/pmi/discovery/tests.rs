@@ -573,3 +573,5 @@ fn with_session<T>(
     }
     result
 }
+
+mod shared_graphs;
