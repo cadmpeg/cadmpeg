@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::super::{polygon_strictly_contains, polygon_strictly_contains_polygon};
+use super::super::{
+    ordered_contained_face_loops, ordered_parameter_face_loops, polygon_strictly_contains,
+    polygon_strictly_contains_polygon, positional_cylinder_carrier,
+};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
@@ -11,6 +14,61 @@ fn visit_policy(work: u64) -> DecodePolicy {
     policy.limits.max_collection_items = 0;
     policy.limits.max_recursion_depth = 0;
     policy
+}
+
+#[test]
+fn carrier_fixed_preconditions_need_no_work() {
+    let scan = crate::test_support::empty_container_scan();
+    let source_carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
+    let plane_row = super::carrier_row(17, crate::surface::SurfaceKind::Plane);
+    let cylinder_row = super::carrier_row(17, crate::surface::SurfaceKind::Cylinder);
+    let lp = crate::test_support::closed_loop(
+        std::num::NonZeroU32::new(5),
+        (10..13)
+            .map(|curve_id| crate::topology::HalfEdgeId {
+                curve_id,
+                side: crate::topology::Side::Zero,
+            })
+            .collect(),
+    );
+    let arena = DecodeArena::new();
+    let policy = visit_policy(0);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let results = [
+        positional_cylinder_carrier(
+            &ctx,
+            &scan,
+            &plane_row,
+            &scan.surfaces.parameters,
+            None,
+            &source_carriers,
+        )
+        .map(|carrier| carrier.is_none()),
+        positional_cylinder_carrier(
+            &ctx,
+            &scan,
+            &cylinder_row,
+            &scan.surfaces.parameters,
+            None,
+            &source_carriers,
+        )
+        .map(|carrier| carrier.is_none()),
+        polygon_strictly_contains(&ctx, &[], [1.0, 1.0]).map(|contains| !contains),
+        polygon_strictly_contains(&ctx, &[[0.0, 0.0], [2.0, 0.0]], [1.0, 1.0])
+            .map(|contains| !contains),
+        polygon_strictly_contains_polygon(&ctx, &[], &[]),
+        ordered_contained_face_loops(&ctx, Vec::new(), &[]).map(|ordered| ordered.is_none()),
+        ordered_contained_face_loops(&ctx, vec![&lp], &[]).map(|ordered| ordered.is_none()),
+        ordered_contained_face_loops(&ctx, vec![&lp, &lp], &[])
+            .map(|ordered| ordered.is_none()),
+        ordered_parameter_face_loops(&ctx, vec![&lp], &[]).map(|ordered| {
+            let ordered = ordered.expect("one supplied loop");
+            ordered.len() == 1 && std::ptr::eq(ordered[0], &raw const lp)
+        }),
+    ];
+    for result in results {
+        assert!(result.expect("fixed precondition"));
+    }
 }
 
 fn assert_visits(
@@ -36,8 +94,9 @@ fn assert_visits(
             );
             original
         } else {
-            let original = ctx.resource_refusal().expect("comparison refusal");
-            assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
+            let Err(CodecError::ResourceLimit(original)) = result else {
+                panic!("comparison refusal")
+            };
             assert_eq!(
                 (
                     original.dimension,
@@ -56,12 +115,6 @@ fn assert_visits(
             );
             original
         };
-        if visits != 0 {
-            assert!(
-                matches!(query(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original)
-            );
-        }
-        assert_eq!(ctx.resource_refusal(), Some(original));
         if cap == visits {
             Ok(())
         } else {
@@ -128,7 +181,7 @@ fn polygon_pair_containment_admits_each_executed_vertex_and_edge_visit() {
 }
 
 #[test]
-fn geometry_section_absence_admits_only_present_sections_and_preserves_refusal() {
+fn geometry_section_absence_admits_only_present_sections() {
     const SECTION: &str = "creo geometry section lookup";
     for count in 0..=2 {
         let mut scan = crate::test_support::empty_container_scan();

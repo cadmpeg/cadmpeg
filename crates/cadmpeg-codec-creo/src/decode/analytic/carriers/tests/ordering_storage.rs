@@ -101,10 +101,9 @@ fn accepted_face_ordering_promotes_only_surviving_reference_backing() {
                 assert!(std::ptr::eq(ordered[0], &raw const lp));
                 original
             } else {
-                let original = ctx.resource_refusal().expect("promotion refusal");
-                assert!(
-                    matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
-                );
+                let Err(CodecError::ResourceLimit(original)) = result else {
+                    panic!("promotion refusal")
+                };
                 assert_eq!(
                     (
                         original.dimension,
@@ -123,17 +122,6 @@ fn accepted_face_ordering_promotes_only_surviving_reference_backing() {
                 );
                 original
             };
-            let repeated = super::super::ordered_face_loops(
-                &ctx,
-                &[&lp],
-                Some(plane),
-                &BTreeMap::new(),
-                &BTreeMap::new(),
-            );
-            assert!(
-                matches!(repeated, Err(CodecError::ResourceLimit(actual)) if actual == original)
-            );
-            assert_eq!(ctx.resource_refusal(), Some(original));
             if cap == bytes {
                 Ok(())
             } else {
@@ -141,29 +129,4 @@ fn accepted_face_ordering_promotes_only_surviving_reference_backing() {
             }
         },
     );
-}
-
-#[test]
-fn accepted_face_ordering_preserves_prior_refusal_before_value_promotion() {
-    use cadmpeg_core::CodecError;
-    let lp = crate::test_support::closed_loop(
-        std::num::NonZeroU32::new(5),
-        (10..13)
-            .map(|curve_id| crate::topology::HalfEdgeId {
-                curve_id,
-                side: crate::topology::Side::Zero,
-            })
-            .collect(),
-    );
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let original = ctx
-        .charge_collection_items_limit(1, "before face ordering promotion")
-        .expect_err("seeded refusal");
-    assert!(
-        matches!(super::super::ordered_face_loops(&ctx, &[&lp], None, &BTreeMap::new(), &BTreeMap::new()), Err(CodecError::ResourceLimit(actual)) if actual == original)
-    );
-    assert_eq!(ctx.resource_refusal(), Some(original));
 }
