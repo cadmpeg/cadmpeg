@@ -1553,3 +1553,43 @@ fn counterbore_disagreement_scans_skip_unvisited_candidate_tails() {
         }
     }
 }
+
+#[test]
+fn rendered_nominal_ambiguity_skips_unvisited_values() {
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+    use cadmpeg_ir::scalar::PositiveReal;
+    assert!(approximately_equal(39_999_999.97, 40_000_000.0));
+    assert!(approximately_equal(40_000_000.03, 40_000_000.0));
+    assert!(!approximately_equal(3.999999997, 4.000000003));
+    let value = |value| RenderedDimension {
+        kind: RenderedDimensionKind::Diameter,
+        value: PositiveReal::new(value).unwrap(),
+        decimal_places: 2,
+    };
+    let mut prefix_work = None;
+    for tail in [1, 128] {
+        let mut values = vec![value(39_999_999.97), value(40_000_000.03)];
+        values.extend((0..tail).map(|_| value(1.0)));
+        let query = |ctx: &DecodeContext<'_>| rendered_nominal(ctx, PositiveReal::new(4.0).unwrap(), 2,
+            RenderedDimensionKind::Diameter, &values);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let probe = RefusalProbe::arm(ResourceDimension::WorkUnits,
+            "scan SWIFT rendered dimension values", Some(u64::try_from(values.len()).unwrap()));
+        assert!(query(&ctx).unwrap().is_none());
+        drop(probe);
+        ctx.finish_session().unwrap();
+        let error = crate::test_support::work_refusal_at("scan SWIFT rendered dimension values", |ctx| query(ctx));
+        let CodecError::ResourceLimit(limit) = error else { panic!("rendered nominal step boundary"); };
+        assert_eq!(limit.additional, 1);
+        let error = crate::test_support::work_refusal_at("measure ambiguous rendered nominal work", |ctx| {
+            assert!(query(ctx)?.is_none());
+            ctx.copy_retained_text("x", "measure ambiguous rendered nominal work")
+        });
+        let CodecError::ResourceLimit(limit) = error else { panic!("rendered nominal work measurement"); };
+        if let Some(expected) = prefix_work { assert_eq!(limit.used, expected); }
+        else { prefix_work = Some(limit.used); }
+    }
+}
