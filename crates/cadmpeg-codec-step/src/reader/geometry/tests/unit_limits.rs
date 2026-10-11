@@ -90,7 +90,9 @@ fn document_refusal(records: &str, collection_limit: u64, with_context: bool) ->
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("source fits policy");
     let result =
-        super::super::document_unit_scale(&exchange, super::super::UnitScaleKind::Length, &ctx);
+        super::super::document_unit_scale(&exchange, super::super::UnitScaleKind::Length, &ctx,
+ &mut super::super::scalar_resolver(&exchange, &ctx),
+);
     assert_eq!(
         with_context,
         records.contains("GLOBAL_UNIT_ASSIGNED_CONTEXT")
@@ -162,7 +164,9 @@ fn context_length_scales_refuse_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("source fits policy");
     assert!(matches!(
-        super::super::context_unit_scales(2, &exchange, &ctx),
+        super::super::context_unit_scales(2, &exchange, &ctx,
+ &mut super::super::scalar_resolver(&exchange, &ctx),
+),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_context_length_scales"
@@ -184,7 +188,9 @@ fn context_angle_scales_refuse_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("source fits policy");
     assert!(matches!(
-        super::super::context_unit_scales(2, &exchange, &ctx),
+        super::super::context_unit_scales(2, &exchange, &ctx,
+ &mut super::super::scalar_resolver(&exchange, &ctx),
+),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_context_angle_scales"
@@ -310,7 +316,10 @@ fn uncertainty_refusal(operation: &'static str) -> CodecError {
             policy.limits.max_collection_items = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
                 .expect("source fits policy");
-            super::super::linear_uncertainty(&exchange, &ctx).map(|_| ())
+            let mut scalar = super::super::scalar_resolver(&exchange, &ctx);
+            super::super::linear_uncertainty(&exchange, &ctx,
+ &mut scalar,
+).map(|_| ())
         },
     )
 }
@@ -352,7 +361,10 @@ fn document_unit_failure_does_not_charge_unvisited_records() {
         policy.limits.max_work_units = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
             .expect("source fits policy");
-        super::super::document_unit_scale(&exchange, super::super::UnitScaleKind::Length, &ctx)
+        let mut scalar = super::super::scalar_resolver(&exchange, &ctx);
+        super::super::document_unit_scale(&exchange, super::super::UnitScaleKind::Length, &ctx,
+ &mut scalar,
+)
     };
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::WorkUnits,
