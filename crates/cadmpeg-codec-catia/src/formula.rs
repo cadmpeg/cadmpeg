@@ -31,17 +31,25 @@ pub(crate) fn transfer_parameters<'ctx>(
     // Indexes, candidate keys, conflicts and program snapshots are dropped
     // before this function returns.
     let mut scratch = ctx.reserve_scoped(0, "catia_formula_scratch")?;
-    let entities = scratch.with_storage(|| {
-        ctx.collect_hash_map(
-            native
-                .entity_records
-                .iter()
-                .map(|entity| (entity.id.as_str(), entity)),
-            "catia_formula_entity_index",
-        )
-    })?;
-    let entity_by_id = |id: &str| -> Result<_, cadmpeg_core::CodecError> {
-        Ok(ctx.get_hash_map(&entities, id, ENTITY_LOOKUP)?.copied())
+    let mut entity_storage = ctx.reserve_scoped(0, "catia_formula_entity_index")?;
+    let mut entities = None;
+    let mut entity_by_id = |id: &str| -> Result<_, cadmpeg_core::CodecError> {
+        let index = match &entities {
+            Some(index) => index,
+            None => {
+                let index = entity_storage.with_storage(|| {
+                    ctx.collect_hash_map(
+                        native
+                            .entity_records
+                            .iter()
+                            .map(|entity| (entity.id.as_str(), entity)),
+                        "catia_formula_entity_index",
+                    )
+                })?;
+                entities.insert(index)
+            }
+        };
+        Ok(ctx.get_hash_map(index, id, ENTITY_LOOKUP)?.copied())
     };
     let mut candidates = BTreeMap::<ParameterId, FormulaParameterCandidate<'_>>::new();
     let mut conflicting_inputs = BTreeSet::<ParameterId>::new();
@@ -115,7 +123,7 @@ pub(crate) fn transfer_parameters<'ctx>(
             let Some(entity) = input
                 .entity
                 .entity()
-                .map(entity_by_id)
+                .map(&mut entity_by_id)
                 .transpose()?
                 .flatten()
             else {
@@ -195,7 +203,7 @@ pub(crate) fn transfer_parameters<'ctx>(
             .expression_entity
             .reference
             .entity()
-            .map(entity_by_id)
+            .map(&mut entity_by_id)
             .transpose()?
             .flatten()
         else {
@@ -261,7 +269,12 @@ pub(crate) fn transfer_parameters<'ctx>(
                 all_inputs_typed = false;
                 continue;
             };
-            let Some(entity) = parameter.entity().map(entity_by_id).transpose()?.flatten() else {
+            let Some(entity) = parameter
+                .entity()
+                .map(&mut entity_by_id)
+                .transpose()?
+                .flatten()
+            else {
                 all_inputs_complete = false;
                 all_inputs_typed = false;
                 continue;
@@ -372,7 +385,7 @@ pub(crate) fn transfer_parameters<'ctx>(
             .reference
             .entity()
             .filter(|_| transferable_expression.is_some())
-            .map(entity_by_id)
+            .map(&mut entity_by_id)
             .transpose()?
             .flatten()
         {
@@ -547,7 +560,7 @@ pub(crate) fn transfer_parameters<'ctx>(
         let Some(output_entity) = instance
             .output_entity()
             .and_then(|output| output.entity())
-            .map(entity_by_id)
+            .map(&mut entity_by_id)
             .transpose()?
             .flatten()
         else {
@@ -556,7 +569,7 @@ pub(crate) fn transfer_parameters<'ctx>(
         let Some(expression_entity) = instance
             .relation_expression
             .as_deref()
-            .map(entity_by_id)
+            .map(&mut entity_by_id)
             .transpose()?
             .flatten()
         else {
@@ -578,7 +591,7 @@ pub(crate) fn transfer_parameters<'ctx>(
             },
             expression,
             inputs,
-            &entities,
+            &mut entity_by_id,
         )?
         else {
             continue;
@@ -822,6 +835,8 @@ pub(crate) fn transfer_parameters<'ctx>(
             definition_chain_parameter_count += 1;
         }
     }
+    drop(entities);
+    drop(entity_storage);
     let mut annotation_builder = AnnotationBuilder::resume(std::mem::take(annotations));
     for candidate in ctx.admit_iter(&parameters, "catia_formula_annotation_visits")? {
         resource::derived_annotation(
@@ -1734,23 +1749,21 @@ fn legacy_relation_evaluation<'a>(
             let Some(parameter) = crate::native::relation_symbol_parameter(ctx, symbol)? else {
                 continue;
             };
-            if legacy_symbol_matches_input(ctx, symbol, parameter)? {
-                relation_scratch.with_storage(|| {
+            relation_scratch.with_storage(|| {
+                ctx.insert_hash_set(
+                    &mut symbol_parameters,
+                    parameter,
+                    "catia_legacy_formula_symbol_index",
+                )?;
+                if symbol.len() != parameter.len() {
                     ctx.insert_hash_set(
                         &mut symbol_parameters,
-                        parameter,
+                        symbol.as_str(),
                         "catia_legacy_formula_symbol_index",
                     )?;
-                    if symbol.len() != parameter.len() {
-                        ctx.insert_hash_set(
-                            &mut symbol_parameters,
-                            symbol.as_str(),
-                            "catia_legacy_formula_symbol_index",
-                        )?;
-                    }
-                    Ok::<_, cadmpeg_core::CodecError>(())
-                })?;
-            }
+                }
+                Ok::<_, cadmpeg_core::CodecError>(())
+            })?;
         }
     }
     if symbol_parameters.is_empty() && !relation.inputs.is_empty() {
@@ -1830,34 +1843,6 @@ fn legacy_relation_evaluation<'a>(
             evaluated,
             dependencies,
         }))
-}
-
-fn legacy_symbol_matches_input(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    symbol: &str,
-    input: &str,
-) -> Result<bool, cadmpeg_core::CodecError> {
-    const OPERATION: &str = "catia_legacy_symbol_ordinal_visits";
-    let Some(suffix) = ctx.strip_prefix(symbol, input, "catia_legacy_symbol_prefix_checks")? else {
-        return Ok(false);
-    };
-    let suffix = ctx.trim_start_matches(
-        suffix,
-        |character| Ok(character.is_ascii_whitespace()),
-        "catia_legacy_symbol_suffix_whitespace",
-    )?;
-    if suffix.is_empty() {
-        return Ok(true);
-    }
-    let Some(ordinal) = suffix.strip_prefix('/') else {
-        return Ok(false);
-    };
-    Ok(!ordinal.is_empty()
-        && ctx.all_by(
-            ordinal.as_bytes(),
-            |byte| Ok(byte.is_ascii_digit()),
-            OPERATION,
-        )?)
 }
 
 fn legacy_output_assignment_expression<'a>(
@@ -2271,7 +2256,12 @@ fn relation_program_output_candidate<'a, 'ctx>(
     program_entities: RelationProgramEntities<'a>,
     expression: &crate::native::CatiaRelationExpression,
     inputs: &[crate::native::CatiaRelationProgramInput],
-    entities: &HashMap<&str, &crate::native::entity_record::CatiaEntityRecord>,
+    entity_by_id: &mut impl FnMut(
+        &str,
+    ) -> Result<
+        Option<&'a crate::native::entity_record::CatiaEntityRecord>,
+        cadmpeg_core::CodecError,
+    >,
 ) -> Result<
     Option<(FormulaProgramCandidate<'a>, FormulaParameterCandidate<'ctx>)>,
     cadmpeg_core::CodecError,
@@ -2319,7 +2309,7 @@ fn relation_program_output_candidate<'a, 'ctx>(
         let Some(input_entity) = input
             .entity
             .entity()
-            .map(|id| ctx.get_hash_map(entities, id, "catia_formula_entity_lookup"))
+            .map(&mut *entity_by_id)
             .transpose()?
             .flatten()
         else {

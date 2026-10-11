@@ -1014,7 +1014,7 @@ fn formula_parameter_entity_limit_refuses_before_model_extend() {
 }
 
 #[test]
-fn formula_unscoped_entity_index_refuses_before_empty_transfer() {
+fn formula_unresolved_scope_skips_entity_index_collection() {
     let bytes = standard_catpart_with_typed_formula_inputs(
         4,
         false,
@@ -1025,7 +1025,7 @@ fn formula_unscoped_entity_index_refuses_before_empty_transfer() {
     );
     let native = crate::native::CatiaNative::decode(&bytes);
     let mut ir = CadIr::empty();
-    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+    let unindexed = crate::test_support::with_collection_limit(0, |ctx| {
         crate::formula::transfer_parameters(
             ctx,
             &mut ir,
@@ -1034,11 +1034,10 @@ fn formula_unscoped_entity_index_refuses_before_empty_transfer() {
             &crate::decode::ModelingGraphScope::Unresolved,
         )
         .map(crate::formula::FormulaTransfer::detached)
-    });
-    assert!(
-        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_formula_entity_index")
-    );
+    })
+    .expect("an unresolved scope makes no entity lookup or collection");
+    assert!(unindexed.consumed_object_records.is_empty());
+    assert!(ir.model.parameters.is_empty());
     let admitted = crate::test_support::with_service_context(|ctx| {
         crate::formula::transfer_parameters(
             ctx,
@@ -1626,7 +1625,7 @@ fn decode_rejects_a_formula_with_ambiguous_input_binding() {
 }
 
 #[test]
-fn formula_entity_index_source_propagates_the_caller_work_refusal() {
+fn formula_entity_source_propagates_the_caller_work_refusal() {
     let bytes = standard_catpart_with_typed_formula_inputs(
         4,
         false,
@@ -1648,9 +1647,9 @@ fn formula_entity_index_source_propagates_the_caller_work_refusal() {
                 &crate::decode::ModelingGraphScope::Unresolved,
             )
         else {
-            panic!("entity index source must refuse before scanning")
+            panic!("entity source must refuse before scanning")
         };
-        assert_eq!(limit.operation, "catia_formula_entity_index");
+        assert_eq!(limit.operation, "catia_formula_entity_visits");
         assert_eq!(ctx.resource_refusal(), Some(limit));
         assert!(ir.model.parameters.is_empty());
     });
