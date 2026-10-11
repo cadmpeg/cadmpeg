@@ -7,11 +7,20 @@ use cadmpeg_ir::features::{DesignParameter, DimensionDisplay, Feature, Parameter
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::{
-    Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintDefinitionInput, SketchConstraintId, SketchEntity, SketchEntityId, SketchGeometry,
-    SketchGeometryDefinition,
+    Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintDefinitionInput,
+    SketchConstraintId, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition,
 };
 
-fn diameter_fixture(role: &str, diameter: f64) -> (Sketch, Feature, SketchEntity, DesignParameter, FeatureInputLane) {
+fn diameter_fixture(
+    role: &str,
+    diameter: f64,
+) -> (
+    Sketch,
+    Feature,
+    SketchEntity,
+    DesignParameter,
+    FeatureInputLane,
+) {
     let (sketch, feature, lane) = planar_fixture();
     let mut parameter = parameter();
     parameter.owner = Some(feature.id.clone());
@@ -89,7 +98,8 @@ fn rejected_reference_diameter_releases_tentative_identity_storage() {
             entities: vec![entity.id().clone()],
             parameter: None,
             operands: Vec::new(),
-        }).unwrap(),
+        })
+        .unwrap(),
         name: None,
         driving: None,
         active: None,
@@ -116,10 +126,14 @@ fn rejected_reference_diameter_releases_tentative_identity_storage() {
             std::slice::from_ref(&entity),
             std::slice::from_ref(&parameter),
             std::slice::from_ref(&lane),
-        ).unwrap();
-        assert_eq!(constraints, [existing.clone()]);
-        ctx.reserve_scoped(EMPTY_INPUT_WORKSPACE_BYTES, "reuse rejected diameter workspace")
-            .unwrap();
+        )
+        .unwrap();
+        assert_eq!(constraints.as_slice(), std::slice::from_ref(&existing));
+        ctx.reserve_scoped(
+            EMPTY_INPUT_WORKSPACE_BYTES,
+            "reuse rejected diameter workspace",
+        )
+        .unwrap();
     }
     ctx.finish_session().unwrap();
 }
