@@ -274,3 +274,24 @@ fn sketch_equation_projection_is_scoped_and_preserves_wire_rows() {
         .expect_err("read live backing");
     assert_eq!(resource.used, 0);
 }
+
+#[test]
+fn sketch_point_absence_is_free() {
+    let definition = definition(false);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut storage = ctx
+        .reserve_scoped(0, "point projection storage")
+        .expect("empty storage");
+    assert!(
+        sketch_section_point_records(&ctx, &definition, &mut storage)
+            .expect("absent variables")
+            .is_empty()
+    );
+}
