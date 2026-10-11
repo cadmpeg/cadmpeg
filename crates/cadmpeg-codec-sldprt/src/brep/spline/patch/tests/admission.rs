@@ -335,23 +335,37 @@ fn truncated_patch_surface_wrapper_skips_descriptor_index() {
 }
 
 
+fn assert_unpaired_patch_knots(multiplicity_bytes: &[u8]) {
+    let mut bytes = f64_array(0x80, 40, &vec![0.0; 100_000]);
+    bytes.extend_from_slice(multiplicity_bytes);
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &probe_policy()).unwrap();
+    let operation = "read Parasolid patch scalar values";
+    let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+    assert_eq!(unique_surface_knot_span(
+        &ctx, &bytes, &Arrays::default(), (40, 41), 2, &[0.0, 1.0], &[2, 2]
+    ).unwrap(), None);
+    assert!(matches!(ctx.charge_work(1, operation), Err(CodecError::ResourceLimit(_))));
+    drop(probe);
+}
+
 #[test]
 fn patch_knots_without_paired_multiplicity_counts_skip_scalar_payloads() {
-    for multiplicities in [None, Some([2, 2, 0])] {
-        let mut bytes = f64_array(0x80, 40, &vec![0.0; 100_000]);
-        if let Some(values) = multiplicities {
-            bytes.extend(u16_array(41, &values));
-        }
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &probe_policy()).unwrap();
-        let operation = "read Parasolid patch scalar values";
-        let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-        assert_eq!(unique_surface_knot_span(
-            &ctx, &bytes, &Arrays::default(), (40, 41), 2, &[0.0, 1.0], &[2, 2]
-        ).unwrap(), None);
-        assert!(matches!(ctx.charge_work(1, operation), Err(CodecError::ResourceLimit(_))));
-        drop(probe);
-    }
+    assert_unpaired_patch_knots(&[]);
+}
+
+#[test]
+fn disjoint_patch_multiplicity_counts_skip_scalar_payloads() {
+    assert_unpaired_patch_knots(&u16_array(41, &[2, 2, 0]));
+}
+
+#[test]
+fn truncated_patch_multiplicity_payload_skips_scalar_payloads() {
+    let mut multiplicities = u16_array(41, &[2, 2]);
+    let body = super::super::array_body(&multiplicities, 0, 0x7f).unwrap();
+    let count = body + crate::layout::bspline_array_header::COUNT;
+    multiplicities[count..count + 4].copy_from_slice(&100_000_u32.to_be_bytes());
+    assert_unpaired_patch_knots(&multiplicities);
 }
 
 #[test]
@@ -420,28 +434,34 @@ fn two_multiplicity_locations_make_one_patch_knot_span_ambiguous() {
     ).unwrap(), None);
 }
 
-#[test]
-fn surface_patch_skips_framed_index_storage() {
+fn assert_framed_patch_index_unused(operation: &'static str) {
     let bytes = nurbs_surface_carrier(10, 11, 20);
     let baseline = cadmpeg_test_support::service_decode_context();
     let carriers = scan_surface_carriers(&baseline, &bytes, &mut Vec::new()).unwrap();
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) = carriers[&10].geometry.solved() else {
         panic!("surface");
     };
-    for operation in ["collect Parasolid scalar arrays", "collect Parasolid integer arrays"] {
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &probe_policy()).unwrap();
-        let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-        let mut patched = bytes.clone();
-        assert_eq!(patch_nurbs_surface(&ctx, &mut patched, 0, surface, surface, 0.001).unwrap(), Some(()));
-        assert_eq!(patched, bytes);
-        assert!(matches!(ctx.charge_work(1, operation), Err(CodecError::ResourceLimit(_))));
-        drop(probe);
-    }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &probe_policy()).unwrap();
+    let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+    let mut patched = bytes.clone();
+    assert_eq!(patch_nurbs_surface(&ctx, &mut patched, 0, surface, surface, 0.001).unwrap(), Some(()));
+    assert_eq!(patched, bytes);
+    assert!(matches!(ctx.charge_work(1, operation), Err(CodecError::ResourceLimit(_))));
+    drop(probe);
 }
 
 #[test]
-fn rejected_surface_spans_skip_replacement_pole_construction() {
+fn surface_patch_skips_framed_scalar_index_storage() {
+    assert_framed_patch_index_unused("collect Parasolid scalar arrays");
+}
+
+#[test]
+fn surface_patch_skips_framed_integer_index_storage() {
+    assert_framed_patch_index_unused("collect Parasolid integer arrays");
+}
+
+fn assert_rejected_surface_span_skips_replacement(reference: usize) {
     let original = nurbs_surface_carrier(10, 11, 20);
     let baseline = cadmpeg_test_support::service_decode_context();
     let carriers = scan_surface_carriers(&baseline, &original, &mut Vec::new()).unwrap();
@@ -454,42 +474,55 @@ fn rejected_surface_spans_skip_replacement_pole_construction() {
             cadmpeg_ir::math::Point3::new(f64::MAX, 0.0, 0.0)
         ).unwrap()), &baseline
     ).unwrap().unwrap();
-    for reference in [0, 3, 4] {
-        let mut bytes = original.clone();
-        let body = bytes.windows(2).position(|w| w == [0, 0x7e]).unwrap() + 2;
-        let at = body + crate::layout::bspline_surface_descriptor::ARRAY_REFS + reference * 2;
-        bytes[at..at + 2].copy_from_slice(&65000_u16.to_be_bytes());
-        let operation = "test completed rejected surface patch";
-        let boundary = |new| {
-            let error = cadmpeg_test_support::refusal::resource_limit_at(
-                ResourceDimension::WorkUnits, operation, |cap| {
-                    let arena = DecodeArena::new();
-                    let mut policy = probe_policy();
-                    policy.limits.max_work_units = cap;
-                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-                    let mut patched = bytes.clone();
-                    assert_eq!(patch_nurbs_surface(&ctx, &mut patched, 0, surface, new, 2.0)?, None);
-                    assert_eq!(patched, bytes);
-                    ctx.charge_work(1, operation)
-                },
-            );
-            let CodecError::ResourceLimit(limit) = error else {
-                panic!("completed rejection boundary");
-            };
-            limit.used
+    let mut bytes = original.clone();
+    let body = bytes.windows(2).position(|w| w == [0, 0x7e]).unwrap() + 2;
+    let at = body + crate::layout::bspline_surface_descriptor::ARRAY_REFS + reference * 2;
+    bytes[at..at + 2].copy_from_slice(&65000_u16.to_be_bytes());
+    let operation = "test completed rejected surface patch";
+    let boundary = |new| {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits, operation, |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = probe_policy();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let mut patched = bytes.clone();
+                assert_eq!(patch_nurbs_surface(&ctx, &mut patched, 0, surface, new, 2.0)?, None);
+                assert_eq!(patched, bytes);
+                ctx.charge_work(1, operation)
+            },
+        );
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("completed rejection boundary");
         };
-        let cap = boundary(surface);
-        // An overflowing replacement would stop serialization at its first
-        // pole. Neither replacement grid is read after native span rejection.
-        assert_eq!(boundary(&replacement), cap);
-        let arena = DecodeArena::new();
-        let mut policy = probe_policy();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert_eq!(patch_nurbs_surface(&ctx, &mut bytes.clone(), 0, surface, surface, 2.0).unwrap(), None);
-        ctx.finish_session().unwrap();
-    }
+        limit.used
+    };
+    let cap = boundary(surface);
+    // An overflowing replacement would stop serialization at its first
+    // pole. Neither replacement grid is read after native span rejection.
+    assert_eq!(boundary(&replacement), cap);
+    let arena = DecodeArena::new();
+    let mut policy = probe_policy();
+    policy.limits.max_work_units = cap;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(patch_nurbs_surface(&ctx, &mut bytes.clone(), 0, surface, surface, 2.0).unwrap(), None);
+    ctx.finish_session().unwrap();
     let mut bytes = original.clone();
     assert_eq!(patch_nurbs_surface(&baseline, &mut bytes, 0, surface, &replacement, 2.0).unwrap(), None);
     assert_eq!(bytes, original);
+}
+
+#[test]
+fn rejected_surface_spans_skip_replacement_pole_construction() {
+    assert_rejected_surface_span_skips_replacement(0);
+}
+
+#[test]
+fn rejected_u_knot_span_skips_replacement_pole_construction() {
+    assert_rejected_surface_span_skips_replacement(3);
+}
+
+#[test]
+fn rejected_v_knot_span_skips_replacement_pole_construction() {
+    assert_rejected_surface_span_skips_replacement(4);
 }
