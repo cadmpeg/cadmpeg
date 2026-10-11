@@ -320,7 +320,7 @@ fn native_design_inventory_excludes_alias_rows_inside_catalog_entries() {
 
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
-            crate::object_graph::surface_aliases(ctx, &bytes)
+            crate::object_graph::surface_aliases(ctx, &bytes, &[])
         })
         .expect("service budget")
         .len(),
@@ -757,7 +757,7 @@ fn alias_surface_resolution_refuses_collection_limit() {
 fn native_alias_row_id_refuses_retained_limit() {
     let bytes = surface_alias_stream();
     let rows = crate::test_support::with_service_context(|ctx| {
-        crate::object_graph::surface_aliases(ctx, &bytes)
+        crate::object_graph::surface_aliases(ctx, &bytes, &[])
     })
     .expect("service resource budget");
     let row = rows.first().expect("alias row").clone();
@@ -814,7 +814,7 @@ fn pre_route_surface_alias_map_closes_only_unique_group_targets() {
             &cadmpeg_core::decode::DecodePolicy::service(),
         )
         .expect("alias fixture fits the service input limit");
-        crate::object_graph::surface_alias_tag_map(&ctx, bytes)
+        crate::object_graph::surface_alias_tag_map(&ctx, bytes, &[])
             .expect("alias fixture fits the service resource limits")
     }
     let mut bytes = grouped_surface_alias_stream(0, 0x1234, 0x148);
@@ -1021,4 +1021,59 @@ fn native_overlap_filter_refuses_before_inventory_mutation() {
     });
     assert_eq!(graphs.len(), 1);
     assert_eq!(blocks.len(), 1);
+}
+
+#[test]
+fn storage_property_members_do_not_enter_the_surface_alias_inventory() {
+    use crate::storage_property::MemberState;
+    let mut bytes = b"FINJPL  ".to_vec();
+    bytes.extend(0x8e_u32.to_be_bytes());
+    bytes.extend([0; 8]);
+    for (label, state, slot) in [
+        (b'1', 0x0001_0001_u32, 25_u32),
+        (b'2', 0x0001_0000, 281),
+        (b'3', 1, 25),
+    ] {
+        bytes.extend([5, 0, 1, 0, 0, 0, label, 0, 0]);
+        bytes.extend(state.to_le_bytes());
+        if state != 1 {
+            bytes.extend(0x133_u32.to_le_bytes());
+        }
+        bytes.extend([1, 0, 4, 0]);
+        bytes.extend(0x69ab_u32.to_le_bytes());
+        bytes.extend([0, 3, 0]);
+        bytes.extend(slot.to_le_bytes());
+        bytes.extend([0x21, 0, 0, 0, 0x17]);
+    }
+    bytes.extend([8, 0, 4, 0, 0, 0, b'G', b'C', b'.', b'3']);
+    bytes.extend([1, 0, 0, 1, 0, 4, 0]);
+    bytes.extend(0x40add_u32.to_le_bytes());
+    bytes.extend([0, 3, 0]);
+    bytes.extend(25_u32.to_le_bytes());
+    bytes.extend([0x1f, 0, 0, 0, 0xda]);
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert!(
+        native.alias_rows.is_empty(),
+        "storage membership is not a surface alias or a history-record ordinal"
+    );
+    assert_eq!(native.storage_property_members.len(), 3);
+    assert_eq!(
+        native
+            .storage_property_members
+            .iter()
+            .map(|m| (m.state, m.slot, m.label.as_deref()))
+            .collect::<Vec<_>>(),
+        [
+            (MemberState::Present, 25, Some("1")),
+            (MemberState::Absent, 281, Some("2")),
+            (MemberState::Direct, 25, Some("3"))
+        ]
+    );
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native.store(&mut namespace).expect("store storage members");
+    let loaded = crate::native::CatiaNative::load(&namespace).expect("load storage members");
+    assert_eq!(
+        loaded.storage_property_members,
+        native.storage_property_members
+    );
 }

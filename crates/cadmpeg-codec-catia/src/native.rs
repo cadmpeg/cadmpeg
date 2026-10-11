@@ -66,6 +66,7 @@ use crate::object_graph::{
     self, AliasGroupMembership, AliasLead, HeadToken, ListItem, ObjectPayload, PayloadField,
     PayloadSubtype,
 };
+use crate::storage_property::{self, CatiaStoragePropertyMember};
 use crate::value_block;
 use crate::wire::records::{ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedRecord};
 
@@ -7928,6 +7929,10 @@ define_catia_arenas! {
         /// Exact outer alias-row cores in source order.
         pub(crate) stored;
     },
+    storage_property_members: CatiaStoragePropertyMember {
+        /// Complete bounded storage-property members in source order.
+        pub(crate) stored;
+    },
     catalog_entries: CatiaCatalogEntry {
         => catalogs.entries;
     },
@@ -9816,6 +9821,8 @@ impl CatiaNative {
             None => Vec::new(),
         };
         let parsed_finjpl = container::finjpl_segments(ctx, &container::BodyExtent::whole(bytes))?;
+        let storage_property_members = storage_property::parse(ctx, bytes, &parsed_finjpl)?;
+        let parsed_alias_rows = object_graph::surface_aliases(ctx, bytes, &parsed_finjpl)?;
         let mut finjpl_segments = Vec::new();
         for (index, segment) in parsed_finjpl.into_iter().enumerate() {
             let id = ctx.format_retained(
@@ -9850,7 +9857,7 @@ impl CatiaNative {
             "catia_native_paired_graph_roots",
         )?;
         let mut alias_rows = Vec::new();
-        for row in object_graph::surface_aliases(ctx, bytes)? {
+        for row in parsed_alias_rows {
             let row = CatiaAliasRow::from_source(ctx, row)?;
             ctx.push_vec(&mut alias_rows, row, "catia_native_alias_rows")?;
         }
@@ -10211,6 +10218,7 @@ impl CatiaNative {
             consolidated_vertex_identities(ctx, &consolidated_edge_nodes)?;
         Ok(Self {
             alias_rows,
+            storage_property_members,
             catalogs,
             consolidated_circles,
             consolidated_class61_records,

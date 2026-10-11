@@ -174,14 +174,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must identify complete native set-owner, ordered collection, capture-membership, active-view, and geometry-target incidences. Validate each relation independently against producer collections and properties. A named camera, shared structural ancestry, numeric equality, or a display state cannot supply a missing relation. Document design configurations require their own model-variant production.
 
-### DI-29. Exact alias lead `0x00000133`
-
-**Question.** Which storage role does the fixed outer-alias lead value `0x00000133` select?
-
-**Known.** The lead precedes a complete fixed alias core. Its F1 ordinal links the alias tag to one object-graph record and, when present, that record's owner design object. The ordinal identifies design-history storage and does not identify a consolidated freeform carrier.
-
-**Need.** We must identify the lead's storage role before assigning semantics beyond the retained alias and object-graph relations.
-
 ## 3. Standard nested `V5_CFV2`
 
 ### SN-01. `a5 03 32` header type codes

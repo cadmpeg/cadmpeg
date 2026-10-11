@@ -125,7 +125,9 @@ pub fn object_graph(data: &[u8]) {
         return;
     };
     let _probe = crate::object_graph::parse(&ctx, data);
-    let _probe = crate::object_graph::surface_aliases(&ctx, data);
+    let _probe =
+        crate::container::finjpl_segments(&ctx, &crate::container::BodyExtent::whole(data))
+            .and_then(|segments| crate::object_graph::surface_aliases(&ctx, data, &segments));
 }
 
 /// Exercise `7C02` string-catalog parsing.

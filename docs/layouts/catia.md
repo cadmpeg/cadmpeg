@@ -529,6 +529,45 @@ Spec §7.3 · layout: byte offsets · size: 86 B
 | 72 | 12 | `support_references` | `bytes[12]` | little | spec | The final two identities retain support incidences. |
 | 84 | 2 | `terminal_pair` | `bytes[2]` | little | spec | 86 bytes, with 14 distinct source-ordered identities. |
 
+## `storage_member_core`
+
+Spec §7.6 · layout: byte offsets · size: 20 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `marker` | `bytes[4]` | little | spec | The marker is at core offset zero |
+| 4 | 4 | `tag` | `u32` | little | spec | the stored tag at offset four |
+| 8 | 1 | `flag` | `u8` | little | spec | flag at offset eight |
+| 9 | 2 | `prefix` | `bytes[2]` | little | spec | retained prefix at offset nine |
+| 11 | 4 | `slot` | `u32` | little | spec | slot at offset eleven |
+| 15 | 5 | `tail` | `bytes[5]` | little | spec | retained tail at offset fifteen |
+
+## `storage_member_direct_prefix`
+
+Spec §7.6 · layout: byte offsets · size: 4 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `lead` | `u32` | little | spec | A direct numbered member has prefix `01 00 00 00` |
+
+## `storage_member_nullable_prefix`
+
+Spec §7.6 · layout: byte offsets · size: 8 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `state` | `u32` | little | spec | with state at prefix offset zero |
+| 4 | 4 | `discriminator` | `u32` | little | spec | discriminator at offset four |
+
+## `storage_member_number_prefix`
+
+Spec §7.6 · layout: byte offsets · size: 6 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `inclusive_length` | `u16` | little | spec | the inclusive `u16le` length is at offset zero |
+| 2 | 4 | `digit_count` | `u32` | little | spec | the `u32le` digit count is at offset two |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

@@ -713,11 +713,12 @@ impl SurfaceAlias {
 pub(crate) fn surface_aliases(
     ctx: &DecodeContext<'_>,
     data: &[u8],
+    segments: &[crate::container::FinjplSegment],
 ) -> Result<Vec<SurfaceAlias>, CodecError> {
     const MARKER: [u8; 4] = [0x01, 0x00, 0x04, 0x00];
     let mut aliases = Vec::new();
     for (pos, bytes) in data.windows(MARKER.len()).enumerate() {
-        if bytes != MARKER {
+        if bytes != MARKER || crate::storage_property::is_member(ctx, data, pos, segments)? {
             continue;
         }
         let Some(row) = pos.checked_sub(alias_row::MARKER) else {
@@ -733,8 +734,7 @@ pub(crate) fn surface_aliases(
             continue;
         };
         let group = alias_group_membership(ctx, data, pos)?;
-        if lead_raw & 0xff != 1 && !matches!(lead_raw, 0x8e | 0x8f | 0x0000_0133) && group.is_none()
-        {
+        if lead_raw & 0xff != 1 && !matches!(lead_raw, 0x8e | 0x8f) && group.is_none() {
             continue;
         }
         let f1 = [
@@ -775,6 +775,7 @@ pub(crate) fn surface_aliases(
 pub(crate) fn surface_alias_tag_map(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
+    segments: &[crate::container::FinjplSegment],
 ) -> Result<HashMap<u32, Option<u32>>, cadmpeg_core::CodecError> {
     let paired_object_graph_roots = entity_table::paired_object_graph_roots(ctx, data)?;
     let mut object_graphs = parse_all_with_paired_roots(ctx, data, &paired_object_graph_roots)?;
@@ -800,7 +801,7 @@ pub(crate) fn surface_alias_tag_map(
         "catia_alias_filtered_catalogs",
     )?;
 
-    let mut rows = surface_aliases(ctx, data)?;
+    let mut rows = surface_aliases(ctx, data, segments)?;
     rows.retain(|row| {
         let row_start = row.row_pos;
         !object_graphs

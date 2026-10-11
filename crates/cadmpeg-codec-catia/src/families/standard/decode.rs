@@ -1994,7 +1994,7 @@ pub(in crate::families) fn try_decode_standard(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<FamilyOutput>, cadmpeg_core::CodecError> {
     let surface_alias_tags = if matches!(scan.variant, Variant::StandardNested) {
-        crate::object_graph::surface_alias_tag_map(ctx, &scan.data)?
+        crate::object_graph::surface_alias_tag_map(ctx, &scan.data, &scan.finjpl_segments)?
     } else {
         HashMap::new()
     };

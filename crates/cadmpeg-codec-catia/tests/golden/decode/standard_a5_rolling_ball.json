@@ -461,6 +461,7 @@
         "preview_images": [],
         "reference_signature_cohorts": [],
         "schema_configuration_row_chains": [],
+        "storage_property_members": [],
         "unknowns": [
           {
             "id": "catia:payload:unknown#brep-stream",

@@ -743,3 +743,9 @@ current levels require those matrices and representative fixtures.
 The current public score is L1. Capabilities above L1, including
 standard-nested geometry, are extras until every cumulative gate through
 the target level passes for every admitted layout.
+
+Storage-property members in bounded type-`0x8e` FINJPL segments are retained in
+`storage_property_members`, separately from `alias_rows`. The native records
+preserve direct or nullable state, complete four-byte allocation slots, framed
+numbered labels, raw tags, unassigned bytes, and containing segment identities.
+Their labels and slot low bytes do not assign history records or face ordinals.

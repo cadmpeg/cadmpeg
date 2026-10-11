@@ -121,7 +121,7 @@ A parallel representation of faces/edges/vertices indexed by the same topologica
 - **Freeform surface cores:** `<tag_u24le> 00 00 00 <10×f32le> <sign_i8>` (47 bytes), `sign ∈ {+1=0x01, −1=0xff}` (per-face orientation). The ten f32 are `f[0:3]` AABB center, `f[3:6]` AABB half-extents, `f[6:9]` bounding-sphere center, `f[9]` bounding-sphere radius of the **trimmed** face; the per-coordinate containment `|f[i]−f[6+i]| + f[3+i] ≤ f[9]` holds within three binary32 ulps at the largest magnitude among those four coordinate fields (a larger violation is invalid; the AABB-corner-containment reading does not apply). These cores interleave in face order with analytic surface records (`00 33 <kind>`) at non-uniform stride; a fixed 47-byte stride spans only the freeform prefix before the first analytic record.
 - **Analytic surface cores:** each `00 33 <kind>` carrier parameter body is followed by the same ten-f32 trimmed-face bounds and one orientation byte. The same three-ULP per-coordinate containment rule applies. The bounds begin at marker-relative `+3` for plane, `+27` for cylinder and cone, `+19` for sphere, and `+31` for torus.
 - **Freeform curve rows:** `60 <tag_u24le> 00 00 00 <face_ref> <face_ref>` (count tracks the freeform-curve subset).
-- **`01 00 04 00 <tag_u32le>` alias:** a freeform surface tag can have one matching fixed alias row. The four-byte little-endian lead value is `0x00000001`, `0x0000008e`, `0x0000008f`, or the exact unclassified form `0x00000133`; grouped rows admit other retained leads through their closed allocation header. The third F1 byte is a one-based object-graph record ordinal and links the tag to design-history storage. The row does not name a consolidated `a5 03 34` carrier. Vertex tags carry no such alias.
+- **`01 00 04 00 <tag_u32le>` alias:** a freeform surface tag can have one matching fixed alias row. The four-byte little-endian lead value is `0x00000001`, `0x0000008e`, `0x0000008f`; grouped rows admit other retained leads through their closed allocation header. The third F1 byte is a one-based object-graph record ordinal and links the tag to design-history storage. The row does not name a consolidated `a5 03 34` carrier. Vertex tags carry no such alias. Bounded storage-property members use the separate framing in §7.6.
 
 ---
 
@@ -985,12 +985,11 @@ Resolve every in-range selector to the exact entry in the block's source schema 
 surface_alias_lead := <u32le whose low byte is 01>
                     | 8e 00 00 00
                     | 8f 00 00 00
-                    | 33 01 00 00
 alias_row         := surface_alias_lead 01 00 04 00 <tag:u32le> <flag:u8>
                      <f1:3B> <f2:u32le> <f3:u32le>
 ```
 
-The low 24 bits of `tag` are the persistent roster tag; the high byte remains part of the stored word. A literal `01 00 04 00` without `surface_alias_lead` or a complete `alias_group_header` and `alias_group_storage` is not an alias row. The same literal occurs in outer container declarations, counted allocation tables, and framed geometry payloads. An alias core overlapping a complete `7C02`, `7C08`, or `7C0B` extent is framed field or payload data rather than an outer roster row. Exact lead values `0x0000008e` and `0x0000008f` are ordinal-linked storage forms. Exact lead value `0x00000133` is an unclassified fixed alias form. `f1[2]` is a one-based `7C09` ordinal in the unique object graph physically contained by the declared `CATPrtCont` stream. An in-range ordinal links the row to that exact record. When the selected record carries an `owner_ref`, the row also links to the corresponding design object. A missing or multiply matching part-container graph, ordinal zero, and values beyond that graph's record population carry no object-record or design-object link. The complete lead, flag, F1, F2, and F3 fields remain attached to the alias row.
+The low 24 bits of `tag` are the persistent roster tag; the high byte remains part of the stored word. A literal `01 00 04 00` without `surface_alias_lead` or a complete `alias_group_header` and `alias_group_storage` is not an alias row. The same literal occurs in outer container declarations, counted allocation tables, and framed geometry payloads. A source-closed storage-property member (§7.6) is separate from an alias row. An alias core overlapping a complete `7C02`, `7C08`, or `7C0B` extent is framed field or payload data rather than an outer roster row. Exact lead values `0x0000008e` and `0x0000008f` are ordinal-linked storage forms. `f1[2]` is a one-based `7C09` ordinal in the unique object graph physically contained by the declared `CATPrtCont` stream. An in-range ordinal links the row to that exact record. When the selected record carries an `owner_ref`, the row also links to the corresponding design object. A missing or multiply matching part-container graph, ordinal zero, and values beyond that graph's record population carry no object-record or design-object link. The complete lead, flag, F1, F2, and F3 fields remain attached to the alias row.
 
 Grouped alias rows carry this header before a bounded storage prefix:
 
@@ -1013,6 +1012,20 @@ Each `bit` is exactly zero or one. `prototype` identifies the node kind and `gro
 A grouped row whose four-byte word immediately before `01 00 04 00` is `01 00 00 00` selects its own persistent surface-roster tag. A grouped row whose preceding word is `00 00 00 00` selects the tag of the unique `01 00 00 00` row with the same exact `(prototype, group_id)`. It selects no surface tag when that group has zero or multiple `01 00 00 00` rows. Other preceding words do not enter this group closure.
 
 ---
+
+### 7.6 `CATStorageProperty` member rows
+
+Type-`0x0000008e` FINJPL segments contain storage-property members. A numbered label is `<length+4:u16le> <length:u32le> <ASCII digits[length]> 00 00`. The numbered-label header is six bytes: the inclusive `u16le` length is at offset zero and the `u32le` digit count is at offset two. The two lengths must agree and the digits must end immediately before the row prefix. A direct numbered member has prefix `01 00 00 00`. A nullable surface member has prefix `<state:u32le> 33 01 00 00`, where state `0x00010001` declares a present carrier and state `0x00010000` declares an absent carrier. Nullable members can have an unassigned prefix instead of a numbered label. Both prefixes are followed by this exact twenty-byte core:
+
+```text
+storage_member_core := 01 00 04 00 <tag:u32le> <flag:u8>
+                       <prefix:2B> <slot:u32le> <tail:5B>
+```
+
+The marker is at core offset zero, the stored tag at offset four, flag at offset eight, retained prefix at offset nine, slot at offset eleven, and retained tail at offset fifteen. The direct prefix is four bytes; the nullable prefix is eight bytes, with state at prefix offset zero and discriminator at offset four. The discriminator selects nullable framing; the preceding state selects presence. A present nullable member's stored tag selects its separately serialized surface carrier; an absent member selects no carrier. The production admits analytic and freeform carrier substrates. It supplies no design-history owner or geometric construction.
+
+The complete four-byte slot spans core offsets eleven through fourteen. Its low byte alone is not a record identity. Numbered labels and storage order do not assign face ordinals. The flag, two-byte prefix, and five-byte tail remain unassigned. These members are separate from outer alias rows. A discriminator overlapping a complete framed string is string data; the final `33` byte of `GC.3` followed by `01 00 00` does not form a nullable prefix.
+
 
 ## 8. Zero-entity `a9 03` variant
 

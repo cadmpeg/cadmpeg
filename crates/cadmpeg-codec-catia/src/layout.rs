@@ -339,3 +339,55 @@ pub(crate) mod fbb_face_row {
     /// Offset of `red` (`u8`). Spec §7.4.
     pub(crate) const RED: usize = 7;
 }
+
+/// Byte offsets for the `storage_member_core` record.
+///
+/// Spec §7.6. Record length 20 B.
+pub(crate) mod storage_member_core {
+    /// Record length in bytes. Spec §7.6.
+    pub(crate) const LEN: usize = 20;
+    /// Offset of `tag` (`u32`, little-endian). Spec §7.6.
+    pub(crate) const TAG: usize = 4;
+    /// Offset of `flag` (`u8`). Spec §7.6.
+    pub(crate) const FLAG: usize = 8;
+    /// Offset of `prefix` (`bytes[2]`). Spec §7.6.
+    pub(crate) const PREFIX: usize = 9;
+    /// Offset of `slot` (`u32`, little-endian). Spec §7.6.
+    pub(crate) const SLOT: usize = 11;
+    /// Offset of `tail` (`bytes[5]`). Spec §7.6.
+    pub(crate) const TAIL: usize = 15;
+}
+
+/// Byte offsets for the `storage_member_direct_prefix` record.
+///
+/// Spec §7.6. Record length 4 B.
+pub(crate) mod storage_member_direct_prefix {
+    /// Record length in bytes. Spec §7.6.
+    pub(crate) const LEN: usize = 4;
+    /// Offset of `lead` (`u32`, little-endian). Spec §7.6.
+    pub(crate) const LEAD: usize = 0;
+}
+
+/// Byte offsets for the `storage_member_nullable_prefix` record.
+///
+/// Spec §7.6. Record length 8 B.
+pub(crate) mod storage_member_nullable_prefix {
+    /// Record length in bytes. Spec §7.6.
+    pub(crate) const LEN: usize = 8;
+    /// Offset of `state` (`u32`, little-endian). Spec §7.6.
+    pub(crate) const STATE: usize = 0;
+    /// Offset of `discriminator` (`u32`, little-endian). Spec §7.6.
+    pub(crate) const DISCRIMINATOR: usize = 4;
+}
+
+/// Byte offsets for the `storage_member_number_prefix` record.
+///
+/// Spec §7.6. Record length 6 B.
+pub(crate) mod storage_member_number_prefix {
+    /// Record length in bytes. Spec §7.6.
+    pub(crate) const LEN: usize = 6;
+    /// Offset of `inclusive_length` (`u16`, little-endian). Spec §7.6.
+    pub(crate) const INCLUSIVE_LENGTH: usize = 0;
+    /// Offset of `digit_count` (`u32`, little-endian). Spec §7.6.
+    pub(crate) const DIGIT_COUNT: usize = 2;
+}

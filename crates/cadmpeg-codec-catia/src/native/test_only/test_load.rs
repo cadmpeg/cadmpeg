@@ -556,6 +556,7 @@ impl CatiaNative {
             ));
         }
         let preview_images = expected_preview_images;
+        let storage_property_members = namespace.arena_as("storage_property_members")?;
         let alias_rows: Vec<CatiaAliasRow> = namespace.arena_as("alias_rows")?;
         let mut consolidated_circles: Vec<CatiaConsolidatedCircle> =
             namespace.arena_as("consolidated_circles")?;
@@ -711,6 +712,7 @@ impl CatiaNative {
         validate_owner_chart_support_aliases(&consolidated_owner_packets, &alias_rows)?;
         Ok(Self {
             alias_rows,
+            storage_property_members,
             catalogs,
             consolidated_circles,
             consolidated_class61_records,

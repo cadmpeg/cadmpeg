@@ -93,7 +93,7 @@ fn parse_all_with_paired_roots(
 }
 
 fn surface_aliases(data: &[u8]) -> Vec<super::SurfaceAlias> {
-    crate::test_support::with_service_context(|ctx| super::surface_aliases(ctx, data))
+    crate::test_support::with_service_context(|ctx| super::surface_aliases(ctx, data, &[]))
         .expect("alias fixture fits the service limits")
 }
 
@@ -159,8 +159,8 @@ fn grouped_alias_storage_refuses_retained_limit() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
         .expect("alias fixture fits the input limit");
-    let error =
-        super::surface_aliases(&ctx, &bytes).expect_err("group storage requires a retained copy");
+    let error = super::surface_aliases(&ctx, &bytes, &[])
+        .expect_err("group storage requires a retained copy");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "catia_alias_group_storage"));
@@ -1573,16 +1573,10 @@ fn outer_alias_parser_classifies_both_ordinal_linked_storage_leads() {
 }
 
 #[test]
-fn outer_alias_parser_retains_exact_unclassified_0133_lead() {
-    use crate::object_graph::AliasLead;
-
+fn outer_alias_parser_rejects_0133_without_nullable_storage_framing() {
     let mut bytes = surface_alias_stream();
     bytes[..4].copy_from_slice(&0x0000_0133u32.to_le_bytes());
-    let [row] = surface_aliases(&bytes)
-        .try_into()
-        .expect("one unclassified alias row");
-    assert_eq!(row.lead(), AliasLead::Unclassified(0x0000_0133));
-    assert_eq!(row.entity_record_ordinal(), 7);
+    assert!(surface_aliases(&bytes).is_empty());
 }
 
 #[test]
