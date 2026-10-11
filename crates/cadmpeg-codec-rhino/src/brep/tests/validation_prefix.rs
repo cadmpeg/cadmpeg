@@ -141,3 +141,32 @@ fn empty_brep_ring_route_preserves_original_session_refusal() {
     );
     assert_eq!(ctx.resource_refusal(), Some(first));
 }
+
+#[test]
+fn invalid_brep_validation_releases_resolved_topology_and_local_warnings() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 64 * 1024;
+    policy.limits.max_materialized_bytes = 64 * 1024;
+    let ctx = DecodeContext::new(&arena, &policy, false);
+    // Raw input and pre-validation diagnostics have a separate owner.
+    ctx.charge_retained(17, "test surviving raw input").unwrap();
+    for _ in 0..8 {
+        let mut raw = super::one_face_raw();
+        raw.faces[0].surface = -1;
+        raw.vertices[0].index = 9;
+        let error = super::super::ValidatedRawBrep::validate(&ctx, &mut raw, None)
+            .expect_err("invalid face surface after resolved reference allocation");
+        assert!(matches!(error,
+            GeometryError::Malformed(crate::chunks::FramingError::Structural { offset, message })
+                if offset == raw.faces[0].source_range.start
+                    && message == "face surface reference is invalid"));
+        assert_eq!(raw.faces[0].surface, -1);
+    }
+    ctx.charge_retained(policy.limits.max_retained_bytes - 17, "test retained reuse")
+        .expect("only surviving raw input remains charged");
+    let scratch = ctx.reserve_scoped(policy.limits.max_materialized_bytes, "test scratch reuse")
+        .expect("validation scratch was released");
+    drop(scratch);
+    ctx.finish_session().expect("recoverable validation leaves no refusal");
+}
