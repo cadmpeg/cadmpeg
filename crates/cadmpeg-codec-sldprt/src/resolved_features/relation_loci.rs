@@ -877,12 +877,19 @@ pub(super) fn relation_definition(
             marker_point_locus(ctx, marker, markers_by_id, loci_by_marker)
         }
     };
+    // Resolver cells own scratch identities; returned identities have separate storage.
+    let cache_storage =
+        std::cell::RefCell::new(ctx.reserve_scoped(0, "SLDPRT relation resolver identities")?);
     let point_cache: [OnceCell<Option<SketchLocus>>; 2] = Default::default();
     let point = |operand: usize| -> Result<Option<SketchLocus>, CodecError> {
         match point_cache.get(operand) {
             Some(cell) => memoized(
                 cell,
-                || resolve_point(operand),
+                || {
+                    cache_storage
+                        .borrow_mut()
+                        .with_storage(|| resolve_point(operand))
+                },
                 |locus| {
                     locus
                         .as_ref()
@@ -913,7 +920,11 @@ pub(super) fn relation_definition(
         match curve_cache.get(operand) {
             Some(cell) => memoized(
                 cell,
-                || resolve_curve(operand),
+                || {
+                    cache_storage
+                        .borrow_mut()
+                        .with_storage(|| resolve_curve(operand))
+                },
                 |entity| {
                     entity
                         .as_ref()
@@ -924,8 +935,21 @@ pub(super) fn relation_definition(
             None => resolve_curve(operand),
         }
     };
-    if relation_uses_solver_points(relation) && (point(0)?.is_none() || point(1)?.is_none()) {
-        return Ok(None);
+    if relation_uses_solver_points(relation) {
+        for operand in [0, 1] {
+            let resolved = memoized(
+                &point_cache[operand],
+                || {
+                    cache_storage
+                        .borrow_mut()
+                        .with_storage(|| resolve_point(operand))
+                },
+                |point| Ok(point.is_some()),
+            )?;
+            if !resolved {
+                return Ok(None);
+            }
+        }
     }
     let dynamic_point_pair = if dynamic {
         match relation.family {

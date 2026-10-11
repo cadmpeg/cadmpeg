@@ -31,9 +31,9 @@ use super::typed_relations::{
 };
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
-    FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
-    FeatureInputRelationInstance, FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity,
-    SketchInputKind, SketchRelationKind,
+    FeatureInputClass, FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind,
+    FeatureInputRelationFamily, FeatureInputRelationInstance, FeatureInputScalar,
+    FeatureInputScalarRole, SketchInputEntity, SketchInputKind, SketchRelationKind,
 };
 use cadmpeg_core::convert::f64_from_i64;
 use cadmpeg_core::decode::{
@@ -2231,8 +2231,10 @@ pub(crate) fn project_relation_solved_line_geometry(
                                         operand.entity_index,
                                         if prefer_marker_endpoints {
                                             "resolve SLDPRT solved-line point markers"
-                                        } else {
+                                        } else if operand_index == 0 {
                                             "reuse SLDPRT solved-line point markers"
+                                        } else {
+                                            "reuse SLDPRT second solved-line point markers"
                                         },
                                     )?
                                     else {
@@ -3431,7 +3433,10 @@ pub(super) fn implicit_circle_marker<'a>(
 #[derive(Clone, Copy)]
 pub(super) enum DeclaredEntityHandleOwner<'a> {
     Absent,
-    Unique(&'a FeatureInputLane),
+    Unique {
+        lane: &'a FeatureInputLane,
+        class: &'a FeatureInputClass,
+    },
     Ambiguous,
 }
 
@@ -3479,7 +3484,7 @@ pub(super) fn declared_entity_handle_owner<'a>(
             if owner.is_some() {
                 return Ok(true);
             }
-            owner = Some(lane);
+            owner = Some((lane, class));
             Ok(false)
         },
         "scan SLDPRT declared entity-handle lanes",
@@ -3487,10 +3492,11 @@ pub(super) fn declared_entity_handle_owner<'a>(
     if ambiguous {
         return Ok(DeclaredEntityHandleOwner::Ambiguous);
     }
-    Ok(owner.map_or(
-        DeclaredEntityHandleOwner::Absent,
-        DeclaredEntityHandleOwner::Unique,
-    ))
+    Ok(
+        owner.map_or(DeclaredEntityHandleOwner::Absent, |(lane, class)| {
+            DeclaredEntityHandleOwner::Unique { lane, class }
+        }),
+    )
 }
 
 /// Resolve the circular-dimension center carried by a slot handle.
@@ -3513,8 +3519,10 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
     let Some(entity_ref) = operand.entity_ref.as_deref() else {
         return Ok(None);
     };
-    let DeclaredEntityHandleOwner::Unique(lane) =
-        declared_entity_handle_owner(ctx, lanes, operand)?
+    let DeclaredEntityHandleOwner::Unique {
+        lane,
+        class: entity_class,
+    } = declared_entity_handle_owner(ctx, lanes, operand)?
     else {
         return Ok(None);
     };
@@ -3547,37 +3555,6 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
     let Some(center_indices) = slot_center_indices(lane, marker_offset)? else {
         return Ok(None);
     };
-    let class_ref = ctx
-        .find_by(
-            &lane.references,
-            |reference| {
-                ctx.equal(
-                    reference.id.as_str(),
-                    operand.reference_ref.as_str(),
-                    DIMENSIONED_HANDLE_OPERATION,
-                )
-            },
-            "find SLDPRT declared slot-handle reference",
-        )?
-        .and_then(|reference| reference.class_ref.as_deref());
-    let Some(class_ref) = class_ref else {
-        return Ok(None);
-    };
-    let entity_class = ctx.find_by(
-        &lane.classes,
-        |class| ctx.equal(class.id.as_str(), class_ref, DIMENSIONED_HANDLE_OPERATION),
-        "find SLDPRT declared slot-handle class",
-    )?;
-    let Some(entity_class) = entity_class else {
-        return Ok(None);
-    };
-    if !ctx.equal(
-        entity_class.name.as_str(),
-        "sgEntHandle",
-        "match SLDPRT slot entity-handle class",
-    )? {
-        return Ok(None);
-    }
     let bounds = (|| -> Result<_, cadmpeg_core::CodecError> {
         let mut classes = lane.classes.iter();
         let mut next_slot = || {
@@ -3728,7 +3705,7 @@ pub(super) fn declared_entity_handle_indexed_circle_dimension_center<'a>(
     {
         return Ok(None);
     }
-    let DeclaredEntityHandleOwner::Unique(lane) =
+    let DeclaredEntityHandleOwner::Unique { lane, .. } =
         declared_entity_handle_owner(ctx, lanes, operand)?
     else {
         return Ok(None);
@@ -3836,7 +3813,7 @@ pub(super) fn declared_entity_handle_point_dimension_center<'a>(
     if !matches!(operand.kind, FeatureInputOperandKind::Native(_)) {
         return Ok(None);
     }
-    let DeclaredEntityHandleOwner::Unique(lane) =
+    let DeclaredEntityHandleOwner::Unique { lane, .. } =
         declared_entity_handle_owner(ctx, lanes, operand)?
     else {
         return Ok(None);
@@ -3968,7 +3945,7 @@ pub(super) fn declared_entity_handle_circular_marker<'a>(
     if !expected_radius.is_finite() || expected_radius <= 0.0 {
         return Ok(None);
     }
-    let DeclaredEntityHandleOwner::Unique(lane) =
+    let DeclaredEntityHandleOwner::Unique { lane, .. } =
         declared_entity_handle_owner(ctx, lanes, operand)?
     else {
         return Ok(None);
@@ -4079,7 +4056,7 @@ pub(super) fn declared_entity_handle_has_resolved_pair(
     feature: &str,
     operand: &FeatureInputOperand,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let DeclaredEntityHandleOwner::Unique(lane) =
+    let DeclaredEntityHandleOwner::Unique { lane, .. } =
         declared_entity_handle_owner(ctx, lanes, operand)?
     else {
         return Ok(false);
@@ -4102,7 +4079,7 @@ pub(super) fn declared_entity_handle_point_is_declared_radial(
     let Some(entity_ref) = operand.entity_ref.as_deref() else {
         return Ok(false);
     };
-    let DeclaredEntityHandleOwner::Unique(lane) =
+    let DeclaredEntityHandleOwner::Unique { lane, .. } =
         declared_entity_handle_owner(ctx, lanes, operand)?
     else {
         return Ok(false);
@@ -4522,34 +4499,37 @@ pub(crate) fn project_relation_bindings(
                 .transpose()?
                 .unwrap_or(false);
             let native_kind = relation_native_kind(relation.family);
-            let typed_definition = match relation.family {
-                FeatureInputRelationFamily::PointPointHorizontalDistance
-                | FeatureInputRelationFamily::PointPointVerticalDistance => {
-                    profile_axis_for_relation(
-                        ctx,
-                        relation,
-                        ctx.get_hash_map(
-                            &transforms,
-                            relation.feature_ref.as_str(),
-                            "resolve SLDPRT planar relation transforms",
-                        )?
-                        .map(Vec::as_slice),
-                    )?
-                    .map(|profile_axis| {
-                        relation_definition(
-                            ctx,
-                            relation,
-                            parameter,
-                            sketch,
-                            index,
-                            Some(profile_axis),
-                        )
+            let (typed_definition, typed_storage) =
+                ctx.with_scoped_storage("SLDPRT tentative relation definition", || {
+                    Ok::<_, cadmpeg_core::CodecError>(match relation.family {
+                        FeatureInputRelationFamily::PointPointHorizontalDistance
+                        | FeatureInputRelationFamily::PointPointVerticalDistance => {
+                            profile_axis_for_relation(
+                                ctx,
+                                relation,
+                                ctx.get_hash_map(
+                                    &transforms,
+                                    relation.feature_ref.as_str(),
+                                    "resolve SLDPRT planar relation transforms",
+                                )?
+                                .map(Vec::as_slice),
+                            )?
+                            .map(|profile_axis| {
+                                relation_definition(
+                                    ctx,
+                                    relation,
+                                    parameter,
+                                    sketch,
+                                    index,
+                                    Some(profile_axis),
+                                )
+                            })
+                            .transpose()?
+                            .flatten()
+                        }
+                        _ => relation_definition(ctx, relation, parameter, sketch, index, None)?,
                     })
-                    .transpose()?
-                    .flatten()
-                }
-                _ => relation_definition(ctx, relation, parameter, sketch, index, None)?,
-            };
+                })?;
             let mut typed_inactive = None;
             let typed_definition = match typed_definition {
                 Some(definition) if reference_parameter => {
@@ -4564,56 +4544,63 @@ pub(crate) fn project_relation_bindings(
                 }
                 definition => definition,
             };
-            let definition = if let Some(definition) = typed_definition {
-                definition
+            let (definition, definition_storage) = if let Some(definition) = typed_definition {
+                (definition, typed_storage)
             } else {
+                drop(typed_storage);
                 if existing.is_some() {
                     continue;
                 }
-                let entities = relation_marker_entities(
-                    ctx,
-                    ctx.admit_iter(
+                ctx.with_scoped_storage("SLDPRT native relation definition", || {
+                    let entities = relation_marker_entities(
+                        ctx,
+                        ctx.admit_iter(
+                            &relation.operands,
+                            "resolve SLDPRT planar relation operands",
+                        )?
+                        .filter_map(|operand| operand.entity_ref.as_deref()),
+                        markers_by_id,
+                        &loci_by_marker,
+                    )?;
+                    let mut operands = Vec::new();
+                    for operand in ctx.admit_iter(
                         &relation.operands,
-                        "resolve SLDPRT planar relation operands",
-                    )?
-                    .filter_map(|operand| operand.entity_ref.as_deref()),
-                    markers_by_id,
-                    &loci_by_marker,
-                )?;
-                let mut operands = Vec::new();
-                for operand in ctx.admit_iter(
-                    &relation.operands,
-                    "collect SLDPRT planar relation operands",
-                )? {
-                    let native_ref = operand
-                        .entity_ref
-                        .as_deref()
-                        .map(|reference| {
-                            ctx.format_retained(
-                                format_args!("{reference}"),
-                                "copy SLDPRT planar relation operand reference",
-                            )
-                        })
-                        .transpose()?;
-                    ctx.reserve_vec(&mut operands, 1, "collect SLDPRT planar relation operands")?;
-                    operands.push(SketchNativeOperand {
-                        native_kind: operand_kind_name(ctx, operand.kind)?,
-                        field: None,
-                        object_index: Some(u32::from(operand.entity_index)),
-                        native_ref,
-                    });
-                }
-                SketchConstraintDefinitionInput::Native {
-                    native_kind,
-                    native_state: None,
-                    native_flags: None,
-                    native_properties: std::collections::BTreeMap::new(),
-                    entities,
-                    parameter: parameter
-                        .map(|parameter| copy_relation_parameter_id(ctx, &parameter.id))
-                        .transpose()?,
-                    operands,
-                }
+                        "collect SLDPRT planar relation operands",
+                    )? {
+                        let native_ref = operand
+                            .entity_ref
+                            .as_deref()
+                            .map(|reference| {
+                                ctx.format_retained(
+                                    format_args!("{reference}"),
+                                    "copy SLDPRT planar relation operand reference",
+                                )
+                            })
+                            .transpose()?;
+                        ctx.reserve_vec(
+                            &mut operands,
+                            1,
+                            "collect SLDPRT planar relation operands",
+                        )?;
+                        operands.push(SketchNativeOperand {
+                            native_kind: operand_kind_name(ctx, operand.kind)?,
+                            field: None,
+                            object_index: Some(u32::from(operand.entity_index)),
+                            native_ref,
+                        });
+                    }
+                    Ok::<_, cadmpeg_core::CodecError>(SketchConstraintDefinitionInput::Native {
+                        native_kind,
+                        native_state: None,
+                        native_flags: None,
+                        native_properties: std::collections::BTreeMap::new(),
+                        entities,
+                        parameter: parameter
+                            .map(|parameter| copy_relation_parameter_id(ctx, &parameter.id))
+                            .transpose()?,
+                        operands,
+                    })
+                })?
             };
             let inactive = match typed_inactive {
                 Some(inactive) => inactive,
@@ -4667,7 +4654,7 @@ pub(crate) fn project_relation_bindings(
                     projected.definition.kind(),
                     SketchConstraintDefinitionInput::Native { .. }
                 ) {
-                    constraints[index] = projected;
+                    constraints[index] = definition_storage.commit_value(projected)?;
                 }
             } else {
                 let operation = "index SLDPRT planar relation constraints";
@@ -4685,7 +4672,7 @@ pub(crate) fn project_relation_bindings(
                     )
                 })?;
                 ctx.reserve_vec(constraints, 1, "append SLDPRT planar relation constraint")?;
-                constraints.push(projected);
+                constraints.push(definition_storage.commit_value(projected)?);
             }
         }
         for marker in ctx.admit_iter(

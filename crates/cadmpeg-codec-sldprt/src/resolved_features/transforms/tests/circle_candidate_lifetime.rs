@@ -167,6 +167,51 @@ fn circle_candidates_refuse_live_scoring_storage_and_stay_sticky() {
 }
 
 #[test]
+fn circle_candidates_refuse_scored_vector_copy_overlap() {
+    const OPERATION: &str = "score SLDPRT compatible marker transforms";
+    let (sketch, surfaces) = fixture();
+    let (before_growth, overlap) = materialized_peak();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        OPERATION,
+        |cap| {
+            // Raise actual refusals to locate the final live peak. Capacity growth
+            // and relocation have the same size and operation, so a size probe
+            // cannot distinguish them. The helper replays only the final boundary.
+            let mut limit = if cap == u64::MAX { 0 } else { cap };
+            let mut peak = None;
+            loop {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_materialized_bytes = limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result =
+                    dimensioned_circle_surface_transforms(&ctx, &sketch, &surfaces, &CIRCLES, 1.0);
+                match result {
+                    Err(CodecError::ResourceLimit(refusal)) if cap == u64::MAX => {
+                        assert_eq!(refusal.dimension, ResourceDimension::MaterializedBytes);
+                        let need = refusal.used.checked_add(refusal.additional).unwrap();
+                        assert!(need > limit);
+                        limit = need;
+                        peak = Some(CodecError::ResourceLimit(refusal));
+                    }
+                    Ok(_) if cap == u64::MAX => {
+                        break Err(peak.expect("scoring has a live allocation peak"));
+                    }
+                    result => break result,
+                }
+            }
+        },
+    );
+    let CodecError::ResourceLimit(boundary) = error else {
+        panic!("scored-vector relocation must refuse");
+    };
+    assert_eq!(boundary.used, before_growth);
+    assert_eq!(boundary.additional, overlap);
+    assert_eq!(boundary.limit, before_growth + overlap - 1);
+}
+
+#[test]
 fn circle_candidate_scoped_calls_release_score_and_output_backing() {
     let (sketch, surfaces) = fixture();
     let (before_growth, overlap) = materialized_peak();
