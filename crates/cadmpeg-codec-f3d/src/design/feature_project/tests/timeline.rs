@@ -829,14 +829,14 @@ fn move_matrix_decomposes_to_translation_and_axis_angle() {
         [-angle.sin(), 0.0, angle.cos(), 9.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    let rotation = crate::design::feature_project::matrix_axis_angle(&transform)
+    let rotation = crate::design::feature_project::fixed_geometry::matrix_axis_angle(&transform)
         .expect("nonidentity rotation");
     assert!((rotation.angle.get() - angle).abs() <= 1.0e-12);
     assert!((rotation.direction.x - 0.0).abs() <= 1.0e-12);
     assert!((rotation.direction.y - 1.0).abs() <= 1.0e-12);
     assert!((rotation.direction.z - 0.0).abs() <= 1.0e-12);
     assert_eq!(
-        crate::design::feature_project::matrix_axis_angle(
+        crate::design::feature_project::fixed_geometry::matrix_axis_angle(
             &crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows()
         ),
         None
@@ -992,7 +992,7 @@ fn numerical_audit_half_turn_recovers_axis_with_zero_x() {
         [0.0, -1.0, 0.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    let rotation = crate::design::feature_project::matrix_axis_angle(&transform).unwrap();
+    let rotation = crate::design::feature_project::fixed_geometry::matrix_axis_angle(&transform).unwrap();
     assert_eq!(rotation.angle.get(), std::f64::consts::PI);
     let axis = [
         rotation.direction.x,
@@ -1023,7 +1023,7 @@ fn numerical_seventh_matrix_angle_preserves_shallow_rotations() {
             [0.0, 0.0, 1.0, 0.0],
             [0.0, 0.0, 0.0, 1.0],
         ];
-        let rotation = crate::design::feature_project::matrix_axis_angle(&matrix).unwrap();
+        let rotation = crate::design::feature_project::fixed_geometry::matrix_axis_angle(&matrix).unwrap();
         assert!((rotation.angle.get() - angle.abs()).abs() <= 8.0 * f64::EPSILON * angle.abs());
         if angle.abs() < 1.0 {
             assert_eq!(rotation.direction.get().z.signum(), angle.signum());
