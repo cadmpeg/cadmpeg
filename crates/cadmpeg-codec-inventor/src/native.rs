@@ -1903,14 +1903,15 @@ mod tests {
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
 
-        ctx.finish_session().expect("exact work completes the session");
+        ctx.finish_session()
+            .expect("exact work completes the session");
         let error = cadmpeg_test_support::refusal::resource_limit_at(
             ResourceDimension::RetainedBytes,
             "retain Inventor assembly placement suffix digest",
             |cap| {
                 policy.limits.max_retained_bytes = cap;
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-                    .expect("limited context");
+                let (ctx, _) =
+                    DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
                 let result = AssemblyPlacementRecord::from_placement(&ctx, placement())
                     .map_err(|failure| failure.error);
                 if let Err(CodecError::ResourceLimit(limit)) = &result {
