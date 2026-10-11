@@ -652,3 +652,13 @@ fn swift_reused_datum_system_drops_temporary_reference_storage() {
         "the extra tolerance retains its two output identities, not a discarded reference vector"
     );
 }
+
+#[test]
+fn swift_pmi_identity_grammar_preserves_resource_refusal() {
+    crate::test_support::work_refusal_at("validate SWIFT PMI identity", |ctx| {
+        crate::swift::pmi_id_charged(ctx, "A10")
+    });
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert_eq!(crate::swift::pmi_id_charged(&ctx, "A10").unwrap(), pmi_id("A10"));
+    assert!(crate::swift::pmi_id_charged(&ctx, " ").unwrap().is_none());
+}
