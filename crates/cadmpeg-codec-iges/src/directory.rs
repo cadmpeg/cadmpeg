@@ -534,7 +534,7 @@ pub(crate) fn parse(
     let mut entries = Vec::new();
     let mut quarantined = Vec::new();
     let mut pairs = cards.chunks_exact(2);
-    while pairs.len() != 0 || ctx.resource_refusal().is_some() {
+    while pairs.len() != 0 {
         let Some(pair) = ctx.next_charged(&mut pairs, "iges directory card pairs")? else {
             break;
         };
@@ -591,7 +591,7 @@ pub(crate) fn summary_notes<'ctx>(
     let mut census_storage = ctx.reserve_scoped(0, "iges directory summary groups")?;
     let mut census = BTreeMap::<(i64, i64), usize>::new();
     let mut source = entries.iter();
-    while source.len() != 0 || ctx.resource_refusal().is_some() {
+    while source.len() != 0 {
         let Some(entry) = ctx.next_charged(&mut source, "iges directory summary groups")? else {
             break;
         };
@@ -613,7 +613,7 @@ pub(crate) fn summary_notes<'ctx>(
         "iges directory summary text",
     )?);
     let mut grouped = census.into_iter();
-    while grouped.len() != 0 || ctx.resource_refusal().is_some() {
+    while grouped.len() != 0 {
         let Some(((entity_type, form), count)) =
             ctx.next_charged(&mut grouped, "iges directory summary notes")?
         else {

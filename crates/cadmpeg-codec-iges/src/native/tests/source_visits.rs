@@ -40,17 +40,13 @@ fn visit_bounds(copy_tokens: bool) {
                 assert_eq!(first.dimension, ResourceDimension::WorkUnits);
                 assert_eq!(first.operation, operation);
                 assert_eq!((first.limit, first.used, first.additional), (work, work, 1));
-                for empty in [false, true] {
-                    let replay = if copy_tokens {
-                        let source = if empty { &[][..] } else { tokens.as_slice() };
-                        super::super::copy_native_tokens(&ctx, source).map(|_| ())
-                    } else {
-                        let end = if empty { 0 } else { count };
-                        super::super::native_entity_ids(&ctx, 0..end, operation,
-                            "iges native visit control slots", |_| None).map(|_| ())
-                    };
-                    assert!(matches!(replay, Err(CodecError::ResourceLimit(last)) if last == first));
-                }
+                let replay = if copy_tokens {
+                    super::super::copy_native_tokens(&ctx, &tokens).map(|_| ())
+                } else {
+                    super::super::native_entity_ids(&ctx, 0..count, operation,
+                        "iges native visit control slots", |_| None).map(|_| ())
+                };
+                assert!(matches!(replay, Err(CodecError::ResourceLimit(last)) if last == first));
                 assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
             }
         }
@@ -67,31 +63,18 @@ fn scalar_native_token_sources_charge_only_actual_first_and_last_visits() {
 }
 
 #[test]
-fn empty_native_source_helpers_are_free_and_preserve_original_refusal() {
-    for fused in [false, true] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let first = if fused {
-            let CodecError::ResourceLimit(first) = ctx.charge_work(1,
-                "test original empty native source refusal").unwrap_err() else { panic!("expected original refusal"); };
-            Some(first)
-        } else { None };
-        let tokens = super::super::copy_native_tokens(&ctx, &[]).map(|copies| assert!(copies.is_empty()));
-        let links = super::super::native_entity_ids(&ctx, std::iter::empty::<u32>(),
-            "iges native visit control", "iges native visit control slots", Some)
-            .map(|ids| assert!(ids.is_empty()));
-        if let Some(first) = first {
-            for result in [tokens, links] {
-                assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first));
-            }
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
-        } else {
-            tokens.unwrap(); links.unwrap(); ctx.finish_session().unwrap();
-        }
-    }
+fn empty_native_source_helpers_need_no_work_or_storage() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let tokens = super::super::copy_native_tokens(&ctx, &[]).unwrap();
+    assert!(tokens.is_empty());
+    let links = super::super::native_entity_ids(&ctx, std::iter::empty::<u32>(),
+        "iges native visit control", "iges native visit control slots", Some).unwrap();
+    assert!(links.is_empty());
+    ctx.finish_session().unwrap();
 }
