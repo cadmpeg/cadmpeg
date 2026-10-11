@@ -49,11 +49,13 @@ fn associated_pcurves_refuse_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
+    let decoded = std::collections::BTreeSet::from([2]);
+    let mut associations = super::super::associations::PcurveAssociations::new(&exchange, &decoded, &ctx).expect("empty associations");
     assert!(matches!(
-        super::super::associated_pcurves(1, 3, &exchange, &std::collections::BTreeSet::from([2]), &ctx),
+        associations.candidates(1, 3),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_associated_pcurves"
+                && refusal.operation == "step_associated_pcurve_members"
     ));
 }
 
@@ -833,8 +835,11 @@ fn brep_builder_refusal(collection_limit: u64) -> super::super::BuildError {
     let ir = cadmpeg_ir::CadIr::empty();
     let mut face_cache =
         super::super::FaceAttributeCache::new(&ctx).expect("empty face attribute cache");
+    let decoded = std::collections::BTreeSet::new();
+    let mut associations = super::super::associations::PcurveAssociations::new(&exchange, &decoded, &ctx).expect("empty associations");
     let mut state = super::super::BuildState {
         face_cache: &mut face_cache,
+        associations: &mut associations,
         failure: None,
         selection_index: None,
     };
@@ -847,7 +852,6 @@ fn brep_builder_refusal(collection_limit: u64) -> super::super::BuildError {
             edefs: &BTreeMap::new(),
             odefs: &BTreeMap::new(),
             shell_definitions: &shells,
-            decoded_pcurves: &std::collections::BTreeSet::new(),
             point_positions: &carriers,
             ctx: &ctx,
         },
