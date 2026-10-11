@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 mod collection_limits;
 mod stage_caches;
 mod string_limits;
+mod name_storage;
 mod style_indices;
 mod surface_styles;
 mod target_expansion;

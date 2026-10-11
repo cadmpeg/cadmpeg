@@ -679,7 +679,7 @@ fn distinct_color_roots_share_safe_branches_inside_cycles_and_warnings() {
                     ),
                     (1.0, 0.0, 0.0)
                 );
-                assert_eq!(candidate.name.as_deref(), Some("red"));
+                assert_eq!(candidate.name, Some(1));
                 assert!(candidate.rank == super::super::SurfaceSideRank::NoUsage);
                 assert_eq!(losses.len(), usize::from(warning));
                 if warning {

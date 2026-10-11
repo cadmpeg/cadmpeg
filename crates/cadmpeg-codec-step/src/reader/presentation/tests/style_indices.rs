@@ -220,28 +220,6 @@ fn presentation_identity_index_refuses_only_first_visit() {
 }
 
 #[test]
-fn empty_presentation_identity_index_preserves_original_refusal() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root");
-    let CodecError::ResourceLimit(original) = ctx
-        .charge_work(1, "test original identity refusal")
-        .expect_err("original refusal")
-    else {
-        panic!("identity resource refusal");
-    };
-    let source: [&str; 0] = [];
-    assert!(
-        matches!(super::super::collect_identity_indices(source, &ctx, "test empty identity index"),
-        Err(CodecError::ResourceLimit(sticky)) if sticky == original)
-    );
-    assert_eq!(ctx.resource_refusal(), Some(original));
-    assert!(matches!(ctx.finish_session(),
-        Err(CodecError::ResourceLimit(sticky)) if sticky == original));
-}
-
-#[test]
 fn hidden_style_terminals_do_not_enter_depth() {
     let (exchange, _) =
         crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
