@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Full, partial, grouped and profile membership use their actual callers.
 
-use super::{assert_original_refusal, fixtures};
+use super::fixtures;
+use crate::design::feature_project::test_support::assert_original_refusal;
 use crate::records::feature::scope::DesignFeatureKind;
 use crate::records::feature::surface_ops::{
     DesignSurfaceOffsetOperation, DesignSurfaceOffsetSupport,

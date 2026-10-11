@@ -14,7 +14,6 @@ mod dispatcher;
 mod hole_limits;
 mod loft_limits;
 mod native_scope_definition_limits;
-mod parameter_cycles;
 mod parameters;
 mod pipe;
 mod query_admission;
