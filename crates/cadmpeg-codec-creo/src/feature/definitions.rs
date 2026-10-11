@@ -2633,9 +2633,7 @@ fn unresolved_variable_guess_end(
     let Some(delimiter) = delimiter else {
         return Ok(None);
     };
-    let suffix_start = delimiter
-        .checked_sub((delimiter - offset - 1).min(SUFFIX_BYTES))
-        .ok_or_else(|| CodecError::malformed("Creo variable suffix position underflows"))?;
+    let suffix_start = delimiter - (delimiter - offset - 1).min(SUFFIX_BYTES);
     let mut candidate = None;
     for start in suffix_start..delimiter {
         if variable_row_trailing_fields(payload, start, delimiter).is_some()
@@ -5498,6 +5496,9 @@ fn feature_skamps(
         prototype_items.push(item);
     }
     while prototype_items.len() < index_from_u32(prototype_item_count) {
+        if item_cursor >= prototype_end {
+            return Ok(Vec::new());
+        }
         ctx.next_charged(
             &mut (prototype_items.len()..index_from_u32(prototype_item_count)),
             "creo feature skamps cursor traversal",
@@ -6523,9 +6524,7 @@ fn positional_relation_rows(
             break;
         }
         let mut suffix = None;
-        let suffix_begin = row_end
-            .checked_sub((row_end - after_used).min(SUFFIX_BYTES))
-            .ok_or_else(|| CodecError::malformed("Creo relation suffix position underflows"))?;
+        let suffix_begin = row_end - (row_end - after_used).min(SUFFIX_BYTES);
         for suffix_start in suffix_begin..row_end {
             let (sign, after_sign) = psb::compact_int(payload, suffix_start);
             let (dimension_id, after_dimension) = psb::compact_int(payload, after_sign);

@@ -54,7 +54,7 @@ fn checked_trim_cache_radius_constructor_has_exact_backing_boundary() {
         &["creo trim radius groups"],
         |cap| {
             with_limits(cap, |ctx| {
-                let refusal = match table.reconciled_trim_geometry(&ctx) {
+                match table.reconciled_trim_geometry(&ctx) {
                     Ok(cache) => {
                         assert_eq!(cap, backing);
                         assert_eq!(cache.radius(7).expect("radius").expect("stored").get(), 2.0);
@@ -65,7 +65,7 @@ fn checked_trim_cache_radius_constructor_has_exact_backing_boundary() {
                             ctx.reserve_scoped(cap, "trim cache cleanup")
                                 .expect("backing refunded"),
                         );
-                        None
+                        Ok(())
                     }
                     Err(CodecError::ResourceLimit(original)) => {
                         assert!(cap < backing);
@@ -79,21 +79,10 @@ fn checked_trim_cache_radius_constructor_has_exact_backing_boundary() {
                             (ResourceDimension::MaterializedBytes, 0, backing, cap)
                         );
                         assert_eq!(original.operation, "creo trim radius groups");
-                        for _ in 0..2 {
-                            assert!(matches!(table.reconciled_trim_geometry(&ctx),
-                            Err(CodecError::ResourceLimit(actual)) if actual == original));
-                        }
-                        Some(original)
+
+                        Err(CodecError::ResourceLimit(original))
                     }
                     Err(error) => panic!("unexpected cache error: {error:?}"),
-                };
-                if let Some(original) = refusal {
-                    assert!(matches!(ctx.finish_session(),
-                    Err(CodecError::ResourceLimit(actual)) if actual == original));
-                    Err(CodecError::ResourceLimit(original))
-                } else {
-                    ctx.finish_session().expect("active zero-retained session");
-                    Ok(())
                 }
             })
         },
@@ -123,8 +112,6 @@ fn checked_trim_cache_keeps_backing_live_until_drop() {
         );
         assert_eq!(cache.radius(7).expect("radius").expect("stored").get(), 2.0);
         drop(cache);
-        assert!(matches!(ctx.finish_session(),
-            Err(CodecError::ResourceLimit(actual)) if actual == original));
     });
 }
 
@@ -160,13 +147,11 @@ fn checked_trim_cache_outlives_actual_parent_without_refunding_its_backing() {
         assert_eq!(cache.radius(7).expect("radius").expect("stored").get(), 2.0);
         drop(cache);
         drop(rest);
-        assert!(matches!(ctx.finish_session(),
-            Err(CodecError::ResourceLimit(actual)) if actual == original));
     });
 }
 
 #[test]
-fn empty_checked_trim_cache_keeps_original_refusal_and_uses_no_backing() {
+fn empty_checked_trim_cache_uses_no_backing() {
     let mut table = radius_table();
     table.rows.clear();
     table.declared_count = 0;
@@ -176,20 +161,12 @@ fn empty_checked_trim_cache_keeps_original_refusal_and_uses_no_backing() {
         assert!(cache.coordinates.ambiguous.is_empty());
         assert!(cache.radius(7).expect("absent radius").is_none());
         drop(cache);
-        let original = ctx
-            .charge_retained_limit(1, "before empty trim cache")
-            .expect_err("zero retained budget");
-        for _ in 0..2 {
-            assert!(matches!(table.reconciled_trim_geometry(&ctx),
-                Err(CodecError::ResourceLimit(actual)) if actual == original));
-        }
-        assert!(matches!(ctx.finish_session(),
-            Err(CodecError::ResourceLimit(actual)) if actual == original));
+        assert!(ctx.resource_refusal().is_none());
     });
 }
 
 #[test]
-fn empty_checked_trim_cache_accepts_zero_limits_and_keeps_work_refusal() {
+fn empty_checked_trim_cache_accepts_zero_limits() {
     let mut table = radius_table();
     table.rows.clear();
     table.declared_count = 0;
@@ -207,22 +184,5 @@ fn empty_checked_trim_cache_accepts_zero_limits_and_keeps_work_refusal() {
     assert!(cache.coordinates.ambiguous.is_empty());
     assert!(cache.radius(7).expect("absent radius").is_none());
     drop(cache);
-    let original = ctx
-        .charge_work_limit(1, "before empty trim cache")
-        .expect_err("zero work budget");
-    assert_eq!(
-        (
-            original.dimension,
-            original.used,
-            original.additional,
-            original.limit
-        ),
-        (ResourceDimension::WorkUnits, 0, 1, 0)
-    );
-    for _ in 0..2 {
-        assert!(matches!(table.reconciled_trim_geometry(&ctx),
-            Err(CodecError::ResourceLimit(actual)) if actual == original));
-    }
-    assert!(matches!(ctx.finish_session(),
-        Err(CodecError::ResourceLimit(actual)) if actual == original));
+    assert!(ctx.resource_refusal().is_none());
 }

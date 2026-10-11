@@ -43,8 +43,8 @@ fn named_section_reference_plane_refuses_before_vec_growth() {
             )
         })
     };
-    assert!(
-        matches!(run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo named section reference planes"), run)),
+    let result = run(crate::test_support::allocation_limit_at(ResourceDimension::CollectionItems, Some("creo named section reference planes"), run));
+    assert!(matches!(result,
 Err(CodecError::ResourceLimit(refusal))
         if refusal.dimension == ResourceDimension::CollectionItems
             && refusal.operation == "creo named section reference planes")

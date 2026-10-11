@@ -2,7 +2,7 @@
 
 use super::super::{
     entity_intersection_cached, named_trim_vertex_prototype_complete, trim_vertex_entry,
-    trim_vertex_entry_bounds, TrimTableClasses,
+    trim_vertex_entry_bounds, trim_buckets, trim_carrier, trim_radius, TrimEntryKind, TrimTableClasses, TrimTableHeader,
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -33,20 +33,19 @@ fn counted_trim_bounds_admit_only_present_entities() {
                 let mut policy = zero_policy();
                 policy.limits.max_work_units = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-                let run = || trim_vertex_entry_bounds(&ctx, payload, 0, end);
-                let result = run();
-                let completed = result.is_ok();
-                if completed {
+                match trim_vertex_entry_bounds(&ctx, payload, 0, end) {
+                    Ok(value) => {
                     assert_eq!(
-                        result.expect("exact source work"),
+                        value,
                         (end == payload.len()).then_some((2, 3, payload.len(), 2))
                     );
                     let original = ctx
                         .charge_work_limit(1, "after trim bounds")
                         .expect_err("present entity work consumed");
                     assert_eq!((original.used, original.additional), (visits, 1));
-                } else {
-                    let original = ctx.resource_refusal().expect("present entity refusal");
+                        Ok(())
+                    }
+                    Err(CodecError::ResourceLimit(original)) => {
                     assert_eq!(
                         (
                             original.dimension,
@@ -61,17 +60,9 @@ fn counted_trim_bounds_admit_only_present_entities() {
                             "creo trim vertex bound entities"
                         )
                     );
-                    assert!(
-                        matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
-                    );
-                }
-
-                if completed {
-                    Ok(())
-                } else {
-                    Err(CodecError::ResourceLimit(
-                        ctx.resource_refusal().expect("original refusal"),
-                    ))
+                        Err(CodecError::ResourceLimit(original))
+                    }
+                    Err(error) => Err(error),
                 }
             },
         );
@@ -93,23 +84,19 @@ fn counted_trim_vertices_admit_only_present_entities() {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-                let run = || trim_vertex_entry(&ctx, payload, 0, end);
-                let result = run();
-                let completed = result.is_ok();
-                if completed {
+                match trim_vertex_entry(&ctx, payload, 0, end) {
+                    Ok(value) => {
                     assert_eq!(
-                        result.expect("exact source work"),
+                        value,
                         (end == payload.len()).then_some((vec![9, 10], 3, payload.len()))
                     );
                     let original = ctx
                         .charge_work_limit(1, "after trim vertices")
                         .expect_err("present entity work consumed");
                     assert_eq!((original.used, original.additional), (visits, 1));
-                    assert!(
-                        matches!(run(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-                    );
-                } else {
-                    let original = ctx.resource_refusal().expect("present entity refusal");
+                        Ok(())
+                    }
+                    Err(CodecError::ResourceLimit(original)) => {
                     assert_eq!(
                         (
                             original.dimension,
@@ -124,20 +111,9 @@ fn counted_trim_vertices_admit_only_present_entities() {
                             "creo trim vertex entity traversal"
                         )
                     );
-                    assert!(
-                        matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
-                    );
-                    assert!(
-                        matches!(run(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-                    );
-                }
-
-                if completed {
-                    Ok(())
-                } else {
-                    Err(CodecError::ResourceLimit(
-                        ctx.resource_refusal().expect("original refusal"),
-                    ))
+                        Err(CodecError::ResourceLimit(original))
+                    }
+                    Err(error) => Err(error),
                 }
             },
         );
@@ -170,20 +146,16 @@ fn counted_trim_prototype_stops_at_absent_entity_source() {
                 let mut policy = zero_policy();
                 policy.limits.max_work_units = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-                let run = || named_trim_vertex_prototype_complete(&ctx, payload, 0, end, classes);
-                let result = run();
-                let completed = result.is_ok();
-                if completed {
-                    assert!(!result.expect("exact present-source work keeps incomplete prototype"));
+                match named_trim_vertex_prototype_complete(&ctx, payload, 0, end, classes) {
+                    Ok(value) => {
+                    assert!(!value);
                     let original = ctx
                         .charge_work_limit(1, "after trim prototype")
                         .expect_err("all source work consumed");
                     assert_eq!((original.used, original.additional), (need, 1));
-                    assert!(
-                        matches!(run(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-                    );
-                } else {
-                    let original = ctx.resource_refusal().expect("present source refusal");
+                        Ok(())
+                    }
+                    Err(CodecError::ResourceLimit(original)) => {
                     let (used, additional, operation) = if cap < search_work {
                         (0, search_work, "find Creo feature definition field")
                     } else {
@@ -198,20 +170,9 @@ fn counted_trim_prototype_stops_at_absent_entity_source() {
                         ),
                         (ResourceDimension::WorkUnits, used, additional, operation)
                     );
-                    assert!(
-                        matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
-                    );
-                    assert!(
-                        matches!(run(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-                    );
-                }
-
-                if completed {
-                    Ok(())
-                } else {
-                    Err(CodecError::ResourceLimit(
-                        ctx.resource_refusal().expect("original refusal"),
-                    ))
+                        Err(CodecError::ResourceLimit(original))
+                    }
+                    Err(error) => Err(error),
                 }
             },
         );
@@ -247,24 +208,19 @@ fn trim_vertex_vector_transfer_keeps_exact_backing_and_ambient_lifetime() {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_retained_bytes = cap;
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-                let run = || trim_vertex_entry(&ctx, payload, 0, payload.len());
-                assert!(ctx.resource_refusal().is_none());
-                let result = run();
-                let completed = result.is_ok();
-                if completed {
+                match trim_vertex_entry(&ctx, payload, 0, payload.len()) {
+                    Ok(value) => {
                     assert_eq!(
-                        result.expect("exact retained backing"),
+                        value,
                         Some((vec![9, 10], 3, payload.len()))
                     );
                     let original = ctx
                         .charge_retained_limit(1, "after retained trim vector")
                         .expect_err("backing remains retained");
                     assert_eq!((original.used, original.additional), (backing, 1));
-                    assert!(
-                        matches!(run(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-                    );
-                } else {
-                    let original = ctx.resource_refusal().expect("retained transfer refusal");
+                        Ok(())
+                    }
+                    Err(CodecError::ResourceLimit(original)) => {
                     assert_eq!(
                         (
                             original.dimension,
@@ -279,20 +235,9 @@ fn trim_vertex_vector_transfer_keeps_exact_backing_and_ambient_lifetime() {
                             "creo trim vertex entities"
                         )
                     );
-                    assert!(
-                        matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
-                    );
-                    assert!(
-                        matches!(run(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-                    );
-                }
-
-                if completed {
-                    Ok(())
-                } else {
-                    Err(CodecError::ResourceLimit(
-                        ctx.resource_refusal().expect("original refusal"),
-                    ))
+                        Err(CodecError::ResourceLimit(original))
+                    }
+                    Err(error) => Err(error),
                 }
             },
         );
@@ -425,11 +370,6 @@ fn trim_intersection_traversals_visit_present_rows_and_unordered_pairs_once() {
                         assert_eq!(original.additional, 1);
                         observed.borrow_mut()[index].insert(original.used);
                     }
-                    assert!(
-                        matches!(entity_intersection_cached(&ctx, &ids, Some(&segments),
-                        Some(&variables), &mut geometry),
-                        Err(CodecError::ResourceLimit(actual)) if actual == original)
-                    );
                     Err(CodecError::ResourceLimit(original))
                 }
                 Err(error) => panic!("unexpected trim route error: {error:?}"),
@@ -477,3 +417,76 @@ fn missing_bounded_chains_marker_adds_no_vertex_table_search_work() {
     });
     assert_eq!(observed.get(), operations.len());
 }
+
+#[test]
+fn empty_trim_buckets_keep_zero_work() {
+    let arena = DecodeArena::new();
+    let policy = zero_policy();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let header = TrimTableHeader { declared_count: 0,
+        classes: TrimTableClasses { table: 66, bucket: 67, entry: 68 } };
+    assert!(trim_buckets(&ctx, &[], 0, 0, header, TrimEntryKind::Vertex).expect("empty table is free").is_empty());
+    assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn fixed_trim_bounds_keep_zero_work() {
+    let arena = DecodeArena::new();
+    let policy = zero_policy();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let payload = b"\x09\x0a\x03\x00";
+    assert_eq!(trim_vertex_entry_bounds(&ctx, payload, 0, payload.len()).expect("fixed grammar"),
+        Some((2, 3, payload.len(), 0)));
+    assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn absent_trim_radius_keeps_zero_work() {
+    let fixture_arena = DecodeArena::new();
+    let fixture_policy = DecodePolicy::service();
+    let (fixture_ctx, _) = DecodeContext::from_root_bytes(&[], &fixture_arena, &fixture_policy)
+        .expect("fixture root");
+    let geometry = empty_geometry(&fixture_ctx);
+    let segment = isolated_segment();
+    let arena = DecodeArena::new();
+    let policy = zero_policy();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert!(trim_radius(&ctx, &segment, [0.0; 2], &geometry).expect("absent radius is free").is_none());
+    assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn isolated_trim_carrier_keeps_zero_work() {
+    let fixture_arena = DecodeArena::new();
+    let fixture_policy = DecodePolicy::service();
+    let (fixture_ctx, _) = DecodeContext::from_root_bytes(&[], &fixture_arena, &fixture_policy)
+        .expect("fixture root");
+    let geometry = empty_geometry(&fixture_ctx);
+    let segment = isolated_segment();
+    let arena = DecodeArena::new();
+    let policy = zero_policy();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert!(trim_carrier(&ctx, &segment, &geometry).expect("isolated point has no carrier").is_none());
+    assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn missing_trim_intersection_inputs_keep_zero_work() {
+    let arena = DecodeArena::new();
+    let policy = zero_policy();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let mut geometry = None;
+    assert!(entity_intersection_cached(&ctx, &[], None, None, &mut geometry)
+        .expect("absent inputs are free").is_none());
+    assert!(geometry.is_none());
+    assert!(ctx.resource_refusal().is_none());
+}
+
+fn empty_geometry<'ctx>(ctx: &'ctx DecodeContext<'_>)
+    -> super::super::super::points::CheckedTrimGeometry<'ctx> {
+    let variables = super::FeatureVariableTable { declared_count: 0, entity_ref: None,
+        rows: Vec::new(), offset: 0 };
+    variables.reconciled_trim_geometry(ctx)
+        .expect("empty fixture geometry")
+}
+

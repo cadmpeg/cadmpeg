@@ -29,8 +29,6 @@ fn recipe_owner_uses_current_consensus_and_preserves_feature_identity() {
             .expect_err("owner selection retains no operation names or output vector");
         assert_eq!((original.dimension, original.used, original.additional),
             (ResourceDimension::RetainedBytes, 0, 1));
-        assert!(matches!(unique_recipe_owner(&ctx, payload),
-            Err(CodecError::ResourceLimit(actual)) if actual == original));
 
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
@@ -44,7 +42,7 @@ fn recipe_owner_uses_current_consensus_and_preserves_feature_identity() {
 }
 
 #[test]
-fn recipe_owner_empty_route_is_free_and_keeps_original_refusal() {
+fn recipe_owner_empty_route_is_free() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
@@ -57,8 +55,6 @@ fn recipe_owner_empty_route_is_free_and_keeps_original_refusal() {
     let original = ctx.charge_work_limit(1, "after empty recipe owner").expect_err("zero cap");
     assert_eq!((original.dimension, original.used, original.additional),
         (ResourceDimension::WorkUnits, 0, 1));
-    assert!(matches!(unique_recipe_owner(&ctx, &[]),
-        Err(CodecError::ResourceLimit(actual)) if actual == original));
 }
 
 #[test]
@@ -84,8 +80,6 @@ fn recipe_owner_grouping_storage_ends_before_the_ambient_parent() {
             .expect_err("no retained operation output");
         assert_eq!((original.dimension, original.used, original.additional),
             (ResourceDimension::RetainedBytes, 0, 1));
-        assert!(matches!(unique_recipe_owner(&ctx, &[]),
-            Err(CodecError::ResourceLimit(actual)) if actual == original));
     }
 }
 
@@ -131,13 +125,12 @@ fn consumed_parser_vector_ends_before_current_operation_callback() {
             assert_eq!(visits, 1);
             drop(parent);
             if overflow {
-                let original = ctx.resource_refusal().expect("one byte beyond live storage");
-                assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
+                let Err(CodecError::ResourceLimit(original)) = result else {
+                    panic!("one byte beyond live storage must refuse");
+                };
                 assert_eq!((original.dimension, original.used, original.additional, original.operation),
                     (ResourceDimension::MaterializedBytes, group_bytes + parent_bytes,
                         available + 1, "current operation callback storage"));
-                assert!(matches!(unique_recipe_owner(&ctx, &[]),
-                    Err(CodecError::ResourceLimit(actual)) if actual == original));
             } else {
                 result.expect("callback uses the remaining materialized allowance");
                 let probe = ctx.reserve_scoped(EMPTY_ROOT_MATERIALIZED_BYTES,

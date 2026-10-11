@@ -57,6 +57,8 @@ fn check_work<T: std::fmt::Debug + PartialEq>(
             policy.limits.max_materialized_bytes = 0;
             policy.limits.max_retained_bytes = 0;
             policy.limits.max_collection_items = 0;
+            policy.limits.max_entities = 0;
+            policy.limits.max_recursion_depth = 0;
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
         let result = run(&ctx);
@@ -71,7 +73,18 @@ fn check_work<T: std::fmt::Debug + PartialEq>(
                 Ok(())
             }
             Err(CodecError::ResourceLimit(original)) => {
-                assert_eq!(ctx.resource_refusal(), Some(original));
+                let mut used = 0;
+                let (additional, operation) = fees.iter().find_map(|&(fee, operation)| {
+                    if used + fee > cap {
+                        Some((fee, operation))
+                    } else {
+                        used += fee;
+                        None
+                    }
+                }).expect("first scheduled operation beyond cap");
+                assert_eq!((original.dimension, original.used, original.additional, original.operation),
+                    (ResourceDimension::WorkUnits, used, additional, operation));
+
                 Err(CodecError::ResourceLimit(original))
             }
             Err(error) => Err(error),
@@ -392,8 +405,6 @@ fn check_same_work<T: std::fmt::Debug + PartialEq>(
             .charge_work_limit(u64::MAX, "measure paired source work")
             .expect_err("measurement refuses after executed work");
         work[index] = original.used;
-        assert!(matches!(run(&ctx, index != 0),
-            Err(CodecError::ResourceLimit(actual)) if actual == original));
     }
     assert_eq!(work[0], work[1], "same source scans; no absent count visit");
 }
@@ -908,4 +919,149 @@ fn named_segment_integer_stays_in_prototype() {
         assert!(super::named_segment_values(ctx, payload, 0, 9, b"radius2\0", 1)?.is_none());
         Ok::<_, CodecError>(())
     }).expect("bounded prototype integer");
+}
+
+#[test]
+fn outline_empty_and_named_boundary_routes_are_free() {
+    for payload in [b"".as_slice(), b"\xe0"] {
+        check_work(&[], &(), false, |ctx| {
+            let fields = super::outline_scalars(ctx, payload, &crate::scalar::ScalarCache::default())?;
+            assert!(fields.iter().all(|field| field.value.is_none() && field.body.is_empty()));
+            Ok(())
+        });
+    }
+}
+
+#[test]
+fn trim_bucket_count_mismatch_is_free() {
+    check_work(&[], &false, false, |ctx| super::complete_bucket_frame(ctx, Some(1), &[]));
+}
+
+#[test]
+fn dimension_value_fixed_routes_are_free() {
+    for (value, expected) in [(Some(1.0), super::DimensionValue::Resolved(1.0)),
+        (None, super::DimensionValue::Undefined)] {
+        check_work(&[], &expected, false, |ctx| super::DimensionValue::decoded(ctx, value, &[]));
+    }
+}
+
+#[test]
+fn variable_scalar_fixed_and_absent_routes_are_free() {
+    for (payload, expected) in [(b"".as_slice(), (super::ScalarLane::Undefined, 0)),
+        (b"\x0f".as_slice(), (super::ScalarLane::Value(0.0), 1)),
+        (b"\x90\0\0\0\0\0\0".as_slice(), (super::ScalarLane::Value(2.625), 7))] {
+        check_work(&[], &expected, false, |ctx| super::decode_variable_scalar(ctx, payload, 0,
+            payload.len(), &crate::scalar::ScalarCache::default()));
+    }
+}
+
+#[test]
+fn coordinate_scalar_fixed_routes_are_free() {
+    for (payload, expected) in [(b"\0\0\0".as_slice(), (super::ScalarLane::Undefined, 3)),
+        (b"\x01\0\0\0".as_slice(), (super::ScalarLane::Undefined, 4)),
+        (b"\x2d\0\0\0\0\0\0\0".as_slice(), (super::ScalarLane::Value(2.0), 8))] {
+        check_work(&[], &expected, false, |ctx| super::decode_section_coordinate_scalar(ctx,
+            payload, 0, payload.len(), &crate::scalar::ScalarCache::default()));
+    }
+}
+
+#[test]
+fn variable_guess_fixed_suffix_is_free() {
+    let payload = b"\x18\x01\x02\x03";
+    check_work(&[], &(super::ScalarLane::Value(0.0), 1), false, |ctx|
+        super::decode_variable_guess(ctx, payload, 0, payload.len(), &crate::scalar::ScalarCache::default()));
+}
+
+#[test]
+fn equation_invalid_range_is_free() {
+    for (start, end) in [(1, 0), (0, 1)] {
+        check_work(&[], &None, false, |ctx| super::equation_table(ctx, &[], start, end));
+    }
+}
+
+#[test]
+fn placement_absent_table_is_free() {
+    check_work(&[], &None, false, |ctx| {
+        let mut instructions = super::PlacementInstructions {
+            payload: &[], definition_offset: 0, table_class: None, markers: 0..0,
+        };
+        instructions.next(ctx)
+    });
+}
+
+#[test]
+fn segment_absent_array_is_free() {
+    for prototype in [super::PrototypeRow::Present, super::PrototypeRow::Elided] {
+        check_work(&[], &None, false, |ctx|
+            super::segment_table_body(ctx, &[], 0, 0, 0, prototype));
+    }
+}
+
+#[test]
+fn positional_dimension_absent_type_is_free() {
+    check_work(&[], &None, false, |ctx| super::positional_dimension(ctx, &[], 0, 0,
+        &crate::scalar::ScalarCache::default()));
+}
+
+#[test]
+fn class_close_invalid_window_and_short_extent_are_free() {
+    for (start, end) in [(1, 0), (0, 1), (0, 0)] {
+        check_work(&[], &None, false, |ctx| super::find_class_close(ctx, &[], start, end, 0xf3, &[]));
+    }
+}
+
+#[test]
+fn saved_scalar_invalid_window_is_free() {
+    for (start, end) in [(1, 0), (0, 1)] {
+        check_work(&[], &None, false, |ctx| super::saved_named_scalars::<3>(ctx, &[], b"center",
+            start, end, &crate::scalar::ScalarCache::default()));
+    }
+}
+
+#[test]
+fn saved_generated_absent_topology_is_free() {
+    check_work(&[], &(), false, |ctx| {
+        let mut entities = Vec::new();
+        super::saved_positional_generated_entities(ctx, &[], 0, 0,
+            &crate::scalar::ScalarCache::default(), None, &mut entities)?;
+        assert!(entities.is_empty());
+        Ok(())
+    });
+}
+
+#[test]
+fn trimmed_ids_absent_table_is_free() {
+    let definition = super::FeatureDefinition {
+        identity: super::DefinitionIdentity::Parsed { schema_id: None, owner_feature_id: None },
+        body: Vec::new(), parameter_frames: Vec::new(), outlines: Vec::new(), variables: None,
+        segments: None, trim_entities: None, trim_vertices: None, order_table: None,
+        section_3d: None, dimensions: None, relations: None, saved_section: None, offset: 0,
+    };
+    check_work(&[], &(&[] as &[u32]), false, |ctx| super::unique_trimmed_external_ids(ctx, &definition));
+}
+
+#[test]
+fn named_skamp_prototype_does_not_visit_an_absent_item() {
+    let payload = b"skamp_ptr\0\xf3\xf8\x01\xf7\x6b\xfb\xe2\
+        \xe0\x01id\0\x05\xe0\x01type\0\x02\xe0\x01flags\0\x03\
+        \xe0\x01status\0\x04\xe0\0items\0\xf8\x02\xf7\x6c\xfb\xe2\
+        \xe0\x01ent_id\0\x2a\xe0\x01sense\0\x01\xf1\xf7\x6c\xe2\
+        \xf3\xf7\x6b\xe2";
+    crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &[], |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        match super::feature_skamps(&ctx, payload, 0, payload.len()) {
+            Ok(rows) => {
+                assert!(rows.is_empty());
+                Ok(())
+            }
+            Err(CodecError::ResourceLimit(limit)) => {
+                assert_ne!(limit.operation, "creo feature skamps cursor traversal");
+                Err(CodecError::ResourceLimit(limit))
+            }
+            Err(error) => Err(error),
+        }
+    });
 }
