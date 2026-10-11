@@ -17,6 +17,8 @@ use cadmpeg_ir::{AnnotationBuilder, Annotations};
 use crate::native::CatiaNative;
 use crate::resource;
 
+mod parameter_names;
+
 const FORMULA_INTEGER_LOWER: f64 = -9_223_372_036_854_775_808.0;
 const FORMULA_INTEGER_UPPER: f64 = 9_223_372_036_854_775_808.0;
 
@@ -676,6 +678,7 @@ pub(crate) fn transfer_parameters(
             "catia_formula_neutral_parameters",
         )?;
     }
+    parameter_names::normalize(ctx, &mut ir.model.parameters)?;
     let typed_parameter_count = transferred
         .checked_sub(legacy_transfer.parameters)
         .ok_or_else(|| {

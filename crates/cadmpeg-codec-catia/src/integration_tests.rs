@@ -674,3 +674,78 @@ fn operation_schema_buckets_stay_native_without_feature_ownership() {
         assert_valid(&result);
     }
 }
+
+#[test]
+fn parameters_without_feature_aggregation_stay_document_scoped() {
+    use crate::test_support::test_container::outer_container_catpart;
+    use crate::test_support::test_object_graph::{
+        catalog_stream, entity_table_record, entity_table_record_with_definition_and_value,
+        object_graph_from_records, object_graph_record,
+    };
+    let mut stream = entity_table_record(1);
+    stream.extend(entity_table_record(2));
+    let mut definition = vec![0, 0, 0x32];
+    definition.extend(7_u32.to_le_bytes());
+    definition.push(0x32);
+    definition.extend(8_u32.to_le_bytes());
+    let mut parameter = entity_table_record_with_definition_and_value(3, &definition, &[0xfe]);
+    parameter[6] = 2;
+    parameter.extend([0x84, 0x88, 0x82, 0x32]);
+    parameter.extend(7_u32.to_le_bytes());
+    parameter.push(0xe6);
+    parameter.extend(3.25_f64.to_le_bytes());
+    parameter.extend([0x81, 0x4a]);
+    let length = u32::try_from(parameter.len()).expect("fixture record length");
+    parameter[2..6].copy_from_slice(&length.to_le_bytes());
+    stream.extend(parameter);
+    stream.push(0xde);
+    stream.extend(object_graph_from_records(&[
+        object_graph_record(&[0x54, 0x01, 0x82, 0x84, 0x83], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x85], &[0xfe]),
+        object_graph_record(&[0x14, 0x01, 0x81, 0x86], &[0xfe]),
+    ]));
+    stream.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Sketch",
+        "CurrentFeature",
+        "EndLimit",
+        "Angle",
+        "Real",
+    ]));
+    let result = decode(outer_container_catpart(&stream).0);
+    assert_eq!(result.ir().model.sketches.len(), 1);
+    assert_eq!(result.ir().model.features.len(), 1);
+    assert_eq!(result.ir().model.parameters.len(), 1);
+    let parameter = &result.ir().model.parameters[0];
+    assert_eq!(parameter.name, "Angle");
+    assert_eq!(parameter.ordinal, 0);
+    assert!(
+        matches!(&parameter.value, Some(cadmpeg_ir::features::ParameterValue::Real(value)) if value.get() == 3.25)
+    );
+    assert!(
+        parameter.owner.is_none(),
+        "structural sketch ancestry does not declare parameter aggregation"
+    );
+    let native_ref = parameter
+        .native_ref
+        .as_deref()
+        .expect("parameter native identity");
+    let namespace = result
+        .ir()
+        .native
+        .namespace("catia")
+        .expect("native namespace");
+    let entities: Vec<crate::native::entity_record::CatiaEntityRecord> = namespace
+        .arena_as("entity_records")
+        .expect("native entities");
+    let entity = entities
+        .iter()
+        .find(|entity| entity.id == native_ref)
+        .expect("native parameter entity");
+    assert_eq!(entity.entity_id, 3);
+    assert!(entity.definition_chain_value().is_some());
+    assert_valid(&result);
+}

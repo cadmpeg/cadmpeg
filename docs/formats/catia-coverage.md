@@ -317,17 +317,11 @@ current levels require those matrices and representative fixtures.
   resolution state, and resolved target identity/class when available.
   Constraint type, coordinates, parameters, driving or active state, and solver
   semantics remain unresolved; this slice does not raise the CATIA score.
-- A transferred typed parameter receives a feature owner only when its exact
-  entity record selects an object record whose design-object owner chain
-  reaches a transferred feature through a complete acyclic prefix. The nearest
-  transferred feature owns the parameter; an outer feature later in the chain
-  does not make that ownership ambiguous. A missing object or cycle before the
-  first feature leaves the parameter at document scope.
-- Exact feature-owned parameters receive feature-local ordinals in serialized
-  object-record order, with the entity-record position as a deterministic
-  tie-breaker. This records parameter order and ownership only; it does not
-  assign a parameter to an operation role such as profile, direction, extent,
-  or output.
+- Typed scalar parameters remain document-scoped with contiguous source-order
+  ordinals and unique neutral names. Changed names retain the original spelling
+  in `properties["source_name"]`. Their native fields, paired entities,
+  definition selectors, and values retain source identities. Structural
+  ancestry does not assign a feature parameter owner or collection position.
 - Operation-like schema labels retain native design-object identity, fields,
   definition-bound values, range intervals, and relations. Structural ownership
   and class identity do not establish an operation instance or a neutral

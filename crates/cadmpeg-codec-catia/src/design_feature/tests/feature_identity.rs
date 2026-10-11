@@ -6,11 +6,9 @@
 use cadmpeg_ir::codec::Codec;
 
 use super::{
-    catalog_stream, entity_backed_object_graph, normalize_parameter_names,
-    object_graph_from_records, object_graph_record, parameter,
-    standard_catpart_with_definition_value, standard_catpart_with_design_class,
-    standard_catpart_with_visualization_values_only, transfer_design_features, value_block_stream,
-    CadIr, CatiaCodec, Cursor, DecodeOptions, FeatureId,
+    catalog_stream, entity_backed_object_graph, object_graph_from_records, object_graph_record,
+    standard_catpart_with_design_class, standard_catpart_with_visualization_values_only,
+    transfer_design_features, value_block_stream, CadIr, CatiaCodec, Cursor, DecodeOptions,
 };
 
 #[test]
@@ -65,136 +63,6 @@ fn incompatible_exact_feature_candidates_on_one_object_remain_unresolved() {
     assert!(ir.model.sketches.is_empty());
     assert!(transfer.consumed_records().next().is_none());
     assert!(transfer.feature_ids.is_empty());
-}
-
-#[test]
-fn parameter_owner_follows_one_exact_child_design_object() {
-    let mut native = crate::native::CatiaNative::decode(&standard_catpart_with_definition_value(
-        &[0x00, 0x08, 0x32, 4, 0, 0, 0],
-        &[0xfe],
-        &[0xd1, 0x67, 0x88, 0x81, 0xbd, 0xe8, 0x81, 0x49],
-    ));
-    let owner_record = native
-        .object_graphs
-        .iter()
-        .flat_map(|graph| graph.records.iter())
-        .find(|record| record.design_object.is_some())
-        .expect("synthetic owner declaration record")
-        .clone();
-    let owner_record_id = owner_record.id.clone();
-    let owner_design_object = owner_record.design_object.clone();
-    let owner_class_entry = "synthetic-sketch-class".to_string();
-    let owner_record_mut = native
-        .object_graphs
-        .iter_mut()
-        .flat_map(|graph| graph.records.iter_mut())
-        .find(|record| record.id == owner_record_id)
-        .expect("mutable synthetic owner declaration record");
-    if let Some(class) = &mut owner_record_mut.class {
-        class.name = Some("Sketch".to_string());
-        class.entry = Some(owner_class_entry.clone());
-    } else {
-        owner_record_mut.class = Some(crate::native::CatiaObjectClass {
-            ordinal: 0,
-            name: Some("Sketch".to_string()),
-            entry: Some(owner_class_entry.clone()),
-        });
-    }
-
-    let feature_object = native
-        .design_objects
-        .first_mut()
-        .expect("synthetic design object");
-    feature_object.owner_record = Some(owner_record_id);
-    feature_object.owner_design_object = owner_design_object.clone();
-    feature_object.owner_class = Some(crate::native::CatiaDesignClass {
-        entry: owner_class_entry,
-        name: "Sketch".to_string(),
-    });
-    let feature_id = feature_object.id.clone();
-
-    let child_record_id = "synthetic-child-record".to_string();
-    let child_entity_id = "synthetic-child-entity".to_string();
-    let mut child_record = owner_record.clone();
-    child_record.id.clone_from(&child_record_id);
-    child_record.entity = Some(crate::native::CatiaObjectEntity {
-        record: child_entity_id.clone(),
-        id: 2,
-    });
-    child_record.owner = Some(crate::native::CatiaObjectOwner::Entity(2));
-    child_record.design_object = Some("synthetic-child-object".to_string());
-    native.object_graphs[0].records.push(child_record);
-
-    let mut child_entity = native.entity_records[0].clone();
-    child_entity.id.clone_from(&child_entity_id);
-    child_entity.object_record = child_record_id.clone();
-    child_entity.entity_id = 2;
-    child_entity.ordinal = cadmpeg_core::decode::u64_from_index(native.entity_records.len());
-    native.entity_records.push(child_entity);
-
-    let mut child_object = native.design_objects[0].clone();
-    child_object.id = "synthetic-child-object".to_string();
-    child_object.ordinal += 1;
-    child_object.first_field_byte_offset += 1;
-    child_object.owner_entity_id = 2;
-    child_object.owner_record = Some(child_record_id);
-    child_object.owner_design_object = Some(feature_id.clone());
-    child_object.owner_class = None;
-    child_object.owner_storage_ref = None;
-    child_object.fields = vec!["synthetic-child-record".to_string()];
-    child_object.field_classes.clear();
-    child_object.definition_values.clear();
-    child_object.definition_chain_values.clear();
-    child_object.relations.clear();
-    child_object.parallel_reference_table = None;
-    native.design_objects.push(child_object);
-
-    let mut ir = CadIr::empty();
-    let transfer = crate::test_support::with_service_context(|ctx| {
-        crate::design_feature::transfer_design_features(
-            ctx,
-            &mut ir,
-            &native,
-            &crate::decode::ModelingGraphScope::Unscoped,
-        )
-    })
-    .unwrap();
-    ir.model
-        .parameters
-        .push(cadmpeg_ir::features::DesignParameter {
-            id: cadmpeg_ir::features::ParameterId::mint(
-                "synthetic:test:id#synthetic:child-parameter".to_string(),
-            )
-            .expect("identity grammar"),
-            owner: None,
-            ordinal: 0,
-            name: "Value".to_string(),
-            expression: String::new(),
-            display: None,
-            value: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-            properties: std::collections::BTreeMap::new(),
-            pmi: None,
-            native_ref: Some(child_entity_id),
-        });
-
-    crate::test_support::with_service_context(|ctx| {
-        transfer.assign_parameter_owners(ctx, &mut ir, &native)
-    })
-    .unwrap();
-
-    assert_eq!(ir.model.features.len(), 1);
-    assert_eq!(
-        ir.model.parameters[0].owner,
-        Some(cadmpeg_ir::features::FeatureId::from(
-            crate::test_support::with_service_context(|ctx| crate::ids::neutral_history_id(
-                ctx,
-                &feature_id,
-                &cadmpeg_ir::identity_component!("feature")
-            ))
-            .expect("identity grammar")
-        ))
-    );
 }
 
 #[test]
@@ -448,35 +316,4 @@ fn decode_does_not_promote_field_class_names_to_features() {
                 && loss.message.contains("neutral features")
         }));
     }
-}
-
-#[test]
-fn normalizes_scopes_containing_only_unnamed_parameters() {
-    let mut ir = CadIr::empty();
-    for owner in [
-        None,
-        Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
-    ] {
-        for id in ["first", "second"] {
-            let mut value = parameter(id, "native");
-            value.owner = owner.clone();
-            value.name.clear();
-            ir.model.parameters.push(value);
-        }
-    }
-    crate::test_support::with_service_context(|ctx| normalize_parameter_names(ctx, &mut ir))
-        .unwrap();
-    assert_eq!(
-        ir.model
-            .parameters
-            .iter()
-            .map(|value| value.name.as_str())
-            .collect::<Vec<_>>(),
-        ["Parameter#1", "Parameter#2", "Parameter#1", "Parameter#2"]
-    );
-    assert!(ir.model.parameters.iter().all(|value| value
-        .properties
-        .get("source_name")
-        .map(String::as_str)
-        == Some("")));
 }
