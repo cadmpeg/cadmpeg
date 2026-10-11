@@ -5489,13 +5489,12 @@ fn inline_resolved_frames(
         scalar::InlineNonPlaneLocalSystemPrefix::Explicit(frame) => Some(frame),
         scalar::InlineNonPlaneLocalSystemPrefix::Compact(_) => None,
     };
-    let compact_origins = match compact {
-        Some(frame) => Some((
+    let compact_origins = compact.map(|frame| {
+        (
             frame,
             scalar::decode_inline_non_plane_origin_prefix(local, frame.cursor, cache),
-        )),
-        None => None,
-    };
+        )
+    });
     compact_origins
         .into_iter()
         .flat_map(|(frame, origins)| {
