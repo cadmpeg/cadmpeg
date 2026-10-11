@@ -979,7 +979,11 @@ impl<'f, 'ctx> PatternFeatureIndex<'f, 'ctx> {
 /// Whether a container section carries a SWIFT schema.
 fn is_swift_schema_section(ctx: &DecodeContext<'_>, name: &str) -> Result<bool, CodecError> {
     Ok(name.starts_with("SWIFT/")
-        && ctx.contains_text(name, "Schema", "find SWIFT schema section name")?)
+        && ctx.any_by(
+            name.as_bytes().windows(b"Schema".len()),
+            |candidate| Ok(candidate == b"Schema"),
+            "find SWIFT schema section name",
+        )?)
 }
 
 fn has_root_marker(ctx: &DecodeContext<'_>, scan: &ContainerScan<'_>) -> Result<bool, CodecError> {
@@ -989,9 +993,9 @@ fn has_root_marker(ctx: &DecodeContext<'_>, scan: &ContainerScan<'_>) -> Result<
             Ok(match section.name() {
                 Some(name) => {
                     is_swift_schema_section(ctx, name)?
-                        && ctx.contains_bytes(
-                            section.payload(),
-                            ROOT_CLASS.as_bytes(),
+                        && ctx.any_by(
+                            section.payload().windows(ROOT_CLASS.len()),
+                            |candidate| Ok(candidate == ROOT_CLASS.as_bytes()),
                             "scan SWIFT root class marker",
                         )?
                 }
