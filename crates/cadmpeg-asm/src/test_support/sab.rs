@@ -12,7 +12,7 @@ pub fn frame(
     start: usize,
     limit: usize,
     width: RefWidth,
-) -> Result<Vec<Record>, StreamError> {
+) -> Result<Vec<Record<'static>>, StreamError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
         .map_err(|error| StreamError {
@@ -20,8 +20,9 @@ pub fn frame(
             offset: start,
             reason: format!("fixture exceeds the service input limit: {error}"),
         })?;
-    match crate::sab::frame(&ctx, bytes, start, limit, width, None) {
-        Ok(records) => Ok(records),
+    let outcome = crate::sab::frame(&ctx, bytes, start, limit, width, None);
+    match outcome {
+        Ok(records) => Ok(records.into_iter().map(Record::into_fixture).collect()),
         Err(
             StreamFailure::Parse(error)
             | StreamFailure::Malformed(error)
@@ -49,7 +50,7 @@ pub fn frame_history(
     start: usize,
     limit: usize,
     width: RefWidth,
-) -> Result<Vec<Record>, StreamError> {
+) -> Result<Vec<Record<'static>>, StreamError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
         .map_err(|error| StreamError {
@@ -57,8 +58,9 @@ pub fn frame_history(
             offset: start,
             reason: format!("fixture exceeds the service input limit: {error}"),
         })?;
-    match crate::sab::frame_history(&ctx, bytes, start, limit, width, None) {
-        Ok(records) => Ok(records),
+    let outcome = crate::sab::frame_history(&ctx, bytes, start, limit, width, None);
+    match outcome {
+        Ok(records) => Ok(records.into_iter().map(Record::into_fixture).collect()),
         Err(
             StreamFailure::Parse(error)
             | StreamFailure::Malformed(error)
@@ -133,9 +135,11 @@ pub fn record(
     tokens: std::sync::Arc<[crate::sab::Token]>,
     offset: usize,
     len: usize,
-) -> Record {
+) -> Record<'static> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("record fixture context");
-    Record::new(&ctx, index, name, tokens, offset, len).expect("indexed record fixture")
+    Record::new(&ctx, index, name, tokens, offset, len)
+        .expect("indexed record fixture")
+        .into_fixture()
 }

@@ -221,9 +221,6 @@ fn normalize_support_pcurve(
     chart: NativeSupportChart,
     pcurve: &mut PcurveNurbs,
 ) -> Option<Result<(), cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     match chart {
         NativeSupportChart::Canonical => {}
         NativeSupportChart::PlaneLengths => {
@@ -266,9 +263,6 @@ pub(crate) fn normalize_pcurve_for_surface_record(
     surface_tokens: &[Token],
     pcurve: &mut PcurveNurbs,
 ) -> Option<Result<(), cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let chart = match surface_head {
         "plane" => NativeSupportChart::PlaneLengths,
         "cone" => {
@@ -670,9 +664,6 @@ pub fn pcurve_for_selector_with_chart(
     selector: i64,
     table: &SubtypeTable,
 ) -> Option<Result<(PcurveNurbs, bool), cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let slot = match selector {
         1 | -1 => 0,
         2 | -2 => 1,
@@ -1262,7 +1253,7 @@ fn embedded_deformable(
                     Err(error) => return Some(Err(error)),
                 };
             let mut visits = 0..count;
-            while (!visits.is_empty() || ctx.resource_refusal().is_some())
+            while !visits.is_empty()
                 && propagate_resource!(
                     ctx.next_charged(&mut visits, "ASM embedded deformable entries")
                 )
@@ -1336,9 +1327,6 @@ fn nullable_law_surface(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<Nullable<SurfaceGeometry>, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let saved = cur.pos();
     if cur.take_ident() == Some("null_surface") {
         return Some(Ok(Nullable::Null));
@@ -1445,7 +1433,7 @@ fn embedded_law_curve(
     let mut additional =
         propagate_resource!(ctx.collection_vec(count, "ASM law curve additional formulas"));
     let mut visits = 0..count;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some())
+    while !visits.is_empty()
         && propagate_resource!(ctx.next_charged(&mut visits, "ASM embedded law curve entries"))
             .is_some()
     {
@@ -1728,7 +1716,7 @@ pub fn compound_patch_layout(
             ctx.collection_vec(component_count, "ASM compound patch component parameters")
         );
         let mut visits = 0..component_count;
-        while (!visits.is_empty() || ctx.resource_refusal().is_some())
+        while !visits.is_empty()
             && propagate_resource!(
                 ctx.next_charged(&mut visits, "ASM compound patch component parameters")
             )
@@ -2544,10 +2532,7 @@ fn surface_isoline_along(
     support: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     pcurve: &PcurveNurbs,
 ) -> Result<Option<NurbsCurve>, cadmpeg_core::decode::ResourceLimit> {
-    use cadmpeg_ir::eval::{admission::EvaluationAdmission, IsolineDirection};
-    if let EvaluationAdmission::Decode(ctx) = admission {
-        ctx.charge_work_limit(0, "ASM surface isoline evaluation")?;
-    }
+    use cadmpeg_ir::eval::IsolineDirection;
     let Some((direction, at)) = (|| {
         let poles = pcurve.pole_rows();
         (pcurve.degree() == 1 && poles.count() == 2 && poles.weight_at(0).is_none())
@@ -2637,9 +2622,6 @@ fn cache_first_curve_context(
     cur: &mut Cur<'_>,
     table: &SubtypeTable,
 ) -> Option<Result<CacheFirstCurveContext, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let revision = PositiveI64::new(cur.take_long()?)?;
     // The leading enum selects the approximation-cache form. `0` stores the
     // solved curve cache and its fit tolerance; `2` stores neither and instead
@@ -3177,9 +3159,6 @@ fn cache_first_intersection(
     solved: &NurbsCurve,
     table: &SubtypeTable,
 ) -> Option<Result<(EmbeddedIntersection, bool), cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let mut cur = Cur::at(toks, position);
     (cur.take_long()? > 0).then_some(())?;
     (cur.take_enum()? == 0).then_some(())?;
@@ -3354,9 +3333,6 @@ fn optional_embedded_surface(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<Nullable<SurfaceGeometry>, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let start = cur.pos();
     if cur.take_ident()? == "null_surface" {
         return Some(Ok(Nullable::Null));
@@ -3369,9 +3345,6 @@ fn optional_pcurve(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<Nullable<PcurveNurbs>, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let start = cur.pos();
     if cur.take_ident()? == "nullbs" {
         return Some(Ok(Nullable::Null));
@@ -3605,9 +3578,6 @@ fn embedded_surface_fields(
     cur: &mut Cur<'_>,
     preserve_ranges: bool,
 ) -> Option<Result<EmbeddedSurfaceWithRanges, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let no_ranges = [[None, None], [None, None]];
     let kind = cur.take_ident()?;
     if kind == "spline" {
@@ -3905,9 +3875,6 @@ pub(super) fn optional_embedded_surface_with_bounds(
     cur: &mut Cur<'_>,
     table: &SubtypeTable,
 ) -> Option<Result<EmbeddedSurfaceWithBounds, cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let toks = cur.toks();
     let saved = cur.pos();
     let kind = cur.take_ident();
@@ -4029,7 +3996,7 @@ fn compound_definition(
         propagate_resource!(ctx.temporary_vec(count, "ASM compound curve parameters"));
     _parameter_storage = result_parameter_storage;
     let mut visits = 0..count;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some())
+    while !visits.is_empty()
         && propagate_resource!(ctx.next_charged(&mut visits, "ASM compound definition entries"))
             .is_some()
     {
@@ -4043,9 +4010,6 @@ fn compound_definition(
         Ok(components) => components,
         Err(error) => return Some(Err(error)),
     };
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let mut source_values = IntoIterator::into_iter(component_parameters);
     while source_values.len() != 0 {
         let Some(parameter) = propagate_resource!(
@@ -4212,9 +4176,6 @@ pub fn record_trailing_surface_bounds(
     // Walk the fixed spline-record header: any leading payload identifiers,
     // attrib ref, history int, geometry ref, sense boolean, then the subtype
     // scope.
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut position = 0usize;
     while position < toks.len() {
         ctx.charge_work(1, "ASM trailing surface bounds prefix")?;

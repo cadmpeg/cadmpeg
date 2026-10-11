@@ -9,8 +9,9 @@
 
 use crate::kernel_header::RefWidth;
 use crate::nurbs::reader::{
-    construction_marker_positions, is_periodic, marker_at, marker_positions, read_control_points,
-    read_knots, take_tagged_int, BsplineMarker, KnotLayout, ReadPoles3, INT_WIDTHS, LEN_TO_MM,
+    construction_marker_positions, finish_knot_layout, is_periodic, marker_at, marker_positions,
+    read_control_points, read_knots, take_f64, take_tagged_int, BsplineMarker, KnotLayout,
+    ReadPoles3, INT_WIDTHS, LEN_TO_MM,
 };
 use crate::nurbs::subtypes;
 use crate::nurbs::toks;
@@ -51,7 +52,7 @@ fn control_points(
         marker.rational(),
     ));
     let mut visits = 0..count;
-    while (!visits.is_empty() || ctx.resource_refusal().is_some())
+    while !visits.is_empty()
         && propagate_resource!(ctx.next_charged(&mut visits, "ASM control points entries"))
             .is_some()
     {
@@ -79,9 +80,6 @@ pub(super) fn surface_block(
     toks: &[Token],
     marker_pos: usize,
 ) -> Option<Result<(NurbsSurface, usize), cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let marker = toks::marker_at(toks, marker_pos)?;
     let mut cur = Cur::at(toks, marker_pos + 1);
 
@@ -152,12 +150,12 @@ pub(super) fn surface_block(
             |_| ctx.collection_vec(n_poles_v, "ASM NURBS grid row poles"),
         ));
         let mut columns = 0..n_poles_v;
-        while (!columns.is_empty() || ctx.resource_refusal().is_some())
+        while !columns.is_empty()
             && propagate_resource!(ctx.next_charged(&mut columns, "ASM surface control columns"))
                 .is_some()
         {
             let mut rows = rows.iter_mut();
-            while rows.len() != 0 || ctx.resource_refusal().is_some() {
+            while rows.len() != 0 {
                 let Some(row) =
                     propagate_resource!(ctx.next_charged(&mut rows, "ASM surface control points"))
                 else {
@@ -182,12 +180,12 @@ pub(super) fn surface_block(
             |_| ctx.collection_vec(n_poles_v, "ASM NURBS grid row poles"),
         ));
         let mut columns = 0..n_poles_v;
-        while (!columns.is_empty() || ctx.resource_refusal().is_some())
+        while !columns.is_empty()
             && propagate_resource!(ctx.next_charged(&mut columns, "ASM surface control columns"))
                 .is_some()
         {
             let mut rows = rows.iter_mut();
-            while rows.len() != 0 || ctx.resource_refusal().is_some() {
+            while rows.len() != 0 {
                 let Some(row) =
                     propagate_resource!(ctx.next_charged(&mut rows, "ASM surface control points"))
                 else {
@@ -229,9 +227,6 @@ pub(super) fn curve_block(
     toks: &[Token],
     marker_pos: usize,
 ) -> Option<Result<(NurbsCurve, usize), cadmpeg_core::CodecError>> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     let marker = toks::marker_at(toks, marker_pos)?;
     let mut cur = Cur::at(toks, marker_pos + 1);
 
@@ -413,9 +408,6 @@ where
         toks::SubtypeScope<'_>,
     ) -> Option<Result<T, cadmpeg_core::CodecError>>,
 {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Some(Err(refusal.into()));
-    }
     (|| -> Result<Option<T>, cadmpeg_core::CodecError> {
         if toks.is_empty() {
             return Ok(None);
@@ -712,6 +704,86 @@ impl CurvePatchLayout {
         (0..self.curve.pole_count() * components)
             .map(|ordinal| self.control_start + ordinal * 9 + 1)
     }
+}
+
+/// Read one byte-addressed curve into scoped tokens, then use the shared
+/// curve decoder. The byte position stops at the final control component.
+pub(super) fn decode_inline_curve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    marker_pos: usize,
+    int_width: RefWidth,
+) -> Option<Result<(NurbsCurve, usize), cadmpeg_core::CodecError>> {
+    let marker = marker_at(bytes, marker_pos)?;
+    let mut position = marker_pos + marker.byte_len();
+    let degree = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
+    if !(1..=20).contains(&degree) {
+        return None;
+    }
+    let closure = take_tagged_int(bytes, &mut position, 0x15, int_width)?;
+    let count = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
+    if !(1..=1000).contains(&count) {
+        return None;
+    }
+    let count = usize::try_from(count).ok()?;
+    let name = if marker.rational() { "nurbs" } else { "nubs" };
+    let mut storage = propagate_resource!(ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(name.len()),
+        "ASM inline byte curve tokens",
+    ));
+    let mut tokens = Vec::new();
+    propagate_resource!(ctx.reserve_scoped_vec(
+        &mut storage,
+        &mut tokens,
+        4,
+        "ASM inline byte curve tokens",
+    ));
+    tokens.extend([
+        Token::Ident(name.into()),
+        Token::Long(degree),
+        Token::Enum(closure),
+        Token::Long(i64::try_from(count).ok()?),
+    ]);
+    let mut sum = Some(0usize);
+    let mut expanded_len = Some(0usize);
+    let mut pairs = 0..count;
+    while !pairs.is_empty() {
+        let index = propagate_resource!(
+            ctx.next_charged(&mut pairs, "scan ASM inline byte curve knot pairs",)
+        )?;
+        let value = take_f64(bytes, &mut position)?;
+        let multiplicity = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
+        let run = usize::try_from(multiplicity).ok();
+        sum = sum.and_then(|sum| sum.checked_add(run?));
+        expanded_len = expanded_len.and_then(|length| {
+            length.checked_add(run?.checked_add(usize::from(index == 0 || index + 1 == count))?)
+        });
+        for token in [Token::Double(value), Token::Long(multiplicity)] {
+            propagate_resource!(ctx.push_scoped_vec(
+                &mut storage,
+                &mut tokens,
+                token,
+                "ASM inline byte curve tokens",
+            ));
+        }
+    }
+    let expansion = finish_knot_layout(sum?, expanded_len?, degree)?;
+    let mut poles = 0..expansion.n_poles;
+    while !poles.is_empty() {
+        let _pole =
+            propagate_resource!(ctx.next_charged(&mut poles, "scan ASM inline byte curve poles",))?;
+        for _ in 0..marker.cp_dims() {
+            let value = take_f64(bytes, &mut position)?;
+            propagate_resource!(ctx.push_scoped_vec(
+                &mut storage,
+                &mut tokens,
+                Token::Double(value),
+                "ASM inline byte curve tokens",
+            ));
+        }
+    }
+    let (curve, _) = propagate_resource!(curve_block(ctx, &tokens, 0)?);
+    Some(Ok((curve, position)))
 }
 
 pub(super) fn decode_curve_block(
@@ -1194,5 +1266,4 @@ mod tests {
     }
 
     mod attempt_storage;
-    mod entry_refusal;
 }

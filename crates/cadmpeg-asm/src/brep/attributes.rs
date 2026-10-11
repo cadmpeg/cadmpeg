@@ -24,9 +24,6 @@ pub fn collect_attributes(
     out: &mut Vec<SourceAttribute>,
     format: IdFormat,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let (emitted, emitted_storage) = emitted;
     let mut current = entity.ref_at(0);
     let mut chain_storage = ctx.reserve_scoped(0, "ASM attribute chain")?;
@@ -180,10 +177,7 @@ pub fn source_attribute(
     {
         ctx.reserve_vec(&mut values, 1, "ASM attribute values")?;
         let value = attribute_value(ctx, token, format)?.ok_or_else(|| {
-            cadmpeg_core::CodecError::malformed(format_args!(
-                "attribute record {} ({}) holds a non-finite number",
-                record.index, record.name
-            ))
+            cadmpeg_core::CodecError::malformed("attribute record holds a non-finite number")
         })?;
         values.push(value);
     }
@@ -202,9 +196,6 @@ fn attribute_value(
     token: &Token,
     format: IdFormat,
 ) -> Result<Option<AttributeValue>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     Ok(Some(match token {
         Token::Char(value) => AttributeValue::Integer(i64::from(*value)),
         Token::Short(value) => AttributeValue::Integer(i64::from(*value)),
@@ -342,9 +333,6 @@ fn direct_attribute_color(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: &Record,
 ) -> Result<Option<DirectAttributeColor>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(payload) = attribute_base(record).map(AttributeBase::payload) else {
         return Ok(None);
     };
@@ -480,11 +468,8 @@ pub fn attribute_chain_color_carrier<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entity: &Record,
     max_steps: usize,
-    mut by_index: impl FnMut(i64) -> Option<&'a Record>,
-) -> Result<Option<(&'a Record, DirectAttributeColor)>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
+    mut by_index: impl FnMut(i64) -> Option<&'a Record<'a>>,
+) -> Result<Option<(&'a Record<'a>, DirectAttributeColor)>, cadmpeg_core::CodecError> {
     let Some(mut current) = entity.ref_at(0) else {
         return Ok(None);
     };
@@ -531,9 +516,6 @@ pub fn attribute_chain_name(
     entity: &Record,
     by_index: &HashMap<i64, &Record, RandomState>,
 ) -> Result<Option<String>, cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(mut current) = entity.ref_at(0) else {
         return Ok(None);
     };
@@ -602,6 +584,32 @@ pub fn unknown_record_id(
 mod tests {
     use super::decode_transform;
     use crate::sab::{Record, Token};
+
+    #[test]
+    fn nonfinite_attribute_error_has_fixed_text_for_large_record_names() {
+        let record = crate::test_support::sab::record(
+            17,
+            "attribute".repeat(8192),
+            vec![Token::Double(f64::NAN)].into(),
+            0,
+            0,
+        );
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 1024;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::source_attribute(
+            &ctx,
+            &record,
+            cadmpeg_ir::attributes::AttributeTarget::Document,
+            crate::asm_format!("f3d"),
+        )
+        .unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(message)
+            if message == "attribute record holds a non-finite number"));
+        ctx.finish_session().unwrap();
+    }
 
     #[test]
     fn unknown_record_identity_refuses_retained_limit() {
@@ -728,7 +736,7 @@ mod tests {
         assert_eq!(limit.operation, "ASM attribute chain walk");
     }
 
-    fn transform_record(scale: f64, x: [f64; 3]) -> Record {
+    fn transform_record(scale: f64, x: [f64; 3]) -> Record<'static> {
         crate::test_support::sab::record(
             0,
             "transform".into(),
@@ -774,7 +782,7 @@ mod tests {
             .unwrap()
             .is_none());
     }
-    mod entry_refusal;
+
     mod limits;
     mod owned_values;
 }

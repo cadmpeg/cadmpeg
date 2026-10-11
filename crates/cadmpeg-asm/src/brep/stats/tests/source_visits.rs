@@ -8,7 +8,9 @@ use std::collections::BTreeMap;
 fn part() -> Stats {
     Stats {
         missing_face_surface_kinds: BTreeMap::from([
-            ("cone".into(), 1), ("plane".into(), 2), ("sphere".into(), 3),
+            ("cone".into(), 1),
+            ("plane".into(), 2),
+            ("sphere".into(), 3),
         ]),
         ..Stats::default()
     }
@@ -29,8 +31,6 @@ fn stats_kind_source_refuses_one_visit_before_any_entry_admission() {
     assert_eq!(first.operation, "ASM merge loss kind traversal");
     assert_eq!((first.limit, first.used, first.additional), (0, 0, 1));
     assert!(target.missing_face_surface_kinds.is_empty());
-    assert!(matches!(target.merge(&ctx, Stats::default()),
-        Err(CodecError::ResourceLimit(last)) if last == first));
     assert!(matches!(ctx.finish_session(),
         Err(CodecError::ResourceLimit(last)) if last == first));
 }
@@ -50,13 +50,14 @@ fn stats_kind_node_work_refuses_after_one_source_visit_without_admitting_the_tai
     assert_eq!(first.dimension, ResourceDimension::WorkUnits);
     assert_eq!(first.operation, "ASM merge loss kinds");
     // An empty tree adds one node: one shift pass plus two split passes.
-    let alignment = std::mem::align_of::<String>()
-        .max(std::mem::align_of::<usize>());
+    let alignment = std::mem::align_of::<String>().max(std::mem::align_of::<usize>());
     let node_bytes = 11 * (std::mem::size_of::<String>() + std::mem::size_of::<usize>())
-        + 16 * std::mem::size_of::<usize>() + 2 * alignment;
+        + 16 * std::mem::size_of::<usize>()
+        + 2 * alignment;
     let node_work = u64::try_from(3 * node_bytes).unwrap();
-    assert_eq!((first.limit, first.used, first.additional), (1, 1, node_work));
+    assert_eq!(
+        (first.limit, first.used, first.additional),
+        (1, 1, node_work)
+    );
     assert!(target.missing_face_surface_kinds.is_empty());
-    assert!(matches!(target.merge(&ctx, Stats::default()),
-        Err(CodecError::ResourceLimit(last)) if last == first));
 }

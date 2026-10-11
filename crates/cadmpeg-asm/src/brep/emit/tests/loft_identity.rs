@@ -157,38 +157,6 @@ fn revision_loft_support_calls_identity_once_and_keeps_geometry() {
 }
 
 #[test]
-fn present_loft_members_skip_identity_after_original_refusal() {
-    let geometry = curve();
-    crate::test_support::with_entry_context(|ctx, original| {
-        let Some(first) = original else {
-            return;
-        };
-        let mut out = AsmBrep::default();
-        for layout in [
-            EmbeddedLoftPathLayout::Legacy(geometry.clone()),
-            EmbeddedLoftPathLayout::Revision(Some(EmbeddedRevisionLoftPathCurve {
-                geometry: geometry.clone(),
-                endpoints: [Some(0.0), Some(1.0)],
-            })),
-        ] {
-            assert!(
-                matches!(super::super::emit_loft_path_curve(ctx, &mut out, layout,
-                || panic!("refused present path skips identity")),
-                Err(cadmpeg_core::CodecError::ResourceLimit(last)) if last == first)
-            );
-        }
-        for classic in [true, false] {
-            assert!(
-                matches!(super::super::emit_loft_member_form(ctx, &mut out, support(classic),
-                || panic!("refused present support skips identity")),
-                Err(cadmpeg_core::CodecError::ResourceLimit(last)) if last == first)
-            );
-        }
-        assert!(out.curves.is_empty() && out.surfaces.is_empty());
-    });
-}
-
-#[test]
 fn loft_identity_factory_refusal_precedes_output_mutation() {
     let geometry = curve();
     for scenario in 0..4 {
@@ -228,16 +196,7 @@ fn loft_identity_factory_refusal_precedes_output_mutation() {
         assert_eq!(first.operation, "test original identity factory refusal");
         assert_eq!((first.limit, first.used, first.additional), (0, 0, 1));
         assert!(out.curves.is_empty() && out.surfaces.is_empty());
-        for _ in 0..64 {
-            assert!(matches!(super::super::emit_loft_path_curve(&ctx, &mut out,
-                EmbeddedLoftPathLayout::Revision(None), || panic!("fused factory cannot run")),
-                Err(cadmpeg_core::CodecError::ResourceLimit(last)) if last == first));
-            assert!(
-                matches!(super::super::emit_loft_member_form(&ctx, &mut out, support(true),
-                || panic!("fused factory cannot run")),
-                Err(cadmpeg_core::CodecError::ResourceLimit(last)) if last == first)
-            );
-        }
+
         assert!(matches!(ctx.finish_session(),
             Err(cadmpeg_core::CodecError::ResourceLimit(last)) if last == first));
     }
@@ -612,12 +571,7 @@ fn support_copy_limits(refuse: bool) {
                 (used + identity_bytes - 1, used, identity_bytes)
             );
             assert!(out.surfaces.is_empty() && out.curves.is_empty());
-            for _ in 0..64 {
-                assert!(matches!(super::super::emit_loft_member_form(&ctx, &mut out,
-                    support(classic), || panic!("original copy refusal skips factory")),
-                    Err(cadmpeg_core::CodecError::ResourceLimit(last)) if last == first));
-                assert!(out.surfaces.is_empty() && out.curves.is_empty());
-            }
+
             assert!(matches!(ctx.finish_session(),
                 Err(cadmpeg_core::CodecError::ResourceLimit(last)) if last == first));
         }

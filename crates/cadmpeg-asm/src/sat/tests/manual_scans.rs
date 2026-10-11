@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::{parse, Cur, FieldReader, Prim};
+use super::super::{parse, Cur, Prim};
 use crate::stream_error::StreamFailure;
 use cadmpeg_core::decode::{
     refusal_probe::RefusalProbe, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
@@ -47,18 +47,6 @@ fn manual_sat_typing_peeks_only_actual_primitives() {
                 let first = *first;
                 assert_eq!(first.operation, "read SAT typing primitive");
                 assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
-                let mut empty = Cur {
-                    prims: &[],
-                    pos: 0,
-                    scale: 1.0,
-                    failure: None,
-                    resource: None,
-                    ctx: &ctx,
-                };
-                assert!(empty.peek().is_none());
-                assert!(
-                    matches!(empty.resource, Some(CodecError::ResourceLimit(last)) if last == first)
-                );
                 assert!(
                     matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
                 );
@@ -99,107 +87,4 @@ fn manual_sat_absent_field_keeps_the_missing_terminator_error() {
     drop(probe);
     assert!(ctx.resource_refusal().is_none());
     ctx.finish_session().unwrap();
-}
-
-#[test]
-fn manual_sat_empty_fields_are_free_and_preserve_original_refusal() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    policy.limits.max_collection_items = 0;
-    policy.limits.max_materialized_bytes = 0;
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut reader = FieldReader { bytes: &[], pos: 0 };
-    for _ in 0..64 {
-        assert!(reader.next_field(&ctx, None).unwrap().is_none());
-    }
-    let Err(CodecError::ResourceLimit(first)) =
-        ctx.charge_work(1, "test original SAT scan refusal")
-    else {
-        panic!("original refusal");
-    };
-    for _ in 0..64 {
-        assert!(
-            matches!(reader.next_field(&ctx, None), Err(StreamFailure::Resource(last)) if last == first)
-        );
-        assert!(matches!(parse(&ctx, &[]), Err(StreamFailure::Resource(last)) if last == first));
-    }
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
-}
-
-#[test]
-fn entry_sat_header_integer_missing_field_preserves_original_refusal() {
-    crate::test_support::with_entry_context(|ctx, original| {
-        let result = super::super::header_int::<i64>(ctx, None, 7, "version");
-        if let Some(first) = original {
-            assert!(
-                matches!(result, Err(crate::stream_error::StreamFailure::Resource(last)) if last == first)
-            );
-        } else {
-            let Err(StreamFailure::Parse(error)) = result else {
-                panic!("missing field");
-            };
-            assert_eq!(error.offset, 7);
-            assert_eq!(error.reason, "header line has no version field");
-        }
-    });
-}
-
-#[test]
-fn entry_sat_header_float_missing_field_preserves_original_refusal() {
-    crate::test_support::with_entry_context(|ctx, original| {
-        let result = super::super::header_float(ctx, None, 9, "tolerance");
-        if let Some(first) = original {
-            assert!(
-                matches!(result, Err(crate::stream_error::StreamFailure::Resource(last)) if last == first)
-            );
-        } else {
-            let Err(StreamFailure::Malformed(error)) = result else {
-                panic!("missing value");
-            };
-            assert_eq!(error.offset, 9);
-            assert_eq!(error.reason, "header line has no valid tolerance value");
-        }
-    });
-}
-
-#[test]
-fn entry_sat_truncated_string_preserves_original_refusal_and_cursor() {
-    crate::test_support::with_entry_context(|ctx, original| {
-        let mut reader = FieldReader { bytes: &[], pos: 0 };
-        let result = reader.read_str_payload(ctx, 3, 11);
-        if let Some(first) = original {
-            assert!(
-                matches!(result, Err(crate::stream_error::StreamFailure::Resource(last)) if last == first)
-            );
-            assert_eq!(reader.pos, 0);
-        } else {
-            let Err(StreamFailure::Parse(error)) = result else {
-                panic!("truncated string");
-            };
-            assert_eq!(error.offset, 11);
-            assert_eq!(error.reason, "truncated @3 string");
-            assert_eq!(reader.pos, 1);
-        }
-    });
-}
-
-#[test]
-fn entry_sat_fixed_braces_preserve_original_refusal() {
-    crate::test_support::with_entry_context(|ctx, original| {
-        for field in ["{", "}"] {
-            let mut reader = FieldReader { bytes: &[], pos: 0 };
-            let result = super::super::lex_prim(ctx, &mut reader, 0, field, false);
-            if let Some(first) = &original {
-                assert!(matches!(result, Err(StreamFailure::Resource(last)) if &last == first));
-            } else {
-                assert!(matches!(
-                    (field, result.unwrap()),
-                    ("{", Prim::Open) | ("}", Prim::Close)
-                ));
-            }
-            assert_eq!(reader.pos, 0);
-        }
-    });
 }

@@ -46,9 +46,6 @@ pub fn transfer_into_ir<'ir>(
     native_format: &str,
     brep: AsmBrep,
 ) -> Result<(&'ir NativeNamespace, AsmTransferRemainder), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if ir.native.namespace(native_format).is_some_and(|namespace| {
         ASM_NATIVE_ARENAS.iter().any(|name| {
             namespace
@@ -131,24 +128,22 @@ pub fn transfer_into_ir<'ir>(
     ctx.extend_vec(&mut ir.model.surfaces, surfaces, "ASM transfer surfaces")?;
     ctx.extend_vec(&mut ir.model.curves, curves, "ASM transfer curves")?;
     ctx.extend_vec(&mut ir.model.pcurves, pcurves, "ASM transfer pcurves")?;
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(procedural_surfaces);
     while source_values.len() != 0 {
-        let Some((owner, procedural)) = ctx.next_charged(&mut source_values, "ASM procedural surface transfer")? else {
+        let Some((owner, procedural)) =
+            ctx.next_charged(&mut source_values, "ASM procedural surface transfer")?
+        else {
             break;
         };
         ir.model
             .add_procedural_surface(ctx, &owner, procedural)?
             .map_err(|error| CodecError::malformed(error.to_string()))?;
     }
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(procedural_curves);
     while source_values.len() != 0 {
-        let Some((owner, procedural)) = ctx.next_charged(&mut source_values, "ASM procedural curve transfer")? else {
+        let Some((owner, procedural)) =
+            ctx.next_charged(&mut source_values, "ASM procedural curve transfer")?
+        else {
             break;
         };
         ir.model
@@ -191,7 +186,6 @@ pub fn transfer_into_ir<'ir>(
 
 #[cfg(test)]
 mod tests {
-    mod entry_refusal;
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 
     use super::transfer_into_ir;

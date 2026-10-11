@@ -10,11 +10,10 @@ use cadmpeg_ir::geometry::RevisionCacheForm;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use std::collections::{HashMap, HashSet};
 
-mod entry_refusal;
 mod shared_carrier;
 mod source_visits;
 
-fn ref_record(index: usize, name: &str, refs: &[i64]) -> Record {
+fn ref_record(index: usize, name: &str, refs: &[i64]) -> Record<'static> {
     crate::test_support::sab::record(
         index,
         name.into(),
@@ -69,7 +68,9 @@ fn assert_work_refusal(error: &cadmpeg_core::CodecError, operation: &str) {
     assert_eq!(limit.operation, operation);
 }
 
-fn indexed_records(records: &[Record]) -> HashMap<i64, &Record> {
+fn indexed_records<'record>(
+    records: &'record [Record<'record>],
+) -> HashMap<i64, &'record Record<'record>> {
     records
         .iter()
         .map(|record| (i64::try_from(record.index).unwrap(), record))

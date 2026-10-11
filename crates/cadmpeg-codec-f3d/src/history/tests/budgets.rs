@@ -207,7 +207,7 @@ fn one_insert_only_state() -> crate::history_records::AsmHistory {
     history
 }
 
-fn archive_record() -> cadmpeg_asm::sab::Record {
+fn archive_record() -> cadmpeg_asm::sab::Record<'static> {
     cadmpeg_asm::test_support::sab::record(
         0,
         "edge".into(),

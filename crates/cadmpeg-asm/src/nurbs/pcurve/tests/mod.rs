@@ -343,6 +343,4 @@ mod cache_selection;
 mod procedural_curves;
 mod procedural_surfaces;
 
-mod entry_refusal;
-
 mod block_attempt_storage;
