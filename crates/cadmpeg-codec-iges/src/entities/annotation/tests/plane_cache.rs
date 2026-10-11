@@ -92,7 +92,7 @@ fn sectioned_area_plane_cache_reuses_equivalent_overflowed_offsets() {
 }
 
 fn linear_nurbs_for_cache(points: Vec<Point3>) -> SolvedCurveGeometry {
-    with_coplanarity_probe_context(|ctx| {
+    crate::test_support::with_service_context(&[], |ctx| {
         SolvedCurveGeometry::Nurbs(
             cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                 ctx,
