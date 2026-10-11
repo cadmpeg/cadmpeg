@@ -1011,9 +1011,21 @@ pub(in super::super) fn section_segment_radius_constraints_for_emitted(
     emitted: &BTreeSet<SketchEntityId>,
     available_parameters: &BTreeSet<ParameterId>,
 ) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
-    let (rows, _slots) = section_segment_radius_candidates_for_emitted(ctx, definition, sketch, emitted, available_parameters)?;
-    if rows.is_empty() { return Ok(Vec::new()); }
-    ctx.try_collect_vec(rows.into_iter().map(|(constraint, offset, storage)| storage.commit_value((constraint, offset))), "creo retained radius constraints")
+    let (rows, _slots) = section_segment_radius_candidates_for_emitted(
+        ctx,
+        definition,
+        sketch,
+        emitted,
+        available_parameters,
+    )?;
+    if rows.is_empty() {
+        return Ok(Vec::new());
+    }
+    ctx.try_collect_vec(
+        rows.into_iter()
+            .map(|(constraint, offset, storage)| storage.commit_value((constraint, offset))),
+        "creo retained radius constraints",
+    )
 }
 
 pub(in super::super) fn section_segment_radius_candidates_for_emitted<'ctx>(
@@ -1026,7 +1038,8 @@ pub(in super::super) fn section_segment_radius_candidates_for_emitted<'ctx>(
     let mut binding_storage = ctx.reserve_scoped(0, "creo radius binding scratch storage")?;
     let mut bindings =
         section_segment_radius_bindings(ctx, definition, sketch, &mut binding_storage)?;
-    let (mut constraints, mut slots) = ctx.temporary_vec(0, "creo emitted segment radius constraints")?;
+    let (mut constraints, mut slots) =
+        ctx.temporary_vec(0, "creo emitted segment radius constraints")?;
     for binding in ctx.admit_iter(&mut bindings, "creo segment radius binding rows")? {
         let mut storage = ctx.reserve_scoped(0, "creo radius candidate storage")?;
         let Some((constraint, offset)) =
@@ -1191,7 +1204,8 @@ pub(in super::super) fn section_equation_radius_dimension_candidates<'ctx>(
         let Ok(ordinal) = usize::try_from(equation.scalar.1) else {
             continue;
         };
-        let mut parameter_storage = ctx.reserve_scoped(0, "creo equation parameter scratch storage")?;
+        let mut parameter_storage =
+            ctx.reserve_scoped(0, "creo equation parameter scratch storage")?;
         let Some((dimension, parameter)) = parameter_storage.with_storage(|| {
             resolved_feature_dimension_parameter_admitted(ctx, sketch, dimensions, ordinal)
         })?
@@ -2008,9 +2022,16 @@ pub(in super::super) fn section_equation_native_constraints(
     sketch: &SketchId,
     typed_offsets: &BTreeSet<usize>,
 ) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
-    let (rows, _slots) = section_equation_native_candidates(ctx, definition, sketch, typed_offsets)?;
-    if rows.is_empty() { return Ok(Vec::new()); }
-    ctx.try_collect_vec(rows.into_iter().map(|(constraint, offset, storage)| storage.commit_value((constraint, offset))), "creo retained native equation constraints")
+    let (rows, _slots) =
+        section_equation_native_candidates(ctx, definition, sketch, typed_offsets)?;
+    if rows.is_empty() {
+        return Ok(Vec::new());
+    }
+    ctx.try_collect_vec(
+        rows.into_iter()
+            .map(|(constraint, offset, storage)| storage.commit_value((constraint, offset))),
+        "creo retained native equation constraints",
+    )
 }
 
 pub(in super::super) fn section_equation_native_candidates<'ctx>(
@@ -2037,117 +2058,140 @@ pub(in super::super) fn section_equation_native_candidates<'ctx>(
             continue;
         }
         let mut storage = ctx.reserve_scoped(0, "creo native equation candidate storage")?;
-        let build_candidate = || -> Result<Option<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
-        let active = !solver.is_disabled(equation.equation_id);
-        let native_ref = sketch_native_ref_admitted(ctx, sketch)?;
-        let mut native_properties = BTreeMap::new();
-        insert_native_equation_property(
-            ctx,
-            &mut native_properties,
-            "equation_id",
-            equation.equation_id,
-        )?;
-        insert_native_equation_property(
-            ctx,
-            &mut native_properties,
-            "function_id",
-            equation.function_id,
-        )?;
-        insert_native_equation_property(ctx, &mut native_properties, "offset", equation.offset)?;
-        insert_native_equation_property(ctx, &mut native_properties, "table_offset", table.offset)?;
-        insert_native_equation_property(
-            ctx,
-            &mut native_properties,
-            "table_declared_count",
-            table.declared_count,
-        )?;
-        insert_native_equation_property(ctx, &mut native_properties, "active", active)?;
-        let NativeEquationData {
-            operands,
-            argument_slots,
-            null_argument_ordinals,
-        } = native_equation_data(ctx, equation.equation_id, &equation.arguments, &native_ref)?;
-        let key = ctx.copy_retained_text("argument_slots", "creo native equation property keys")?;
-        ctx.insert_btree_map(
-            &mut native_properties,
-            key,
-            argument_slots,
-            "creo native equation property nodes",
-        )?;
-        if let Some(ordinals) = null_argument_ordinals {
-            let key = ctx.copy_retained_text(
-                "null_argument_ordinals",
-                "creo native equation property keys",
-            )?;
-            ctx.insert_btree_map(
-                &mut native_properties,
-                key,
-                ordinals,
-                "creo native equation property nodes",
-            )?;
-        }
-        if let Some(count) = equation.explicit_argument_count {
-            insert_native_equation_property(
-                ctx,
-                &mut native_properties,
-                "explicit_argument_count",
-                count,
-            )?;
-        }
-        if let Some(entity_ref) = table.entity_ref {
-            insert_native_equation_property(
-                ctx,
-                &mut native_properties,
-                "table_entity_ref",
-                entity_ref,
-            )?;
-        }
-        let Some(id) = sketch_constraint_id_admitted(
-            ctx,
-            sketch,
-            format_args!("equation:offset:{}", equation.offset),
-        )?
-        else {
-            return Ok(None);
-        };
-        let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
-            SketchConstraintDefinitionInput::Native {
-                native_kind: native_equation_nonblank(
+        let build_candidate =
+            || -> Result<Option<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
+                let active = !solver.is_disabled(equation.equation_id);
+                let native_ref = sketch_native_ref_admitted(ctx, sketch)?;
+                let mut native_properties = BTreeMap::new();
+                insert_native_equation_property(
                     ctx,
-                    format_args!("creo:equation:{}", equation.function_id),
-                    "creo equation native kind",
-                )?,
-                native_state: Some(u64::from(active)),
-                native_flags: None,
-                native_properties,
-                entities: Vec::new(),
-                parameter: None,
-                operands,
-            },
-        ) else {
-            return Ok(None);
-        };
-        Ok(Some((
-            SketchConstraint {
-                id,
-                sketch: sketch.try_clone_for_decode(ctx, "creo native equation sketch identity")?,
-                definition,
-                name: None,
-                driving: None,
-                active: Some(active),
-                virtual_space: None,
-                visible: None,
-                orientation: None,
-                label_distance: None,
-                label_position: None,
-                metadata: None,
-                native_ref: Some(native_ref),
-            },
-            equation.offset,
-        )))
-        };
+                    &mut native_properties,
+                    "equation_id",
+                    equation.equation_id,
+                )?;
+                insert_native_equation_property(
+                    ctx,
+                    &mut native_properties,
+                    "function_id",
+                    equation.function_id,
+                )?;
+                insert_native_equation_property(
+                    ctx,
+                    &mut native_properties,
+                    "offset",
+                    equation.offset,
+                )?;
+                insert_native_equation_property(
+                    ctx,
+                    &mut native_properties,
+                    "table_offset",
+                    table.offset,
+                )?;
+                insert_native_equation_property(
+                    ctx,
+                    &mut native_properties,
+                    "table_declared_count",
+                    table.declared_count,
+                )?;
+                insert_native_equation_property(ctx, &mut native_properties, "active", active)?;
+                let NativeEquationData {
+                    operands,
+                    argument_slots,
+                    null_argument_ordinals,
+                } = native_equation_data(
+                    ctx,
+                    equation.equation_id,
+                    &equation.arguments,
+                    &native_ref,
+                )?;
+                let key =
+                    ctx.copy_retained_text("argument_slots", "creo native equation property keys")?;
+                ctx.insert_btree_map(
+                    &mut native_properties,
+                    key,
+                    argument_slots,
+                    "creo native equation property nodes",
+                )?;
+                if let Some(ordinals) = null_argument_ordinals {
+                    let key = ctx.copy_retained_text(
+                        "null_argument_ordinals",
+                        "creo native equation property keys",
+                    )?;
+                    ctx.insert_btree_map(
+                        &mut native_properties,
+                        key,
+                        ordinals,
+                        "creo native equation property nodes",
+                    )?;
+                }
+                if let Some(count) = equation.explicit_argument_count {
+                    insert_native_equation_property(
+                        ctx,
+                        &mut native_properties,
+                        "explicit_argument_count",
+                        count,
+                    )?;
+                }
+                if let Some(entity_ref) = table.entity_ref {
+                    insert_native_equation_property(
+                        ctx,
+                        &mut native_properties,
+                        "table_entity_ref",
+                        entity_ref,
+                    )?;
+                }
+                let Some(id) = sketch_constraint_id_admitted(
+                    ctx,
+                    sketch,
+                    format_args!("equation:offset:{}", equation.offset),
+                )?
+                else {
+                    return Ok(None);
+                };
+                let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                    SketchConstraintDefinitionInput::Native {
+                        native_kind: native_equation_nonblank(
+                            ctx,
+                            format_args!("creo:equation:{}", equation.function_id),
+                            "creo equation native kind",
+                        )?,
+                        native_state: Some(u64::from(active)),
+                        native_flags: None,
+                        native_properties,
+                        entities: Vec::new(),
+                        parameter: None,
+                        operands,
+                    },
+                ) else {
+                    return Ok(None);
+                };
+                Ok(Some((
+                    SketchConstraint {
+                        id,
+                        sketch: sketch
+                            .try_clone_for_decode(ctx, "creo native equation sketch identity")?,
+                        definition,
+                        name: None,
+                        driving: None,
+                        active: Some(active),
+                        virtual_space: None,
+                        visible: None,
+                        orientation: None,
+                        label_distance: None,
+                        label_position: None,
+                        metadata: None,
+                        native_ref: Some(native_ref),
+                    },
+                    equation.offset,
+                )))
+            };
         if let Some((constraint, offset)) = storage.with_storage(build_candidate)? {
-            ctx.push_scoped_vec(&mut slots, &mut constraints, (constraint, offset, storage), "creo native equation constraints")?;
+            ctx.push_scoped_vec(
+                &mut slots,
+                &mut constraints,
+                (constraint, offset, storage),
+                "creo native equation constraints",
+            )?;
         }
     }
     Ok((constraints, slots))

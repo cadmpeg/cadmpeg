@@ -358,10 +358,10 @@ pub(super) fn transfer_section_entities(
             sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
         let entity = SketchEntity::new(id, sketch_copy, geometry)
-                .with_construction(construction)
-                .with_native_ref(Some(native_ref))
-                .with_geometry_ref(geometry_ref)
-                .with_endpoint_refs(endpoint_refs);
+            .with_construction(construction)
+            .with_native_ref(Some(native_ref))
+            .with_geometry_ref(geometry_ref)
+            .with_endpoint_refs(endpoint_refs);
         ctx.charge_entities(1, "admit Creo model sketch_entities")?;
         ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
     }
@@ -414,9 +414,9 @@ pub(super) fn transfer_section_entities(
             sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
         let entity = SketchEntity::new(id, sketch_copy, geometry)
-                .with_construction(true)
-                .with_native_ref(Some(native_ref))
-                .with_endpoint_refs(endpoint_refs);
+            .with_construction(true)
+            .with_native_ref(Some(native_ref))
+            .with_endpoint_refs(endpoint_refs);
         ctx.charge_entities(1, "admit Creo model sketch_entities")?;
         ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
     }
@@ -481,9 +481,9 @@ pub(super) fn transfer_section_entities(
             sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
         let entity = SketchEntity::new(id, sketch_copy, geometry)
-                .with_construction(construction)
-                .with_native_ref(Some(native_ref))
-                .with_geometry_ref(geometry_ref);
+            .with_construction(construction)
+            .with_native_ref(Some(native_ref))
+            .with_geometry_ref(geometry_ref);
         ctx.charge_entities(1, "admit Creo model sketch_entities")?;
         ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
     }
@@ -549,9 +549,9 @@ pub(super) fn transfer_section_entities(
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
         let endpoint_refs = admitted_endpoint_refs(ctx, sketch_id, &[segment.point_id])?;
         let entity = SketchEntity::new(id, sketch_copy, geometry)
-                .with_construction(construction)
-                .with_native_ref(Some(native_ref))
-                .with_endpoint_refs(endpoint_refs);
+            .with_construction(construction)
+            .with_native_ref(Some(native_ref))
+            .with_endpoint_refs(endpoint_refs);
         ctx.charge_entities(1, "admit Creo model sketch_entities")?;
         ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
     }
@@ -614,10 +614,10 @@ pub(super) fn transfer_section_entities(
             sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
         let entity = SketchEntity::new(id, sketch_copy, geometry)
-                .with_construction(true)
-                .with_native_ref(Some(native_ref))
-                .with_geometry_ref(geometry_ref)
-                .with_endpoint_refs(endpoint_refs);
+            .with_construction(true)
+            .with_native_ref(Some(native_ref))
+            .with_geometry_ref(geometry_ref)
+            .with_endpoint_refs(endpoint_refs);
         ctx.charge_entities(1, "admit Creo model sketch_entities")?;
         ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
     }
@@ -686,10 +686,10 @@ pub(super) fn transfer_section_entities(
             sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
         let entity = SketchEntity::new(id, sketch_copy, geometry)
-                .with_construction(true)
-                .with_native_ref(Some(native_ref))
-                .with_geometry_ref(geometry_ref)
-                .with_endpoint_refs(endpoint_refs);
+            .with_construction(true)
+            .with_native_ref(Some(native_ref))
+            .with_geometry_ref(geometry_ref)
+            .with_endpoint_refs(endpoint_refs);
         ctx.charge_entities(1, "admit Creo model sketch_entities")?;
         ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
     }
@@ -746,9 +746,9 @@ pub(super) fn transfer_section_entities(
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
         let geometry = native_section_geometry(ctx, "bounded_curve")?;
         let entity = SketchEntity::new(id, sketch_copy, geometry)
-                .with_construction(construction)
-                .with_native_ref(Some(native_ref))
-                .with_endpoint_refs(endpoint_refs);
+            .with_construction(construction)
+            .with_native_ref(Some(native_ref))
+            .with_endpoint_refs(endpoint_refs);
         ctx.charge_entities(1, "admit Creo model sketch_entities")?;
         ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
     }
@@ -795,8 +795,8 @@ pub(super) fn transfer_section_entities(
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
         let geometry = native_section_geometry(ctx, "conic")?;
         let entity = SketchEntity::new(id, sketch_copy, geometry)
-                .with_construction(true)
-                .with_native_ref(Some(native_ref));
+            .with_construction(true)
+            .with_native_ref(Some(native_ref));
         ctx.charge_entities(1, "admit Creo model sketch_entities")?;
         ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
     }
@@ -875,9 +875,9 @@ pub(super) fn transfer_section_entities(
             sketch_id.try_clone_for_decode(ctx, "creo section entity sketch identity")?;
         let native_ref = sketch_native_ref_admitted(ctx, sketch_id)?;
         let entity = SketchEntity::new(id, sketch_copy, geometry)
-                .with_construction(construction)
-                .with_native_ref(Some(native_ref))
-                .with_geometry_ref(geometry_ref);
+            .with_construction(construction)
+            .with_native_ref(Some(native_ref))
+            .with_geometry_ref(geometry_ref);
         ctx.charge_entities(1, "admit Creo model sketch_entities")?;
         ctx.push_scoped_vec(entity_slots, &mut entities, entity, "creo section entities")?;
     }
@@ -992,8 +992,10 @@ pub(super) fn transfer_section_entities(
             generated_saved_geometries.push((external_id, copied));
         }
         let native_ref = {
-            let mut reference_storage = ctx.reserve_scoped(0, "creo saved base reference storage")?;
-            let reference = reference_storage.with_storage(|| sketch_native_ref_admitted(ctx, sketch_id))?;
+            let mut reference_storage =
+                ctx.reserve_scoped(0, "creo saved base reference storage")?;
+            let reference =
+                reference_storage.with_storage(|| sketch_native_ref_admitted(ctx, sketch_id))?;
             ctx.format_retained(
                 format_args!("{reference}:saved_entity#{internal_id}"),
                 "creo saved entity native reference",
