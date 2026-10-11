@@ -4,10 +4,12 @@
 use cadmpeg_core::decode::ScopedReservation;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 use crate::native::{EntryRecord, LinkTarget, ObjectRecord, PropertyFamily, PropertyRecord};
+
+mod comparison;
 
 /// Write the legacy census from authoritative object, property, and entry records.
 pub(crate) fn install(
@@ -44,7 +46,7 @@ pub(crate) fn matches_native(
         Ord::cmp,
         "FreeCAD application records sort",
     )?;
-    let mut actual = namespace.arena_iter_as_for_decode::<serde_json::Value>(ctx, "applications");
+    let mut actual = namespace.arena_iter_as_for_decode::<ApplicationRecordWire>(ctx, "applications");
     let mut expected = expected.into_iter();
     while expected.len() != 0 {
         if actual.size_hint().1 == Some(0) {
@@ -54,15 +56,19 @@ pub(crate) fn matches_native(
             break;
         };
         let record_result = ctx.with_scoped_storage("FreeCAD actual application record", || {
-            ctx.next_charged(&mut actual, "FreeCAD actual application record")?
-                .transpose()
+            match ctx.next_charged(&mut actual, "FreeCAD actual application record")? {
+                Some(Ok(record)) => Ok(Some(record)),
+                Some(Err(error)) if error.resource_limit().is_some() => Err(error),
+                // A stored value outside the exact wire shape cannot match.
+                Some(Err(_)) | None => Ok(None),
+            }
         })?;
         let _actual_storage = record_result.1;
         let actual = record_result.0;
         let Some(actual) = actual else {
             return Ok(false);
         };
-        if actual != serde_json::to_value(record)? {
+        if !actual.matches(ctx, &record)? {
             return Ok(false);
         }
     }
@@ -70,61 +76,82 @@ pub(crate) fn matches_native(
         return Ok(true);
     }
     let tail = ctx.with_scoped_storage("FreeCAD actual application tail", || {
-        ctx.next_charged(&mut actual, "FreeCAD actual application tail")?
-            .transpose()
+        match ctx.next_charged(&mut actual, "FreeCAD actual application tail")? {
+            Some(Err(error)) if error.resource_limit().is_some() => Err(error),
+            Some(_) => Ok(false),
+            None => Ok(true),
+        }
     })?;
     let _tail_storage = tail.1;
     let tail = tail.0;
-    Ok(tail.is_none())
+    Ok(tail)
 }
 
 // These are serialization views, not independent preservation records. Payload bytes
 // borrow their authoritative entry; absent object data remains an Option until this
 // legacy wire boundary emits its empty-data and zero-offset representation.
-#[derive(Serialize)]
-struct ApplicationRecordWire<'a> {
+type ApplicationRecordView<'a> = ApplicationRecordWire<
+    &'a str,
+    &'a [u8],
+    &'a [String],
+    &'a [Option<LinkTarget>],
+>;
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields, bound(deserialize = "S: Deserialize<'de>, B: Deserialize<'de>, D: Deserialize<'de>, L: Deserialize<'de>"))]
+struct ApplicationRecordWire<
+    S = String,
+    B = Vec<u8>,
+    D = Vec<String>,
+    L = Vec<Option<comparison::ObjectOnly<comparison::ApplicationLinkWire>>>,
+> {
     id: String,
-    object: &'a str,
-    type_name: &'a str,
-    domain: &'a str,
-    properties: Vec<&'a str>,
-    dependencies: &'a [String],
-    side_entries: Vec<&'a str>,
+    object: S,
+    type_name: S,
+    domain: S,
+    properties: Vec<S>,
+    dependencies: D,
+    side_entries: Vec<S>,
     inert_payload: bool,
     order: usize,
     byte_start: u64,
     byte_end: u64,
     byte_len: u64,
     sha256: String,
-    data: &'a [u8],
-    property_records: Vec<ApplicationPropertyWire<'a>>,
+    data: B,
+    #[serde(deserialize_with = "comparison::object_vec")]
+    property_records: Vec<ApplicationPropertyWire<S, B, L>>,
 }
 
-#[derive(Serialize)]
-struct ApplicationPropertyWire<'a> {
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields, bound(deserialize = "S: Deserialize<'de>, B: Deserialize<'de>, L: Deserialize<'de>"))]
+struct ApplicationPropertyWire<S, B, L> {
     id: String,
-    object: &'a str,
-    property: &'a str,
-    type_name: &'a str,
+    object: S,
+    property: S,
+    type_name: S,
+    #[serde(deserialize_with = "comparison::property_family")]
     family: PropertyFamily,
     order: usize,
-    links: &'a [Option<LinkTarget>],
+    links: L,
     byte_start: u64,
     byte_end: u64,
     byte_len: u64,
     sha256: String,
-    data: &'a [u8],
-    payloads: Vec<ApplicationPayloadWire<'a>>,
+    data: B,
+    #[serde(deserialize_with = "comparison::object_vec")]
+    payloads: Vec<ApplicationPayloadWire<S, B>>,
     inert: bool,
 }
 
-#[derive(Serialize)]
-struct ApplicationPayloadWire<'a> {
-    entry: &'a str,
-    name: &'a str,
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ApplicationPayloadWire<S, B> {
+    entry: S,
+    name: S,
     byte_len: u64,
-    sha256: &'a str,
-    data: &'a [u8],
+    sha256: S,
+    data: B,
 }
 
 struct OwnerProperties<'records, 'context> {
@@ -137,7 +164,7 @@ fn wire_records<'a>(
     objects: &'a [ObjectRecord],
     properties: &'a [PropertyRecord],
     entries: &'a [EntryRecord],
-) -> Result<Vec<ApplicationRecordWire<'a>>, CodecError> {
+) -> Result<Vec<ApplicationRecordView<'a>>, CodecError> {
     const OWNER_PROPERTIES: &str = "FreeCAD application owner properties";
     if objects.is_empty() {
         return Ok(Vec::new());
@@ -245,7 +272,7 @@ fn wire_records<'a>(
                 )? {
                     ctx.push_vec(
                         &mut payloads,
-                        ApplicationPayloadWire {
+                        ApplicationPayloadWire::<&str, &[u8]> {
                             entry: entry.id(),
                             name: entry.name(),
                             byte_len: entry.byte_len(),
@@ -263,7 +290,7 @@ fn wire_records<'a>(
                 "FreeCAD application property digest",
             )?;
             ctx.charge_retained(64, "FreeCAD application property digest")?;
-            property_records.push(ApplicationPropertyWire {
+            property_records.push(ApplicationPropertyWire::<&str, &[u8], &[Option<LinkTarget>]> {
                 id: crate::native::native_child_id_charged(
                     ctx,
                     "application-property",
@@ -292,7 +319,7 @@ fn wire_records<'a>(
             "FreeCAD application object digest",
         )?;
         ctx.charge_retained(64, "FreeCAD application object digest")?;
-        records.push(ApplicationRecordWire {
+        records.push(ApplicationRecordView {
             id: crate::native::native_id_charged(ctx, "application", object.name())?,
             object: object.id(),
             type_name: &object.type_name,
