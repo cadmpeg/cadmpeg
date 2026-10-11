@@ -41,3 +41,5 @@ mod index_growth;
 mod candidate_storage;
 
 mod association_growth;
+
+mod selection_growth;
