@@ -434,14 +434,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know its role to parse other framing branches.
 
-### OS-09. Vertex-incidence terminal controls
-
-**Question.** What is the semantic difference between terminal controls `00` and `04` in an object-stream vertex-incidence record?
-
-**Known.** Both forms retain the same resolved vertex incidence.
-
-**Need.** We must know the difference to validate and write the record.
-
 ### OS-11. Class-`0x2c` auxiliary scalars
 
 **Question.** What does each decreasing auxiliary scalar in class-`0x2c` terminal forms `01 09` and `01 15` control?

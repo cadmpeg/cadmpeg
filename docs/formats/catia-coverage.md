@@ -790,3 +790,5 @@ Object-loop member triples retain the edge occurrence sign, the composite pcurve
 Numeric object-loop terminals retain patch-aware U/V rectangle corners and paired Cartesian bounds. Admission requires nondecreasing patch identifiers, nondecreasing local scalars within one patch, a terminal compact zero, and finite ordered Cartesian low/high pairs. Local resets across patch boundaries remain admitted; stored boxes are retained without regeneration.
 
 A8 freeform surfaces consume their pole and weight grids inside the declared logical frame after descriptor reconstruction. Nonphysical extent order preserves the complete neutral model. Unframed pcurve gaps do not supply pole grids or bridge object-stream namespaces. The fixed terminal-span tail retains local intervals and identity affine pairs independently of the full knot domain.
+
+Vertex-incidence links accept exactly terminal `00` or `04` after one complete object reference and retain the terminal separately from the resolved roster. The two controls use the same incidence resolution. Strict frame closure rejects missing and extra terminal bytes. Class-`5d` dispatch uses the complete payload signature.
