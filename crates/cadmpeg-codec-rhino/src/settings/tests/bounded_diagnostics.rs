@@ -98,3 +98,97 @@ fn layer_class_diagnostic_has_no_text_budget_fee() {
     assert_eq!(ctx.resource_refusal(), None);
     ctx.finish_session().unwrap();
 }
+
+fn layer_before_rendering(minor: u8) -> Vec<u8> {
+    use crate::test_support::test_dump::utf16_bytes;
+
+    let mut payload = vec![0x10 | minor];
+    for value in [0_i32, 7, -1, -1, 0] {
+        payload.extend(value.to_le_bytes());
+    }
+    payload.extend([0, 0, 0, 255]);
+    payload.extend([0; 4]);
+    payload.extend(0.0_f64.to_le_bytes());
+    payload.extend(1.0_f64.to_le_bytes());
+    payload.extend(utf16_bytes(""));
+    payload.push(1);
+    payload.extend((-1_i32).to_le_bytes());
+    payload.extend([0, 0, 0, 255]);
+    payload.extend(0.0_f64.to_le_bytes());
+    payload.push(0);
+    payload.extend([0; 16]);
+    payload
+}
+
+fn assert_layer_wrapper_without_admission(payload: &[u8], label: &str, needed: usize) {
+    use crate::loss::Diagnostics;
+    use crate::test_support::test_dump::{class_wrapper, metadata_record};
+
+    let archive = ArchiveVersion::V8;
+    let (bytes, record) = metadata_record(
+        settings::LAYER_RECORD,
+        class_wrapper(archive, settings::ON_LAYER_UUID.to_wire(), payload),
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "Rhino parse_layer text",
+        None,
+    );
+    let mut warnings = Diagnostics::new();
+    let mut losses = Vec::new();
+    let error = settings::parse_layer(
+        &ctx,
+        &bytes,
+        &record,
+        archive,
+        Some(200_505_000),
+        &mut warnings,
+        &mut losses,
+    )
+    .unwrap_err();
+    drop(probe);
+    let FramingError::Structural { offset, message } = error else {
+        panic!("bounded layer framing error");
+    };
+    let expected_offset = crate::objects::parse_class_wrapper(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        record.body(),
+        archive,
+        &mut Diagnostics::new(),
+    )
+    .unwrap()
+    .class_data_range
+    .end;
+    assert_eq!(offset, expected_offset);
+    let source = FramingError::OutOfBounds {
+        offset: expected_offset,
+        end: expected_offset + needed,
+        bound: expected_offset,
+    };
+    assert_eq!(message, format!("{label}: {source}"));
+    assert!(warnings.is_empty());
+    assert!(losses.is_empty());
+    assert_eq!(ctx.resource_refusal(), None);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn truncated_layer_rendering_diagnostic_has_no_budget_fee() {
+    assert_layer_wrapper_without_admission(&layer_before_rendering(7), "rendering", 4);
+}
+
+#[test]
+fn truncated_layer_display_material_diagnostic_has_no_budget_fee() {
+    let mut payload = layer_before_rendering(8);
+    let mut rendering = 1_i32.to_le_bytes().to_vec();
+    rendering.extend(0_i32.to_le_bytes());
+    rendering.extend(0_i32.to_le_bytes());
+    payload.extend(crc_chunk(ArchiveVersion::V8, 0x4000_8000, &rendering));
+    assert_layer_wrapper_without_admission(&payload, "display material", 16);
+}

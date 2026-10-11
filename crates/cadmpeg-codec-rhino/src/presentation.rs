@@ -1054,7 +1054,6 @@ fn displacement_record(
         displacement.sub_items.len(),
         "Rhino projected displacement sub-items",
     )?;
-    ctx.charge_work(0, "Rhino displacement record traversal")?;
     let mut projection_source = displacement.sub_items.iter();
     for _ in 0..projection_source.len() {
         let item = ctx
@@ -1155,7 +1154,6 @@ fn shut_lining_record(
         shut_lining.curves.len(),
         "Rhino projected shut-lining curves",
     )?;
-    ctx.charge_work(0, "Rhino shut lining record traversal")?;
     let mut projection_source = shut_lining.curves.iter();
     for _ in 0..projection_source.len() {
         let curve = ctx
@@ -1395,8 +1393,12 @@ fn read_user_string_records(
     let Some(payload_range) = payload_range else {
         return Ok(Vec::new());
     };
-    match parse_user_string_list(ctx, data, payload_range, archive, selection) {
-        Ok(parsed) => user_string_records(ctx, parsed.entries),
+    let mut attempt = ctx.reserve_scoped(0, "Rhino user-string projection attempt")?;
+    match attempt.with_storage(|| {
+        let parsed = parse_user_string_list(ctx, data, payload_range, archive, selection)?;
+        Ok::<_, FramingError>(user_string_records(ctx, parsed.entries)?)
+    }) {
+        Ok(records) => attempt.commit_value(records),
         Err(FramingError::Resource(limit)) => Err(CodecError::ResourceLimit(limit)),
         Err(error) => {
             push_scoped_presentation_loss(
@@ -1420,7 +1422,6 @@ fn first_user_string_records(
     losses: &mut impl AdmittedVec<LossNote>,
 ) -> Result<(Vec<UserStringRecord>, Vec<UserStringRecord>), CodecError> {
     let mut geometry_range = None;
-    ctx.charge_work(0, "Rhino first user string records traversal")?;
     let mut source = class_userdata.iter();
     for _ in 0..source.len() {
         let raw = ctx
@@ -1446,7 +1447,6 @@ fn first_user_string_records(
         losses,
     )?;
     let mut attributes_range = None;
-    ctx.charge_work(0, "Rhino first user string records traversal")?;
     let mut source = attribute_userdata.iter();
     for _ in 0..source.len() {
         let raw = ctx
@@ -1495,19 +1495,25 @@ fn object_attributes_presentation(
         offset: source_offset,
         uuid: source_uuid,
     } = source;
-    let rendering = match rendering_attributes(
-        ctx,
-        data,
-        attributes.rendering_range.clone(),
-        archive,
-        settings::RenderingAttributesKind::Object,
-    ) {
-        Ok(rendering) => rendering,
+    let mut rendering_storage =
+        ctx.reserve_scoped(0, "Rhino object rendering projection attempt")?;
+    let rendering = match rendering_storage.with_storage(|| {
+        rendering_attributes(
+            ctx,
+            data,
+            attributes.rendering_range.clone(),
+            archive,
+            settings::RenderingAttributesKind::Object,
+        )
+    }) {
+        Ok(rendering) => rendering_storage.commit_value(rendering)?,
         Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
         Err(error) => {
             push_scoped_presentation_loss(ctx, losses, RhinoLossCode::PresentationRecordDropped, format_args!(
                 "object rendering attributes at offset {source_offset} could not be transferred: {error}"
             ))?;
+            drop(error);
+            drop(rendering_storage);
             RenderingAttributesPresentation::default()
         }
     };
@@ -1532,7 +1538,6 @@ fn object_attributes_presentation(
         attributes.display_materials.len(),
         "Rhino projected display materials",
     )?;
-    ctx.charge_work(0, "Rhino object attributes presentation traversal")?;
     let mut projection_source = attributes.display_materials.iter();
     for _ in 0..projection_source.len() {
         let (viewport, material) = ctx
@@ -1566,7 +1571,6 @@ fn object_attributes_presentation(
         attributes.clipping_plane_ids.len(),
         "Rhino projected clipping plane UUIDs",
     )?;
-    ctx.charge_work(0, "Rhino object attributes presentation traversal")?;
     let mut projection_source = attributes.clipping_plane_ids.iter();
     for _ in 0..projection_source.len() {
         let id = ctx
@@ -1829,7 +1833,6 @@ fn parse_uuid_text(
     let mut nibble = None;
     let mut index = 0;
     let mut source = value.bytes();
-    ctx.charge_work(0, "Rhino UUID text traversal")?;
     for _ in 0..source.len() {
         let byte = ctx
             .next_charged(&mut source, "Rhino UUID text traversal")?
@@ -1856,12 +1859,26 @@ fn parse_uuid_text(
     Ok((index == bytes.len() && nibble.is_none()).then_some(Uuid::from_canonical(bytes)))
 }
 
+#[cfg(test)]
 fn parse_legacy_rdk_material_instance_id(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     payload_range: Range<usize>,
 ) -> Result<Option<Uuid>, FramingError> {
-    match classify_rdk_material_payload(ctx, data, payload_range)? {
+    let offset = payload_range.start;
+    let classified = classify_rdk_material_payload(ctx, data, payload_range).or_else(|error| {
+        let FramingError::Core(CodecError::Malformed(message)) = error else {
+            return Err(error);
+        };
+        Err(FramingError::structural(
+            offset,
+            ctx.format_retained(
+                format_args!("legacy RDK XML is malformed: {message}"),
+                "Rhino classify_rdk_material_payload text",
+            )?,
+        ))
+    })?;
+    match classified {
         RdkMaterialPayload::Compatibility(instance_id) => Ok(instance_id),
         RdkMaterialPayload::CallbackOwned => Ok(None),
     }
@@ -1912,20 +1929,7 @@ fn classify_rdk_material_payload(
         .map_err(|_| {
             FramingError::structural(payload_range.start, "legacy RDK XML is not UTF-8")
         })?;
-    let admitted_document = ctx
-        .parse_xml(xml, "Rhino legacy RDK XML tree")
-        .or_else(|error| {
-            let CodecError::Malformed(error) = error else {
-                return Err(error.into());
-            };
-            Err(FramingError::structural(
-                payload_range.start,
-                ctx.format_retained(
-                    format_args!("legacy RDK XML is malformed: {error}"),
-                    "Rhino classify_rdk_material_payload text",
-                )?,
-            ))
-        })?;
+    let admitted_document = ctx.parse_xml(xml, "Rhino legacy RDK XML tree")?;
     let document = admitted_document.document();
     let root = ctx.xml_root_element(document, "Rhino RDK root search")?;
     if root.tag_name().name() != "xml" {
@@ -1935,7 +1939,6 @@ fn classify_rdk_material_payload(
         ));
     }
     let mut render_data = None;
-    ctx.charge_work(0, "Rhino RDK render data search")?;
     if let Some(last_child) = root.last_child() {
         let mut source = root.children();
         loop {
@@ -1960,7 +1963,6 @@ fn classify_rdk_material_payload(
         )
     })?;
     let mut material = None;
-    ctx.charge_work(0, "Rhino RDK material search")?;
     if let Some(last_child) = render_data.last_child() {
         let mut source = render_data.children();
         loop {
@@ -1985,7 +1987,6 @@ fn classify_rdk_material_payload(
         )
     })?;
     let mut instance_id = None;
-    ctx.charge_work(0, "Rhino RDK instance attribute search")?;
     let mut source = material.attributes();
     for _ in 0..source.len() {
         let attribute = ctx
@@ -2020,7 +2021,6 @@ fn legacy_rdk_material_instance_id(
     data: &[u8],
     userdata: &[UserdataDescriptor],
 ) -> Result<Option<Uuid>, CodecError> {
-    ctx.charge_work(0, "Rhino legacy rdk material instance id traversal")?;
     let mut source = userdata.iter().rev();
     for _ in 0..source.len() {
         let raw = ctx
@@ -2040,10 +2040,13 @@ fn legacy_rdk_material_instance_id(
         {
             continue;
         }
-        match parse_legacy_rdk_material_instance_id(ctx, data, value.payload_range.clone()) {
-            Ok(Some(value)) => return Ok(Some(value)),
+        let mut attempt = ctx.reserve_scoped(0, "Rhino RDK classification attempt")?;
+        match attempt
+            .with_storage(|| classify_rdk_material_payload(ctx, data, value.payload_range.clone()))
+        {
+            Ok(RdkMaterialPayload::Compatibility(Some(value))) => return Ok(Some(value)),
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
-            Ok(None) | Err(_) => {}
+            Ok(_) | Err(_) => {}
         }
     }
     Ok(None)
@@ -2054,7 +2057,6 @@ fn rdk_material_userdata_requires_opaque(
     data: &[u8],
     userdata: &[UserdataDescriptor],
 ) -> Result<bool, CodecError> {
-    ctx.charge_work(0, "Rhino rdk material userdata requires opaque traversal")?;
     let mut source = userdata.iter();
     for _ in 0..source.len() {
         let raw = ctx
@@ -2074,7 +2076,10 @@ fn rdk_material_userdata_requires_opaque(
         {
             continue;
         }
-        match classify_rdk_material_payload(ctx, data, value.payload_range.clone()) {
+        let mut attempt = ctx.reserve_scoped(0, "Rhino RDK classification attempt")?;
+        match attempt
+            .with_storage(|| classify_rdk_material_payload(ctx, data, value.payload_range.clone()))
+        {
             Ok(RdkMaterialPayload::Compatibility(_)) => {}
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Ok(RdkMaterialPayload::CallbackOwned) | Err(_) => return Ok(true),
@@ -2089,7 +2094,6 @@ fn wide_string(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
 ) -> Result<String, FramingError> {
-    ctx.charge_work(0, "Rhino wide string")?;
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
     if chunk.typecode != UTF8_STRING_CHUNK || chunk.short() {
         return Err(FramingError::structural(
@@ -2272,7 +2276,6 @@ fn parse_light_record_attributes(
             .transpose()?
             .unwrap_or_default();
         let mut userdata_requires_opaque = false;
-        ctx.charge_work(0, "Rhino parse light record attributes traversal")?;
         let mut source = attributes_userdata.iter();
         for _ in 0..source.len() {
             let raw = ctx.next_charged(&mut source, "Rhino parse light record attributes traversal")?
@@ -2508,13 +2511,18 @@ fn parse_texture(
     ];
     let blend_order = reader.i32()?;
     let file_reference = if version.1 >= 1 {
+        let mut diagnostics_storage =
+            ctx.reserve_scoped(0, "Rhino texture file-reference diagnostics")?;
         let mut diagnostics = Diagnostics::new();
         let value = match crate::instances::file_reference(
             ctx,
             data,
             &mut reader,
             archive,
-            &mut |code, message| diagnostics.push_coded_admitted(ctx, code, message),
+            &mut |code, message| {
+                diagnostics_storage
+                    .with_storage(|| diagnostics.push_coded_admitted(ctx, code, message))
+            },
         ) {
             Ok(value) => value,
             Err(error) => {
@@ -3114,7 +3122,6 @@ fn disambiguate_group_ids<'ctx>(
 ) -> Result<usize, CodecError> {
     let mut workspace = ctx.reserve_scoped(0, "Rhino group identity workspace")?;
     let mut counts = HashMap::<GroupIdentity, usize>::new();
-    ctx.charge_work(0, "Rhino disambiguate group ids traversal")?;
     let mut projection_source = groups[..].iter();
     for _ in 0..projection_source.len() {
         let group = ctx
@@ -3134,7 +3141,6 @@ fn disambiguate_group_ids<'ctx>(
     }
     let mut index_workspace = ctx.reserve_scoped(0, "Rhino duplicate group workspace")?;
     let mut duplicate_indices = Vec::new();
-    ctx.charge_work(0, "Rhino disambiguate group ids traversal")?;
     let mut projection_source = groups[..].iter();
     for order in 0..projection_source.len() {
         let group = ctx
@@ -3160,7 +3166,6 @@ fn disambiguate_group_ids<'ctx>(
     drop(workspace);
     let changed = duplicate_indices.len();
     staging.with_storage(|| {
-        ctx.charge_work(0, "Rhino duplicate group traversal")?;
         let mut projection_source = duplicate_indices.into_iter();
         for _ in 0..projection_source.len() {
             let order = ctx
@@ -3175,7 +3180,6 @@ fn disambiguate_group_ids<'ctx>(
                 format_args!("{identity}-source-offset-{source_offset:016x}-record-{order:06}");
             group.id = ctx.format_retained(id, "Rhino disambiguated group ID")?;
         }
-        ctx.charge_work(0, "Rhino group identity assignment")?;
         let mut projection_source = groups[..].iter_mut();
         for _ in 0..projection_source.len() {
             let group = ctx
@@ -3447,7 +3451,6 @@ fn parse_linetype(
     let mut segments = ctx
         .collection_vec(values.values.len(), "Rhino projected linetype segments")
         .map_err(crate::chunks::FramingError::from)?;
-    ctx.charge_work(0, "Rhino linetype projection traversal")?;
     let mut projection_source = values.values.into_iter();
     for _ in 0..projection_source.len() {
         let segment = ctx
@@ -3576,7 +3579,6 @@ impl SourceHatchLine {
         scale: MillimeterScale,
         source_offset: usize,
     ) -> Result<HatchLineRecord, FramingError> {
-        ctx.charge_work(0, "Rhino hatch dash projection traversal")?;
         for value in self.base.iter_mut().chain(self.offset.iter_mut()) {
             *value = scaled_coordinate(value.get(), scale).ok_or_else(|| {
                 FramingError::structural(source_offset, "scaled hatch line is invalid")
@@ -3746,7 +3748,6 @@ fn parse_hatch_pattern(
         let mut projected = ctx
             .collection_vec(lines.values.len(), "Rhino projected hatch lines")
             .map_err(crate::chunks::FramingError::from)?;
-        ctx.charge_work(0, "Rhino hatch pattern projection traversal")?;
         let mut projection_source = lines.values.into_iter();
         for _ in 0..projection_source.len() {
             let line = ctx
@@ -4803,7 +4804,6 @@ fn parse_texture_mapping(
                     &mut warnings,
                 )?;
                 let mut cache_requires_opaque = false;
-                ctx.charge_work(0, "Rhino parse texture mapping traversal")?;
                 let mut source = userdata.iter();
                 for _ in 0..source.len() {
                     let raw = ctx
@@ -5330,7 +5330,10 @@ fn parse_text_style(
             "text-style version is unsupported",
         ));
     }
-    let component = component(ctx, data, &mut reader, archive)?;
+    let mut component_storage = ctx.reserve_scoped(0, "Rhino text style component attempt")?;
+    let component =
+        component_storage.with_storage(|| component(ctx, data, &mut reader, archive))?;
+    let index = component.index;
     let font_description = if reader.bool_with_writer_version(writer_version)? {
         crate::settings::utf16_retained(ctx, &mut reader, "Rhino text style font description")?
     } else {
@@ -5342,15 +5345,18 @@ fn parse_text_style(
         FontRecord::default()
     };
     let (id, name) = if version.1 >= 1 {
-        (
-            uuid(&mut reader)?,
-            crate::settings::utf16_retained(ctx, &mut reader, "Rhino text style name")?,
-        )
+        let id = uuid(&mut reader)?;
+        let name = crate::settings::utf16_retained(ctx, &mut reader, "Rhino text style name")?;
+        drop(component);
+        drop(component_storage);
+        (id, name)
     } else {
-        (component.id, component.name)
+        (
+            component.id,
+            component_storage.commit_value(component.name)?,
+        )
     };
     reader.skip_remaining()?;
-    let index = component.index;
     Ok(TextStyleRecord {
         id: if id.is_nil() {
             index.map_or_else(
@@ -5476,7 +5482,6 @@ pub(crate) fn install<'ctx>(
     let mut losses = ScratchVec::new(ctx, "Rhino presentation loss Vec")?;
     let mut opaque_records = ScratchVec::new(ctx, "Rhino presentation source Vec")?;
     let mut apple_runtime = None;
-    ctx.charge_work(0, "Rhino install traversal")?;
     let mut projection_source = scan.objects[..].iter();
     for _ in 0..projection_source.len() {
         let object = ctx
@@ -5497,7 +5502,6 @@ pub(crate) fn install<'ctx>(
             *count += 1;
         }
     }
-    ctx.charge_work(0, "Rhino install traversal")?;
     let mut projection_source = scan.tables[..].iter();
     for _ in 0..projection_source.len() {
         let table = ctx
@@ -5506,7 +5510,6 @@ pub(crate) fn install<'ctx>(
                 CodecError::malformed("Rhino presentation traversal source ended early")
             })?;
         let table_type = table.typecode & !0x0000_8000;
-        ctx.charge_work(0, "Rhino install traversal")?;
         let mut projection_source = table.records[..].iter();
         for _ in 0..projection_source.len() {
             let record = ctx
@@ -5568,7 +5571,6 @@ pub(crate) fn install<'ctx>(
                         ))?;
                     }
                     let mut physically_based_userdata = None;
-                    ctx.charge_work(0, "Rhino PBR userdata search")?;
                     let mut source = class.userdata.iter();
                     for _ in 0..source.len() {
                         let raw = ctx
@@ -5898,7 +5900,6 @@ pub(crate) fn install<'ctx>(
                     ))? {
                         let range = class.range.clone();
                         let mut extra = None;
-                        ctx.charge_work(0, "Rhino dimension style userdata search")?;
                         let mut source = class.userdata.iter();
                         for _ in 0..source.len() {
                             let raw = ctx
@@ -6135,7 +6136,6 @@ pub(crate) fn install<'ctx>(
                                             let value = match &scan.metadata.properties.application {
                                                 Some(application) => {
                                                     let mut is_apple = false;
-                                                    ctx.charge_work(0, "Rhino font application search")?;
                                                     let mut source = application.name.as_bytes().windows(3);
                                                     for _ in 0..source.len() {
                                                         let part = ctx.next_charged(&mut source, "Rhino font application search")?
@@ -6214,7 +6214,6 @@ pub(crate) fn install<'ctx>(
     .map(|(value, storage)| (storage, value))?;
     let mut group_members = HashMap::<i32, Vec<String>>::new();
     group_member_workspace = ctx.reserve_scoped(0, "Rhino group member workspace")?;
-    ctx.charge_work(0, "Rhino install traversal")?;
     let mut projection_source = scan.objects[..].iter();
     for source_order in 0..projection_source.len() {
         let object = ctx
@@ -6226,7 +6225,6 @@ pub(crate) fn install<'ctx>(
             continue;
         };
         if let Some(attributes) = object.attributes.parsed() {
-            ctx.charge_work(0, "Rhino install traversal")?;
             let mut projection_source = attributes.groups[..].iter();
             for _ in 0..projection_source.len() {
                 let group = ctx
@@ -6377,7 +6375,6 @@ pub(crate) fn install<'ctx>(
     }
     let mut layer_count_workspace = ctx.reserve_scoped(0, "Rhino layer identity workspace")?;
     let mut layer_id_counts = HashMap::<Uuid, usize>::new();
-    ctx.charge_work(0, "Rhino install traversal")?;
     let mut projection_source = scan.metadata.layers[..].iter();
     for _ in 0..projection_source.len() {
         let layer = ctx
@@ -6394,7 +6391,6 @@ pub(crate) fn install<'ctx>(
             *count += 1;
         }
     }
-    ctx.charge_work(0, "Rhino install traversal")?;
     let mut projection_source = scan.metadata.layers[..].iter();
     for _ in 0..projection_source.len() {
         let layer = ctx
@@ -6516,7 +6512,6 @@ pub(crate) fn install<'ctx>(
             "Rhino layer presentation records",
         )?;
     }
-    ctx.charge_work(0, "Rhino install traversal")?;
     let mut projection_source = group_index_counts[..].iter();
     for _ in 0..projection_source.len() {
         let (index, count) = ctx
@@ -6543,7 +6538,6 @@ pub(crate) fn install<'ctx>(
             "{disambiguated_group_count} group source identities were disambiguated by source offset"
         ))?;
     }
-    ctx.charge_work(0, "Rhino group link traversal")?;
     let mut projection_source = groups[..].iter_mut();
     for _ in 0..projection_source.len() {
         let group = ctx
