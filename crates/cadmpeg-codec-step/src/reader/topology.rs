@@ -8,7 +8,7 @@ use std::num::NonZeroUsize;
 
 use super::geometry::curve_carrier_record;
 use super::{source_numeric_id, RecordExt, ValueExt};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit, ScopedReservation};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ProvisionalReservation, ResourceLimit, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{CommitSession, DraftError, ModelDraft};
@@ -741,7 +741,8 @@ pub(super) fn decode<'ctx>(
                         "step_topology_losses",
                     )?;
                 } else {
-                    committed += 1;
+                    built.payload.commit()?;
+                committed += 1;
                     decode_storage.with_storage(|| {
                         ctx.insert_btree_set(
                             &mut built_wire_models,
@@ -840,7 +841,8 @@ pub(super) fn decode<'ctx>(
                     "step_topology_losses",
                 )?;
             } else {
-                committed += 1;
+                built.payload.commit()?;
+            committed += 1;
                 for shell in ctx.admit_iter(&built.shell_sources, "STEP decode traversal")? {
                     topology_storage.with_storage(|| {
                         insert_topology_body_group(
@@ -1052,6 +1054,7 @@ pub(super) fn decode<'ctx>(
                     "step_topology_losses",
                 )?;
             } else {
+                built.payload.commit()?;
                 for shell in ctx.admit_iter(&built.shell_sources, "STEP decode traversal")? {
                     topology_storage.with_storage(|| {
                         insert_topology_body_group(
@@ -1239,6 +1242,7 @@ pub(super) fn decode<'ctx>(
                 "step_topology_losses",
             )?;
         } else {
+            built.payload.commit()?;
             topology_storage.with_storage(|| {
                 push_topology_body_group(
                     &mut result.body_by_root,
@@ -1729,6 +1733,8 @@ fn build_wire_set<'ctx>(
     let (losses, loss_storage) = losses;
     let mut built_storage = ctx.reserve_scoped(0, "STEP staged metadata")?;
     let mut scratch = ctx.reserve_scoped(0, "STEP topology staging scratch")?;
+    let mut staging_storage = ctx.reserve_scoped(0, "STEP topology staging arenas")?;
+    let mut payload = ctx.provisional_retained("STEP topology candidate payload")?;
     let WireSources {
         vdefs,
         edefs,
@@ -1797,13 +1803,13 @@ fn build_wire_set<'ctx>(
             .dash(id)
             .dash(key_word!("set"))
             .dash(set_id);
-        ctx.push_vec(
+        payload.with_storage(|| ctx.push_vec(
             &mut wire_edges,
             ir_id.try_clone_for_decode(ctx, "step_wire_edge_ids")?,
             "step_wire_edge_ids",
-        )?;
+        ))?;
         ctx.push_scoped_vec(
-            &mut scratch,
+            &mut staging_storage,
             &mut built_edges,
             Edge {
                 id: ir_id,
@@ -1861,7 +1867,7 @@ fn build_wire_set<'ctx>(
                 return Ok(None);
             }
             ctx.push_scoped_vec(
-                &mut scratch,
+                &mut staging_storage,
                 &mut built_vertices,
                 Vertex {
                     id: VertexId::from(ids::data(
@@ -1890,8 +1896,8 @@ fn build_wire_set<'ctx>(
         IdentityKey::from(id).with_tail(&suffix),
     ));
     let shell_value = match Shell::new(
-        shell.try_clone_for_decode(ctx, "step_wire_shell_id_copy")?,
-        region.try_clone_for_decode(ctx, "step_wire_region_id_copy")?,
+        payload.with_storage(|| shell.try_clone_for_decode(ctx, "step_wire_shell_id_copy"))?,
+        payload.with_storage(|| region.try_clone_for_decode(ctx, "step_wire_region_id_copy"))?,
         Vec::new(),
         wire_edges,
         Vec::new(),
@@ -1910,8 +1916,7 @@ fn build_wire_set<'ctx>(
             return Ok(None);
         }
     };
-    let staged = staged_topology(
-        StagedTopologyParts {
+    let parts = StagedTopologyParts {
             typed,
             vertices: built_vertices,
             edges: built_edges,
@@ -1921,24 +1926,24 @@ fn build_wire_set<'ctx>(
             surfaces: Vec::new(),
             shells: {
                 let mut values = Vec::new();
-                ctx.push_scoped_vec(&mut scratch, &mut values, shell_value, "step_wire_shells")?;
+                ctx.push_scoped_vec(&mut staging_storage, &mut values, shell_value, "step_wire_shells")?;
                 values
             },
             region: Region {
-                id: region.try_clone_for_decode(ctx, "step_wire_region_id_copy")?,
-                body: body.try_clone_for_decode(ctx, "step_wire_body_id_copy")?,
+                id: payload.with_storage(|| region.try_clone_for_decode(ctx, "step_wire_region_id_copy"))?,
+                body: payload.with_storage(|| body.try_clone_for_decode(ctx, "step_wire_body_id_copy"))?,
                 shells: {
                     let mut values = Vec::new();
-                    ctx.push_vec(&mut values, shell, "step_wire_region_shells")?;
+                    payload.with_storage(|| ctx.push_vec(&mut values, shell, "step_wire_region_shells"))?;
                     values
                 },
             },
             body: Body {
-                id: body.try_clone_for_decode(ctx, "step_wire_body_id_copy")?,
+                id: payload.with_storage(|| body.try_clone_for_decode(ctx, "step_wire_body_id_copy"))?,
                 kind: BodyKind::Wire,
                 regions: {
                     let mut values = Vec::new();
-                    ctx.push_vec(&mut values, region, "step_wire_body_regions")?;
+                    payload.with_storage(|| ctx.push_vec(&mut values, region, "step_wire_body_regions"))?;
                     values
                 },
                 transform: None,
@@ -1946,10 +1951,9 @@ fn build_wire_set<'ctx>(
                 color: None,
                 visible: None,
             },
-        },
-        built_storage,
-        ctx,
-    );
+        };
+    let staged = staged_topology(payload, built_storage, parts, ctx);
+    drop(staging_storage);
     let mut built = match staged {
         Ok(built) => built,
         Err(StageError::Draft(error)) => {
@@ -2036,6 +2040,8 @@ fn build_shell_wire_set<'ctx>(
     let (losses, loss_storage) = losses;
     let mut built_storage = ctx.reserve_scoped(0, "STEP staged metadata")?;
     let mut scratch = ctx.reserve_scoped(0, "STEP topology staging scratch")?;
+    let mut staging_storage = ctx.reserve_scoped(0, "STEP topology staging arenas")?;
+    let mut payload = ctx.provisional_retained("STEP topology candidate payload")?;
     let WireSources {
         vdefs,
         edefs,
@@ -2225,13 +2231,13 @@ fn build_shell_wire_set<'ctx>(
                     .dash(oriented_id)
                     .dash(index),
             ));
-            ctx.push_vec(
+            payload.with_storage(|| ctx.push_vec(
                 &mut wire_edges,
                 ir_id.try_clone_for_decode(ctx, "step_wire_edge_ids")?,
                 "step_wire_edge_ids",
-            )?;
+            ))?;
             ctx.push_scoped_vec(
-                &mut scratch,
+                &mut staging_storage,
                 &mut edges,
                 Edge {
                     id: ir_id,
@@ -2273,7 +2279,7 @@ fn build_shell_wire_set<'ctx>(
                 return Ok(None);
             }
             ctx.push_scoped_vec(
-                &mut scratch,
+                &mut staging_storage,
                 &mut vertices,
                 Vertex {
                     id: VertexId::from(ids::data(
@@ -2298,18 +2304,18 @@ fn build_shell_wire_set<'ctx>(
     let shell = shell_identity(id, shell_id, scope_root);
     let mut free_vertex_ids = Vec::new();
     for vertex in ctx.admit_iter(free_vertices, "STEP topology collection traversal")? {
-        ctx.push_vec(
+        payload.with_storage(|| ctx.push_vec(
             &mut free_vertex_ids,
             VertexId::from(ids::data(
                 kind!("vertex"),
                 IdentityKey::from(vertex).with_tail(&vertex_suffix),
             )),
             "step_wire_free_vertex_ids",
-        )?;
+        ))?;
     }
     let shell_value = match Shell::new(
-        shell.try_clone_for_decode(ctx, "step_wire_shell_id_copy")?,
-        region.try_clone_for_decode(ctx, "step_wire_region_id_copy")?,
+        payload.with_storage(|| shell.try_clone_for_decode(ctx, "step_wire_shell_id_copy"))?,
+        payload.with_storage(|| region.try_clone_for_decode(ctx, "step_wire_region_id_copy"))?,
         Vec::new(),
         wire_edges,
         free_vertex_ids,
@@ -2328,8 +2334,7 @@ fn build_shell_wire_set<'ctx>(
             return Ok(None);
         }
     };
-    let staged = staged_topology(
-        StagedTopologyParts {
+    let parts = StagedTopologyParts {
             typed,
             vertices,
             edges,
@@ -2339,24 +2344,24 @@ fn build_shell_wire_set<'ctx>(
             surfaces: Vec::new(),
             shells: {
                 let mut values = Vec::new();
-                ctx.push_scoped_vec(&mut scratch, &mut values, shell_value, "step_wire_shells")?;
+                ctx.push_scoped_vec(&mut staging_storage, &mut values, shell_value, "step_wire_shells")?;
                 values
             },
             region: Region {
-                id: region.try_clone_for_decode(ctx, "step_wire_region_id_copy")?,
-                body: body.try_clone_for_decode(ctx, "step_wire_body_id_copy")?,
+                id: payload.with_storage(|| region.try_clone_for_decode(ctx, "step_wire_region_id_copy"))?,
+                body: payload.with_storage(|| body.try_clone_for_decode(ctx, "step_wire_body_id_copy"))?,
                 shells: {
                     let mut values = Vec::new();
-                    ctx.push_vec(&mut values, shell, "step_wire_region_shells")?;
+                    payload.with_storage(|| ctx.push_vec(&mut values, shell, "step_wire_region_shells"))?;
                     values
                 },
             },
             body: Body {
-                id: body.try_clone_for_decode(ctx, "step_wire_body_id_copy")?,
+                id: payload.with_storage(|| body.try_clone_for_decode(ctx, "step_wire_body_id_copy"))?,
                 kind: BodyKind::Wire,
                 regions: {
                     let mut values = Vec::new();
-                    ctx.push_vec(&mut values, region, "step_wire_body_regions")?;
+                    payload.with_storage(|| ctx.push_vec(&mut values, region, "step_wire_body_regions"))?;
                     values
                 },
                 transform: None,
@@ -2364,10 +2369,9 @@ fn build_shell_wire_set<'ctx>(
                 color: None,
                 visible: None,
             },
-        },
-        built_storage,
-        ctx,
-    );
+        };
+    let staged = staged_topology(payload, built_storage, parts, ctx);
+    drop(staging_storage);
     let mut built = match staged {
         Ok(built) => built,
         Err(StageError::Draft(error)) => {
@@ -2465,7 +2469,8 @@ fn build_geometric_set<'ctx>(
 ) -> Result<Option<Built<'ctx>>, CodecError> {
     let (losses, loss_storage) = losses;
     let mut built_storage = ctx.reserve_scoped(0, "STEP staged metadata")?;
-    let mut scratch = ctx.reserve_scoped(0, "STEP topology staging scratch")?;
+    let mut staging_storage = ctx.reserve_scoped(0, "STEP topology staging arenas")?;
+    let mut payload = ctx.provisional_retained("STEP topology candidate payload")?;
     let Some(set_ids) = representation_item_values(ctx, representation)? else {
         ctx.push_scoped_vec(
             loss_storage,
@@ -2537,7 +2542,7 @@ fn build_geometric_set<'ctx>(
                             .dash(key_word!("set"))
                             .dash(id),
                     )),
-                    shell: shell_id.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
+                    shell: payload.with_storage(|| shell_id.try_clone_for_decode(ctx, "step_topology_identity_copy"))?,
                     surface,
                     sense: Sense::Forward,
                     loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
@@ -2545,13 +2550,13 @@ fn build_geometric_set<'ctx>(
                     color: None,
                     tolerance: None,
                 };
-                ctx.push_vec(
+                payload.with_storage(|| ctx.push_vec(
                     &mut shell_faces,
                     face.id
                         .try_clone_for_decode(ctx, "step_geometric_set_shell_faces")?,
                     "step_geometric_set_shell_faces",
-                )?;
-                ctx.push_scoped_vec(&mut scratch, &mut faces, face, "step_geometric_set_faces")?;
+                ))?;
+                ctx.push_scoped_vec(&mut staging_storage, &mut faces, face, "step_geometric_set_faces")?;
             }
         }
     }
@@ -2562,15 +2567,14 @@ fn build_geometric_set<'ctx>(
         return Ok(None);
     }
     let shell = Shell::new(
-        shell_id.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
-        region.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
+        payload.with_storage(|| shell_id.try_clone_for_decode(ctx, "step_topology_identity_copy"))?,
+        payload.with_storage(|| region.try_clone_for_decode(ctx, "step_topology_identity_copy"))?,
         shell_faces,
         Vec::new(),
         Vec::new(),
     )
     .map_err(CodecError::malformed)?;
-    let staged = staged_topology(
-        StagedTopologyParts {
+    let parts = StagedTopologyParts {
             typed,
             vertices: Vec::new(),
             edges: Vec::new(),
@@ -2581,7 +2585,7 @@ fn build_geometric_set<'ctx>(
             shells: {
                 let mut values = Vec::new();
                 ctx.push_scoped_vec(
-                    &mut scratch,
+                    &mut staging_storage,
                     &mut values,
                     shell,
                     "step_geometric_set_shells",
@@ -2589,11 +2593,11 @@ fn build_geometric_set<'ctx>(
                 values
             },
             region: Region {
-                id: region.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
-                body: body.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
+                id: payload.with_storage(|| region.try_clone_for_decode(ctx, "step_topology_identity_copy"))?,
+                body: payload.with_storage(|| body.try_clone_for_decode(ctx, "step_topology_identity_copy"))?,
                 shells: {
                     let mut values = Vec::new();
-                    ctx.push_vec(&mut values, shell_id, "step_geometric_set_region_shells")?;
+                    payload.with_storage(|| ctx.push_vec(&mut values, shell_id, "step_geometric_set_region_shells"))?;
                     values
                 },
             },
@@ -2602,7 +2606,7 @@ fn build_geometric_set<'ctx>(
                 kind: BodyKind::Sheet,
                 regions: {
                     let mut values = Vec::new();
-                    ctx.push_vec(&mut values, region, "step_geometric_set_body_regions")?;
+                    payload.with_storage(|| ctx.push_vec(&mut values, region, "step_geometric_set_body_regions"))?;
                     values
                 },
                 transform: None,
@@ -2610,10 +2614,9 @@ fn build_geometric_set<'ctx>(
                 color: None,
                 visible: None,
             },
-        },
-        built_storage,
-        ctx,
-    );
+        };
+    let staged = staged_topology(payload, built_storage, parts, ctx);
+    drop(staging_storage);
     match staged {
         Ok(built) => Ok(Some(built)),
         Err(StageError::Draft(error)) => {
@@ -3233,6 +3236,8 @@ struct Built<'ctx> {
     /// staged. They are located source facts; the document report formats them.
     pcurve_admissions: Vec<PcurveAdmission>,
     storage: ScopedReservation<'ctx>,
+    // Declared after the draft so rejection drops the payload before its lease.
+    payload: ProvisionalReservation<'ctx>,
 }
 
 fn drop_committed_surfaces(
@@ -3291,8 +3296,9 @@ struct StagedTopologyParts {
 }
 
 fn staged_topology<'ctx>(
-    parts: StagedTopologyParts,
+    payload: ProvisionalReservation<'ctx>,
     mut storage: ScopedReservation<'ctx>,
+    parts: StagedTopologyParts,
     ctx: &'ctx DecodeContext<'_>,
 ) -> Result<Built<'ctx>, StageError> {
     let mut surface_storage = ctx.reserve_scoped(0, "STEP staged surface index")?;
@@ -3405,6 +3411,7 @@ fn staged_topology<'ctx>(
         body_id,
         shell_sources: BTreeSet::new(),
         pcurve_admissions: Vec::new(),
+        payload,
     })
 }
 
@@ -3807,6 +3814,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
         ctx,
     } = sources;
     let mut scratch = ctx.reserve_scoped(0, "STEP body scratch")?;
+    let mut staging_storage = ctx.reserve_scoped(0, "STEP topology staging arenas")?;
     let mut built_storage = ctx.reserve_scoped(0, "STEP staged metadata")?;
     let BuildRoot {
         shell_steps,
@@ -3821,18 +3829,21 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
     let solid = root.partial(ctx, "MANIFOLD_SOLID_BREP")?.is_some()
         || root.partial(ctx, "BREP_WITH_VOIDS")?.is_some()
         || root.partial(ctx, "FACETED_BREP")?.is_some();
+    let mut payload = ctx.provisional_retained("STEP topology candidate payload")?;
     let mut typed = BTreeSet::new();
     built_storage.with_storage(|| ctx.insert_btree_set(&mut typed, id, "step_brep_typed"))?;
     let mut vertices = Vec::new();
     let mut edges = Vec::new();
     let mut coedges = Vec::new();
     let mut loops = Vec::new();
+    // Face values drop before the leases for their initial shell fields.
+    let mut face_shell_owners = Vec::new();
     let mut faces = Vec::new();
     let mut surfaces = Vec::new();
     let mut shells = Vec::new();
     let mut region = Region {
-        id: rid.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
-        body: bid.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
+        id: payload.with_storage(|| rid.try_clone_for_decode(ctx, "step_topology_identity_copy"))?,
+        body: payload.with_storage(|| bid.try_clone_for_decode(ctx, "step_topology_identity_copy"))?,
         shells: Vec::new(),
     };
     let body = Body {
@@ -3844,11 +3855,11 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
         },
         regions: {
             let mut values = Vec::new();
-            ctx.push_vec(
+            payload.with_storage(|| ctx.push_vec(
                 &mut values,
                 rid.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
                 "step_brep_body_regions",
-            )?;
+            ))?;
             values
         },
         transform: None,
@@ -4124,11 +4135,11 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
                         )
                     })?;
                     ctx.push_scoped_vec(
-                        &mut scratch,
+                        &mut staging_storage,
                         &mut surfaces,
                         Surface {
-                            id: surface_id
-                                .try_clone_for_decode(ctx, "step_topology_identity_copy")?,
+                            id: payload.with_storage(|| surface_id
+                                .try_clone_for_decode(ctx, "step_topology_identity_copy"))?,
                             geometry: require_carrier(
                                 implicit_face_plane(
                                     &face_bounds,
@@ -4156,7 +4167,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
                 IdentityKey::from(face_step).with_tail(&face_suffix),
             ));
             let name = if let Some(Value::String(bytes)) = face_info.name {
-                match exchange.decode_string_with_context(bytes, ctx) {
+                match payload.with_storage(|| Ok::<_, CodecError>(exchange.decode_string_with_context(bytes, ctx)))? {
                     Ok(text) => Some(text),
                     Err(crate::strings::StringDecodeFailure::Invalid(error)) => {
                         let message = ctx.format_retained(
@@ -4257,12 +4268,12 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
                             return Err(BuildError::Absent);
                         }
                         ctx.push_scoped_vec(
-                            &mut scratch,
+                            &mut staging_storage,
                             &mut loops,
                             Loop {
-                                id: lid.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
-                                face: fid
-                                    .try_clone_for_decode(ctx, "step_topology_identity_copy")?,
+                                id: payload.with_storage(|| lid.try_clone_for_decode(ctx, "step_topology_identity_copy"))?,
+                                face: payload.with_storage(|| fid
+                                    .try_clone_for_decode(ctx, "step_topology_identity_copy"))?,
                                 boundary: cadmpeg_ir::topology::LoopBoundary::Vertex {
                                     vertex: scoped_vertex_id(
                                         vertex_step,
@@ -4386,8 +4397,8 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
                             )? {
                                 let key = (
                                     shell_step,
-                                    edge_id
-                                        .try_clone_for_decode(ctx, "step_topology_identity_copy")?,
+                                    payload.with_storage(|| edge_id
+                                        .try_clone_for_decode(ctx, "step_topology_identity_copy"))?,
                                 );
                                 scratch.with_storage(|| {
                                     ctx.insert_btree_map(
@@ -4422,21 +4433,21 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
                                     .dash(face_step)
                                     .with_tail(&face_suffix),
                             ));
-                            ctx.push_vec(
+                            payload.with_storage(|| ctx.push_vec(
                                 &mut coedge_ids,
                                 cid.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
                                 "step_brep_coedge_ids",
-                            )?;
+                            ))?;
                             ctx.push_scoped_vec(
-                                &mut scratch,
+                                &mut staging_storage,
                                 &mut coedges,
                                 Coedge {
-                                    id: cid
-                                        .try_clone_for_decode(ctx, "step_topology_identity_copy")?,
-                                    owner_loop: lid
-                                        .try_clone_for_decode(ctx, "step_topology_identity_copy")?,
-                                    edge: edge_id
-                                        .try_clone_for_decode(ctx, "step_topology_identity_copy")?,
+                                    id: payload.with_storage(|| cid
+                                        .try_clone_for_decode(ctx, "step_topology_identity_copy"))?,
+                                    owner_loop: payload.with_storage(|| lid
+                                        .try_clone_for_decode(ctx, "step_topology_identity_copy"))?,
+                                    edge: payload.with_storage(|| edge_id
+                                        .try_clone_for_decode(ctx, "step_topology_identity_copy"))?,
                                     radial_next: cid,
                                     sense: if (canonical_start, canonical_end)
                                         == (start_point, end_point)
@@ -4471,12 +4482,12 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
                             return Err(BuildError::Absent);
                         };
                         ctx.push_scoped_vec(
-                            &mut scratch,
+                            &mut staging_storage,
                             &mut loops,
                             Loop {
-                                id: lid.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
-                                face: fid
-                                    .try_clone_for_decode(ctx, "step_topology_identity_copy")?,
+                                id: payload.with_storage(|| lid.try_clone_for_decode(ctx, "step_topology_identity_copy"))?,
+                                face: payload.with_storage(|| fid
+                                    .try_clone_for_decode(ctx, "step_topology_identity_copy"))?,
                                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
                             },
                             "step_brep_loops",
@@ -4652,7 +4663,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
                                         *selection_index =
                                             Some(PcurveSelectionIndex::build(ir, ctx)?);
                                     }
-                                    match select_associated_pcurve(
+                                    match payload.with_storage(|| select_associated_pcurve(
                                         selection_index.as_ref(),
                                         exchange,
                                         surface,
@@ -4663,7 +4674,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
                                             candidates: &associated,
                                         },
                                         ctx,
-                                    ) {
+                                    )) {
                                         Ok(selected) => {
                                             ctx.push_scoped_vec(
                                                 &mut built_storage,
@@ -4747,7 +4758,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
                                         return Err(BuildError::Absent);
                                     }
                                 };
-                                ctx.push_vec(
+                                payload.with_storage(|| ctx.push_vec(
                                     &mut pcurve_uses,
                                     PcurveUse {
                                         pcurve,
@@ -4755,21 +4766,21 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
                                         parameter_range,
                                     },
                                     "step_brep_pcurve_uses",
-                                )?;
+                                ))?;
                             }
-                            ctx.push_vec(
+                            payload.with_storage(|| ctx.push_vec(
                                 &mut coedge_ids,
                                 cid.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
                                 "step_brep_coedge_ids",
-                            )?;
+                            ))?;
                             ctx.push_scoped_vec(
-                                &mut scratch,
+                                &mut staging_storage,
                                 &mut coedges,
                                 Coedge {
-                                    id: cid
-                                        .try_clone_for_decode(ctx, "step_topology_identity_copy")?,
-                                    owner_loop: lid
-                                        .try_clone_for_decode(ctx, "step_topology_identity_copy")?,
+                                    id: payload.with_storage(|| cid
+                                        .try_clone_for_decode(ctx, "step_topology_identity_copy"))?,
+                                    owner_loop: payload.with_storage(|| lid
+                                        .try_clone_for_decode(ctx, "step_topology_identity_copy"))?,
                                     edge: scoped_edge_id(
                                         o.edge,
                                         id,
@@ -4839,11 +4850,11 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
                         return Err(BuildError::Absent);
                     };
                     ctx.push_scoped_vec(
-                        &mut scratch,
+                        &mut staging_storage,
                         &mut loops,
                         Loop {
-                            id: lid.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
-                            face: fid.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
+                            id: payload.with_storage(|| lid.try_clone_for_decode(ctx, "step_topology_identity_copy"))?,
+                            face: payload.with_storage(|| fid.try_clone_for_decode(ctx, "step_topology_identity_copy"))?,
                             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
                         },
                         "step_brep_loops",
@@ -4872,7 +4883,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
                         outer = Some(id);
                     }
                 } else {
-                    ctx.push_vec(&mut inner, id, "step_brep_inner_loops")?;
+                    payload.with_storage(|| ctx.push_vec(&mut inner, id, "step_brep_inner_loops"))?;
                 }
             }
             let face_loops = match outer {
@@ -4882,10 +4893,19 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
             let face_forward = face_same_sense == shell_forward;
             ctx.push_scoped_vec(
                 &mut scratch,
+                &mut face_shell_owners,
+                ctx.provisional_retained("STEP staged face shell owner")?,
+                "step_brep_face_shell_owners",
+            )?;
+            let face_shell = face_shell_owners[faces.len()].with_storage(|| {
+                sid.try_clone_for_decode(ctx, "step_topology_identity_copy")
+            })?;
+            ctx.push_scoped_vec(
+                &mut staging_storage,
                 &mut faces,
                 Face {
-                    id: fid.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
-                    shell: sid.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
+                    id: payload.with_storage(|| fid.try_clone_for_decode(ctx, "step_topology_identity_copy"))?,
+                    shell: face_shell,
                     surface: surface_id,
                     sense: if face_forward {
                         Sense::Forward
@@ -4986,7 +5006,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
                     return Err(BuildError::Absent);
                 }
                 let component_shell = if component_index == 0 {
-                    sid.try_clone_for_decode(ctx, "step_topology_identity_copy")?
+                    payload.with_storage(|| sid.try_clone_for_decode(ctx, "step_topology_identity_copy"))?
                 } else {
                     ShellId::from(ids::data(
                         kind!("shell"),
@@ -5005,18 +5025,26 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
                 };
                 let mut component_faces = Vec::new();
                 for face_index in ctx.admit_iter(component, "STEP topology collection traversal")? {
-                    let face_id = face_ids[face_index]
-                        .try_clone_for_decode(ctx, "step_brep_component_faces")?;
-                    faces[face_start + face_index].shell =
-                        component_shell.try_clone_for_decode(ctx, "step_topology_identity_copy")?;
-                    ctx.push_vec(&mut component_faces, face_id, "step_brep_component_faces")?;
+                    let face_id = payload.with_storage(|| face_ids[face_index]
+                        .try_clone_for_decode(ctx, "step_brep_component_faces"))?;
+                    if component_index != 0 {
+                        faces[face_start + face_index].shell =
+                            payload.with_storage(|| component_shell.try_clone_for_decode(ctx, "step_topology_identity_copy"))?;
+                        // The previous field has been dropped; release only its copy.
+                        let previous = std::mem::replace(
+                            &mut face_shell_owners[face_start + face_index],
+                            ctx.provisional_retained("STEP staged face shell owner")?,
+                        );
+                        drop(previous);
+                    }
+                    payload.with_storage(|| ctx.push_vec(&mut component_faces, face_id, "step_brep_component_faces"))?;
                 }
                 ctx.push_scoped_vec(
-                    &mut scratch,
+                    &mut staging_storage,
                     &mut shells,
                     match Shell::new(
-                        component_shell.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
-                        rid.try_clone_for_decode(ctx, "step_topology_identity_copy")?,
+                        payload.with_storage(|| component_shell.try_clone_for_decode(ctx, "step_topology_identity_copy"))?,
+                        payload.with_storage(|| rid.try_clone_for_decode(ctx, "step_topology_identity_copy"))?,
                         component_faces,
                         vec![],
                         vec![],
@@ -5037,11 +5065,11 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
                     },
                     "step_brep_shells",
                 )?;
-                ctx.push_vec(
+                payload.with_storage(|| ctx.push_vec(
                     &mut region.shells,
                     component_shell,
                     "step_brep_region_shells",
-                )?;
+                ))?;
             }
         }
         built_storage
@@ -5063,7 +5091,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
             .ok_or(BuildError::Absent)?;
             let (start, end) = e.curve_vertices();
             ctx.push_scoped_vec(
-                &mut scratch,
+                &mut staging_storage,
                 &mut edges,
                 Edge {
                     id: scoped_edge_id(edge_id, id, shell_step, scope_edges, scope_root),
@@ -5086,7 +5114,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
         ctx.admit_iter(poly_edges, "STEP topology collection traversal")?
     {
         ctx.push_scoped_vec(
-            &mut scratch,
+            &mut staging_storage,
             &mut edges,
             Edge {
                 id: edge_identity,
@@ -5120,7 +5148,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
             )
             .ok_or(BuildError::Absent)?;
             ctx.push_scoped_vec(
-                &mut scratch,
+                &mut staging_storage,
                 &mut vertices,
                 Vertex {
                     id: scoped_vertex_id(vertex_id, id, shell_step, scope_edges, scope_root),
@@ -5148,7 +5176,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
             )
             .ok_or(BuildError::Absent)?;
             ctx.push_scoped_vec(
-                &mut scratch,
+                &mut staging_storage,
                 &mut vertices,
                 Vertex {
                     id: scoped_poly_vertex_id(point_id, id, shell_step, scope_edges, scope_root),
@@ -5170,9 +5198,9 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
             .admit_iter(&indices[..], "STEP body topology traversal")?
             .enumerate()
         {
-            coedges[index].radial_next = coedges[indices[(position + 1) % indices.len()]]
+            coedges[index].radial_next = payload.with_storage(|| coedges[indices[(position + 1) % indices.len()]]
                 .id
-                .try_clone_for_decode(ctx, "step_topology_identity_copy")?;
+                .try_clone_for_decode(ctx, "step_topology_identity_copy"))?;
         }
     }
     let mut edge_by_id = BTreeMap::<&EdgeId, &Edge>::new();
@@ -5259,8 +5287,12 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
             }
         }
     }
-    let mut built = match staged_topology(
-        StagedTopologyParts {
+    while !face_shell_owners.is_empty() {
+        ctx.charge_work(1, "STEP face shell owner transfer")?;
+        let Some(owner) = face_shell_owners.pop() else { break; };
+        payload.with_storage(|| owner.commit())?;
+    }
+    let parts = StagedTopologyParts {
             typed,
             vertices,
             edges,
@@ -5271,10 +5303,15 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
             shells,
             region,
             body,
-        },
+        };
+    let staged = staged_topology(
+        payload,
         built_storage,
+        parts,
         ctx,
-    ) {
+    );
+    drop(staging_storage);
+    let mut built = match staged {
         Ok(built) => built,
         Err(StageError::Draft(_)) => {
             note_failure(failure, id, CarrierKind::TopologyDraft);
