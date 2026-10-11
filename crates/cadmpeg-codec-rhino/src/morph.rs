@@ -516,7 +516,6 @@ fn append_points<T>(
     values: &[T],
     point: impl Fn(&T) -> cadmpeg_ir::math::Point3,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.charge_work(0, "Rhino morph point projection")?;
     let mut values = values.iter();
     for _ in 0..values.len() {
         let value = ctx
