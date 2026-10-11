@@ -699,15 +699,15 @@ pub(crate) fn transfer<'ctx>(
         "schemaVersion",
     )?;
     let admission = schema::classify(schema_declaration);
-    let neutral_schema_version = admission.neutral_schema_version();
+    let mut diagnostic_storage = ctx.reserve_scoped(0, "FCStd GUI recovered diagnostic")?;
     let transferred = transfer_schema_one(
         ctx,
         ir,
         text,
         xml,
         schema_declaration,
-        neutral_schema_version,
         sources,
+        &mut diagnostic_storage,
     );
     match (admission, transferred) {
         (GuiSchemaAdmission::Schema1, result) => {
@@ -732,11 +732,7 @@ pub(crate) fn transfer<'ctx>(
         ) => {
             let declaration = schema_declaration.unwrap_or("missing");
             let mut losses = ctx.collection_vec(1, "FCStd GUI schema losses")?;
-            losses.push(FreecadLossCode::SourceGuiSchemaUnverified.note(
-                ctx.format_retained(format_args!(
-                    "GuiDocument.xml could not be decoded with the schema-1 vocabulary; declared schema {declaration} is the probable cause: {error}"
-                ), "FCStd GUI schema loss text")?,
-            ));
+            losses.push(schema_failure_loss(ctx, declaration, error, diagnostic_storage)?);
             Ok(Graph {
                 losses,
                 ..Graph::default()
@@ -746,15 +742,30 @@ pub(crate) fn transfer<'ctx>(
     }
 }
 
+fn schema_failure_loss(
+    ctx: &DecodeContext<'_>,
+    declaration: &str,
+    error: CodecError,
+    diagnostic_storage: cadmpeg_core::decode::ScopedReservation<'_>,
+) -> Result<LossNote, CodecError> {
+    let message = ctx.format_retained(format_args!(
+        "GuiDocument.xml could not be decoded with the schema-1 vocabulary; declared schema {declaration} is the probable cause: {error}"
+    ), "FCStd GUI schema loss text");
+    drop(error);
+    drop(diagnostic_storage);
+    Ok(FreecadLossCode::SourceGuiSchemaUnverified.note(message?))
+}
+
 fn transfer_schema_one<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     ir: &CadIr,
     text: &str,
     xml: &roxmltree::Document<'_>,
     schema_declaration: Option<&str>,
-    neutral_schema_version: Option<u32>,
     sources: &GuiSources<'_, '_>,
+    diagnostic_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<(Graph<'ctx>, AppearancePlan<'ctx>), CodecError> {
+    let neutral_schema_version = schema::classify(schema_declaration).neutral_schema_version();
     let entries = sources.entries;
     let objects = sources.objects;
     let properties = sources.properties;
@@ -955,11 +966,11 @@ fn transfer_schema_one<'ctx>(
                 append_native_provider(
                     ctx,
                     text,
-                    provider,
-                    provider_order,
+                    (provider, provider_order),
                     None,
                     &mut native_providers,
                     &mut native_properties,
+                    diagnostic_storage,
                 )
             })?;
             continue;
@@ -973,11 +984,11 @@ fn transfer_schema_one<'ctx>(
             append_native_provider(
                 ctx,
                 text,
-                provider,
-                provider_order,
+                (provider, provider_order),
                 Some(object_id),
                 &mut native_providers,
                 &mut native_properties,
+                diagnostic_storage,
             )
         })?;
         let properties_node = unique_child(ctx, provider, "Properties")?.ok_or_else(|| {
@@ -2636,11 +2647,11 @@ fn unique_child<'a, 'input>(
 fn append_native_provider(
     ctx: &DecodeContext<'_>,
     text: &str,
-    provider: roxmltree::Node<'_, '_>,
-    order: usize,
+    (provider, order): (roxmltree::Node<'_, '_>, usize),
     object: Option<&str>,
     providers: &mut Vec<GuiViewProviderRecord>,
     properties: &mut Vec<GuiPropertyRecord>,
+    diagnostic_storage: &mut cadmpeg_core::decode::ScopedReservation<'_>,
 ) -> Result<(), CodecError> {
     let name = ctx
         .xml_attribute(provider, "name", "FCStd GUI provider attribute")?
@@ -2670,10 +2681,7 @@ fn append_native_provider(
     };
     let id = &record.id;
     let Some(container) = unique_child(ctx, provider, "Properties")? else {
-        return Err(gui_malformed(
-            ctx,
-            format_args!("ViewProvider {name} has no Properties"),
-        ));
+        return Err(ctx.format_scoped_text(diagnostic_storage, format_args!("ViewProvider {name} has no Properties"), "FCStd GUI diagnostic").map_or_else(std::convert::identity, CodecError::Malformed));
     };
     let (node_storage, property_nodes) = ctx
         .with_scoped_storage("FCStd GUI provider property nodes", || {
@@ -2702,19 +2710,13 @@ fn append_native_provider(
         .transpose()?
         .flatten()
         .ok_or_else(|| {
-            gui_malformed(
-                ctx,
-                format_args!("ViewProvider {name} has invalid property count"),
-            )
+            ctx.format_scoped_text(diagnostic_storage, format_args!("ViewProvider {name} has invalid property count"), "FCStd GUI diagnostic").map_or_else(std::convert::identity, CodecError::Malformed)
         })?;
     if declared != property_nodes.len() {
-        return Err(gui_malformed(
-            ctx,
-            format_args!(
+        return Err(ctx.format_scoped_text(diagnostic_storage, format_args!(
                 "ViewProvider {name} declares {declared} properties but contains {}",
                 property_nodes.len()
-            ),
-        ));
+            ), "FCStd GUI diagnostic").map_or_else(std::convert::identity, CodecError::Malformed));
     }
     let mut name_storage = ctx.reserve_scoped(0, "FCStd GUI property names")?;
     let mut names = HashSet::new();
@@ -2728,10 +2730,7 @@ fn append_native_provider(
         let property_name = ctx
             .xml_attribute(property, "name", "FCStd GUI provider attribute")?
             .ok_or_else(|| {
-                gui_malformed(
-                    ctx,
-                    format_args!("ViewProvider {name} property has no name"),
-                )
+                ctx.format_scoped_text(diagnostic_storage, format_args!("ViewProvider {name} property has no name"), "FCStd GUI diagnostic").map_or_else(std::convert::identity, CodecError::Malformed)
             })?;
         if !name_storage.with_storage(|| {
             ctx.insert_hash_set(&mut names, property_name, "FCStd GUI property names")
@@ -2743,12 +2742,13 @@ fn append_native_provider(
         let type_name = ctx
             .xml_attribute(property, "type", "FCStd GUI provider attribute")?
             .ok_or_else(|| {
-                gui_malformed(
-                    ctx,
-                    format_args!("ViewProvider {name}.{property_name} has no type"),
-                )
+                ctx.format_scoped_text(diagnostic_storage, format_args!("ViewProvider {name}.{property_name} has no type"), "FCStd GUI diagnostic").map_or_else(std::convert::identity, CodecError::Malformed)
             })?;
-        validate_gui_property(ctx, property, property_name, type_name)?;
+        if is_gui_link_type(type_name) {
+            crate::persistence::validate_link_property(ctx, property, type_name, Some(&mut *diagnostic_storage))?;
+        } else {
+            diagnostic_storage.with_storage(|| validate_gui_property(ctx, property, property_name, type_name))?;
+        }
         let mut values = Vec::new();
         let mut descendants = property.descendants();
         while descendants.len() != 0 {
@@ -2865,7 +2865,7 @@ fn validate_gui_property(
         return validate_visual_layer_list(ctx, property, property_name);
     }
     if is_gui_link_type(type_name) {
-        return crate::persistence::validate_link_property(ctx, property, type_name);
+        return crate::persistence::validate_link_property(ctx, property, type_name, None);
     }
     match type_name {
         "Mesh::PropertyMeshKernel" => {
@@ -7212,7 +7212,15 @@ mod shape_association_tests {
         let text = r#"<Document><Camera settings=""/><ViewProviderData Count="1"><ViewProvider name="P"><Properties Count="0"/></ViewProvider></ViewProviderData></Document>"#;
         let xml = roxmltree::Document::parse(text).expect("GUI XML");
         crate::test_support::with_service_context(text.as_bytes(), |ctx| {
-            let (_, plan) = super::transfer_schema_one(ctx, &ir, text, &xml, None, None, &sources)
+            let (_, plan) = super::transfer_schema_one(
+                ctx,
+                &ir,
+                text,
+                &xml,
+                None,
+                &sources,
+                &mut ctx.reserve_scoped(0, "test GUI diagnostics").expect("owner"),
+            )
                 .expect("GUI transfer");
             plan.apply(ctx, &mut ir).expect("body assignments");
             assert_eq!(ir.model.bodies[0].visible, None);

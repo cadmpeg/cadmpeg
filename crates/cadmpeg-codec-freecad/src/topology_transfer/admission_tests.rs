@@ -77,7 +77,7 @@ fn assert_topology_occurrence_materialized_refusal(operation: &str) {
                 &payloads,
                 &properties,
                 &mut Vec::new(),
-                !maps.is_empty(),
+                &maps,
             )
             .map(|_| ())
         },

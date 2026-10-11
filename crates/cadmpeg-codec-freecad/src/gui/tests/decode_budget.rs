@@ -113,11 +113,11 @@ fn gui_attribute_lookup_refuses_before_provider_record_copy() {
             let result = super::super::append_native_provider(
                 ctx,
                 xml,
-                tree.root_element(),
-                0,
+                (tree.root_element(), 0),
                 None,
                 &mut providers,
                 &mut Vec::new(),
+                &mut ctx.reserve_scoped(0, "test GUI diagnostics").expect("owner"),
             );
             if let Err(CodecError::ResourceLimit(limit)) = &result {
                 if limit.operation == "FCStd GUI provider attribute" {
@@ -660,11 +660,11 @@ fn gui_property_names_are_local_to_each_provider() {
             super::super::append_native_provider(
                 ctx,
                 text,
-                node,
-                order,
+                (node, order),
                 None,
                 &mut providers,
                 &mut properties,
+                &mut ctx.reserve_scoped(0, "test GUI diagnostics").expect("owner"),
             )
             .expect("separate provider names");
         }
@@ -684,11 +684,11 @@ fn gui_duplicate_property_name_precedes_later_invalid_properties() {
         let error = super::super::append_native_provider(
             ctx,
             text,
-            xml.root_element(),
-            0,
+            (xml.root_element(), 0),
             None,
             &mut Vec::new(),
             &mut Vec::new(),
+            &mut ctx.reserve_scoped(0, "test GUI diagnostics").expect("owner"),
         )
         .expect_err("duplicate name");
         assert!(
