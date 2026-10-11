@@ -95,27 +95,18 @@ fn derived_intersection_curve_fixture() -> (crate::container::ContainerScan<'sta
             .collect(),
     ));
     scan.topology.face_components.push(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::FaceComponent::new_for_test(ctx, vec![5], vec![10, 11, 12])
-        })
-        .expect("component admission")
-        .expect("valid component fixture"),
+        crate::topology::FaceComponent::new_for_test(vec![5], vec![10, 11, 12]),
     );
     scan.topology.vertices = [1_u32, 2, 3]
         .into_iter()
         .zip([10_u32, 11, 12])
         .map(|(id, curve_id)| {
-            crate::decode::with_test_decode_ctx(|ctx| {
-                crate::topology::TopologicalVertex::new_for_test(
-                    ctx,
-                    id,
+            crate::topology::TopologicalVertex::new_for_test(id,
                     vec![crate::topology::HalfEdgeId {
                         curve_id,
                         side: crate::topology::Side::Zero,
                     }],
                 )
-            })
-            .expect("vertex admission")
             .expect("valid vertex fixture")
         })
         .collect();

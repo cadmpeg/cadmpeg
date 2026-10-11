@@ -118,49 +118,8 @@ pub(crate) struct Loop {
 
 impl Loop {
     #[cfg(test)]
-    pub(crate) fn new(
-        ctx: &DecodeContext<'_>,
-        face_id: Option<NonZeroU32>,
-        half_edges: Vec<HalfEdgeId>,
-        graph: &[HalfEdge],
-    ) -> Result<Option<Self>, CodecError> {
-        if half_edges.is_empty() {
-            return Ok(None);
-        }
-        let mut ids = half_edges.iter();
-        let mut index = 0;
-        while ids.len() != 0 {
-            let Some(id) = ctx.next_charged(&mut ids, "creo closed ring validation work")? else {
-                break;
-            };
-            if index != 0
-                && ctx.any_by(
-                    &half_edges[..index],
-                    |previous| Ok(previous == id),
-                    "creo closed ring validation work",
-                )?
-            {
-                return Ok(None);
-            }
-            let Some(edge) = crate::decode::uniqueness::exactly_one_by(
-                ctx,
-                graph,
-                |edge| Ok(edge.id == *id),
-                "creo closed ring validation work",
-            )?
-            else {
-                return Ok(None);
-            };
-            let next = half_edges[(index + 1) % half_edges.len()];
-            if edge.face_id != face_id || edge.next != Some(next) {
-                return Ok(None);
-            }
-            index += 1;
-        }
-        Ok(Some(Self {
-            face_id,
-            half_edges,
-        }))
+    pub(crate) fn new_for_test(face_id: Option<NonZeroU32>, half_edges: Vec<HalfEdgeId>) -> Self {
+        Self { face_id, half_edges }
     }
 
     pub(crate) fn face_id(&self) -> Option<NonZeroU32> {
@@ -184,34 +143,6 @@ pub(crate) struct FaceComponent {
 }
 
 impl FaceComponent {
-    #[cfg(test)]
-    fn new(
-        ctx: &DecodeContext<'_>,
-        face_ids: Vec<u32>,
-        curve_ids: Vec<u32>,
-    ) -> Result<Option<Self>, CodecError> {
-        if face_ids.is_empty()
-            || face_ids[0] == 0
-            || (face_ids.len() > 1
-                && ctx.any_by(
-                    face_ids.windows(2),
-                    |pair| Ok(pair[0] >= pair[1]),
-                    "creo face component validation work",
-                )?)
-            || (curve_ids.len() > 1
-                && ctx.any_by(
-                    curve_ids.windows(2),
-                    |pair| Ok(pair[0] >= pair[1]),
-                    "creo face component validation work",
-                )?)
-        {
-            return Ok(None);
-        }
-        Ok(Some(Self {
-            face_ids,
-            curve_ids,
-        }))
-    }
     pub(crate) fn face_ids(&self) -> &[u32] {
         &self.face_ids
     }
@@ -219,12 +150,8 @@ impl FaceComponent {
         &self.curve_ids
     }
     #[cfg(test)]
-    pub(crate) fn new_for_test(
-        ctx: &DecodeContext<'_>,
-        face_ids: Vec<u32>,
-        curve_ids: Vec<u32>,
-    ) -> Result<Option<Self>, CodecError> {
-        Self::new(ctx, face_ids, curve_ids)
+    pub(crate) fn new_for_test(face_ids: Vec<u32>, curve_ids: Vec<u32>) -> Self {
+        Self { face_ids, curve_ids }
     }
 }
 
@@ -238,37 +165,12 @@ pub(crate) struct TopologicalVertex {
 }
 
 impl TopologicalVertex {
-    #[cfg(test)]
-    fn new(
-        ctx: &DecodeContext<'_>,
-        id: u32,
-        half_edges: Vec<HalfEdgeId>,
-    ) -> Result<Option<Self>, CodecError> {
-        let Some(id) = NonZeroU32::new(id) else {
-            return Ok(None);
-        };
-        if half_edges.is_empty()
-            || (half_edges.len() > 1
-                && ctx.any_by(
-                    half_edges.windows(2),
-                    |pair| Ok(pair[0] >= pair[1]),
-                    "creo vertex orbit validation work",
-                )?)
-        {
-            return Ok(None);
-        }
-        Ok(Some(Self { id, half_edges }))
-    }
     pub(crate) fn half_edges(&self) -> &[HalfEdgeId] {
         &self.half_edges
     }
     #[cfg(test)]
-    pub(crate) fn new_for_test(
-        ctx: &DecodeContext<'_>,
-        id: u32,
-        half_edges: Vec<HalfEdgeId>,
-    ) -> Result<Option<Self>, CodecError> {
-        Self::new(ctx, id, half_edges)
+    pub(crate) fn new_for_test(id: u32, half_edges: Vec<HalfEdgeId>) -> Option<Self> {
+        NonZeroU32::new(id).map(|id| Self { id, half_edges })
     }
 }
 

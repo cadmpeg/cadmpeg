@@ -66,61 +66,21 @@ pub(crate) struct PrimitiveTriangleStrip {
 }
 impl PrimitiveTriangleStrip {
     #[cfg(test)]
-    pub(crate) fn new(
-        ctx: &DecodeContext<'_>,
+    pub(crate) fn new_for_test(
         offset: usize,
         positions: Vec<FiniteVector<3>>,
         normals: Option<Vec<FiniteVector<3>>>,
         strip_lengths: Vec<u32>,
-    ) -> Result<Option<Self>, CodecError> {
-        let mut total = 0usize;
-        let mut lengths = strip_lengths.iter();
-        while lengths.len() != 0 {
-            let Some(length) = ctx.next_charged(&mut lengths, "creo primitive strip validation")?
-            else {
-                break;
-            };
-            if *length < 3 {
-                return Ok(None);
-            }
-            let Some(next) = usize::try_from(*length)
-                .ok()
-                .and_then(|length| total.checked_add(length))
-            else {
-                return Ok(None);
-            };
-            total = next;
-        }
-        if strip_lengths.is_empty()
-            || total != positions.len()
-            || normals
-                .as_ref()
-                .is_some_and(|normals| normals.len() != positions.len())
-        {
-            return Ok(None);
-        }
+    ) -> Self {
         let vertices = match normals {
             None => PrimitiveVertices::Unshaded(positions),
-            Some(normals) => {
-                let parts = ctx.with_scoped_storage("creo primitive shaded vertices", || {
-                    ctx.collect_retained_vec(
-                        positions
-                            .into_iter()
-                            .zip(normals)
-                            .map(|(position, normal)| PrimitiveShadedVertex { position, normal }),
-                        "creo primitive shaded vertices",
-                    )
-                })?;
-                let storage = parts.1;
-                let vertices = parts.0;
-                PrimitiveVertices::Shaded(storage.commit_value(vertices)?)
-            }
+            Some(normals) => PrimitiveVertices::Shaded(
+                positions.into_iter().zip(normals)
+                    .map(|(position, normal)| PrimitiveShadedVertex { position, normal })
+                    .collect(),
+            ),
         };
-        Ok(Some(Self {
-            offset,
-            vertices,
-            strip_lengths,
-        }))
+        Self { offset, vertices, strip_lengths }
     }
     #[cfg(test)]
     pub(crate) fn positions(&self) -> impl ExactSizeIterator<Item = &FiniteVector<3>> {
@@ -1105,36 +1065,21 @@ mod tests {
     }
 
     #[test]
-    fn checked_primitive_strips_reject_invalid_lanes_and_spans() {
-        crate::decode::with_test_decode_ctx(|ctx| {
-            let positions = || finite_points(vec![[0.0; 3]; 3]);
-            for spans in [vec![], vec![2], vec![4], vec![3, 3]] {
-                assert!(
-                    super::PrimitiveTriangleStrip::new(ctx, 0, positions(), None, spans)
-                        .expect("service")
-                        .is_none()
-                );
-            }
-            assert!(super::PrimitiveTriangleStrip::new(
-                ctx,
-                0,
-                positions(),
-                Some(finite_points(vec![[0.0; 3]; 2])),
-                vec![3]
-            )
-            .expect("service")
-            .is_none());
-            let shaded = super::PrimitiveTriangleStrip::new(
-                ctx,
-                0,
-                positions(),
-                Some(finite_points(vec![[0.0, 1.0, 0.0]; 3])),
-                vec![3],
-            )
-            .expect("service")
-            .expect("paired strip");
-            assert_eq!(shaded.positions().len(), 3);
-            assert_eq!(shaded.normals().expect("shaded").len(), 3);
-        });
+    fn primitive_parser_rejects_invalid_lanes_and_spans() {
+        for spans in [vec![], vec![2], vec![4], vec![3, 3]] {
+            let bytes = strip_visits::strip_input(0, &spans, 3, false);
+            let scan = with_context(&bytes, |ctx| triangle_strips(ctx, &bytes)).expect("service");
+            assert!(scan.strips.is_empty());
+            assert_eq!(scan.conflicting_representation_count, 0);
+        }
+        let bytes = strip_visits::strip_input(0, &[3], 2, true);
+        assert!(with_context(&bytes, |ctx| triangle_strips(ctx, &bytes))
+            .expect("service").strips.is_empty());
+        let bytes = strip_visits::strip_input(0, &[3], 3, true);
+        let scan = with_context(&bytes, |ctx| triangle_strips(ctx, &bytes)).expect("service");
+        let [shaded] = scan.strips.as_slice() else { panic!("paired strip"); };
+        assert_eq!(shaded.positions().len(), 3);
+        assert_eq!(shaded.normals().expect("shaded").len(), 3);
+        assert!(shaded.normals().expect("shaded").all(|normal| normal.get() == [0.0, 1.0, 0.0]));
     }
 }

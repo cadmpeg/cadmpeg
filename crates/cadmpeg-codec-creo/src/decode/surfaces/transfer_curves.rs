@@ -920,29 +920,19 @@ mod tests {
             },
         ];
         scan.topology.vertices = vec![
-            crate::decode::with_test_decode_ctx(|ctx| {
-                crate::topology::TopologicalVertex::new_for_test(
-                    ctx,
-                    1,
+            crate::topology::TopologicalVertex::new_for_test(1,
                     vec![HalfEdgeId {
                         curve_id: 10,
                         side: crate::topology::Side::Zero,
                     }],
                 )
-            })
-            .expect("vertex admission")
             .expect("valid vertex fixture"),
-            crate::decode::with_test_decode_ctx(|ctx| {
-                crate::topology::TopologicalVertex::new_for_test(
-                    ctx,
-                    2,
+            crate::topology::TopologicalVertex::new_for_test(2,
                     vec![HalfEdgeId {
                         curve_id: 10,
                         side: crate::topology::Side::One,
                     }],
                 )
-            })
-            .expect("vertex admission")
             .expect("valid vertex fixture"),
         ];
         scan.topology.half_edge_vertex_incidence = vec![
@@ -1088,29 +1078,19 @@ mod tests {
             },
         ];
         scan.topology.vertices = vec![
-            crate::decode::with_test_decode_ctx(|ctx| {
-                crate::topology::TopologicalVertex::new_for_test(
-                    ctx,
-                    1,
+            crate::topology::TopologicalVertex::new_for_test(1,
                     vec![HalfEdgeId {
                         curve_id: 10,
                         side: crate::topology::Side::Zero,
                     }],
                 )
-            })
-            .expect("vertex admission")
             .expect("valid vertex fixture"),
-            crate::decode::with_test_decode_ctx(|ctx| {
-                crate::topology::TopologicalVertex::new_for_test(
-                    ctx,
-                    2,
+            crate::topology::TopologicalVertex::new_for_test(2,
                     vec![HalfEdgeId {
                         curve_id: 10,
                         side: crate::topology::Side::One,
                     }],
                 )
-            })
-            .expect("vertex admission")
             .expect("valid vertex fixture"),
         ];
         scan.topology.half_edge_vertex_incidence = vec![

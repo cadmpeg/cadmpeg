@@ -26,11 +26,7 @@ fn built_ir_diagnostic_storage_survives_build_and_releases_with_result() {
         offset: 0,
     });
     scan.topology.face_components.push(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            crate::topology::FaceComponent::new_for_test(ctx, vec![5], Vec::new())
-        })
-        .expect("component admission")
-        .expect("one-face component"),
+        crate::topology::FaceComponent::new_for_test(vec![5], Vec::new()),
     );
 
     let run = |cap: u64, release: bool, probe: Option<u64>| {
