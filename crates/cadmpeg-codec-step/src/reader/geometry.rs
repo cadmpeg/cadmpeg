@@ -7389,8 +7389,7 @@ fn default_nurbs_knots(
 
                 let mut geometry_source = 0..multiplicity;
                 for _ in 0..geometry_source.len() {
-                    let _ = ctx
-                        .next_charged(&mut geometry_source, "STEP repeated knot traversal")?
+                    ctx.next_charged(&mut geometry_source, "STEP repeated knot traversal")?
                         .ok_or_else(|| {
                             CodecError::malformed("STEP geometry traversal source ended early")
                         })?;
@@ -7432,8 +7431,7 @@ fn default_nurbs_knots(
 
                 let mut geometry_source = 0..multiplicity;
                 for _ in 0..geometry_source.len() {
-                    let _ = ctx
-                        .next_charged(&mut geometry_source, "STEP repeated knot traversal")?
+                    ctx.next_charged(&mut geometry_source, "STEP repeated knot traversal")?
                         .ok_or_else(|| {
                             CodecError::malformed("STEP geometry traversal source ended early")
                         })?;
@@ -9170,8 +9168,7 @@ fn expand_knots(
 
         let mut geometry_source = 0..count;
         for _ in 0..geometry_source.len() {
-            let _ = ctx
-                .next_charged(&mut geometry_source, "STEP knot repetition traversal")?
+            ctx.next_charged(&mut geometry_source, "STEP knot repetition traversal")?
                 .ok_or_else(|| {
                     CodecError::malformed("STEP geometry traversal source ended early")
                 })?;
