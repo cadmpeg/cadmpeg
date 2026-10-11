@@ -1228,6 +1228,7 @@ pub(super) fn decode<'ctx>(
             }
         }
     }
+    drop((face_cache, associations, selections));
     // Every admitted relation shares one class of unproved invariant, so the
     // document reports the class once with its count and named examples.
     if let Some(note) = pcurve_admission_note(&admissions, ctx)? {
