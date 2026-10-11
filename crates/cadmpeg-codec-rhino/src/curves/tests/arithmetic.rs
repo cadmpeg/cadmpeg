@@ -49,9 +49,16 @@ fn degree_elevation_full_knot_break_copies_the_next_polygon() {
         let elevated = super::super::elevate_to_degree(ctx, &curve, 2, 0)
             .expect("full knot multiplicity starts a new polygon");
         assert_eq!(elevated.degree(), 2);
-        assert_eq!(elevated.knots().as_slice(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0]);
         assert_eq!(
-            elevated.control_points().iter().map(|point| point.get()).collect::<Vec<_>>(),
+            elevated.knots().as_slice(),
+            [0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0]
+        );
+        assert_eq!(
+            elevated
+                .control_points()
+                .iter()
+                .map(|point| point.get())
+                .collect::<Vec<_>>(),
             [0.0, 1.0, 2.0, 10.0, 12.0, 14.0].map(|x| Point3::new(x, 0.0, 0.0))
         );
         assert!(elevated.weights().is_none());
