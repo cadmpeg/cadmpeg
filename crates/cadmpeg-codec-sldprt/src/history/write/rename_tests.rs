@@ -148,3 +148,21 @@ fn feature_rename_without_identifier_consumers_does_not_scan_owner_suffixes() {
         assert_eq!(parameters, expected);
     }
 }
+
+#[test]
+fn feature_rename_without_changed_dependency_owner_leaves_expression_unread() {
+    let owner = FeatureId::mint("synthetic:test:feature#owner").unwrap();
+    for live_owner in [false, true] {
+        let mut parameters = vec![parameter("synthetic:test:parameter#consumer", None, &"A+".repeat(1_000_001))];
+        parameters[0].dependencies = DistinctMembers::try_from(
+            vec![ParameterId::mint("synthetic:test:parameter#missing").unwrap()],
+            &cadmpeg_test_support::service_decode_context(),
+        ).unwrap();
+        if live_owner {
+            parameters.push(parameter("synthetic:test:parameter#owned", Some(owner.clone()), "1"));
+        }
+        let expected = parameters.clone();
+        apply_feature_name_changes(&mut parameters, &HashMap::from([(owner.clone(), ("Old".into(), "New".into()))])).unwrap();
+        assert_eq!(parameters, expected);
+    }
+}

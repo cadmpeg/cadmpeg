@@ -86,7 +86,8 @@ pub(crate) fn apply_feature_name_changes(
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())?;
     let mut owners_storage = ctx.reserve_scoped(0, OPERATION)?;
-    let mut owners = HashMap::new();
+    let mut owners = HashMap::<cadmpeg_ir::features::ParameterId, Option<&(String, String)>>::new();
+    let mut live_owners = 0usize;
     if ctx.any_by(
         &*parameters,
         |parameter| Ok(!parameter.dependencies.is_empty()),
@@ -100,8 +101,11 @@ pub(crate) fn apply_feature_name_changes(
                 .transpose()?
                 .flatten();
             if let Some(previous) = ctx.get_mut_hash_map(&mut owners, &parameter.id, OPERATION)? {
+                live_owners -= usize::from(previous.is_some());
+                live_owners += usize::from(change.is_some());
                 *previous = change;
             } else if change.is_some() {
+                live_owners += 1;
                 owners_storage.with_storage(|| {
                     let id = parameter.id.try_clone_for_decode(&ctx, OPERATION)?;
                     ctx.insert_hash_map(&mut owners, id, change, OPERATION)
@@ -130,7 +134,11 @@ pub(crate) fn apply_feature_name_changes(
                 }
             }
         }
-        if parameter.dependencies.is_empty() {
+        if live_owners == 0 || !ctx.any_by(
+            parameter.dependencies.as_slice(),
+            |dependency| Ok(ctx.get_hash_map(&owners, dependency, OPERATION)?.is_some_and(Option::is_some)),
+            OPERATION,
+        )? {
             continue;
         }
         let (tokens, token_storage) = expression_identifier_tokens(&ctx, &parameter.expression)?;
