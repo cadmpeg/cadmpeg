@@ -367,15 +367,21 @@ fn missing_start_inverse_skips_end_inverse_search() {
     let curve = crate::brep::graph::test_support::test_nurbs_curve(
         1,
         vec![0., 0., 1., 2., 3., 3.],
-        (0..4).map(|index| Point3::new(f64::from(index), 0., 0.)).collect(),
+        (0..4)
+            .map(|index| Point3::new(f64::from(index), 0., 0.))
+            .collect(),
         None,
     );
     let start = Point3::new(0., 1., 0.);
     let end = Point3::new(3., 0., 0.);
-    let boundary = crate::test_support::work_refusal_at("test completed first endpoint inverse", |ctx| {
-        assert!(matches!(nurbs_parameter_at_point(ctx, &curve, start)?, InverseResolution::NoMatch));
-        ctx.charge_work(1, "test completed first endpoint inverse")
-    });
+    let boundary =
+        crate::test_support::work_refusal_at("test completed first endpoint inverse", |ctx| {
+            assert!(matches!(
+                nurbs_parameter_at_point(ctx, &curve, start)?,
+                InverseResolution::NoMatch
+            ));
+            ctx.charge_work(1, "test completed first endpoint inverse")
+        });
     let cadmpeg_core::CodecError::ResourceLimit(boundary) = boundary else {
         panic!("completed first inverse boundary");
     };
@@ -390,6 +396,9 @@ fn missing_start_inverse_skips_end_inverse_search() {
         end: VertexId::mint("test:model:vertex#end").unwrap(),
         tolerance: None,
     };
-    assert_eq!(nurbs_edge_parameter_range(&ctx, &edge, &curve, || Ok(Some([start, end]))).unwrap(), None);
+    assert_eq!(
+        nurbs_edge_parameter_range(&ctx, &edge, &curve, || Ok(Some([start, end]))).unwrap(),
+        None
+    );
     ctx.finish_session().unwrap();
 }
