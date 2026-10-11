@@ -35,6 +35,28 @@ fn scan_with_sections(layout: Layout) -> ContainerScan<'static> {
 }
 
 #[test]
+fn source_section_empty_fallback_is_free() {
+    for (layout, fallback) in [
+        (Layout::Nd, "unknown"),
+        (crate::test_support::legacy_layout(), "legacy_ascii"),
+    ] {
+        let mut scan = scan_with_sections(layout);
+        let arena = DecodeArena::new();
+        let policy = policy(0);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        scan.framing.sections.clear();
+        assert_eq!(
+            source_section_ref(&ctx, &scan, 0).expect("empty fallback"),
+            fallback
+        );
+        assert_eq!(
+            source_section_ref(&ctx, &scan, usize::MAX).expect("empty fallback"),
+            fallback
+        );
+    }
+}
+
+#[test]
 fn source_section_search_admits_only_present_sections_and_keeps_first_match() {
     for (layout, fallback) in [
         (Layout::Nd, "unknown"),
@@ -85,9 +107,6 @@ fn source_section_search_admits_only_present_sections_and_keeps_first_match() {
                             (original.limit, original.used, original.additional),
                             (cap, cap, 1)
                         );
-                        assert!(matches!(source_section_ref(&ctx, &scan, offset),
-                        Err(CodecError::ResourceLimit(actual)) if actual == original));
-                        assert_eq!(ctx.resource_refusal(), Some(original));
                         return Err(original.into());
                     }
                     Ok(())

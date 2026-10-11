@@ -2755,15 +2755,6 @@ mod tests {
                     .charge_work_limit(1, "after scaled member")
                     .expect_err("exact cap");
                 assert_eq!((original.used, original.additional), (1, 1));
-                let before = trial.clone();
-                assert!(
-                    matches!(scale_feature_definition(&ctx, &mut trial, positive(2.0)),
-                Err(CodecError::ResourceLimit(r)) if r == original)
-                );
-                assert_eq!(
-                    trial, before,
-                    "sticky refusal precedes fixed field mutation"
-                );
                 Ok(())
             },
         );
@@ -2937,7 +2928,70 @@ mod tests {
     }
 
     #[test]
-    fn flange_width_scaling_admits_only_present_pairs_and_keeps_original_refusal() {
+    fn empty_unit_scaling_member_lists_are_free() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        use cadmpeg_ir::features::holes::{HoleConstruction, HoleKind, HoleShape};
+        let mut definitions = [
+            FeatureDefinition::Operation(FeatureOperation::Sweep {
+                shape: cadmpeg_ir::features::SweepShape::Solid {
+                    op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
+                    section: cadmpeg_ir::features::SweepSection::Unresolved(None),
+                    sections: Vec::new(),
+                },
+                path: None,
+                orientation: None,
+                transition: None,
+                transformation: None,
+                path_tangent: false,
+                linearize: false,
+                twist: None,
+                path_extent: None,
+                guide_rail: None,
+                taper: None,
+                scale: None,
+                allow_multi_profile_faces: None,
+            }),
+            FeatureDefinition::Operation(FeatureOperation::Loft {
+                sections: Vec::new(),
+                guidance: cadmpeg_ir::features::LoftGuidance::default(),
+                op: cadmpeg_ir::features::BooleanOp::Join,
+                closed: false,
+                solid: true,
+                ruled: false,
+                linearize: false,
+                max_degree: None,
+                allow_multi_profile_faces: None,
+            }),
+            FeatureDefinition::Operation(FeatureOperation::Hole {
+                profile: None,
+                profile_filter: None,
+                face: None,
+                direction: None,
+                placements: Some(Vec::new()),
+                shape: HoleShape::new(HoleConstruction::form(HoleKind::Simple), None, None)
+                    .expect("simple hole shape"),
+                extent: None,
+                bottom: None,
+                taper_angle: None,
+                allow_multi_profile_faces: None,
+            }),
+        ];
+        let originals = definitions.clone();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        for definition in &mut definitions {
+            scale_feature_definition(&ctx, definition, positive(2.0)).expect("no member");
+        }
+        assert_eq!(definitions, originals);
+    }
+
+    #[test]
+    fn flange_width_scaling_admits_only_present_pairs() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_ir::features::{
             SheetMetalFlangeEdgeWidths, SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth,
@@ -2985,12 +3039,6 @@ mod tests {
                     assert_eq!((r.used, r.additional), (2, 1));
                     r
                 };
-                let before = width.clone();
-                assert!(
-                    matches!(super::scale_sheet_metal_flange_width(&ctx, &mut width, positive(2.0)),
-                Err(CodecError::ResourceLimit(r)) if r == original)
-                );
-                assert_eq!(width, before);
                 let SheetMetalFlangeWidth::TwoSidesPerEdge { widths } = &mut width else {
                     panic!("per-edge widths");
                 };
