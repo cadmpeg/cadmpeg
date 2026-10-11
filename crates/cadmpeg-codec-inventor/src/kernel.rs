@@ -108,9 +108,9 @@ pub(crate) fn decode_kernel_carrier(
             // source.kernel-dialect-unverified mark (`dialect::kernel_layer`), never
             // whether the records are read.
             (
-                acis_header::record_stream_start_with_header(header).ok_or_else(
-                    || CodecError::Malformed("Inventor ACIS carrier has no record stream".into()),
-                )?,
+                acis_header::record_stream_start_with_header(header).ok_or_else(|| {
+                    CodecError::Malformed("Inventor ACIS carrier has no record stream".into())
+                })?,
                 acis_header::solved_record_limit_with_header(ctx, bytes, header)?,
             )
         }

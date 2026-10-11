@@ -214,15 +214,43 @@ mod tests {
     #[test]
     fn parsed_binary_record_start_matches_byte_scan() {
         for (magic, header_len, acis) in [
-            (b"ASM BinaryFile4".as_slice(), crate::layout::asmheader_binaryfile4::LEN, false),
-            (b"ASM BinaryFile8".as_slice(), crate::layout::asmheader_binaryfile8::LEN, false),
-            (b"ACIS BinaryFile".as_slice(), crate::layout::acisheader_binaryfile4::LEN, true),
+            (
+                b"ASM BinaryFile4".as_slice(),
+                crate::layout::asmheader_binaryfile4::LEN,
+                false,
+            ),
+            (
+                b"ASM BinaryFile8".as_slice(),
+                crate::layout::asmheader_binaryfile8::LEN,
+                false,
+            ),
+            (
+                b"ACIS BinaryFile".as_slice(),
+                crate::layout::acisheader_binaryfile4::LEN,
+                true,
+            ),
         ] {
-            let parse = if acis { crate::acis_header::parse } else { crate::asm_header::parse };
-            let scan = if acis { crate::acis_header::record_stream_start } else { crate::asm_header::record_stream_start };
-            let cached = if acis { crate::acis_header::record_stream_start_with_header } else { crate::asm_header::record_stream_start_with_header };
+            let parse = if acis {
+                crate::acis_header::parse
+            } else {
+                crate::asm_header::parse
+            };
+            let scan = if acis {
+                crate::acis_header::record_stream_start
+            } else {
+                crate::asm_header::record_stream_start
+            };
+            let cached = if acis {
+                crate::acis_header::record_stream_start_with_header
+            } else {
+                crate::asm_header::record_stream_start_with_header
+            };
             for strings in [
-                [b"family".as_slice(), "v\u{00e9}rsion".as_bytes(), b"date".as_slice()],
+                [
+                    b"family".as_slice(),
+                    "v\u{00e9}rsion".as_bytes(),
+                    b"date".as_slice(),
+                ],
                 [b"".as_slice(); 3],
                 [b"family".as_slice(), b"\xff".as_slice(), b"date".as_slice()],
             ] {
@@ -232,16 +260,29 @@ mod tests {
                     let ctx = cadmpeg_test_support::service_decode_context();
                     let header = parse(&ctx, prefix).expect("header admitted");
                     let scanned = scan(&ctx, prefix).expect("header scan admitted");
-                    assert_eq!(header.as_ref().and_then(cached), scanned, "{magic:?} prefix {end}");
+                    assert_eq!(
+                        header.as_ref().and_then(cached),
+                        scanned,
+                        "{magic:?} prefix {end}"
+                    );
                     let expected = (end == bytes.len() && strings[1] != b"\xff").then_some(end);
-                    assert_eq!(header.and_then(|header| header.record_stream_start), expected, "{magic:?} prefix {end}");
+                    assert_eq!(
+                        header.and_then(|header| header.record_stream_start),
+                        expected,
+                        "{magic:?} prefix {end}"
+                    );
                 }
                 let mut wrong_tag = bytes;
                 wrong_tag[header_len] = 6;
                 let ctx = cadmpeg_test_support::service_decode_context();
-                let header = parse(&ctx, &wrong_tag).expect("header admitted").expect("binary header");
+                let header = parse(&ctx, &wrong_tag)
+                    .expect("header admitted")
+                    .expect("binary header");
                 assert_eq!(header.record_stream_start, None);
-                assert_eq!(cached(&header), scan(&ctx, &wrong_tag).expect("header scan admitted"));
+                assert_eq!(
+                    cached(&header),
+                    scan(&ctx, &wrong_tag).expect("header scan admitted")
+                );
             }
         }
     }
@@ -249,20 +290,49 @@ mod tests {
     #[test]
     fn parsed_binary_header_lookups_do_not_charge_product_string_work() {
         for (magic, header_len, acis) in [
-            (b"ASM BinaryFile4".as_slice(), crate::layout::asmheader_binaryfile4::LEN, false),
-            (b"ASM BinaryFile8".as_slice(), crate::layout::asmheader_binaryfile8::LEN, false),
-            (b"ACIS BinaryFile".as_slice(), crate::layout::acisheader_binaryfile4::LEN, true),
+            (
+                b"ASM BinaryFile4".as_slice(),
+                crate::layout::asmheader_binaryfile4::LEN,
+                false,
+            ),
+            (
+                b"ASM BinaryFile8".as_slice(),
+                crate::layout::asmheader_binaryfile8::LEN,
+                false,
+            ),
+            (
+                b"ACIS BinaryFile".as_slice(),
+                crate::layout::acisheader_binaryfile4::LEN,
+                true,
+            ),
         ] {
-            let parse = if acis { crate::acis_header::parse } else { crate::asm_header::parse };
-            let cached = if acis { crate::acis_header::record_stream_start_with_header } else { crate::asm_header::record_stream_start_with_header };
-            let solved = if acis { crate::acis_header::solved_record_limit_with_header } else { crate::asm_header::solved_record_limit_with_header };
-            let mut bytes = binary_header_bytes(magic, header_len, [b"family", b"version", b"date"]);
+            let parse = if acis {
+                crate::acis_header::parse
+            } else {
+                crate::asm_header::parse
+            };
+            let cached = if acis {
+                crate::acis_header::record_stream_start_with_header
+            } else {
+                crate::asm_header::record_stream_start_with_header
+            };
+            let solved = if acis {
+                crate::acis_header::solved_record_limit_with_header
+            } else {
+                crate::asm_header::solved_record_limit_with_header
+            };
+            let mut bytes =
+                binary_header_bytes(magic, header_len, [b"family", b"version", b"date"]);
             let start = bytes.len();
             let header = parse(&cadmpeg_test_support::service_decode_context(), &bytes)
-                .expect("header admitted").expect("binary header");
+                .expect("header admitted")
+                .expect("binary header");
             crate::test_support::with_zero_context(|ctx| {
                 assert_eq!(cached(&header), Some(start));
-                assert_eq!(solved(ctx, &bytes, &header).expect("empty record stream needs no work"), None);
+                assert_eq!(
+                    solved(ctx, &bytes, &header).expect("empty record stream needs no work"),
+                    None
+                );
             });
             bytes.extend_from_slice(b"\x0d\x0bdelta_state");
             let refusal = crate::test_support::resource_limit_at(
@@ -274,8 +344,15 @@ mod tests {
             assert_eq!(refusal.operation, "scan SAB history record");
             assert_eq!(refusal.used, 0);
             assert_eq!(refusal.additional, 1);
-            assert_eq!(solved(&cadmpeg_test_support::service_decode_context(), &bytes, &header)
-                .expect("history scan admitted"), Some(start));
+            assert_eq!(
+                solved(
+                    &cadmpeg_test_support::service_decode_context(),
+                    &bytes,
+                    &header
+                )
+                .expect("history scan admitted"),
+                Some(start)
+            );
         }
     }
 
