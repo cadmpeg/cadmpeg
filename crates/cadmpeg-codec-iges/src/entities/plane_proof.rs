@@ -92,36 +92,20 @@ pub(super) fn coplanarity_placement_key(
 
 pub(super) fn coplanarity_neighbors(
     key: CoplanarityPlaneKey,
-    normal: cadmpeg_ir::math::Vector3,
 ) -> impl Iterator<Item = CoplanarityPlaneKey> {
-    let normal = canonical_plane_normal(normal);
-    // Equivalent normal scalings can cross the closest quantization boundary.
-    // Plane offsets use both adjacent bins because their tolerance is a length.
-    (0..24).filter_map(move |mut position| {
+    // Each coefficient can differ by one bin while remaining within tolerance.
+    (0..81).filter_map(move |mut position| {
         let CoplanarityPlaneKey::Equation(mut values) = key else {
             return None;
         };
-        let normal = normal?;
-        let components = [normal.x, normal.y, normal.z];
-        let offset = f64::from_bits(values[0]);
-        let step = f64::from(position % 3) - 1.0;
-        position /= 3;
-        if !offset.is_finite() && step != 0.0 {
-            return None;
-        }
-        values[0] = plane_key_bits(offset + step);
-        for (value, component) in values[1..4].iter_mut().zip(components) {
+        for value in &mut values[..4] {
             let bin = f64::from_bits(*value);
-            if position % 2 != 0 {
-                let coordinate = component / geometry::CURVE_PLANE_NORMAL_EPSILON;
-                let step = if coordinate - coordinate.floor() < 0.5 {
-                    -1.0
-                } else {
-                    1.0
-                };
-                *value = plane_key_bits(bin + step);
+            let step = f64::from(position % 3) - 1.0;
+            position /= 3;
+            if !bin.is_finite() && step != 0.0 {
+                return None;
             }
-            position /= 2;
+            *value = plane_key_bits(bin + step);
         }
         let neighbor = CoplanarityPlaneKey::Equation(values);
         (neighbor != key).then_some(neighbor)

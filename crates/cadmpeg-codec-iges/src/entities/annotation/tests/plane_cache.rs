@@ -293,3 +293,30 @@ fn sectioned_area_plane_cache_rechecks_failed_control_points_after_normal_scalin
             .unwrap());
     });
 }
+
+#[test]
+fn sectioned_area_plane_cache_reuses_normals_across_both_adjacent_bins() {
+    let mut ir = CadIr::empty();
+    ir.model.curves.push(Curve {
+        id: CurveId::mint("iges:model:curve#D1").unwrap(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            ).unwrap(),
+        )),
+        source_object: None,
+    });
+    crate::test_support::with_service_context(&[], |ctx| {
+        let mut cache = super::super::SectionedAreaGeometryCache::new(&ir, ctx).unwrap();
+        let origin = Point3::new(0.0, 0.0, 0.0);
+        assert!(cache.curve_coplanar(1, (origin, Vector3::new(1.0, -2e-11, 0.0)), 0.001, ctx).unwrap());
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::RecursionDepth,
+            "iges coplanar curve recursion",
+            None,
+        );
+        assert!(cache.curve_coplanar(1, (origin, Vector3::new(1.0, 6e-11, 0.0)), 0.001, ctx).unwrap());
+        assert_eq!(cache.proofs.len(), 1);
+    });
+}
