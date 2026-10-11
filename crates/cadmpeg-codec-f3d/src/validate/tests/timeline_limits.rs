@@ -620,11 +620,11 @@ fn timeline_scope_history_uses_released_scratch() {
 }
 
 #[test]
-fn timeline_scope_history_id_refuses_work_limit() {
+fn timeline_scope_history_stream_refuses_work_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::WorkUnits,
-        "f3d component history scope id",
+        "resolve F3D component history scope stream",
         |cap| {
             crate::test_support::with_decode_context(|service_ctx| {
                 let ir = cadmpeg_ir::examples::unit_cube().unwrap();
@@ -641,7 +641,7 @@ fn timeline_scope_history_id_refuses_work_limit() {
     );
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "f3d component history scope id"
+        if limit.operation == "resolve F3D component history scope stream"
             && limit.dimension == ResourceDimension::WorkUnits)
     );
 }

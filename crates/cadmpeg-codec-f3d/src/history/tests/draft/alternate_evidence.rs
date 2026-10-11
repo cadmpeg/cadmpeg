@@ -359,12 +359,49 @@ fn draft_duplicate_binding_stops_before_unread_carriers() {
 }
 
 #[test]
-fn draft_alternate_each_reached_phase_keeps_original_refusal() {
+fn draft_duplicate_binding_ambiguity_uses_exactly_two_work_units() {
+    let mut topology = topology(false);
+    topology.face_surfaces = vec![
+        AsmHistoricalCarrierBinding {
+            entity: 10,
+            carrier: 100,
+        },
+        AsmHistoricalCarrierBinding {
+            entity: 10,
+            carrier: 200,
+        },
+    ];
+    topology
+        .face_surfaces
+        .extend((12..4110).map(|entity| AsmHistoricalCarrierBinding {
+            entity,
+            carrier: entity + 100,
+        }));
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 2;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        assert!(draft_surface_geometry(ctx, &topology, 10)
+            .expect("binding proof")
+            .is_none());
+        assert_eq!(ctx.resource_refusal(), None);
+        let Err(CodecError::ResourceLimit(limit)) = ctx.charge_work(1, "after repeated binding")
+        else {
+            panic!("exact two-record work boundary")
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.used, 2);
+        assert_eq!(limit.additional, 1);
+    });
+}
+
+#[test]
+fn draft_alternate_each_reached_phase_refuses_work() {
     let operand = operand();
     let before = topology(false);
     let after = topology(true);
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = u64::MAX;
     for (operation, additional) in [
         ("scan F3D draft face candidates", 2),
         ("collect F3D draft alternate faces", 1),
@@ -372,27 +409,17 @@ fn draft_alternate_each_reached_phase_keeps_original_refusal() {
         ("find F3D draft face in both states", 1),
         ("find F3D draft surface geometry", 1),
     ] {
-        crate::test_support::with_decode_policy(&policy, |ctx| {
-            let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-                ResourceDimension::WorkUnits,
-                operation,
-                Some(additional),
-            );
-            let Err(CodecError::ResourceLimit(original)) =
-                resolve_draft_face_by_surface_transition(ctx, &operand, &before, &after)
-            else {
-                panic!("reached draft phase {operation}")
-            };
-            assert_eq!(original.operation, operation);
-            assert_eq!(original.dimension, ResourceDimension::WorkUnits);
-            assert_eq!(original.additional, additional);
-            assert_eq!(ctx.resource_refusal(), Some(original));
-            let Err(CodecError::ResourceLimit(sticky)) =
-                resolve_draft_face_by_surface_transition(ctx, &operand, &before, &after)
-            else {
-                panic!("sticky draft phase")
-            };
-            assert_eq!(sticky, original);
-        });
+        let error = crate::test_support::resource_refusal_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            0,
+            |ctx| resolve_draft_face_by_surface_transition(ctx, &operand, &before, &after),
+        );
+        let CodecError::ResourceLimit(original) = error else {
+            panic!("reached draft phase {operation}")
+        };
+        assert_eq!(original.operation, operation);
+        assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(original.additional, additional);
     }
 }

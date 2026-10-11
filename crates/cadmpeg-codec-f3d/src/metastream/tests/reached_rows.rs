@@ -121,3 +121,36 @@ fn metastream_headers_and_unread_type_tail_need_no_output_storage() {
         });
     }
 }
+
+#[test]
+fn metastream_empty_record_index_is_free() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        let mut at = 0;
+        assert!(take_record_index(ctx, &[0; 4], &mut at)
+            .unwrap()
+            .unwrap()
+            .is_empty());
+        assert_eq!(at, 4);
+        assert_eq!(ctx.resource_refusal(), None);
+    });
+}
+
+#[test]
+fn metastream_empty_version_context_is_free() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        let mut at = 0;
+        assert!(take_version_context(ctx, &[0; 4], &mut at).is_ok());
+        assert_eq!(at, 4);
+        assert_eq!(ctx.resource_refusal(), None);
+    });
+}

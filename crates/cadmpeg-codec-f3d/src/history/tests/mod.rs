@@ -19,6 +19,7 @@ mod hole;
 mod mirror;
 mod path_selection_limits;
 mod planes;
+mod recent_topology;
 mod recipe_projection;
 mod recipes;
 mod resource_staging;
