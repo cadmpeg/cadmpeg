@@ -282,9 +282,6 @@ fn object_array_is_complete(
     dimensions: &[u32],
     elements: &[String],
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut count = 1u64;
     let mut dimensions = dimensions.iter();
     while dimensions.len() != 0 {
@@ -303,10 +300,7 @@ fn object_array_is_complete(
 
 impl ObjectPayload {
     /// Whether an array has exactly its declared extent product of elements.
-    pub(crate) fn is_complete(&self, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
+    pub(crate) fn is_complete(&self, _ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
         Ok(matches!(self, Self::Array { complete: true, .. }))
     }
 }
@@ -762,9 +756,6 @@ impl Persistence {
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Option<PrincipalUnitSystem>, CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut candidate = None;
         let mut found = false;
         let mut records = self.string_values.iter();
@@ -806,9 +797,6 @@ impl Persistence {
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Option<PrincipalUnitSystem>, CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         if self.objects.is_empty() {
             return Ok(None);
         }
@@ -992,9 +980,6 @@ pub(crate) fn line<'a>(
     data: &'a [u8],
     start: usize,
 ) -> Result<Option<(&'a [u8], usize)>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(bytes) = data.get(start..) else {
         return Ok(None);
     };
@@ -1026,9 +1011,6 @@ pub(crate) fn text_field<'a>(
     text: &mut &'a str,
     ascii: bool,
 ) -> Result<Option<&'a str>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let whitespace = |c: char| {
         if ascii {
             c.is_ascii_whitespace()
@@ -1132,9 +1114,6 @@ fn decimal(
     bytes: &[u8],
     mut offset: usize,
 ) -> Result<Option<(u32, usize)>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let start = offset;
     let mut value = 0u32;
     let mut digits = bytes.get(start..).unwrap_or_default().iter();
@@ -1209,9 +1188,6 @@ fn array_dimensions(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<Vec<u32>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut storage = ctx.reserve_scoped(0, "creo legacy array dimension storage")?;
     let mut dimensions = Vec::new();
     let mut cursor = 0;
@@ -1552,9 +1528,6 @@ fn byte_string_value(
     bytes: &[u8],
     null_token: NullToken,
 ) -> Result<StringValue, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if null_token == NullToken::RepresentsNull && bytes == b"NULL" {
         Ok(StringValue::Null)
     } else if let Ok(text) = ctx.validate_utf8(bytes, "creo UTF-8 validation")? {

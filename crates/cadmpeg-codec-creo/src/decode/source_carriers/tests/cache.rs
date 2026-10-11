@@ -93,45 +93,36 @@ fn source_surface_removal_releases_key_geometry_and_node_storage() {
 fn source_surface_node_storage_stays_live_until_last_removal() {
     const PROBE_OPERATION: &str = "test source surface live storage probe";
 
-    let surface_a = cached_surface(
-        "creo:test:cache-surface-a#1",
-        "creo:test:cache-record-a#1",
-    );
-    let surface_b = cached_surface(
-        "creo:test:cache-surface-b#1",
-        "creo:test:cache-record-b#1",
-    );
-    let run = |cap: u64,
-               include_a: bool,
-               remove_a: bool,
-               remove_b: bool,
-               probe_bytes: Option<u64>| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let mut carriers = SourceUnitCarriers::for_decode(&ctx, None);
-        let mut ir = CadIr::empty();
-        if include_a {
-            carriers.admit_surface(&ctx, &mut ir, surface_a.clone())?;
-            assert_eq!(carriers.surface_geometry(&surface_a)?, &surface_a.geometry);
-        }
-        carriers.admit_surface(&ctx, &mut ir, surface_b.clone())?;
-        assert_eq!(carriers.surface_geometry(&surface_b)?, &surface_b.geometry);
-        if remove_a {
-            carriers.remove_surface(&surface_a.id)?;
-        }
-        if !remove_b {
+    let surface_a = cached_surface("creo:test:cache-surface-a#1", "creo:test:cache-record-a#1");
+    let surface_b = cached_surface("creo:test:cache-surface-b#1", "creo:test:cache-record-b#1");
+    let run =
+        |cap: u64, include_a: bool, remove_a: bool, remove_b: bool, probe_bytes: Option<u64>| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let mut carriers = SourceUnitCarriers::for_decode(&ctx, None);
+            let mut ir = CadIr::empty();
+            if include_a {
+                carriers.admit_surface(&ctx, &mut ir, surface_a.clone())?;
+                assert_eq!(carriers.surface_geometry(&surface_a)?, &surface_a.geometry);
+            }
+            carriers.admit_surface(&ctx, &mut ir, surface_b.clone())?;
             assert_eq!(carriers.surface_geometry(&surface_b)?, &surface_b.geometry);
-        }
-        if remove_b {
-            carriers.remove_surface(&surface_b.id)?;
-        }
-        if let Some(probe_bytes) = probe_bytes {
-            let _probe = ctx.reserve_scoped(probe_bytes, PROBE_OPERATION)?;
-        }
-        Ok::<_, CodecError>(())
-    };
+            if remove_a {
+                carriers.remove_surface(&surface_a.id)?;
+            }
+            if !remove_b {
+                assert_eq!(carriers.surface_geometry(&surface_b)?, &surface_b.geometry);
+            }
+            if remove_b {
+                carriers.remove_surface(&surface_b.id)?;
+            }
+            if let Some(probe_bytes) = probe_bytes {
+                let _probe = ctx.reserve_scoped(probe_bytes, PROBE_OPERATION)?;
+            }
+            Ok::<_, CodecError>(())
+        };
 
     let two_entry_peak = crate::test_support::allocation_limit_at(
         ResourceDimension::MaterializedBytes,
@@ -324,7 +315,8 @@ fn owned_sketch_nurbs_scaling_preserves_source_and_refuses_overflow_before_inser
         for x in [1.0, f64::MAX] {
             let source = geometry(x, rational);
             let entity = SketchEntity::new(
-                cadmpeg_ir::sketches::SketchEntityId::mint("creo:test:owned-nurbs#1").expect("entity ID"),
+                cadmpeg_ir::sketches::SketchEntityId::mint("creo:test:owned-nurbs#1")
+                    .expect("entity ID"),
                 cadmpeg_ir::sketches::SketchId::mint("creo:test:sketch#1").expect("sketch ID"),
                 source.clone(),
             );
@@ -341,47 +333,16 @@ fn owned_sketch_nurbs_scaling_preserves_source_and_refuses_overflow_before_inser
                 let actual = &ir.model.sketch_entities[0];
                 assert_eq!(actual.id(), &expected_id);
                 assert_eq!(actual.geometry, geometry(2.0, rational));
-                assert_eq!(carriers.sketch_geometry(actual).expect("source lookup"), &source);
+                assert_eq!(
+                    carriers.sketch_geometry(actual).expect("source lookup"),
+                    &source
+                );
             } else {
                 assert!(matches!(result, Err(CodecError::NotImplemented(_))));
                 assert!(ir.model.sketch_entities.is_empty());
                 assert!(carriers.sketch_entities.is_empty());
             }
             assert_eq!(ctx.resource_refusal(), None);
-        }
-    }
-}
-
-#[test]
-fn replacement_feature_fixed_path_is_free_and_preserves_original_refusal() {
-    let datum = |distance| FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-        reference: None,
-        distance: cadmpeg_ir::scalar::Length::new(distance).expect("finite source distance"),
-    });
-    for scale in [None, PositiveReal::new(2.0)] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        policy.limits.max_recursion_depth = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let carriers = SourceUnitCarriers::for_decode(&ctx, scale);
-        let mut feature = source_feature(FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}));
-        let mut expected = feature.clone();
-        expected.evaluation.set_definition(datum(scale.map_or(1.0, PositiveReal::get)));
-        carriers.replace_feature_definition(&ctx, &mut feature, datum(1.0)).expect("fixed replacement is free");
-        assert_eq!(feature, expected);
-        assert_eq!(ctx.resource_refusal(), None);
-        let original = ctx.charge_work_limit(1, "after fixed feature replacement").expect_err("zero work cap");
-        assert_eq!((original.dimension, original.used, original.additional),
-            (ResourceDimension::WorkUnits, 0, 1));
-        for replacement in [FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}), datum(f64::MAX)] {
-            let result = carriers.replace_feature_definition(&ctx, &mut feature, replacement);
-            assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original));
-            assert_eq!(feature, expected);
-            assert_eq!(ctx.resource_refusal(), Some(original));
         }
     }
 }

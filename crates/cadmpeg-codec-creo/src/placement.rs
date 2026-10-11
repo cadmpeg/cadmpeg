@@ -220,9 +220,6 @@ impl<'ctx, 'source, 'input> PlacementLookup<'ctx, 'source, 'input> {
         &mut self,
         id: u32,
     ) -> Result<Option<&'source crate::surface::SurfaceRow>, CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         if let Some(row) = self.sources.surface_rows.unique(id) {
             return Ok((row.kind == SurfaceKind::Plane).then_some(row));
         }
@@ -260,9 +257,6 @@ impl<'ctx, 'source, 'input> PlacementLookup<'ctx, 'source, 'input> {
             .flatten())
     }
     fn definition(&mut self, id: u32) -> Result<Option<&'source FeatureDefinition>, CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let ctx = self.ctx;
         if self.definition_rows.is_none() {
             let mut index = std::collections::HashMap::new();
@@ -330,9 +324,6 @@ impl<'ctx, 'source, 'input> PlacementLookup<'ctx, 'source, 'input> {
     }
 
     fn datum(&mut self, id: u32) -> Result<RowLookup<&'source DatumPlaneRecord>, CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let ctx = self.ctx;
         if self.datums.is_none() {
             let mut index = std::collections::HashMap::new();
@@ -361,9 +352,6 @@ impl<'ctx, 'source, 'input> PlacementLookup<'ctx, 'source, 'input> {
         )
     }
     fn model(&mut self, id: u32) -> Result<RowLookup<&'source PlaneLocalSystem>, CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let ctx = self.ctx;
         if self.models.is_none() {
             let mut index = std::collections::HashMap::new();
@@ -397,9 +385,6 @@ impl<'ctx, 'source, 'input> PlacementLookup<'ctx, 'source, 'input> {
         )
     }
     fn outline(&mut self, id: u32) -> Result<RowLookup<&'source OutlinePlane>, CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let ctx = self.ctx;
         if self.outlines.is_none() {
             let mut index = std::collections::HashMap::new();
@@ -433,9 +418,6 @@ impl<'ctx, 'source, 'input> PlacementLookup<'ctx, 'source, 'input> {
         )
     }
     fn envelope_rows(&mut self, id: u32) -> Result<&[&'source PlaneEnvelopeRecord], CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let ctx = self.ctx;
         if self.envelopes.is_none() {
             let mut index = std::collections::HashMap::<u32, Vec<&PlaneEnvelopeRecord>>::new();
@@ -534,9 +516,6 @@ impl<'ctx, 'source, 'input> PlacementLookup<'ctx, 'source, 'input> {
     }
 
     fn is_generated_datum(&mut self, id: u32) -> Result<bool, CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let ctx = self.ctx;
         if self.datum_counts.is_none() {
             let mut index = std::collections::HashMap::<u32, u8>::new();
@@ -561,9 +540,6 @@ impl<'ctx, 'source, 'input> PlacementLookup<'ctx, 'source, 'input> {
         Ok(self.datum_counts.as_ref().and_then(|index| index.get(&id)) == Some(&1))
     }
     fn feature_datums(&mut self, id: u32) -> Result<&[&'source DatumPlaneRecord], CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let ctx = self.ctx;
         if self.feature_datums.is_none() {
             let mut index = std::collections::HashMap::<u32, Vec<&DatumPlaneRecord>>::new();
@@ -598,9 +574,6 @@ impl<'ctx, 'source, 'input> PlacementLookup<'ctx, 'source, 'input> {
         &mut self,
         id: u32,
     ) -> Result<&[&'source crate::surface::SurfaceRow], CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let ctx = self.ctx;
         if self.feature_planes.is_none() {
             let mut index =
@@ -639,9 +612,6 @@ impl<'ctx, 'source, 'input> PlacementLookup<'ctx, 'source, 'input> {
         &mut self,
         id: u32,
     ) -> Result<Option<&'source SurfaceParameterRecord>, CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let ctx = self.ctx;
         let sources = &self.sources;
         if self.parameters.is_none() {
@@ -682,9 +652,6 @@ fn generated_cylinder_section_transform(
     entity_tables: &[FeatureEntityTable],
     lookup: &mut PlacementLookup<'_, '_, '_>,
 ) -> Result<Option<FeatureSectionTransform>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let sources = lookup.sources;
     let Some(feature_id) = definition.identity.owner_feature_id() else {
         return Ok(None);
@@ -703,11 +670,10 @@ fn generated_cylinder_section_transform(
     if !points.ambiguous.is_empty() {
         return Ok(None);
     }
-    let correspondences_owned_storage = ctx
-        .temporary_vec::<([f64; 2], [f64; 3], UnitVector3)>(
-            0,
-            "creo cylinder placement correspondence storage",
-        )?;
+    let correspondences_owned_storage = ctx.temporary_vec::<([f64; 2], [f64; 3], UnitVector3)>(
+        0,
+        "creo cylinder placement correspondence storage",
+    )?;
     let mut correspondence_storage = correspondences_owned_storage.1;
     let mut correspondences = correspondences_owned_storage.0;
     let mut coordinate_scale = 1.0f64;
@@ -716,7 +682,10 @@ fn generated_cylinder_section_transform(
         if table.feature_id != feature_id {
             continue;
         }
-        for entry in ctx.admit_iter(table.entries.as_slice(), "creo cylinder placement entry traversal")? {
+        for entry in ctx.admit_iter(
+            table.entries.as_slice(),
+            "creo cylinder placement entry traversal",
+        )? {
             if !ctx.contains_btree_set(
                 table.unique_surface_ids(),
                 &entry.entity_id,
@@ -802,9 +771,9 @@ fn generated_cylinder_section_transform(
     let mut frame = None::<([f64; 3], [f64; 3], [f64; 3])>;
     let mut seconds = correspondences[1..].iter();
     while seconds.len() != 0 {
-        let Some(second) = ctx.next_charged(
-            &mut seconds, "creo cylinder placement frame candidates",
-        )? else {
+        let Some(second) =
+            ctx.next_charged(&mut seconds, "creo cylinder placement frame candidates")?
+        else {
             break;
         };
         let local = [second.0[0] - first.0[0], second.0[1] - first.0[1]];
@@ -892,9 +861,6 @@ fn generated_planar_section_transform(
     entity_tables: &[FeatureEntityTable],
     lookup: &mut PlacementLookup<'_, '_, '_>,
 ) -> Result<Option<FeatureSectionTransform>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(feature_id) = definition.identity.owner_feature_id() else {
         return Ok(None);
     };
@@ -940,9 +906,8 @@ fn generated_planar_section_transform(
     let mut sides = sides_owned_storage.0;
     let mut entries = table.entries[2..].iter();
     while entries.len() != 0 {
-        let Some(entry) = ctx.next_charged(
-            &mut entries, "creo planar placement side traversal",
-        )? else {
+        let Some(entry) = ctx.next_charged(&mut entries, "creo planar placement side traversal")?
+        else {
             break;
         };
         if !ctx.contains_btree_set(
@@ -1011,7 +976,8 @@ fn generated_planar_section_transform(
             .zip(right)
             .all(|(left, right)| close(left, right))
     };
-    let candidates_owned_storage = ctx.temporary_vec(0, "creo planar placement candidate storage")?;
+    let candidates_owned_storage =
+        ctx.temporary_vec(0, "creo planar placement candidate storage")?;
     let mut candidate_storage = candidates_owned_storage.1;
     let mut candidates = candidates_owned_storage.0;
     for first_index in
@@ -1139,9 +1105,6 @@ fn generated_planar_table_shape(
     ctx: &DecodeContext<'_>,
     table: &FeatureEntityTable,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let [first, second, rest @ ..] = table.entries.as_slice() else {
         return Ok(false);
     };
@@ -1161,8 +1124,10 @@ fn generated_planar_table_shape(
     let mut entries = table.entries.iter();
     while entries.len() != 0 {
         let Some(entry) = ctx.next_charged(
-            &mut entries, "creo generated planar table identity traversal",
-        )? else {
+            &mut entries,
+            "creo generated planar table identity traversal",
+        )?
+        else {
             break;
         };
         if !storage.with_storage(|| {
@@ -1213,9 +1178,6 @@ fn reference_flip_for_reference(
     section: &crate::feature::definitions::FeatureSection3d,
     reference_id: Option<u32>,
 ) -> Result<Option<BinaryFlag>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     Ok(match &section.reference_planes {
         ReferencePlanes::Named(_) => section.orientation.reference_flip,
         ReferencePlanes::Positional(rows) => match reference_id {
@@ -1235,9 +1197,6 @@ fn unique_carrier_reference_id(
     ctx: &DecodeContext<'_>,
     section: &crate::feature::definitions::FeatureSection3d,
 ) -> Result<Option<u32>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if let Some(id) = section.reference_plane_datum_geometry_id {
         return Ok(Some(id));
     }
@@ -1248,9 +1207,8 @@ fn unique_carrier_reference_id(
     let mut ids = section.reference_planes.entity_ids();
     let mut selected = None;
     while remaining != 0 {
-        let Some(candidate) = ctx.next_charged(
-            &mut ids, "creo carrier reference ID selection",
-        )? else {
+        let Some(candidate) = ctx.next_charged(&mut ids, "creo carrier reference ID selection")?
+        else {
             break;
         };
         remaining -= 1;
@@ -1267,9 +1225,6 @@ fn apply_section_orientation(
     mut transform: FeatureSectionTransform,
     section: &crate::feature::definitions::FeatureSection3d,
 ) -> Result<FeatureSectionTransform, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if section.sketch_plane_flip == Some(BinaryFlag::Set) {
         transform = transform.flipped_v();
     }
@@ -1294,9 +1249,6 @@ fn definition_local_frame_transform(
     definition: &FeatureDefinition,
     section: &crate::feature::definitions::FeatureSection3d,
 ) -> Result<Option<FeatureSectionTransform>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(feature_id) = definition.identity.owner_feature_id() else {
         return Ok(None);
     };
@@ -1400,9 +1352,6 @@ fn generated_parent_plane_equation(
     reference_normal: [f64; 3],
     lookup: &mut PlacementLookup<'_, '_, '_>,
 ) -> Result<Option<SignedPlaneEquation>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut equation = None;
     let mut accept = |candidate: SignedPlaneEquation| {
         let aligned = dot(candidate.normal, reference_normal).abs() <= EPS_PLACEMENT_EXACT_GEOMETRY;
@@ -1419,9 +1368,9 @@ fn generated_parent_plane_equation(
     };
     let mut datums = lookup.feature_datums(feature_id)?.iter();
     while datums.len() != 0 {
-        let Some(datum) = ctx.next_charged(
-            &mut datums, "creo generated datum feature datum traversal",
-        )? else {
+        let Some(datum) =
+            ctx.next_charged(&mut datums, "creo generated datum feature datum traversal")?
+        else {
             break;
         };
         if !accept(SignedPlaneEquation {
@@ -1435,8 +1384,10 @@ fn generated_parent_plane_equation(
     let mut positions = 0..plane_count;
     while !positions.is_empty() {
         let Some(position) = ctx.next_charged(
-            &mut positions, "creo generated datum feature plane traversal",
-        )? else {
+            &mut positions,
+            "creo generated datum feature plane traversal",
+        )?
+        else {
             break;
         };
         let Some(row) = lookup
@@ -1455,9 +1406,9 @@ fn generated_parent_plane_equation(
         }
         let mut envelopes = lookup.envelope_rows(row.id)?.iter();
         while envelopes.len() != 0 {
-            let Some(record) = ctx.next_charged(
-                &mut envelopes, "creo generated datum envelope traversal",
-            )? else {
+            let Some(record) =
+                ctx.next_charged(&mut envelopes, "creo generated datum envelope traversal")?
+            else {
                 break;
             };
             let corners = match &record.envelope {
@@ -1567,9 +1518,6 @@ fn generated_cap_pair_plane_equation(
     table: &FeatureEntityTable,
     lookup: &mut PlacementLookup<'_, '_, '_>,
 ) -> Result<Option<SignedPlaneEquation>, CodecError> {
-    if let Some(refusal) = lookup.ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let [first, second, ..] = table.entries.as_slice() else {
         return Ok(None);
     };
@@ -1639,9 +1587,6 @@ fn zero_offset_standard_section_plane_equation(
     entity_tables: &[FeatureEntityTable],
     lookup: &mut PlacementLookup<'_, '_, '_>,
 ) -> Result<Option<SignedPlaneEquation>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let (reference_id, reference) = reference;
     let Some(feature_id) = definition.identity.owner_feature_id() else {
         return Ok(None);
@@ -1881,7 +1826,8 @@ pub(crate) fn resolve(
         }
         .map(|transform| apply_section_orientation(ctx, transform, section))
         .transpose()?;
-        let reference_ids_owned_storage = ctx.temporary_vec(0, "creo placement reference storage")?;
+        let reference_ids_owned_storage =
+            ctx.temporary_vec(0, "creo placement reference storage")?;
         let mut reference_storage = reference_ids_owned_storage.1;
         let mut reference_ids = reference_ids_owned_storage.0;
         if let Some(id) = section.reference_plane_datum_geometry_id {
@@ -1946,7 +1892,8 @@ pub(crate) fn resolve(
                 },
             },
         };
-        let candidates_owned_storage = ctx.temporary_vec::<SectionFrameCandidate>(0, "creo placement candidate storage")?;
+        let candidates_owned_storage =
+            ctx.temporary_vec::<SectionFrameCandidate>(0, "creo placement candidate storage")?;
         let mut candidate_storage = candidates_owned_storage.1;
         let mut candidates = candidates_owned_storage.0;
         for &reference_id in ctx.admit_iter(

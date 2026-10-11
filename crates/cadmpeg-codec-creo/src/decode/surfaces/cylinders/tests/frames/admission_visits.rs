@@ -54,56 +54,11 @@ fn assert_exact_visits(
         (original.dimension, original.used, original.additional),
         (ResourceDimension::WorkUnits, visits, 1)
     );
-    assert!(matches!(query(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original));
-    assert_eq!(ctx.resource_refusal(), Some(original));
-}
-
-#[test]
-fn round_edge_fixed_preconditions_preserve_original_refusal_without_work() {
-    let arena = DecodeArena::new();
-    let mut policy = visit_policy(0);
-    policy.limits.max_materialized_bytes = 0;
-    policy.limits.max_collection_items = 0;
-    policy.limits.max_recursion_depth = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let check = |refused| {
-        let mut nonfinite = edge_envelope();
-        nonfinite.vertices[0][0] = f64::NAN;
-        let results = [
-            round_edge_cylinder_frame(&ctx, edge_envelope(), 0.0, &[]).map(|frame| frame.is_none()),
-            round_edge_cylinder_frame(&ctx, edge_envelope(), -1.0, &[])
-                .map(|frame| frame.is_none()),
-            round_edge_cylinder_frame(&ctx, edge_envelope(), f64::NAN, &[])
-                .map(|frame| frame.is_none()),
-            round_edge_cylinder_frame(&ctx, edge_envelope(), f64::INFINITY, &[])
-                .map(|frame| frame.is_none()),
-            round_edge_cylinder_frame(&ctx, nonfinite, 0.2, &[]).map(|frame| frame.is_none()),
-            round_edge_cylinder_frame(&ctx, edge_envelope(), 0.2, &[]).map(|frame| frame.is_none()),
-            perpendicular_round_edge_cylinder_frame(&ctx, edge_envelope(), &[]).map(|frame| {
-                frame == Err(PerpendicularRoundEdgeFailure::NoPerpendicularSupportPair)
-            }),
-        ];
-        for result in results {
-            if refused {
-                let original = ctx.resource_refusal().expect("seeded refusal");
-                assert!(
-                    matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == original)
-                );
-            } else {
-                assert!(result.expect("fixed precondition needs no input visit"));
-            }
-        }
-    };
-    check(false);
-    assert_eq!(ctx.resource_refusal(), None);
-    let original = ctx
-        .charge_work_limit(1, "after cylinder fixed preconditions")
-        .expect_err("zero cap");
-    assert_eq!(
-        (original.dimension, original.used, original.additional),
-        (ResourceDimension::WorkUnits, 0, 1)
-    );
-    check(true);
+    if visits != 0 {
+        assert!(
+            matches!(query(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == original)
+        );
+    }
     assert_eq!(ctx.resource_refusal(), Some(original));
 }
 
