@@ -4591,6 +4591,9 @@ fn positional_section_3d(
     start: usize,
     end: usize,
 ) -> Result<Option<FeatureSection3d>, CodecError> {
+    let Some(payload) = payload.get(..end).filter(|_| start <= end) else {
+        return Ok(None);
+    };
     let Some((section, name_end)) = ctx.find_map(
         payload[start..end].windows(4).enumerate(),
         |(relative, _)| {
