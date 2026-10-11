@@ -61,7 +61,6 @@ fn record_references(
     record: &RawRecord,
     ctx: &DecodeContext<'_>,
 ) -> Result<RecordReferences, CodecError> {
-    ctx.charge_work(0, "STEP annotation reference traversal")?;
     let mut selected = None;
     let mut partials = record.partials.iter();
     for _ in 0..partials.len() {

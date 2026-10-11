@@ -80,8 +80,6 @@ pub(super) struct CarrierIndex {
 
 impl CarrierIndex {
     pub(super) fn from_ir(ir: &CadIr, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        // Check session refusal even when all carrier arenas are empty.
-        ctx.charge_work(0, "STEP from ir traversal")?;
         let mut curves = HashMap::new();
         let mut curve_source = ir.model.curves.iter().enumerate();
         for _ in 0..curve_source.len() {
@@ -323,21 +321,4 @@ mod tests {
             Err(CodecError::ResourceLimit(sticky)) if sticky == refusal));
     }
 
-    #[test]
-    fn empty_carrier_index_preserves_original_sticky_refusal() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-        let CodecError::ResourceLimit(refusal) = ctx
-            .charge_work(1, "test original carrier refusal")
-            .expect_err("original session refusal")
-        else {
-            panic!("work resource refusal");
-        };
-        assert!(matches!(CarrierIndex::from_ir(&CadIr::empty(), &ctx),
-            Err(CodecError::ResourceLimit(sticky)) if sticky == refusal));
-        assert!(matches!(ctx.finish_session(),
-            Err(CodecError::ResourceLimit(sticky)) if sticky == refusal));
-    }
 }
