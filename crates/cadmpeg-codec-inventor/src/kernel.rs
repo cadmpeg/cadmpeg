@@ -97,7 +97,7 @@ pub(crate) fn decode_kernel_carrier(
     let bytes = carrier.bytes.window();
     let (start, solved_limit) = match carrier.family {
         KernelFamily::Asm => (
-            asm_header::record_stream_start_with_header(ctx, bytes, header)?.ok_or_else(|| {
+            asm_header::record_stream_start_with_header(header).ok_or_else(|| {
                 CodecError::Malformed("Inventor ASM carrier has no record stream".into())
             })?,
             asm_header::solved_record_limit_with_header(ctx, bytes, header)?,
@@ -108,7 +108,7 @@ pub(crate) fn decode_kernel_carrier(
             // source.kernel-dialect-unverified mark (`dialect::kernel_layer`), never
             // whether the records are read.
             (
-                acis_header::record_stream_start_with_header(ctx, bytes, header)?.ok_or_else(
+                acis_header::record_stream_start_with_header(header).ok_or_else(
                     || CodecError::Malformed("Inventor ACIS carrier has no record stream".into()),
                 )?,
                 acis_header::solved_record_limit_with_header(ctx, bytes, header)?,
@@ -418,6 +418,7 @@ mod tests {
     fn header_copy_fixture() -> BinaryHeader {
         BinaryHeader {
             width: RefWidth::Eight,
+            record_stream_start: Some(47 + 6 + 17 + 27),
             metadata: KernelHeader {
                 save_format_version: Some(700),
                 entity_count: Some(12),
@@ -662,6 +663,7 @@ mod tests {
         header.metadata.product_family = None;
         header.metadata.product_version = Some(String::new());
         header.metadata.save_date = None;
+        header.record_stream_start = Some(47 + 6 + 27);
         let original_header = header.clone();
         let bytes = empty_asm_carrier_for_header(&header);
         let arena = DecodeArena::new();

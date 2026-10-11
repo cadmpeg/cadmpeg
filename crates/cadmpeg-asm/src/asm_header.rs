@@ -100,6 +100,7 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Option<BinaryHeade
     let HeaderRegion {
         strings: [family, version, date],
         doubles: [scale, linear, angular],
+        record_stream_start,
     } = read_string_region(ctx, bytes, start)?;
     header.product_family = family;
     header.product_version = version;
@@ -111,6 +112,7 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Option<BinaryHeade
     Ok(Some(BinaryHeader {
         width,
         metadata: header,
+        record_stream_start,
     }))
 }
 
@@ -131,12 +133,8 @@ pub fn record_stream_start(
 
 /// Byte offset at which the SAB record stream begins, using an already-parsed
 /// ASM header.
-pub fn record_stream_start_with_header(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    header: &BinaryHeader,
-) -> Result<Option<usize>, CodecError> {
-    record_stream_start_with_width(ctx, bytes, header.width)
+pub const fn record_stream_start_with_header(header: &BinaryHeader) -> Option<usize> {
+    header.record_stream_start
 }
 
 fn record_stream_start_with_width(
@@ -198,7 +196,7 @@ pub fn solved_record_limit_with_header(
     if !header.metadata.has_history_partition() {
         return Ok(None);
     }
-    let Some(start) = record_stream_start_with_header(ctx, bytes, header)? else {
+    let Some(start) = record_stream_start_with_header(header) else {
         return Ok(None);
     };
     crate::sab::scan_history_boundary(
