@@ -7,7 +7,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 /// Plane equation identity, with a placement fallback for indeterminate equations.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) enum CoplanarityPlaneKey {
     Equation([u64; 5]),
     Placement([u64; 7]),
@@ -243,54 +243,86 @@ impl<T> CoplanarityProof<'_, T> {
     }
 }
 
-/// Sequence presence avoids neighbor searches before a curve has a cached proof.
+/// Exact key presence skips B-tree lookups for uncached neighboring planes.
 /// Small populations use fixed storage, so they add no heap allocation peak.
-pub(super) enum PlaneProofSequences {
-    Inline { values: [u32; 32], len: usize },
-    Indexed(std::collections::HashSet<u32>),
+pub(super) enum PlaneProofKeys {
+    Inline {
+        values: [(u32, CoplanarityPlaneKey); 2],
+        len: usize,
+    },
+    Indexed(std::collections::HashSet<(u32, CoplanarityPlaneKey)>),
 }
 
-impl Default for PlaneProofSequences {
+impl Default for PlaneProofKeys {
     fn default() -> Self {
         Self::Inline {
-            values: [0; 32],
+            values: [(0, CoplanarityPlaneKey::Equation([0; 5])); 2],
             len: 0,
         }
     }
 }
 
-impl PlaneProofSequences {
-    pub(super) fn contains(&self, sequence: u32) -> bool {
+impl PlaneProofKeys {
+    pub(super) fn contains(&self, key: (u32, CoplanarityPlaneKey)) -> bool {
         match self {
-            Self::Inline { values, len } => values[..*len].contains(&sequence),
-            Self::Indexed(values) => values.contains(&sequence),
+            Self::Inline { values, len } => values[..*len].contains(&key),
+            Self::Indexed(values) => values.contains(&key),
         }
     }
 
     pub(super) fn insert(
         &mut self,
-        sequence: u32,
+        key: (u32, CoplanarityPlaneKey),
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<(), CodecError> {
         match self {
             Self::Inline { values, len } => {
                 if *len < values.len() {
-                    values[*len] = sequence;
+                    values[*len] = key;
                     *len += 1;
                 } else {
                     let mut indexed = std::collections::HashSet::new();
                     for value in values.iter() {
                         ctx.insert_hash_set(&mut indexed, *value, operation)?;
                     }
-                    ctx.insert_hash_set(&mut indexed, sequence, operation)?;
+                    ctx.insert_hash_set(&mut indexed, key, operation)?;
                     *self = Self::Indexed(indexed);
                 }
             }
             Self::Indexed(values) => {
-                ctx.insert_hash_set(values, sequence, operation)?;
+                ctx.insert_hash_set(values, key, operation)?;
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plane_proof_key_presence_distinguishes_planes_and_sequences() {
+        crate::test_support::with_service_context(&[], |ctx| {
+            let mut keys = PlaneProofKeys::default();
+            let key = |position| {
+                if position % 2 == 0 {
+                    CoplanarityPlaneKey::Equation([position, 0, 0, 0, 0])
+                } else {
+                    CoplanarityPlaneKey::Placement([position, 0, 0, 0, 0, 0, 0])
+                }
+            };
+            assert!(!keys.contains((1, key(0))));
+            for position in 0..64 {
+                keys.insert((1, key(position)), ctx, "test plane proof keys")
+                    .expect("proof key admission");
+                for previous in 0..=position {
+                    assert!(keys.contains((1, key(previous))));
+                    assert!(!keys.contains((2, key(previous))));
+                }
+                assert!(!keys.contains((1, key(position + 1))));
+            }
+        });
     }
 }

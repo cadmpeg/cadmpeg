@@ -208,7 +208,7 @@ type SectionCoplanarityKey = (u32, super::plane_proof::CoplanarityPlaneKey);
 struct SectionedAreaGeometryCache<'ctx, 'ir> {
     ir: &'ir CadIr,
     index: Option<cadmpeg_ir::index::DecodeModelIndex<'ctx, 'ir>>,
-    sequences: super::plane_proof::PlaneProofSequences,
+    keys: super::plane_proof::PlaneProofKeys,
     proofs: BTreeMap<SectionCoplanarityKey, super::plane_proof::CoplanarityProof<'ir, bool>>,
     storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
@@ -219,7 +219,7 @@ impl<'ctx, 'ir> SectionedAreaGeometryCache<'ctx, 'ir> {
             ir,
             index: None,
             proofs: BTreeMap::new(),
-            sequences: super::plane_proof::PlaneProofSequences::default(),
+            keys: super::plane_proof::PlaneProofKeys::default(),
             storage: ctx.reserve_scoped(0, "iges section coplanarity cache scratch")?,
         })
     }
@@ -252,8 +252,8 @@ impl<'ctx, 'ir> SectionedAreaGeometryCache<'ctx, 'ir> {
                 return Ok(proof.result);
             }
         }
-        if self.sequences.contains(sequence) {
-            for neighbor in super::plane_proof::coplanarity_neighbors(plane_key) {
+        for neighbor in super::plane_proof::coplanarity_neighbors(plane_key) {
+            if self.keys.contains((sequence, neighbor)) {
                 if let Some(proof) = ctx.get_btree_map(
                     &self.proofs,
                     &(sequence, neighbor),
@@ -318,10 +318,10 @@ impl<'ctx, 'ir> SectionedAreaGeometryCache<'ctx, 'ir> {
                 "iges section coplanarity proof cache",
             )
         })?;
-        if !self.sequences.contains(sequence) {
+        if !self.keys.contains(key) {
             self.storage.with_storage(|| {
-                self.sequences
-                    .insert(sequence, ctx, "iges section coplanarity proof sequences")
+                self.keys
+                    .insert(key, ctx, "iges section coplanarity proof keys")
             })?;
         }
         Ok(coplanar)
