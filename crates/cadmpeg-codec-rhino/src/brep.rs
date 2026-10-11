@@ -571,6 +571,8 @@ impl ValidatedRawBrep {
         raw: &mut RawBrep,
         region_storage: Option<&mut cadmpeg_core::decode::ScopedReservation<'ctx>>,
     ) -> Result<(ResolvedBrep, Diagnostics), GeometryError> {
+        let mut candidate_storage = ctx.provisional_retained("Rhino validated Brep candidate")?;
+        let candidate = candidate_storage.with_storage(|| {
         let mut warnings = Diagnostics::new();
         for (label, mismatch) in [
             (
@@ -912,6 +914,8 @@ impl ValidatedRawBrep {
             }
         }
         Ok((resolved, warnings))
+        })?;
+        Ok(candidate_storage.commit_value(candidate)?)
     }
 
     /// Returns every reference of the payload, resolved to an array position.
