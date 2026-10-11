@@ -9,6 +9,7 @@ fn operation_reference_fields(
 ) -> Vec<DirectReferenceFrame<usize>> {
     crate::test_support::with_decode_context(|ctx| {
         crate::om::direct_reference::operation_reference_fields(ctx, record, kind)
+            .map(|(value, _storage)| value)
     })
     .unwrap()
 }

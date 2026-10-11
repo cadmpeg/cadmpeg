@@ -205,15 +205,12 @@ pub trait EntitySchema: Serialize + rewrite::typed::RewriteIdentities {
     ) -> Result<(), cadmpeg_core::CodecError> {
         rewrite::typed::RewriteIdentities::visit_identity_references(self, ctx, &mut |target| {
             let identity = self.identity();
-            ctx.charge_work(1, "typed reference owner comparison")?;
-            if identity.len() == target.len() {
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(identity.len()),
-                    "typed reference owner comparison",
-                )?;
-                if identity == target {
-                    return Ok(());
-                }
+            if ctx.equal_bytes(
+                identity.as_bytes(),
+                target.as_bytes(),
+                "typed reference owner comparison",
+            )? {
+                return Ok(());
             }
             visitor(target)
         })

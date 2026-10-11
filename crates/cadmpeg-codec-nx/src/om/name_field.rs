@@ -46,30 +46,39 @@ impl<S: AsRef<str>, O: Copy + From<u8> + Add<Output = O>, T> NameField<S, O, T> 
     }
 }
 
+impl<T> Form<u64, T> {
+    fn checked(
+        offset: u64,
+        text_len: usize,
+        code: Option<CompactIndexTarget<T>>,
+    ) -> Result<Self, &'static str> {
+        match code {
+            None if offset == 0 => Ok(Self::Leading),
+            None => Err("payload_offset: payload-leading name must start at zero"),
+            Some(code) => {
+                let byte_len = 4 + u64_from_index(code.atom.raw().len()) + u64_from_index(text_len);
+                offset
+                    .checked_add(byte_len)
+                    .ok_or("payload_offset: name frame extent overflow")?;
+                Ok(Self::Typed { offset, code })
+            }
+        }
+    }
+}
+
 impl<T> NameField<String, u64, T> {
     pub(crate) fn new(
         value: String,
         offset: u64,
         code: Option<CompactIndexTarget<T>>,
     ) -> Result<Self, &'static str> {
-        let text = value.as_str();
-        if text.is_empty() || text.len() > 253 || !text.bytes().all(|byte| byte.is_ascii_graphic())
-        {
-            return Err("value: expected 1..=253 graphic ASCII bytes");
+        match validate_name(value.as_bytes(), |text| {
+            Ok::<_, std::convert::Infallible>(text.iter().all(u8::is_ascii_graphic))
+        }) {
+            Ok(validation) => validation?,
+            Err(error) => match error {},
         }
-        let form = match code {
-            None if offset == 0 => Form::Leading,
-            None => return Err("payload_offset: payload-leading name must start at zero"),
-            Some(code) => {
-                let byte_len = 4
-                    + cadmpeg_core::decode::u64_from_index(code.atom.raw().len())
-                    + cadmpeg_core::decode::u64_from_index(text.len());
-                offset
-                    .checked_add(byte_len)
-                    .ok_or("payload_offset: name frame extent overflow")?;
-                Form::Typed { offset, code }
-            }
-        };
+        let form = Form::checked(offset, value.len(), code)?;
         Ok(Self { form, value })
     }
 }
@@ -90,9 +99,11 @@ impl NameField<&str, usize, ()> {
             }),
             None => None,
         };
-        let mut value = ctx.retained_string(self.value.len(), "NX native name field")?;
-        value.push_str(self.value);
-        Ok(NameField::new(value, offset, code).ok())
+        let Ok(form) = Form::checked(offset, self.value.len(), code) else {
+            return Ok(None);
+        };
+        let value = ctx.copy_retained_text(self.value, "NX native name field")?;
+        Ok(Some(NameField { form, value }))
     }
 }
 
@@ -102,9 +113,8 @@ pub(crate) fn scan<'a>(
     bytes: &'a [u8],
 ) -> Result<Vec<NameField<&'a str, usize, ()>>, CodecError> {
     let mut fields = Vec::new();
-    ctx.charge_work(u64_from_index(bytes.len()), "scan NX name fields")?;
     if bytes.first() == Some(&3) {
-        if let Some(value) = name_text(bytes, 1) {
+        if let Some(value) = name_text(ctx, bytes, 1)? {
             ctx.reserve_vec(&mut fields, 1, "NX name fields")?;
             fields.push(NameField {
                 form: Form::Leading,
@@ -112,47 +122,81 @@ pub(crate) fn scan<'a>(
             });
         }
     }
-    for start in bytes
-        .len()
-        .checked_sub(5)
-        .into_iter()
-        .flat_map(|last| 0..last)
-    {
-        if bytes[start] != 0x66 {
-            continue;
+    if let Some(range_end) = bytes.len().checked_sub(5) {
+        for start in ctx.admit_iter(&(0..range_end), "scan NX name fields")? {
+            if bytes[start] != 0x66 {
+                continue;
+            }
+            let Some(atom) = bytes.get(start + 1..).and_then(CompactIndexAtom::read) else {
+                continue;
+            };
+            let marker = start + 1 + atom.raw().len();
+            if bytes.get(marker) != Some(&3) {
+                continue;
+            }
+            let Some(value) = name_text(ctx, bytes, marker + 1)? else {
+                continue;
+            };
+            ctx.reserve_vec(&mut fields, 1, "NX name fields")?;
+            fields.push(NameField {
+                form: Form::Typed {
+                    offset: start,
+                    code: atom.into(),
+                },
+                value,
+            });
         }
-        let Some(atom) = bytes.get(start + 1..).and_then(CompactIndexAtom::read) else {
-            continue;
-        };
-        let marker = start + 1 + atom.raw().len();
-        if bytes.get(marker) != Some(&3) {
-            continue;
-        }
-        let Some(value) = name_text(bytes, marker + 1) else {
-            continue;
-        };
-        ctx.reserve_vec(&mut fields, 1, "NX name fields")?;
-        fields.push(NameField {
-            form: Form::Typed {
-                offset: start,
-                code: atom.into(),
-            },
-            value,
-        });
     }
     Ok(fields)
 }
 
-fn name_text(bytes: &[u8], length_offset: usize) -> Option<&str> {
-    let text_len = usize::from(bytes.get(length_offset).copied()?.checked_sub(2)?);
-    let text_start = length_offset.checked_add(1)?;
-    let text_end = text_start.checked_add(text_len)?;
-    let text = bytes.get(text_start..text_end)?;
-    if text.is_empty() || !text.iter().all(u8::is_ascii_graphic) || bytes.get(text_end) != Some(&0)
+fn name_text<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
+    length_offset: usize,
+) -> Result<Option<&'a str>, CodecError> {
+    let Some(text_len) = bytes
+        .get(length_offset)
+        .copied()
+        .and_then(|len| len.checked_sub(2))
+        .map(usize::from)
+    else {
+        return Ok(None);
+    };
+    let Some(text_start) = length_offset.checked_add(1) else {
+        return Ok(None);
+    };
+    let Some(text_end) = text_start.checked_add(text_len) else {
+        return Ok(None);
+    };
+    let Some(text) = bytes.get(text_start..text_end) else {
+        return Ok(None);
+    };
+    if validate_name(text, |text| {
+        ctx.all_by(
+            text,
+            |byte| Ok(byte.is_ascii_graphic()),
+            "NX name text validation",
+        )
+    })?
+    .is_err()
+        || bytes.get(text_end) != Some(&0)
     {
-        return None;
+        return Ok(None);
     }
-    std::str::from_utf8(text).ok()
+    Ok(ctx
+        .validate_utf8(text, "NX name text UTF-8 validation")?
+        .ok())
+}
+
+fn validate_name<E>(
+    text: &[u8],
+    graphic: impl FnOnce(&[u8]) -> Result<bool, E>,
+) -> Result<Result<(), &'static str>, E> {
+    if text.is_empty() || text.len() > 253 || !graphic(text)? {
+        return Ok(Err("value: expected 1..=253 graphic ASCII bytes"));
+    }
+    Ok(Ok(()))
 }
 
 #[cfg(test)]
@@ -163,6 +207,25 @@ mod tests {
 
     fn scan_test(bytes: &[u8]) -> Vec<NameField<&str, usize, ()>> {
         crate::test_support::with_decode_context(|ctx| scan(ctx, bytes)).unwrap()
+    }
+
+    #[test]
+    fn name_text_utf8_refusal_propagates() {
+        let bytes = [3, 5, b'A', b'B', b'C', 0];
+        assert_eq!(
+            crate::test_support::with_decode_context(|ctx| super::name_text(ctx, &bytes, 1))
+                .unwrap(),
+            Some("ABC")
+        );
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "NX name text UTF-8 validation",
+            |ctx| super::name_text(ctx, &bytes, 1),
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 3)
+        );
     }
 
     #[test]
@@ -280,5 +343,22 @@ mod tests {
         assert_eq!(fields[0].value(), "Point1");
 
         assert!(scan_test(&[0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'1',]).is_empty());
+    }
+
+    #[test]
+    fn native_name_field_copy_refusal_propagates() {
+        let bytes = [3, 6, b'N', b'a', b'm', b'e', 0];
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "NX native name field",
+            |ctx| {
+                let field = scan(ctx, &bytes)?.remove(0);
+                field.into_native(ctx, |_| Ok(None))
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "NX native name field" && limit.additional == 4)
+        );
     }
 }

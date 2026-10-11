@@ -5,7 +5,6 @@ use crate::records::{
     FeatureInputReference, SketchInputEntity, SketchInputKind,
 };
 use crate::resolved_features::relation_geometry::direct_point_dimension_center;
-use std::collections::HashMap;
 
 #[test]
 fn classless_point_identity_requires_exact_reference_and_center_role() {
@@ -72,15 +71,13 @@ fn classless_point_identity_requires_exact_reference_and_center_role() {
         .map(crate::records::SketchInputEntity::id),
         Some("center")
     );
-    let markers = lane
-        .sketch_entities
-        .iter()
-        .map(|marker| (marker.id(), marker))
-        .collect::<HashMap<_, _>>();
     let carrier = dimensioned_relation_carrier(
         &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_ref(&lane),
-        &markers,
+        &crate::resolved_features::dimensions::LaneMarkerIndex::new(
+            &cadmpeg_test_support::service_decode_context(),
+            std::slice::from_ref(&lane),
+        )
+        .unwrap(),
         "feature",
         &operand,
         5.0,
@@ -200,11 +197,6 @@ fn native_point_identity_rejects_a_declared_radial_marker() {
             marker("radial", 20, Some(1), Some(0), [0.014, 0.020]),
         ],
     };
-    let markers = lane
-        .sketch_entities
-        .iter()
-        .map(|marker| (marker.id(), marker))
-        .collect::<HashMap<_, _>>();
     let center = FeatureInputOperand {
         offset: 100,
         reference_ref: "reference".into(),
@@ -214,8 +206,11 @@ fn native_point_identity_rejects_a_declared_radial_marker() {
     };
     let carrier = dimensioned_relation_carrier(
         &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_ref(&lane),
-        &markers,
+        &crate::resolved_features::dimensions::LaneMarkerIndex::new(
+            &cadmpeg_test_support::service_decode_context(),
+            std::slice::from_ref(&lane),
+        )
+        .unwrap(),
         "feature",
         &center,
         5.0,
@@ -231,8 +226,11 @@ fn native_point_identity_rejects_a_declared_radial_marker() {
     };
     assert!(dimensioned_relation_carrier(
         &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_ref(&lane),
-        &markers,
+        &crate::resolved_features::dimensions::LaneMarkerIndex::new(
+            &cadmpeg_test_support::service_decode_context(),
+            std::slice::from_ref(&lane)
+        )
+        .unwrap(),
         "feature",
         &radial,
         5.0,
@@ -325,11 +323,6 @@ fn native_radial_identity_selects_one_of_equal_radius_pairs() {
             marker("line-radial", 60, Some(6), Some(0), [0.025, 0.020]),
         ],
     };
-    let markers = lane
-        .sketch_entities
-        .iter()
-        .map(|marker| (marker.id(), marker))
-        .collect::<HashMap<_, _>>();
     let operand = FeatureInputOperand {
         offset: 100,
         reference_ref: "reference".into(),
@@ -340,8 +333,11 @@ fn native_radial_identity_selects_one_of_equal_radius_pairs() {
 
     let carrier = dimensioned_relation_carrier(
         &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_ref(&lane),
-        &markers,
+        &crate::resolved_features::dimensions::LaneMarkerIndex::new(
+            &cadmpeg_test_support::service_decode_context(),
+            std::slice::from_ref(&lane),
+        )
+        .unwrap(),
         "feature",
         &operand,
         5.0,

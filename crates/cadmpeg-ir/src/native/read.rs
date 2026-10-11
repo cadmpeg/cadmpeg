@@ -11,8 +11,9 @@
 //!   nothing, and an ignored value keeps nothing;
 //! - an absent option keeps one tag byte;
 //! - a sequence keeps a `Vec` header and each element one collection item and
-//!   whatever its own requests keep, paid again as work for one move when the
-//!   vector grows;
+//!   whatever its own requests keep, its in-place bytes paid again as work for
+//!   one move when the vector grows; the reader gets no length hint, so it
+//!   reserves nothing before its elements are admitted;
 //! - a map keeps a header and, per member, one collection item and B-tree
 //!   node storage for a `String` key and a `Value` value, plus the key
 //!   comparisons of one insertion;
@@ -27,11 +28,16 @@
 //! The bound is per request, so a reader's own layout can exceed it by a
 //! factor fixed by its types, never by the file: struct padding and enum tags
 //! are not charged, a map whose key and value are wider than a `String` and a
-//! `Value` stores wider nodes, and a vector past serde's preallocation cap can
-//! hold up to twice its elements while it grows. Types using
-//! `#[serde(flatten)]` or `#[serde(untagged)]` buffer the members they read
-//! through `deserialize_any`, which is charged, and then read the buffer again
-//! without this reader, once per member or per variant tried.
+//! `Value` stores wider nodes, and a vector can hold up to twice its elements
+//! while it grows. Types using `#[serde(flatten)]` or `#[serde(untagged)]`
+//! buffer the members they read through `deserialize_any`, which is charged,
+//! and then read the buffer again without this reader, once per member or per
+//! variant tried. That repetition is bounded by the type only while no untagged
+//! enum contains itself: a recursive one would retry its variants at every
+//! level, a cost that grows exponentially with the file's nesting.
+//!
+//! A refusal for a value of the wrong shape names the shape, never the stored
+//! text, so building the message copies nothing the file controls.
 
 use std::cell::Cell;
 use std::io;
@@ -57,7 +63,8 @@ const RAW_VALUE_TOKEN: &str = "$serde_json::private::RawValue";
 #[derive(Clone, Copy)]
 pub(super) struct Account<'a> {
     ctx: &'a DecodeContext<'a>,
-    /// Bytes the read has kept so far.
+    /// Bytes the value being read keeps in place: its scalars and the
+    /// headers of its containers, not what those containers own.
     kept: &'a Cell<u64>,
 }
 
@@ -66,9 +73,14 @@ impl<'a> Account<'a> {
         Self { ctx, kept }
     }
 
-    fn admit(self, work: usize, kept: usize) -> Result<(), Error> {
+    /// Admit `work`, `inline` bytes kept in place and `owned` bytes kept
+    /// behind a pointer.
+    fn admit_parts(self, work: usize, inline: usize, owned: usize) -> Result<(), Error> {
         let work = u64_from_index(work);
-        let kept = u64_from_index(kept);
+        let inline = u64_from_index(inline);
+        let kept = inline
+            .checked_add(u64_from_index(owned))
+            .ok_or_else(refused)?;
         self.ctx
             .charge_work(work, TYPED_READ)
             .and_then(|()| self.ctx.charge_retained(kept, TYPED_READ))
@@ -76,12 +88,31 @@ impl<'a> Account<'a> {
         // Every kept byte was charged first, so the total stays within the
         // retained counter.
         self.kept
-            .set(self.kept.get().checked_add(kept).ok_or_else(refused)?);
+            .set(self.kept.get().checked_add(inline).ok_or_else(refused)?);
         Ok(())
     }
 
-    fn text(self, text: &str, kept: usize) -> Result<(), Error> {
-        self.admit(text.len(), kept)
+    fn admit(self, work: usize, inline: usize) -> Result<(), Error> {
+        self.admit_parts(work, inline, 0)
+    }
+
+    /// Admit reading `text` and keeping `inline` bytes in place.
+    fn text(self, text: &str, inline: usize) -> Result<(), Error> {
+        self.admit(text.len(), inline)
+    }
+
+    /// Admit reading `text` and keeping a copy of it behind `inline` bytes.
+    fn owned_text(self, text: &str, inline: usize) -> Result<(), Error> {
+        self.admit_parts(text.len(), inline, text.len())
+    }
+
+    /// Read a container's contents: what they keep in place belongs to the
+    /// container, not to the value that holds the container's header.
+    fn contents<T>(self, read: impl FnOnce() -> Result<T, Error>) -> Result<T, Error> {
+        let outer = self.kept.get();
+        let read = read();
+        self.kept.set(outer);
+        read
     }
 
     fn enter(self) -> Result<cadmpeg_core::decode::DepthGuard<'a>, Error> {
@@ -93,6 +124,33 @@ impl<'a> Account<'a> {
 /// then, and the caller reports the fused limit instead of this text.
 fn refused() -> Error {
     de::Error::custom("native record read refused by the decode budget")
+}
+
+/// What a stored value is, for a refusal message that copies none of its
+/// text.
+fn unexpected(value: &Value) -> Unexpected<'_> {
+    match value {
+        Value::Null => Unexpected::Unit,
+        Value::Bool(value) => Unexpected::Bool(*value),
+        Value::Number(number) => {
+            if let Some(value) = number.as_u64() {
+                Unexpected::Unsigned(value)
+            } else if let Some(value) = number.as_i64() {
+                Unexpected::Signed(value)
+            } else {
+                number
+                    .as_f64()
+                    .map_or(Unexpected::Other("number"), Unexpected::Float)
+            }
+        }
+        Value::String(_) => Unexpected::Other("string"),
+        Value::Array(_) => Unexpected::Seq,
+        Value::Object(_) => Unexpected::Map,
+    }
+}
+
+fn mismatch(value: &Value, expected: &dyn de::Expected) -> Error {
+    de::Error::invalid_type(unexpected(value), expected)
 }
 
 /// Text length of a value's JSON form, each written chunk admitted as work.
@@ -127,6 +185,9 @@ macro_rules! scalar {
     ($($method:ident: $width:ty;)*) => {$(
         fn $method<V: Visitor<'a>>(self, visitor: V) -> Result<V::Value, Error> {
             self.account.admit(1, std::mem::size_of::<$width>())?;
+            if self.value.is_string() {
+                return Err(mismatch(self.value, &visitor));
+            }
             self.value.$method(visitor)
         }
     )*};
@@ -152,7 +213,7 @@ impl<'a> Reader<'a> {
             account: self.account,
             items: items.iter(),
         };
-        let read = visitor.visit_seq(&mut access)?;
+        let read = self.account.contents(|| visitor.visit_seq(&mut access))?;
         if access.items.len() == 0 {
             Ok(read)
         } else {
@@ -172,11 +233,19 @@ impl<'a> Reader<'a> {
     ) -> Result<V::Value, Error> {
         let _depth = self.account.enter()?;
         self.account.admit(1, kept)?;
-        visitor.visit_map(Members::new(
+        let mut access = Members::new(
             self.account,
             members.iter().map(|(key, value)| (key.as_str(), value)),
             stores_nodes,
-        ))
+        );
+        // Struct fields are kept in place; map entries live in tree nodes.
+        let read = if stores_nodes {
+            self.account.contents(|| visitor.visit_map(&mut access))?
+        } else {
+            visitor.visit_map(&mut access)?
+        };
+        access.finish(members.len())?;
+        Ok(read)
     }
 }
 
@@ -190,7 +259,7 @@ impl<'a> de::Deserializer<'a> for Reader<'a> {
                 self.value.deserialize_any(visitor)
             }
             Value::String(text) => {
-                self.account.text(text, VALUE_WIDTH + text.len())?;
+                self.account.owned_text(text, VALUE_WIDTH)?;
                 visitor.visit_borrowed_str(text)
             }
             Value::Array(items) => self.sequence(items, VALUE_WIDTH, visitor),
@@ -212,8 +281,16 @@ impl<'a> de::Deserializer<'a> for Reader<'a> {
         deserialize_u128: u128;
         deserialize_f32: f32;
         deserialize_f64: f64;
-        deserialize_char: char;
         deserialize_unit: ();
+    }
+
+    fn deserialize_char<V: Visitor<'a>>(self, visitor: V) -> Result<V::Value, Error> {
+        self.account.admit(1, std::mem::size_of::<char>())?;
+        let mut chars = self.value.as_str().map(str::chars);
+        match chars.as_mut().map(|chars| (chars.next(), chars.next())) {
+            Some((Some(single), None)) => visitor.visit_char(single),
+            _ => Err(mismatch(self.value, &visitor)),
+        }
     }
 
     fn deserialize_unit_struct<V: Visitor<'a>>(
@@ -227,10 +304,10 @@ impl<'a> de::Deserializer<'a> for Reader<'a> {
     fn deserialize_str<V: Visitor<'a>>(self, visitor: V) -> Result<V::Value, Error> {
         match self.value {
             Value::String(text) => {
-                self.account.text(text, STRING_HEADER + text.len())?;
+                self.account.owned_text(text, STRING_HEADER)?;
                 visitor.visit_borrowed_str(text)
             }
-            _ => self.value.deserialize_str(visitor),
+            _ => Err(mismatch(self.value, &visitor)),
         }
     }
 
@@ -271,7 +348,12 @@ impl<'a> de::Deserializer<'a> for Reader<'a> {
                 len: 0,
             };
             serde_json::to_writer(&mut text, self.value).map_err(|_| refused())?;
-            self.account.admit(1, STRING_HEADER + text.len)?;
+            // The reader writes the text again into the string it keeps.
+            self.account.admit_parts(
+                text.len.checked_add(1).ok_or_else(refused)?,
+                STRING_HEADER,
+                text.len,
+            )?;
             return self.value.deserialize_newtype_struct(name, visitor);
         }
         self.account.admit(1, 0)?;
@@ -281,14 +363,14 @@ impl<'a> de::Deserializer<'a> for Reader<'a> {
     fn deserialize_seq<V: Visitor<'a>>(self, visitor: V) -> Result<V::Value, Error> {
         match self.value {
             Value::Array(items) => self.sequence(items, VEC_HEADER, visitor),
-            _ => self.value.deserialize_seq(visitor),
+            _ => Err(mismatch(self.value, &visitor)),
         }
     }
 
-    fn deserialize_tuple<V: Visitor<'a>>(self, len: usize, visitor: V) -> Result<V::Value, Error> {
+    fn deserialize_tuple<V: Visitor<'a>>(self, _len: usize, visitor: V) -> Result<V::Value, Error> {
         match self.value {
             Value::Array(items) => self.sequence(items, 0, visitor),
-            _ => self.value.deserialize_tuple(len, visitor),
+            _ => Err(mismatch(self.value, &visitor)),
         }
     }
 
@@ -304,27 +386,27 @@ impl<'a> de::Deserializer<'a> for Reader<'a> {
     fn deserialize_map<V: Visitor<'a>>(self, visitor: V) -> Result<V::Value, Error> {
         match self.value {
             Value::Object(members) => self.object(members, MAP_HEADER, true, visitor),
-            _ => self.value.deserialize_map(visitor),
+            _ => Err(mismatch(self.value, &visitor)),
         }
     }
 
     fn deserialize_struct<V: Visitor<'a>>(
         self,
-        name: &'static str,
-        fields: &'static [&'static str],
+        _name: &'static str,
+        _fields: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value, Error> {
         match self.value {
             Value::Object(members) => self.object(members, 0, false, visitor),
             Value::Array(items) => self.sequence(items, 0, visitor),
-            _ => self.value.deserialize_struct(name, fields, visitor),
+            _ => Err(mismatch(self.value, &visitor)),
         }
     }
 
     fn deserialize_enum<V: Visitor<'a>>(
         self,
-        name: &'static str,
-        variants: &'static [&'static str],
+        _name: &'static str,
+        _variants: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value, Error> {
         match self.value {
@@ -347,7 +429,7 @@ impl<'a> de::Deserializer<'a> for Reader<'a> {
                     name: variant,
                 })
             }
-            _ => self.value.deserialize_enum(name, variants, visitor),
+            _ => Err(mismatch(self.value, &visitor)),
         }
     }
 
@@ -357,7 +439,7 @@ impl<'a> de::Deserializer<'a> for Reader<'a> {
                 self.account.text(text, 0)?;
                 visitor.visit_borrowed_str(text)
             }
-            _ => self.value.deserialize_identifier(visitor),
+            _ => Err(mismatch(self.value, &visitor)),
         }
     }
 
@@ -398,8 +480,10 @@ impl<'a> SeqAccess<'a> for Elements<'a> {
         Ok(Some(element))
     }
 
+    /// No hint: a reader that reserves from a hint would allocate before its
+    /// elements are admitted, so its vector grows as each one arrives.
     fn size_hint(&self) -> Option<usize> {
-        Some(self.items.len())
+        None
     }
 }
 
@@ -411,6 +495,7 @@ pub(super) struct Members<'a, I> {
     value: Option<&'a Value>,
     stores_nodes: bool,
     stored: usize,
+    taken: usize,
 }
 
 impl<'a, I> Members<'a, I> {
@@ -421,6 +506,16 @@ impl<'a, I> Members<'a, I> {
             value: None,
             stores_nodes,
             stored: 0,
+            taken: 0,
+        }
+    }
+
+    /// Refuse a reader that stopped before the object's last member.
+    fn finish(&self, len: usize) -> Result<(), Error> {
+        if self.taken == len {
+            Ok(())
+        } else {
+            Err(de::Error::invalid_length(len, &"fewer elements in map"))
         }
     }
 
@@ -455,6 +550,7 @@ impl<'a, I: Iterator<Item = (&'a str, &'a Value)>> MapAccess<'a> for Members<'a,
         let Some((key, value)) = self.entries.next() else {
             return Ok(None);
         };
+        self.taken += 1;
         if self.stores_nodes {
             self.admit_entry(key)?;
         }
@@ -491,7 +587,7 @@ macro_rules! numeric_key {
             let numeric = matches!(self.key.as_bytes().first(), Some(b'0'..=b'9' | b'-'))
                 && !self.key.as_bytes().last().is_some_and(u8::is_ascii_whitespace);
             if !numeric {
-                return Err(de::Error::invalid_type(Unexpected::Str(self.key), &visitor));
+                return Err(de::Error::invalid_type(Unexpected::Other("map key"), &visitor));
             }
             let mut text = serde_json::Deserializer::from_str(self.key);
             let read = text.$method(visitor)?;
@@ -505,8 +601,7 @@ impl<'a> de::Deserializer<'a> for Key<'a> {
     type Error = Error;
 
     fn deserialize_any<V: Visitor<'a>>(self, visitor: V) -> Result<V::Value, Error> {
-        self.account
-            .text(self.key, STRING_HEADER + self.key.len())?;
+        self.account.owned_text(self.key, STRING_HEADER)?;
         visitor.visit_borrowed_str(self.key)
     }
 
@@ -530,7 +625,10 @@ impl<'a> de::Deserializer<'a> for Key<'a> {
         match self.key {
             "true" => visitor.visit_bool(true),
             "false" => visitor.visit_bool(false),
-            _ => Err(de::Error::invalid_type(Unexpected::Str(self.key), &visitor)),
+            _ => Err(de::Error::invalid_type(
+                Unexpected::Other("map key"),
+                &visitor,
+            )),
         }
     }
 
@@ -626,6 +724,8 @@ impl<'a> VariantAccess<'a> for Reader<'a> {
 pub(super) struct Record<'a, I> {
     pub(super) account: Account<'a>,
     pub(super) members: I,
+    /// How many members `members` yields.
+    pub(super) len: usize,
 }
 
 impl<'a, I: Iterator<Item = (&'a str, &'a Value)>> de::Deserializer<'a> for Record<'a, I> {
@@ -634,7 +734,10 @@ impl<'a, I: Iterator<Item = (&'a str, &'a Value)>> de::Deserializer<'a> for Reco
     fn deserialize_any<V: Visitor<'a>>(self, visitor: V) -> Result<V::Value, Error> {
         let _depth = self.account.enter()?;
         self.account.admit(1, MAP_HEADER)?;
-        visitor.visit_map(Members::new(self.account, self.members, true))
+        let mut access = Members::new(self.account, self.members, true);
+        let read = visitor.visit_map(&mut access)?;
+        access.finish(self.len)?;
+        Ok(read)
     }
 
     fn deserialize_struct<V: Visitor<'a>>(
@@ -645,7 +748,10 @@ impl<'a, I: Iterator<Item = (&'a str, &'a Value)>> de::Deserializer<'a> for Reco
     ) -> Result<V::Value, Error> {
         let _depth = self.account.enter()?;
         self.account.admit(1, 0)?;
-        visitor.visit_map(Members::new(self.account, self.members, false))
+        let mut access = Members::new(self.account, self.members, false);
+        let read = visitor.visit_map(&mut access)?;
+        access.finish(self.len)?;
+        Ok(read)
     }
 
     forward_to_deserialize_any! {

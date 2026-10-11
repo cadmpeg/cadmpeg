@@ -8,11 +8,11 @@ impl<S: crate::immutable_text::ImmutableText> CanonicalUuid<S> {
     pub(crate) fn new(value: S) -> Result<Self, &'static str> {
         let text = value.as_ref();
         if text.len() != 36
-            || !text.bytes().enumerate().all(|(index, byte)| {
+            || !text.chars().enumerate().all(|(index, ch)| {
                 if matches!(index, 8 | 13 | 18 | 23) {
-                    byte == b'-'
+                    ch == '-'
                 } else {
-                    byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)
+                    ch.is_ascii_digit() || ('a'..='f').contains(&ch)
                 }
             })
         {
@@ -92,5 +92,17 @@ mod tests {
                 serde_json::to_string(text).unwrap()
             );
         }
+    }
+
+    #[test]
+    fn canonical_uuid_validation_needs_no_work_budget() {
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| policy.limits.max_work_units = 0,
+            |_ctx| {
+                assert!(CanonicalUuid::new("01234567-89ab-cdef-0123-456789abcdef").is_ok());
+                assert!(CanonicalUuid::new("01234567-89AB-cdef-0123-456789abcdef").is_err());
+            },
+        );
     }
 }

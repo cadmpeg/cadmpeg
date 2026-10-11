@@ -2904,6 +2904,9 @@ fn project_with_type_130_policy<'ctx>(
             wire_slots_storage,
         });
     }
+    let mut construction_storage =
+        ctx.reserve_scoped(0, "iges composite procedural constructions")?;
+    let mut constructions = Vec::new();
     let mut index_storage = ctx.reserve_scoped(0, "IGES composite carrier index")?;
     let mut index = index_storage.with_storage(|| CompositeIndex::from_ir(ir, ctx))?;
     let join_tolerance = global.minimum_resolution_mm();
@@ -3479,20 +3482,22 @@ fn project_with_type_130_policy<'ctx>(
         }
 
         ctx.charge_entities(1, "iges_geometry_composites")?;
-        let _attached = ir.model.add_procedural_curve(
-            ctx,
-            &curve_id,
-            ProceduralCurve::new(
-                crate::ids::procedural_curve_admitted(&stem, ctx)?,
-                ProceduralCurveDefinition::Compound(
-                    cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
-                        boundaries, components, None,
-                    )
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
-                ),
+        let procedural = ProceduralCurve::new(
+            crate::ids::procedural_curve_admitted(&stem, ctx)?,
+            ProceduralCurveDefinition::Compound(
+                cadmpeg_ir::geometry::CompoundCurveConstruction::try_new_for_decode(
+                    ctx, boundaries, components, None,
+                )?
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             ),
+        );
+        construction_storage.absorb(&mut curve_identity_storage)?;
+        ctx.push_scoped_vec(
+            &mut construction_storage,
+            &mut constructions,
+            (curve_id, procedural),
+            "iges composite procedural constructions",
         )?;
-        drop(curve_id);
         drop(curve_identity_storage);
         ctx.reserve_scoped_vec(
             &mut wire_slots_storage,
@@ -3510,6 +3515,9 @@ fn project_with_type_130_policy<'ctx>(
         })?;
     }
 
+    // Attached together: the model indexes its curves once for the batch.
+    let _attached = ir.model.add_procedural_curves(ctx, constructions)?;
+    drop(construction_storage);
     Ok(WireProjectionOutcome {
         decoded,
         decoded_storage,

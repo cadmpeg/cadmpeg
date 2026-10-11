@@ -20,12 +20,34 @@ fn deserialize_local_id<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<String, D::Error> {
     let value = String::deserialize(deserializer)?;
-    if value.is_empty() || value.chars().any(char::is_whitespace) {
-        Err(serde::de::Error::custom(IdentityError::InvalidId { value }))
-    } else {
-        Ok(value)
+    match admit_local_text(value, |_| Ok::<(), std::convert::Infallible>(())) {
+        Ok(result) => result.map_err(serde::de::Error::custom),
+        Err(error) => match error {},
     }
 }
+fn admit_local_text<E>(
+    value: String,
+    mut visit: impl FnMut(u64) -> Result<(), E>,
+) -> Result<Result<String, IdentityError>, E> {
+    let mut characters = value.chars();
+    let mut valid = !value.is_empty();
+    while !characters.as_str().is_empty() {
+        visit(1)?;
+        let Some(character) = characters.next() else {
+            break;
+        };
+        if character.is_whitespace() {
+            valid = false;
+            break;
+        }
+    }
+    Ok(if valid {
+        Ok(value)
+    } else {
+        Err(IdentityError::InvalidId { value })
+    })
+}
+
 use std::fmt::{self, Display};
 
 /// True when `id` matches `<format>:<scope>:<kind>#<key>`.
@@ -41,7 +63,6 @@ pub fn is_valid_identity(id: &str) -> bool {
 
 /// One grammar scan with an explicit admission callback before each scalar.
 fn check_identity<E>(id: &str, mut visit: impl FnMut(u64) -> Result<(), E>) -> Result<bool, E> {
-    visit(0)?;
     let mut characters = id.chars();
     let mut separators = 0_u8;
     let mut key = false;
@@ -130,6 +151,23 @@ impl Identity {
             Ok(result) => result.map_err(|value| IdentityError::InvalidId { value }),
             Err(error) => match error {},
         }
+    }
+
+    /// Admit identity grammar within the decode budget. Owned input moves;
+    /// borrowed input is copied as retained text, including rejected text.
+    pub fn new_for_decode<'text>(
+        ctx: &DecodeContext<'_>,
+        value: impl Into<std::borrow::Cow<'text, str>>,
+        operation: &'static str,
+    ) -> Result<Result<Self, IdentityError>, CodecError> {
+        let value = match value.into() {
+            std::borrow::Cow::Owned(value) => value,
+            std::borrow::Cow::Borrowed(value) => ctx.copy_retained_text(value, operation)?,
+        };
+        Ok(
+            Self::admit_text(value, |work| ctx.charge_work(work, operation))?
+                .map_err(|value| IdentityError::InvalidId { value }),
+        )
     }
 
     /// Admit owned text with the same grammar used by standard reconstruction.
@@ -370,6 +408,21 @@ impl IdentityComponent {
         }
     }
 
+    /// Admit component grammar within the decode budget. Owned input moves;
+    /// borrowed input is copied as retained text, including rejected text.
+    pub fn try_new_for_decode<'text>(
+        ctx: &DecodeContext<'_>,
+        value: impl Into<std::borrow::Cow<'text, str>>,
+        operation: &'static str,
+    ) -> Result<Result<Self, IdentityError>, CodecError> {
+        let value = match value.into() {
+            std::borrow::Cow::Owned(value) => value,
+            std::borrow::Cow::Borrowed(value) => ctx.copy_retained_text(value, operation)?,
+        };
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(value.len()), operation)?;
+        Ok(Self::try_new(value))
+    }
+
     /// Construct a component from a static proof.
     #[must_use]
     pub const fn from_static(proof: StaticIdentityComponent) -> Self {
@@ -474,10 +527,7 @@ impl IdentityKey {
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         Ok(Self(match &self.0 {
-            std::borrow::Cow::Borrowed(text) => {
-                ctx.charge_work(1, operation)?;
-                std::borrow::Cow::Borrowed(*text)
-            }
+            std::borrow::Cow::Borrowed(text) => std::borrow::Cow::Borrowed(*text),
             std::borrow::Cow::Owned(text) => {
                 std::borrow::Cow::Owned(ctx.copy_retained_text(text, operation)?)
             }
@@ -1054,6 +1104,15 @@ macro_rules! id_type {
                 $crate::ids::Identity::new(value).map(Self::from)
             }
 
+            /// Mint an identity with grammar work and borrowed text admitted for decode.
+            pub fn mint_for_decode<'text>(
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                value: impl Into<std::borrow::Cow<'text, str>>,
+                operation: &'static str,
+            ) -> Result<Result<Self, $crate::ids::IdentityError>, cadmpeg_core::CodecError> {
+                Ok($crate::ids::Identity::new_for_decode(ctx, value, operation)?.map(Self::from))
+            }
+
             $($crate::ids::id_type!(@helper $helper);)*
 
             /// Borrow the underlying id string.
@@ -1163,10 +1222,23 @@ macro_rules! local_id_type {
             /// Mint a non-empty identity that has no whitespace.
             pub fn mint(value: impl Into<String>) -> Result<Self, $crate::ids::IdentityError> {
                 let value = value.into();
-                if value.is_empty() || value.chars().any(char::is_whitespace) {
-                    return Err($crate::ids::IdentityError::InvalidId { value });
+                match $crate::ids::admit_local_text(value, |_| Ok::<(), std::convert::Infallible>(())) {
+                    Ok(result) => result.map(Self),
+                    Err(error) => match error {},
                 }
-                Ok(Self(value))
+            }
+
+            /// Mint a local identity with grammar work and borrowed text admitted for decode.
+            pub fn mint_for_decode<'text>(
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                value: impl Into<std::borrow::Cow<'text, str>>,
+                operation: &'static str,
+            ) -> Result<Result<Self, $crate::ids::IdentityError>, cadmpeg_core::CodecError> {
+                let value = match value.into() {
+                    std::borrow::Cow::Owned(value) => value,
+                    std::borrow::Cow::Borrowed(value) => ctx.copy_retained_text(value, operation)?,
+                };
+                Ok($crate::ids::admit_local_text(value, |work| ctx.charge_work(work, operation))?.map(Self))
             }
 
             /// Compose a local identity from an admitted namespace and key.

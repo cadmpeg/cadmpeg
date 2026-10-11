@@ -923,7 +923,7 @@ pub(in crate::native) fn feature_pattern_references(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeaturePatternReference>, cadmpeg_core::CodecError> {
-    let indexed = history.container().indexed_om_sections(ctx)?;
+    let (indexed, _indexed_storage) = history.container().indexed_om_sections(ctx)?;
     let mut references = Vec::new();
     for history_section in
         ctx.admit_iter(history.sections(), "visit NX feature history sections")?
@@ -934,11 +934,11 @@ pub(in crate::native) fn feature_pattern_references(
             &history_section.records,
             "visit NX feature operation records",
         )? {
-            let Some(decoded) = PatternReferences::read(record.payload_view()) else {
+            let Some(decoded) = PatternReferences::read(ctx, record.payload_view())? else {
                 continue;
             };
             let layout = decoded.layout();
-            let mut decoded_references = decoded.into_references().into_iter();
+            let mut decoded_references = decoded.into_references();
             let ordinals = ctx.admit_iter(
                 &(0..decoded_references.len()),
                 "visit NX pattern references",
@@ -989,7 +989,7 @@ pub(in crate::native) fn feature_pattern_counted_reference_lanes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeaturePatternCountedReferenceLane>, cadmpeg_core::CodecError> {
-    let indexed = history.container().indexed_om_sections(ctx)?;
+    let (indexed, _indexed_storage) = history.container().indexed_om_sections(ctx)?;
     let mut lanes = Vec::new();
     for history_section in
         ctx.admit_iter(history.sections(), "visit NX feature history sections")?
@@ -1000,13 +1000,14 @@ pub(in crate::native) fn feature_pattern_counted_reference_lanes(
             &history_section.records,
             "visit NX feature operation records",
         )? {
-            let lane = match CountedPatternReferences::read(ctx, record.payload_view()) {
-                Ok(Some(lane)) => lane,
-                Ok(None) => continue,
-                Err(error) => {
-                    return Err(error);
-                }
-            };
+            let (lane, _lane_storage) =
+                match CountedPatternReferences::read(ctx, record.payload_view()) {
+                    Ok((Some(lane), storage)) => (lane, storage),
+                    Ok((None, _)) => continue,
+                    Err(error) => {
+                        return Err(error);
+                    }
+                };
             let references = match lane.resolve(ctx, entry_offset, |token| {
                 charged_unique_offset_data_block(ctx, &indexed, token.value())
             }) {

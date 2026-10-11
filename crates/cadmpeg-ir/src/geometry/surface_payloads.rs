@@ -2626,9 +2626,6 @@ impl BlendSurfacePayload {
     }
 }
 
-#[cfg(test)]
-mod tests;
-
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_pcurve, PcurveGeometry, "pcurve");
 cadmpeg_core::named_optional_field!(
@@ -2659,3 +2656,6 @@ cadmpeg_core::named_optional_field!(deserialize_native, Box<SweepSurfaceConstruc
 cadmpeg_core::named_optional_field!(deserialize_spine, CurveId, "spine");
 
 mod identity_rewrite;
+
+#[cfg(test)]
+mod tests;

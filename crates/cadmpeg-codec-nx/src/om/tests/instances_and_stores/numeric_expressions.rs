@@ -446,6 +446,21 @@ fn printable_string_refusal(
 }
 
 #[test]
+fn printable_string_value_iteration_refusal_propagates() {
+    let bytes = b"\x66\x32\x03\x03A\0";
+    let error = crate::test_support::resource_refusal_at(
+        bytes,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX printable string syntax",
+        |ctx| crate::om::string_values(ctx, bytes, 0),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "NX printable string syntax" && limit.additional == 1)
+    );
+}
+
+#[test]
 fn printable_strings_refuse_collection_limit() {
     let error = printable_string_refusal(|policy| policy.limits.max_collection_items = 0);
     assert!(
@@ -526,4 +541,84 @@ fn expression_declaration_propagates_expression_limit() {
             );
         },
     );
+}
+
+#[test]
+fn store_version_text_iteration_refusal_propagates() {
+    let bytes = b"\xff\x04\x01\x05NX \0";
+    let error = crate::test_support::resource_refusal_at(
+        bytes,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX printable string syntax",
+        |ctx| crate::om::store_version(ctx, bytes, 0),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "NX printable string syntax")
+    );
+}
+
+#[test]
+fn constant_decimal_parse_refusal_propagates() {
+    for (text, expected) in [("1.25", Some(1.25)), ("1e309", None)] {
+        assert_eq!(
+            crate::test_support::with_decode_context(
+                |ctx| crate::om::evaluate_constant_expression(ctx, text)
+            )
+            .unwrap()
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+            expected
+        );
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "NX constant expression decimal parse",
+            |ctx| crate::om::evaluate_constant_expression(ctx, text),
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == cadmpeg_core::decode::u64_from_index(text.len()))
+        );
+    }
+}
+
+#[test]
+fn constant_decimal_utf8_refusal_propagates() {
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX constant expression UTF-8 validation",
+        |ctx| crate::om::evaluate_constant_expression(ctx, "1.25"),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 4)
+    );
+}
+
+#[test]
+fn constant_expression_stacks_are_scoped_and_refuse_at_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let text = "(1 + 2) * 3";
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_retained_bytes = 0,
+        |ctx| {
+            assert_eq!(
+                crate::om::evaluate_constant_expression(ctx, text)
+                    .unwrap()
+                    .map(cadmpeg_ir::scalar::FiniteReal::get),
+                Some(9.0)
+            );
+        },
+    );
+    for operation in ["NX expression operator stack", "NX expression value stack"] {
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::MaterializedBytes,
+            operation,
+            |ctx| crate::om::evaluate_constant_expression(ctx, text),
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == operation)
+        );
+    }
 }

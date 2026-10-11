@@ -1,6 +1,7 @@
 use super::dimension_nominal;
 use super::length;
 use super::semantic_root;
+use crate::swift::annotations;
 use crate::swift::parse_unique_root;
 use crate::swift::pmi_id;
 use crate::swift::project;
@@ -8,6 +9,7 @@ use crate::swift::project_lower_profile_tier;
 use crate::swift::Entity;
 use crate::swift::ObjectSection;
 use crate::swift::Reference;
+use crate::swift::RelatedObject;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::Codec;
@@ -29,28 +31,42 @@ fn lower_profile_tier_holds_an_admitted_nonnegative_magnitude() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("empty test root fits policy");
     entity.doubles.insert("ToleranceLowerTier".into(), 0.0);
-    let projected = project_lower_profile_tier(&ctx, &reference, &entity, &BTreeMap::new(), None)
-        .expect("lower tier fits policy")
-        .expect("zero is a valid lower tier");
+    let projected = project_lower_profile_tier(
+        &ctx,
+        &reference,
+        &entity,
+        &BTreeMap::new(),
+        &crate::swift::ProjectionGeometry::new(&ctx, None, None, None),
+    )
+    .expect("lower tier fits policy")
+    .expect("zero is a valid lower tier");
     let PmiDefinition::GeometricTolerance { magnitude, .. } = projected.definition else {
         panic!("lower profile tier definition");
     };
     assert_eq!(magnitude.get(), length(0.0).expect("finite zero length"));
 
     entity.doubles.insert("ToleranceLowerTier".into(), -1.0);
-    assert!(
-        project_lower_profile_tier(&ctx, &reference, &entity, &BTreeMap::new(), None)
-            .expect("invalid lower tier fits policy")
-            .is_none()
-    );
+    assert!(project_lower_profile_tier(
+        &ctx,
+        &reference,
+        &entity,
+        &BTreeMap::new(),
+        &crate::swift::ProjectionGeometry::new(&ctx, None, None, None)
+    )
+    .expect("invalid lower tier fits policy")
+    .is_none());
     entity
         .doubles
         .insert("ToleranceLowerTier".into(), f64::INFINITY);
-    assert!(
-        project_lower_profile_tier(&ctx, &reference, &entity, &BTreeMap::new(), None)
-            .expect("invalid lower tier fits policy")
-            .is_none()
-    );
+    assert!(project_lower_profile_tier(
+        &ctx,
+        &reference,
+        &entity,
+        &BTreeMap::new(),
+        &crate::swift::ProjectionGeometry::new(&ctx, None, None, None)
+    )
+    .expect("invalid lower tier fits policy")
+    .is_none());
 }
 
 fn put_pstr(bytes: &mut Vec<u8>, value: &str) {
@@ -157,7 +173,7 @@ fn parse_root_with_service(payload: &[u8]) -> Option<Entity> {
 }
 
 #[test]
-fn swift_annotations_refuse_retained_stream_limit() {
+fn swift_annotations_refuse_scoped_stream_limit() {
     let root = Entity {
         class: crate::swift::ROOT_CLASS.into(),
         ..Entity::default()
@@ -172,17 +188,22 @@ fn swift_annotations_refuse_retained_stream_limit() {
     ));
     let scan = crate::test_support::container::scan(&source);
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = u64::try_from(root.class.len()).expect("fixture length");
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&source, &arena, &policy).expect("source fits policy");
-    let mut annotations = cadmpeg_ir::annotations::Annotations::default();
-    let Err(CodecError::ResourceLimit(limit)) =
-        crate::swift::annotations(&ctx, &scan, &mut annotations, None, None)
-    else {
-        panic!("expected retained refusal")
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "copy SWIFT source stream name",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)?;
+            let mut annotations = cadmpeg_ir::annotations::Annotations::default();
+            crate::swift::annotations(&ctx, &scan, &mut annotations, None)
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected scoped refusal");
     };
-    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!(limit.operation, "copy SWIFT source stream name");
 }
 
 fn swift_rendered_annotation_limit_error(
@@ -208,7 +229,7 @@ fn swift_rendered_annotation_limit_error(
     let (ctx, _) =
         DecodeContext::from_root_bytes(&source, &arena, &policy).expect("source fits policy");
     let mut annotations = cadmpeg_ir::annotations::Annotations::default();
-    crate::swift::annotations(&ctx, &scan, &mut annotations, None, None)
+    crate::swift::annotations(&ctx, &scan, &mut annotations, None)
         .expect_err("SWIFT annotations must refuse")
 }
 
@@ -533,6 +554,18 @@ fn swift_roster_identity_admission_preserves_resource_refusal() {
     assert_eq!(ctx.resource_refusal(), Some(limit));
 }
 
+fn source_with_swift_root(root: &Entity) -> Vec<u8> {
+    let mut payload = Vec::new();
+    encode_entity(root, &mut payload);
+    let mut source = crate::test_support::container::outer_header();
+    source.extend(crate::test_support::container::make_block(
+        0x40,
+        "SWIFT/Schema",
+        &payload,
+    ));
+    source
+}
+
 fn source_with_swift_annotation(annotation: Entity) -> Vec<u8> {
     let mut root = Entity {
         class: crate::swift::ROOT_CLASS.into(),
@@ -543,32 +576,25 @@ fn source_with_swift_annotation(annotation: Entity) -> Vec<u8> {
         class: annotation.class.clone(),
     });
     root.annotations.entities.push(annotation);
-    let mut payload = Vec::new();
-    encode_entity(&root, &mut payload);
-    let mut source = crate::test_support::container::outer_header();
-    source.extend(crate::test_support::container::make_block(
-        0x40,
-        "SWIFT/Schema",
-        &payload,
-    ));
-    source
+    source_with_swift_root(&root)
 }
 
 fn assert_malformed_swift_projection(annotation: Entity, reason: &str) {
-    let class = crate::swift::short_class(&annotation.class).to_owned();
+    let class = crate::swift::short_class(
+        &cadmpeg_test_support::service_decode_context(),
+        &annotation.class,
+    )
+    .unwrap()
+    .to_owned();
     let source = source_with_swift_annotation(annotation);
     let scan = crate::test_support::container::scan(&source);
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut provenance = cadmpeg_ir::annotations::Annotations::default();
     let expected = format!("SWIFT annotation A42 ({class}): {reason}");
-    assert!(
-        matches!(crate::swift::annotations(&ctx, &scan, &mut provenance, None, None),
-        Err(CodecError::Malformed(message)) if message == expected)
-    );
-    assert!(
-        matches!(crate::swift::unsupported_annotation_classes(&ctx, &scan),
-        Err(CodecError::Malformed(message)) if message == expected)
-    );
+    assert!(matches!(
+        crate::swift::annotations(&ctx, &scan, &mut provenance, None),
+        Err(CodecError::Malformed(message)) if message == expected
+    ));
     assert!(
         matches!(crate::SldprtCodec.decode(&mut std::io::Cursor::new(source), &cadmpeg_ir::codec::DecodeOptions::default()),
         Err(cadmpeg_ir::codec::DecodeFailure::Codec(CodecError::Malformed(message))) if message == expected)
@@ -631,18 +657,15 @@ fn swift_valid_and_suppressed_annotations_have_explicit_dispositions() {
         let scan = crate::test_support::container::scan(&source);
         let ctx = cadmpeg_test_support::service_decode_context();
         let mut provenance = cadmpeg_ir::annotations::Annotations::default();
-        let projected =
-            crate::swift::annotations(&ctx, &scan, &mut provenance, None, None).unwrap();
-        assert_eq!(projected.len(), 1);
-        let annotation = projected.first().unwrap();
+        let projection = annotations(&ctx, &scan, &mut provenance, None).unwrap();
+        assert_eq!(projection.annotations.len(), 1);
+        let annotation = projection.annotations.first().unwrap();
         assert_eq!(annotation.id, pmi_id("A42").unwrap());
         let PmiDefinition::GeometricTolerance { magnitude, .. } = &annotation.definition else {
             panic!("expected flatness tolerance");
         };
         assert_eq!(magnitude.get(), length(value).unwrap());
-        assert!(crate::swift::unsupported_annotation_classes(&ctx, &scan)
-            .unwrap()
-            .is_empty());
+        assert!(projection.unsupported_loss.is_none());
     }
     for class in ["GdtFlatness", "GdtDatum", "GdtUnsupported"] {
         let mut annotation = super::entity(class);
@@ -651,14 +674,9 @@ fn swift_valid_and_suppressed_annotations_have_explicit_dispositions() {
         let scan = crate::test_support::container::scan(&source);
         let ctx = cadmpeg_test_support::service_decode_context();
         let mut provenance = cadmpeg_ir::annotations::Annotations::default();
-        assert!(
-            crate::swift::annotations(&ctx, &scan, &mut provenance, None, None)
-                .unwrap()
-                .is_empty()
-        );
-        assert!(crate::swift::unsupported_annotation_classes(&ctx, &scan)
-            .unwrap()
-            .is_empty());
+        let projection = annotations(&ctx, &scan, &mut provenance, None).unwrap();
+        assert!(projection.annotations.is_empty());
+        assert!(projection.unsupported_loss.is_none());
     }
 }
 
@@ -668,14 +686,12 @@ fn swift_recognized_unprojected_annotation_records_unsupported_loss() {
     let scan = crate::test_support::container::scan(&source);
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut provenance = cadmpeg_ir::annotations::Annotations::default();
-    assert!(
-        crate::swift::annotations(&ctx, &scan, &mut provenance, None, None)
-            .unwrap()
-            .is_empty()
-    );
+    let projection = annotations(&ctx, &scan, &mut provenance, None)
+        .expect("unsupported annotation is still parsed once");
+    assert!(projection.annotations.is_empty());
     assert_eq!(
-        crate::swift::unsupported_annotation_classes(&ctx, &scan).unwrap(),
-        BTreeMap::from([("GdtWidth".into(), 1)])
+        projection.unsupported_loss.as_deref(),
+        Some("1 SWIFT semantic annotation(s) have no neutral PMI definition: GdtWidth (1).")
     );
     let result = crate::SldprtCodec
         .decode(
@@ -688,4 +704,878 @@ fn swift_recognized_unprojected_annotation_records_unsupported_loss() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("GdtWidth (1)")));
+}
+
+#[test]
+fn unsupported_swift_loss_refuses_collection_limit() {
+    let source = source_with_swift_annotation(super::entity("GdtWidth"));
+    let scan = crate::test_support::container::scan(&source);
+    let arena = DecodeArena::new();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "collect SLDPRT unsupported SWIFT classes",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)?;
+            let mut provenance = cadmpeg_ir::annotations::Annotations::default();
+            crate::swift::annotations(&ctx, &scan, &mut provenance, None).map(|_| ())
+        },
+    );
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "collect SLDPRT unsupported SWIFT classes"
+    ));
+}
+
+#[test]
+fn unsupported_swift_loss_refuses_scoped_limit() {
+    let unsupported = BTreeMap::from([("GdtWidth".into(), 1)]);
+    let arena = DecodeArena::new();
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "format SLDPRT unsupported SWIFT classes",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            crate::swift::format_unsupported_loss(&ctx, &unsupported).map(drop)
+        },
+    );
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && limit.operation == "format SLDPRT unsupported SWIFT classes"
+    ));
+}
+
+fn assert_geometry_indexes_skipped(root: &Entity, expected_loss: Option<&str>) {
+    use cadmpeg_core::decode::{
+        refusal_probe::RefusalProbe, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+    };
+    use cadmpeg_ir::ids::BodyId;
+    use cadmpeg_ir::topology::{Body, BodyKind};
+
+    let source = source_with_swift_root(root);
+    let scan = crate::test_support::container::scan(&source);
+    let body = Body {
+        id: BodyId::mint("sldprt:brep:body#11").expect("identity grammar"),
+        kind: BodyKind::default(),
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    };
+    let features = super::identity::pattern_hole_features();
+    assert!(!features.is_empty());
+
+    for operation in [
+        "index SWIFT body identities",
+        "swift pattern hole candidates",
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
+            .expect("SWIFT root fits policy");
+        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+        let mut provenance = cadmpeg_ir::annotations::Annotations::default();
+        let projection = annotations(
+            &ctx,
+            &scan,
+            &mut provenance,
+            Some(crate::swift::GeometryProjectionInputs {
+                topology: crate::swift::PrimaryTopology {
+                    bodies: std::slice::from_ref(&body),
+                    faces: &[],
+                    edges: &[],
+                    vertices: &[],
+                },
+                face_bridge_sequences: &[],
+                edge_use_sequences: &[],
+                vertex_use_sequences: &[],
+                features: &features,
+            }),
+        )
+        .expect("empty or incomplete annotation roster skips geometry indexes");
+        assert!(projection.annotations.is_empty());
+        assert_eq!(projection.unsupported_loss.as_deref(), expected_loss);
+        ctx.finish_session().expect("accepted session");
+    }
+}
+
+#[test]
+fn swift_empty_annotation_roster_skips_geometry_indexes() {
+    let root = Entity {
+        class: crate::swift::ROOT_CLASS.into(),
+        ..Entity::default()
+    };
+    assert_geometry_indexes_skipped(&root, None);
+}
+
+#[test]
+fn swift_incomplete_annotation_roster_keeps_loss_without_geometry_indexes() {
+    let mut root = Entity {
+        class: crate::swift::ROOT_CLASS.into(),
+        ..Entity::default()
+    };
+    root.annotations.references.push(Reference {
+        id: "A42".into(),
+        class: "GdtWidth".into(),
+    });
+    assert_geometry_indexes_skipped(
+        &root,
+        Some("1 SWIFT semantic annotation(s) have no neutral PMI definition: GdtAnalysisIncompleteAnnotationRoster (1)."),
+    );
+}
+
+#[test]
+fn swift_pattern_diameter_report_uses_the_projection_nominal_context() {
+    use super::identity::{cad_feature, pattern_hole_features};
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("empty root fits policy");
+    let features = pattern_hole_features();
+
+    let mut pattern = cad_feature("GdtPattern", "");
+    pattern
+        .strings
+        .insert("ObjectName".into(), "Hole Pattern6".into());
+    pattern.related.push(RelatedObject {
+        name: "SubFeatures".into(),
+        class: "PrizMetrik.GdtAnalysis.GdtAppliedFeatureCollection".into(),
+        entity: super::entity("GdtAppliedFeatureCollection"),
+    });
+    let mut diameter = super::entity("GdtDiameter");
+    diameter
+        .strings
+        .insert("ObjectName".into(), "Diameter 8".into());
+    diameter.doubles.insert("Nominal".into(), 0.0);
+    diameter
+        .features
+        .references
+        .push(super::reference("FP", "GdtPattern"));
+    let root = Entity {
+        class: crate::swift::ROOT_CLASS.into(),
+        features: ObjectSection {
+            references: vec![super::reference("FP", "GdtPattern")],
+            entities: vec![pattern],
+        },
+        annotations: ObjectSection {
+            references: vec![super::reference("A8", "GdtDiameter")],
+            entities: vec![diameter],
+        },
+        ..Entity::default()
+    };
+    let mut payload = Vec::new();
+    encode_entity(&root, &mut payload);
+    let mut source = crate::test_support::container::outer_header();
+    source.extend(crate::test_support::container::make_block(
+        0x40,
+        "SWIFT/Schema",
+        &payload,
+    ));
+    let scan = crate::test_support::container::scan(&source);
+    let mut provenance = cadmpeg_ir::annotations::Annotations::default();
+    let projected = annotations(
+        &ctx,
+        &scan,
+        &mut provenance,
+        Some(crate::swift::GeometryProjectionInputs {
+            topology: crate::swift::PrimaryTopology {
+                bodies: &[],
+                faces: &[],
+                edges: &[],
+                vertices: &[],
+            },
+            face_bridge_sequences: &[],
+            edge_use_sequences: &[],
+            vertex_use_sequences: &[],
+            features: &features,
+        }),
+    )
+    .expect("same projection supplies annotation and loss classification");
+
+    assert_eq!(
+        dimension_nominal(&projected.annotations, "A8"),
+        length(6.1468),
+        "the zero source nominal is filled from the unique native pattern seed"
+    );
+    assert!(projected.unsupported_loss.is_none());
+}
+
+#[test]
+fn swift_provenance_index_preserves_overlapping_source_prefixes() {
+    let mut root = Entity {
+        class: crate::swift::ROOT_CLASS.into(),
+        ..Entity::default()
+    };
+    for id in ["A:child", "A", "Aother"] {
+        let mut annotation = super::entity("GdtFlatness");
+        annotation.doubles.insert("Tolerance".into(), 0.25);
+        root.annotations.references.push(Reference {
+            id: id.into(),
+            class: annotation.class.clone(),
+        });
+        root.annotations.entities.push(annotation);
+    }
+    let mut payload = Vec::new();
+    encode_entity(&root, &mut payload);
+    let parsed = parse_root_with_service(&payload).unwrap();
+    let mut source = crate::test_support::container::outer_header();
+    source.extend(crate::test_support::container::make_block(
+        0x40,
+        "SWIFT/Schema",
+        &payload,
+    ));
+    let scan = crate::test_support::container::scan(&source);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut provenance = cadmpeg_ir::annotations::Annotations::default();
+    let projected = crate::swift::annotations(&ctx, &scan, &mut provenance, None).unwrap();
+    assert_eq!(
+        projected
+            .annotations
+            .iter()
+            .map(|annotation| annotation.id.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "sldprt:model:pmi#A:child",
+            "sldprt:model:pmi#A",
+            "sldprt:model:pmi#Aother"
+        ]
+    );
+    for (id, index) in [("A:child", 1), ("A", 1), ("Aother", 2)] {
+        assert_eq!(
+            provenance
+                .provenance
+                .get(pmi_id(id).unwrap().as_str())
+                .unwrap()
+                .offset,
+            cadmpeg_core::decode::u64_from_index(
+                parsed.annotations.entities.get(index).unwrap().offset
+            )
+        );
+    }
+}
+
+#[test]
+fn swift_class_suffix_search_visits_only_the_suffix() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::try_from(".GdtCylinder".len()).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let class = format!("{}.GdtCylinder", "長namespace".repeat(1024));
+    assert_eq!(
+        crate::swift::short_class(&ctx, &class).unwrap(),
+        "GdtCylinder"
+    );
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn swift_object_prefix_validation_does_not_precharge_unused_pairs() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let references: Vec<_> = (0..128)
+        .map(|index| Reference {
+            id: format!("F{index}"),
+            class: "First".into(),
+        })
+        .collect();
+    let mismatched = Entity {
+        class: "Other".into(),
+        ..Entity::default()
+    };
+    let arena = DecodeArena::new();
+    let run = |cap| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        ObjectSection::new(&ctx, references.clone(), vec![mismatched.clone()])
+    };
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "scan SWIFT object pairs",
+        run,
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("pair boundary");
+    };
+    assert_eq!(limit.additional, 1);
+    // One pair step, the comma-search bytes and end probe, and both comparison operands.
+    let search = u64::try_from("First".len()).unwrap() + 1;
+    let comparison = u64::try_from("First".len() + "Other".len()).unwrap();
+    assert!(run(limit.used + 1 + search + comparison).unwrap().is_none());
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = limit.used + 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(ObjectSection::new(&ctx, references, Vec::new())
+        .unwrap()
+        .is_some());
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn swift_reference_class_search_stops_at_the_comma() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let reference = Reference {
+        id: "F0".into(),
+        class: format!("First,{}", "unused".repeat(1024)),
+    };
+    let entity = Entity {
+        class: "First".into(),
+        ..Entity::default()
+    };
+    let arena = DecodeArena::new();
+    let run = |cap| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        ObjectSection::new(&ctx, vec![reference.clone()], vec![entity.clone()])
+    };
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "bind SWIFT reference classes",
+        run,
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("class search boundary");
+    };
+    // The prefix bytes, both comparison operands, and the final pair probe.
+    let search = u64::try_from("First,".len()).unwrap();
+    let comparison = u64::try_from(2 * "First".len()).unwrap();
+    assert!(run(limit.used + search + comparison + 1).unwrap().is_some());
+}
+
+#[test]
+fn swift_empty_projection_skips_feature_and_provenance_work() {
+    use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+    let mut root = Entity {
+        class: crate::swift::ROOT_CLASS.into(),
+        ..Entity::default()
+    };
+    root.features
+        .references
+        .push(super::reference("F10", "GdtPlane"));
+    root.features.entities.push(super::entity("GdtPlane"));
+    let source = source_with_swift_root(&root);
+    let scan = crate::test_support::container::scan(&source);
+    for operation in [
+        "index SWIFT features",
+        "index SWIFT annotation provenance",
+        "scan SWIFT annotation references",
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+        let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+        let projection = annotations(
+            &ctx,
+            &scan,
+            &mut cadmpeg_ir::annotations::Annotations::default(),
+            None,
+        )
+        .unwrap();
+        assert!(projection.annotations.is_empty());
+        assert!(projection.unsupported_loss.is_none());
+        ctx.finish_session().unwrap();
+    }
+    root.annotations
+        .references
+        .push(super::reference("A10", "GdtFlatness"));
+    let source = source_with_swift_root(&root);
+    let scan = crate::test_support::container::scan(&source);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let _probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "scan SWIFT annotation references",
+        None,
+    );
+    let projection = annotations(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::annotations::Annotations::default(),
+        None,
+    )
+    .unwrap();
+    assert!(projection.annotations.is_empty());
+    assert!(projection
+        .unsupported_loss
+        .unwrap()
+        .contains("GdtAnalysisIncompleteAnnotationRoster"));
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn swift_discarded_entity_candidates_release_their_storage() {
+    let mut payload = Vec::new();
+    for _ in 0..64 {
+        encode_entity(&super::entity("GdtPlane"), &mut payload);
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 1024 * 1024;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(parse_unique_root(&ctx, &payload).unwrap().is_none());
+    let all_scratch = ctx
+        .reserve_scoped(
+            policy.limits.max_materialized_bytes,
+            "reuse SWIFT discovery scratch",
+        )
+        .unwrap();
+    drop(all_scratch);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn swift_root_discovery_checks_nested_and_property_root_tokens() {
+    let nested_root = Entity {
+        class: crate::swift::ROOT_CLASS.into(),
+        ..Entity::default()
+    };
+    let mut root = nested_root.clone();
+    root.related.push(RelatedObject {
+        name: "Nested".into(),
+        class: nested_root.class.clone(),
+        entity: nested_root,
+    });
+    let mut payload = Vec::new();
+    encode_entity(&root, &mut payload);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert!(parse_unique_root(&ctx, &payload).unwrap().is_none());
+    let root = Entity {
+        class: crate::swift::ROOT_CLASS.into(),
+        ..Entity::default()
+    };
+    let mut embedded = Vec::new();
+    encode_entity(&root, &mut embedded);
+    let embedded = String::from_utf8(embedded).unwrap();
+    let mut root = root;
+    root.strings.insert("Embedded".into(), embedded);
+    let mut payload = Vec::new();
+    encode_entity(&root, &mut payload);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert!(parse_unique_root(&ctx, &payload).unwrap().is_none());
+}
+
+#[test]
+fn swift_discovery_holds_only_the_selected_tree_storage() {
+    let mut root = Entity {
+        class: crate::swift::ROOT_CLASS.into(),
+        ..Entity::default()
+    };
+    for index in 0..64 {
+        root.features
+            .references
+            .push(super::reference(&format!("F{index}"), "GdtPlane"));
+        root.features.entities.push(super::entity("GdtPlane"));
+    }
+    let mut payload = Vec::new();
+    encode_entity(&root, &mut payload);
+    let live_storage = |discover| {
+        let arena = DecodeArena::new();
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::MaterializedBytes,
+            "measure selected SWIFT tree",
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_materialized_bytes = cap;
+                policy.limits.max_retained_bytes = 0;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                let (parsed, storage) =
+                    ctx.with_scoped_storage("selected SWIFT test tree", || {
+                        if discover {
+                            parse_unique_root(&ctx, &payload)
+                        } else {
+                            crate::swift::parse_entity(
+                                &ctx,
+                                &mut cadmpeg_core::decode::View::over_retained(&payload),
+                                0,
+                            )
+                        }
+                    })?;
+                assert_eq!(parsed.as_ref().unwrap().features.entities.len(), 64);
+                let measurement =
+                    ctx.reserve_scoped(u64::MAX / 2, "measure selected SWIFT tree")?;
+                drop((measurement, parsed, storage));
+                Ok(())
+            },
+        );
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("measurement refusal");
+        };
+        limit.used
+    };
+    assert_eq!(live_storage(true), live_storage(false));
+}
+
+#[test]
+fn swift_suppressed_roster_skips_geometry_indexes_and_provenance() {
+    let mut root = Entity {
+        class: crate::swift::ROOT_CLASS.into(),
+        ..Entity::default()
+    };
+    let mut annotation = super::entity("GdtFlatness");
+    annotation.integers.insert("IsSuppressed".into(), 1);
+    root.annotations
+        .references
+        .push(super::reference("A10", "GdtFlatness"));
+    root.annotations.entities.push(annotation);
+    assert_geometry_indexes_skipped(&root, None);
+    let source = source_with_swift_root(&root);
+    let scan = crate::test_support::container::scan(&source);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "format SWIFT PMI identity",
+        None,
+    );
+    let mut provenance = cadmpeg_ir::annotations::Annotations::default();
+    let projection = annotations(&ctx, &scan, &mut provenance, None).unwrap();
+    assert!(projection.annotations.is_empty());
+    assert!(provenance.provenance.is_empty());
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn swift_explicit_nominal_skips_native_pattern_index() {
+    use super::identity::pattern_hole_features;
+    let mut root = Entity {
+        class: crate::swift::ROOT_CLASS.into(),
+        ..Entity::default()
+    };
+    let mut annotation = super::entity("GdtDiameter");
+    annotation.doubles.insert("Nominal".into(), 4.0);
+    annotation
+        .features
+        .references
+        .push(super::reference("F10", "GdtCylinder"));
+    root.annotations
+        .references
+        .push(super::reference("A10", "GdtDiameter"));
+    root.annotations.entities.push(annotation);
+    root.features
+        .references
+        .push(super::reference("F10", "GdtCylinder"));
+    root.features.entities.push(super::entity("GdtCylinder"));
+    let source = source_with_swift_root(&root);
+    let scan = crate::test_support::container::scan(&source);
+    let features = pattern_hole_features();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "swift pattern hole candidates",
+        None,
+    );
+    let projection = annotations(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::annotations::Annotations::default(),
+        Some(crate::swift::GeometryProjectionInputs {
+            topology: crate::swift::PrimaryTopology {
+                bodies: &[],
+                faces: &[],
+                edges: &[],
+                vertices: &[],
+            },
+            face_bridge_sequences: &[],
+            edge_use_sequences: &[],
+            vertex_use_sequences: &[],
+            features: &features,
+        }),
+    )
+    .unwrap();
+    assert_eq!(projection.annotations.len(), 1);
+    assert_eq!(
+        dimension_nominal(&projection.annotations, "A10"),
+        length(4.0)
+    );
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn swift_suppressed_roster_skips_populated_feature_index() {
+    let mut root = Entity {
+        class: crate::swift::ROOT_CLASS.into(),
+        ..Entity::default()
+    };
+    for index in 0..64 {
+        root.features
+            .references
+            .push(super::reference(&format!("F{index}"), "GdtPlane"));
+        root.features.entities.push(super::entity("GdtPlane"));
+    }
+    let mut annotation = super::entity("GdtFlatness");
+    annotation.integers.insert("IsSuppressed".into(), 1);
+    annotation
+        .features
+        .references
+        .push(super::reference("F0", "GdtPlane"));
+    root.annotations
+        .references
+        .push(super::reference("A10", "GdtFlatness"));
+    root.annotations.entities.push(annotation);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "index SWIFT features",
+        None,
+    );
+    let projection =
+        crate::swift::project_with_topology(&ctx, &root, None, &[], None, None).unwrap();
+    assert!(projection.annotations.is_empty());
+    assert!(projection.unsupported.is_empty());
+    drop(projection);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn swift_discarded_stream_roots_release_their_storage() {
+    let root = Entity {
+        class: crate::swift::ROOT_CLASS.into(),
+        ..Entity::default()
+    };
+    let mut payload = Vec::new();
+    encode_entity(&root, &mut payload);
+    let mut source = source_with_swift_root(&root);
+    source.extend(crate::test_support::container::make_block(
+        0x41,
+        "SWIFT/OtherSchema",
+        &payload,
+    ));
+    let scan = crate::test_support::container::scan(&source);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 1024 * 1024;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(crate::swift::scan_root(&ctx, &scan).unwrap().is_none());
+    let all_scratch = ctx
+        .reserve_scoped(
+            policy.limits.max_materialized_bytes,
+            "reuse SWIFT stream discovery scratch",
+        )
+        .unwrap();
+    drop(all_scratch);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn swift_second_root_skips_unused_descendant_index() {
+    let mut root = Entity {
+        class: crate::swift::ROOT_CLASS.into(),
+        ..Entity::default()
+    };
+    let mut payload = Vec::new();
+    encode_entity(&root, &mut payload);
+    for index in 0..64 {
+        root.features
+            .references
+            .push(super::reference(&format!("F{index}"), "GdtPlane"));
+        root.features.entities.push(super::entity("GdtPlane"));
+    }
+    encode_entity(&root, &mut payload);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "index validated SWIFT features",
+        Some(64),
+    );
+    assert!(parse_unique_root(&ctx, &payload).unwrap().is_none());
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn swift_rejected_annotation_gates_skip_populated_feature_index() {
+    for class in ["GdtDatum", "GdtAngleBetween", "GdtUnrecognized"] {
+        let mut root = Entity {
+            class: crate::swift::ROOT_CLASS.into(),
+            ..Entity::default()
+        };
+        for index in 0..64 {
+            root.features
+                .references
+                .push(super::reference(&format!("F{index}"), "GdtPlane"));
+            root.features.entities.push(super::entity("GdtPlane"));
+        }
+        let mut annotation = super::entity(class);
+        annotation
+            .features
+            .references
+            .push(super::reference("F0", "GdtPlane"));
+        root.annotations
+            .references
+            .push(super::reference("A10", class));
+        root.annotations.entities.push(annotation);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            "index SWIFT features",
+            None,
+        );
+        {
+            let result = crate::swift::project_with_topology(&ctx, &root, None, &[], None, None);
+            if class == "GdtDatum" {
+                let Err(CodecError::Malformed(message)) = result else {
+                    panic!("missing datum identifier is malformed");
+                };
+                assert!(message.contains("missing or empty DatumIdentifier"));
+            } else {
+                let projection = result.unwrap();
+                assert!(projection.annotations.is_empty());
+                assert_eq!(projection.unsupported.get(class), Some(&1));
+                drop(projection);
+            }
+        }
+        ctx.finish_session().unwrap();
+    }
+}
+
+#[test]
+fn swift_datum_reuses_its_admitted_pmi_identity() {
+    let mut datum = super::entity("GdtDatum");
+    datum.strings.insert("DatumIdentifier".into(), "A".into());
+    let features = BTreeMap::<&str, &Entity>::new();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let id = crate::swift::pmi_id_charged(&ctx, "A10").unwrap().unwrap();
+    let geometry = crate::swift::ProjectionGeometry::new(&ctx, None, None, None);
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "format SWIFT PMI identity",
+        None,
+    );
+    let annotation = crate::swift::project_datum(&ctx, id, &datum, || Ok(&features), &geometry)
+        .unwrap()
+        .unwrap();
+    assert_eq!(annotation.id, crate::swift::pmi_id("A10").unwrap());
+    assert!(
+        matches!(annotation.definition, PmiDefinition::Datum { identification } if identification == "A")
+    );
+    drop(geometry);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn swift_unbindable_cad_identifiers_skip_topology_indexes() {
+    use cadmpeg_ir::ids::BodyId;
+    use cadmpeg_ir::topology::Body;
+    let bodies = vec![
+        Body {
+            id: BodyId::mint("sldprt:brep:body#11").unwrap(),
+            kind: cadmpeg_ir::topology::BodyKind::default(),
+            regions: Vec::new(),
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        };
+        64
+    ];
+    let sequences = vec![(11, 1); 64];
+    for (identifier, empty) in [
+        ("invalid", false),
+        (":11", false),
+        ("schema:", false),
+        ("schema:not-a-number", false),
+        ("schema:11", true),
+    ] {
+        let mut root = Entity {
+            class: crate::swift::ROOT_CLASS.into(),
+            ..Entity::default()
+        };
+        let mut feature = super::entity("GdtCylinder");
+        let mut cad = super::entity("CadRef");
+        cad.strings
+            .insert("CadIdentifier".into(), identifier.into());
+        feature.related.push(RelatedObject {
+            name: "Cad".into(),
+            class: cad.class.clone(),
+            entity: cad,
+        });
+        root.features
+            .references
+            .push(super::reference("F10", "GdtCylinder"));
+        root.features.entities.push(feature);
+        let mut annotation = super::entity("GdtDiameter");
+        annotation.doubles.insert("Nominal".into(), 4.0);
+        annotation
+            .features
+            .references
+            .push(super::reference("F10", "GdtCylinder"));
+        root.annotations
+            .references
+            .push(super::reference("A10", "GdtDiameter"));
+        root.annotations.entities.push(annotation);
+        let source = source_with_swift_root(&root);
+        let scan = crate::test_support::container::scan(&source);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+        let operation = if empty {
+            "index SWIFT face sequence"
+        } else {
+            "index SWIFT body identities"
+        };
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            operation,
+            Some(64),
+        );
+        let projection = annotations(
+            &ctx,
+            &scan,
+            &mut cadmpeg_ir::annotations::Annotations::default(),
+            Some(crate::swift::GeometryProjectionInputs {
+                topology: crate::swift::PrimaryTopology {
+                    bodies: if empty { &[] } else { &bodies },
+                    faces: &[],
+                    edges: &[],
+                    vertices: &[],
+                },
+                face_bridge_sequences: if empty { &sequences } else { &[] },
+                edge_use_sequences: &[],
+                vertex_use_sequences: &[],
+                features: &[],
+            }),
+        )
+        .unwrap();
+        assert_eq!(projection.annotations.len(), 1);
+        assert_eq!(
+            dimension_nominal(&projection.annotations, "A10"),
+            length(4.0)
+        );
+        assert!(
+            matches!(projection.annotations.first().expect("one annotation").targets.as_slice(), [PmiTarget::ShapeAspect { source_id }] if source_id.as_str() == "F10")
+        );
+        ctx.finish_session().unwrap();
+    }
 }

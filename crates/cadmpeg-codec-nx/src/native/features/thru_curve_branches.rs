@@ -159,12 +159,12 @@ impl TryFrom<GroupWire> for FeatureThruCurveConstructionBranchGroup {
             if cadmpeg_core::decode::index_from_u32(branch.terminal.ordinal) != members.len() {
                 return Err("terminal.ordinal must equal members length");
             }
-            branches.push(ThruCurveBranch {
-                mode: branch.mode,
-                members: ThruCurveBranchItems::from_parts(members, &branch.state_lane)?,
-                terminal: (branch.terminal.token, branch.terminal.data_block),
-                suffix: branch.suffix,
-            });
+            branches.push(ThruCurveBranch::new(
+                branch.mode,
+                ThruCurveBranchItems::from_parts(members, &branch.state_lane)?,
+                (branch.terminal.token, branch.terminal.data_block),
+                branch.suffix,
+            )?);
             locations.push((
                 branch.source_offset,
                 positions,
@@ -209,7 +209,7 @@ pub(in crate::native) fn feature_thru_curve_construction_branch_groups(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     history: &FeatureHistory<'_, '_, '_>,
 ) -> Result<Vec<FeatureThruCurveConstructionBranchGroup>, cadmpeg_core::CodecError> {
-    let indexed = history.container().indexed_om_sections(ctx)?;
+    let (indexed, _indexed_storage) = history.container().indexed_om_sections(ctx)?;
     let mut groups = Vec::new();
     for history_section in
         ctx.admit_iter(history.sections(), "visit NX feature history sections")?
@@ -220,7 +220,9 @@ pub(in crate::native) fn feature_thru_curve_construction_branch_groups(
             &history_section.records,
             "visit NX feature operation records",
         )? {
-            let Some(group) = thru_curve_payload_branch_group(ctx, record.payload_view())? else {
+            let (group, _group_storage) =
+                thru_curve_payload_branch_group(ctx, record.payload_view())?;
+            let Some(group) = group else {
                 continue;
             };
             let Some(frame) = group.resolve(ctx, entry_offset, |token| {

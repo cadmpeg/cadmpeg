@@ -25,13 +25,13 @@ use crate::resolved_features::selections::compact_surface_selection_at;
 use crate::resolved_features::selections::component_profile_source_at;
 use crate::resolved_features::selections::component_reference_curve_path_at;
 use crate::resolved_features::selections::coordinate_marker_local_links;
-use crate::resolved_features::selections::fillet_edge_roster_end;
 use crate::resolved_features::selections::is_component_vector_selector;
 use crate::resolved_features::selections::marker_local_links;
 use crate::resolved_features::selections::operation_surface_selection_candidates;
 use crate::resolved_features::selections::surface_reference_matches_at;
 use crate::resolved_features::selections::unique_marker_candidate;
 use crate::resolved_features::selections::COMPACT_EDGE_VECTOR_MARKER;
+use crate::resolved_features::selections::{fillet_dimension_classes, fillet_edge_roster_end};
 use std::collections::BTreeMap;
 
 #[test]
@@ -266,9 +266,17 @@ fn non_coordinate_legacy_profile_line_carries_counted_endpoint_links() {
 #[test]
 fn coordinate_namespace_disambiguates_reused_local_id() {
     let candidates = vec![("relation".into(), false), ("geometry".into(), true)];
-    assert_eq!(unique_marker_candidate(&candidates), Some("geometry"));
+    assert_eq!(
+        unique_marker_candidate(&cadmpeg_test_support::service_decode_context(), &candidates)
+            .unwrap(),
+        Some("geometry")
+    );
     let ambiguous = vec![("first".into(), true), ("second".into(), true)];
-    assert_eq!(unique_marker_candidate(&ambiguous), None);
+    assert_eq!(
+        unique_marker_candidate(&cadmpeg_test_support::service_decode_context(), &ambiguous)
+            .unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -883,7 +891,25 @@ fn compact_edge_selection_marker_does_not_require_a_class_declaration() {
         sketch_entities: Vec::new(),
     };
 
-    let selections = compact_edge_selections(&history_ctx, &[history], &lane).unwrap();
+    let histories = [history];
+    crate::test_support::work_refusal_at(
+        "deduplicate SLDPRT compact edge selection offsets",
+        |ctx| {
+            let mut history =
+                crate::resolved_features::selections::SelectionHistory::new(ctx, &histories)?;
+            compact_edge_selections(ctx, &histories, history.for_lane(ctx, &lane)?, &lane)
+        },
+    );
+    let selections = compact_edge_selections(
+        &history_ctx,
+        &histories,
+        crate::resolved_features::selections::SelectionHistory::new(&history_ctx, &histories)
+            .unwrap()
+            .for_lane(&history_ctx, &lane)
+            .unwrap(),
+        &lane,
+    )
+    .unwrap();
 
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].feature_ref, "consumer");
@@ -946,12 +972,13 @@ fn fillet_edge_roster_ends_at_direct_or_repeated_vertex_dimension() {
     )
     .unwrap();
 
+    let classes = fillet_dimension_classes(&ctx, &lane).unwrap();
     assert_eq!(
-        fillet_edge_roster_end(&ctx, &lane, 0, 80).unwrap(),
+        fillet_edge_roster_end(&ctx, &lane, &classes, 0, 80).unwrap(),
         Some(direct_record)
     );
     assert_eq!(
-        fillet_edge_roster_end(&ctx, &lane, 80, 144).unwrap(),
+        fillet_edge_roster_end(&ctx, &lane, &classes, 80, 144).unwrap(),
         Some(repeated_record)
     );
 }
@@ -1183,6 +1210,14 @@ fn compact_reference_list_accepts_unframed_surface_cut_targets() {
         &identity_ctx,
         FeatureClass::CutWithSurface,
         &lane,
+        &crate::resolved_features::selections::OperationSurfaceClasses::new(
+            &identity_ctx,
+            &crate::resolved_features::selections::generated_surface_identities(
+                &identity_ctx,
+                &lane,
+            )
+            .unwrap(),
+        ),
         0,
         payload.len(),
         None,
@@ -1296,7 +1331,17 @@ fn varfillet_roster_accepts_unframed_reference_lists() {
         sketch_entities: Vec::new(),
     };
 
-    let selections = compact_edge_selections(&history_ctx, &[history], &lane).unwrap();
+    let histories = [history];
+    let selections = compact_edge_selections(
+        &history_ctx,
+        &histories,
+        crate::resolved_features::selections::SelectionHistory::new(&history_ctx, &histories)
+            .unwrap()
+            .for_lane(&history_ctx, &lane)
+            .unwrap(),
+        &lane,
+    )
+    .unwrap();
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].references.len(), 4);
     assert_eq!(selections[0].references[3][0].instance, Some(0x8083));
@@ -1414,8 +1459,11 @@ fn variable_fillet_control_names_require_canonical_unsigned_indices() {
     };
     let index = |feature: &Feature, name: &str| {
         crate::resolved_features::selections::variable_fillet_dimension_index_for_feature(
-            feature, name,
+            &cadmpeg_test_support::service_decode_context(),
+            feature,
+            name,
         )
+        .unwrap()
     };
     for (name, expected) in [("D0", 0), ("D01", 1), ("D012", 12), ("D1", 1)] {
         assert_eq!(index(&feature, name), Some(expected), "{name}");
@@ -1435,4 +1483,101 @@ fn variable_fillet_control_names_require_canonical_unsigned_indices() {
         .insert(cadmpeg_core::nonblank_literal!("D01"), "1mm".into());
     assert_eq!(index(&feature, "D1"), None);
     assert_eq!(index(&feature, "D01"), Some(1));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    assert!(matches!(
+        crate::resolved_features::selections::variable_fillet_dimension_index_for_feature(
+            &ctx, &feature, "D012",
+        ),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+    ));
+}
+
+#[test]
+fn component_parser_pushes_propagate_slot_refusals() {
+    let mut payload = Vec::new();
+    payload.extend(0x803e_u16.to_le_bytes());
+    payload.extend([0, 0]);
+    payload.extend([0x34, 0x80, 1, 0, 57, 0, 0, 0, 1, 0, 0, 0]);
+    payload.extend(9u32.to_le_bytes());
+    for parser in 0..3 {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (result, operation) = match parser {
+            0 => (
+                super::super::compact_mixed_component_path(
+                    &ctx,
+                    &payload,
+                    0,
+                    1,
+                    false,
+                    "collect test components",
+                )
+                .map(|_| ()),
+                "collect test components",
+            ),
+            1 => (
+                super::super::compact_component_path_with_layout(
+                    &ctx,
+                    &payload,
+                    0,
+                    1,
+                    false,
+                    "collect test components",
+                )
+                .map(|_| ()),
+                "collect test components",
+            ),
+            _ => (
+                super::super::compact_homogeneous_edge_ids(&ctx, &payload, 0, 1).map(|_| ()),
+                "decode SLDPRT homogeneous edge identities",
+            ),
+        };
+        assert!(
+            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == operation && ctx.resource_refusal() == Some(limit))
+        );
+    }
+    let service = cadmpeg_test_support::service_decode_context();
+    let expected = vec![FeatureInputComponentPathEntry {
+        instance: Some(0x803e),
+        type_signature: [0x34, 0x80, 1, 0, 57, 0, 0, 0, 1, 0, 0, 0],
+        local_id: Some(9),
+    }];
+    assert_eq!(
+        super::super::compact_mixed_component_path(
+            &service,
+            &payload,
+            0,
+            1,
+            false,
+            "collect test components",
+        )
+        .unwrap(),
+        Some((expected.clone(), 20))
+    );
+    assert_eq!(
+        super::super::compact_component_path_with_layout(
+            &service,
+            &payload,
+            0,
+            1,
+            false,
+            "collect test components",
+        )
+        .unwrap(),
+        Some((expected, 20))
+    );
+    assert_eq!(
+        super::super::compact_homogeneous_edge_ids(&service, &payload, 0, 1).unwrap(),
+        Some(vec![9])
+    );
 }

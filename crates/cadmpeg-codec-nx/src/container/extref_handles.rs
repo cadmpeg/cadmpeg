@@ -163,6 +163,12 @@ mod tests {
         for tokens in [vec![], vec![7; 255], vec![9, 7]] {
             assert!(ExtrefHandles::new(tokens).is_err());
         }
+        let mut overlong_and_unsorted = vec![7; 254];
+        overlong_and_unsorted.push(6);
+        assert_eq!(
+            ExtrefHandles::new(overlong_and_unsorted).unwrap_err(),
+            "handles: encoded token count must be in 1..=254"
+        );
         for (handles, closing, length, field) in [
             (vec![], true, 26, "closing_duplicate"),
             (vec![7, 7], false, 36, "closing_duplicate"),

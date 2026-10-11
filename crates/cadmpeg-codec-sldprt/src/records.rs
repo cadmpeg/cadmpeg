@@ -215,6 +215,21 @@ impl FeatureSource {
     pub(crate) fn from_value(value: u32) -> Option<Self> {
         FeatureSourceId::try_from(value).ok().map(Self::Id)
     }
+
+    /// Parse a native source id while admitting numeric parsing. The reserved sentinel is a fixed comparison.
+    pub(crate) fn parse_for_decode(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        value: &str,
+        operation: &'static str,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        if value == RESERVED_FEATURE_SOURCE {
+            return Ok(Some(Self::Reserved));
+        }
+        Ok(ctx
+            .parse_text::<u32>(value, operation)?
+            .ok()
+            .and_then(Self::from_value))
+    }
 }
 
 impl TryFrom<&str> for FeatureSource {
@@ -419,6 +434,42 @@ pub(crate) enum FeatureContent {
     Feature(String),
     /// Non-whitespace text content.
     Text(String),
+}
+
+/// Compare two native maps entry by entry, stopping at the first difference.
+pub(crate) fn equal_text_maps<K, V>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    left: &BTreeMap<K, V>,
+    right: &BTreeMap<K, V>,
+    operation: &'static str,
+) -> Result<bool, cadmpeg_core::CodecError>
+where
+    K: cadmpeg_core::decode::cost::DecodeCost + PartialEq,
+    V: cadmpeg_core::decode::cost::DecodeCost + PartialEq,
+{
+    if left.len() != right.len() {
+        return Ok(false);
+    }
+    ctx.all_by(
+        left.iter().zip(right),
+        |((left_key, left_value), (right_key, right_value))| {
+            Ok(ctx.equal(left_key, right_key, operation)?
+                && ctx.equal(left_value, right_value, operation)?)
+        },
+        operation,
+    )
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureContent {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        let (Self::Dimension(text) | Self::Feature(text) | Self::Text(text)) = self;
+        // One discriminant byte selects the variant before its text compares.
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(&(0u8, text.as_str()), ctx, operation)
+    }
 }
 
 /// One ordered item inside the native `Keywords` root.
@@ -860,6 +911,33 @@ pub(crate) struct FeatureInputGeneratedSurfaceIdentity {
     pub(crate) components: Vec<FeatureInputComponentPathEntry>,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureInputGeneratedSurfaceIdentity {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                (
+                    self.id.as_str(),
+                    self.parent.as_str(),
+                    self.ordinal,
+                    self.offset,
+                ),
+                (
+                    self.type_prefix,
+                    self.feature_source_id,
+                    self.local_identity,
+                    &self.components,
+                ),
+            ),
+            ctx,
+            operation,
+        )
+    }
+}
+
 /// One typed node in a persistent feature-input component path.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct FeatureInputComponentPathEntry {
@@ -879,6 +957,20 @@ pub(crate) struct FeatureInputComponentPathEntry {
         deserialize_with = "deserialize_local_id"
     )]
     pub(crate) local_id: Option<u32>,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureInputComponentPathEntry {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(self.instance, self.type_signature, self.local_id),
+            ctx,
+            operation,
+        )
+    }
 }
 
 /// A declared sketch-relation family and its attached scalar record.
@@ -930,6 +1022,61 @@ pub(crate) struct FeatureInputRelationInstance {
     pub(crate) scalars: relation_scalars::RelationScalars,
     /// Operand cells shared by the participating scalar records.
     pub(crate) operands: Vec<FeatureInputOperand>,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureInputRelationBinding {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                (
+                    self.id.as_str(),
+                    self.parent.as_str(),
+                    self.ordinal,
+                    self.offset,
+                ),
+                (
+                    self.class_ref.as_str(),
+                    self.family,
+                    self.scalar_ref.as_str(),
+                    self.feature_ref.as_deref(),
+                ),
+            ),
+            ctx,
+            operation,
+        )
+    }
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureInputRelationInstance {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                (
+                    self.id.as_str(),
+                    self.parent.as_str(),
+                    self.ordinal,
+                    self.offset,
+                ),
+                (
+                    self.family,
+                    self.class_ref.as_str(),
+                    self.feature_ref.as_str(),
+                ),
+                &self.scalars,
+                self.operands.as_slice(),
+            ),
+            ctx,
+            operation,
+        )
+    }
 }
 
 /// Partial wire record; membership is admitted before it becomes a relation.
@@ -1062,6 +1209,33 @@ pub(crate) struct FeatureInputReference {
     pub(crate) class_ref: Option<String>,
     /// Local object index carried by the cell.
     pub(crate) object_index: u16,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureInputReference {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                (
+                    self.id.as_str(),
+                    self.parent.as_str(),
+                    self.feature_ref.as_deref(),
+                    self.ordinal,
+                ),
+                (
+                    self.offset,
+                    self.kind,
+                    self.class_ref.as_deref(),
+                    self.object_index,
+                ),
+            ),
+            ctx,
+            operation,
+        )
+    }
 }
 
 /// One serialized UTF-16 object name in a feature-input stream.
@@ -1267,6 +1441,26 @@ pub(crate) struct FeatureInputOperand {
     pub(crate) entity_ref: Option<String>,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureInputOperand {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                self.offset,
+                self.reference_ref.as_str(),
+                self.kind,
+                self.entity_index,
+                self.entity_ref.as_deref(),
+            ),
+            ctx,
+            operation,
+        )
+    }
+}
+
 /// Native feature-input entity-reference cell family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1321,6 +1515,26 @@ pub(crate) struct FeatureInputClass {
     /// Declared native class name.
     #[serde(flatten, with = "feature_class_wire")]
     pub(crate) name: String,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for FeatureInputClass {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                self.id.as_str(),
+                self.parent.as_str(),
+                self.ordinal,
+                self.offset,
+                self.name.as_str(),
+            ),
+            ctx,
+            operation,
+        )
+    }
 }
 
 impl FeatureInputClass {
@@ -1425,6 +1639,36 @@ pub(crate) struct SketchInputEntity {
     pub(crate) links: Option<SketchInputLinks>,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for SketchInputEntity {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(
+                (
+                    self.id.as_str(),
+                    self.parent.as_str(),
+                    self.feature_ref.as_deref(),
+                    self.ordinal,
+                    self.offset,
+                    self.object_index,
+                ),
+                (
+                    self.local_id,
+                    &self.kind,
+                    self.state_value.map(cadmpeg_ir::scalar::FiniteReal::get),
+                    self.coordinates_m.map(cadmpeg_ir::units::FiniteVector::get),
+                    &self.links,
+                ),
+            ),
+            ctx,
+            operation,
+        )
+    }
+}
+
 /// Deserialization mirror of a sketch-entity marker, re-admitted against its lane payload.
 #[derive(Deserialize)]
 pub(crate) struct SketchInputEntityWire {
@@ -1483,6 +1727,20 @@ pub(crate) struct SketchInputEntityWire {
 pub(crate) struct SketchInputLinks {
     selector: u16,
     entries: Vec<SketchInputLink>,
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for SketchInputLinks {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(self.selector, &self.entries),
+            ctx,
+            operation,
+        )
+    }
 }
 
 impl SketchInputLinks {
@@ -1656,25 +1914,36 @@ impl SketchInputEntity {
         kind: SketchInputKind,
         payload: &[u8],
     ) -> Result<Self, &'static str> {
-        let position = usize::try_from(offset).map_err(|_| "sketch entity offset exceeds usize")?;
-        if position >= payload.len()
-            || !crate::resolved_features::markers::sketch_marker_at(payload, position)
-        {
-            return Err("sketch entity offset is not a marker in native_payload");
-        }
+        let (object_index, local_id) = Self::payload_identity(offset, payload)?;
         Ok(Self {
             id,
             parent,
             feature_ref: None,
             ordinal,
             offset,
-            object_index: crate::resolved_features::markers::marker_object_index(payload, position),
-            local_id: crate::resolved_features::markers::marker_local_id(payload, position),
+            object_index,
+            local_id,
             kind,
             state_value: None,
             coordinates_m: None,
             links: None,
         })
+    }
+
+    fn payload_identity(
+        offset: u64,
+        payload: &[u8],
+    ) -> Result<(Option<u32>, Option<u32>), &'static str> {
+        let position = usize::try_from(offset).map_err(|_| "sketch entity offset exceeds usize")?;
+        if position >= payload.len()
+            || !crate::resolved_features::markers::sketch_marker_at(payload, position)
+        {
+            return Err("sketch entity offset is not a marker in native_payload");
+        }
+        Ok((
+            crate::resolved_features::markers::marker_object_index(payload, position),
+            crate::resolved_features::markers::marker_local_id(payload, position),
+        ))
     }
 
     /// Re-admit this record against the payload it references.
@@ -1684,18 +1953,11 @@ impl SketchInputEntity {
     /// Keep the payload-derived marker identity tied to the record at every
     /// outbound boundary.
     pub(crate) fn validate_against_payload(&self, payload: &[u8]) -> Result<(), &'static str> {
-        let expected = Self::try_new(
-            self.id.clone(),
-            self.parent.clone(),
-            self.ordinal,
-            self.offset,
-            self.kind,
-            payload,
-        )?;
-        if self.object_index != expected.object_index {
+        let (object_index, local_id) = Self::payload_identity(self.offset, payload)?;
+        if self.object_index != object_index {
             return Err("SolidWorks feature-input object index does not match its native payload");
         }
-        if self.local_id != expected.local_id {
+        if self.local_id != local_id {
             return Err(
                 "SolidWorks feature-input local object id does not match its native payload",
             );
@@ -1746,6 +2008,20 @@ pub(crate) struct SketchInputLink {
     pub(crate) entity_ref: String,
 }
 
+impl cadmpeg_core::decode::cost::DecodeCost for SketchInputLink {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+            &(self.local_id, self.entity_ref.as_str()),
+            ctx,
+            operation,
+        )
+    }
+}
+
 /// Kind of sketch entity referenced by a native feature-input marker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(from = "SketchInputKindWire", into = "SketchInputKindWire")]
@@ -1764,6 +2040,24 @@ pub(crate) enum SketchInputKind {
     Native(sketch_code::NativeSketchCode),
     /// A low code retained under a native handle layout, such as a slot handle.
     NativeHandle(sketch_code::LowMarkerCode),
+}
+
+impl cadmpeg_core::decode::cost::DecodeCost for SketchInputKind {
+    fn decode_cost(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<u64, cadmpeg_core::CodecError> {
+        match self {
+            Self::Point | Self::LineOrCircle | Self::Arc | Self::ConstrainedPoint => Ok(1),
+            Self::Relation(_) | Self::NativeHandle(_) => Ok(2),
+            Self::Native(value) => cadmpeg_core::decode::cost::DecodeCost::decode_cost(
+                &(0u8, value.value()),
+                ctx,
+                operation,
+            ),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -2232,6 +2526,79 @@ mod tests {
     use cadmpeg_test_support::refusal::{refusal, states_the_key};
 
     #[test]
+    fn feature_source_decode_parser_preserves_reserved_and_numeric_grammar() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("decode context");
+        assert_eq!(
+            super::FeatureSource::parse_for_decode(&ctx, "-1", "parse test source")
+                .expect("reserved source admission"),
+            Some(super::FeatureSource::Reserved),
+        );
+        assert_eq!(
+            super::FeatureSource::parse_for_decode(&ctx, "41", "parse test source")
+                .expect("numeric source admission"),
+            Some(super::FeatureSource::Id(
+                super::FeatureSourceId::try_from(41).expect("positive source id"),
+            )),
+        );
+        for invalid in ["0", "4294967295", "not-an-id"] {
+            assert_eq!(
+                super::FeatureSource::parse_for_decode(&ctx, invalid, "parse test source")
+                    .expect("invalid grammar is not a refusal"),
+                None,
+            );
+        }
+    }
+
+    #[test]
+    fn feature_source_reserved_decode_uses_no_work_or_storage() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
+            super::FeatureSource::parse_for_decode(&ctx, "-1", "parse test source")
+        });
+        assert_eq!(result.unwrap(), Some(super::FeatureSource::Reserved));
+        assert_eq!(allocations, 0);
+        ctx.finish_session().unwrap();
+    }
+
+    #[test]
+    fn feature_source_decode_preserves_original_refusal_on_text_parse_routes() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        use cadmpeg_core::CodecError;
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let Err(CodecError::ResourceLimit(limit)) =
+            ctx.charge_work(1, "test original source refusal")
+        else {
+            panic!("original work refusal");
+        };
+        for value in ["41", "not-an-id", ""] {
+            assert!(matches!(
+                super::FeatureSource::parse_for_decode(&ctx, value, "parse test source"),
+                Err(CodecError::ResourceLimit(actual)) if actual == limit
+            ));
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+        }
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == limit)
+        );
+    }
+
+    #[test]
     fn feature_source_borrowed_json_matches_owned_string_bytes() {
         for source in [
             super::FeatureSource::Reserved,
@@ -2595,6 +2962,58 @@ mod tests {
         let error = serde_json::from_value::<FeatureInputLane>(renamed).unwrap_err();
         assert!(error.to_string().contains("local object id does not match"));
         assert!(SketchInputLinks::new(3, Vec::new()).is_none());
+    }
+
+    #[test]
+    fn retained_marker_validation_borrows_identity_and_preserves_error_order() {
+        let mut payload = vec![0u8; 43];
+        payload[..4].copy_from_slice(&41u32.to_le_bytes());
+        payload[4..9].copy_from_slice(&[0xff, 0xff, 0x1f, 0x00, 0x03]);
+        payload[9..17].fill(0xff);
+        payload[17..21].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        let mut entity = super::SketchInputEntity::try_new(
+            "test:marker:retained-identity".into(),
+            "test:lane:retained-identity".into(),
+            0,
+            4,
+            super::SketchInputKind::Point,
+            &payload,
+        )
+        .unwrap();
+        let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
+            entity.validate_against_payload(&payload)
+        });
+        assert_eq!(result, Ok(()));
+        assert_eq!(allocations, 0);
+
+        entity.object_index = Some(99);
+        entity.local_id = Some(99);
+        let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
+            entity.validate_against_payload(&payload)
+        });
+        assert_eq!(
+            result,
+            Err("SolidWorks feature-input object index does not match its native payload")
+        );
+        assert_eq!(allocations, 0);
+        entity.object_index = Some(41);
+        let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
+            entity.validate_against_payload(&payload)
+        });
+        assert_eq!(
+            result,
+            Err("SolidWorks feature-input local object id does not match its native payload")
+        );
+        assert_eq!(allocations, 0);
+        entity.offset = u64::try_from(payload.len()).unwrap();
+        let (result, allocations) = crate::test_support::allocation::count_allocations(|| {
+            entity.validate_against_payload(&payload)
+        });
+        assert_eq!(
+            result,
+            Err("sketch entity offset is not a marker in native_payload")
+        );
+        assert_eq!(allocations, 0);
     }
 
     #[test]

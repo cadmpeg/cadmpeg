@@ -22,9 +22,10 @@ fn pair_weights<P, W, T, A: NurbsAdmission>(
     mut row: impl FnMut(usize, P, W) -> Result<T, A::Error>,
 ) -> Result<Vec<T>, A::Error> {
     let mut output = Vec::new();
-    for (index, (point, value)) in points.into_iter().zip(weights).enumerate() {
+    let points = admission.admit_iter(points, operation)?;
+    let weights = admission.admit_iter(weights, operation)?;
+    for (index, (point, value)) in points.zip(weights).enumerate() {
         admission.reserve(&mut output, storage, operation)?;
-        admission.work(1, operation)?;
         output.push(row(index, point, value)?);
     }
     Ok(output)

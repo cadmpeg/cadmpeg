@@ -8,40 +8,12 @@ pub(crate) fn assert_retained_refusal_at<T>(
     operation: &str,
     decode: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
 ) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
-    for _ in 0..1024 {
-        let (ctx, _) = DecodeContext::from_root_bytes(input, &arena, &policy)
-            .expect("test input is within the root limit");
-        match decode(&ctx) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes =>
-            {
-                let threshold = limit
-                    .used
-                    .checked_add(limit.additional)
-                    .expect("retained admission fits u64");
-                assert!(threshold > policy.limits.max_retained_bytes);
-                if limit.operation == operation {
-                    policy.limits.max_retained_bytes = threshold - 1;
-                    let (ctx, _) = DecodeContext::from_root_bytes(input, &arena, &policy)
-                        .expect("test input is within the root limit");
-                    assert!(matches!(decode(&ctx),
-                        Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-                            if refusal.dimension == ResourceDimension::RetainedBytes
-                                && refusal.operation == operation
-                                && refusal.used + refusal.additional == threshold));
-                    return;
-                }
-                policy.limits.max_retained_bytes = threshold;
-            }
-            Err(error) => panic!("expected {operation} refusal; got {error:?}"),
-            Ok(_) => panic!("{operation} did not refuse"),
-        }
-    }
-    panic!("{operation} was not reached within 1024 retained admissions");
+    refusal_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        input,
+        operation,
+        decode,
+    );
 }
 
 pub(crate) fn assert_collection_refusal_at<T>(
@@ -49,78 +21,53 @@ pub(crate) fn assert_collection_refusal_at<T>(
     operation: &str,
     decode: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
 ) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    for _ in 0..4096 {
-        let (ctx, _) = DecodeContext::from_root_bytes(input, &arena, &policy)
-            .expect("test input is within the root limit");
-        match decode(&ctx) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems =>
-            {
-                let threshold = limit
-                    .used
-                    .checked_add(limit.additional)
-                    .expect("collection admission fits u64");
-                assert!(threshold > policy.limits.max_collection_items);
-                if limit.operation == operation {
-                    policy.limits.max_collection_items = threshold - 1;
-                    let (ctx, _) = DecodeContext::from_root_bytes(input, &arena, &policy)
-                        .expect("test input is within the root limit");
-                    assert!(matches!(decode(&ctx),
-                        Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
-                            if refusal.dimension == ResourceDimension::CollectionItems
-                                && refusal.operation == operation
-                                && refusal.used + refusal.additional == threshold));
-                    return;
-                }
-                policy.limits.max_collection_items = threshold;
-            }
-            Err(error) => panic!("expected {operation} refusal; got {error:?}"),
-            Ok(_) => panic!("{operation} did not refuse"),
-        }
-    }
-    panic!("{operation} was not reached within 4096 collection admissions");
+    refusal_at(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        input,
+        operation,
+        decode,
+    );
 }
 
 pub(crate) fn materialized_refusal_at<T>(
     operation: &str,
     decode: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
 ) -> cadmpeg_core::CodecError {
+    refusal_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        &[],
+        operation,
+        decode,
+    )
+}
+
+/// Refuses `operation` one unit below its need in `dimension`, every earlier
+/// charge admitted, through the core refusal probe.
+pub(crate) fn refusal_at<T>(
+    dimension: cadmpeg_core::decode::ResourceDimension,
+    input: &[u8],
+    operation: &str,
+    decode: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+) -> cadmpeg_core::CodecError {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_materialized_bytes = 0;
-    for _ in 0..1024 {
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = decode(&ctx) else {
-            panic!("{operation} must refuse before decode completes");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
-        assert_eq!(ctx.resource_refusal(), Some(limit));
-        let threshold = limit
-            .used
-            .checked_add(limit.additional)
-            .expect("materialized admission fits u64");
-        assert!(threshold > policy.limits.max_materialized_bytes);
-        if limit.operation == operation {
-            policy.limits.max_materialized_bytes = threshold - 1;
-            let (ctx, _) =
-                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-            let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = decode(&ctx) else {
-                panic!("{operation} must refuse one byte below its boundary");
-            };
-            assert_eq!(refusal.dimension, ResourceDimension::MaterializedBytes);
-            assert_eq!(refusal.operation, operation);
-            assert_eq!(refusal.used + refusal.additional, threshold);
-            assert_eq!(ctx.resource_refusal(), Some(refusal));
-            return cadmpeg_core::CodecError::ResourceLimit(refusal);
+    cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+        let mut policy = DecodePolicy::default();
+        match dimension {
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+            other => panic!("no policy limit for {other:?}"),
         }
-        policy.limits.max_materialized_bytes = threshold;
-    }
-    panic!("{operation} was not reached within 1024 materialized admissions");
+        let (ctx, _) = DecodeContext::from_root_bytes(input, &arena, &policy)
+            .expect("test input is within the root limit");
+        let result = decode(&ctx);
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = &result {
+            assert_eq!(ctx.resource_refusal(), Some(*limit), "{operation}");
+        }
+        result
+    })
 }
 
 pub(crate) fn validate_native(

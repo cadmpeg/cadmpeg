@@ -45,7 +45,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if existing.is_some_and(|record| !is_fillet(record)) {
+            if match existing {
+                Some(record) => !is_fillet(record),
+                None => false,
+            } {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported fillet semantics",
                     feature.id
@@ -183,7 +186,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if existing.is_some_and(|record| !is_chamfer(record)) {
+            if match existing {
+                Some(record) => !is_chamfer(record),
+                None => false,
+            } {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported chamfer semantics",
                     feature.id
@@ -355,10 +361,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            if existing.is_some_and(|record| {
-                !feature_family(record, "Combine")
-                    && !feature_input_class(record, NativeClassKind::Combine)
-            }) || keep_tools
+            if match existing {
+                Some(record) => {
+                    !feature_family(record, "Combine")
+                        && !feature_input_class(record, NativeClassKind::Combine)
+                }
+                None => false,
+            } || keep_tools
             {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported combine semantics",
@@ -512,7 +521,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            let unsupported = existing.is_some_and(|record| !feature_family(record, "DeleteFace"));
+            let unsupported = match existing {
+                Some(record) => !feature_family(record, "DeleteFace"),
+                None => false,
+            };
             let (Some(faces), false) = (face_selection_value(faces), unsupported) else {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported delete-face semantics",
@@ -540,7 +552,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            let unsupported = existing.is_some_and(|record| !feature_family(record, "ReplaceFace"));
+            let unsupported = match existing {
+                Some(record) => !feature_family(record, "ReplaceFace"),
+                None => false,
+            };
             let (Some(targets), Some(replacements), false) = (
                 face_selection_value(targets),
                 face_selection_value(replacements),
@@ -575,7 +590,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            let unsupported = existing.is_some_and(|record| !feature_family(record, "MoveFace"));
+            let unsupported = match existing {
+                Some(record) => !feature_family(record, "MoveFace"),
+                None => false,
+            };
             let (Some(faces), false) = (face_selection_value(faces), unsupported) else {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported move-face semantics",
@@ -722,7 +740,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let existing = self.existing;
         Ok({
             let faces = face_selection_value(faces);
-            if existing.is_some_and(|record| !feature_family(record, "Dome")) {
+            if match existing {
+                Some(record) => !feature_family(record, "Dome"),
+                None => false,
+            } {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported dome semantics",
                     feature.id
@@ -780,7 +801,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            if existing.is_some_and(|record| !feature_family(record, "Flex")) {
+            if match existing {
+                Some(record) => !feature_family(record, "Flex"),
+                None => false,
+            } {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported flex semantics",
                     feature.id
@@ -861,7 +885,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let existing = self.existing;
         Ok({
             let selection = body_selection_value(bodies);
-            if existing.is_some_and(|record| !feature_family(record, "Scale")) {
+            if match existing {
+                Some(record) => !feature_family(record, "Scale"),
+                None => false,
+            } {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported scale semantics",
                     feature.id

@@ -496,7 +496,7 @@ pub(super) fn try_decode_geometry(
                 Some("B_SPLINE_SURFACE"),
             )?;
             annotations.derived(ctx, id.as_str(), "geometry")?;
-            if let Some(node) = graph.at_pos(surf.pos) {
+            if let Some(node) = graph.at_pos(ctx, surf.pos)? {
                 stream_storage.with_storage(|| {
                     let key = id.try_clone_for_decode(ctx, "nx surface node index")?;
                     ctx.insert_btree_map(
@@ -833,7 +833,7 @@ pub(super) fn try_decode_geometry(
                 Some("B_SPLINE_CURVE"),
             )?;
             annotations.derived(ctx, id.as_str(), "geometry")?;
-            if let Some(node) = graph.at_pos(crv.pos) {
+            if let Some(node) = graph.at_pos(ctx, crv.pos)? {
                 stream_storage.with_storage(|| {
                     let key = id.try_clone_for_decode(ctx, "nx curve node index")?;
                     ctx.insert_btree_map(&mut curves_by_xmt, node.xmt(), key, "nx curve node index")
@@ -861,7 +861,7 @@ pub(super) fn try_decode_geometry(
                 Some("B_CURVE_2D"),
             )?;
             annotations.derived(ctx, id.as_str(), "geometry")?;
-            if let Some(node) = graph.at_pos(pcurve.pos) {
+            if let Some(node) = graph.at_pos(ctx, pcurve.pos)? {
                 stream_storage.with_storage(|| {
                     let key = id.try_clone_for_decode(ctx, "nx pcurve node index")?;
                     ctx.insert_btree_map(
@@ -1060,7 +1060,9 @@ pub(super) fn try_decode_geometry(
                 stream_storage.with_storage(|| {
                     let pending = (
                         procedural_id.try_clone_for_decode(ctx, "nx pending EXT11 construction")?,
-                        charted.samples.clone_charged(ctx)?,
+                        charted
+                            .samples
+                            .clone_charged(ctx, "NX solved chart sample copy")?,
                         charted.fit_tolerance.get(),
                         SerializedSupportUv {
                             values: [
@@ -2185,22 +2187,18 @@ pub(super) fn topology_body_node_ids(
     let scope = IdScope::stream_charged(ctx, stream_index)?;
     let mut storage = ctx.reserve_scoped(0, OWNERS)?;
     let mut bodies = BTreeMap::<u32, BodyTopology>::new();
-    for shell in graph.body_shape_shells(ctx)? {
-        if let Some(body_xmt) = shell
-            .shell_fields()
-            .and_then(|fields| fields.body.map(u32::from))
-        {
-            if !ctx.contains_key_btree_map(&bodies, &body_xmt, "nx topology body nodes")? {
-                let body = BodyTopology {
-                    complete: true,
-                    ..BodyTopology::default()
-                };
-                storage.with_storage(|| {
-                    ctx.insert_btree_map(&mut bodies, body_xmt, body, "nx topology body nodes")
-                })?;
-            }
+    graph.visit_body_shape_body_ids(ctx, |body_xmt| {
+        if !ctx.contains_key_btree_map(&bodies, &body_xmt, "nx topology body nodes")? {
+            let body = BodyTopology {
+                complete: true,
+                ..BodyTopology::default()
+            };
+            storage.with_storage(|| {
+                ctx.insert_btree_map(&mut bodies, body_xmt, body, "nx topology body nodes")
+            })?;
         }
-    }
+        Ok(())
+    })?;
     let mut shell_owners = NodeOwners::new();
     for shell in graph.of_kind(NodeKind::Shell) {
         ctx.charge_work(1, "nx topology body shells")?;

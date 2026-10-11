@@ -5,6 +5,7 @@ use super::{
     FeatureSourceContent, FeatureTreeNodeRole, IdScope, Length, ParameterId, ParameterValue,
     StreamHandle, TreeChildren,
 };
+use std::collections::btree_map::Entry;
 
 pub(in crate::native) fn attach_expression_parameters(
     ctx: &DecodeContext<'_>,
@@ -16,33 +17,29 @@ pub(in crate::native) fn attach_expression_parameters(
 ) -> Result<(), CodecError> {
     let mut reservation = ctx.reserve_scoped(0, "NX expression parameter indexes")?;
     let mut declaration_index = BTreeMap::new();
-    for declaration in declarations {
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(declaration_index.len()),
-            "NX expression declaration lookup",
-        )?;
-        if !declaration_index.contains_key(declaration.id.as_str()) {
-            ctx.charge_collection_items(1, "NX expression declaration index")?;
-            reservation.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<(&str, &crate::native::om::ExpressionDeclaration)>() * 4,
-            ))?;
-        }
-        declaration_index.insert(declaration.id.as_str(), declaration);
+    for declaration in ctx.admit_iter(declarations, "NX expression declaration traversal")? {
+        reservation.with_storage(|| {
+            ctx.insert_btree_map(
+                &mut declaration_index,
+                declaration.id.as_str(),
+                declaration,
+                "NX expression declaration index",
+            )
+        })?;
     }
     let mut tables = BTreeMap::<&str, Vec<&crate::native::om::ParameterFormula>>::new();
-    for expression in expressions {
+    for expression in ctx.admit_iter(expressions, "NX expression table traversal")? {
         let table = expression.source_table.as_str();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(tables.len()),
-            "NX expression table lookup",
-        )?;
-        if !tables.contains_key(table) {
-            ctx.charge_collection_items(1, "NX expression table index")?;
-            reservation.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<(&str, Vec<&crate::native::om::ParameterFormula>)>() * 4,
-            ))?;
-        }
-        let table_expressions = tables.entry(table).or_default();
+
+        let table_expressions = reservation
+            .with_storage(|| {
+                ctx.entry_btree_map(
+                    &mut tables,
+                    table,
+                    "NX attach expression parameters tables entry",
+                )
+            })?
+            .or_default();
         ctx.reserve_scoped_vec(
             &mut reservation,
             table_expressions,
@@ -58,24 +55,22 @@ pub(in crate::native) fn attach_expression_parameters(
     )?;
     let mut uses_by_expression =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureParameterUse>>::new();
-    for parameter_use in parameter_uses {
+    for parameter_use in ctx.admit_iter(parameter_uses, "NX expression use traversal")? {
         let key = parameter_use.expression.as_str();
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(uses_by_expression.len()),
-            "NX expression uses lookup",
-        )?;
-        if !uses_by_expression.contains_key(key) {
-            ctx.charge_collection_items(1, "NX expression uses index")?;
-            reservation.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<(&str, Vec<&crate::native::features::FeatureParameterUse>)>()
-                    * 4,
-            ))?;
-        }
-        let uses = uses_by_expression.entry(key).or_default();
+
+        let uses = reservation
+            .with_storage(|| {
+                ctx.entry_btree_map(
+                    &mut uses_by_expression,
+                    key,
+                    "NX attach expression parameters uses by expression entry",
+                )
+            })?
+            .or_default();
         ctx.reserve_scoped_vec(&mut reservation, uses, 1, "NX expression use member")?;
         uses.push(parameter_use);
     }
-    for uses in uses_by_expression.values_mut() {
+    for (_, uses) in ctx.admit_iter(&mut uses_by_expression, "NX expression use groups")? {
         ctx.stable_sort_by_key(
             uses,
             |value| {
@@ -90,7 +85,7 @@ pub(in crate::native) fn attach_expression_parameters(
         )?;
     }
     let mut ordered_tables = Vec::new();
-    for entry in tables {
+    for entry in ctx.admit_iter(tables, "NX expression tables")? {
         ctx.reserve_scoped_vec(
             &mut reservation,
             &mut ordered_tables,
@@ -99,7 +94,7 @@ pub(in crate::native) fn attach_expression_parameters(
         )?;
         ordered_tables.push(entry);
     }
-    for (_, expressions) in &mut ordered_tables {
+    for (_, expressions) in ctx.admit_iter(&mut ordered_tables, "NX expression table ordering")? {
         ctx.stable_sort_by_key(
             expressions,
             |value| {
@@ -122,51 +117,80 @@ pub(in crate::native) fn attach_expression_parameters(
         "NX ordered table sort",
     )?;
     let base_ordinal = cadmpeg_core::decode::u64_from_index(ir.model.features.len());
-    for (table_ordinal, (table, mut expressions)) in ordered_tables.into_iter().enumerate() {
+    for (table_ordinal, (table, mut expressions)) in ctx
+        .admit_iter(ordered_tables, "NX ordered expression tables")?
+        .enumerate()
+    {
         let ordered_count = order_expression_dependencies(ctx, &mut reservation, &mut expressions)?;
-        let feature_id_bytes = table.len().checked_add(32).ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX expression feature identity",
-                0,
-                cadmpeg_core::decode::u64_from_index(table.len()),
-            )
-        })?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(feature_id_bytes))?;
-        let feature_id: FeatureId = match table.split_once(":expression-table#") {
-            None => IdScope::of(table)
-                .map(|scope| {
-                    scope.id(
-                        &cadmpeg_ir::identity_component!("feature"),
-                        cadmpeg_ir::identity_key!("equations"),
-                    )
-                })
-                .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed(format_args!(
-                        "NX expression table id is not an NX identity"
-                    ))
-                })?,
-            Some((scope, key)) => {
-                let key = cadmpeg_ir::ids::IdentityKey::try_new(key).map_err(|error| {
-                    cadmpeg_core::CodecError::malformed(format_args!(
-                        "NX expression table key is not identity key text: {error}"
-                    ))
-                })?;
-                IdScope::of(scope)
-                    .map(|scope| {
-                        scope.id(
-                            &cadmpeg_ir::identity_component!("feature"),
-                            cadmpeg_ir::identity_key!("equations-").then(key),
-                        )
-                    })
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed(format_args!(
-                            "NX expression table id is not an NX identity"
-                        ))
-                    })?
-            }
-        };
-        let first_offset = expressions
-            .iter()
+        let (feature_id, _feature_id_storage) =
+            ctx.with_scoped_storage("NX expression table feature identity", || {
+                match ctx.split_once(
+                    table,
+                    ":expression-table#",
+                    "NX expression table identity parsing",
+                )? {
+                    None => {
+                        let (_validated_scope, _scope_storage) =
+                            ctx.with_scoped_storage("NX expression feature scope", || {
+                                let Some(scope_text) = table.strip_prefix("nx:") else {
+                                    return Err(CodecError::malformed(
+                                        "NX expression table id is not an NX identity",
+                                    ));
+                                };
+                                ctx.charge_formatted_retained(
+                                    format_args!("{scope_text}"),
+                                    "NX expression feature scope text",
+                                )?;
+                                IdScope::of(table).ok_or_else(|| {
+                                    CodecError::malformed(
+                                        "NX expression table id is not an NX identity",
+                                    )
+                                })
+                            })?;
+                        let text = ctx.format_retained(
+                            format_args!("{table}:feature#equations"),
+                            "NX expression table feature identity",
+                        )?;
+                        FeatureId::mint(text).map_err(CodecError::malformed)
+                    }
+                    Some((scope, key)) => {
+                        let (key, _key_storage) =
+                            ctx.with_scoped_storage("NX expression table key", || {
+                                let key_text =
+                                    ctx.copy_retained_text(key, "NX expression table key text")?;
+                                cadmpeg_ir::ids::IdentityKey::try_new(key_text).map_err(|error| {
+                                    CodecError::malformed(format_args!(
+                                        "NX expression table key is not identity key text: {error}"
+                                    ))
+                                })
+                            })?;
+                        let (_validated_scope, _scope_storage) =
+                            ctx.with_scoped_storage("NX expression feature scope", || {
+                                let Some(scope_text) = scope.strip_prefix("nx:") else {
+                                    return Err(CodecError::malformed(
+                                        "NX expression table id is not an NX identity",
+                                    ));
+                                };
+                                ctx.charge_formatted_retained(
+                                    format_args!("{scope_text}"),
+                                    "NX expression feature scope text",
+                                )?;
+                                IdScope::of(scope).ok_or_else(|| {
+                                    CodecError::malformed(
+                                        "NX expression table id is not an NX identity",
+                                    )
+                                })
+                            })?;
+                        let text = ctx.format_retained(
+                            format_args!("{scope}:feature#equations-{key}"),
+                            "NX expression table feature identity",
+                        )?;
+                        FeatureId::mint(text).map_err(CodecError::malformed)
+                    }
+                }
+            })?;
+        let first_offset = ctx
+            .admit_iter(&expressions, "NX expression table first offset")?
             .map(|expression| expression.source_offset)
             .min()
             .unwrap_or(0);
@@ -179,17 +203,11 @@ pub(in crate::native) fn attach_expression_parameters(
         )?;
         annotations.exactness(ctx, &feature_id, Exactness::Derived)?;
         let mut source_content = Vec::new();
-        for expression in &expressions {
-            let bytes = expression.id.len();
-            reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
-            let Some(parameter) = expression_parameter_id(&expression.id) else {
+        for expression in ctx.admit_iter(&expressions, "NX expression parameter traversal")? {
+            let Some(parameter) = expression_parameter_id(ctx, &expression.id)? else {
                 continue;
             };
             ctx.charge_collection_items(1, "NX expression feature content")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(bytes),
-                "NX expression feature content",
-            )?;
             ctx.reserve_capacity(&mut source_content, 1, "NX expression feature content")?;
             source_content.push(FeatureSourceContent::Parameter(parameter));
         }
@@ -203,12 +221,7 @@ pub(in crate::native) fn attach_expression_parameters(
                 .derived(ctx, &feature_id, "source_content")
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
-        let feature_bytes = std::mem::size_of::<Feature>();
         ctx.charge_collection_items(1, "NX expression feature")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(feature_bytes),
-            "NX expression feature",
-        )?;
         ctx.reserve_capacity(&mut ir.model.features, 1, "NX expression feature")?;
         let ordinal = base_ordinal
             .checked_add(cadmpeg_core::decode::u64_from_index(table_ordinal))
@@ -216,11 +229,13 @@ pub(in crate::native) fn attach_expression_parameters(
         ir.model.features.push(Feature {
             id: feature_id.try_clone_for_decode(ctx, "NX expression feature identity")?,
             ordinal,
-            name: Some("NX expressions".to_string()),
+            name: Some(ctx.copy_retained_text("NX expressions", "NX expression feature name")?),
             suppressed: Some(false),
             dependencies: DistinctMembers::default(),
             source_properties: BTreeMap::new(),
-            source_tag: Some("hostglobalvariables".to_string()),
+            source_tag: Some(
+                ctx.copy_retained_text("hostglobalvariables", "NX expression feature source tag")?,
+            ),
             source_text: None,
             source_content,
 
@@ -232,42 +247,43 @@ pub(in crate::native) fn attach_expression_parameters(
             ),
             native_ref: None,
         });
+        let mut parameter_index_storage =
+            ctx.reserve_scoped(0, "NX parameter identity index storage")?;
         let mut parameter_ids =
             BTreeMap::<(&str, &crate::native::om::ExpressionUnit), Vec<ParameterId>>::new();
-        for expression in &expressions {
-            let id_bytes = expression.id.len();
-            reservation.grow(cadmpeg_core::decode::u64_from_index(id_bytes))?;
-            let Some(id) = expression_parameter_id(&expression.id) else {
+        for expression in ctx.admit_iter(&expressions, "NX expression parameter traversal")? {
+            let Some(id) = parameter_index_storage
+                .with_storage(|| expression_parameter_id(ctx, &expression.id))?
+            else {
                 continue;
             };
             let key = (expression.name.as_str(), &expression.unit);
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(parameter_ids.len()),
-                "NX parameter identity lookup",
+
+            let ids = parameter_index_storage
+                .with_storage(|| {
+                    ctx.entry_btree_map(
+                        &mut parameter_ids,
+                        key,
+                        "NX attach expression parameters parameter ids entry",
+                    )
+                })?
+                .or_default();
+            ctx.reserve_scoped_vec(
+                &mut parameter_index_storage,
+                ids,
+                1,
+                "NX parameter identity candidates",
             )?;
-            if !parameter_ids.contains_key(&key) {
-                ctx.charge_collection_items(1, "NX parameter identity index")?;
-                reservation.grow(cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<(
-                        (&str, &crate::native::om::ExpressionUnit),
-                        Vec<ParameterId>,
-                    )>() * 4,
-                ))?;
-            }
-            let ids = parameter_ids.entry(key).or_default();
-            ctx.reserve_scoped_vec(&mut reservation, ids, 1, "NX parameter identity candidates")?;
             ids.push(id);
         }
-        for (ordinal, expression) in expressions.into_iter().enumerate() {
-            let id_bytes = expression.id.len();
-            reservation.grow(cadmpeg_core::decode::u64_from_index(id_bytes))?;
-            let Some(id) = expression_parameter_id(&expression.id) else {
+        for (ordinal, expression) in ctx
+            .admit_iter(&expressions, "NX ordered expression traversal")?
+            .copied()
+            .enumerate()
+        {
+            let Some(id) = expression_parameter_id(ctx, &expression.id)? else {
                 continue;
             };
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(id_bytes),
-                "NX expression parameter identity",
-            )?;
             annotations.note(
                 ctx,
                 id.as_str(),
@@ -293,29 +309,30 @@ pub(in crate::native) fn attach_expression_parameters(
                     crate::native::om::expression_parameter_names(ctx, &expression.expression)
                 {
                     let name = name?;
-                    ctx.charge_work(
-                        cadmpeg_core::decode::u64_from_index(parameter_ids.len()),
-                        "NX parameter dependency lookup",
-                    )?;
-                    let Some([candidate]) = parameter_ids
-                        .get(&(name, &expression.unit))
+                    let Some([candidate]) = ctx
+                        .get_btree_map(
+                            &parameter_ids,
+                            &(name, &expression.unit),
+                            "NX parameter dependency lookup",
+                        )?
                         .map(Vec::as_slice)
                     else {
                         continue;
                     };
-                    ctx.charge_work(
-                        cadmpeg_core::decode::u64_from_index(dependencies.len()),
+                    if ctx.any_by(
+                        &dependencies,
+                        |existing: &ParameterId| {
+                            ctx.equal_bytes(
+                                existing.as_str().as_bytes(),
+                                candidate.as_str().as_bytes(),
+                                "NX parameter dependency identity",
+                            )
+                        },
                         "NX parameter dependency uniqueness",
-                    )?;
-                    if dependencies.contains(candidate) {
+                    )? {
                         continue;
                     }
-                    let bytes = std::mem::size_of::<ParameterId>();
                     ctx.charge_collection_items(1, "NX parameter dependencies")?;
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(bytes),
-                        "NX parameter dependency",
-                    )?;
                     ctx.reserve_capacity(&mut dependencies, 1, "NX parameter dependencies")?;
                     dependencies.push(
                         candidate.try_clone_for_decode(ctx, "NX expression dependency identity")?,
@@ -357,7 +374,15 @@ pub(in crate::native) fn attach_expression_parameters(
             if let Some(declaration) = expression
                 .declaration
                 .as_deref()
-                .and_then(|id| declaration_index.get(id))
+                .map(|id| {
+                    ctx.get_btree_map(
+                        &declaration_index,
+                        id,
+                        "NX attach expression parameters declaration index lookup",
+                    )
+                })
+                .transpose()?
+                .flatten()
             {
                 insert_parameter_property(
                     ctx,
@@ -365,7 +390,7 @@ pub(in crate::native) fn attach_expression_parameters(
                     format_args!("declaration"),
                     ctx.format_retained(
                         format_args!("{}", declaration.id),
-                        "NX feature projection text",
+                        "NX expression declaration identity text",
                     )?,
                 )?;
                 insert_parameter_property(
@@ -374,44 +399,43 @@ pub(in crate::native) fn attach_expression_parameters(
                     format_args!("declaration_object_id"),
                     ctx.format_retained(
                         format_args!("{}", declaration.object_id),
-                        "NX feature projection text",
+                        "NX expression declaration object identity text",
                     )?,
                 )?;
                 annotations
                     .derived(ctx, id.as_str(), "properties")
                     .map_err(cadmpeg_core::CodecError::from)?;
             }
-            for (consumer_ordinal, parameter_use) in uses_by_expression
-                .get(expression.id.as_str())
-                .into_iter()
-                .flatten()
-                .enumerate()
-            {
-                insert_parameter_property(
-                    ctx,
-                    &mut properties,
-                    format_args!("consumer.{consumer_ordinal}"),
-                    parameter_consumer_identity(ctx, &parameter_use.operation_label)?,
-                )?;
-                insert_parameter_property(
-                    ctx,
-                    &mut properties,
-                    format_args!("parameter_use.{consumer_ordinal}"),
-                    ctx.format_retained(
-                        format_args!("{}", parameter_use.id),
-                        "NX feature projection text",
-                    )?,
-                )?;
-                annotations
-                    .derived(ctx, id.as_str(), "properties")
-                    .map_err(cadmpeg_core::CodecError::from)?;
+            if let Some(feature_property_records) = ctx.get_btree_map(
+                &uses_by_expression,
+                expression.id.as_str(),
+                "NX attach expression parameters uses by expression lookup",
+            )? {
+                for (consumer_ordinal, parameter_use) in ctx
+                    .admit_iter(feature_property_records, "NX expression consumer traversal")?
+                    .enumerate()
+                {
+                    insert_parameter_property(
+                        ctx,
+                        &mut properties,
+                        format_args!("consumer.{consumer_ordinal}"),
+                        parameter_consumer_identity(ctx, &parameter_use.operation_label)?,
+                    )?;
+                    insert_parameter_property(
+                        ctx,
+                        &mut properties,
+                        format_args!("parameter_use.{consumer_ordinal}"),
+                        ctx.format_retained(
+                            format_args!("{}", parameter_use.id),
+                            "NX expression parameter-use identity text",
+                        )?,
+                    )?;
+                    annotations
+                        .derived(ctx, id.as_str(), "properties")
+                        .map_err(cadmpeg_core::CodecError::from)?;
+                }
             }
-            let bytes = std::mem::size_of::<DesignParameter>();
             ctx.charge_collection_items(1, "NX expression parameters")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(bytes),
-                "NX expression parameter",
-            )?;
             ctx.reserve_capacity(&mut ir.model.parameters, 1, "NX expression parameters")?;
             let ordinal = u32::try_from(ordinal).map_err(|_| {
                 ctx.refuse_codec_limit(
@@ -428,11 +452,11 @@ pub(in crate::native) fn attach_expression_parameters(
                 ordinal,
                 name: ctx.format_retained(
                     format_args!("{}", expression.name.as_str()),
-                    "NX feature projection text",
+                    "NX expression parameter name text",
                 )?,
                 expression: ctx.format_retained(
                     format_args!("{}", expression.expression),
-                    "NX feature projection text",
+                    "NX expression formula text",
                 )?,
                 display: None,
                 value,
@@ -442,7 +466,7 @@ pub(in crate::native) fn attach_expression_parameters(
                 pmi: None,
                 native_ref: Some(ctx.format_retained(
                     format_args!("{}", expression.id),
-                    "NX feature projection text",
+                    "NX native expression reference text",
                 )?),
             });
         }
@@ -456,41 +480,58 @@ fn order_expression_dependencies(
     expressions: &mut Vec<&crate::native::om::ParameterFormula>,
 ) -> Result<usize, CodecError> {
     let count = expressions.len();
-    let emitted_bytes = count
-        .checked_mul(std::mem::size_of::<bool>())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX expression dependency order",
-                0,
-                cadmpeg_core::decode::u64_from_index(count),
+    let mut index_storage = ctx.reserve_scoped(0, "NX expression dependency index storage")?;
+    let mut dependency_indices = BTreeMap::new();
+    for (index, expression) in ctx
+        .admit_iter(&*expressions, "NX expression dependency identity index")?
+        .enumerate()
+    {
+        match index_storage.with_storage(|| {
+            ctx.entry_btree_map(
+                &mut dependency_indices,
+                (expression.name.as_str(), &expression.unit),
+                "NX order expression dependencies dependency indices entry",
             )
-        })?;
-    reservation.grow(cadmpeg_core::decode::u64_from_index(emitted_bytes))?;
-    let mut emitted = ctx.alloc_filled(count, false, "NX expression dependency order")?;
+        })? {
+            Entry::Vacant(entry) => {
+                entry.insert(Some(index));
+            }
+            Entry::Occupied(mut entry) => {
+                entry.insert(None);
+            }
+        }
+    }
+    let mut emitted_storage = ctx.reserve_scoped(0, "NX expression emitted flags")?;
+    let mut emitted = emitted_storage
+        .with_storage(|| ctx.alloc_filled(count, false, "NX expression dependency order"))?;
     let mut order = Vec::new();
-    for _ in 0..count {
+    let mut records_iter = 0..count;
+    while ctx
+        .next_charged(
+            &mut records_iter,
+            "NX order expression dependencies range traversal",
+        )?
+        .is_some()
+    {
         let mut ready = None;
-        for (index, expression) in expressions.iter().enumerate() {
-            ctx.charge_work(1, "NX expression dependency candidate")?;
+        let mut records_iter = expressions.iter().enumerate();
+        while let Some((index, expression)) =
+            ctx.next_charged(&mut records_iter, "NX expression dependency candidate")?
+        {
             if emitted[index] {
                 continue;
             }
             let mut dependencies_ready = true;
             for name in crate::native::om::expression_parameter_names(ctx, &expression.expression) {
                 let name = name?;
-                let mut dependency = None;
-                let mut ambiguous = false;
-                for (candidate_index, candidate) in expressions.iter().enumerate() {
-                    ctx.charge_work(1, "NX expression dependency lookup")?;
-                    if candidate.name.as_str() == name
-                        && candidate.unit == expression.unit
-                        && dependency.replace(candidate_index).is_some()
-                    {
-                        ambiguous = true;
-                        break;
-                    }
-                }
-                if !ambiguous && dependency.is_some_and(|dependency| !emitted[dependency]) {
+                let dependency = ctx
+                    .get_btree_map(
+                        &dependency_indices,
+                        &(name, &expression.unit),
+                        "NX expression dependency lookup",
+                    )?
+                    .and_then(Option::as_ref);
+                if dependency.is_some_and(|dependency| !emitted[*dependency]) {
                     dependencies_ready = false;
                     break;
                 }
@@ -506,7 +547,10 @@ fn order_expression_dependencies(
         order.push(expressions[index]);
     }
     let ordered_count = order.len();
-    for (index, expression) in expressions.iter().enumerate() {
+    for (index, expression) in ctx
+        .admit_iter(expressions.as_slice(), "NX unresolved expression traversal")?
+        .enumerate()
+    {
         if !emitted[index] {
             ctx.reserve_scoped_vec(reservation, &mut order, 1, "NX expression dependency order")?;
             order.push(expression);
@@ -522,67 +566,89 @@ pub(super) fn attach_block_dimension_parameter_consumers(
     dimensions: &[crate::native::features::FeatureBlockDimensions],
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    for dimension_set in dimensions {
+    let mut records_iter = dimensions.iter();
+    while let Some(dimension_set) =
+        ctx.next_charged(&mut records_iter, "NX block dimension traversal")?
+    {
         let mut reservation = ctx.reserve_scoped(0, "NX block dimension consumers")?;
-        let consumer = match dimension_set.operation_label.split_once("operation-label") {
+        let consumer = match ctx.split_once(
+            &dimension_set.operation_label,
+            "operation-label",
+            "NX block consumer label parsing",
+        )? {
             Some((prefix, suffix)) => ctx.format_scoped_text(
                 &mut reservation,
                 format_args!("{prefix}feature{suffix}"),
-                "NX body selection text",
+                "NX block parameter consumer identity text",
             )?,
             None => ctx.format_scoped_text(
                 &mut reservation,
                 format_args!("{}", dimension_set.operation_label),
-                "NX body selection text",
+                "NX block parameter consumer identity text",
             )?,
         };
         for (ordinal, dimension) in dimension_set.dimensions.iter().enumerate() {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(ir.model.parameters.len()),
-                "NX block dimension parameter lookup",
-            )?;
-            reservation.grow(cadmpeg_core::decode::u64_from_index(
-                dimension.expression.len(),
-            ))?;
-            let Some(parameter_id) = expression_parameter_id(&dimension.expression) else {
+            let (parameter_id, _parameter_id_storage) = ctx
+                .with_scoped_storage("NX block dimension parameter identity", || {
+                    expression_parameter_id(ctx, &dimension.expression)
+                })?;
+            let Some(parameter_id) = parameter_id else {
                 continue;
             };
-            let Some(parameter) = ir
-                .model
-                .parameters
-                .iter_mut()
-                .rev()
-                .find(|parameter| parameter.id == parameter_id)
+            let Some(parameter_index) = ctx.rposition_by(
+                &ir.model.parameters,
+                |parameter| {
+                    ctx.equal_bytes(
+                        parameter.id.as_str().as_bytes(),
+                        parameter_id.as_str().as_bytes(),
+                        "NX attach block dimension parameter consumers equality",
+                    )
+                },
+                "NX block dimension parameter lookup",
+            )?
             else {
                 continue;
             };
+            let parameter = &mut ir.model.parameters[parameter_index];
             insert_parameter_property(
                 ctx,
                 &mut parameter.properties,
                 format_args!("block_dimension.{ordinal}"),
                 ctx.format_retained(
                     format_args!("{}", dimension_set.id),
-                    "NX feature projection text",
+                    "NX block dimension source property value",
                 )?,
             )?;
-            if !parameter
-                .properties
-                .values()
-                .any(|value| value == &consumer)
-            {
+            let has_consumer = ctx.any_by(
+                &parameter.properties,
+                |(_, value)| {
+                    ctx.equal_bytes(
+                        value.as_bytes(),
+                        consumer.as_bytes(),
+                        "NX block consumer identity equality",
+                    )
+                },
+                "NX block parameter property traversal",
+            )?;
+            if !has_consumer {
                 // One more candidate than the map holds entries, so one of
                 // them is free; the `else` states that rather than asserting it.
                 let mut consumer_ordinal = None;
-                for candidate in 0..=parameter.properties.len() {
-                    ctx.charge_work(1, "NX block dimension consumer ordinal")?;
+                let mut records_iter = 0..=parameter.properties.len();
+                while let Some(candidate) =
+                    ctx.next_charged(&mut records_iter, "NX block dimension consumer ordinal")?
+                {
                     let mut key_reservation =
                         ctx.reserve_scoped(0, "NX block dimension consumer key")?;
                     let key = ctx.format_scoped_text(
                         &mut key_reservation,
                         format_args!("consumer.{candidate}"),
-                        "NX body selection text",
+                        "NX block consumer property candidate key",
                     )?;
-                    if !parameter.properties.contains_key(key.as_str()) {
+                    if !ctx.contains_key_btree_map(
+                        &parameter.properties,
+                        key.as_str(),"NX attach block dimension parameter consumers parameter properties membership",
+                    )? {
                         consumer_ordinal = Some(candidate);
                         break;
                     }
@@ -596,7 +662,10 @@ pub(super) fn attach_block_dimension_parameter_consumers(
                     ctx,
                     &mut parameter.properties,
                     format_args!("consumer.{consumer_ordinal}"),
-                    ctx.format_retained(format_args!("{consumer}"), "NX feature projection text")?,
+                    ctx.format_retained(
+                        format_args!("{consumer}"),
+                        "NX block consumer property value",
+                    )?,
                 )?;
             }
             annotations
@@ -607,7 +676,48 @@ pub(super) fn attach_block_dimension_parameter_consumers(
     Ok(())
 }
 
-pub(super) fn expression_parameter_id(expression_id: &str) -> Option<ParameterId> {
-    let (section, key) = expression_id.split_once(":expression#")?;
-    IdScope::of(section)?.try_id(&cadmpeg_ir::identity_component!("parameter"), key)
+pub(super) fn expression_parameter_id(
+    ctx: &DecodeContext<'_>,
+    expression_id: &str,
+) -> Result<Option<ParameterId>, CodecError> {
+    let Some((section, key)) = ctx.split_once(
+        expression_id,
+        ":expression#",
+        "NX expression parameter source parsing",
+    )?
+    else {
+        return Ok(None);
+    };
+    let Some(scope_text) = section.strip_prefix("nx:") else {
+        return Ok(None);
+    };
+    if key.is_empty() {
+        return Ok(None);
+    }
+    let (scope, _scope_storage) =
+        ctx.with_scoped_storage("NX expression parameter scope", || {
+            ctx.charge_formatted_retained(
+                format_args!("{scope_text}"),
+                "NX expression parameter scope text",
+            )?;
+            Ok::<_, CodecError>(IdScope::of(section))
+        })?;
+    let Some(_validated_scope) = scope else {
+        return Ok(None);
+    };
+    let (key, _key_storage) = ctx.with_scoped_storage("NX expression parameter key", || {
+        let key_text = ctx.copy_retained_text(key, "NX expression parameter key text")?;
+        Ok::<_, CodecError>(cadmpeg_ir::ids::IdentityKey::try_new(key_text).ok())
+    })?;
+    let Some(key) = key else {
+        return Ok(None);
+    };
+    let text = ctx.format_retained(
+        format_args!("{section}:parameter#{key}"),
+        "NX expression parameter identity",
+    )?;
+    Ok(ParameterId::mint(text).ok())
 }
+
+#[cfg(test)]
+mod tests;

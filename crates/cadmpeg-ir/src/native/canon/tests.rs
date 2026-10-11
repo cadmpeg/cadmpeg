@@ -682,11 +682,12 @@ fn canonical_native_sequence_slots_are_admitted_before_allocation() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = CanonValue::for_record(&ctx)
-        .serialize_seq(Some(3))
-        .err()
-        .unwrap();
-    let super::CanonError::Resource(cadmpeg_core::CodecError::ResourceLimit(first)) = error else {
+    let super::CanonError::Resource(cadmpeg_core::CodecError::ResourceLimit(first)) =
+        CanonValue::for_record(&ctx)
+            .serialize_seq(Some(3))
+            .err()
+            .unwrap()
+    else {
         panic!("sequence slots must refuse");
     };
     assert_eq!(first.dimension, ResourceDimension::CollectionItems);
@@ -707,7 +708,10 @@ fn canonical_native_key_comparisons_admit_the_complete_key_bound() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut entries = Map::from_iter([("a".into(), Value::Null), ("b".into(), Value::Null)]);
         let error = if copied {
-            super::super::copy::insert(&ctx, &mut entries, String::new(), Value::Null).unwrap_err()
+            let error = super::super::copy::insert(&ctx, &mut entries, String::new(), Value::Null)
+                .unwrap_err();
+            assert_eq!(entries.len(), 2);
+            error
         } else {
             let mut map = super::CanonMap {
                 ctx: &ctx,
@@ -718,18 +722,269 @@ fn canonical_native_key_comparisons_admit_the_complete_key_bound() {
             };
             let super::CanonError::Resource(error) = map.insert(String::new(), &7).unwrap_err()
             else {
-                panic!("key comparison must refuse");
+                panic!("scalar admission must refuse");
             };
             assert_eq!(map.entries.len(), 2);
             error
         };
         let cadmpeg_core::CodecError::ResourceLimit(first) = error else {
-            panic!("key work must refuse");
+            panic!("work must refuse");
         };
         assert_eq!(first.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(first.additional, 3);
+        // Empty keys cost no comparison bytes. Canonical construction next
+        // visits one scalar; copying next admits one insertion node pass.
+        let node_bytes = 11 * (std::mem::size_of::<String>() + std::mem::size_of::<Value>())
+            + 16 * std::mem::size_of::<usize>()
+            + 2 * std::mem::align_of::<String>()
+                .max(std::mem::align_of::<Value>())
+                .max(std::mem::align_of::<usize>());
+        assert_eq!(
+            first.additional,
+            if copied {
+                cadmpeg_core::decode::u64_from_index(node_bytes)
+            } else {
+                1
+            }
+        );
         assert!(
             matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == first)
         );
+    }
+}
+
+#[test]
+fn native_map_insertions_admit_search_paths_before_lookup() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use serde_json::{Map, Value};
+    for copied in [false, true] {
+        let run = |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let entries = (0..1000)
+                .map(|i| (format!("key-{i:04}"), Value::Null))
+                .collect::<Map<_, _>>();
+            if copied {
+                let mut entries = entries;
+                super::super::copy::insert(&ctx, &mut entries, "key-0999".into(), Value::Null)
+            } else {
+                let mut map = super::CanonMap {
+                    ctx: &ctx,
+                    _nested: ctx.enter_nested(super::WORK)?,
+                    entries,
+                    key: None,
+                    depth: super::MAX_NATIVE_NESTING_DEPTH,
+                };
+                match map.insert("key-0999".into(), &7) {
+                    Err(super::CanonError::Resource(error)) => Err(error),
+                    Err(super::CanonError::Message(message)) => {
+                        assert_eq!(message, "duplicate key key-0999");
+                        Ok(())
+                    }
+                    _ => panic!("duplicate key must refuse"),
+                }
+            }
+        };
+        let operation = if copied {
+            "insert copied native field"
+        } else {
+            super::WORK
+        };
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            run,
+        );
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("search path refusal");
+        };
+        // ceil(1000/2)=500; 1+ilog6(500)=4 levels, 11 comparisons each.
+        assert_eq!(limit.additional, 8 * 11 * 4);
+        run(u64::MAX).unwrap();
+    }
+}
+
+#[test]
+fn canonical_native_unknown_sequence_slot_refuses_before_the_child_producer() {
+    use std::cell::Cell;
+
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    struct Child<'a>(&'a Cell<usize>);
+    impl Serialize for Child<'_> {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            self.0.set(self.0.get() + 1);
+            serializer.serialize_str("retained child")
+        }
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let calls = Cell::new(0);
+    let mut sequence = CanonValue::for_record(&ctx).serialize_seq(None).unwrap();
+    let super::CanonError::Resource(cadmpeg_core::CodecError::ResourceLimit(original)) =
+        sequence.serialize_element(&Child(&calls)).unwrap_err()
+    else {
+        panic!("destination slot must refuse");
+    };
+    assert_eq!(original.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(original.operation, super::STORAGE);
+    assert_eq!(original.used, 0);
+    assert_eq!(original.additional, 1);
+    assert_eq!(calls.get(), 0);
+    assert!(sequence.out.is_empty());
+    assert_eq!(sequence.unfilled, 0);
+    let super::CanonError::Resource(cadmpeg_core::CodecError::ResourceLimit(repeated)) =
+        sequence.serialize_element(&Child(&calls)).unwrap_err()
+    else {
+        panic!("original refusal must remain");
+    };
+    assert_eq!(repeated, original);
+    assert_eq!(calls.get(), 0);
+    drop(sequence);
+    assert!(
+        matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit == original)
+    );
+}
+
+#[test]
+fn canonical_native_unknown_sequence_keeps_the_reserved_slot_after_child_error() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    struct Refused;
+    impl Serialize for Refused {
+        fn serialize<S: Serializer>(&self, _: S) -> Result<S::Ok, S::Error> {
+            Err(serde::ser::Error::custom("fixture rejects this element"))
+        }
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut sequence = CanonValue::for_record(&ctx).serialize_seq(None).unwrap();
+    sequence.serialize_element(&1).unwrap();
+    assert_eq!(
+        sequence
+            .serialize_element(&Refused)
+            .unwrap_err()
+            .to_string(),
+        "fixture rejects this element"
+    );
+    assert_eq!(sequence.out, vec![serde_json::json!(1)]);
+    assert_eq!(sequence.unfilled, 1);
+    sequence
+        .serialize_element(&2)
+        .expect("retry reuses the admitted slot");
+    assert_eq!(sequence.unfilled, 0);
+    assert_eq!(sequence.end().unwrap().render(), "[1,2]");
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn non_finite_path_steps_release_scoped_storage() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let key = "k".repeat(64);
+    let run = |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        // Only the final 64-byte path text remains retained.
+        policy.limits.max_retained_bytes = 64;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        let error = super::number(&ctx, f64::NAN)
+            .err()
+            .unwrap()
+            .within(&ctx, || super::copy_text(&ctx, &key).map(super::Step::Key))
+            .into_native(&ctx);
+        match error {
+            crate::native::NativeConvertError::NonFiniteNumber { field } => {
+                assert_eq!(field, key);
+                drop(ctx.reserve_scoped(cap, "released non-finite path steps")?);
+                ctx.finish_session()
+            }
+            error => Err(CodecError::from(error)),
+        }
+    };
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "serialize native record",
+        run,
+    );
+    run(1024).unwrap();
+}
+
+#[test]
+fn raw_scalar_does_not_pay_for_unused_container_depth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use serde::ser::SerializeStruct;
+    for depth in [0, super::MAX_NATIVE_NESTING_DEPTH] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Serialize the one-byte text: one visit + one copy byte.
+        // Replay: one text byte + one scalar visit. No container is entered.
+        policy.limits.max_work_units = 1 + 1 + 1 + 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut raw = super::CanonStruct::Raw {
+            ctx: &ctx,
+            depth,
+            parsed: None,
+        };
+        raw.serialize_field(super::RAW_VALUE_STRUCT, &"7").unwrap();
+        assert_eq!(raw.end().unwrap().render(), "7");
+        ctx.finish_session().unwrap();
+    }
+}
+
+#[test]
+fn raw_replay_duplicate_does_not_admit_unread_object_or_array_members() {
+    use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy};
+    use serde_json::Value;
+
+    let node_bytes = 11 * (std::mem::size_of::<String>() + std::mem::size_of::<Value>())
+        + 16 * std::mem::size_of::<usize>()
+        + 2 * std::mem::align_of::<String>()
+            .max(std::mem::align_of::<Value>())
+            .max(std::mem::align_of::<usize>());
+    // One map visit, two key copies, one scalar visit, the first insertion's
+    // three node passes, one duplicate comparison and one duplicate-key scan,
+    // then two text passes to format the duplicate message.
+    let native_work = 1 + 2 + 1 + 3 * node_bytes + 1 + 1 + 2 * "duplicate key a".len();
+    // Two three-byte raw-key scans; only the first one-byte value is replayed.
+    // The duplicate refuses before its value's Replay serializer is called.
+    let member_work = 2 * 3 + 1;
+    for tail in ["7".to_owned(), "[7]".repeat(1024).replace("][", "],[")] {
+        for array in [false, true] {
+            let (json, parent_work) = if array {
+                (
+                    format!(r#"[{{"a":7,"a":8}},[{tail}]]"#),
+                    r#"{"a":7,"a":8}"#.len() + 1 + 1,
+                )
+            } else {
+                (format!(r#"{{"a":7,"a":8,"tail":[{tail}]}}"#), 0)
+            };
+            // The root text pass pays the initial parser. Additional replay
+            // charges cover only members read before the duplicate refuses.
+            let work = u64_from_index(json.len() + native_work + member_work + parent_work);
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = work;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            ctx.charge_work(u64_from_index(json.len()), super::WORK)
+                .unwrap();
+            let error = super::super::replay::emit(
+                &json,
+                super::CanonValue::for_record(&ctx),
+                super::MAX_NATIVE_NESTING_DEPTH,
+                &ctx,
+            )
+            .err()
+            .expect("duplicate key must refuse");
+            assert!(error.to_string().contains("duplicate key a"), "{error}");
+            drop(error);
+            ctx.finish_session().unwrap();
+        }
     }
 }
