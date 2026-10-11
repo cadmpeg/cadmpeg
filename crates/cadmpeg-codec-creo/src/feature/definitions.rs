@@ -2963,19 +2963,29 @@ fn variable_table(
             break;
         }
         let row_offset = cursor;
-        let (variable_type, next) = psb::compact_int(payload, cursor);
+        let Some((variable_type, next)) = psb::complete_compact_int(payload, cursor) else {
+            break;
+        };
         cursor = next;
         if cursor >= end || payload[cursor] >= 0xc0 {
             break;
         }
-        let (key, next) = psb::compact_int(payload, cursor);
+        let Some((key, next)) = psb::complete_compact_int(payload, cursor) else {
+            break;
+        };
         cursor = next;
         let value_start = cursor;
         let (value, next) = decode_section_coordinate_scalar(ctx, payload, cursor, end, cache)?;
+        if next <= cursor {
+            break;
+        }
         cursor = next;
         let value_end = cursor;
         let guess_start = cursor;
         let (guess, next) = decode_variable_guess(ctx, payload, cursor, end, cache)?;
+        if next <= cursor {
+            break;
+        }
         cursor = next;
         let guess_end = cursor;
         let mut trailing = [None; 3];
@@ -2984,13 +2994,15 @@ fn variable_table(
             if payload[cursor] >= 0xc0 {
                 break;
             }
-            let (field, next) = psb::compact_int(payload, cursor);
-            if next == cursor {
+            let Some((field, next)) = psb::complete_compact_int(payload, cursor) else {
                 break;
-            }
+            };
             trailing[trailing_count] = Some(field);
             trailing_count += 1;
             cursor = next;
+        }
+        if trailing_count != 3 {
+            break;
         }
         let Some(delimiter) = ctx.position_by(
             &payload[cursor..end],
@@ -3084,16 +3096,26 @@ fn positional_variable_table(
     'rows: while cursor < end && rows.len() < row_limit {
         ctx.next_charged(&mut (cursor..end), "creo positional variable row traversal")?;
         let row_offset = cursor;
-        let (variable_type, next) = psb::compact_int(payload, cursor);
+        let Some((variable_type, next)) = psb::complete_compact_int(payload, cursor) else {
+            break;
+        };
         cursor = next;
-        let (key, next) = psb::compact_int(payload, cursor);
+        let Some((key, next)) = psb::complete_compact_int(payload, cursor) else {
+            break;
+        };
         cursor = next;
         let value_start = cursor;
         let (value, next) = decode_section_coordinate_scalar(ctx, payload, cursor, end, cache)?;
+        if next <= cursor {
+            break;
+        }
         cursor = next;
         let value_end = cursor;
         let guess_start = cursor;
         let (guess, next) = decode_variable_guess(ctx, payload, cursor, end, cache)?;
+        if next <= cursor {
+            break;
+        }
         cursor = next;
         let guess_end = cursor;
         let mut trailing = [None; 3];
@@ -3102,16 +3124,17 @@ fn positional_variable_table(
             if payload[cursor] >= 0xc0 {
                 break 'rows;
             }
-            let (field, next) = psb::compact_int(payload, cursor);
-            if next <= cursor {
-                break 'rows;
-            }
+            let Some((field, next)) = psb::complete_compact_int(payload, cursor) else {
+                break;
+            };
             trailing[trailing_count] = Some(field);
             trailing_count += 1;
             cursor = next;
         }
-        if rows.len() + 1 < row_limit {
-            if rows.is_empty() {
+        if trailing_count != 3 {
+            break;
+        }
+        if rows.is_empty() {
                 if payload.get(cursor..cursor + 2) != Some(&[0xf1, psb::token::ENTITY_REF])
                     || payload.get(cursor + 2..cursor + 2 + reference_bytes.len())
                         != Some(reference_bytes)
@@ -3119,13 +3142,12 @@ fn positional_variable_table(
                 {
                     break;
                 }
-                cursor += prototype_separator_len;
-            } else {
-                if payload.get(cursor) != Some(&0xe2) {
-                    break;
-                }
-                cursor += 1;
+            cursor += prototype_separator_len;
+        } else if rows.len() + 1 < row_limit {
+            if payload.get(cursor) != Some(&0xe2) {
+                break;
             }
+            cursor += 1;
         }
         let row = FeatureVariableRow {
             variable_type: variable_type.into(),
