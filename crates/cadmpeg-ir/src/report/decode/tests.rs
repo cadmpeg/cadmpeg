@@ -115,6 +115,42 @@ fn admitted_hex_coverage_refuses_retained_name_limit() {
 }
 
 #[test]
+fn formatted_occupied_coverage_releases_name_without_retaining_another_key() {
+    use crate::report::decode::{Coverage, HexByteCoverageKey, IndexedCoverageKey};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    const EMPTY_ROOT_MATERIALIZED_ALLOWANCE: u64 = 16 * 1024 * 1024;
+    let indexed = IndexedCoverageKey::decimal("type_", "_count");
+    let hexadecimal = HexByteCoverageKey::new("type_", "_count");
+    let mut coverage = Coverage::default();
+    let prior = cadmpeg_test_support::service_decode_context();
+    coverage.record_indexed(&prior, indexed, 4, 7).unwrap();
+    coverage
+        .record_hex_byte(&prior, hexadecimal, 0x0a, 7)
+        .unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    for count in [8, 9] {
+        coverage.record_indexed(&ctx, indexed, 4, count).unwrap();
+        coverage
+            .record_hex_byte(&ctx, hexadecimal, 0x0a, count)
+            .unwrap();
+        assert_eq!(coverage.get("type_4_count"), Some(&count));
+        assert_eq!(coverage.get("type_0a_count"), Some(&count));
+        let released = ctx
+            .reserve_scoped(
+                EMPTY_ROOT_MATERIALIZED_ALLOWANCE,
+                "check formatted name release",
+            )
+            .unwrap();
+        drop(released);
+    }
+    ctx.finish_session().unwrap();
+}
+
+#[test]
 fn owned_coverage_record_preserves_declared_key() {
     let key = crate::report::decode::CoverageKey::new("decoded_entities");
     let mut coverage = crate::report::decode::Coverage::default();
@@ -370,17 +406,140 @@ fn coverage_entry_refuses_retained_map_storage() {
 }
 
 #[test]
-fn coverage_entry_refuses_lookup_work() {
+fn coverage_existing_entry_refuses_key_comparison() {
     use crate::report::decode::{Coverage, CoverageKey};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let key = CoverageKey::new("one_count");
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "decode coverage lookup",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let mut coverage: Coverage = [(key, 7)].into_iter().collect();
+            let result = coverage.record(&ctx, key, 8);
+            assert_eq!(coverage.get(key.as_str()), Some(&7));
+            result
+        },
+    );
+}
+
+#[test]
+fn coverage_rejects_unequal_lengths_without_scanning() {
+    use crate::report::decode::{Coverage, CoverageKey};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let mut coverage = Coverage::default();
-    assert!(
-        matches!(coverage.record(&ctx, CoverageKey::new("one_count"), 7), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "decode coverage lookup")
-    );
+    let error = coverage
+        .record_owned(&ctx, CoverageKey::new("one_count"), "x".repeat(4096), 7)
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
     assert!(coverage.is_empty());
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn decode_transfer_verification_preserves_the_first_unresolved_target() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let ir = crate::CadIr::empty();
+    let index = crate::index::ModelIndex::build(&ir, crate::index::StandardIndex);
+    let ledger = TransferLedger {
+        entries: vec![
+            TransferRecord {
+                source: "source".repeat(64),
+                outcome: TransferOutcome::Emitted {
+                    target: "a:b:c#missing".to_owned()
+                },
+            };
+            4096
+        ],
+    };
+    let ctx = cadmpeg_test_support::service_decode_context();
+    assert_eq!(
+        ledger.verify_for_decode(&ctx, &index).unwrap(),
+        ledger.verify(&index)
+    );
+    for (dimension, operation) in [
+        (ResourceDimension::WorkUnits, "decode transfer verification"),
+        (ResourceDimension::RetainedBytes, "decode transfer refusal"),
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+                _ => unreachable!(),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            ledger.verify_for_decode(&ctx, &index)
+        });
+    }
+}
+
+#[test]
+fn decode_report_borrowed_serialization_preserves_wire_order_and_omissions() {
+    use super::DecodeReportWire;
+    use crate::report::loss::{LossKind, LossNamespace, LossNote, LossTaxonomy};
+
+    for has_coverage in [false, true] {
+        for has_ledger in [false, true] {
+            let coverage = if has_coverage {
+                BTreeMap::from([("a_count".to_owned(), 2), ("z_count".to_owned(), 9)])
+            } else {
+                BTreeMap::new()
+            };
+            let ledger = if has_ledger {
+                TransferLedger {
+                    entries: vec![TransferRecord {
+                        source: "source\n🦀".to_owned(),
+                        outcome: TransferOutcome::Omitted {
+                            note: Some("omitted\t\"".to_owned()),
+                        },
+                    }],
+                }
+            } else {
+                TransferLedger::default()
+            };
+            let report = DecodeReport::unclassified(
+                "test",
+                DecodeTransfer::full(true),
+                coverage,
+                vec![LossNote::new(
+                    LossKind::namespaced(
+                        LossNamespace::new("test").unwrap(),
+                        "geometry.omitted",
+                        LossTaxonomy::GeometryNotTransferred,
+                    ),
+                    "loss\n🦀",
+                )],
+                vec!["note\t\"".to_owned()],
+                ledger,
+            );
+            // The original owned wire serializer is the compatibility oracle.
+            let expected = DecodeReportWire {
+                identity: report.classification.clone(),
+                transfer: report.transfer,
+                coverage: report.coverage.entries.clone(),
+                losses: report.losses.clone(),
+                notes: report.notes.clone(),
+                transfer_ledger: report.transfer_ledger.clone(),
+            };
+            let bytes = serde_json::to_vec(&report).unwrap();
+            assert_eq!(bytes, serde_json::to_vec(&expected).unwrap());
+            assert_eq!(
+                serde_json::from_slice::<DecodeReport>(&bytes).unwrap(),
+                report
+            );
+            let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(value.get("coverage").is_some(), has_coverage);
+            assert_eq!(value.get("transfer_ledger").is_some(), has_ledger);
+            assert_eq!(value["losses"][0]["code"]["namespace"], "test");
+        }
+    }
 }

@@ -15,29 +15,21 @@ fn vertices() -> Vec<Point3> {
 }
 
 #[test]
-fn polygonal_construction_preserves_first_and_later_caller_refusals() {
-    for cap in 0..6 {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        let Err(CodecError::ResourceLimit(limit)) =
-            PolygonalSurface::new(vertices(), vec![[0, 1, 2]], 0., &ctx)
-        else {
-            panic!("triangle comparisons and conversion visits require admission");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(
-            limit.operation,
-            if cap < 3 {
-                "IR polygonal triangle index"
-            } else {
-                "IR polygonal admitted vertices"
-            }
-        );
-        assert_eq!(limit.used, cap);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+fn polygonal_construction_preserves_named_caller_refusals() {
+    for operation in [
+        "IR polygonal triangle index",
+        "IR polygonal admitted vertices",
+    ] {
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
+                crate::geometry::tests::budget::with_limit(
+                    ResourceDimension::WorkUnits,
+                    cap,
+                    |ctx| PolygonalSurface::new(vertices(), vec![[0, 1, 2]], 0., ctx),
+                )
+            },
         );
     }
     for dimension in [
@@ -74,23 +66,20 @@ fn polygonal_construction_moves_typed_storage_and_admits_raw_conversion_once() {
     policy.limits.max_retained_bytes =
         u64::try_from(3 * std::mem::size_of::<FinitePoint3>()).expect("bytes");
     policy.limits.max_collection_items = 3;
-    // Three triangle indexes plus three vertex yields and collector exhaustion cost 7.
-    policy.limits.max_work_units = 6;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let Err(CodecError::ResourceLimit(limit)) =
-        PolygonalSurface::new(vertices(), vec![[0, 1, 2]], 0.5, &ctx)
-    else {
-        panic!("collector exhaustion must refuse at six work units");
-    };
-    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(limit.used, 6);
-    assert_eq!(limit.operation, "IR polygonal admitted vertices");
-    assert!(
-        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
+    // One triangle visit and three vertex yields plus collector exhaustion.
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "IR polygonal admitted vertices",
+        |cap| {
+            crate::geometry::tests::budget::with_policy(
+                ResourceDimension::WorkUnits,
+                cap,
+                policy,
+                |ctx| PolygonalSurface::new(vertices(), vec![[0, 1, 2]], 0.5, ctx),
+            )
+        },
     );
-
-    let arena = DecodeArena::new();
-    policy.limits.max_work_units = 7;
+    policy.limits.max_work_units = 5;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let raw = PolygonalSurface::new(vertices(), vec![[0, 1, 2]], 0.5, &ctx)
         .expect("exact limits")
@@ -105,7 +94,7 @@ fn polygonal_construction_moves_typed_storage_and_admits_raw_conversion_once() {
     let arena = DecodeArena::new();
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_collection_items = 0;
-    policy.limits.max_work_units = 3;
+    policy.limits.max_work_units = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     let admitted = vertices()
         .into_iter()
@@ -164,4 +153,40 @@ fn polygonal_construction_admits_diagnostics_and_keeps_geometric_failure_order()
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
     );
+}
+
+#[test]
+fn polygonal_validation_charges_only_visited_triangles() {
+    let admitted = || {
+        vertices()
+            .into_iter()
+            .map(|point| FinitePoint3::new(point).expect("point"))
+            .collect()
+    };
+    let construct = |ctx: &DecodeContext<'_>| {
+        PolygonalSurface::from_admitted_scaled_deflection(
+            admitted(),
+            vec![[0, 1, 3], [0, 1, 2]],
+            NonNegativeReal::new(0.).expect("deflection"),
+            PositiveReal::new(1.).expect("scale"),
+            ctx,
+        )
+    };
+    let refusal = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        "IR sampled construction refusal",
+        |cap| {
+            crate::geometry::tests::budget::with_limit(ResourceDimension::WorkUnits, cap, construct)
+        },
+    );
+    assert!(matches!(refusal, CodecError::ResourceLimit(limit) if limit.used == 1));
+    let message = "polygonal surface contains an out-of-range triangle index";
+    // One visited triangle followed by the diagnostic's byte copy.
+    let actual = crate::geometry::tests::budget::with_limit(
+        ResourceDimension::WorkUnits,
+        1 + cadmpeg_core::decode::u64_from_index(message.len()),
+        construct,
+    )
+    .expect("one triangle and diagnostic");
+    assert_eq!(actual, Err(GeometryLayoutError::Layout(message.into())));
 }

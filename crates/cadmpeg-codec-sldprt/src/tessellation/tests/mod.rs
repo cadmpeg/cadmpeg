@@ -80,7 +80,7 @@ macro_rules! planar_contains_mesh {
         $trim
             .contains_mesh(
                 &ctx,
-                $mesh,
+                $mesh.mesh(),
                 cadmpeg_ir::transform::Transform::identity(),
                 $tolerance,
             )
@@ -682,21 +682,35 @@ fn persistent_surface_identity_requires_agreeing_duplicates() {
         ],
     };
     assert_eq!(
-        face.feature_source_id().map(FeatureSourceId::value),
+        face.feature_source_id(&cadmpeg_test_support::service_decode_context())
+            .unwrap()
+            .map(FeatureSourceId::value),
         Some(7)
     );
     let expected = persistent_identity(7, 3, &[]);
-    assert_eq!(face.persistent_surface_identity(), Some(&expected));
+    assert_eq!(
+        face.persistent_surface_identity(&cadmpeg_test_support::service_decode_context())
+            .unwrap(),
+        Some(&expected)
+    );
 
     let mut conflicting = face;
     if let PersistentSurfaceReference::Complete(identity) = &mut conflicting.surface_references[1] {
         identity.local_id = 4;
     }
     assert_eq!(
-        conflicting.feature_source_id().map(FeatureSourceId::value),
+        conflicting
+            .feature_source_id(&cadmpeg_test_support::service_decode_context())
+            .unwrap()
+            .map(FeatureSourceId::value),
         Some(7)
     );
-    assert_eq!(conflicting.persistent_surface_identity(), None);
+    assert_eq!(
+        conflicting
+            .persistent_surface_identity(&cadmpeg_test_support::service_decode_context())
+            .unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -919,7 +933,8 @@ fn geometric_tessellation_assignment_refuses_retained_limit() {
 
 #[test]
 fn geometric_tessellation_assignment_refuses_work_limit() {
-    let error = geometric_assignment_limit_error(|policy| policy.limits.max_work_units = 0);
+    // One face visit precedes surface index admission.
+    let error = geometric_assignment_limit_error(|policy| policy.limits.max_work_units = 1);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index SLDPRT tessellation surfaces")
@@ -978,6 +993,7 @@ fn cylindrical_trim_angle_collection_refuses_caller_limit() {
             vertices: &vertices,
             points: &points,
             curves: &curves,
+            coordinate_scale: 1.0,
         },
     )
     .expect_err("angle collection exceeds the caller limit");
@@ -1062,6 +1078,7 @@ fn conical_trim_angle_collection_refuses_caller_limit() {
             vertices: &vertices,
             points: &points,
             curves: &curves,
+            coordinate_scale: 1.0,
         },
     )
     .expect_err("angle collection exceeds the caller limit");
@@ -1592,7 +1609,7 @@ fn polygonal_planar_hole_excludes_inner_face_mesh() {
             Point2::new(4.0, 4.0),
             Point2::new(-4.0, 4.0),
         ])),
-        holes: vec![PlanarHole::polygon(
+        holes: vec![geometry_predicates::hole_polygon(
             &ctx,
             vec![
                 Point2::new(-2.0, -2.0),
@@ -1666,6 +1683,7 @@ fn polygonal_planar_hole_excludes_inner_face_mesh() {
 
 #[test]
 fn mixed_planar_holes_reject_overlap() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     let polygon = vec![
         Point2::new(-2.0, -2.0),
         Point2::new(2.0, -2.0),
@@ -1673,21 +1691,25 @@ fn mixed_planar_holes_reject_overlap() {
         Point2::new(-2.0, 2.0),
     ];
     assert!(circle_overlaps_polygon(
+        &ctx,
         CircularHole {
             center: Point2::new(0.0, 0.0),
             radius: 1.0,
         },
         &polygon,
         EPS_DISPLAY_QUANTIZATION
-    ));
+    )
+    .unwrap());
     assert!(!circle_overlaps_polygon(
+        &ctx,
         CircularHole {
             center: Point2::new(4.0, 0.0),
             radius: 1.0,
         },
         &polygon,
         EPS_DISPLAY_QUANTIZATION
-    ));
+    )
+    .unwrap());
 }
 
 #[test]
@@ -1948,3 +1970,11 @@ mod cone_supports;
 mod resource_admission;
 
 mod arc_trims;
+
+mod radial_trim_admission;
+
+mod workspace_lifetimes;
+
+mod planar_circle_workspaces;
+
+mod planar_polygon_workspaces;

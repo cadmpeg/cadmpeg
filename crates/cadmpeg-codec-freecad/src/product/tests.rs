@@ -12,11 +12,15 @@ use crate::test_support::test_archive::{archive, archive_entries, assert_valid_d
 use crate::FcstdCodec;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
 use cadmpeg_ir::{Codec, DecodeOptions};
-use std::collections::HashSet;
 use std::io::Cursor;
 
+mod body_owner_tests;
 mod graph_diagnostic_tests;
+mod index_demand;
+mod numeric_text;
 mod property_diagnostic_tests;
+mod resource_admission_tests;
+mod source_visits;
 
 #[test]
 fn local_copy_on_change_target_identity_refuses_at_retained_limit() {
@@ -194,7 +198,7 @@ fn product_element_identity_refuses_at_retained_limit() {
 }
 
 #[test]
-fn product_body_prefix_refuses_at_retained_limit() {
+fn product_projection_without_consumers_does_not_build_body_prefixes() {
     let property = native::PropertyRecord {
         id: "fcstd:native:property#Part:Shape".into(),
         owner: "fcstd:native:object#Part".into(),
@@ -212,25 +216,95 @@ fn product_body_prefix_refuses_at_retained_limit() {
         entry: "shape.brp".into(),
         payload: crate::brep::ShapePayload::Empty,
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
-        // Owner lookup (four buckets), its property vector, the property-owner lookup,
-        // and four body-owner slots are live before the scoped body prefix.
-        4 * std::mem::size_of::<(&str, Vec<&native::PropertyRecord>)>()
-            + 35
-            + 4 * std::mem::size_of::<&native::PropertyRecord>()
-            + 4 * std::mem::size_of::<(&str, &str)>()
-            + 35
-            + 4 * std::mem::size_of::<(String, &str)>()
-            + native::model_id("body", &payload.id, "").len(),
-    ) - 1;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    assert!(
-        matches!(super::transfer_neutral(&ctx, &[], &[], &[], &[property], &[payload], &[]),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD model identity")
+    let objects = (0..4097)
+        .map(|index| native::ObjectRecord {
+            identity: native::object_identity::ObjectIdentity::try_new(
+                format!("fcstd:native:object#Unused{index}"),
+                format!("Unused{index}"),
+            )
+            .expect("object identity"),
+            type_name: "Part::Feature".into(),
+            persistent_id: None,
+            view_type: None,
+            attributes: std::collections::BTreeMap::new(),
+            dependencies: Vec::new(),
+            dependency_allow_partial: None,
+            order: index,
+            data: None,
+        })
+        .collect::<Vec<_>>();
+    let long_key = format!("Part:Shape:{}", "x".repeat(65_536));
+    let mut payloads = vec![payload.clone()];
+    payloads[0].id = format!("fcstd:native:shape-payload#{long_key}");
+    payloads.extend((0..4097).map(|index| crate::brep::ShapePayloadRecord {
+        id: format!("fcstd:native:shape-payload#Unused{index}"),
+        property: format!("fcstd:native:property#Unused{index}:Shape"),
+        entry: format!("unused{index}.brp"),
+        payload: crate::brep::ShapePayload::Empty,
+    }));
+    let bodies = vec![cadmpeg_ir::topology::Body {
+        id: cadmpeg_ir::ids::BodyId::mint(format!("fcstd:model:body#{long_key}:0"))
+            .expect("body identity"),
+        kind: cadmpeg_ir::topology::BodyKind::default(),
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    }];
+    let run = |objects: &[native::ObjectRecord],
+               payloads: &[crate::brep::ShapePayloadRecord],
+               bodies: &[cadmpeg_ir::topology::Body],
+               refuse: bool| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = 0;
+        if refuse {
+            policy.limits.max_work_units = 0;
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty context");
+        let result = super::transfer_neutral(
+            &ctx,
+            &[],
+            &[],
+            objects,
+            std::slice::from_ref(&property),
+            payloads,
+            bodies,
+        );
+        if refuse {
+            let cadmpeg_core::CodecError::ResourceLimit(limit) =
+                result.expect_err("placement setup work refuses")
+            else {
+                panic!("work refusal");
+            };
+            assert_eq!(
+                limit.dimension,
+                cadmpeg_core::decode::ResourceDimension::WorkUnits
+            );
+            assert_eq!(ctx.resource_refusal(), Some(limit));
+            (None, Some(limit))
+        } else {
+            let (definitions, occurrences) = result.expect("no product consumer");
+            assert!(definitions.is_empty());
+            assert!(occurrences.is_empty());
+            assert_eq!(ctx.resource_refusal(), None);
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx
+                .charge_work(u64::MAX, "measure unused product inputs")
+                .expect_err("work measurement")
+            else {
+                panic!("work refusal");
+            };
+            (Some(limit.used), None)
+        }
+    };
+    assert_eq!(
+        run(&[], std::slice::from_ref(&payload), &[], false),
+        run(&objects, &payloads, &bodies, false)
+    );
+    assert_eq!(
+        run(&[], std::slice::from_ref(&payload), &[], true),
+        run(&objects, &payloads, &bodies, true)
     );
 }
 
@@ -1507,15 +1581,11 @@ fn node(object: &str, members: &[&str]) -> native::ProductNodeRecord {
 #[test]
 fn reconvergent_product_graph_is_not_a_cycle() {
     let records = [node("A", &["C", "B"]), node("B", &["C"]), node("C", &[])];
-    let nodes = records
-        .iter()
-        .map(|record| (record.object.as_str(), record))
-        .collect();
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    assert!(product_cycle_nodes(&ctx, &nodes)
+    assert!(product_cycle_nodes(&ctx, &records)
         .expect("cycle analysis")
         .is_empty());
 }
@@ -1523,35 +1593,22 @@ fn reconvergent_product_graph_is_not_a_cycle() {
 #[test]
 fn product_cycle_marks_only_the_strongly_connected_component() {
     let records = [node("A", &["B"]), node("B", &["C"]), node("C", &["B"])];
-    let nodes = records
-        .iter()
-        .map(|record| (record.object.as_str(), record))
-        .collect();
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
     assert_eq!(
-        product_cycle_nodes(&ctx, &nodes).expect("cycle analysis"),
-        HashSet::from(["B", "C"])
+        product_cycle_nodes(&ctx, &records).expect("cycle analysis"),
+        std::collections::BTreeSet::from(["B", "C"])
     );
 }
 
 #[test]
 fn product_cycle_graph_refuses_at_caller_limit() {
     let records = [node("A", &["B"]), node("B", &[])];
-    let nodes = records
-        .iter()
-        .map(|record| (record.object.as_str(), record))
-        .collect();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    assert!(matches!(product_cycle_nodes(&ctx, &nodes),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "fcstd product reverse graph"));
+    crate::test_support::assert_collection_refusal_at(&[], "fcstd product reverse graph", |ctx| {
+        product_cycle_nodes(ctx, &records)
+    });
 }
 
 #[test]

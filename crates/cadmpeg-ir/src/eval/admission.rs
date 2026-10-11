@@ -53,16 +53,11 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
         ) -> Result<T, EvaluationFailure<R>>,
     ) -> Result<T, EvaluationFailure<R>> {
         let evaluate = |admission: EvaluationAdmission<'_, '_>| {
-            let scratch = super::decode::Scratch::new(admission);
-            scratch
-                .unless_refused()
-                .map_err(EvaluationFailure::ResourceLimit)?;
             let result = run(admission);
-            let result = match admission.work_slice() {
+            match admission.work_slice() {
                 Some(_) => super::ModelEvaluationDepthGuard::finish_budgeted(admission, result),
                 None => result,
-            };
-            scratch.settle(result)
+            }
         };
         if let Self::Decode(context) = self {
             let work = context.work_budget(u64_from_index(usize::MAX));
@@ -90,13 +85,9 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
                     return Ok(());
                 }
                 if let Some(context) = self.context() {
-                    context
-                        .charge_work_limit(0, "model evaluation work slice")
-                        .map_err(EvaluationFailure::ResourceLimit)?;
-                    drop(context.refuse_codec_limit("model evaluation work slice", remaining, 1));
-                    context
-                        .charge_work_limit(0, "model evaluation work slice")
-                        .map_err(EvaluationFailure::ResourceLimit)?;
+                    return Err(context
+                        .refuse_codec_limit("model evaluation work slice", remaining, 1)
+                        .into());
                 }
                 Err(EvaluationFailure::NoValue)
             }
@@ -116,14 +107,8 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
             EvaluationAdmission<'slice, 'slice>,
         ) -> Result<T, EvaluationFailure<R>>,
     ) -> Result<T, EvaluationFailure<R>> {
-        let _boundary = parent
-            .reserve_scratch(0, "geometry work slice boundary")
-            .map_err(EvaluationFailure::ResourceLimit)?;
         match self.context() {
             Some(context) => {
-                context
-                    .charge_work_limit(0, "geometry work slice boundary")
-                    .map_err(EvaluationFailure::ResourceLimit)?;
                 let child = context.work_budget(u64_from_index(parent.remaining()));
                 let result = run(EvaluationAdmission::WorkSlice(EvaluationWorkSlice {
                     policy: WorkSlicePolicy::Session {
@@ -132,27 +117,25 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
                     },
                 }));
                 let remaining = u64_from_index(parent.remaining());
-                if parent.consume_child(&child).is_err() {
-                    drop(context.refuse_codec_limit(
-                        "geometry work slice transfer",
-                        remaining,
-                        u64_from_index(work_units(child.consumed())),
-                    ));
+                if child.consumed() != 0 && parent.consume_child(&child).is_err() {
+                    return Err(context
+                        .refuse_codec_limit(
+                            "geometry work slice transfer",
+                            remaining,
+                            u64_from_index(work_units(child.consumed())),
+                        )
+                        .into());
                 }
-                context
-                    .charge_work_limit(0, "geometry work slice boundary")
-                    .map_err(EvaluationFailure::ResourceLimit)?;
+                if child.exhausted() {
+                    if let Some(limit) = context.resource_refusal() {
+                        return Err(EvaluationFailure::ResourceLimit(limit));
+                    }
+                }
                 result
             }
-            None => {
-                let result = run(EvaluationAdmission::WorkSlice(EvaluationWorkSlice {
-                    policy: WorkSlicePolicy::Independent(parent),
-                }));
-                let _boundary = parent
-                    .reserve_scratch(0, "geometry work slice boundary")
-                    .map_err(EvaluationFailure::ResourceLimit)?;
-                result
-            }
+            None => run(EvaluationAdmission::WorkSlice(EvaluationWorkSlice {
+                policy: WorkSlicePolicy::Independent(parent),
+            })),
         }
     }
 
@@ -194,16 +177,14 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
             Self::WorkSlice(EvaluationWorkSlice {
                 policy: WorkSlicePolicy::Session { context, work },
             }) => {
-                context.charge_work_limit(0, operation)?;
                 let remaining = u64_from_index(work.remaining());
                 if !usize::try_from(count).is_ok_and(|count| work.charge_by(count)) {
-                    context.charge_work_limit(0, operation)?;
                     drop(context.refuse_codec_limit(
                         "geometry evaluation work slice",
                         remaining,
                         count,
                     ));
-                    return context.charge_work_limit(0, operation);
+                    return context.resource_refusal().map_or(Ok(()), Err);
                 }
                 Ok(())
             }
@@ -253,6 +234,37 @@ impl crate::index::sealed::IndexQuery for EvaluationAdmission<'_, '_> {}
 impl crate::index::IndexQuery for EvaluationAdmission<'_, '_> {
     type Error = ResourceLimit;
     type Output<T> = Result<T, ResourceLimit>;
+    type Iter<S: cadmpeg_core::decode::iter_source::IterSource> = std::iter::Chain<
+        std::iter::Flatten<
+            std::option::IntoIter<cadmpeg_core::decode::scan::AdmittedIter<S::Iter>>,
+        >,
+        std::iter::Flatten<std::option::IntoIter<S::Iter>>,
+    >;
+    fn admit_iter<S: cadmpeg_core::decode::iter_source::IterSource>(
+        &self,
+        source: S,
+        operation: &'static str,
+    ) -> Result<Self::Iter<S>, Self::Error> {
+        let bound = source.visit_bound();
+        // Core admission refuses overflowing source bounds before iteration.
+        let context = match self {
+            Self::Decode(ctx) => Some(*ctx),
+            _ if bound.is_err() => self.context(),
+            _ => None,
+        };
+        let (decode, standard) = if let Some(ctx) = context {
+            (Some(ctx.admit_iter(source, operation)?), None)
+        } else {
+            if let Ok(bound) = bound {
+                EvaluationAdmission::work(*self, bound, operation)?;
+            }
+            (None, Some(source.source_iter()))
+        };
+        Ok(decode
+            .into_iter()
+            .flatten()
+            .chain(standard.into_iter().flatten()))
+    }
     fn finish<T>(&self, result: Result<T, ResourceLimit>) -> Self::Output<T> {
         result
     }
@@ -293,6 +305,123 @@ mod tests {
         DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, WorkBudget,
     };
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn index_iteration_charges_decode_and_session_slice_work_once() {
+        let source = [11, 13, 17];
+        // The source has three visits and needs no decode storage.
+        for sliced in [false, true] {
+            for cap in 0..=3 {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                policy.limits.max_materialized_bytes = 0;
+                policy.limits.max_retained_bytes = 0;
+                policy.limits.max_collection_items = 0;
+                let arena = DecodeArena::new();
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let parent = ctx.work_budget(3);
+                let iterate =
+                    |admission: EvaluationAdmission<'_, '_>| -> Result<(), EvaluationFailure<()>> {
+                        let values = crate::index::IndexQuery::admit_iter(
+                            &admission,
+                            &source,
+                            "test index source visits",
+                        )
+                        .map_err(EvaluationFailure::ResourceLimit)?;
+                        assert!(values.copied().eq(source));
+                        Ok(())
+                    };
+                let admission = EvaluationAdmission::Decode(&ctx);
+                let result = if sliced {
+                    admission.within_work_slice(&parent, iterate)
+                } else {
+                    iterate(admission)
+                };
+                if sliced {
+                    assert_eq!(parent.consumed(), 3);
+                }
+                let original = if cap < 3 {
+                    let EvaluationFailure::ResourceLimit(original) = result.unwrap_err() else {
+                        panic!("source visit refusal");
+                    };
+                    assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+                    assert_eq!(
+                        (original.limit, original.used, original.additional),
+                        (cap, 0, 3)
+                    );
+                    assert_eq!(
+                        original.operation,
+                        if sliced {
+                            "work_budget"
+                        } else {
+                            "test index source visits"
+                        }
+                    );
+                    original
+                } else {
+                    assert_eq!(result, Ok(()));
+                    let original = ctx
+                        .charge_work_limit(1, "test next source visit")
+                        .unwrap_err();
+                    assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+                    assert_eq!(
+                        (original.limit, original.used, original.additional),
+                        (3, 3, 1)
+                    );
+                    original
+                };
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn index_iteration_preserves_session_refusals_for_overflowing_visit_bounds() {
+        for sliced in [false, true] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = u64::MAX;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let parent = ctx.work_budget(3);
+            // The inclusive range has u64::MAX + 1 visits; core saturates the
+            // refused request to u64::MAX without advancing its source.
+            let iterate =
+                |admission: EvaluationAdmission<'_, '_>| -> Result<(), EvaluationFailure<()>> {
+                    crate::index::IndexQuery::admit_iter(
+                        &admission,
+                        0_u64..=u64::MAX,
+                        "test overflowing index source",
+                    )
+                    .map(|_| ())
+                    .map_err(EvaluationFailure::ResourceLimit)
+                };
+            let admission = EvaluationAdmission::Decode(&ctx);
+            let result = if sliced {
+                admission.within_work_slice(&parent, iterate)
+            } else {
+                iterate(admission)
+            };
+            let EvaluationFailure::ResourceLimit(original) = result.unwrap_err() else {
+                panic!("source bound overflow must preserve its refusal");
+            };
+            assert_eq!(original.dimension, ResourceDimension::WorkUnits);
+            assert_eq!(
+                original.reason,
+                cadmpeg_core::decode::ResourceFailure::BudgetExceeded
+            );
+            assert_eq!(
+                (original.limit, original.used, original.additional),
+                (u64::MAX, 0, u64::MAX)
+            );
+            assert_eq!(original.operation, "test overflowing index source");
+            assert_eq!(parent.consumed(), 0);
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original)
+            );
+        }
+    }
 
     #[test]
     fn model_text_comparison_consumes_its_local_slice_and_global_work_once() {
@@ -759,14 +888,6 @@ mod tests {
             };
             assert_eq!(first.dimension, dimension);
             assert_eq!((first.limit, first.used, first.additional), (0, 0, 1));
-            let called = std::cell::Cell::new(false);
-            let repeated: Result<(), EvaluationFailure<()>> = EvaluationAdmission::Decode(&ctx)
-                .within_work_slice(&parent, |_| {
-                    called.set(true);
-                    Err(EvaluationFailure::NoValue)
-                });
-            assert_eq!(repeated, Err(EvaluationFailure::ResourceLimit(first)));
-            assert!(!called.get());
             assert!(
                 matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
             );
@@ -871,12 +992,6 @@ mod tests {
                 assert_eq!(first.dimension, dimension);
                 assert_eq!((first.limit, first.used), (0, 0));
                 assert!(first.additional > 0);
-                assert_eq!(
-                    EvaluationAdmission::Decode(&ctx).within_work_slice(&parent, |admission| {
-                        crate::eval::decode::curve_tangent(admission, &curve, f64::NAN)
-                    }),
-                    Err(EvaluationFailure::ResourceLimit(first))
-                );
                 assert!(
                     matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
                 );

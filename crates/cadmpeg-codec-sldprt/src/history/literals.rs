@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Length, angle, vector, and parameter-literal parse/format helpers.
+//!
+//! The grammars take no decode context: the writer and wire validation share
+//! them. A decode caller admits each parse with [`admit_literal`] or
+//! [`named_literal`] immediately before it.
 
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::{
@@ -8,13 +12,38 @@ use cadmpeg_ir::{
         FaceMotion, FeatureDefinition, FeatureOperation, FinitePoint3, FiniteVector3,
         ParameterValue,
     },
-    scalar::{Angle, FiniteReal, InteriorAngle, Length, PositiveAngle, PositiveLength},
+    scalar::{Angle, InteriorAngle, Length, PositiveAngle, PositiveLength},
 };
 
 const EPS_LITERALS_VALID_PLANE_FRAME_E9: f64 = 1.0e-9;
 const EPS_LITERALS_PARSE_LENGTH_MM_E6: f64 = 1.0e-6;
 const EPS_LITERALS_PARSE_LENGTH_MM_E7: f64 = 1.0e-7;
 const EPS_LITERALS_FORMAT_F64_LITERAL_E6: f64 = 1.0e-6;
+
+/// Charges one work unit per input byte for a shared literal-grammar call.
+/// A caller that runs a fixed number of grammars over the same text charges it once.
+pub(crate) fn admit_literal(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    text: &str,
+    operation: &'static str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(text.len()), operation)
+}
+
+/// Looks up a named value with charged key comparisons and admits one literal
+/// parse of it. The caller parses the returned text once.
+pub(crate) fn named_literal<'v>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    values: &'v std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    name: &str,
+    operation: &'static str,
+) -> Result<Option<&'v str>, cadmpeg_core::CodecError> {
+    let Some(value) = ctx.get_btree_map(values, name, operation)? else {
+        return Ok(None);
+    };
+    admit_literal(ctx, value, operation)?;
+    Ok(Some(value))
+}
 
 pub(super) fn valid_plane_frame(normal: Vector3, u_axis: Vector3) -> bool {
     let normal_length = normal.norm();
@@ -122,10 +151,6 @@ pub(crate) fn format_angle_rad(value: Angle) -> String {
     format!("{}rad", finite_literal(value.get()))
 }
 
-pub(super) fn format_f64_literal(value: FiniteReal) -> String {
-    finite_literal(value.get())
-}
-
 /// The literal of a finite value. Every caller passes the value of a checked
 /// scalar.
 fn finite_literal(value: f64) -> String {
@@ -141,7 +166,7 @@ impl std::fmt::Display for LengthLiteral {
     }
 }
 
-struct FiniteLiteral(f64);
+pub(super) struct FiniteLiteral(pub(super) f64);
 
 impl std::fmt::Display for FiniteLiteral {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -236,11 +261,10 @@ pub(super) fn parse_parameter_literal(expression: &str) -> Option<ParameterValue
     if let Some(value) = parse_angle_rad(expression) {
         return Some(ParameterValue::Angle(value));
     }
-    if let Ok(value) = expression.trim().parse::<i64>() {
+    if let Ok(value) = expression.parse::<i64>() {
         return Some(ParameterValue::Integer(value));
     }
     expression
-        .trim()
         .parse::<f64>()
         .ok()
         .and_then(cadmpeg_ir::scalar::FiniteReal::new)
@@ -273,6 +297,7 @@ pub(crate) fn parse_dimension_display_length(expression: &str) -> Option<Length>
         .or_else(|| parse_length_mm(expression))
 }
 
+/// Removes a leading positive `<count>X` instance count.
 fn strip_dimension_count(expression: &str) -> &str {
     let digit_count = expression.bytes().take_while(u8::is_ascii_digit).count();
     let (count, rest) = expression.split_at(digit_count);
@@ -286,14 +311,11 @@ fn strip_dimension_count(expression: &str) -> &str {
     }
 }
 
+/// The nominal value of a toleranced fit such as `15mmH7`.
 fn strip_dimension_fit(value: &str) -> Option<&str> {
-    let fit_start = value
-        .char_indices()
-        .find_map(|(offset, character)| character.is_ascii_alphabetic().then_some(offset))?;
+    let fit_start = value.bytes().position(|byte| byte.is_ascii_alphabetic())?;
     let (nominal, fit) = value.split_at(fit_start);
-    let grade_start = fit
-        .char_indices()
-        .find_map(|(offset, character)| character.is_ascii_digit().then_some(offset))?;
+    let grade_start = fit.bytes().position(|byte| byte.is_ascii_digit())?;
     let (position, grade) = fit.split_at(grade_start);
     (!nominal.is_empty()
         && !position.is_empty()
@@ -359,13 +381,22 @@ pub(super) fn parse_neutral_parameter_literal(
 }
 
 pub(super) fn format_parameter_value(value: &ParameterValue) -> String {
-    match value {
-        ParameterValue::Length(value) => format_length_mm(*value),
-        ParameterValue::Angle(value) => format_angle_rad(*value),
-        ParameterValue::Real(value) => format_f64_literal(*value),
-        ParameterValue::Integer(value) => value.to_string(),
-        ParameterValue::Boolean(value) => value.to_string(),
-        ParameterValue::String(value) => value.clone(),
+    ParameterLiteral(value).to_string()
+}
+
+/// The canonical literal of a parameter, written directly into the text sink.
+pub(crate) struct ParameterLiteral<'a>(pub(crate) &'a ParameterValue);
+
+impl std::fmt::Display for ParameterLiteral<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            ParameterValue::Length(value) => write!(formatter, "{}", LengthLiteral(*value)),
+            ParameterValue::Angle(value) => write!(formatter, "{}rad", FiniteLiteral(value.get())),
+            ParameterValue::Real(value) => write!(formatter, "{}", FiniteLiteral(value.get())),
+            ParameterValue::Integer(value) => write!(formatter, "{value}"),
+            ParameterValue::Boolean(value) => write!(formatter, "{value}"),
+            ParameterValue::String(value) => formatter.write_str(value),
+        }
     }
 }
 

@@ -1,7 +1,6 @@
 use super::super::{
-    dimensioned_arc_native_geometry, extended_radial_circle_index,
-    extended_terminal_repeated_radial_circle_index, terminal_repeated_radial_circle_pairs,
-    DimensionedCurveNative,
+    compact_radial_circle_index, dimensioned_arc_native_geometry, extended_radial_circle_index,
+    terminal_repeated_radial_circle_pairs, DimensionedCurveNative,
 };
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink};
 use crate::resolved_features::LEGACY_EXTENDED_SKETCH_MARKER;
@@ -45,7 +44,9 @@ fn arc_dimension_center_requires_one_matching_radial_witness() {
     };
 
     assert!(matches!(
-        dimensioned_arc_native_geometry(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&lane), &center, 3.0).unwrap(),
+        dimensioned_arc_native_geometry(
+        &cadmpeg_test_support::service_decode_context(),
+        &crate::resolved_features::dimensions::LaneMarkerIndex::new(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&lane)).unwrap(), &center, 3.0).unwrap(),
         Some(DimensionedCurveNative::Circle { center: [u, v] })
             if [u, v] == [0.1, 0.2]
     ));
@@ -59,7 +60,11 @@ fn arc_dimension_center_requires_one_matching_radial_witness() {
     ));
     assert!(dimensioned_arc_native_geometry(
         &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_ref(&ambiguous_lane),
+        &crate::resolved_features::dimensions::LaneMarkerIndex::new(
+            &cadmpeg_test_support::service_decode_context(),
+            std::slice::from_ref(&ambiguous_lane)
+        )
+        .unwrap(),
         &ambiguous_lane.sketch_entities[0],
         3.0
     )
@@ -129,7 +134,11 @@ fn arc_dimension_uses_two_endpoint_markers_for_a_bounded_arc() {
 
     let Some(DimensionedCurveNative::Arc(arc)) = dimensioned_arc_native_geometry(
         &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_ref(&lane),
+        &crate::resolved_features::dimensions::LaneMarkerIndex::new(
+            &cadmpeg_test_support::service_decode_context(),
+            std::slice::from_ref(&lane),
+        )
+        .unwrap(),
         &center,
         3.0,
     )
@@ -139,7 +148,7 @@ fn arc_dimension_uses_two_endpoint_markers_for_a_bounded_arc() {
     assert_eq!(arc.center, [0.0, 0.0]);
     assert_eq!(arc.start, [0.003, 0.0]);
     assert_eq!(arc.end, [0.0, 0.003]);
-    assert_eq!(arc.endpoints, Some(["start".into(), "end".into()]));
+    assert_eq!(arc.endpoints, Some(["start", "end"]));
 
     let mut invalid_end = lane.sketch_entities[2].clone();
     invalid_end.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, 0.004]);
@@ -149,7 +158,11 @@ fn arc_dimension_uses_two_endpoint_markers_for_a_bounded_arc() {
     };
     assert!(dimensioned_arc_native_geometry(
         &cadmpeg_test_support::service_decode_context(),
-        std::slice::from_ref(&invalid_lane),
+        &crate::resolved_features::dimensions::LaneMarkerIndex::new(
+            &cadmpeg_test_support::service_decode_context(),
+            std::slice::from_ref(&invalid_lane)
+        )
+        .unwrap(),
         &invalid_lane.sketch_entities[0],
         3.0
     )
@@ -239,15 +252,9 @@ fn extended_terminal_radial_record_carries_a_one_based_roster_address() {
         payload[at..at + 4].copy_from_slice(&(-2i32).to_le_bytes());
     }
 
-    assert_eq!(
-        extended_terminal_repeated_radial_circle_index(&payload, 0),
-        Some(12)
-    );
+    assert_eq!(compact_radial_circle_index(&payload, 0), Some(12));
     payload[58..60].copy_from_slice(&13u16.to_le_bytes());
-    assert_eq!(
-        extended_terminal_repeated_radial_circle_index(&payload, 0),
-        None
-    );
+    assert_eq!(compact_radial_circle_index(&payload, 0), None);
 }
 
 #[test]

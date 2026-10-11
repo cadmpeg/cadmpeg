@@ -268,14 +268,19 @@ fn legacy_zlib_candidate_refuses_expansion_limit() {
 fn parasolid_stream_header_is_parsed() {
     let f = synthetic_sldprt();
     let scan = crate::test_support::container::scan(&f);
-    let site = container::select_active_parasolid_site(&scan).expect("active parasolid");
+    let site = container::select_active_parasolid_site(
+        &cadmpeg_test_support::service_decode_context(),
+        &scan,
+    )
+    .unwrap()
+    .expect("active parasolid");
     assert_eq!(site.header.schema.value(), "SCH_SW_33103_11000");
     assert!(site.header.description.contains("partition"));
     let container::Section::Block(block) = site.section else {
         panic!("synthetic native block selected as compound stream");
     };
     assert_eq!(block.family, container::PayloadFamily::Parasolid);
-    assert!(crate::parasolid::is_body_stream(site.header));
+    assert!(site.header.is_body_stream());
 }
 
 #[test]
@@ -539,4 +544,26 @@ fn parasolid_frame_storage_refuses_before_expansion_allocation() {
     assert_eq!(limit.operation, "inflate Parasolid frame");
     assert_eq!(ctx.resource_refusal(), Some(limit));
     assert_eq!(allocations, 0);
+}
+
+#[test]
+fn lossy_description_character_refusal_preserves_the_resource_limit() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut output = String::new();
+    super::append_lossy_utf8(&ctx, &mut output, &[b'a', 0xff, b'z']).unwrap();
+    assert_eq!(output, "a�z");
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut output = String::new();
+    let error = super::append_lossy_utf8(&ctx, &mut output, &[0xff]).unwrap_err();
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("replacement character refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(limit.operation, "append SLDPRT decoded character");
+    assert_eq!(limit.additional, 3);
+    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert!(output.is_empty());
 }

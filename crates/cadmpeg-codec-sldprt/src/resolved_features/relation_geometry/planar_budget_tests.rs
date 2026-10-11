@@ -103,6 +103,88 @@ fn project_solved_line_with_policy(policy: DecodePolicy) -> Result<(), CodecErro
     Ok(())
 }
 
+const TWO_SOLVER_LINE_OPERANDS: usize = 2;
+
+fn two_solver_line_fixture() -> (
+    Sketch,
+    Feature,
+    FeatureInputLane,
+    cadmpeg_ir::features::DesignParameter,
+) {
+    use crate::records::{SketchInputEntity, SketchInputKind};
+    use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
+    use cadmpeg_ir::scalar::Length;
+
+    let (sketch, feature, mut lane) = planar_fixture();
+    lane.relation_instances[0].family =
+        crate::records::FeatureInputRelationFamily::LineLineDistance;
+    lane.relation_instances[0].operands = (0..TWO_SOLVER_LINE_OPERANDS)
+        .map(|index| {
+            let entity_index = u16::try_from(index).unwrap();
+            FeatureInputOperand {
+                offset: u64::from(entity_index),
+                reference_ref: format!("line-reference-{entity_index}"),
+                kind: FeatureInputOperandKind::E1,
+                entity_index,
+                entity_ref: None,
+            }
+        })
+        .collect();
+    lane.sketch_entities = [
+        ("line-0-start", 0.0, 0.0),
+        ("line-0-end", 10.0, 0.0),
+        ("line-1-start", 0.0, 5.0),
+        ("line-1-end", 10.0, 5.0),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, (id, u, v))| {
+        let mut marker = SketchInputEntity::new(
+            id,
+            "lane",
+            u32::try_from(index).unwrap(),
+            u64::try_from(index).unwrap(),
+            SketchInputKind::Point,
+        );
+        marker.feature_ref = Some("feature".into());
+        marker.coordinates_m = cadmpeg_ir::units::FiniteVector::new([u / 1000.0, v / 1000.0]);
+        marker
+    })
+    .collect();
+    let parameter = DesignParameter {
+        id: ParameterId::mint("synthetic:test:id#line-distance").unwrap(),
+        owner: Some(feature.id.clone()),
+        ordinal: 0,
+        name: "D1".into(),
+        expression: "5mm".into(),
+        display: None,
+        value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
+        dependencies: DistinctMembers::default(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: Some("scalar".into()),
+    };
+    (sketch, feature, lane, parameter)
+}
+
+fn project_two_solver_lines_with_policy(
+    policy: &DecodePolicy,
+) -> Result<Vec<cadmpeg_ir::sketches::SketchEntity>, CodecError> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"two solved lines", &arena, policy)?;
+    let (sketch, feature, lane, parameter) = two_solver_line_fixture();
+    let mut entities = Vec::new();
+    project_relation_solved_line_geometry(
+        &ctx,
+        &mut entities,
+        &[sketch],
+        &[feature],
+        &[parameter],
+        &[lane],
+    )?;
+    Ok(entities)
+}
+
 fn project_relation_point_with_policy(policy: DecodePolicy) -> Result<(), CodecError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(b"relation point", &arena, &policy)?;
@@ -159,20 +241,23 @@ fn solved_point_projection_refuses_collection_limit() {
             && limit.operation == "index SLDPRT solved-point sketches"));
 }
 
+// The copied relation key belongs to the temporary ownership map.
 #[test]
-fn solved_point_projection_refuses_retained_limit() {
+fn solved_point_projection_refuses_scoped_limit() {
+    // The relation ownership index is built under the projection's scoped
+    // storage, after the larger sketch index has set the peak.
     let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "copy SLDPRT relation identity",
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "index SLDPRT relation parameter ownership",
         |cap| {
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
+            policy.limits.max_materialized_bytes = cap;
             project_solved_point_with_policy(policy)
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "copy SLDPRT relation identity"));
+        if limit.dimension == ResourceDimension::MaterializedBytes
+            && limit.operation == "index SLDPRT relation parameter ownership"));
 }
 
 #[test]
@@ -196,22 +281,6 @@ fn solved_line_projection_refuses_collection_limit() {
 }
 
 #[test]
-fn solved_line_projection_refuses_retained_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "copy SLDPRT planar sketch identity",
-        |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            project_solved_line_with_policy(policy)
-        },
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "copy SLDPRT planar sketch identity"));
-}
-
-#[test]
 fn solved_line_projection_refuses_work_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
@@ -232,19 +301,10 @@ fn relation_point_projection_refuses_collection_limit() {
 }
 
 #[test]
-fn relation_point_projection_refuses_retained_limit() {
-    let error = cadmpeg_test_support::refusal::resource_limit_at(
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "copy SLDPRT planar sketch identity",
-        |cap| {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cap;
-            project_relation_point_with_policy(policy)
-        },
-    );
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
-        if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "copy SLDPRT planar sketch identity"));
+fn relation_point_projection_uses_scoped_storage() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    project_relation_point_with_policy(policy).unwrap();
 }
 
 #[test]
@@ -255,6 +315,94 @@ fn relation_point_projection_refuses_work_limit() {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "index SLDPRT relation-point sketches"));
+}
+
+#[test]
+fn solved_line_projection_materializes_two_operand_geometry() {
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+
+    let entities = project_two_solver_lines_with_policy(&DecodePolicy::service()).unwrap();
+    assert_eq!(entities.len(), TWO_SOLVER_LINE_OPERANDS);
+    let lines = entities
+        .iter()
+        .map(|entity| {
+            let SketchGeometryDefinition::Line { start, end } = *entity.geometry.definition()
+            else {
+                panic!("solved relation output is a line");
+            };
+            (entity.geometry_ref.as_deref(), start.get(), end.get())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        lines,
+        vec![
+            (
+                Some("feature:solver-line:0"),
+                Point2::new(0.0, 0.0),
+                Point2::new(10.0, 0.0),
+            ),
+            (
+                Some("feature:solver-line:1"),
+                Point2::new(0.0, 5.0),
+                Point2::new(10.0, 5.0),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn solved_line_projection_refuses_operand_vector_materialized_bytes() {
+    let (_, _, lane, _) = two_solver_line_fixture();
+    let operand_count = lane.relation_instances[0].operands.len();
+    assert_eq!(operand_count, TWO_SOLVER_LINE_OPERANDS);
+    let slot_bytes = std::mem::size_of::<(
+        &FeatureInputOperand,
+        [&crate::records::SketchInputEntity; 2],
+        cadmpeg_ir::sketches::SketchGeometry,
+    )>();
+    // Core amortized growth starts an empty vector at its inline-size minimum.
+    let capacity = match slot_bytes {
+        1 => 8,
+        2..=1024 => 4,
+        _ => 1,
+    };
+    let requested_bytes =
+        u64::try_from(slot_bytes * capacity).expect("fixture operand vector bytes fit u64");
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::MaterializedBytes,
+        "collect SLDPRT relation operand lines",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_materialized_bytes = cap;
+            project_two_solver_lines_with_policy(&policy).map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes
+            && limit.operation == "collect SLDPRT relation operand lines"
+            && limit.additional == requested_bytes));
+}
+
+#[test]
+fn solved_line_projection_refuses_operand_vector_collection_items() {
+    let (_, _, lane, _) = two_solver_line_fixture();
+    let operand_count = lane.relation_instances[0].operands.len();
+    assert_eq!(operand_count, TWO_SOLVER_LINE_OPERANDS);
+    let requested_slots = 1;
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::CollectionItems,
+        "collect SLDPRT relation operand lines",
+        |cap| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            project_two_solver_lines_with_policy(&policy).map(|_| ())
+        },
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "collect SLDPRT relation operand lines"
+            && limit.additional == requested_slots));
 }
 
 fn project_owned_loci_with_policy(policy: &DecodePolicy) -> Result<(), CodecError> {
@@ -427,9 +575,24 @@ fn assert_owned_loci_refusal(
     set_limit(&mut policy, upper);
     project(&policy).unwrap();
     set_limit(&mut policy, upper - 1);
-    assert!(
-        matches!(project(&policy), Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
-    );
+    let CodecError::ResourceLimit(limit) = project(&policy).unwrap_err() else {
+        panic!("one unit below the complete route must refuse its resource limit");
+    };
+    assert_eq!(limit.dimension, dimension);
+    let operation = match dimension {
+        ResourceDimension::CollectionItems | ResourceDimension::WorkUnits => {
+            "index SLDPRT planar relation sketches"
+        }
+        ResourceDimension::RetainedBytes => "copy SLDPRT planar sketch identity",
+        ResourceDimension::RecursionDepth => limit.operation,
+        _ => panic!("unexpected owned locus budget dimension"),
+    };
+    let error = cadmpeg_test_support::refusal::resource_limit_at(dimension, operation, |cap| {
+        let mut policy = DecodePolicy::service();
+        set_limit(&mut policy, cap);
+        project(&policy)
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == dimension));
 }
 
 #[test]
@@ -441,11 +604,10 @@ fn planar_relation_owned_loci_refuse_collection_limit() {
 }
 
 #[test]
-fn planar_relation_owned_loci_refuse_retained_limit() {
-    assert_owned_loci_refusal(
-        ResourceDimension::RetainedBytes,
-        project_owned_loci_with_policy,
-    );
+fn planar_relation_owned_loci_use_scoped_storage() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    project_owned_loci_with_policy(&policy).unwrap();
 }
 
 #[test]
@@ -1093,6 +1255,54 @@ fn planar_native_marker_refuses_work_limit() {
     );
 }
 
+#[test]
+fn invalid_all_fallback_solver_lines_do_not_requery_point_roster() {
+    use cadmpeg_ir::features::ParameterValue;
+    use cadmpeg_ir::scalar::Length;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (sketch, feature, lane, mut parameter) = two_solver_line_fixture();
+    parameter.value = Some(ParameterValue::Length(Length::new(7.0).unwrap()));
+    let mut entities = Vec::new();
+    let _retry_probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "reuse SLDPRT solved-line point markers",
+        None,
+    );
+    project_relation_solved_line_geometry(
+        &ctx,
+        &mut entities,
+        &[sketch],
+        &[feature],
+        &[parameter],
+        &[lane],
+    )
+    .unwrap();
+    assert!(entities.is_empty());
+}
+
+#[test]
+fn solved_line_point_roster_reuse_keeps_a_charged_boundary() {
+    const REUSE: &str = "reuse SLDPRT solved-line point markers";
+    let (_, _, lane, _) = two_solver_line_fixture();
+    let error = crate::test_support::work_refusal_at(REUSE, |ctx| {
+        let mut points = super::SolvedLinePoints::new(ctx)?;
+        points.roster(
+            ctx,
+            &lane,
+            "feature",
+            "resolve SLDPRT solved-line point markers",
+        )?;
+        points.roster(ctx, &lane, "feature", REUSE).map(|_| ())
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.operation == REUSE
+            && limit.dimension == ResourceDimension::WorkUnits));
+}
+
 mod roster_points;
 
 mod address_markers;
@@ -1100,3 +1310,74 @@ mod address_markers;
 mod axis_markers;
 
 mod native_markers;
+
+#[test]
+fn relation_point_operand_workspace_is_scoped_without_output() {
+    use crate::records::FeatureInputRelationFamily;
+    let mut lane = relation_lane();
+    lane.relation_instances[0].family = FeatureInputRelationFamily::PointLineDistance;
+    lane.relation_instances[0].operands = (0u16..2)
+        .map(|index| FeatureInputOperand {
+            offset: u64::from(index),
+            reference_ref: format!("reference-{index}"),
+            kind: FeatureInputOperandKind::D6,
+            entity_index: index,
+            entity_ref: Some(format!("marker-{index}")),
+        })
+        .collect();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 64 * 1024;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut entities = Vec::new();
+    project_relation_point_geometry(&ctx, &mut entities, &[], &[], &[lane]).unwrap();
+    assert!(entities.is_empty());
+    ctx.reserve_scoped(
+        policy.limits.max_materialized_bytes,
+        "released operand workspace",
+    )
+    .unwrap();
+}
+
+#[test]
+fn relation_without_point_operands_does_not_admit_the_operand_roster() {
+    use crate::records::FeatureInputRelationFamily;
+    let mut lane = relation_lane();
+    lane.relation_instances[0].family = FeatureInputRelationFamily::CircleDiameter;
+    lane.relation_instances[0].operands = (0u16..20)
+        .map(|index| FeatureInputOperand {
+            offset: u64::from(index),
+            reference_ref: format!("reference-{index}"),
+            kind: FeatureInputOperandKind::D6,
+            entity_index: index,
+            entity_ref: Some(format!("marker-{index}")),
+        })
+        .collect();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "index SLDPRT relation-point operands",
+        None,
+    );
+    let mut entities = Vec::new();
+    project_relation_point_geometry(&ctx, &mut entities, &[], &[], &[lane]).unwrap();
+    assert!(entities.is_empty());
+}
+
+#[test]
+fn relation_parameter_lookup_does_not_retry_an_empty_roster() {
+    let lane = relation_lane();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(
+        super::relation_parameter_by_relation_id(&ctx, &lane.relation_instances[0], &[])
+            .unwrap()
+            .is_none()
+    );
+}

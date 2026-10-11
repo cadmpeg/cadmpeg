@@ -123,20 +123,16 @@ fn polyline_nurbs_construction_preserves_caller_refusal_in_both_orientations() {
                 sense,
                 crate::IgesVersion::V5_3,
             );
-            if dimension == ResourceDimension::RetainedBytes {
-                assert!(
-                    result.is_ok(),
-                    "admitted polynomial poles move without retained storage"
-                );
-                assert!(ctx.finish_session().is_ok());
-                continue;
-            }
             let Err(CodecError::ResourceLimit(limit)) = result else {
                 panic!("constructor refusal must stay outside the polyline geometry error");
             };
             assert_eq!(limit.dimension, dimension);
             let operation = match dimension {
-                ResourceDimension::CollectionItems => "iges NURBS weights",
+                // Polynomial poles move without retained storage; the
+                // writer's default weights are the first retained allocation.
+                ResourceDimension::RetainedBytes | ResourceDimension::CollectionItems => {
+                    "iges NURBS weights"
+                }
                 ResourceDimension::WorkUnits => "IR NURBS knot finiteness",
                 _ => unreachable!(),
             };

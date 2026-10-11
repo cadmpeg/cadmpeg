@@ -533,10 +533,9 @@ fn signed_reversal_refuses_every_pass_before_any_carrier_changes() {
         knot_count: usize,
         reverse: impl Fn(&mut T, &DecodeContext<'_>) -> Result<(), CodecError>,
     ) {
-        let pole_swaps = u64::try_from(pole_count / 2).expect("pole swaps");
-        let knot_swaps = u64::try_from(knot_count / 2).expect("knot swaps");
-        let negations = u64::try_from(knot_count).expect("knot negations");
-        let total = pole_swaps + knot_swaps + negations;
+        // Admit each complete lane once; knot reversal and negation share one pass.
+        let poles = u64::try_from(pole_count).expect("pole visits");
+        let total = poles + u64::try_from(knot_count).expect("knot visits");
         for cap in 0..total {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -549,12 +548,10 @@ fn signed_reversal_refuses_every_pass_before_any_carrier_changes() {
             assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
             assert_eq!(
                 limit.operation,
-                if cap < pole_swaps {
+                if cap < poles {
                     "IR signed pole reversal"
-                } else if cap < pole_swaps + knot_swaps {
-                    "IR signed knot reversal"
                 } else {
-                    "IR signed knot negation"
+                    "IR signed knot reversal"
                 }
             );
             assert_eq!(&edited, original);

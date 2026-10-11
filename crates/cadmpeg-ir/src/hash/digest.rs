@@ -43,7 +43,6 @@ impl Sha256Digest {
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let text = ctx.retained_string(64, operation)?;
-        ctx.charge_work(64, operation)?;
         Ok(Self::encode_bytes(bytes, text))
     }
 
@@ -56,13 +55,27 @@ impl Sha256Digest {
         Self(text)
     }
 
+    fn validate_text(text: &str) -> Result<(), InvalidSha256Digest> {
+        if text.len() == 64
+            && text
+                .bytes()
+                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+        {
+            Ok(())
+        } else {
+            Err(InvalidSha256Digest)
+        }
+    }
+
     /// Copy the canonical spelling through the decode budget.
     pub fn try_clone_for_decode(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        Ok(Self(ctx.copy_retained_text(self.as_str(), operation)?))
+        let mut text = ctx.retained_string(64, operation)?;
+        text.push_str(self.as_str());
+        Ok(Self(text))
     }
 
     /// Borrow the canonical hexadecimal spelling.
@@ -82,15 +95,8 @@ impl TryFrom<String> for Sha256Digest {
     type Error = InvalidSha256Digest;
 
     fn try_from(text: String) -> Result<Self, Self::Error> {
-        if text.len() == 64
-            && text
-                .bytes()
-                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
-        {
-            Ok(Self(text))
-        } else {
-            Err(InvalidSha256Digest)
-        }
+        Self::validate_text(&text)?;
+        Ok(Self(text))
     }
 }
 
@@ -98,7 +104,8 @@ impl TryFrom<&str> for Sha256Digest {
     type Error = InvalidSha256Digest;
 
     fn try_from(text: &str) -> Result<Self, Self::Error> {
-        Self::try_from(text.to_owned())
+        Self::validate_text(text)?;
+        Ok(Self(text.to_owned()))
     }
 }
 
@@ -172,6 +179,25 @@ mod tests {
         );
     }
 
+    #[test]
+    fn completed_digest_encoding_has_no_input_sized_work() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let digest =
+            Sha256Digest::from_bytes_for_decode(&ctx, [0x5a; 32], "completed hash").unwrap();
+        assert_eq!(digest, Sha256Digest::from_bytes([0x5a; 32]));
+        assert_eq!(
+            digest
+                .try_clone_for_decode(&ctx, "completed hash clone")
+                .unwrap(),
+            digest
+        );
+        ctx.finish_session().unwrap();
+    }
+
     #[cfg(feature = "schema")]
     #[test]
     fn digest_schema_does_not_admit_a_trailing_line_break() {
@@ -198,6 +224,7 @@ mod tests {
             String::new(),
             "a".repeat(63),
             "a".repeat(65),
+            "a".repeat(8192),
             "A".repeat(64),
             "g".repeat(64),
             " ".repeat(64),

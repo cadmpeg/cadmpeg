@@ -87,7 +87,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if existing.is_some_and(|record| !is_revolve(record)) {
+            if match existing {
+                Some(record) => !is_revolve(record),
+                None => false,
+            } {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported revolution semantics",
                     feature.id
@@ -238,7 +241,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if existing.is_some_and(|record| !is_sweep(record)) {
+            if match existing {
+                Some(record) => !is_sweep(record),
+                None => false,
+            } {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes operation family",
                     feature.id
@@ -407,7 +413,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if existing.is_some_and(|record| !is_loft(record)) {
+            if match existing {
+                Some(record) => !is_loft(record),
+                None => false,
+            } {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported loft semantics",
                     feature.id
