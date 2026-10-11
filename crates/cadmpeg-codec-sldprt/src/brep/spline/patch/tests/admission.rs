@@ -369,6 +369,47 @@ fn truncated_patch_multiplicity_payload_skips_scalar_payloads() {
 }
 
 #[test]
+fn invalid_declared_patch_multiplicities_skip_scalar_payloads() {
+    let mut multiplicities = vec![0; 100_000];
+    multiplicities[1] = 2;
+    assert_unpaired_patch_knots(&u16_array(41, &multiplicities));
+}
+
+#[test]
+fn nonzero_trailing_patch_multiplicities_skip_scalar_payloads() {
+    let mut multiplicities = vec![0; 100_000];
+    multiplicities[0] = 2;
+    multiplicities[1] = 2;
+    multiplicities[99_999] = 1;
+    assert_unpaired_patch_knots(&u16_array(41, &multiplicities));
+}
+
+#[test]
+fn patch_knot_matching_reads_only_the_declared_scalar_prefix() {
+    let mut knots = vec![f64::MAX; 100_000];
+    knots[0] = 0.0;
+    knots[1] = 1.0;
+    let mut multiplicities = vec![0; 100_000];
+    multiplicities[0] = 2;
+    multiplicities[1] = 2;
+    let mut bytes = f64_array(0x80, 40, &knots);
+    bytes.extend(u16_array(41, &multiplicities));
+    let arena = DecodeArena::new();
+    let mut policy = probe_policy();
+    policy.limits.max_retained_bytes = 0;
+    // The integer lane and two scalar values fit; a full scalar buffer does not.
+    policy.limits.max_materialized_bytes = 512 * 1024;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let span = unique_surface_knot_span(
+        &ctx, &bytes, &Arrays::default(), (40, 41), 2, &[0.0, 1.0], &[2, 2],
+    ).unwrap().unwrap();
+    assert_eq!(span.count, 100_000);
+    assert_eq!(span.start, super::super::array_body(&bytes, 0, 0x80).unwrap()
+        + crate::layout::bspline_array_header::LEN);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
 fn patch_knot_ambiguity_skips_payloads_after_the_second_distinct_pair() {
     use crate::brep::spline::CompactArray;
 
@@ -424,6 +465,61 @@ fn patch_knot_ambiguity_skips_payloads_after_the_second_distinct_pair() {
 }
 
 #[test]
+fn patch_knot_mismatch_skips_later_multiplicity_payloads() {
+    use crate::brep::spline::CompactArray;
+
+    let mut bytes = f64_array(0x80, 40, &[0.0, 1.0]);
+    let mut headers = Vec::new();
+    for _ in 0..128 {
+        let offset = bytes.len();
+        bytes.extend_from_slice(&[0, 2, 0, 41, 0, 2, 0, 2]);
+        headers.push(CompactArray { offset, count: 2 });
+    }
+    let arrays = |count| {
+        let mut arrays = Arrays::default();
+        arrays.compact.insert(41, headers[..count].to_vec());
+        arrays
+    };
+    let boundary = |count, discovery_only| {
+        let operation = "test completed patch knot mismatch";
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits, operation, |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = probe_policy();
+                policy.limits.max_work_units = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let arrays = arrays(count);
+                if discovery_only {
+                    array_spans(&ctx, &bytes, &arrays, 0x80, 40)?;
+                    array_spans(&ctx, &bytes, &arrays, 0x7f, 41)?;
+                } else {
+                    assert_eq!(unique_surface_knot_span(
+                        &ctx, &bytes, &arrays, (40, 41), 2, &[2.0, 3.0], &[2, 2],
+                    )?, None);
+                }
+                ctx.charge_work(1, operation)
+            },
+        );
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("completed knot mismatch boundary");
+        };
+        limit.used
+    };
+    let cap = boundary(1, false) + boundary(128, true) - boundary(1, true);
+    let arena = DecodeArena::new();
+    let mut policy = probe_policy();
+    policy.limits.max_work_units = cap;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(unique_surface_knot_span(
+        &ctx, &bytes, &arrays(128), (40, 41), 2, &[2.0, 3.0], &[2, 2],
+    ).unwrap(), None);
+    ctx.finish_session().unwrap();
+    crate::test_support::work_refusal_at("scan Parasolid patch multiplicity spans", |ctx| {
+        unique_surface_knot_span(ctx, &bytes, &arrays(128), (40, 41), 2, &[2.0, 3.0], &[2, 2])
+    });
+}
+
+#[test]
 fn two_multiplicity_locations_make_one_patch_knot_span_ambiguous() {
     let mut bytes = f64_array(0x80, 40, &[0.0, 1.0]);
     bytes.extend(u16_array(41, &[2, 2]));
@@ -462,12 +558,22 @@ fn surface_patch_skips_framed_integer_index_storage() {
 }
 
 fn assert_rejected_surface_span_skips_replacement(reference: usize) {
-    let original = nurbs_surface_carrier(10, 11, 20);
+    let mut original = nurbs_surface_carrier(10, 11, 20);
     let baseline = cadmpeg_test_support::service_decode_context();
     let carriers = scan_surface_carriers(&baseline, &original, &mut Vec::new()).unwrap();
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) = carriers[&10].geometry.solved() else {
         panic!("surface");
     };
+    let controls = f64_array(0x2d, 12,
+        &[0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.5]);
+    let control_at = original.windows(controls.len()).position(|w| w == controls).unwrap();
+    // Decode multiplies coordinates by 1000; scale 2 needs these controls.
+    let controls_at_scale = f64_array(0x2d, 12,
+        &[0.0, 0.0, 0.0, 0.0, 2000.0, 0.0, 2000.0, 0.0, 0.0, 2000.0, 2000.0, 1000.0]);
+    original[control_at..control_at + controls.len()].copy_from_slice(&controls_at_scale);
+    let mut confirmed = original.clone();
+    assert_eq!(patch_nurbs_surface(&baseline, &mut confirmed, 0, surface, surface, 2.0).unwrap(), Some(()));
+    assert_eq!(confirmed, original);
     let mut replacement = surface.clone();
     replacement.try_map_control_points(
         |_, _| Ok::<_, std::convert::Infallible>(cadmpeg_ir::features::FinitePoint3::new(
