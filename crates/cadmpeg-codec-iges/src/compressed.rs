@@ -120,9 +120,6 @@ fn malformed(message: impl Into<String>) -> CodecError {
 }
 
 fn split_lines<'a>(source: &'a [u8], ctx: &DecodeContext<'_>) -> Result<Vec<&'a [u8]>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal));
-    }
     if source.is_empty() {
         return Err(malformed("source is empty"));
     }
@@ -244,9 +241,6 @@ fn hollerith_at(
     start: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<(usize, usize)>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal));
-    }
     let mut cursor = start;
     while cursor < bytes.len() {
         ctx.charge_work(1, "iges compressed Global Hollerith digits")?;
@@ -324,9 +318,6 @@ fn parse_sequence(
     label: &str,
     ctx: &DecodeContext<'_>,
 ) -> Result<(u32, usize), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal));
-    }
     let mut end = start;
     while end < bytes.len() {
         ctx.charge_work(1, "iges compressed sequence digits")?;
@@ -358,9 +349,6 @@ fn parse_field_specs(
     bytes: &[u8],
     ctx: &DecodeContext<'_>,
 ) -> Result<[Option<Rc<Vec<u8>>>; 16], CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal));
-    }
     let mut specs = std::array::from_fn(|_| None);
     let mut cursor = 0_usize;
     while cursor < bytes.len() {
@@ -579,10 +567,10 @@ fn fixed_number(value: i64) -> Result<[u8; 8], CodecError> {
 }
 
 fn sequence_field(marker: u8, sequence: u32) -> Result<[u8; 8], CodecError> {
-    let mut output = [b' '; 8];
-    output[0] = marker;
     // Every u32 spelling fits in ten decimal digits.
     const DIGIT_WIDTH: usize = 10;
+    let mut output = [b' '; 8];
+    output[0] = marker;
     let mut digits = [0_u8; DIGIT_WIDTH];
     let count = {
         let mut remaining = digits.as_mut_slice();
@@ -873,9 +861,6 @@ fn append_parameter_cards(
     first_parameter_sequence: u32,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal));
-    }
     let mut lines = entity.parameter_lines.iter().copied().enumerate();
     while lines.len() != 0 {
         let Some((index, line)) =
@@ -1043,9 +1028,6 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
 
     // The output charge above pays every byte the card writers below copy;
     // each loop also admits its own steps.
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(&lines[start_begin..global_begin]);
     while source_values.len() != 0 {
         let Some(line) = ctx.next_charged(&mut source_values, "iges compressed Start cards")?
@@ -1053,9 +1035,6 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
             break;
         };
         append_source_card(&mut output, line, b'S')?;
-    }
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
     }
     let mut source_values = IntoIterator::into_iter(&lines[global_begin..data_begin]);
     while source_values.len() != 0 {

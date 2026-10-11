@@ -39,7 +39,14 @@ fn native_token_copy_first_payload_refusal_does_not_admit_the_tail() {
         };
         assert_eq!(first.dimension, dimension);
         assert_eq!(first.operation, "iges native token bytes");
-        assert_eq!(first.used, if dimension == ResourceDimension::WorkUnits { 1 } else { slots });
+        assert_eq!(
+            first.used,
+            if dimension == ResourceDimension::WorkUnits {
+                1
+            } else {
+                slots
+            }
+        );
         assert_eq!(first.additional, 3);
         assert!(matches!(ctx.finish_session(),
             Err(CodecError::ResourceLimit(actual)) if actual == first
@@ -49,9 +56,9 @@ fn native_token_copy_first_payload_refusal_does_not_admit_the_tail() {
 
 #[test]
 fn native_token_copy_admits_each_actual_visit_once() {
-    let tokens = tokens();
     // 1,024 token visits and three copied string bytes.
     const WORK: u64 = 1024 + 3;
+    let tokens = tokens();
     for limit in [WORK - 1, WORK] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();

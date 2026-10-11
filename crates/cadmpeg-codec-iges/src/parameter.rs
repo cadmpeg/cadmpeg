@@ -1194,9 +1194,6 @@ fn entity_primary_end_for_entry(
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<usize>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     Ok(match (entry.entity_type, entry.form) {
         (102, 0) | (402, 1 | 7 | 14 | 15) => Some(counted_primary_end(record)),
         (402, 5) => Some(label_display_primary_end(record)),
@@ -1394,9 +1391,6 @@ fn entity_primary_end_with_records_for_entry(
     widths: &mut AttributeDefinitionWidths<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<usize>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if entry.entity_type == 422 && matches!(entry.form, 0 | 1) {
         return Ok(Some(attribute_table_instance_primary_end(
             record, entry, directory, records, widths, ctx,
@@ -1515,9 +1509,6 @@ fn fem_result_primary_end(
     entity_type: i64,
     ctx: &DecodeContext<'_>,
 ) -> Result<usize, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let (value_count_index, item_count_index, item_start): (usize, usize, usize) =
         if entity_type == 146 {
             (4, 5, 6)
@@ -1603,9 +1594,6 @@ fn text_font_primary_end(
     record: &ParameterRecord,
     ctx: &DecodeContext<'_>,
 ) -> Result<usize, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(character_count) = record
         .integer(5)
         .and_then(|value| usize::try_from(value).ok())
@@ -1692,9 +1680,6 @@ fn tabular_data_primary_end(
     record: &ParameterRecord,
     ctx: &DecodeContext<'_>,
 ) -> Result<usize, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(dependent_count) = record
         .integer(3)
         .and_then(|value| usize::try_from(value).ok())
@@ -2083,9 +2068,6 @@ fn associativity_definition_primary_end(
     record: &ParameterRecord,
     ctx: &DecodeContext<'_>,
 ) -> Result<usize, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(class_count) = record
         .integer(1)
         .and_then(|value| usize::try_from(value).ok())
@@ -2172,9 +2154,6 @@ fn attribute_table_definition_primary_end(
     form: i64,
     ctx: &DecodeContext<'_>,
 ) -> Result<usize, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(attribute_count) = record
         .integer(3)
         .and_then(|value| usize::try_from(value).ok())
@@ -2216,9 +2195,10 @@ fn attribute_table_definition_primary_end(
     Ok(cursor)
 }
 
-/// Descriptor-count failure in a Type 322 Form 0 row width.
+/// Count failure in a Type 322 Form 0 row width.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AttributeWidthDefect {
+    AttributeCount,
     ValueCount { attribute: usize },
     ValueTotal,
 }
@@ -2231,32 +2211,36 @@ pub(crate) fn attribute_table_definition_width(
     operation: &'static str,
 ) -> Result<Result<usize, AttributeWidthDefect>, CodecError> {
     let mut values_per_row = 0_usize;
-    let mut attributes = 0..attribute_count;
-    while !attributes.is_empty() {
-        let Some(attribute) = ctx.next_charged(&mut attributes, operation)? else {
-            break;
-        };
-        let descriptor = attribute
-            .checked_mul(3)
-            .and_then(|span| span.checked_add(4));
-        let declared = descriptor.and_then(|cursor| {
-            record.tokens.get(cursor)?;
-            record.tokens.get(cursor + 1)?;
-            let count_index = cursor + 2;
-            match record.tokens.get(count_index) {
-                Some(_) => record.integer_or(count_index, 1),
-                None if attribute + 1 == attribute_count => Some(1),
-                None => None,
-            }
-            .and_then(|value| usize::try_from(value).ok())
-        });
-        let Some(declared) = declared else {
-            return Ok(Err(AttributeWidthDefect::ValueCount { attribute }));
-        };
-        let Some(total) = values_per_row.checked_add(declared) else {
-            return Ok(Err(AttributeWidthDefect::ValueTotal));
-        };
-        values_per_row = total;
+    let defect = ctx.find_map(
+        0..attribute_count,
+        |attribute| {
+            let descriptor = attribute
+                .checked_mul(3)
+                .and_then(|span| span.checked_add(4));
+            let declared = descriptor.and_then(|cursor| {
+                record.tokens.get(cursor)?;
+                record.tokens.get(cursor + 1)?;
+                let count_index = cursor + 2;
+                match record.tokens.get(count_index) {
+                    Some(_) => record.integer_or(count_index, 1),
+                    None if attribute + 1 == attribute_count => Some(1),
+                    None => None,
+                }
+                .and_then(|value| usize::try_from(value).ok())
+            });
+            let Some(declared) = declared else {
+                return Ok(Some(AttributeWidthDefect::ValueCount { attribute }));
+            };
+            let Some(total) = values_per_row.checked_add(declared) else {
+                return Ok(Some(AttributeWidthDefect::ValueTotal));
+            };
+            values_per_row = total;
+            Ok(None)
+        },
+        operation,
+    )?;
+    if let Some(defect) = defect {
+        return Ok(Err(defect));
     }
     Ok(Ok(values_per_row))
 }
@@ -2264,29 +2248,36 @@ pub(crate) fn attribute_table_definition_width(
 fn attribute_table_definition_values_per_row(
     record: &ParameterRecord,
     ctx: &DecodeContext<'_>,
-) -> Result<Option<usize>, CodecError> {
-    ctx.charge_work(0, "iges parameter primary layout")?;
+) -> Result<Result<usize, AttributeWidthDefect>, CodecError> {
     let Some(attribute_count) = record
         .integer(3)
         .and_then(|value| usize::try_from(value).ok())
-        .filter(|count| *count > 0)
     else {
-        return Ok(None);
+        return Ok(Err(AttributeWidthDefect::AttributeCount));
     };
-    Ok(attribute_table_definition_width(
+    if attribute_count == 0 {
+        return Ok(Ok(0));
+    }
+    attribute_table_definition_width(
         record,
         attribute_count,
         ctx,
         "iges parameter primary layout",
-    )?
-    .ok())
+    )
 }
 
-/// Scoped row widths, including malformed definitions, shared by all primary-layout instances.
-struct AttributeDefinitionWidths<'ctx> {
+/// A definition's row width and the boundary required to hold its descriptors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct AttributeDefinitionWidth {
+    pub(crate) values_per_row: Result<usize, AttributeWidthDefect>,
+    pub(crate) descriptor_end: Option<usize>,
+}
+
+/// Scoped definition widths and count defects shared by primary layout and native storage.
+pub(crate) struct AttributeDefinitionWidths<'ctx> {
     // One definition fits inline; further definitions need scoped tree nodes.
-    first: Option<(u32, Option<usize>)>,
-    values: BTreeMap<u32, Option<usize>>,
+    first: Option<(u32, AttributeDefinitionWidth)>,
+    values: BTreeMap<u32, AttributeDefinitionWidth>,
     storage: ScopedReservation<'ctx>,
 }
 
@@ -2299,37 +2290,62 @@ impl<'ctx> AttributeDefinitionWidths<'ctx> {
         })
     }
 
+    pub(crate) fn get(
+        &self,
+        sequence: u32,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Option<AttributeDefinitionWidth>, CodecError> {
+        let Some((first_sequence, width)) = self.first else {
+            return Ok(None);
+        };
+        if sequence == first_sequence {
+            return Ok(Some(width));
+        }
+        ctx.get_btree_map(&self.values, &sequence, operation)
+            .map(Option::<&AttributeDefinitionWidth>::copied)
+    }
+
     fn width(
         &mut self,
         record: &ParameterRecord,
         ctx: &DecodeContext<'_>,
     ) -> Result<Option<usize>, CodecError> {
-        if let Some((sequence, width)) = self.first {
-            if sequence == record.directory_sequence {
-                return Ok(width);
+        let width = match self.get(
+            record.directory_sequence,
+            ctx,
+            "iges parameter attribute width lookup",
+        )? {
+            Some(width) => width,
+            None => {
+                let width = AttributeDefinitionWidth {
+                    values_per_row: attribute_table_definition_values_per_row(record, ctx)?,
+                    descriptor_end: record
+                        .integer(3)
+                        .and_then(|value| usize::try_from(value).ok())
+                        .and_then(|count| count.checked_mul(3))
+                        .and_then(|span| span.checked_add(4)),
+                };
+                if self.first.is_none() {
+                    self.first = Some((record.directory_sequence, width));
+                } else {
+                    self.storage.with_storage(|| {
+                        ctx.insert_btree_map(
+                            &mut self.values,
+                            record.directory_sequence,
+                            width,
+                            "iges parameter attribute width nodes",
+                        )
+                    })?;
+                }
+                width
             }
-            if let Some(width) = ctx.get_btree_map(
-                &self.values,
-                &record.directory_sequence,
-                "iges parameter attribute width lookup",
-            )? {
-                return Ok(*width);
-            }
-        }
-        let width = attribute_table_definition_values_per_row(record, ctx)?;
-        if self.first.is_none() {
-            self.first = Some((record.directory_sequence, width));
-        } else {
-            self.storage.with_storage(|| {
-                ctx.insert_btree_map(
-                    &mut self.values,
-                    record.directory_sequence,
-                    width,
-                    "iges parameter attribute width nodes",
-                )
-            })?;
-        }
-        Ok(width)
+        };
+        // A zero-attribute definition states no instance primary layout.
+        Ok(width
+            .values_per_row
+            .ok()
+            .filter(|_| record.integer(3) != Some(0)))
     }
 }
 
@@ -2341,9 +2357,6 @@ fn attribute_table_instance_primary_end(
     widths: &mut AttributeDefinitionWidths<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<usize, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(definition_sequence) = entry
         .structure
         .checked_neg()
@@ -2521,9 +2534,6 @@ fn loop_primary_end(
     record: &ParameterRecord,
     ctx: &DecodeContext<'_>,
 ) -> Result<usize, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(use_count) = record
         .integer(1)
         .and_then(|value| usize::try_from(value).ok())
@@ -2712,9 +2722,6 @@ fn boundary_primary_end(
     record: &ParameterRecord,
     ctx: &DecodeContext<'_>,
 ) -> Result<usize, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(segment_count) = record
         .integer(4)
         .and_then(|value| usize::try_from(value).ok())
@@ -2890,7 +2897,7 @@ fn groups_for_candidate_with_context(
             }
             let mut pointers = ctx.collection_vec(range.len(), "iges trailing pointer entries")?;
             let mut pointer_indices = range;
-            while pointer_indices.len() != 0 || ctx.resource_refusal().is_some() {
+            while !pointer_indices.is_empty() || ctx.resource_refusal().is_some() {
                 let Some(token_index) =
                     ctx.next_charged(&mut pointer_indices, "iges trailing pointer entries")?
                 else {
@@ -3110,9 +3117,6 @@ impl QuarantinedParameterRecord {
     }
 
     pub(crate) fn loss_note(&self, ctx: &DecodeContext<'_>) -> Result<LossNote, CodecError> {
-        if let Some(limit) = ctx.resource_refusal() {
-            return Err(CodecError::ResourceLimit(limit));
-        }
         let owned = match &self.ownership {
             QuarantinedCards::Owned { range, .. } => {
                 let last = range.end.checked_sub(1).ok_or_else(|| {
@@ -3169,9 +3173,6 @@ fn layout_hollerith(
     start: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<(usize, usize)>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal));
-    }
     let mut cursor = start;
     while cursor < bytes.len() {
         ctx.charge_work(1, "iges parameter layout Hollerith digits")?;
@@ -3328,6 +3329,7 @@ pub(crate) fn layout_parameter_cards(
 pub(crate) struct ParameterAssembly<'ctx> {
     pub(crate) records: Vec<ParameterRecord>,
     pub(crate) trailing_pointer_analysis: BTreeMap<u32, TrailingPointerAnalysis>,
+    pub(crate) attribute_definition_widths: AttributeDefinitionWidths<'ctx>,
     pub(crate) quarantined: Vec<QuarantinedParameterRecord>,
     pub(crate) recoveries: FramingRecoveries,
     pub(crate) records_storage: ScopedReservation<'ctx>,
@@ -3382,9 +3384,6 @@ fn hollerith(
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<(Token, usize)>, TokenizeFailure> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(TokenizeFailure::Refusal(CodecError::ResourceLimit(refusal)));
-    }
     let mut cursor = start;
     while cursor < bytes.len() {
         ctx.charge_work(1, "iges parameter Hollerith digits")
@@ -3476,9 +3475,6 @@ fn trim_macro_span(
     span: Range<usize>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Range<usize>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal));
-    }
     let mut start = span.start;
     let mut end = span.end;
     while start < end && start < bytes.len() {
@@ -3516,9 +3512,6 @@ fn macro_hollerith_end(
     start: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<HollerithProbe, MacroDataError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal).into());
-    }
     let mut cursor = start;
     while cursor < bytes.len() {
         ctx.charge_work(1, "iges macro Hollerith digits")?;
@@ -3559,9 +3552,6 @@ fn macro_next_field(
     record_delimiter: u8,
     ctx: &DecodeContext<'_>,
 ) -> Result<(Range<usize>, u8, usize), MacroDataError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal).into());
-    }
     let mut cursor = start;
     while cursor < bytes.len() {
         ctx.charge_work(1, "iges macro leading whitespace")?;
@@ -3605,9 +3595,6 @@ fn macro_integer(
     span: &Range<usize>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<i64>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(bytes) = bytes.get(span.clone()) else {
         return Ok(None);
     };
@@ -3627,9 +3614,6 @@ fn macro_keyword(
     keyword: &[u8],
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(value) = bytes.get(span.clone()) else {
         return Ok(false);
     };
@@ -3677,9 +3661,6 @@ pub(crate) fn macro_parameter_data_with_context(
     record_delimiter: u8,
     ctx: &DecodeContext<'_>,
 ) -> Result<MacroParameterData, MacroDataError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal).into());
-    }
     let mut statements = Vec::new();
     let mut start = 0_usize;
     let mut cursor = 0_usize;
@@ -4113,9 +4094,6 @@ fn tokenize_with_limits(
     limits: NumericLimits,
     ctx: &DecodeContext<'_>,
 ) -> Result<(Vec<Token>, usize, Vec<u64>), TokenizeFailure> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(TokenizeFailure::Refusal(CodecError::ResourceLimit(refusal)));
-    }
     let mut tokens = Vec::new();
     let mut double_precision_reals = Vec::new();
     let mut cursor = 0_usize;
@@ -4655,7 +4633,7 @@ fn resolve_ownership<'a, 'ctx>(
             continue;
         }
         let mut claimed_cards = range.clone();
-        while claimed_cards.len() != 0 || ctx.resource_refusal().is_some() {
+        while !claimed_cards.is_empty() || ctx.resource_refusal().is_some() {
             let Some(card) =
                 ctx.next_charged(&mut claimed_cards, "iges claimed parameter cards")?
             else {
@@ -4995,6 +4973,7 @@ pub(crate) fn assemble_with_context<'ctx>(
         let record = records_storage.with_storage(|| record_storage.commit_value(record))?;
         records.push(record);
     }
+    let mut widths;
     {
         let mut record_index_storage = ctx.reserve_scoped(0, "iges parameter record index")?;
         let mut record_by_directory = BTreeMap::new();
@@ -5014,7 +4993,7 @@ pub(crate) fn assemble_with_context<'ctx>(
                 )
             })?;
         }
-        let mut widths = AttributeDefinitionWidths::new(ctx)?;
+        widths = AttributeDefinitionWidths::new(ctx)?;
         let mut analyzed_records = records.iter();
         while analyzed_records.len() != 0 || ctx.resource_refusal().is_some() {
             let Some(record) =
@@ -5123,6 +5102,7 @@ pub(crate) fn assemble_with_context<'ctx>(
         )?;
     }
     Ok(ParameterAssembly {
+        attribute_definition_widths: widths,
         records,
         trailing_pointer_analysis,
         quarantined,

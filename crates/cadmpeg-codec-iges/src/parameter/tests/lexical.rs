@@ -3,7 +3,6 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::super::{tokenize, ParameterDefect, Token, TokenValue, TokenizeFailure};
@@ -652,14 +651,17 @@ fn manual_scan_policy(work: u64) -> cadmpeg_core::decode::DecodePolicy {
 }
 
 fn manual_digit_probe(
-    owner: usize, bytes: &[u8], start: usize, ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    owner: usize,
+    bytes: &[u8],
+    start: usize,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     match owner {
         0 => {
             assert!(super::super::layout_hollerith(bytes, start, ctx)?.is_none());
         }
         1 => match super::super::hollerith(bytes, &[], start, GlobalTable::V5Later, ctx) {
-            Ok(None) => {},
+            Ok(None) => {}
             Err(TokenizeFailure::Refusal(error)) => return Err(error),
             _ => panic!("digit-only ordinary probe must have no Hollerith payload"),
         },
@@ -688,16 +690,17 @@ fn manual_digit_controls(owner: usize, operation: &str) {
                 result.unwrap();
                 ctx.finish_session().unwrap();
             } else {
-                let Err(CodecError::ResourceLimit(first)) = result else { panic!("actual digit refusal"); };
+                let Err(CodecError::ResourceLimit(first)) = result else {
+                    panic!("actual digit refusal");
+                };
                 assert_eq!(first.dimension, ResourceDimension::WorkUnits);
                 assert_eq!(first.operation, operation);
                 assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
-                for (input, start) in [(b"".as_slice(), 0), (bytes.as_slice(), count),
-                    (bytes.as_slice(), usize::MAX), (bytes.as_slice(), 0)] {
-                    assert!(matches!(manual_digit_probe(owner, input, start, &ctx),
-                        Err(CodecError::ResourceLimit(last)) if last == first));
-                }
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+                assert!(matches!(manual_digit_probe(owner, &bytes, 0, &ctx),
+                    Err(CodecError::ResourceLimit(last)) if last == first));
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+                );
             }
         }
     }
@@ -705,7 +708,11 @@ fn manual_digit_controls(owner: usize, operation: &str) {
     let policy = manual_scan_policy(0);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     for _ in 0..64 {
-        for (input, start) in [(b"".as_slice(), 0), (b"1".as_slice(), 1), (b"1".as_slice(), usize::MAX)] {
+        for (input, start) in [
+            (b"".as_slice(), 0),
+            (b"1".as_slice(), 1),
+            (b"1".as_slice(), usize::MAX),
+        ] {
             manual_digit_probe(owner, input, start, &ctx).unwrap();
         }
     }
@@ -743,14 +750,18 @@ fn manual_macro_trim_stops_at_its_logical_span() {
                 assert_eq!(result.unwrap(), count..count);
                 ctx.finish_session().unwrap();
             } else {
-                let Err(CodecError::ResourceLimit(first)) = result else { panic!("actual whitespace refusal"); };
+                let Err(CodecError::ResourceLimit(first)) = result else {
+                    panic!("actual whitespace refusal");
+                };
                 assert_eq!(first.operation, "iges macro leading whitespace");
                 assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
-                for span in [0..0, 0..count] {
-                    assert!(matches!(super::super::trim_macro_span(&bytes, span, &ctx),
-                        Err(CodecError::ResourceLimit(last)) if last == first));
-                }
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+                assert!(
+                    matches!(super::super::trim_macro_span(&bytes, 0..count, &ctx),
+                    Err(CodecError::ResourceLimit(last)) if last == first)
+                );
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+                );
             }
         }
         // A nonblank leading byte is visited once. The trailing scan visits
@@ -760,14 +771,23 @@ fn manual_macro_trim_stops_at_its_logical_span() {
         let arena = DecodeArena::new();
         let policy = manual_scan_policy(required + 2);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert_eq!(super::super::trim_macro_span(&trailing, 0..trailing.len(), &ctx).unwrap(), 0..1);
+        assert_eq!(
+            super::super::trim_macro_span(&trailing, 0..trailing.len(), &ctx).unwrap(),
+            0..1
+        );
         ctx.finish_session().unwrap();
     }
     let arena = DecodeArena::new();
     let policy = manual_scan_policy(0);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(super::super::trim_macro_span(b" ", 0..0, &ctx).unwrap(), 0..0);
-    assert_eq!(super::super::trim_macro_span(b"", 0..0, &ctx).unwrap(), 0..0);
+    assert_eq!(
+        super::super::trim_macro_span(b" ", 0..0, &ctx).unwrap(),
+        0..0
+    );
+    assert_eq!(
+        super::super::trim_macro_span(b"", 0..0, &ctx).unwrap(),
+        0..0
+    );
     ctx.finish_session().unwrap();
 }
 
@@ -790,27 +810,34 @@ fn manual_layout_missing_delimiter_uses_only_actual_field_bytes() {
                     if message == "IGES Parameter Data delimiter is missing"));
                 ctx.finish_session().unwrap();
             } else {
-                let Err(CodecError::ResourceLimit(first)) = result else { panic!("actual field-byte refusal"); };
+                let Err(CodecError::ResourceLimit(first)) = result else {
+                    panic!("actual field-byte refusal");
+                };
                 assert_eq!(first.operation, "iges parameter layout field bytes");
                 assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
                 assert!(matches!(super::super::layout_parameter_cards(&[], &ctx),
                     Err(CodecError::ResourceLimit(last)) if last == first));
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+                );
             }
         }
     }
     let arena = DecodeArena::new();
     let policy = manual_scan_policy(0);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(super::super::layout_parameter_cards(&[], &ctx), Err(CodecError::Malformed(_))));
+    assert!(matches!(
+        super::super::layout_parameter_cards(&[], &ctx),
+        Err(CodecError::Malformed(_))
+    ));
     ctx.finish_session().unwrap();
 }
 
 #[test]
 fn manual_macro_header_scans_only_existing_whitespace_and_field_bytes() {
+    use super::super::{macro_next_field, MacroDataError};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext};
     use cadmpeg_core::CodecError;
-    use super::super::{macro_next_field, MacroDataError};
     for count in [1_usize, 64] {
         for whitespace in [true, false] {
             let bytes = vec![if whitespace { b' ' } else { b'x' }; count];
@@ -821,15 +848,22 @@ fn manual_macro_header_scans_only_existing_whitespace_and_field_bytes() {
                 let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
                 let result = macro_next_field(&bytes, 0, b',', b';', &ctx);
                 if cap == required {
-                    assert!(matches!(result, Err(MacroDataError::Defect(ParameterDefect::MacroHeaderMalformed, at))
-                        if at == if whitespace { count } else { 0 }));
+                    assert!(
+                        matches!(result, Err(MacroDataError::Defect(ParameterDefect::MacroHeaderMalformed, at))
+                        if at == if whitespace { count } else { 0 })
+                    );
                     ctx.finish_session().unwrap();
                 } else {
-                    let Err(MacroDataError::Refusal(CodecError::ResourceLimit(first))) = result else { panic!("actual header-byte refusal"); };
+                    let Err(MacroDataError::Refusal(CodecError::ResourceLimit(first))) = result
+                    else {
+                        panic!("actual header-byte refusal");
+                    };
                     assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
-                    assert!(matches!(macro_next_field(&[], 0, b',', b';', &ctx),
+                    assert!(matches!(macro_next_field(&bytes, 0, b',', b';', &ctx),
                         Err(MacroDataError::Refusal(CodecError::ResourceLimit(last))) if last == first));
-                    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+                    assert!(
+                        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+                    );
                 }
             }
         }
@@ -837,16 +871,21 @@ fn manual_macro_header_scans_only_existing_whitespace_and_field_bytes() {
     let arena = DecodeArena::new();
     let policy = manual_scan_policy(0);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(macro_next_field(&[], 0, b',', b';', &ctx),
-        Err(MacroDataError::Defect(ParameterDefect::MacroHeaderMalformed, 0))));
+    assert!(matches!(
+        macro_next_field(&[], 0, b',', b';', &ctx),
+        Err(MacroDataError::Defect(
+            ParameterDefect::MacroHeaderMalformed,
+            0
+        ))
+    ));
     ctx.finish_session().unwrap();
 }
 
 #[test]
 fn manual_macro_statement_scan_preserves_missing_terminator_recovery() {
+    use super::super::{macro_parameter_data_with_context, MacroDataError};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext};
     use cadmpeg_core::CodecError;
-    use super::super::{macro_parameter_data_with_context, MacroDataError};
     for count in [1_usize, 64] {
         let bytes = vec![b'x'; count];
         // One statement-byte visit and one nondigit Hollerith probe per byte.
@@ -857,22 +896,39 @@ fn manual_macro_statement_scan_preserves_missing_terminator_recovery() {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let result = macro_parameter_data_with_context(&bytes, b',', b';', &ctx);
             if cap == required {
-                assert!(matches!(result, Err(MacroDataError::Defect(ParameterDefect::MacroTerminatorMissing, 0))));
+                assert!(matches!(
+                    result,
+                    Err(MacroDataError::Defect(
+                        ParameterDefect::MacroTerminatorMissing,
+                        0
+                    ))
+                ));
                 ctx.finish_session().unwrap();
             } else {
-                let Err(MacroDataError::Refusal(CodecError::ResourceLimit(first))) = result else { panic!("actual statement-byte refusal"); };
+                let Err(MacroDataError::Refusal(CodecError::ResourceLimit(first))) = result else {
+                    panic!("actual statement-byte refusal");
+                };
                 assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
-                assert!(matches!(macro_parameter_data_with_context(&[], b',', b';', &ctx),
-                    Err(MacroDataError::Refusal(CodecError::ResourceLimit(last))) if last == first));
-                assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+                assert!(
+                    matches!(macro_parameter_data_with_context(&bytes, b',', b';', &ctx),
+                    Err(MacroDataError::Refusal(CodecError::ResourceLimit(last))) if last == first)
+                );
+                assert!(
+                    matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+                );
             }
         }
     }
     let arena = DecodeArena::new();
     let policy = manual_scan_policy(0);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(macro_parameter_data_with_context(&[], b',', b';', &ctx),
-        Err(MacroDataError::Defect(ParameterDefect::MacroTerminatorMissing, 0))));
+    assert!(matches!(
+        macro_parameter_data_with_context(&[], b',', b';', &ctx),
+        Err(MacroDataError::Defect(
+            ParameterDefect::MacroTerminatorMissing,
+            0
+        ))
+    ));
     ctx.finish_session().unwrap();
 }
 
@@ -888,8 +944,10 @@ fn manual_tokenizer_whitespace_eof_keeps_the_original_defect() {
         let arena = DecodeArena::new();
         let policy = manual_scan_policy(required);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(tokenize(&bytes, &[], b',', b';', GlobalTable::V5Later, &ctx),
-            Err(TokenizeFailure::Defect(ParameterDefect::DelimiterMissing, at)) if at == count));
+        assert!(
+            matches!(tokenize(&bytes, &[], b',', b';', GlobalTable::V5Later, &ctx),
+            Err(TokenizeFailure::Defect(ParameterDefect::DelimiterMissing, at)) if at == count)
+        );
         ctx.finish_session().unwrap();
         if count != 0 {
             let arena = DecodeArena::new();
@@ -897,82 +955,21 @@ fn manual_tokenizer_whitespace_eof_keeps_the_original_defect() {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let Err(TokenizeFailure::Refusal(CodecError::ResourceLimit(first))) =
                 tokenize(&bytes, &[], b',', b';', GlobalTable::V5Later, &ctx)
-            else { panic!("last actual space refusal"); };
+            else {
+                panic!("last actual space refusal");
+            };
             assert_eq!(first.operation, "iges parameter leading spaces");
-            assert_eq!((first.limit, first.used, first.additional), (required - 1, required - 1, 1));
-            assert!(matches!(tokenize(&[], &[], b',', b';', GlobalTable::V5Later, &ctx),
-                Err(TokenizeFailure::Refusal(CodecError::ResourceLimit(last))) if last == first));
-            assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
+            assert_eq!(
+                (first.limit, first.used, first.additional),
+                (required - 1, required - 1, 1)
+            );
+            assert!(
+                matches!(tokenize(&bytes, &[], b',', b';', GlobalTable::V5Later, &ctx),
+                Err(TokenizeFailure::Refusal(CodecError::ResourceLimit(last))) if last == first)
+            );
+            assert!(
+                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first)
+            );
         }
     }
-}
-
-#[test]
-fn manual_parameter_empty_scanners_replay_each_original_refusal() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    use super::super::{macro_next_field, macro_parameter_data_with_context, trim_macro_span, MacroDataError};
-    for dimension in [ResourceDimension::WorkUnits, ResourceDimension::CollectionItems,
-        ResourceDimension::MaterializedBytes, ResourceDimension::RetainedBytes,
-        ResourceDimension::Entities, ResourceDimension::RecursionDepth] {
-        let arena = DecodeArena::new();
-        let policy = manual_scan_policy(0);
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let refused = match dimension {
-            ResourceDimension::WorkUnits => ctx.charge_work(1, "test original manual scanner refusal"),
-            ResourceDimension::CollectionItems => ctx.charge_collection_items(1, "test original manual scanner refusal"),
-            ResourceDimension::MaterializedBytes => ctx.reserve_scoped(1, "test original manual scanner refusal").map(|_| ()),
-            ResourceDimension::RetainedBytes => ctx.charge_retained(1, "test original manual scanner refusal"),
-            ResourceDimension::Entities => ctx.charge_entities(1, "test original manual scanner refusal"),
-            ResourceDimension::RecursionDepth => ctx.enter_nested("test original manual scanner refusal").map(|_| ()),
-            _ => panic!("manual scanner refusal dimension"),
-        };
-        let Err(CodecError::ResourceLimit(first)) = refused else { panic!("original refusal"); };
-        assert_eq!(first.dimension, dimension);
-        for _ in 0..64 {
-            for owner in 0..3 {
-                assert!(matches!(manual_digit_probe(owner, &[], 0, &ctx),
-                    Err(CodecError::ResourceLimit(last)) if last == first));
-            }
-            assert!(matches!(trim_macro_span(b" ", 0..0, &ctx),
-                Err(CodecError::ResourceLimit(last)) if last == first));
-            assert!(matches!(super::super::layout_parameter_cards(&[], &ctx),
-                Err(CodecError::ResourceLimit(last)) if last == first));
-            assert!(matches!(macro_next_field(&[], 0, b',', b';', &ctx),
-                Err(MacroDataError::Refusal(CodecError::ResourceLimit(last))) if last == first));
-            assert!(matches!(macro_parameter_data_with_context(&[], b',', b';', &ctx),
-                Err(MacroDataError::Refusal(CodecError::ResourceLimit(last))) if last == first));
-            assert!(matches!(tokenize(&[], &[], b',', b';', GlobalTable::V5Later, &ctx),
-                Err(TokenizeFailure::Refusal(CodecError::ResourceLimit(last))) if last == first));
-        }
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
-    }
-}
-
-#[test]
-fn entry_macro_integer_invalid_span_preserves_original_refusal() {
-    crate::test_support::with_entry_context(|ctx, original| {
-
-        let result = super::super::macro_integer(&[], &(1..2), ctx);
-        if let Some(first) = original {
-            assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first));
-
-        } else {
-            assert!(result.unwrap().is_none());
-        }
-    });
-}
-
-#[test]
-fn entry_macro_keyword_invalid_span_preserves_original_refusal() {
-    crate::test_support::with_entry_context(|ctx, original| {
-
-        let result = super::super::macro_keyword(&[], &(1..2), b"ENDM", ctx);
-        if let Some(first) = original {
-            assert!(matches!(result, Err(CodecError::ResourceLimit(last)) if last == first));
-
-        } else {
-            assert!(!result.unwrap());
-        }
-    });
 }

@@ -52,13 +52,29 @@ fn attribute_instances_reuse_valid_and_invalid_definition_widths() {
                     if invalid { 2 } else { 1 }
                 );
             }
-            let expected = if invalid { None } else { Some(0) };
-            if overflow {
-                assert_eq!(widths.first, Some((7, Some(1))));
-                assert_eq!(widths.values.len(), 1);
-                assert_eq!(widths.values[&1], expected);
+            let expected = if invalid {
+                Err(crate::parameter::AttributeWidthDefect::ValueCount {
+                    attribute: ATTRIBUTES - 1,
+                })
             } else {
-                assert_eq!(widths.first, Some((1, expected)));
+                Ok(0)
+            };
+            if overflow {
+                assert_eq!(
+                    widths
+                        .first
+                        .map(|(sequence, width)| (sequence, width.values_per_row)),
+                    Some((7, Ok(1)))
+                );
+                assert_eq!(widths.values.len(), 1);
+                assert_eq!(widths.values[&1].values_per_row, expected);
+            } else {
+                assert_eq!(
+                    widths
+                        .first
+                        .map(|(sequence, width)| (sequence, width.values_per_row)),
+                    Some((1, expected))
+                );
                 assert!(widths.values.is_empty());
             }
             drop(widths);
@@ -106,14 +122,54 @@ fn attribute_width_cache_admits_nodes_before_insertion() {
         } else {
             use std::mem::{align_of, size_of};
             u64::try_from(
-                11 * (size_of::<u32>() + size_of::<Option<usize>>())
+                11 * (size_of::<u32>() + size_of::<crate::parameter::AttributeDefinitionWidth>())
                     + 16 * size_of::<usize>()
                     + 2 * align_of::<u32>()
-                        .max(align_of::<Option<usize>>())
+                        .max(align_of::<crate::parameter::AttributeDefinitionWidth>())
                         .max(align_of::<usize>()),
             )
             .unwrap()
         };
         assert_eq!(limit.additional, amount);
+    }
+}
+
+#[test]
+fn attribute_width_scan_charges_the_end_probe_after_valid_descriptors() {
+    let operation = "iges test attribute width scan";
+    let record = integer_parameter_record(1, &[322, 0, 1, 2, 10, 1, 2, 20, 1, 3]);
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            crate::parameter::attribute_table_definition_width(&record, 0, &ctx, operation)
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected width scan end refusal");
+    };
+    assert_eq!(limit.operation, operation);
+    assert_eq!(limit.additional, 1);
+    for cap in [2, 3] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result =
+            crate::parameter::attribute_table_definition_width(&record, 2, &ctx, operation);
+        if cap == 2 {
+            let Err(CodecError::ResourceLimit(limit)) = result else {
+                panic!("expected width scan end refusal");
+            };
+            assert_eq!(limit.operation, operation);
+            assert_eq!(limit.used, 2);
+            assert_eq!(limit.additional, 1);
+        } else {
+            assert_eq!(result.unwrap(), Ok(5));
+        }
     }
 }

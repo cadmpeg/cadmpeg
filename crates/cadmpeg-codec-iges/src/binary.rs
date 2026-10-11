@@ -256,9 +256,6 @@ impl<'a> BitReader<'a> {
         lengths: PrimitiveLengths,
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<u8>, CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut output = Vec::new();
         loop {
             if !self.is_empty() {
@@ -281,12 +278,10 @@ impl<'a> BitReader<'a> {
             }
 
             ctx.reserve_capacity(&mut output, count, "iges binary string payload")?;
-            if let Some(refusal) = ctx.resource_refusal() {
-                return Err(refusal.into());
-            }
             let mut source_values = IntoIterator::into_iter(0..count);
-            while source_values.len() != 0 {
-                let Some(_) = ctx.next_charged(&mut source_values, "iges binary string payload")? else {
+            while !source_values.is_empty() {
+                let Some(_) = ctx.next_charged(&mut source_values, "iges binary string payload")?
+                else {
                     break;
                 };
                 let byte = self.read_bits(8)?;
@@ -322,9 +317,6 @@ impl<'a, 'ctx, 'arena> ValueStream<'a, 'ctx, 'arena> {
     }
 
     fn one(&mut self, format: u8) -> Result<BinaryValue, CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         match format {
             0 => Ok(BinaryValue::Default),
             1 => self
@@ -353,9 +345,6 @@ impl<'a, 'ctx, 'arena> ValueStream<'a, 'ctx, 'arena> {
     }
 
     fn next(&mut self) -> Result<Option<BinaryValue>, CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         if let Some(value) = self.pending.pop_front() {
             return Ok(Some(value));
         }
@@ -388,9 +377,6 @@ impl<'a, 'ctx, 'arena> ValueStream<'a, 'ctx, 'arena> {
     }
 
     fn clone_value(&self, value: &BinaryValue) -> Result<BinaryValue, CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         match value {
             BinaryValue::Default => Ok(BinaryValue::Default),
             BinaryValue::Integer(value) => Ok(BinaryValue::Integer(*value)),
@@ -404,9 +390,6 @@ impl<'a, 'ctx, 'arena> ValueStream<'a, 'ctx, 'arena> {
     }
 
     fn finish(&self) -> Result<(), CodecError> {
-        if let Some(refusal) = self.ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         if !self.pending.is_empty() || !self.bits.is_empty() {
             return Err(malformed(
                 "a Binary section has values outside its declared fields",
@@ -437,9 +420,6 @@ fn padding_is_zero(
     range: std::ops::Range<usize>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let padding = bytes
         .get(range.clone())
         .ok_or_else(|| malformed("Binary section padding is truncated"))?;
@@ -485,9 +465,6 @@ fn parse_header(
     source: &[u8],
     ctx: &DecodeContext<'_>,
 ) -> Result<(PrimitiveLengths, SectionDisplacements), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if source.len() < BINARY_FLAG_WIDTH || source.first() != Some(&b'B') {
         return Err(malformed("Binary Flag Section is truncated"));
     }
@@ -702,9 +679,6 @@ fn read_directory(
     lengths: PrimitiveLengths,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<BinaryDirectory>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut records = Vec::new();
     let mut cursor = 0_usize;
     while cursor < payload.len() {
@@ -786,9 +760,6 @@ fn render_parameter_value(
     language: bool,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<u8>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     match value {
         BinaryValue::Default => Ok(Vec::new()),
         BinaryValue::Integer(value) | BinaryValue::Pointer(value) => {
@@ -828,12 +799,11 @@ fn parameter_text(
                 "Binary Macro Definition has no language statements",
             ));
         }
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut source_values = IntoIterator::into_iter(values).enumerate();
         while source_values.len() != 0 {
-            let Some((index, value)) = ctx.next_charged(&mut source_values, "iges binary parameter text")? else {
+            let Some((index, value)) =
+                ctx.next_charged(&mut source_values, "iges binary parameter text")?
+            else {
                 break;
             };
             if index > 0 {
@@ -850,12 +820,10 @@ fn parameter_text(
     }
     let entity_text = stack_text(format_args!("{entity_type}"))?;
     let mut output = ctx.copy_retained(entity_text.as_bytes(), "iges binary parameter text")?;
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(values);
     while source_values.len() != 0 {
-        let Some(value) = ctx.next_charged(&mut source_values, "iges binary parameter text")? else {
+        let Some(value) = ctx.next_charged(&mut source_values, "iges binary parameter text")?
+        else {
             break;
         };
         ctx.extend_retained_bytes(&mut output, b",", "iges binary parameter text")?;
@@ -913,9 +881,6 @@ fn render_card(
     sequence: &mut u32,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if data.len() > CARD_DATA_WIDTH {
         return Err(malformed(
             "normalized Fixed ASCII card payload exceeds 72 bytes",
@@ -945,15 +910,14 @@ fn render_cards(
     sequence: &mut u32,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if data.is_empty() {
         return Ok(());
     }
     let mut chunks = data.chunks(CARD_DATA_WIDTH);
     while chunks.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(chunk) = ctx.next_charged(&mut chunks, "iges binary rendered cards")? else { break; };
+        let Some(chunk) = ctx.next_charged(&mut chunks, "iges binary rendered cards")? else {
+            break;
+        };
         render_card(output, chunk, section, sequence, ctx)?;
     }
     Ok(())
@@ -967,9 +931,6 @@ fn render_terminate(
     parameter_count: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let counts = [
         (b'S', start_count),
         (b'G', global_count),
@@ -1000,7 +961,8 @@ fn normalize_start(
     let mut primitive_storage = ctx.reserve_scoped(0, "IGES binary start primitives")?;
     let mut stream = ValueStream::new(payload, lengths, ctx);
     let mut text = Vec::new();
-    while !stream.pending.is_empty() || !stream.bits.is_empty() || ctx.resource_refusal().is_some() {
+    while !stream.pending.is_empty() || !stream.bits.is_empty() || ctx.resource_refusal().is_some()
+    {
         ctx.charge_work(1, "iges binary start primitives")?;
         let Some(value) = primitive_storage.with_storage(|| stream.next())? else {
             break;
@@ -1064,9 +1026,6 @@ fn normalize_global(
     values: &[BinaryValue],
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<u8>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if values.len() != 24 {
         return Err(malformed(
             "Binary Global section does not contain 24 fields",
@@ -1110,9 +1069,6 @@ fn read_parameters(
     directory: &[BinaryDirectory],
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<BinaryParameter>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut records = Vec::new();
     let mut cursor = 0_usize;
     while cursor < payload.len() {
@@ -1140,7 +1096,10 @@ fn read_parameters(
             "Parameter Directory pointer",
         )?;
         let mut values = Vec::new();
-        while !stream.pending.is_empty() || !stream.bits.is_empty() || ctx.resource_refusal().is_some() {
+        while !stream.pending.is_empty()
+            || !stream.bits.is_empty()
+            || ctx.resource_refusal().is_some()
+        {
             ctx.charge_work(1, "iges binary parameter primitives")?;
             let Some(value) = stream.next()? else {
                 break;
@@ -1176,12 +1135,11 @@ fn normalize_directory_and_parameters(
     let mut normalized =
         ctx.collection_vec(parameters.len(), "iges binary normalized parameters")?;
     let mut parameter_sequence = 1_u32;
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(parameters);
     while source_values.len() != 0 {
-        let Some(parameter) = ctx.next_charged(&mut source_values, "iges binary normalized parameters")? else {
+        let Some(parameter) =
+            ctx.next_charged(&mut source_values, "iges binary normalized parameters")?
+        else {
             break;
         };
         let directory_pointer =
@@ -1226,12 +1184,13 @@ fn normalize_directory_and_parameters(
         ctx.alloc_filled(directory.len(), 0_u32, "iges_binary_parameter_starts")?;
     let mut parameter_counts =
         ctx.alloc_filled(directory.len(), 0_usize, "iges_binary_parameter_counts")?;
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(directory).enumerate();
     while source_values.len() != 0 {
-        let Some((directory_index, directory_record)) = ctx.next_charged(&mut source_values, "iges binary Directory parameter pointers")? else {
+        let Some((directory_index, directory_record)) = ctx.next_charged(
+            &mut source_values,
+            "iges binary Directory parameter pointers",
+        )?
+        else {
             break;
         };
         let pointer = directory_record.parameter_pointer();
@@ -1262,12 +1221,11 @@ fn normalize_directory_and_parameters(
         ));
     }
     let mut directory_sequence = 1_u32;
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(directory).enumerate();
     while source_values.len() != 0 {
-        let Some((index, directory_record)) = ctx.next_charged(&mut source_values, "iges binary Directory cards")? else {
+        let Some((index, directory_record)) =
+            ctx.next_charged(&mut source_values, "iges binary Directory cards")?
+        else {
             break;
         };
         let first_sequence = directory_sequence;
@@ -1370,20 +1328,18 @@ fn normalize_directory_and_parameters(
             .ok_or_else(|| malformed("normalized Directory sequence overflows"))?;
     }
     let mut parameter_sequence = 1_u32;
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(&normalized);
     while source_values.len() != 0 {
-        let Some(parameter) = ctx.next_charged(&mut source_values, "iges binary Parameter Data cards")? else {
+        let Some(parameter) =
+            ctx.next_charged(&mut source_values, "iges binary Parameter Data cards")?
+        else {
             break;
         };
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut source_values = IntoIterator::into_iter(&parameter.lines);
         while source_values.len() != 0 {
-            let Some(line) = ctx.next_charged(&mut source_values, "iges binary Parameter Data cards")? else {
+            let Some(line) =
+                ctx.next_charged(&mut source_values, "iges binary Parameter Data cards")?
+            else {
                 break;
             };
             render_parameter_line(
@@ -1424,7 +1380,10 @@ fn render_parameter_lines(
         )?;
         let mut chunks = data.chunks(PARAMETER_DATA_WIDTH);
         while chunks.len() != 0 || ctx.resource_refusal().is_some() {
-            let Some(chunk) = ctx.next_charged(&mut chunks, "iges binary macro parameter cards")? else { break; };
+            let Some(chunk) = ctx.next_charged(&mut chunks, "iges binary macro parameter cards")?
+            else {
+                break;
+            };
             cards.push(ctx.copy_retained(chunk, "iges binary macro parameter card bytes")?);
         }
         return Ok(cards);
@@ -1438,9 +1397,6 @@ fn render_directory_card(
     sequence: u32,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if sequence == 0 || sequence > MAX_SEQUENCE {
         return Err(malformed(
             "normalized Directory sequence exceeds seven digits",
@@ -1461,9 +1417,6 @@ fn render_parameter_line(
     sequence: u32,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if data.len() > PARAMETER_DATA_WIDTH
         || directory_sequence == 0
         || directory_sequence > MAX_SEQUENCE
@@ -1513,9 +1466,6 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
     .map_err(|_| malformed("a Binary Start count does not fit memory"))?;
     let mut global_sequence = 1_u32;
     let global_cards = crate::global::layout_global_cards(&global_text, ctx)?;
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(&global_cards);
     while source_values.len() != 0 {
         let Some(card) = ctx.next_charged(&mut source_values, "iges binary Global cards")? else {
@@ -1544,7 +1494,6 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
 
 #[cfg(test)]
 mod tests {
-    mod entry_refusal;
     mod parameter_primitives;
     mod source_visits;
     mod start_primitives;
