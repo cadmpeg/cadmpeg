@@ -825,7 +825,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             let Some(geometry) = extruded_geometry_surface(transform, &section_geometry) else {
                 continue;
             };
-            let Some(expected_kind) = surface_kind_for_geometry(ctx, &geometry)? else {
+            let Some(expected_kind) = surface_kind_for_geometry(&geometry) else {
                 continue;
             };
             if !unique_feature_surface_row(

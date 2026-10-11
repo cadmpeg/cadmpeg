@@ -347,7 +347,7 @@ fn geometry_array_elements<'a>(
             Ok(object.parent == Some(branch.offset)
                 && object.name == array_name
                 && matches!(object.payload, ObjectPayload::Array { .. })
-                && object.payload.is_complete(ctx)?)
+                && object.payload.is_complete())
         },
         "creo legacy geometry array search",
     )?

@@ -109,17 +109,14 @@ fn unique_model_feature_index(
 }
 
 pub(in super::super) fn surface_kind_for_geometry(
-    _ctx: &DecodeContext<'_>,
     geometry: &SurfaceGeometry,
-) -> Result<Option<crate::surface::SurfaceKind>, CodecError> {
-    let Some(mut basis) = geometry.solved() else {
-        return Ok(None);
-    };
+) -> Option<crate::surface::SurfaceKind> {
+    let mut basis = geometry.solved()?;
     // PlacedSurface bounds the complete basis chain by MAX_GEOMETRY_NESTING.
     while let SolvedSurfaceGeometry::Transformed(placed) = basis {
         basis = placed.basis();
     }
-    Ok(match basis {
+    match basis {
         SolvedSurfaceGeometry::Plane(_) => Some(crate::surface::SurfaceKind::Plane),
         SolvedSurfaceGeometry::Cylinder(_) => Some(crate::surface::SurfaceKind::Cylinder),
         SolvedSurfaceGeometry::Cone(_) => Some(crate::surface::SurfaceKind::Cone),
@@ -130,7 +127,7 @@ pub(in super::super) fn surface_kind_for_geometry(
         SolvedSurfaceGeometry::Transformed(_)
         | SolvedSurfaceGeometry::Polygonal(_)
         | SolvedSurfaceGeometry::Unknown { .. } => None,
-    })
+    }
 }
 
 pub(in super::super) fn generated_surface_id_for_feature(
@@ -405,7 +402,7 @@ pub(in super::super) fn analytic_surface_id_for_feature(
     else {
         return Ok(None);
     };
-    let Some(expected_kind) = surface_kind_for_geometry(ctx, geometry)? else {
+    let Some(expected_kind) = surface_kind_for_geometry(geometry) else {
         return Ok(None);
     };
     let Some(row) = crate::surface::unique_surface_row(surface_rows, surface_id) else {

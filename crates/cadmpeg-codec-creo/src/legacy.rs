@@ -300,8 +300,8 @@ fn object_array_is_complete(
 
 impl ObjectPayload {
     /// Whether an array has exactly its declared extent product of elements.
-    pub(crate) fn is_complete(&self, _ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
-        Ok(matches!(self, Self::Array { complete: true, .. }))
+    pub(crate) fn is_complete(&self) -> bool {
+        matches!(self, Self::Array { complete: true, .. })
     }
 }
 
@@ -807,7 +807,7 @@ impl Persistence {
                 if object.name != "unit_arr" {
                     return Ok(false);
                 }
-                object.payload.is_complete(ctx)
+                Ok(object.payload.is_complete())
             },
             "creo legacy unit array selection",
         )?

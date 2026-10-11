@@ -441,10 +441,7 @@ fn type_0_objects_define_scoped_ownership_and_array_elements() {
 
     assert_eq!(persistence.objects.len(), 4);
     assert_eq!(persistence.incomplete_object_array_count, 0);
-    assert!(
-        crate::decode::with_test_decode_ctx(|ctx| persistence.objects[1].payload.is_complete(ctx))
-            .expect("complete array admission")
-    );
+    assert!(persistence.objects[1].payload.is_complete());
     assert!(
         serde_json::to_value(&persistence.objects[1].payload).unwrap()["complete"]
             .as_bool()
@@ -481,10 +478,7 @@ fn type_0_objects_retain_incomplete_and_opaque_forms() {
 
     assert_eq!(persistence.objects.len(), 2);
     assert_eq!(persistence.incomplete_object_array_count, 1);
-    assert!(
-        !crate::decode::with_test_decode_ctx(|ctx| persistence.objects[0].payload.is_complete(ctx))
-            .expect("complete array admission")
-    );
+    assert!(!persistence.objects[0].payload.is_complete());
     assert!(
         !serde_json::to_value(&persistence.objects[0].payload).unwrap()["complete"]
             .as_bool()

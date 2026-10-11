@@ -945,10 +945,9 @@ pub(crate) enum InlineNonPlaneLocalSystemPrefix {
 /// images name only an axis coordinate; explicit frames use the three
 /// component lanes and the four-slot `18 e5 0f` fill.
 pub(crate) fn decode_inline_non_plane_local_system_prefix(
-    _ctx: &DecodeContext<'_>,
     body: &[u8],
     cache: &ScalarCache,
-) -> Result<impl Iterator<Item = InlineNonPlaneLocalSystemPrefix>, CodecError> {
+) -> impl Iterator<Item = InlineNonPlaneLocalSystemPrefix> {
     let compact =
         decode_inline_compact_image(body).and_then(|(axes, reference_sign, axis_sign, cursor)| {
             let values = FiniteVector::new(compact_inline_frame(axes, reference_sign, axis_sign))?;
@@ -961,21 +960,20 @@ pub(crate) fn decode_inline_non_plane_local_system_prefix(
     let mut count = 0;
     let mut values = [0.0; 12];
     walk_inline_explicit_local_system(body, cache, (0, 0), &mut values, &mut explicit, &mut count);
-    Ok(compact
+    compact
         .into_iter()
         .chain(explicit.into_iter().flatten().map(|(values, cursor)| {
             InlineNonPlaneLocalSystemPrefix::Explicit(InlineLocalSystemFrame { values, cursor })
-        })))
+        }))
 }
 
 /// Decode the three origin slots that follow a compact inline local-system
 /// image.
 pub(crate) fn decode_inline_non_plane_origin_prefix(
-    _ctx: &DecodeContext<'_>,
     body: &[u8],
     cursor: usize,
     cache: &ScalarCache,
-) -> Result<impl Iterator<Item = ([f64; 3], usize)>, CodecError> {
+) -> impl Iterator<Item = ([f64; 3], usize)> {
     let mut values = [0.0; 3];
     let mut results = [None; 8];
     let mut count = 0;
@@ -987,7 +985,7 @@ pub(crate) fn decode_inline_non_plane_origin_prefix(
         &mut results,
         &mut count,
     );
-    Ok(results.into_iter().flatten())
+    results.into_iter().flatten()
 }
 
 /// Decode one inline family suffix scalar. The suffix has its own compact
@@ -1316,33 +1314,26 @@ fn plane_support_layout(values: &[f64; 12], saw_zero_slot_prefix: bool) -> Plane
 
 /// Decode a positional plane support frame and retain its storage layout.
 pub(crate) fn decode_plane_support_local_system(
-    _ctx: &DecodeContext<'_>,
     body: &[u8],
     cache: &ScalarCache,
-) -> Result<Option<(FiniteVector<12>, PlaneSupportFrameLayout)>, CodecError> {
+) -> Option<(FiniteVector<12>, PlaneSupportFrameLayout)> {
     if let Some((values, cursor)) = decode_diagonal_z_plane_support(body, cache) {
         if cursor != body.len() {
-            return Ok(None);
+            return None;
         }
-        return Ok(Some((
-            match finite_local_system_slots(values) {
-                Some(value) => value,
-                None => return Ok(None),
-            },
+        return Some((
+            finite_local_system_slots(values)?,
             PlaneSupportFrameLayout::DirectNormalTriples,
-        )));
+        ));
     }
     if let Some((values, cursor)) = decode_plane_support_special_prefix(body, cache) {
         if cursor != body.len() {
-            return Ok(None);
+            return None;
         }
-        return Ok(Some((
-            match finite_local_system_slots(values) {
-                Some(value) => value,
-                None => return Ok(None),
-            },
+        return Some((
+            finite_local_system_slots(values)?,
             PlaneSupportFrameLayout::SupportTriples,
-        )));
+        ));
     }
     let primary = decode_local_system_slot_prefix(body, cache, LocalSystemVariant::PlaneSupport)
         .map(|prefix| {
@@ -1356,15 +1347,13 @@ pub(crate) fn decode_plane_support_local_system(
             };
             (prefix.values, prefix.cursor, layout)
         });
-    let Some((values, cursor, layout)) = primary else {
-        return Ok(None);
-    };
+    let (values, cursor, layout) = primary?;
     let primary_frame = match finite_local_system_slots(values) {
         Some(frame) if plane_support_values_have_valid_frame(frame.as_raw(), layout) => Some(frame),
         _ => None,
     };
     if let Some(frame) = primary_frame {
-        return Ok((cursor == body.len()).then_some((frame, layout)));
+        return (cursor == body.len()).then_some((frame, layout));
     }
     // Compact image bodies have a distinct token grammar.  Their numeric
     // values can accidentally form another orthogonal frame when replayed as
@@ -1374,33 +1363,21 @@ pub(crate) fn decode_plane_support_local_system(
     // grammar above.
     if matches!(body.first(), Some(0x0e | 0x0f | 0x10 | 0x18)) {
         if cursor != body.len() {
-            return Ok(None);
+            return None;
         }
-        return Ok(Some((
-            match finite_local_system_slots(values) {
-                Some(value) => value,
-                None => return Ok(None),
-            },
-            layout,
-        )));
+        return Some((finite_local_system_slots(values)?, layout));
     }
     let mut variants = decode_plane_support_lane_variants(body, cache);
-    Ok(match (variants.next(), variants.next()) {
+    match (variants.next(), variants.next()) {
         (Some(variant), None) => Some(variant),
         (None, None) => {
             if cursor != body.len() {
-                return Ok(None);
+                return None;
             }
-            Some((
-                match finite_local_system_slots(values) {
-                    Some(value) => value,
-                    None => return Ok(None),
-                },
-                layout,
-            ))
+            Some((finite_local_system_slots(values)?, layout))
         }
         _ => None,
-    })
+    }
 }
 
 const MAX_PLANE_SUPPORT_LANE_VARIANTS: usize = 64;
@@ -1629,9 +1606,7 @@ fn decode_plane_support_lane_variants(
 /// local-system sign for compact one-half coordinates.
 #[cfg(test)]
 fn decode_plane_support_local_system_slots(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]> {
-    crate::decode::with_test_decode_ctx(|ctx| decode_plane_support_local_system(ctx, body, cache))
-        .expect("service scalar admission")
-        .map(|(values, _)| values.get())
+    decode_plane_support_local_system(body, cache).map(|(values, _)| values.get())
 }
 
 #[derive(Clone, Copy)]
@@ -2390,37 +2365,22 @@ mod tests {
     #[test]
     fn inline_explicit_frame_fixed_grammar_is_free_before_absent_candidate() {
         let bytes = [0xe4];
-        let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            super::decode_inline_non_plane_local_system_prefix(ctx, &bytes, &ScalarCache::default())
-                .map(std::iter::Iterator::count)
+        let decode = || {
+            super::decode_inline_non_plane_local_system_prefix(&bytes, &ScalarCache::default())
+                .count()
         };
-        assert_eq!(
-            with_recursive_limits(&bytes, 0, 0, decode)
-                .expect("fixed grammar has no input-sized recursion"),
-            0
-        );
-        assert_eq!(
-            with_context(&bytes, decode).expect("service profile preserves the absent candidate"),
-            0
-        );
+        assert_eq!(decode(), 0);
+        assert_eq!(decode(), 0);
     }
 
     #[test]
     fn inline_origin_fixed_grammar_is_free_before_absent_candidate() {
         let bytes = [0x18];
-        let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            super::decode_inline_non_plane_origin_prefix(ctx, &bytes, 0, &ScalarCache::default())
-                .map(std::iter::Iterator::count)
+        let decode = || {
+            super::decode_inline_non_plane_origin_prefix(&bytes, 0, &ScalarCache::default()).count()
         };
-        assert_eq!(
-            with_recursive_limits(&bytes, 0, 0, decode)
-                .expect("fixed grammar has no input-sized recursion"),
-            0
-        );
-        assert_eq!(
-            with_context(&bytes, decode).expect("service profile preserves the absent candidate"),
-            0
-        );
+        assert_eq!(decode(), 0);
+        assert_eq!(decode(), 0);
     }
 
     #[test]
@@ -2719,20 +2679,16 @@ mod tests {
         ];
         let cache = ScalarCache::default();
         for (body, axis, expected) in cases {
-            let frame = crate::decode::with_test_decode_ctx(|ctx| {
-                decode_inline_non_plane_local_system_prefix(ctx, &body, &cache)
-            })
-            .expect("service scalar admission")
-            .into_iter()
-            .find_map(|prefix| match prefix {
-                InlineNonPlaneLocalSystemPrefix::Compact(frame)
-                    if frame.values.get()[6 + axis] != 0.0 =>
-                {
-                    Some(frame)
-                }
-                _ => None,
-            })
-            .unwrap_or_else(|| panic!("compact inline local-system image {body:02x?}"));
+            let frame = decode_inline_non_plane_local_system_prefix(&body, &cache)
+                .find_map(|prefix| match prefix {
+                    InlineNonPlaneLocalSystemPrefix::Compact(frame)
+                        if frame.values.get()[6 + axis] != 0.0 =>
+                    {
+                        Some(frame)
+                    }
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("compact inline local-system image {body:02x?}"));
             assert_eq!(frame.cursor, body.len());
             assert_eq!(frame.values, expected);
         }
@@ -2798,13 +2754,8 @@ mod tests {
         body.extend([0x18, 0x18, 0x18]);
 
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| decode_plane_support_local_system(
-                ctx,
-                &body,
-                &ScalarCache::default()
-            ))
-            .expect("service scalar admission")
-            .map(|(values, layout)| (values.get(), layout)),
+            decode_plane_support_local_system(&body, &ScalarCache::default())
+                .map(|(values, layout)| (values.get(), layout)),
             Some((
                 [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,],
                 PlaneSupportFrameLayout::SupportTriples,
@@ -2821,16 +2772,13 @@ mod tests {
         let expected = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 4.0];
         let cache = ScalarCache::default();
 
-        assert!(crate::decode::with_test_decode_ctx(|ctx| {
-            decode_inline_non_plane_local_system_prefix(ctx, &body, &cache)
-        })
-        .expect("service scalar admission")
-        .into_iter()
-        .any(|prefix| matches!(
-            prefix,
-            InlineNonPlaneLocalSystemPrefix::Explicit(frame)
-                if frame.cursor == body.len() && frame.values == expected
-        )));
+        assert!(
+            decode_inline_non_plane_local_system_prefix(&body, &cache).any(|prefix| matches!(
+                prefix,
+                InlineNonPlaneLocalSystemPrefix::Explicit(frame)
+                    if frame.cursor == body.len() && frame.values == expected
+            ))
+        );
     }
 
     #[test]
@@ -2842,16 +2790,13 @@ mod tests {
         let expected = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0, 2.0, 2.0, 4.0];
         let cache = ScalarCache::default();
 
-        assert!(crate::decode::with_test_decode_ctx(|ctx| {
-            decode_inline_non_plane_local_system_prefix(ctx, &body, &cache)
-        })
-        .expect("service scalar admission")
-        .into_iter()
-        .any(|prefix| matches!(
-            prefix,
-            InlineNonPlaneLocalSystemPrefix::Explicit(frame)
-                if frame.cursor == body.len() && frame.values == expected
-        )));
+        assert!(
+            decode_inline_non_plane_local_system_prefix(&body, &cache).any(|prefix| matches!(
+                prefix,
+                InlineNonPlaneLocalSystemPrefix::Explicit(frame)
+                    if frame.cursor == body.len() && frame.values == expected
+            ))
+        );
     }
 
     #[test]
@@ -2906,21 +2851,12 @@ mod tests {
         body.push(0x18);
 
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| decode_plane_support_local_system(
-                ctx, &body, &cache
-            ))
-            .expect("service scalar admission")
-            .map(|(_, layout)| layout),
+            decode_plane_support_local_system(&body, &cache).map(|(_, layout)| layout),
             Some(PlaneSupportFrameLayout::SupportTriples)
         );
         assert_eq!(
-            crate::decode::with_test_decode_ctx(|ctx| decode_plane_support_local_system(
-                ctx,
-                &[0x10; 12],
-                &ScalarCache::default()
-            ))
-            .expect("service scalar admission")
-            .map(|(_, layout)| layout),
+            decode_plane_support_local_system(&[0x10; 12], &ScalarCache::default())
+                .map(|(_, layout)| layout),
             Some(PlaneSupportFrameLayout::SupportTriples)
         );
         assert_eq!(
@@ -3049,11 +2985,8 @@ mod tests {
     fn diagonal_compact_plane_support_names_the_z_normal() {
         let body = [0x0f, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x10, 0x18, 0x18, 0x18];
 
-        let (slots, layout) = crate::decode::with_test_decode_ctx(|ctx| {
-            decode_plane_support_local_system(ctx, &body, &ScalarCache::default())
-        })
-        .expect("service scalar admission")
-        .expect("complete diagonal support image");
+        let (slots, layout) = decode_plane_support_local_system(&body, &ScalarCache::default())
+            .expect("complete diagonal support image");
         assert_eq!(layout, PlaneSupportFrameLayout::DirectNormalTriples);
         assert_eq!(
             slots,
@@ -3100,11 +3033,8 @@ mod tests {
         body.extend_from_slice(&positive_subunit_coordinate(first_z));
         body.extend_from_slice(&[0x18, 0x18, 0x18]);
 
-        let (slots, layout) = crate::decode::with_test_decode_ctx(|ctx| {
-            decode_plane_support_local_system(ctx, &body, &cache)
-        })
-        .expect("service scalar admission")
-        .expect("lane-ambiguous frame has one valid orthogonal interpretation");
+        let (slots, layout) = decode_plane_support_local_system(&body, &cache)
+            .expect("lane-ambiguous frame has one valid orthogonal interpretation");
         let slots = slots.get();
         assert_eq!(layout, PlaneSupportFrameLayout::DirectNormalTriples);
         assert!((slots[6] - alternate).abs() <= EPS_PLANE_SUPPORT_LANE_TEST);
@@ -3133,13 +3063,7 @@ mod tests {
         body.extend_from_slice(&[0x18, 0x18, 0x18]);
 
         assert_eq!(decode_plane_support_lane_variants(&body, &cache).count(), 1);
-        assert!(
-            crate::decode::with_test_decode_ctx(|ctx| decode_plane_support_local_system(
-                ctx, &body, &cache
-            ))
-            .expect("service scalar admission")
-            .is_none()
-        );
+        assert!(decode_plane_support_local_system(&body, &cache).is_none());
     }
 
     #[test]
@@ -4059,34 +3983,23 @@ mod tests {
 
     #[test]
     fn fixed_scalar_frames_keep_values_with_zero_limits() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        policy.limits.max_recursion_depth = 0;
-        policy.limits.max_materialized_bytes = 0;
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let cache = ScalarCache::default();
         let explicit = [
             0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x0f, 0x0f, 0x0f,
         ];
         let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0];
         assert!(
-            super::decode_inline_non_plane_local_system_prefix(&ctx, &explicit, &cache)
-                .expect("fixed explicit frame")
-                .any(|prefix| matches!(prefix,
+            super::decode_inline_non_plane_local_system_prefix(&explicit, &cache).any(
+                |prefix| matches!(prefix,
                 InlineNonPlaneLocalSystemPrefix::Explicit(frame)
-                    if frame.cursor == explicit.len() && frame.values.get() == identity))
+                    if frame.cursor == explicit.len() && frame.values.get() == identity)
+            )
         );
-        let mut origins = super::decode_inline_non_plane_origin_prefix(&ctx, &[0x18; 3], 0, &cache)
-            .expect("three fixed origin slots");
+        let mut origins = super::decode_inline_non_plane_origin_prefix(&[0x18; 3], 0, &cache);
         assert_eq!(origins.next(), Some(([0.0; 3], 3)));
         assert_eq!(origins.next(), None);
         let support = [0x0f, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x10, 0x18, 0x18, 0x18];
-        let (values, layout) = super::decode_plane_support_local_system(&ctx, &support, &cache)
-            .expect("fixed support frame")
+        let (values, layout) = super::decode_plane_support_local_system(&support, &cache)
             .expect("complete support image");
         assert_eq!(
             values.get(),

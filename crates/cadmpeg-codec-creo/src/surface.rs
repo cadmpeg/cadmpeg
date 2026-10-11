@@ -1593,8 +1593,8 @@ impl SurfaceParameterRecord {
             let Some(local) = self.body.get(local_start?..) else {
                 continue;
             };
-            for prefix in scalar::decode_inline_non_plane_local_system_prefix(ctx, local, &cache)? {
-                for frame in inline_resolved_frames(ctx, local, prefix, &cache)? {
+            for prefix in scalar::decode_inline_non_plane_local_system_prefix(local, &cache) {
+                for frame in inline_resolved_frames(local, prefix, &cache) {
                     if decode_inline_surface_suffix_at(kind, local, frame.cursor, &cache)
                         .is_some_and(|(_, end)| end == local.len())
                     {
@@ -4970,8 +4970,8 @@ fn inline_surface_body(
                 }
             }
         }
-        for prefix in scalar::decode_inline_non_plane_local_system_prefix(ctx, local, cache)? {
-            for frame in inline_resolved_frames(ctx, local, prefix, cache)? {
+        for prefix in scalar::decode_inline_non_plane_local_system_prefix(local, cache) {
+            for frame in inline_resolved_frames(local, prefix, cache) {
                 if inline_surface_suffix(kind, local, frame.cursor, cache).is_none() {
                     continue;
                 }
@@ -5044,8 +5044,8 @@ fn inline_surface_suffix_body(
         };
         let mut terminal_closes = [0usize; MAX_INLINE_FRAME_CANDIDATES];
         let mut close_count = 0;
-        for prefix in scalar::decode_inline_non_plane_local_system_prefix(ctx, local, cache)? {
-            for frame in inline_resolved_frames(ctx, local, prefix, cache)? {
+        for prefix in scalar::decode_inline_non_plane_local_system_prefix(local, cache) {
+            for frame in inline_resolved_frames(local, prefix, cache) {
                 if let Some((_, end)) =
                     decode_inline_surface_suffix_at(kind, local, frame.cursor, cache)
                 {
@@ -5078,8 +5078,8 @@ fn inline_surface_suffix_body(
             let mut geometric_interpretation_count = 0;
             let mut carriers = [None; MAX_INLINE_FRAME_CANDIDATES];
             let mut carrier_count = 0;
-            for prefix in scalar::decode_inline_non_plane_local_system_prefix(ctx, local, cache)? {
-                for frame in inline_resolved_frames(ctx, local, prefix, cache)? {
+            for prefix in scalar::decode_inline_non_plane_local_system_prefix(local, cache) {
+                for frame in inline_resolved_frames(local, prefix, cache) {
                     if inline_surface_suffix(kind, local, frame.cursor, cache).is_none() {
                         continue;
                     }
@@ -5477,11 +5477,10 @@ struct ResolvedInlineLocalSystemFrame {
 }
 
 fn inline_resolved_frames(
-    ctx: &DecodeContext<'_>,
     local: &[u8],
     prefix: scalar::InlineNonPlaneLocalSystemPrefix,
     cache: &scalar::ScalarCache,
-) -> Result<impl Iterator<Item = ResolvedInlineLocalSystemFrame>, CodecError> {
+) -> impl Iterator<Item = ResolvedInlineLocalSystemFrame> {
     let compact = match prefix {
         scalar::InlineNonPlaneLocalSystemPrefix::Compact(frame) => Some(frame),
         scalar::InlineNonPlaneLocalSystemPrefix::Explicit(_) => None,
@@ -5493,11 +5492,11 @@ fn inline_resolved_frames(
     let compact_origins = match compact {
         Some(frame) => Some((
             frame,
-            scalar::decode_inline_non_plane_origin_prefix(ctx, local, frame.cursor, cache)?,
+            scalar::decode_inline_non_plane_origin_prefix(local, frame.cursor, cache),
         )),
         None => None,
     };
-    Ok(compact_origins
+    compact_origins
         .into_iter()
         .flat_map(|(frame, origins)| {
             origins.map(move |(origin, cursor)| {
@@ -5513,7 +5512,7 @@ fn inline_resolved_frames(
                     values: frame.values.get(),
                     cursor: frame.cursor,
                 }),
-        ))
+        )
 }
 
 fn inline_surface_carrier(
@@ -8167,9 +8166,12 @@ fn complete_plane_local_system(
             normalized.push(byte);
         }
         normalized.push(0x0f);
-        return scalar::decode_plane_support_local_system(ctx, &normalized, cache);
+        return Ok(scalar::decode_plane_support_local_system(
+            &normalized,
+            cache,
+        ));
     }
-    scalar::decode_plane_support_local_system(ctx, frame_body, cache)
+    Ok(scalar::decode_plane_support_local_system(frame_body, cache))
 }
 
 /// Decode the e3-bounded local-system chunk following each plane envelope.
