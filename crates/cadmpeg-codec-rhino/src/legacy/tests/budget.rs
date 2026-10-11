@@ -768,13 +768,13 @@ fn v1_meshes_between_breps_keep_linear_identity_index_work() {
         "doubling records must remain below quadratic growth: {small} -> {large}");
 }
 
-fn joined_line_fixture(invalid_last: bool) -> Vec<u8> {
+fn joined_line_fixture(invalid_last: bool, gap: f64) -> Vec<u8> {
     const SEGMENTS: u16 = 32;
     let mut body = vec![3, 0];
     body.extend(SEGMENTS.to_le_bytes());
     body.extend([0; 48]);
     for index in 0..SEGMENTS {
-        let start = if invalid_last && index + 1 == SEGMENTS { f64::NAN } else { f64::from(index) };
+        let start = if invalid_last && index + 1 == SEGMENTS { f64::NAN } else { f64::from(index) + if index == 0 { 0.0 } else { gap } };
         let line = super::legacy_line([start, 0.0, 0.0], [f64::from(index + 1), 0.0, 0.0], 3);
         let curve = chunk_at(&line, 0, line.len(), ArchiveVersion::V1, false).unwrap();
         let stuff = chunk_at(&line, curve.body().start, line.len(), ArchiveVersion::V1, false).unwrap();
@@ -788,7 +788,7 @@ fn joined_line_fixture(invalid_last: bool) -> Vec<u8> {
 #[test]
 fn joined_v1_curve_releases_sources_before_final_assembly() {
     const SCRATCH_BYTES: u64 = 12 * 1024;
-    let data = joined_line_fixture(false);
+    let data = joined_line_fixture(false, 0.0);
     let chunk = chunk_at(&data, 0, data.len(), ArchiveVersion::V1, false).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -812,7 +812,7 @@ fn joined_v1_curve_releases_sources_before_final_assembly() {
 #[test]
 fn rejected_v1_curve_releases_tuple_backing_before_diagnostic_copy() {
     const SCRATCH_BYTES: u64 = 16 * 1024;
-    let data = joined_line_fixture(true);
+    let data = joined_line_fixture(true, 0.0);
     let chunk = chunk_at(&data, 0, data.len(), ArchiveVersion::V1, false).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -830,5 +830,81 @@ fn rejected_v1_curve_releases_tuple_backing_before_diagnostic_copy() {
     drop(error);
     drop(storage);
     drop(ctx.reserve_scoped(SCRATCH_BYTES, "released joined error").unwrap());
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn unavailable_v1_source_digest_keeps_hex_and_retained_admission() {
+    const EXPECTED: &str = "d7fa81acab6d95a3a6d5c0f296e192cf09dc57dcb3c87916faf9e6bffab99786";
+    let data = super::chunk(0x1234, &[0x5a; 4096]);
+    let chunk = chunk_at(&data, 0, data.len(), ArchiveVersion::V1, false).unwrap();
+    for retained in [0, 64] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 256;
+        policy.limits.max_retained_bytes = retained;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
+        let mut retained_bytes = crate::decode::RETAINED_DOCUMENT_CAP;
+        let result = super::super::retain_v1_record(&ctx, &data, &chunk, &mut retained_bytes);
+        assert_eq!(retained_bytes, crate::decode::RETAINED_DOCUMENT_CAP);
+        if retained == 0 {
+            assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "Rhino V1 source digest text"));
+        } else {
+            let record = result.unwrap();
+            assert_eq!(record.data(), None);
+            assert_eq!(record, cadmpeg_ir::UnknownRecord::unavailable(
+                record.id().clone(), 0, u64::try_from(data.len()).unwrap(), EXPECTED, Vec::new(),
+            ));
+            ctx.finish_session().unwrap();
+        }
+    }
+}
+
+#[test]
+fn v1_join_gap_preserves_midpoints_without_discarded_diagnostics() {
+    const SCRATCH_BYTES: u64 = 64 * 1024;
+    let contiguous = joined_line_fixture(false, 0.0);
+    let chunk = chunk_at(&contiguous, 0, contiguous.len(), ArchiveVersion::V1, false).unwrap();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&contiguous, &arena, &policy).unwrap();
+    let mut storage = ctx.reserve_scoped(0, "contiguous joined output").unwrap();
+    let curve = super::super::legacy_curve(&ctx, &mut storage, &contiguous, chunk.body(),
+        super::super::MillimeterScale::IDENTITY).unwrap();
+    assert_eq!(curve.pole_count(), 33);
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx.charge_collection_items(
+        u64::MAX, "completed contiguous join slots",
+    ).unwrap_err() else { panic!("collection counter probe refuses"); };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    let collection_limit = limit.used;
+    drop(curve);
+    drop(storage);
+
+    let data = joined_line_fixture(false, 0.5);
+    let chunk = chunk_at(&data, 0, data.len(), ArchiveVersion::V1, false).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = SCRATCH_BYTES;
+    let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
+    let mut storage = ctx.reserve_scoped(0, "gapped joined output").unwrap();
+    let curve = super::super::legacy_curve(&ctx, &mut storage, &data, chunk.body(),
+        super::super::MillimeterScale::IDENTITY)
+        .expect("gaps need no discarded diagnostic collection slots");
+    assert_eq!(curve.degree(), 1);
+    assert_eq!(curve.pole_count(), 33);
+    assert!(curve.weights().is_none());
+    assert_eq!(curve.pole_rows().point_at(0).unwrap().get(), Point3::new(0.0, 0.0, 0.0));
+    for index in 1..32_u32 {
+        assert_eq!(curve.pole_rows().point_at(usize::try_from(index).unwrap()).unwrap().get(),
+            Point3::new(f64::from(index) + 0.25, 0.0, 0.0));
+    }
+    assert_eq!(curve.pole_rows().point_at(32).unwrap().get(), Point3::new(32.0, 0.0, 0.0));
+    drop(curve);
+    drop(storage);
+    drop(ctx.reserve_scoped(SCRATCH_BYTES, "released gapped join output").unwrap());
     ctx.finish_session().unwrap();
 }

@@ -629,10 +629,6 @@ fn retain_v1_record(
             )
         }
         None => {
-            ctx.charge_work(
-                cadmpeg_core::decode::u64_from_index(bytes.len()),
-                "Rhino V1 source digest",
-            )?;
             let digest = cadmpeg_ir::hash::sha256(bytes);
             UnknownRecord::unavailable(
                 id,
@@ -975,15 +971,13 @@ fn legacy_curve(
     // The tuple backing is gone. The join owns both the new backing and every
     // segment's lanes until it drops the source geometry.
     drop(source_storage);
-    let mut warnings =
-        crate::loss::ScratchDiagnostics::new(ctx, "Rhino temporary V1 joined curve diagnostics")?;
     let joined = crate::curves::join_nurbs_curves(
         ctx,
         Some(segment_storage),
         segments,
         offset,
         Some(output_storage),
-        Some(&mut warnings),
+        None,
     )
     .or_else(|error| output_storage.with_storage(|| Err(geometry_error(ctx, error)?)))?;
     Ok(joined)
