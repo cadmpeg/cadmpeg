@@ -5121,7 +5121,11 @@ pub(super) fn feature_payload_strings(
             &history_section.records,
             "visit NX feature operation records",
         )? {
-            let values = crate::om::operation_payload_strings(ctx, record.payload_view())?;
+            let mut value_storage =
+                ctx.reserve_scoped(0, "NX feature payload string parser rows")?;
+            let values = value_storage.with_storage(|| {
+                crate::om::operation_payload_strings(ctx, record.payload_view())
+            })?;
             for (ordinal, value) in ctx
                 .admit_iter(values, "visit NX operation payload strings")?
                 .enumerate()
@@ -6407,7 +6411,8 @@ pub(super) fn feature_datum_csys_payloads(
             ctx.copy_retained_text(first, "NX datum CSYS source block identity")?,
             ctx.copy_retained_text(second, "NX datum CSYS source block identity")?,
         ];
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, blocks)? else {
+        let Some(content) = FeaturePayloadContent::from_source_array(ctx, data_blocks, blocks)?
+        else {
             continue;
         };
 
@@ -9460,3 +9465,6 @@ cadmpeg_core::named_optional_field!(
     "witness_source_offset"
 );
 cadmpeg_core::named_optional_field!(deserialize_operand_data_block, String, "operand_data_block");
+
+#[cfg(test)]
+mod text_storage_tests;
