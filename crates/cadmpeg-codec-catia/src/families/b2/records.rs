@@ -1214,7 +1214,12 @@ pub(in crate::families) fn b2_closed_owner_boundary_edges(
         return Ok(None);
     };
     let mut edges = [first, second, third, fourth];
-    edges.sort_unstable_by_key(|edge| edge.slot);
+    // Five fixed comparisons order the four boundary slots.
+    for (left, right) in [(0, 1), (2, 3), (0, 2), (1, 3), (1, 2)] {
+        if edges[left].slot > edges[right].slot {
+            edges.swap(left, right);
+        }
+    }
     if edges.windows(2).any(|pair| pair[0].slot == pair[1].slot)
         || edges
             .iter()
@@ -1245,7 +1250,32 @@ pub(in crate::families) fn b2_closed_owner_boundary_edges(
         edges[3].endpoint_records[0],
         edges[3].endpoint_records[1],
     ];
-    vertices.sort_unstable();
+    // Merge four sorted pairs with a fixed eight-input comparison network.
+    for (left, right) in [
+        (0, 1),
+        (2, 3),
+        (4, 5),
+        (6, 7),
+        (0, 2),
+        (1, 3),
+        (4, 6),
+        (5, 7),
+        (1, 2),
+        (5, 6),
+        (0, 4),
+        (3, 7),
+        (1, 5),
+        (2, 6),
+        (1, 4),
+        (3, 6),
+        (2, 4),
+        (3, 5),
+        (3, 4),
+    ] {
+        if vertices[left] > vertices[right] {
+            vertices.swap(left, right);
+        }
+    }
     Ok((vertices[0] == vertices[1]
         && vertices[1] != vertices[2]
         && vertices[2] == vertices[3]

@@ -1950,7 +1950,9 @@ pub(in crate::families) fn a8_external_grid_ranges(
     match ranges.len() {
         0 | 1 => return Ok(ranges),
         2 => {
-            ranges.sort_unstable_by_key(|value| (value.start, value.end));
+            if (ranges[0].start, ranges[0].end) > (ranges[1].start, ranges[1].end) {
+                ranges.swap(0, 1);
+            }
             ranges.dedup();
             return Ok(ranges);
         }
