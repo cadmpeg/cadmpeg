@@ -506,12 +506,13 @@ fn decode_standard_transfers_vertices_and_cylinder() {
 #[test]
 fn decode_standard_retains_unresolved_roster_carrier_without_fabricating_a_face() {
     let mut surf = surf_stream();
-    let bridge = [0xff, 0x11, 0x22, 0x33, 0x00, 0x02, 0x00, 0x33, 0x32];
-    let bridge_start = surf
-        .windows(bridge.len())
-        .position(|bytes| bytes == bridge)
-        .expect("plane parameter bridge");
-    surf.drain(bridge_start..bridge_start + bridge.len() + 40);
+    let plane = [0x11, 0x22, 0x33, 0x00, 0x02, 0x00, 0x33, 0x32];
+    let plane_start = surf
+        .windows(plane.len())
+        .position(|bytes| bytes == plane)
+        .expect("complete plane record");
+    // Zero bounds retain the framed carrier but provide no valid plane parameters.
+    surf[plane_start + plane.len()..plane_start + plane.len() + 40].fill(0);
     let decoded = CatiaCodec
         .decode(
             &mut Cursor::new(standard_catpart_from_streams(&main_stream(), &surf)),

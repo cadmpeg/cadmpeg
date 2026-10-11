@@ -307,22 +307,8 @@
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 1.0,
-              "y": 2.0,
-              "z": 3.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
+            "kind": "unknown",
+            "record": "catia:payload:unknown#brep-stream"
           },
           "id": "catia:standard:surf#1",
           "source_object": {
@@ -1096,12 +1082,23 @@
     "losses": [
       {
         "code": {
+          "code": "geometry.unresolved-carriers",
+          "kind": "geometry_not_transferred",
+          "namespace": "catia",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "The transferred model retains 0 unresolved curve carriers and 1 unresolved surface carriers without exact procedural constructions. Surface carriers: catia:standard:surf#1.",
+        "severity": "blocking"
+      },
+      {
+        "code": {
           "code": "geometry.carrier-summary",
           "kind": "carrier_summary",
           "namespace": "catia",
           "scope": "namespaced"
         },
-        "message": "3 vertex point(s) were decoded verbatim from `05 08 01` records (3×f32 LE, millimetres, identity world placement) and 2 analytic surface carrier(s) were decoded from `SurfacicReps` `00 33` records: 1 plane, 1 cylinder, 0 cone, 0 sphere, 0 torus.",
+        "message": "3 vertex point(s) were decoded verbatim from `05 08 01` records (3×f32 LE, millimetres, identity world placement) and 1 analytic surface carrier(s) were decoded from `SurfacicReps` `00 33` records: 0 plane, 1 cylinder, 0 cone, 0 sphere, 0 torus.",
         "severity": "info"
       },
       {
@@ -1117,13 +1114,13 @@
       },
       {
         "code": {
-          "code": "geometry.analytic-payload-invalid",
+          "code": "geometry.plane-parameters-invalid",
           "kind": "geometry_not_transferred",
           "namespace": "catia",
           "scope": "namespaced",
           "strict_floor": "warning"
         },
-        "message": "1 analytic surface record(s) had a non-finite or out-of-range inline payload and were not decoded.",
+        "message": "1 plane surface record(s) were located but not decoded because their tag-bridged parameter records were absent or invalid.",
         "severity": "warning"
       },
       {
@@ -1186,6 +1183,10 @@
         },
         "catia:standard:shell#unbound-points": {
           "entity": "inferred",
+          "scope": "entity"
+        },
+        "catia:standard:surf#1": {
+          "entity": "unknown",
           "scope": "entity"
         },
         "catia:standard:v#0": {

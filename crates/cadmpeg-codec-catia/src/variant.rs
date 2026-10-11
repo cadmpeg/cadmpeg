@@ -20,7 +20,7 @@ pub(crate) enum Variant {
     /// No nested `V5_CFV2`; the outer preamble carries `a9 03` record families.
     ZeroEntity,
     /// A nested `V5_CFV2` with no FBB spine whose topology lives in the object
-    /// stream (`b5 03` grammar) or a pure surface-marker inner body.
+    /// stream (`b5 03` grammar).
     FloatPackedInnerNoFbb,
     /// A coherent E5 (`E5 0D 03`) record stream carries the geometry.
     E5Stream,

@@ -249,14 +249,12 @@ fn standard_surface_record_table(
 ) -> Result<StandardSurfaceRecordTable, CodecError> {
     let mut records = BTreeMap::<usize, StandardSurfaceRecord>::new();
     for prefix in surface_prefixes(ctx, brep)? {
-        if face_sense(brep, &prefix).is_some() {
-            ctx.insert_btree_map(
-                &mut records,
-                prefix.pos - analytic_plane::MARKER,
-                StandardSurfaceRecord::Analytic(prefix),
-                "catia_surface_record_tree",
-            )?;
-        }
+        ctx.insert_btree_map(
+            &mut records,
+            prefix.pos - analytic_plane::MARKER,
+            StandardSurfaceRecord::Analytic(prefix),
+            "catia_surface_record_tree",
+        )?;
     }
     let mut analytic_ranges = Vec::new();
     for record in records.values() {
@@ -615,9 +613,10 @@ pub(super) fn standard_vertex_roster(
         .map(|[identities]| identities))
 }
 
-/// Locate every per-face analytic surface record by the strict 5-byte template
+/// Locate complete analytic surface records by the strict 5-byte template
 /// `[target_u24 le][00][prebyte] 00 33 <kind>` ([spec §5.8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#58-analytic-surface-records-in-surfacicreps)). The strict template
-/// rejects collisional `00 33` matches inside other binary data.
+/// rejects collisional `00 33` matches inside other binary data. FV-08 fixes
+/// the record length and requires the terminal face-sense byte.
 pub(crate) fn surface_prefixes(
     ctx: &DecodeContext<'_>,
     brep: &[u8],
@@ -637,15 +636,15 @@ pub(crate) fn surface_prefixes(
         if brep[i - 2] != 0x00 || brep[i - 1] != kind.prebyte() {
             continue;
         }
-        ctx.push_vec(
-            &mut out,
-            SurfacePrefix {
-                pos: i,
-                target: u24_le(brep, i - analytic_plane::MARKER),
-                kind,
-            },
-            "catia_surface_prefixes",
-        )?;
+        let prefix = SurfacePrefix {
+            pos: i,
+            target: u24_le(brep, i - analytic_plane::MARKER),
+            kind,
+        };
+        if face_sense(brep, &prefix).is_none() {
+            continue;
+        }
+        ctx.push_vec(&mut out, prefix, "catia_surface_prefixes")?;
     }
     Ok(out)
 }
@@ -656,29 +655,23 @@ pub(crate) fn surface_prefixes(
 pub(super) fn plane_params<S: std::hash::BuildHasher>(
     ctx: &DecodeContext<'_>,
     brep: &[u8],
+    records: &[StandardSurfaceRecord],
     normals: &HashMap<u32, FiniteVector<3>, S>,
 ) -> Result<Vec<PlaneParams>, CodecError> {
-    const MARKER: &[u8; 5] = b"\x00\x02\x00\x33\x32";
-
     let mut out = Vec::new();
     let mut duplicate_targets = HashSet::new();
     let mut seen_targets = HashSet::new();
-    let mut p = 0usize;
-    while p + MARKER.len() + 40 <= brep.len() {
-        let Some(relative) = brep[p..].windows(MARKER.len()).position(|w| w == MARKER) else {
-            break;
+    for record in records {
+        let StandardSurfaceRecord::Analytic(prefix) = record else {
+            continue;
         };
-        let pos = p + relative;
-        p = pos + 1;
-        if pos < 4 || pos + MARKER.len() + 40 > brep.len() {
+        if prefix.kind != AnalyticSurfaceKind::Plane {
             continue;
         }
-        let Some(bounds) = face_bounds_at(brep, pos + MARKER.len())
-            .filter(|bounds| bounds.sphere_radius.get() > 0.0)
-        else {
+        let Some(bounds) = standard_face_bounds(brep, record) else {
             continue;
         };
-        let target = u24_le(brep, pos - 3);
+        let target = prefix.target;
         if !ctx.insert_hash_set(&mut seen_targets, target, "catia_plane_seen_targets")? {
             ctx.insert_hash_set(
                 &mut duplicate_targets,
@@ -1077,7 +1070,9 @@ mod tests {
 
     #[test]
     fn surface_prefix_and_vertex_roster_limits_refuse_before_growth() {
-        let prefix = [0x12, 0x34, 0x56, 0, 0x1a, 0, 0x33, 0x33, 0];
+        let mut prefix = vec![0x12, 0x34, 0x56, 0, 0x1a, 0, 0x33, 0x33];
+        prefix.resize(73, 0);
+        prefix[72] = 0x01;
         assert_eq!(
             crate::test_support::with_service_context(|ctx| super::surface_prefixes(ctx, &prefix))
                 .expect("service resource budget")
@@ -1102,6 +1097,79 @@ mod tests {
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.operation == "catia_vertex_roster_identities"
         ));
+    }
+
+    #[test]
+    fn analytic_surface_records_require_the_complete_fixed_length_and_sense() {
+        for (kind, prebyte, length) in [
+            (0x32, 0x02, 49),
+            (0x33, 0x1a, 73),
+            (0x34, 0x1a, 73),
+            (0x35, 0x12, 65),
+            (0x38, 0x1e, 77),
+        ] {
+            let mut bytes = vec![1, 0, 0, 0, prebyte, 0, 0x33, kind];
+            bytes.resize(length, 0);
+            for sense in [0x01, 0xff] {
+                bytes[length - 1] = sense;
+                let prefixes = crate::test_support::with_service_context(|ctx| {
+                    super::surface_prefixes(ctx, &bytes)
+                })
+                .expect("service resource budget");
+                assert_eq!(prefixes.len(), 1);
+                assert_eq!(prefixes[0].pos, 5);
+                assert_eq!(super::face_sense(&bytes, &prefixes[0]), Some(sense == 1));
+            }
+            for end in 0..length {
+                assert!(crate::test_support::with_service_context(|ctx| {
+                    super::surface_prefixes(ctx, &bytes[..end])
+                })
+                .expect("service resource budget")
+                .is_empty());
+            }
+            for sense in [0, 2, 0x60] {
+                bytes[length - 1] = sense;
+                assert!(crate::test_support::with_service_context(|ctx| {
+                    super::surface_prefixes(ctx, &bytes)
+                })
+                .expect("service resource budget")
+                .is_empty());
+            }
+            bytes[length - 1] = 1;
+            bytes[4] = prebyte + 1;
+            assert!(crate::test_support::with_service_context(|ctx| {
+                super::surface_prefixes(ctx, &bytes)
+            })
+            .expect("service resource budget")
+            .is_empty());
+        }
+    }
+
+    #[test]
+    fn plane_parameters_use_only_the_admitted_surface_roster() {
+        let mut bytes = vec![1, 0, 0, 0, 2, 0, 0x33, 0x32];
+        for value in [0.0f32, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x01);
+        let records =
+            crate::test_support::with_service_context(|ctx| super::surface_prefixes(ctx, &bytes))
+                .expect("service resource budget")
+                .into_iter()
+                .map(super::StandardSurfaceRecord::Analytic)
+                .collect::<Vec<_>>();
+        // A different population repeats the tag outside the admitted roster.
+        bytes.extend_from_within(..);
+        let normals = std::collections::HashMap::from([(
+            1,
+            cadmpeg_ir::units::FiniteVector::new([0.0, 0.0, 1.0]).expect("finite plane normal"),
+        )]);
+        let planes = crate::test_support::with_service_context(|ctx| {
+            super::plane_params(ctx, &bytes, &records, &normals)
+        })
+        .expect("service resource budget");
+        assert_eq!(planes.len(), 1);
+        assert_eq!(planes[0].target, 1);
     }
 
     #[test]

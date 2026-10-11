@@ -754,14 +754,6 @@ The `5e1a` tuple does not provide this missing join: its `T`, `T−1`, and `T−
 
 **Need.** We must know the roles to interpret and write the metadata.
 
-### FV-08. Marker-only surface delimiter
-
-**Question.** What delimiter grammar closes each record in the marker-only `00 33 3X` surface path?
-
-**Known.** `catia.md` §11 "A nested-`V5_CFV2` file without a standard FBB spine" defines the admitted marker family. Marker bytes can also occur inside numeric payloads.
-
-**Need.** We must know the delimiter grammar to separate adjacent surface records without a false marker match.
-
 ### FV-09. External pole-grid ownership
 
 **Question.** Which identity relation binds an elided-pole `a8 03 34` carrier to its external pole grid?

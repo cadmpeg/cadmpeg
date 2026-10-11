@@ -108,8 +108,8 @@ pub(crate) fn main_stream() -> Vec<u8> {
     b
 }
 
-/// A `SurfacicReps` physical payload carrying one inline cylinder record under
-/// the strict 5-byte prefix template.
+/// A `SurfacicReps` payload with complete cylinder and plane records followed
+/// by one circle-support row.
 pub(crate) fn surf_stream() -> Vec<u8> {
     let mut b = Vec::new();
     b.extend_from_slice(&[0xAA, 0xBB, 0xCC]); // target u24
@@ -122,19 +122,16 @@ pub(crate) fn surf_stream() -> Vec<u8> {
     }
     b.resize(73, 0);
     b[72] = 0x01; // cylinder face sense
-                  // Tag-bridged plane: the plane marker and bounds record share the same
-                  // u24le tag. The paired trim packet stores the normal.
+
+    // The plane record stores bounds; its paired trim packet stores the normal.
     b.extend_from_slice(&[0x11, 0x22, 0x33]);
     b.push(0x00);
     b.push(0x02);
     b.extend_from_slice(&[0x00, 0x33, 0x32]);
-    b.resize(122, 0);
-    b[121] = 0xff; // plane face sense
-    b.extend_from_slice(&[0xff, 0x11, 0x22, 0x33]);
-    b.extend_from_slice(&[0x00, 0x02, 0x00, 0x33, 0x32]);
     for v in [1.0f32, 2.0, 3.0, 0.0, 4.0, 0.0, 1.0, 2.0, 3.0, 4.0] {
         b.extend_from_slice(&le_f32(v));
     }
+    b.push(0xff); // plane face sense
     b.extend_from_slice(&[0x60, 0x44, 0x55, 0x66]);
     b.extend_from_slice(&[0x00, 0x12, 0x00, 0x33, 0x37]);
     for v in [0.0f32, 0.0, 0.0, 5.0] {

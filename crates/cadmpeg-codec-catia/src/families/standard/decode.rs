@@ -2549,7 +2549,7 @@ fn try_decode_standard_population(
         Ok(normals) => normals,
         Err(error) => return Some(Err(error)),
     };
-    let plane_rows = match crate::families::standard::records::plane_params(ctx, brep, &plane_normals) {
+    let plane_rows = match crate::families::standard::records::plane_params(ctx, brep, &records, &plane_normals) {
         Ok(planes) => planes,
         Err(error) => return Some(Err(error)),
     };

@@ -1335,8 +1335,9 @@ fn plane_bounds_bind_normals_by_persistent_carrier_tag() {
             crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0]),
         ),
     ]);
+    let records = plane_records(&bytes);
     let planes = crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::records::plane_params(ctx, &bytes, &normals)
+        crate::families::standard::records::plane_params(ctx, &bytes, &records, &normals)
     })
     .expect("service resource budget");
 
@@ -1365,7 +1366,18 @@ fn plane_bounds_record(
     ] {
         bytes.extend_from_slice(&le_f32(value));
     }
+    bytes.push(0x01);
     bytes
+}
+
+fn plane_records(bytes: &[u8]) -> Vec<StandardSurfaceRecord> {
+    crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::records::surface_prefixes(ctx, bytes)
+    })
+    .expect("service resource budget")
+    .into_iter()
+    .map(StandardSurfaceRecord::Analytic)
+    .collect()
 }
 
 #[test]
@@ -1383,15 +1395,16 @@ fn plane_parameter_target_sets_and_rows_refuse_before_growth() {
         0x0001_0203,
         crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0]),
     )]);
+    let records = plane_records(&bytes);
     assert!(crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::records::plane_params(ctx, &bytes, &normals)
+        crate::families::standard::records::plane_params(ctx, &bytes, &records, &normals)
     })
     .expect("service resource budget")
     .is_empty());
     let mut operations = std::collections::HashSet::new();
     for limit in 0..4 {
         let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            crate::families::standard::records::plane_params(ctx, &bytes, &normals)
+            crate::families::standard::records::plane_params(ctx, &bytes, &records, &normals)
         });
         if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = result {
             operations.insert(refusal.operation);
@@ -1466,8 +1479,9 @@ fn plane_bounds_withhold_duplicates_and_excessive_containment_error() {
         ),
     ]);
 
+    let records = plane_records(&bytes);
     let planes = crate::test_support::with_service_context(|ctx| {
-        crate::families::standard::records::plane_params(ctx, &bytes, &normals)
+        crate::families::standard::records::plane_params(ctx, &bytes, &records, &normals)
     })
     .expect("service resource budget");
 
