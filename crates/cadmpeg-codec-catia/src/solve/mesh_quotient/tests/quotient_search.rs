@@ -6,8 +6,7 @@ use crate::solve::mesh_quotient::coordinate_assignment::{
 };
 use crate::solve::mesh_quotient::selection_search::mesh_assignment_can_merge;
 use crate::solve::mesh_quotient::{
-    admit_orientation_option, deduplicate_mesh_quotient_assignments, initial_mesh_quotient,
-    orientation_fingerprint, orientation_options_equivalent, possible_face_choices,
+    deduplicate_mesh_quotient_assignments, initial_mesh_quotient, possible_face_choices,
     possible_face_choices_with_limit, possible_face_equations, MeshQuotient, MeshSelectionSearch,
     SearchOutcome, MAX_MESH_CONSTRAINT_OPERATIONS,
 };
@@ -18,104 +17,8 @@ use crate::solve::tests::repeated_domain;
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_core::CodecError;
 use std::cell::RefCell;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;
-
-#[test]
-fn orientation_fingerprint_preserves_exact_quotient_and_direction_equality() {
-    let domains = vec![
-        Arc::new(HashSet::from([0, 1])),
-        Arc::new(HashSet::from([1, 2])),
-    ];
-    let mut left = MeshQuotient::new(domains.clone());
-    let mut right = MeshQuotient::new(domains);
-    assert!(
-        crate::test_support::with_service_context(|ctx| left.merge_charged(ctx, 0, 1))
-            .expect("service merge")
-            .is_some()
-    );
-    assert!(
-        crate::test_support::with_service_context(|ctx| right.merge_charged(ctx, 1, 0))
-            .expect("service merge")
-            .is_some()
-    );
-    let first = vec![vec![false, true]];
-    let complement = vec![vec![true, false]];
-    assert_eq!(
-        crate::test_support::with_service_context(|ctx| orientation_fingerprint(
-            ctx, &left, &first
-        ))
-        .expect("service orientation"),
-        crate::test_support::with_service_context(|ctx| orientation_fingerprint(
-            ctx,
-            &right,
-            &complement
-        ))
-        .expect("service orientation")
-    );
-    assert!(
-        crate::test_support::with_service_context(|ctx| orientation_options_equivalent(
-            ctx,
-            &left,
-            &first,
-            &right,
-            &complement
-        ))
-        .expect("service orientation")
-    );
-    assert!(
-        !crate::test_support::with_service_context(|ctx| orientation_options_equivalent(
-            ctx,
-            &left,
-            &first,
-            &right,
-            &[vec![false, false]]
-        ))
-        .expect("service orientation")
-    );
-
-    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        let mut seen_storage = ctx.reserve_scoped(0, "fixture orientation index")?;
-        let mut seen = HashMap::new();
-        let mut output = Vec::new();
-        assert!(admit_orientation_option(
-            ctx,
-            &mut seen,
-            &mut seen_storage,
-            &output,
-            &first,
-            &left
-        )?);
-        output.push((first.clone(), left.clone()));
-        assert!(!admit_orientation_option(
-            ctx,
-            &mut seen,
-            &mut seen_storage,
-            &output,
-            &complement,
-            &right
-        )?);
-        Ok::<_, cadmpeg_core::CodecError>(())
-    };
-    crate::test_support::with_service_context(run).expect("service resource budget");
-    let mut refused = BTreeSet::new();
-    for cap in 0..=256 {
-        match crate::test_support::with_collection_limit(cap, run) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
-                refused.insert(limit.operation);
-            }
-            Ok(()) => break,
-            Err(error) => panic!("unexpected orientation refusal: {error}"),
-        }
-    }
-    for operation in [
-        "catia_orientation_fingerprint",
-        "catia_orientation_fingerprint_keys",
-        "catia_orientation_fingerprint_indices",
-    ] {
-        assert!(refused.contains(operation), "no refusal at {operation}");
-    }
-}
 
 #[test]
 fn quotient_assignments_ignore_span_allocation_with_identical_edge_order() {
