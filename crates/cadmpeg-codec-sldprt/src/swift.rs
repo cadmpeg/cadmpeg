@@ -4729,7 +4729,7 @@ fn pmi_id_charged(ctx: &DecodeContext<'_>, source_id: &str) -> Result<Option<Pmi
             "format SWIFT PMI identity",
         )
     })?;
-    match PmiId::mint(text) {
+    match PmiId::mint_for_decode(ctx, text, "validate SWIFT PMI identity")? {
         Ok(id) => storage.commit_value(Some(id)),
         Err(_) => Ok(None),
     }
