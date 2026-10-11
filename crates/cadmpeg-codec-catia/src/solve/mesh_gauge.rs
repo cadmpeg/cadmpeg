@@ -1,7 +1,7 @@
 //! Evidence-preserving gauge quotient for standard mesh candidates.
 
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::cost::DecodeCost;
 use cadmpeg_core::decode::DecodeContext;
@@ -2802,7 +2802,6 @@ fn relation_row_gauge_mapping(
     // Signatures are needed only for rows that share a class with another row.
     let mut signature_storage = ctx.reserve_scoped(0, "catia_relation_signatures")?;
     let valid = signature_storage.with_storage(|| {
-        let mut signature_slots = None;
         let mut signatures = Vec::<(Vec<Option<[usize; 2]>>, usize)>::new();
         let mut charged_steps = classes.iter();
         while let Some((sources, targets)) =
@@ -2818,8 +2817,10 @@ fn relation_row_gauge_mapping(
             while let Some(&edge) =
                 ctx.next_charged(&mut charged_steps, "catia_relation_signature_rows")?
             {
-                // The output lane marks rows that still need a signature mapping.
-                row_mapping[edge] = usize::MAX;
+                // Final targets are below edge_count; larger values encode signature slots.
+                row_mapping[edge] = edge_count.checked_add(signatures.len()).ok_or_else(|| {
+                    CodecError::malformed("relation signature slot exceeds usize")
+                })?;
                 let assigned = match state.0[edge] {
                     Some(pair) => {
                         let Some(pair) = mapped_endpoint_pair(pair, Some(permutation)) else {
@@ -2856,37 +2857,18 @@ fn relation_row_gauge_mapping(
                     while let Some(&(edge, pair)) =
                         ctx.next_charged(&mut charged_steps, "catia_relation_signature_pairs")?
                     {
-                        if edge >= edge_count || row_mapping[edge] != usize::MAX {
+                        let Some(&mapped) = row_mapping.get(edge) else {
                             continue;
-                        }
-                        if signature_slots.is_none() {
-                            let mut slots = HashMap::new();
-                            for (slot, (_, row)) in ctx
-                                .admit_iter(&signatures, "catia_relation_signature_slots")?
-                                .enumerate()
-                            {
-                                ctx.insert_hash_map(
-                                    &mut slots,
-                                    *row,
-                                    slot,
-                                    "catia_relation_signature_slots",
-                                )?;
-                            }
-                            signature_slots = Some(slots);
-                        }
-                        let Some(slots) = signature_slots.as_ref() else {
-                            return Err(CodecError::malformed(
-                                "relation pair has no signature index",
-                            ));
                         };
-                        let Some(&slot) =
-                            ctx.get_hash_map(slots, &edge, "catia_relation_signature_slots")?
-                        else {
+                        let Some(slot) = mapped.checked_sub(edge_count) else {
+                            continue;
+                        };
+                        let Some((signature, _)) = signatures.get_mut(slot) else {
                             return Err(CodecError::malformed(
                                 "relation signature row has no slot",
                             ));
                         };
-                        let Some(value) = signatures[slot].0.last_mut() else {
+                        let Some(value) = signature.last_mut() else {
                             return Err(CodecError::malformed(
                                 "relation signature lost its choice column",
                             ));

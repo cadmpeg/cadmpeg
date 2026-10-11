@@ -2536,7 +2536,6 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
     }
     struct LocalIncidence<'a> {
         edge_faces: Vec<[usize; 2]>,
-        face_edges: Vec<Vec<usize>>,
         closed_faces: Vec<bool>,
         boundary_domains: Vec<&'a MeshFaceBoundaryDomain>,
         point_supports: Vec<BTreeMap<usize, PointSupport>>,
@@ -4433,7 +4432,6 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                             }
                         }
                         let mut face_index = HashMap::new();
-                        let mut face_edges = Vec::new();
                         let mut local_domains = Vec::new();
                         let mut closed_faces = Vec::new();
                         for (local, face) in ctx
@@ -4447,11 +4445,6 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                                 "catia_coordinate_closure_local_face_index",
                             )?;
                             ctx.push_vec(
-                                &mut face_edges,
-                                Vec::new(),
-                                "catia_coordinate_closure_face_edges",
-                            )?;
-                            ctx.push_vec(
                                 &mut local_domains,
                                 &boundary_domains[face],
                                 "catia_coordinate_closure_local_boundary_domains",
@@ -4463,9 +4456,8 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                             )?;
                         }
                         let mut local_edge_faces = Vec::new();
-                        for (edge, &global_edge) in ctx
-                            .admit_iter(&edge_ids, "catia_coordinate_closure_face_edge_entries")?
-                            .enumerate()
+                        for &global_edge in
+                            ctx.admit_iter(&edge_ids, "catia_coordinate_closure_face_edge_entries")?
                         {
                             let mut faces = [0; 2];
                             for (rank, face) in edge_faces[global_edge].into_iter().enumerate() {
@@ -4479,11 +4471,12 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                                         CodecError::malformed("component face has no local index")
                                     })?;
                                 if rank == 0 || faces[rank] != faces[0] {
-                                    ctx.push_vec(
-                                        &mut face_edges[faces[rank]],
-                                        edge,
-                                        "catia_coordinate_closure_face_edge_entries",
-                                    )?;
+                                    let remaining = &mut closed_faces[faces[rank]];
+                                    *remaining = remaining.checked_sub(1).ok_or_else(|| {
+                                        CodecError::malformed(
+                                            "component face exceeds its edge count",
+                                        )
+                                    })?;
                                 }
                             }
                             ctx.push_vec(
@@ -4493,15 +4486,11 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                             )?;
                         }
                         let closed_faces = ctx.collect_vec(
-                            face_edges
-                                .iter()
-                                .zip(closed_faces)
-                                .map(|(local, total)| local.len() == total),
+                            closed_faces.into_iter().map(|remaining| remaining == 0),
                             "catia_coordinate_closure_closed_faces",
                         )?;
                         Some(LocalIncidence {
                             edge_faces: local_edge_faces,
-                            face_edges,
                             closed_faces,
                             boundary_domains: local_domains,
                             point_supports: Vec::new(),
@@ -4602,7 +4591,7 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                 )?;
                 if let Some(incidence) = local_incidence.as_mut().filter(|_| needs_search) {
                     incidence.point_supports = ctx.collect_indexed_vec(
-                        incidence.face_edges.len(),
+                        incidence.boundary_domains.len(),
                         "catia_coordinate_face_point_supports",
                         |_| Ok(BTreeMap::new()),
                     )?;
@@ -4685,7 +4674,7 @@ pub(super) fn close_coordinate_roots_with_incidence<'storage>(
                 let mut base_degrees = ctx.collect_indexed_vec(
                     local_incidence
                         .as_ref()
-                        .map_or(0, |incidence| incidence.face_edges.len()),
+                        .map_or(0, |incidence| incidence.boundary_domains.len()),
                     "catia_coordinate_closure_degree_rows",
                     |_| Ok(BTreeMap::new()),
                 )?;
@@ -5323,8 +5312,6 @@ mod tests {
             "catia_coordinate_closure_local_edges",
             "catia_coordinate_closure_local_edge_index",
             "catia_coordinate_closure_local_edge_faces",
-            "catia_coordinate_closure_face_edges",
-            "catia_coordinate_closure_face_edge_entries",
             "catia_coordinate_closure_closed_faces",
             "catia_coordinate_closure_local_domain_points",
             "catia_coordinate_closure_local_domains",
@@ -5361,8 +5348,10 @@ mod tests {
             };
             assert_eq!(refusal, replay);
         }
-        // Forced roots bypass these allocations; degree validation borrows its rows.
+        // These allocations are absent or bypassed by forced roots.
         for operation in [
+            "catia_coordinate_closure_face_edges",
+            "catia_coordinate_closure_face_edge_entries",
             "catia_coordinate_closure_scanned_roots",
             "catia_coordinate_closure_supported_unused",
             "catia_coordinate_closure_unused_point_keys",
@@ -5385,6 +5374,12 @@ mod tests {
                 assert_eq!(ctx.resource_refusal(), None);
             });
         }
+        let result = crate::test_support::with_work_refusal(
+            "catia_coordinate_closure_face_edge_entries",
+            run,
+        );
+        assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_coordinate_closure_face_edge_entries"));
     }
 
     #[test]
