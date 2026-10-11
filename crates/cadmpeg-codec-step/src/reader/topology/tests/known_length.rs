@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Empty known-length topology sources preserve the refusal fuse without work.
+//! Known-length topology sources admit only visited work.
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
@@ -30,24 +30,6 @@ fn empty_implicit_bounds_visit_no_terminal_step() {
             .expect("empty source has no work or storage").is_none());
         assert_eq!(ctx.resource_refusal(), None);
         ctx.finish_session().expect("empty source completed without refusal");
-    });
-}
-
-#[test]
-fn empty_implicit_bounds_preserve_original_refusal() {
-    with_empty_bound_source(|exchange, carriers| {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-        let CodecError::ResourceLimit(original) = ctx.charge_work(1, "test original topology refusal")
-            .expect_err("seed original refusal") else { panic!("resource refusal"); };
-        let CodecError::ResourceLimit(actual) = super::super::implicit_face_points(
-            &[], exchange, &BTreeMap::new(), carriers, &ctx
-        ).expect_err("empty path preserves fuse") else { panic!("resource refusal"); };
-        assert_eq!(actual, original);
-        assert_eq!(ctx.resource_refusal(), Some(original));
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(refusal)) if refusal == original));
     });
 }
 

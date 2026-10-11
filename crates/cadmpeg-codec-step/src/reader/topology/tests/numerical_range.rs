@@ -573,10 +573,7 @@ fn pcurve_selection_helpers_preserve_session_depth_refusal() {
                 "STEP pcurve parameter domain traversal"
             }
         );
-        assert_eq!(
-            ctx.charge_work_limit(0, "observe selection refusal"),
-            Err(limit)
-        );
+        assert_eq!(ctx.resource_refusal(), Some(limit));
     }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -585,10 +582,7 @@ fn pcurve_selection_helpers_preserve_session_depth_refusal() {
     let limit = pcurve_selection_uv(&ctx, &pcurve, 0.5).expect_err("first evaluator frame refuses");
     assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
     assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
-    assert_eq!(
-        ctx.charge_work_limit(0, "observe selection refusal"),
-        Err(limit)
-    );
+    assert_eq!(ctx.resource_refusal(), Some(limit));
     for directed in [false, true] {
         let result = if directed {
             pcurve_declared_endpoint_fit_directed(
@@ -619,27 +613,5 @@ fn pcurve_selection_helpers_preserve_session_depth_refusal() {
             Err(limit)
         );
     }
-    assert_eq!(
-        pcurve_surface_closest(&ctx, &index, &id, &pcurve, Point3::new(0.5, 0.0, 0.0), &[])
-            .map_err(|error| match error {
-                CodecError::ResourceLimit(limit) => limit,
-                _ => panic!("selection must preserve the original resource error"),
-            }),
-        Err(limit)
-    );
-    assert_eq!(
-        mapped_pcurve_closest(
-            &ctx,
-            &index,
-            &id,
-            &pcurve,
-            Point3::new(0.5, 0.0, 0.0),
-            f64::NAN
-        )
-        .map_err(|error| match error {
-            CodecError::ResourceLimit(limit) => limit,
-            _ => panic!("selection must preserve the original resource error"),
-        }),
-        Err(limit)
-    );
 }
+

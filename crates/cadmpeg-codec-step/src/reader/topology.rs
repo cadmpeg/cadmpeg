@@ -184,13 +184,14 @@ fn insert_body_id(
     body: &BodyId,
     ctx: &DecodeContext<'_>,
     bytes: &mut ScopedReservation<'_>,
+    nodes: &mut ScopedReservation<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     if ctx.contains_btree_set(bodies, body, "STEP bodies membership")? {
         return Ok(());
     }
     let body =
         bytes.with_storage(|| body.try_clone_for_decode(ctx, "step_representation_body_set"))?;
-    bytes.with_storage(|| ctx.insert_btree_set(bodies, body, "step_representation_body_set"))?;
+    nodes.with_storage(|| ctx.insert_btree_set(bodies, body, "step_representation_body_set"))?;
     Ok(())
 }
 
@@ -229,6 +230,7 @@ pub(super) fn representation_bodies<'a>(
         ctx.insert_btree_set(active, representation, "step_representation_body_active")
     })?;
     let mut body_ids_bytes = ctx.reserve_scoped(0, "step_representation_body_set")?;
+    let mut body_nodes = ctx.reserve_scoped(0, "step_representation_body_set")?;
     let mut body_ids = BTreeSet::new();
     if let Some(items) = ctx
         .get_btree_map(
@@ -253,7 +255,7 @@ pub(super) fn representation_bodies<'a>(
                 ctx.get_btree_map(&topology.body_by_root, &item, "STEP topology body lookup")?
             {
                 for body in ctx.admit_iter(bodies, "STEP representation direct body traversal")? {
-                    insert_body_id(&mut body_ids, body, ctx, &mut body_ids_bytes)?;
+                    insert_body_id(&mut body_ids, body, ctx, &mut body_ids_bytes, &mut body_nodes)?;
                 }
                 continue;
             }
@@ -272,7 +274,7 @@ pub(super) fn representation_bodies<'a>(
                 ctx,
             )?;
             for body in ctx.admit_iter(&nested[..], "STEP representation bodies traversal")? {
-                insert_body_id(&mut body_ids, body, ctx, &mut body_ids_bytes)?;
+                insert_body_id(&mut body_ids, body, ctx, &mut body_ids_bytes, &mut body_nodes)?;
             }
         }
     }
@@ -287,7 +289,7 @@ pub(super) fn representation_bodies<'a>(
     for &related in ctx.admit_iter(related, "STEP related representation traversal")? {
         let nested = representation_bodies(related, exchange, topology, cache, active, ctx)?;
         for body in ctx.admit_iter(&nested[..], "STEP representation bodies traversal")? {
-            insert_body_id(&mut body_ids, body, ctx, &mut body_ids_bytes)?;
+            insert_body_id(&mut body_ids, body, ctx, &mut body_ids_bytes, &mut body_nodes)?;
         }
     }
 
@@ -300,6 +302,7 @@ pub(super) fn representation_bodies<'a>(
         "step_representation_body_output",
     )?;
     bodies.extend(ctx.admit_iter(body_ids, "STEP representation body output traversal")?);
+    drop(body_nodes);
     ctx.remove_btree_set(active, &representation, "STEP topology active removal")?;
     drop(active_bytes);
     cache_representation_bodies(cache, representation, &bodies, ctx)?;
@@ -1768,7 +1771,7 @@ fn build_wire_set<'ctx>(
     let mut wire_edges = Vec::new();
     let mut built_edges = Vec::new();
     let mut source_steps = used_edges.iter();
-    ctx.charge_work(0, "STEP topology reference traversal")?;
+
     for _ in 0..source_steps.len() {
         let source_value = ctx
             .next_charged(&mut source_steps, "STEP topology reference traversal")?
@@ -1844,7 +1847,7 @@ fn build_wire_set<'ctx>(
     let mut built_vertices = Vec::new();
     {
         let mut source_steps = used_vertices.into_iter();
-        ctx.charge_work(0, "STEP topology collection traversal")?;
+
         for _ in 0..source_steps.len() {
             let vertex_id = ctx
                 .next_charged(&mut source_steps, "STEP topology collection traversal")?
@@ -2058,7 +2061,7 @@ fn build_shell_wire_set<'ctx>(
             return Ok(None);
         };
         let mut source_steps = loop_ids.iter();
-        ctx.charge_work(0, "STEP topology reference traversal")?;
+
         for _ in 0..source_steps.len() {
             let source_value = ctx
                 .next_charged(&mut source_steps, "STEP topology reference traversal")?
@@ -2077,7 +2080,7 @@ fn build_shell_wire_set<'ctx>(
                     return Ok(None);
                 };
                 let mut source_steps = oriented_ids.iter();
-                ctx.charge_work(0, "STEP topology reference traversal")?;
+
                 for _ in 0..source_steps.len() {
                     let source_value = ctx
                         .next_charged(&mut source_steps, "STEP topology reference traversal")?
@@ -2198,7 +2201,7 @@ fn build_shell_wire_set<'ctx>(
     let mut wire_edges = Vec::new();
     {
         let mut source_steps = edge_uses.into_iter().enumerate();
-        ctx.charge_work(0, "STEP wire edge use traversal")?;
+
         for _ in 0..source_steps.len() {
             let (index, (edge_id, oriented_id, forward)) = ctx
                 .next_charged(&mut source_steps, "STEP wire edge use traversal")?
@@ -2256,7 +2259,7 @@ fn build_shell_wire_set<'ctx>(
     let mut vertices = Vec::new();
     {
         let mut source_steps = used_vertices.into_iter();
-        ctx.charge_work(0, "STEP topology collection traversal")?;
+
         for _ in 0..source_steps.len() {
             let vertex_id = ctx
                 .next_charged(&mut source_steps, "STEP topology collection traversal")?
@@ -3307,7 +3310,7 @@ fn staged_topology<'ctx>(
     } = parts;
     let mut draft = ModelDraft::new();
     {
-        ctx.charge_work(0, "STEP topology collection traversal")?;
+
         let mut source_steps = (vertices).into_iter();
         for _ in 0..source_steps.len() {
             let vertex = ctx
@@ -3317,7 +3320,7 @@ fn staged_topology<'ctx>(
         }
     }
     {
-        ctx.charge_work(0, "STEP topology collection traversal")?;
+
         let mut source_steps = (edges).into_iter();
         for _ in 0..source_steps.len() {
             let edge = ctx
@@ -3327,7 +3330,7 @@ fn staged_topology<'ctx>(
         }
     }
     {
-        ctx.charge_work(0, "STEP topology collection traversal")?;
+
         let mut source_steps = (coedges).into_iter();
         for _ in 0..source_steps.len() {
             let coedge = ctx
@@ -3337,7 +3340,7 @@ fn staged_topology<'ctx>(
         }
     }
     {
-        ctx.charge_work(0, "STEP topology collection traversal")?;
+
         let mut source_steps = (loops).into_iter();
         for _ in 0..source_steps.len() {
             let loop_ = ctx
@@ -3347,7 +3350,7 @@ fn staged_topology<'ctx>(
         }
     }
     {
-        ctx.charge_work(0, "STEP topology collection traversal")?;
+
         let mut source_steps = (faces).into_iter();
         for _ in 0..source_steps.len() {
             let face = ctx
@@ -3358,7 +3361,7 @@ fn staged_topology<'ctx>(
     }
     let mut surface_ids = BTreeSet::new();
     {
-        ctx.charge_work(0, "STEP topology collection traversal")?;
+
         let mut source_steps = (surfaces).into_iter();
         for _ in 0..source_steps.len() {
             let surface = ctx
@@ -3380,7 +3383,7 @@ fn staged_topology<'ctx>(
         }
     }
     {
-        ctx.charge_work(0, "STEP topology collection traversal")?;
+
         let mut source_steps = (shells).into_iter();
         for _ in 0..source_steps.len() {
             let shell = ctx
@@ -3457,7 +3460,7 @@ fn root_shell_steps(
             return Ok(None);
         };
         let mut values = values.iter();
-        ctx.charge_work(0, "STEP topology reference traversal")?;
+
         for _ in 0..values.len() {
             let value = ctx
                 .next_charged(&mut values, "STEP topology reference traversal")?
@@ -3868,7 +3871,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
     let mut implicit_surface_ids = BTreeSet::new();
     let mut admissions = Vec::new();
     let mut source_steps = shell_steps.iter();
-    ctx.charge_work(0, "STEP body topology traversal")?;
+
     for _ in 0..source_steps.len() {
         let &shell_reference = ctx
             .next_charged(&mut source_steps, "STEP body topology traversal")?
@@ -3976,7 +3979,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
         let coedge_start = coedges.len();
         let mut face_ids = vec![];
         let mut source_steps = face_steps.iter();
-        ctx.charge_work(0, "STEP body topology traversal")?;
+
         for _ in 0..source_steps.len() {
             let source_value = ctx
                 .next_charged(&mut source_steps, "STEP body topology traversal")?
@@ -4181,7 +4184,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
             let mut loop_ids = vec![];
             {
                 let mut source_steps = face_bounds.into_iter();
-                ctx.charge_work(0, "STEP topology collection traversal")?;
+
                 for _ in 0..source_steps.len() {
                     let bound_step = ctx
                         .next_charged(&mut source_steps, "STEP topology collection traversal")?
@@ -4536,7 +4539,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
                     let mut coedge_ids = vec![];
                     {
                         let mut source_steps = uses.into_iter();
-                        ctx.charge_work(0, "STEP topology collection traversal")?;
+
                         for _ in 0..source_steps.len() {
                             let use_step = ctx
                                 .next_charged(
@@ -4970,7 +4973,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
         }
         {
             let mut source_steps = components.into_iter().enumerate();
-            ctx.charge_work(0, "STEP shell component traversal")?;
+
             for _ in 0..source_steps.len() {
                 let (component_index, component) = ctx
                     .next_charged(&mut source_steps, "STEP shell component traversal")?
@@ -5046,7 +5049,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
     }
     {
         let mut source_steps = used_e.into_iter();
-        ctx.charge_work(0, "STEP topology collection traversal")?;
+
         for _ in 0..source_steps.len() {
             let (shell_step, edge_id) = ctx
                 .next_charged(&mut source_steps, "STEP topology collection traversal")?
@@ -5097,7 +5100,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
     }
     {
         let mut source_steps = used_v.into_iter();
-        ctx.charge_work(0, "STEP topology collection traversal")?;
+
         for _ in 0..source_steps.len() {
             let (shell_step, vertex_id) = ctx
                 .next_charged(&mut source_steps, "STEP topology collection traversal")?
@@ -5132,7 +5135,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
     }
     {
         let mut source_steps = poly_points.into_iter();
-        ctx.charge_work(0, "STEP topology collection traversal")?;
+
         for _ in 0..source_steps.len() {
             let (shell_step, point_id) = ctx
                 .next_charged(&mut source_steps, "STEP topology collection traversal")?
@@ -5190,7 +5193,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
         })?;
     }
     let mut source_steps = loops.iter();
-    ctx.charge_work(0, "STEP body topology traversal")?;
+
     for _ in 0..source_steps.len() {
         let loop_ = ctx
             .next_charged(&mut source_steps, "STEP body topology traversal")?
@@ -5200,7 +5203,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
         }
         let loop_source = source_numeric_id(ctx, loop_.id.as_str(), "loop")?.unwrap_or(0);
         let mut source_steps = loop_.coedges().iter().enumerate();
-        ctx.charge_work(0, "STEP body topology traversal")?;
+
         for _ in 0..source_steps.len() {
             let (index, current_id) = ctx
                 .next_charged(&mut source_steps, "STEP body topology traversal")?
@@ -5280,7 +5283,7 @@ fn build_one<'ctx, 'ir, 'records, 'arena>(
         Err(StageError::Resource(error)) => return Err(BuildError::Resource(error)),
     };
     built.pcurve_admissions = admissions;
-    ctx.charge_work(0, "STEP body topology traversal")?;
+
     let mut source_steps = (shell_steps).iter();
     for _ in 0..source_steps.len() {
         let &shell_reference = ctx
@@ -5664,7 +5667,7 @@ fn implicit_face_points(
 ) -> Result<Option<Vec<Vec<Point3>>>, CodecError> {
     let mut loops = Vec::new();
     let mut source_steps = bounds.iter();
-    ctx.charge_work(0, "STEP implicit face points traversal")?;
+
     for _ in 0..source_steps.len() {
         let &bound_step = ctx
             .next_charged(&mut source_steps, "STEP implicit face points traversal")?
@@ -5732,7 +5735,7 @@ fn implicit_face_points(
         let mut points = Vec::new();
         {
             let mut source_steps = point_steps.into_iter();
-            ctx.charge_work(0, "STEP topology collection traversal")?;
+
             for _ in 0..source_steps.len() {
                 let point_step = ctx
                     .next_charged(&mut source_steps, "STEP topology collection traversal")?
@@ -5834,7 +5837,7 @@ fn implicit_face_plane(
     }
     let mut loop_normals = Vec::new();
     let mut source_steps = loops.iter();
-    ctx.charge_work(0, "STEP implicit face normal traversal")?;
+
     for _ in 0..source_steps.len() {
         let loop_points = ctx
             .next_charged(&mut source_steps, "STEP implicit face normal traversal")?
@@ -6632,7 +6635,7 @@ fn pcurve_surface_closest(
     target: Point3,
     seeds: &[f64],
 ) -> Result<Option<(f64, f64)>, CodecError> {
-    ctx.charge_work_limit(0, "geometry helper boundary")?;
+
     // The minimum is only over the finite seed set. The caller treats the
     // directly evaluated result as a witness and omits the optional relation
     // when no witness meets the tolerance.
@@ -6663,7 +6666,7 @@ fn mapped_pcurve_closest(
     target: Point3,
     seed: f64,
 ) -> Result<Option<(f64, f64)>, CodecError> {
-    ctx.charge_work_limit(0, "geometry helper boundary")?;
+
     if !seed.is_finite() {
         return Ok(None);
     }
@@ -6784,30 +6787,20 @@ fn pcurve_parameter_break_fractions(
     ctx.charge_work(1, "STEP pcurve break geometry traversal")?;
     match geometry {
         PcurveGeometry::Nurbs { nurbs } => {
-            ctx.charge_work(0, "STEP pcurve parameter break fractions traversal")?;
-            let mut source_steps = (&(nurbs.knots())[..]).iter().copied();
-            for _ in 0..source_steps.len() {
-                let parameter = ctx
-                    .next_charged(
-                        &mut source_steps,
-                        "STEP pcurve parameter break fractions traversal",
-                    )?
-                    .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
-                add_pcurve_break_fraction(parameter, parameters, fractions, ctx)?;
-            }
+            ctx.fold(
+                nurbs.knots(),
+                (),
+                |(), &parameter| add_pcurve_break_fraction(parameter, parameters, fractions, ctx),
+                "STEP pcurve parameter break fractions traversal",
+            )?;
         }
         PcurveGeometry::PolarNurbs { nurbs } => {
-            ctx.charge_work(0, "STEP pcurve parameter break fractions traversal")?;
-            let mut source_steps = (&(nurbs.knots())[..]).iter().copied();
-            for _ in 0..source_steps.len() {
-                let parameter = ctx
-                    .next_charged(
-                        &mut source_steps,
-                        "STEP pcurve parameter break fractions traversal",
-                    )?
-                    .ok_or_else(|| CodecError::malformed("STEP topology source ended early"))?;
-                add_pcurve_break_fraction(parameter, parameters, fractions, ctx)?;
-            }
+            ctx.fold(
+                nurbs.knots(),
+                (),
+                |(), &parameter| add_pcurve_break_fraction(parameter, parameters, fractions, ctx),
+                "STEP pcurve parameter break fractions traversal",
+            )?;
         }
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let parameter_range = trimmed_pcurve.parameter_range();
