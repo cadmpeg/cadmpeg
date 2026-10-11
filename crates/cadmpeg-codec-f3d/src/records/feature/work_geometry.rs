@@ -1214,7 +1214,7 @@ pub(crate) enum DesignWorkPointRuleForm {
         /// Selected edge carrier.
         input: DesignWorkPointInput,
     },
-    /// Rule code whose operation semantics or input arity is not assigned.
+    /// Source rule code and inputs retained without a normalized rule variant.
     Native {
         /// Serialized `refType` value.
         reference_type: u32,

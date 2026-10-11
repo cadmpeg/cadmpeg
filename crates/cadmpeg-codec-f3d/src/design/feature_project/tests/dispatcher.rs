@@ -456,7 +456,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
     let recipe_id = "f3d:native/BulkStream.dat:construction-recipe#vertex".to_string();
     let recipe = DesignVertexRecipe::try_new(
         crate::records::feature::work_geometry::DesignVertexRecipeDraft {
-            record_index: 12,
+            record_index: 22,
             byte_offset: 0,
             class_tag: crate::records::references::DesignClassTag::try_from("369".to_owned())
                 .unwrap(),
@@ -465,7 +465,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
                 "261".to_owned(),
             )
             .unwrap(),
-            recipe_record_index: 15,
+            recipe_record_index: 25,
             recipe_record_byte_offset: 32,
             recipe_id: recipe_id.clone(),
             recipe_prefix_offset: 43,
@@ -477,7 +477,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
                 crate::records::feature::work_geometry::DesignVertexResolution::new(4, 43)
                     .expect("valid vertex slot"),
             ),
-            next_record_index: 17,
+            next_record_index: 27,
             next_byte_offset: 200,
         },
     )

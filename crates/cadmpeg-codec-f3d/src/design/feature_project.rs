@@ -2091,6 +2091,48 @@ fn project_work_point_construction(
             .transpose()
     };
 
+    let vertex = |input: &DesignWorkPointInput| -> Result<Option<VertexSelection>, CodecError> {
+        let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) = input.carrier() else {
+            return Ok(None);
+        };
+        if recipe.record_index() != input.record_index() {
+            return Ok(None);
+        }
+        let vertex = match recipe.resolution {
+            None => VertexSelection::native(
+                ctx.copy_retained_text(&recipe.recipe_id, "f3d WorkPoint native vertex recipe id")?,
+                ctx,
+            )?
+            .unwrap_or(VertexSelection::Unresolved),
+            Some(resolution) => {
+                let state_id = resolution.state_id;
+                let vertex_slot = resolution.vertex_slot();
+                let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
+                let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
+                let prefix =
+                    crate::design::identity::history_input_prefix(ctx, feature_key, state_id)?;
+                match VertexSelection::historical(
+                    crate::design::identity::feature_input_topology_id(ctx, &feature_id, state_id)?,
+                    crate::design::identity::history_input_vertex_id(
+                        ctx,
+                        &prefix,
+                        vertex_slot,
+                        "f3d historical vertex identifier",
+                    )?,
+                    ctx.copy_retained_text(
+                        &recipe.recipe_id,
+                        "f3d WorkPoint historical vertex recipe id",
+                    )?,
+                    ctx,
+                )? {
+                    Ok(selection) => selection,
+                    Err(_) => VertexSelection::Unresolved,
+                }
+            }
+        };
+        Ok(Some(vertex))
+    };
+
     Ok(Some(match construction.rule.form() {
         DesignWorkPointRuleForm::CircleCenter { input } => DatumPointConstruction::CircleCenter {
             edge: or_none!(edge(input)?),
@@ -2109,50 +2151,19 @@ fn project_work_point_construction(
                 ]),
             }
         }
-        DesignWorkPointRuleForm::Vertex { input } => {
-            let Some(DesignWorkPointInputCarrier::VertexRecipe { recipe }) = input.carrier() else {
+        DesignWorkPointRuleForm::Vertex { input } => DatumPointConstruction::Vertex {
+            vertex: or_none!(vertex(input)?),
+        },
+        DesignWorkPointRuleForm::Native {
+            reference_type: 1,
+            inputs,
+        } => {
+            let [input] = inputs.as_slice() else {
                 return Ok(None);
             };
-            let vertex = match recipe.resolution {
-                None => VertexSelection::native(
-                    ctx.copy_retained_text(
-                        &recipe.recipe_id,
-                        "f3d WorkPoint native vertex recipe id",
-                    )?,
-                    ctx,
-                )?
-                .unwrap_or(VertexSelection::Unresolved),
-                Some(resolution) => {
-                    let state_id = resolution.state_id;
-                    let vertex_slot = resolution.vertex_slot();
-                    let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
-                    let feature_key = crate::design::identity::identity_key(feature_id.as_str())?;
-                    let prefix =
-                        crate::design::identity::history_input_prefix(ctx, feature_key, state_id)?;
-                    match VertexSelection::historical(
-                        crate::design::identity::feature_input_topology_id(
-                            ctx,
-                            &feature_id,
-                            state_id,
-                        )?,
-                        crate::design::identity::history_input_vertex_id(
-                            ctx,
-                            &prefix,
-                            vertex_slot,
-                            "f3d historical vertex identifier",
-                        )?,
-                        ctx.copy_retained_text(
-                            &recipe.recipe_id,
-                            "f3d WorkPoint historical vertex recipe id",
-                        )?,
-                        ctx,
-                    )? {
-                        Ok(selection) => selection,
-                        Err(_) => VertexSelection::Unresolved,
-                    }
-                }
-            };
-            DatumPointConstruction::Vertex { vertex }
+            DatumPointConstruction::Vertex {
+                vertex: or_none!(vertex(input)?),
+            }
         }
         DesignWorkPointRuleForm::EdgePlaneIntersection { inputs } => {
             DatumPointConstruction::EdgePlaneIntersection {

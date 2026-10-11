@@ -248,3 +248,105 @@ fn work_point_historical_edge_operand_id_refuses_retained_limit() {
         operand.id.len(),
     );
 }
+
+#[test]
+fn work_point_code_one_projects_vertex_and_retains_source_rule() {
+    for historical in [false, true] {
+        let original = vertex_construction(historical);
+        let selected = construction(DesignWorkPointRuleForm::Native {
+            reference_type: 1,
+            inputs: original.rule.inputs().to_vec(),
+        });
+        let before = serde_json::to_value(&selected).unwrap();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let project = |construction| {
+            super::super::project_work_point_construction(
+                &ctx,
+                &scope(),
+                construction,
+                &[],
+                &[],
+                &HashMap::new(),
+            )
+            .unwrap()
+        };
+        let expected = project(&original);
+        assert!(matches!(
+            expected,
+            Some(cadmpeg_ir::features::DatumPointConstruction::Vertex { .. })
+        ));
+        assert_eq!(project(&selected), expected);
+        assert_eq!(selected.rule.reference_type(), 1);
+        assert_eq!(serde_json::to_value(&selected).unwrap(), before);
+        let retained: DesignWorkPointConstruction = serde_json::from_value(before).unwrap();
+        assert_eq!(retained, selected);
+    }
+}
+
+#[test]
+fn work_point_code_one_requires_one_vertex_recipe() {
+    let vertex = vertex_construction(false).rule.inputs()[0].clone();
+    let plane = plane_construction().rule.inputs()[0].clone();
+    let edge = input(
+        42,
+        DesignWorkPointInputCarrier::EdgeRecipe {
+            operand_id: edge_operand(false).id,
+        },
+    );
+    let unresolved = DesignWorkPointInput::try_new(22, 0, None).unwrap();
+    let wrong_record = input(23, vertex.carrier().unwrap().clone());
+    for (reference_type, inputs) in [
+        (1, vec![]),
+        (1, vec![vertex.clone(), vertex.clone()]),
+        (1, vec![plane]),
+        (1, vec![edge]),
+        (1, vec![unresolved]),
+        (1, vec![wrong_record]),
+        (18, vec![vertex]),
+    ] {
+        let construction = construction(DesignWorkPointRuleForm::Native {
+            reference_type,
+            inputs,
+        });
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert_eq!(
+            super::super::project_work_point_construction(
+                &ctx,
+                &scope(),
+                &construction,
+                &[],
+                &[],
+                &HashMap::new(),
+            )
+            .unwrap(),
+            None
+        );
+    }
+}
+
+#[test]
+fn work_point_code_one_charges_retained_vertex_recipe_id() {
+    for historical in [false, true] {
+        let original = vertex_construction(historical);
+        let selected = construction(DesignWorkPointRuleForm::Native {
+            reference_type: 1,
+            inputs: original.rule.inputs().to_vec(),
+        });
+        let operation = if historical {
+            "f3d WorkPoint historical vertex recipe id"
+        } else {
+            "f3d WorkPoint native vertex recipe id"
+        };
+        assert_retained_refusal(
+            &selected,
+            &[],
+            &HashMap::new(),
+            operation,
+            "f3d:native/BulkStream.dat:construction-recipe#vertex".len(),
+        );
+    }
+}
