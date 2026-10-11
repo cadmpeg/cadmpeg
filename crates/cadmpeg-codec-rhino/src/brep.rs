@@ -2246,8 +2246,11 @@ fn read_legacy_mesh_sides(
                 let object_start = reader.position();
                 let object = chunk_at(bytes, object_start, reader.end(), archive, false)?;
                 reader.skip(object.next_offset() - object_start)?;
+                let mut userdata_storage =
+                    ctx.reserve_scoped(0, "Rhino Brep mesh class userdata")?;
                 match parse_class_wrapper_with_scoped_userdata(
                     ctx,
+                    &mut userdata_storage,
                     bytes,
                     object.range(),
                     archive,
@@ -2743,8 +2746,11 @@ fn read_mesh_sides(
                     ctx.reserve_vec(&mut children, 1, "Rhino Brep mesh cache child ranges")
                 })?;
                 children.push(object.range());
+                let mut userdata_storage =
+                    ctx.reserve_scoped(0, "Rhino Brep mesh class userdata")?;
                 let class = parse_class_wrapper_with_scoped_userdata(
                     ctx,
+                    &mut userdata_storage,
                     bytes,
                     object.range(),
                     archive,
