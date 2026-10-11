@@ -365,6 +365,47 @@ fn native_extent_index_preserves_strict_containment_and_overlap_boundaries() {
 }
 
 #[test]
+fn native_extent_prefixes_admit_their_source_once() {
+    for count in [0, 1, 4, 5, 64] {
+        let sources = (0..count)
+            .rev()
+            .map(|index| (index * 2, 8 - index % 8))
+            .collect::<Vec<(usize, usize)>>();
+        // Vector growth admits moved inline bytes; source steps belong only
+        // to the ordered walk, including the empty case with no visits.
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            "catia_native_extent_prefixes",
+            Some(1),
+        );
+        with_work_limit(u64::MAX, |ctx| -> Result<(), CodecError> {
+            let index = super::super::NativeExtentIndex::new(ctx, &sources, |&extent| extent)?;
+            assert_eq!(index.0.len(), count);
+            let mut maximum = 0;
+            for (ordinal, &(start, end)) in index.0.iter().enumerate() {
+                let expected_start = ordinal * 2;
+                maximum = maximum.max(expected_start + 8 - ordinal % 8);
+                assert_eq!(start, expected_start);
+                assert_eq!(end, maximum);
+            }
+            assert_eq!(ctx.resource_refusal(), None);
+            Ok(())
+        })
+        .expect("prefix construction has no second source-step charge");
+    }
+    let sources = (0..64_usize)
+        .map(|index| (index * 2, 8))
+        .collect::<Vec<_>>();
+    let error =
+        crate::test_support::with_work_refusal("catia_native_extent_prefix_visits", |ctx| {
+            super::super::NativeExtentIndex::new(ctx, &sources, |&extent| extent).map(|_| ())
+        })
+        .expect_err("the ordered source walk still needs admission");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.operation == "catia_native_extent_prefix_visits" && limit.additional == 64));
+}
+
+#[test]
 fn native_inventory_overlap_filter_has_bounded_work_and_preserves_source_order() {
     let mut graphs: Vec<_> = (0..8192)
         .rev()
@@ -548,4 +589,54 @@ fn native_empty_alias_rows_require_no_extent_index_work() {
     })
     .expect("no alias rows require no index work");
     assert!(rows.is_empty());
+}
+
+#[test]
+fn native_legacy_identities_admit_their_source_once() {
+    let leads = [0x81, 0x82, 0xe5, 0xfd];
+    for count in [1_u32, 2, 4, 5, 64] {
+        let mut bytes = Vec::new();
+        for entity_id in 1..=count {
+            bytes.push(0xea);
+            bytes.extend_from_slice(&entity_id.to_le_bytes());
+            let ordinal = usize::try_from(entity_id - 1).expect("identity ordinal");
+            bytes.extend_from_slice(&[leads[ordinal % leads.len()], 0xfd, 0x8c]);
+        }
+        bytes.extend_from_slice(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
+        {
+            // The reader admits following identities; destination work pays
+            // only for vector relocation, in multiples of the inline record size.
+            let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+                ResourceDimension::WorkUnits,
+                "catia_native_legacy_identities",
+                Some(1),
+            );
+            with_work_limit(u64::MAX, |ctx| -> Result<(), CodecError> {
+                let runs = super::super::legacy_entity_runs(ctx, &bytes)?;
+                assert_eq!(runs.len(), 1);
+                let run = &runs[0];
+                assert_eq!(run.byte_offset, 0);
+                assert_eq!(run.byte_len, u64::from(count) * 8);
+                assert_eq!(run.catalog_offset, u64::from(count) * 8);
+                assert_eq!(run.identities.len(), usize::try_from(count).expect("count"));
+                for (ordinal, identity) in run.identities.iter().enumerate() {
+                    assert_eq!(identity.byte_offset, u64_from_index(ordinal) * 8);
+                    assert_eq!(identity.entity_id, u32::try_from(ordinal + 1).expect("id"));
+                    assert_eq!(u8::from(identity.lead), leads[ordinal % leads.len()]);
+                }
+                assert_eq!(ctx.resource_refusal(), None);
+                Ok(())
+            })
+            .expect("native identity conversion does not repeat reader admission");
+        }
+        if count == 64 {
+            let error =
+                crate::test_support::with_work_refusal("catia_legacy_identity_visits", |ctx| {
+                    super::super::legacy_entity_runs(ctx, &bytes).map(|_| ())
+                })
+                .expect_err("the reader still admits its following identities");
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
+                if limit.operation == "catia_legacy_identity_visits" && limit.additional == 63));
+        }
+    }
 }

@@ -17,7 +17,7 @@ fn legacy_run_indexes_wait_for_value_or_relation_queries() {
     bytes.extend_from_slice(CATALOG_OPEN);
     for operation in [
         "catia_legacy_name_fields",
-        "catia_legacy_relation_identity_ids",
+        "catia_legacy_relation_identity_search",
     ] {
         let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
         crate::test_support::with_work_limit(u64::MAX, |ctx| {
@@ -112,7 +112,7 @@ fn legacy_name_index_waits_for_a_unique_value() {
 }
 
 #[test]
-fn legacy_relation_identity_index_waits_for_matching_role_selectors() {
+fn legacy_relation_identity_search_waits_for_matching_role_selectors() {
     let identities = (1..=4096)
         .map(|entity_id| LegacyEntityIdentity {
             offset: usize::try_from(entity_id).expect("identity") * 8,
@@ -156,7 +156,7 @@ fn legacy_relation_identity_index_waits_for_matching_role_selectors() {
         ];
         let _probe = RefusalProbe::arm(
             ResourceDimension::WorkUnits,
-            "catia_legacy_relation_identity_ids",
+            "catia_legacy_relation_identity_search",
             None,
         );
         crate::test_support::with_work_limit(u64::MAX, |ctx| {
@@ -170,6 +170,111 @@ fn legacy_relation_identity_index_waits_for_matching_role_selectors() {
         })
         .expect("a mismatched body or unresolved param never queries identity membership");
     }
+}
+
+#[test]
+fn legacy_relation_identity_search_uses_bounded_work_without_index_storage() {
+    let identities = (1..=4096)
+        .map(|entity_id| LegacyEntityIdentity {
+            offset: usize::try_from(entity_id).expect("identity") * 8,
+            entity_id,
+            lead: CatiaLegacyIdentityLead::Lead81,
+        })
+        .collect::<Vec<_>>();
+    let gapped = identities
+        .iter()
+        .copied()
+        .filter(|identity| identity.entity_id != 2048)
+        .collect::<Vec<_>>();
+    let mut fields = [
+        LegacyTextField {
+            offset: 0,
+            entity_id: 1,
+            encoding: LegacyTextEncoding::U8InclusiveLength,
+            role: Some(LegacyRoleSelector {
+                offset: 0,
+                entity_id: 1,
+                name: LegacyRoleName::Literal("body".to_owned()),
+                encoding: LegacyRoleSelectorEncoding::Paged,
+                selector: 1,
+                field_code: None,
+            }),
+            value: "#1_ + 2".to_owned(),
+        },
+        LegacyTextField {
+            offset: 1,
+            entity_id: 1,
+            encoding: LegacyTextEncoding::U8InclusiveLength,
+            role: Some(LegacyRoleSelector {
+                offset: 1,
+                entity_id: 1,
+                name: LegacyRoleName::Literal("param".to_owned()),
+                encoding: LegacyRoleSelectorEncoding::Paged,
+                selector: 4096,
+                field_code: None,
+            }),
+            value: "(#1_ : #In Real) : Real".to_owned(),
+        },
+    ];
+    for (source, parameter, expected) in [
+        (&identities[..], 4096, Some(4096)),
+        (&identities[..], 1, Some(1)),
+        (&identities[..], 2048, Some(2048)),
+        (&identities[..], 0, None),
+        (&identities[..], 4097, None),
+        (&gapped[..], 2048, None),
+        (&identities[..1], 1, Some(1)),
+        (&identities[..0], 1, None),
+    ] {
+        fields[1].role.as_mut().expect("param role").selector = parameter;
+        let run =
+            |ctx: &cadmpeg_core::decode::DecodeContext<'_>| parse_relations(ctx, &fields, source);
+        // Signature parsing and output growth fit 512 units; membership needs
+        // at most 13 partition visits plus one equality visit for 4096 ids.
+        let relations = crate::test_support::with_work_limit(512, run)
+            .expect("a single query does not walk all identities");
+        assert_eq!(relations.len(), 1);
+        let relation = &relations[0];
+        assert_eq!(relation.entity_id, 1);
+        assert_eq!(relation.body_selector, Some(1));
+        assert_eq!(relation.parameter_selector, Some(parameter));
+        assert_eq!(relation.parameter_entity_id, expected);
+        assert_eq!(relation.expression_offset, 0);
+        assert_eq!(relation.expression, "#1_ + 2");
+        assert_eq!(relation.signature_offset, 1);
+        assert_eq!(relation.type_signature, "(#1_ : #In Real) : Real");
+        assert_eq!(
+            relation.signature,
+            LegacyRelationSignature {
+                inputs: vec![LegacyRelationParameter {
+                    parameter: "#1_".to_owned(),
+                    value_type: "Real".to_owned(),
+                }],
+                result: LegacyRelationResult::Typed("Real".to_owned()),
+            }
+        );
+        // One borrowed name, one signature input and one relation are kept.
+        assert_eq!(
+            crate::test_support::with_collection_limit(3, run)
+                .expect("identity membership allocates no collection slots"),
+            relations
+        );
+        assert_eq!(
+            crate::test_support::with_materialized_limit(512, run)
+                .expect("only the signature candidate and its names use scratch"),
+            relations
+        );
+    }
+    fields[1].role.as_mut().expect("param role").selector = 4096;
+    let error =
+        crate::test_support::with_work_refusal("catia_legacy_relation_identity_search", |ctx| {
+            parse_relations(ctx, &fields, &identities)
+        })
+        .expect_err("membership visits require admission before comparison");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "catia_legacy_relation_identity_search" && limit.additional == 1)
+    );
 }
 
 #[test]
