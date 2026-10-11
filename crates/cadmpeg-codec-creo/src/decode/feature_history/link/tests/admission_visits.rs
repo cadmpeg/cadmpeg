@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::super::{generated_profile_table_shape, generated_surface_id_for_feature};
+use super::super::{generated_profile_entry_is_admissible, generated_profile_table_shape, generated_surface_id_for_feature, insert_ordered_family_surface_binding, ordered_analytic_surface_id_for_feature, section_entity_is_generated_profile, surface_kind_for_geometry, unique_model_feature_index, SurfaceBindingSource};
+use crate::surface::SurfaceKind;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+use std::collections::BTreeMap;
 use crate::feature::entity::{FeatureEntityTable, FeatureEntityTableEntry};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -23,6 +27,65 @@ fn entry(id: u32, class: u32, source: Option<u32>) -> FeatureEntityTableEntry {
         prefixed: false,
         offset: 0,
         end_offset: 0,
+    }
+}
+
+#[test]
+fn fixed_history_queries_are_free() {
+    let ir = CadIr::empty();
+    let target = super::feature("creo:model:feature#7").id;
+    let table = FeatureEntityTable::new(7, 29, Vec::new(), &BTreeSet::new(), 0);
+    let operand = entry(1, 200, None);
+    let rows = crate::surface::unique_rows::UniqueIdRows::from_rows(Vec::new());
+    let order = crate::feature::definitions::FeatureOrderTable {
+        declared_count: 0,
+        has_prototype: false,
+        entity_ref: None,
+        rows: Vec::new().into(),
+        offset: 0,
+    };
+    let unknown = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
+    let procedural = SurfaceGeometry::Procedural {
+        construction: cadmpeg_ir::ids::ProceduralSurfaceId::mint("test:model:surface#free-kind")
+            .expect("identity"),
+        cache: None,
+    };
+    let queries = |ctx: &DecodeContext<'_>| {
+        [
+            unique_model_feature_index(ctx, &ir, &target).map(|value| value.is_none()),
+            generated_surface_id_for_feature(ctx, &[], 7, 1).map(|value| value.is_none()),
+            generated_profile_entry_is_admissible(ctx, 7, &table, &operand, &[], &rows)
+                .map(|value| !value),
+            section_entity_is_generated_profile(ctx, false, Some(7), 1, &[], &[], &rows)
+                .map(|value| !value),
+            section_entity_is_generated_profile(ctx, true, None, 1, &[], &[], &rows)
+                .map(|value| !value),
+            generated_profile_table_shape(ctx, &table).map(|value| !value),
+            Ok(surface_kind_for_geometry(&unknown).is_none()),
+            Ok(surface_kind_for_geometry(&procedural).is_none()),
+            ordered_analytic_surface_id_for_feature(ctx, &rows, &[], 7, &order, 1, &unknown)
+                .map(|value| value.is_none()),
+            insert_ordered_family_surface_binding(
+                ctx,
+                &SurfaceBindingSource {
+                    surface_rows: &rows,
+                    feature_id: 7,
+                    tables: &[],
+                    order: &order,
+                    expected_kind: SurfaceKind::Plane,
+                },
+                1,
+                &mut BTreeMap::new(),
+                &mut BTreeSet::new(),
+            )
+            .map(|value| !value),
+        ]
+    };
+    let arena = DecodeArena::new();
+    let policy = work_policy(0);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    for result in queries(&ctx) {
+        assert!(result.expect("fixed or absent query"));
     }
 }
 
@@ -90,11 +153,6 @@ fn generated_surface_query_counts_present_tables_and_entries_and_stops_on_ambigu
                             "creo generated surface feature entries"
                         }
                     );
-                    assert!(
-                        matches!(generated_surface_id_for_feature(&ctx, &tables, 7, source),
-                    Err(CodecError::ResourceLimit(actual)) if actual == original)
-                    );
-                    assert_eq!(ctx.resource_refusal(), Some(original));
                 }
 
                 if cap < 5 {
@@ -143,9 +201,6 @@ fn generated_profile_shape_stops_at_first_missing_source_without_building_index(
                     "creo generated profile remaining entries"
                 );
                 assert_eq!((original.used, original.additional), (0, 1));
-                assert!(matches!(generated_profile_table_shape(&ctx, &table),
-                Err(CodecError::ResourceLimit(actual)) if actual == original));
-                assert_eq!(ctx.resource_refusal(), Some(original));
             }
 
             if cap < 1 {

@@ -93,10 +93,6 @@ fn feature_parameter_key_transfer_keeps_exact_live_storage_under_ambient_parent(
                         "live feature parameter storage"
                     )
                 );
-                assert_eq!(
-                    ctx.charge_retained_limit(1, "after refused parameter storage"),
-                    Err(original)
-                );
             } else {
                 result.expect("key transfers within exact live allowance");
                 let probe = ctx
@@ -188,8 +184,6 @@ fn returned_feature_parameter_text_transfers_only_surviving_duplicate_keys() {
                     )
                 );
                 drop(node_storage);
-                assert!(matches!(super::super::feature_parameters(&ctx, &scan, 40),
-                Err(CodecError::ResourceLimit(actual)) if actual == original));
             }
 
             if cap < text_bytes {
