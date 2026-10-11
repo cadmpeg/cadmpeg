@@ -497,9 +497,13 @@ fn uncertainty_name_refuses_materialized_limit() {
         crate::test_support::with_service_context(SOURCE, crate::parse::parse_inner)
             .expect("valid uncertainty exchange");
     crate::test_support::with_service_context(SOURCE, |_, ctx| {
-        let (measures, unresolved) =
-            super::super::context_length_uncertainties(&original.records()[&3], &original, ctx)
-                .expect("original production uncertainty route");
+        let (measures, unresolved) = super::super::context_length_uncertainties(
+            &original.records()[&3],
+            &original,
+            ctx,
+            &mut super::super::scalar_resolver(&original, ctx),
+        )
+        .expect("original production uncertainty route");
         assert_eq!(measures.len(), 1);
         assert_eq!(measures[0].get(), 0.2);
         assert_eq!(unresolved, 0);
@@ -522,8 +526,14 @@ fn uncertainty_name_refuses_materialized_limit() {
             policy.limits.max_materialized_bytes = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
                 .expect("root fits materialized policy");
-            super::super::context_length_uncertainties(&exchange.records()[&3], &exchange, &ctx)
-                .map(|_| ())
+            let mut scalar = super::super::scalar_resolver(&exchange, &ctx);
+            super::super::context_length_uncertainties(
+                &exchange.records()[&3],
+                &exchange,
+                &ctx,
+                &mut scalar,
+            )
+            .map(|_| ())
         },
     );
     assert!(
@@ -752,6 +762,7 @@ fn resolve_unit_scales_for_test(
     let mut loss_storage = ctx
         .reserve_scoped(0, "test geometry report backing")
         .expect("report owner");
+    let mut scalar = super::super::scalar_resolver(exchange, &ctx);
     super::super::resolve_unit_scales(
         exchange,
         PositiveReal::ONE,
@@ -759,6 +770,7 @@ fn resolve_unit_scales_for_test(
         (losses, &mut loss_storage),
         &mut storage,
         &ctx,
+        &mut scalar,
     )
     .expect("unit scales fit policy")
 }

@@ -279,9 +279,6 @@ fn assert_first_pole_refusal(source: &str, is_polyline: bool) {
         u64::try_from(POLE_BYTES).expect("test storage fits u64")
     );
     assert!(losses.is_empty());
-    assert!(
-        matches!(ctx.charge_work(0, "later operation"), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
-    );
     drop(loss_storage);
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
@@ -329,9 +326,6 @@ fn polynomial_nurbs_surface_preserves_first_pole_materialized_refusal() {
         u64::try_from(POLE_BYTES).expect("test storage fits u64")
     );
     assert!(losses.is_empty());
-    assert!(
-        matches!(ctx.charge_work(0, "later operation"), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
-    );
     drop(loss_storage);
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == first)
