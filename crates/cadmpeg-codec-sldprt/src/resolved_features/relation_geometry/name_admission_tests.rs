@@ -25,7 +25,6 @@ fn reference_role_value_is_classified() {
         "reference".into(),
     );
     assert!(is_reference_relation_parameter_in(&ctx, &parameter).unwrap());
-
 }
 
 fn handle_fixture() -> (Vec<FeatureInputLane>, FeatureInputOperand) {
@@ -75,7 +74,6 @@ fn declared_handle_owner_selects_the_matching_class() {
         DeclaredEntityHandleOwner::Unique { lane, class } if std::ptr::eq(lane, &raw const lanes[0])
             && std::ptr::eq(class, &raw const lanes[0].classes[1]))
     );
-
 }
 
 #[test]
@@ -143,7 +141,15 @@ fn declared_slot_handle_rejects_offsets_before_name_comparison() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let operation = "match SLDPRT slot-handle class";
     let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-    assert!(declared_slot_handle_dimension_center(&ctx, &lanes, "feature", &operand, |_, _| Ok(Some([0, 0]))).unwrap().is_none());
-    let CodecError::ResourceLimit(limit) = ctx.charge_work(1, operation).unwrap_err() else { panic!("ineligible offsets must not compare names"); };
+    assert!(
+        declared_slot_handle_dimension_center(&ctx, &lanes, "feature", &operand, |_, _| Ok(Some(
+            [0, 0]
+        )))
+        .unwrap()
+        .is_none()
+    );
+    let CodecError::ResourceLimit(limit) = ctx.charge_work(1, operation).unwrap_err() else {
+        panic!("ineligible offsets must not compare names");
+    };
     assert_eq!(limit.additional, 1);
 }

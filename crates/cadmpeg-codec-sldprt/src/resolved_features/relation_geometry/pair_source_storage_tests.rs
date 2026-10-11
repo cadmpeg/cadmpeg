@@ -148,25 +148,62 @@ fn supplied_declared_child_pairs_are_not_rediscovered() {
     policy.limits.max_work_units = u64::MAX;
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let (children, _child_storage) = ctx.with_scoped_storage("test child pairs", || super::declared_entity_handle_declared_child_pairs(&ctx, &lane, "feature")).unwrap();
+    let (children, _child_storage) = ctx
+        .with_scoped_storage("test child pairs", || {
+            super::declared_entity_handle_declared_child_pairs(&ctx, &lane, "feature")
+        })
+        .unwrap();
     assert_eq!(children.len(), 1);
     let operation = "match SLDPRT entity-handle child class";
     let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-    let (pairs, _pair_storage) = ctx.with_scoped_storage("test aggregate pairs", || declared_entity_handle_pairs(&ctx, &lane, "feature", Some(&children))).unwrap();
-    assert_eq!(pairs, vec![[&lane.sketch_entities[0], &lane.sketch_entities[1]], [&lane.sketch_entities[1], &lane.sketch_entities[2]]]);
-    let CodecError::ResourceLimit(limit) = ctx.charge_work(1, operation).unwrap_err() else { panic!("provided children must not be recomputed"); };
+    let (pairs, _pair_storage) = ctx
+        .with_scoped_storage("test aggregate pairs", || {
+            declared_entity_handle_pairs(&ctx, &lane, "feature", Some(&children))
+        })
+        .unwrap();
+    assert_eq!(
+        pairs,
+        vec![
+            [&lane.sketch_entities[0], &lane.sketch_entities[1]],
+            [&lane.sketch_entities[1], &lane.sketch_entities[2]]
+        ]
+    );
+    let CodecError::ResourceLimit(limit) = ctx.charge_work(1, operation).unwrap_err() else {
+        panic!("provided children must not be recomputed");
+    };
     assert_eq!(limit.additional, 1);
 }
 
 #[test]
 fn one_declared_circular_child_does_not_build_an_aggregate() {
+    use crate::records::{FeatureInputOperand, FeatureInputOperandKind, FeatureInputReference};
     use cadmpeg_core::decode::refusal_probe::RefusalProbe;
-    use crate::records::{FeatureInputReference, FeatureInputOperand, FeatureInputOperandKind};
     let mut lane = fixture();
     lane.sketch_entities[1].coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.005, 0.0]);
-    lane.classes.push(FeatureInputClass { id: "entity-class".into(), parent: "lane".into(), ordinal: 1, offset: 0, name: "sgEntHandle".into() });
-    lane.references.push(FeatureInputReference { id: "reference".into(), parent: "lane".into(), feature_ref: Some("feature".into()), ordinal: 0, offset: 0, kind: FeatureInputOperandKind::E1, class_ref: Some("entity-class".into()), object_index: 0 });
-    let operand = FeatureInputOperand { offset: 0, reference_ref: "reference".into(), kind: FeatureInputOperandKind::E1, entity_index: 0, entity_ref: None };
+    lane.classes.push(FeatureInputClass {
+        id: "entity-class".into(),
+        parent: "lane".into(),
+        ordinal: 1,
+        offset: 0,
+        name: "sgEntHandle".into(),
+    });
+    lane.references.push(FeatureInputReference {
+        id: "reference".into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset: 0,
+        kind: FeatureInputOperandKind::E1,
+        class_ref: Some("entity-class".into()),
+        object_index: 0,
+    });
+    let operand = FeatureInputOperand {
+        offset: 0,
+        reference_ref: "reference".into(),
+        kind: FeatureInputOperandKind::E1,
+        entity_index: 0,
+        entity_ref: None,
+    };
     let lanes = [lane];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -175,9 +212,14 @@ fn one_declared_circular_child_does_not_build_an_aggregate() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let operation = "sldprt declared entity handle pairs sort";
     let _probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
-    let (center, radius) = super::declared_entity_handle_circular_marker(&ctx, &lanes, "feature", &operand, 5.0).unwrap().unwrap();
+    let (center, radius) =
+        super::declared_entity_handle_circular_marker(&ctx, &lanes, "feature", &operand, 5.0)
+            .unwrap()
+            .unwrap();
     assert!(std::ptr::eq(center, &raw const lanes[0].sketch_entities[0]));
     assert_eq!(radius, 5.0);
-    let CodecError::ResourceLimit(limit) = ctx.charge_work(1, operation).unwrap_err() else { panic!("the child pair must avoid the aggregate sort"); };
+    let CodecError::ResourceLimit(limit) = ctx.charge_work(1, operation).unwrap_err() else {
+        panic!("the child pair must avoid the aggregate sort");
+    };
     assert_eq!(limit.additional, 1);
 }

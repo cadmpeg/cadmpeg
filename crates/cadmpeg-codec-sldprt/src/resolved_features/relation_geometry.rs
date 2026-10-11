@@ -631,10 +631,13 @@ pub(crate) fn project_spatial_relation_bindings(
             } else {
                 None
             };
-            let existing = ctx.get_hash_map(
-                &constraints_by_native_ref, relation.id.as_str(),
-                "find existing SLDPRT spatial relation constraint",
-            )?.copied();
+            let existing = ctx
+                .get_hash_map(
+                    &constraints_by_native_ref,
+                    relation.id.as_str(),
+                    "find existing SLDPRT spatial relation constraint",
+                )?
+                .copied();
             let typed_definition =
                 if relation.family == FeatureInputRelationFamily::PointLineDistance {
                     if let (Some(parameter), Some(parameter_id)) = (parameter, parameter_id) {
@@ -661,8 +664,12 @@ pub(crate) fn project_spatial_relation_bindings(
                     None
                 };
             if existing.is_some_and(|index| {
-                !matches!(constraints[index].definition.kind(), SpatialSketchConstraintDefinitionInput::Native { .. })
-            }) || (existing.is_some() && typed_definition.is_none()) {
+                !matches!(
+                    constraints[index].definition.kind(),
+                    SpatialSketchConstraintDefinitionInput::Native { .. }
+                )
+            }) || (existing.is_some() && typed_definition.is_none())
+            {
                 continue;
             }
             let native_kind = relation_native_kind(relation.family);
@@ -3938,9 +3945,11 @@ pub(super) fn declared_entity_handle_circular_marker<'a>(
     let pairs_scope = if child_pairs_scope.0.is_empty()
         || (child_pairs_scope.0.len() == 1 && operand.entity_ref.is_some())
     {
-        Some(ctx.with_scoped_storage("SLDPRT declared circular-marker pairs", || {
-            declared_entity_handle_pairs(ctx, lane, feature, Some(&child_pairs_scope.0))
-        })?)
+        Some(
+            ctx.with_scoped_storage("SLDPRT declared circular-marker pairs", || {
+                declared_entity_handle_pairs(ctx, lane, feature, Some(&child_pairs_scope.0))
+            })?,
+        )
     } else {
         None
     };
@@ -3952,7 +3961,9 @@ pub(super) fn declared_entity_handle_circular_marker<'a>(
         if let Some(entity_ref) = operand.entity_ref.as_deref() {
             let mut unique = None;
             if !ctx.all_by(
-                pairs_scope.as_ref().map_or(&[][..], |(pairs, _)| pairs.as_slice()),
+                pairs_scope
+                    .as_ref()
+                    .map_or(&[][..], |(pairs, _)| pairs.as_slice()),
                 |[center, radial]| {
                     if !ctx.equal(radial.id(), entity_ref, DIMENSIONED_HANDLE_OPERATION)? {
                         return Ok(true);
@@ -4005,7 +4016,9 @@ pub(super) fn declared_entity_handle_circular_marker<'a>(
     }
     let mut unique = None;
     if !ctx.all_by(
-        pairs_scope.as_ref().map_or(&[][..], |(pairs, _)| pairs.as_slice()),
+        pairs_scope
+            .as_ref()
+            .map_or(&[][..], |(pairs, _)| pairs.as_slice()),
         |[center, radial]| {
             let Some([cu, cv]) = center
                 .coordinates_m
@@ -4089,11 +4102,19 @@ fn declared_entity_handle_pairs<'a>(
 ) -> Result<Vec<[&'a SketchInputEntity; 2]>, cadmpeg_core::CodecError> {
     let mut pairs = declared_entity_handle_linked_pairs(ctx, lane, feature)?;
     let child_source = if children.is_none() {
-        Some(ctx.with_scoped_storage("SLDPRT declared entity-handle child pair source", || {
-            declared_entity_handle_declared_child_pairs(ctx, lane, feature)
-        })?)
-    } else { None };
-    let children = children.unwrap_or_else(|| child_source.as_ref().map_or(&[][..], |(pairs, _)| pairs.as_slice()));
+        Some(
+            ctx.with_scoped_storage("SLDPRT declared entity-handle child pair source", || {
+                declared_entity_handle_declared_child_pairs(ctx, lane, feature)
+            })?,
+        )
+    } else {
+        None
+    };
+    let children = children.unwrap_or_else(|| {
+        child_source
+            .as_ref()
+            .map_or(&[][..], |(pairs, _)| pairs.as_slice())
+    });
     ctx.extend_vec(&mut pairs, children, DIMENSIONED_HANDLE_OPERATION)?;
     drop(child_source);
     let indexed_storage;
