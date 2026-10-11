@@ -571,347 +571,368 @@ impl ValidatedRawBrep {
         raw: &mut RawBrep,
         region_storage: Option<&mut cadmpeg_core::decode::ScopedReservation<'ctx>>,
     ) -> Result<(ResolvedBrep, Diagnostics), GeometryError> {
-        let mut warnings = Diagnostics::new();
-        for (label, mismatch) in [
-            (
-                "vertex",
-                positions_drifted(ctx, &raw.vertices, |value| value.index)?,
-            ),
-            (
-                "edge",
-                positions_drifted(ctx, &raw.edges, |value| value.index)?,
-            ),
-            (
-                "trim",
-                positions_drifted(ctx, &raw.trims, |value| value.index)?,
-            ),
-            (
-                "loop",
-                positions_drifted(ctx, &raw.loops, |value| value.index)?,
-            ),
-            (
-                "face",
-                positions_drifted(ctx, &raw.faces, |value| value.index)?,
-            ),
-            (
-                "region face-side",
-                positions_drifted(ctx, &raw.face_sides, |value| value.index)?,
-            ),
-        ] {
-            if mismatch {
-                warnings.push_coded_admitted(
-                    ctx,
-                    crate::loss::RhinoLossCode::RedundantFieldRepaired,
-                    format_args!(
+        let mut candidate_storage = ctx.provisional_retained("Rhino validated Brep candidate")?;
+        let candidate = candidate_storage.with_storage(|| {
+            let mut warnings = Diagnostics::new();
+            for (label, mismatch) in [
+                (
+                    "vertex",
+                    positions_drifted(ctx, &raw.vertices, |value| value.index)?,
+                ),
+                (
+                    "edge",
+                    positions_drifted(ctx, &raw.edges, |value| value.index)?,
+                ),
+                (
+                    "trim",
+                    positions_drifted(ctx, &raw.trims, |value| value.index)?,
+                ),
+                (
+                    "loop",
+                    positions_drifted(ctx, &raw.loops, |value| value.index)?,
+                ),
+                (
+                    "face",
+                    positions_drifted(ctx, &raw.faces, |value| value.index)?,
+                ),
+                (
+                    "region face-side",
+                    positions_drifted(ctx, &raw.face_sides, |value| value.index)?,
+                ),
+            ] {
+                if mismatch {
+                    warnings.push_coded_admitted(
+                        ctx,
+                        crate::loss::RhinoLossCode::RedundantFieldRepaired,
+                        format_args!(
                     "redundant Brep {label} positional index mismatch; serialized array order used"
                 ),
-                )?;
+                    )?;
+                }
             }
-        }
-        let mut resolved = ResolvedBrep {
-            vertices: ctx
-                .collection_vec(raw.vertices.len(), "Rhino resolved Brep vertices")
-                .map_err(crate::curves::GeometryError::from)?,
-            edges: ctx
-                .collection_vec(raw.edges.len(), "Rhino resolved Brep edges")
-                .map_err(crate::curves::GeometryError::from)?,
-            trims: ctx
-                .collection_vec(raw.trims.len(), "Rhino resolved Brep trims")
-                .map_err(crate::curves::GeometryError::from)?,
-            loops: ctx
-                .collection_vec(raw.loops.len(), "Rhino resolved Brep loops")
-                .map_err(crate::curves::GeometryError::from)?,
-            faces: ctx
-                .collection_vec(raw.faces.len(), "Rhino resolved Brep faces")
-                .map_err(crate::curves::GeometryError::from)?,
-            face_sides: Vec::new(),
-        };
-        let mut vertex_source = raw.vertices[..].iter();
-        for _ in 0..vertex_source.len() {
-            let vertex = ctx
-                .next_charged(&mut vertex_source, "Rhino validate traversal")?
-                .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
-            let edges = slots(ctx, &vertex.edges, raw.edges.len(), "vertex edge")?;
-            let tolerance = finite_tolerance(vertex.tolerance, "vertex tolerance")?;
-            resolved.vertices.push(ResolvedVertex { edges, tolerance });
-        }
-        let mut edge_source = raw.edges[..].iter().enumerate();
-        for _ in 0..edge_source.len() {
-            let (index, edge) = ctx
-                .next_charged(&mut edge_source, "Rhino validate traversal")?
-                .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
-            let Some(curve) = child_slot(&raw.c3, edge.curve, RawBrepBaseType::Curve) else {
-                return Err(error(
-                    edge.source_range.start,
-                    "edge C3 reference is invalid",
-                ));
+            let mut resolved = ResolvedBrep {
+                vertices: ctx
+                    .collection_vec(raw.vertices.len(), "Rhino resolved Brep vertices")
+                    .map_err(crate::curves::GeometryError::from)?,
+                edges: ctx
+                    .collection_vec(raw.edges.len(), "Rhino resolved Brep edges")
+                    .map_err(crate::curves::GeometryError::from)?,
+                trims: ctx
+                    .collection_vec(raw.trims.len(), "Rhino resolved Brep trims")
+                    .map_err(crate::curves::GeometryError::from)?,
+                loops: ctx
+                    .collection_vec(raw.loops.len(), "Rhino resolved Brep loops")
+                    .map_err(crate::curves::GeometryError::from)?,
+                faces: ctx
+                    .collection_vec(raw.faces.len(), "Rhino resolved Brep faces")
+                    .map_err(crate::curves::GeometryError::from)?,
+                face_sides: Vec::new(),
             };
-            let vertices = slot_pair(edge.vertices, raw.vertices.len(), "edge vertex")?;
-            let trims = slots(ctx, &edge.trims, raw.trims.len(), "edge trim")?;
-            unique(ctx, &edge.trims, "edge trim")?;
-            ordered_interval(edge.proxy_domain, "edge proxy domain")?;
-            ordered_interval(edge.domain, "edge domain")?;
-            let tolerance = finite_tolerance(edge.tolerance, "edge tolerance")?;
-            let mut trim_source = trims[..].iter();
-            for _ in 0..trim_source.len() {
-                let trim = ctx
-                    .next_charged(&mut trim_source, "Rhino validate traversal")?
+            let mut vertex_source = raw.vertices[..].iter();
+            for _ in 0..vertex_source.len() {
+                let vertex = ctx
+                    .next_charged(&mut vertex_source, "Rhino validate traversal")?
                     .ok_or_else(|| {
                         GeometryError::unpositioned("Brep traversal source ended early")
                     })?;
-                if position(raw.trims[*trim].edge) != Some(index) {
-                    return Err(error(
-                        edge.source_range.start,
-                        "edge/trim reciprocity mismatch",
-                    ));
-                }
+                let edges = slots(ctx, &vertex.edges, raw.edges.len(), "vertex edge")?;
+                let tolerance = finite_tolerance(vertex.tolerance, "vertex tolerance")?;
+                resolved.vertices.push(ResolvedVertex { edges, tolerance });
             }
-            resolved.edges.push(ResolvedEdge {
-                curve,
-                vertices,
-                trims,
-                tolerance,
-            });
-        }
-        let mut membership_storage = ctx.reserve_scoped(0, "Rhino Brep membership flags")?;
-        let mut listed_trims = membership_storage.with_storage(|| {
-            ctx.alloc_filled(raw.trims.len(), false, "Rhino Brep trim membership")
-        })?;
-        let mut loop_record_source = raw.loops[..].iter().enumerate();
-        for _ in 0..loop_record_source.len() {
-            let (loop_index, loop_record) = ctx
-                .next_charged(&mut loop_record_source, "Rhino Brep trim membership")?
-                .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
-            for value in ctx
-                .admit_iter(&loop_record.trims[..], "Rhino Brep trim membership")
-                .map_err(cadmpeg_core::CodecError::from)?
-            {
-                if let Some(trim_index) =
-                    position(Some(*value)).filter(|&index| index < raw.trims.len())
-                {
-                    if position(Some(raw.trims[trim_index].loop_index)) == Some(loop_index) {
-                        listed_trims[trim_index] = true;
-                    }
-                }
-            }
-        }
-        let mut trim_source = raw.trims[..].iter().enumerate();
-        for _ in 0..trim_source.len() {
-            let (trim_index, trim) = ctx
-                .next_charged(&mut trim_source, "Rhino validate traversal")?
-                .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
-            let curve = if trim.trim_type == RawTrimKind::PointOnSurface {
-                if trim.curve.is_some() {
-                    return Err(error(
-                        trim.source_range.start,
-                        "point-on-surface trim must not require C2",
-                    ));
-                }
-                None
-            } else {
-                let Some(curve) = trim
-                    .curve
-                    .and_then(|curve| child_slot(&raw.c2, curve, RawBrepBaseType::Curve))
-                else {
-                    return Err(error(
-                        trim.source_range.start,
-                        "trim C2 reference is invalid",
-                    ));
-                };
-                Some(curve)
-            };
-            let vertices = slot_pair(trim.vertices, raw.vertices.len(), "trim vertex")?;
-            let loop_index = slot(trim.loop_index, raw.loops.len(), "trim loop")?;
-            if !listed_trims[trim_index] {
-                return Err(error(
-                    trim.source_range.start,
-                    "trim/loop reciprocity mismatch",
-                ));
-            }
-            ordered_interval(trim.proxy_domain, "trim proxy domain")?;
-            ordered_interval(trim.domain, "trim domain")?;
-            let tolerances = [
-                finite_tolerance(trim.tolerances[0], "trim tolerance")?,
-                finite_tolerance(trim.tolerances[1], "trim tolerance")?,
-            ];
-            for tolerance in trim.legacy_tolerances {
-                finite_tolerance(tolerance, "trim tolerance")?;
-            }
-            let edge = if matches!(
-                trim.trim_type,
-                RawTrimKind::Singular | RawTrimKind::PointOnSurface
-            ) {
-                if trim.edge.is_some() || trim.vertices[0] != trim.vertices[1] {
-                    return Err(error(
-                        trim.source_range.start,
-                        "singular trim endpoints are invalid",
-                    ));
-                }
-                None
-            } else {
-                let Some(edge) = trim.edge else {
-                    return Err(error(
-                        trim.source_range.start,
-                        "trim edge reference is out of range",
-                    ));
-                };
-                Some(slot(edge, raw.edges.len(), "trim edge")?)
-            };
-            resolved.trims.push(ResolvedTrim {
-                curve,
-                edge,
-                vertices,
-                loop_index,
-                tolerances,
-            });
-        }
-        validate_edge_incidences(ctx, raw, &resolved)?;
-        let mut vertex_source = resolved.vertices[..].iter().enumerate();
-        for _ in 0..vertex_source.len() {
-            let (index, vertex) = ctx
-                .next_charged(&mut vertex_source, "Rhino validate traversal")?
-                .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
-            let mut edge_source = vertex.edges.iter();
+            let mut edge_source = raw.edges[..].iter().enumerate();
             for _ in 0..edge_source.len() {
-                let edge = ctx
+                let (index, edge) = ctx
                     .next_charged(&mut edge_source, "Rhino validate traversal")?
                     .ok_or_else(|| {
                         GeometryError::unpositioned("Brep traversal source ended early")
                     })?;
-                if !resolved.edges[*edge].vertices.contains(&index) {
+                let Some(curve) = child_slot(&raw.c3, edge.curve, RawBrepBaseType::Curve) else {
                     return Err(error(
-                        raw.vertices[index].source_range.start,
-                        "vertex/edge reciprocity mismatch",
+                        edge.source_range.start,
+                        "edge C3 reference is invalid",
                     ));
+                };
+                let vertices = slot_pair(edge.vertices, raw.vertices.len(), "edge vertex")?;
+                let trims = slots(ctx, &edge.trims, raw.trims.len(), "edge trim")?;
+                unique(ctx, &edge.trims, "edge trim")?;
+                ordered_interval(edge.proxy_domain, "edge proxy domain")?;
+                ordered_interval(edge.domain, "edge domain")?;
+                let tolerance = finite_tolerance(edge.tolerance, "edge tolerance")?;
+                let mut trim_source = trims[..].iter();
+                for _ in 0..trim_source.len() {
+                    let trim = ctx
+                        .next_charged(&mut trim_source, "Rhino validate traversal")?
+                        .ok_or_else(|| {
+                            GeometryError::unpositioned("Brep traversal source ended early")
+                        })?;
+                    if position(raw.trims[*trim].edge) != Some(index) {
+                        return Err(error(
+                            edge.source_range.start,
+                            "edge/trim reciprocity mismatch",
+                        ));
+                    }
+                }
+                resolved.edges.push(ResolvedEdge {
+                    curve,
+                    vertices,
+                    trims,
+                    tolerance,
+                });
+            }
+            let mut membership_storage = ctx.reserve_scoped(0, "Rhino Brep membership flags")?;
+            let mut listed_trims = membership_storage.with_storage(|| {
+                ctx.alloc_filled(raw.trims.len(), false, "Rhino Brep trim membership")
+            })?;
+            let mut loop_record_source = raw.loops[..].iter().enumerate();
+            for _ in 0..loop_record_source.len() {
+                let (loop_index, loop_record) = ctx
+                    .next_charged(&mut loop_record_source, "Rhino Brep trim membership")?
+                    .ok_or_else(|| {
+                        GeometryError::unpositioned("Brep traversal source ended early")
+                    })?;
+                for value in ctx
+                    .admit_iter(&loop_record.trims[..], "Rhino Brep trim membership")
+                    .map_err(cadmpeg_core::CodecError::from)?
+                {
+                    if let Some(trim_index) =
+                        position(Some(*value)).filter(|&index| index < raw.trims.len())
+                    {
+                        if position(Some(raw.trims[trim_index].loop_index)) == Some(loop_index) {
+                            listed_trims[trim_index] = true;
+                        }
+                    }
                 }
             }
-        }
-        let mut listed_loops = membership_storage.with_storage(|| {
-            ctx.alloc_filled(raw.loops.len(), false, "Rhino Brep loop membership")
-        })?;
-        let mut face_source = raw.faces[..].iter().enumerate();
-        for _ in 0..face_source.len() {
-            let (face_index, face) = ctx
-                .next_charged(&mut face_source, "Rhino Brep loop membership")?
-                .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
-            for value in ctx
-                .admit_iter(&face.loops[..], "Rhino Brep loop membership")
+            let mut trim_source = raw.trims[..].iter().enumerate();
+            for _ in 0..trim_source.len() {
+                let (trim_index, trim) = ctx
+                    .next_charged(&mut trim_source, "Rhino validate traversal")?
+                    .ok_or_else(|| {
+                        GeometryError::unpositioned("Brep traversal source ended early")
+                    })?;
+                let curve = if trim.trim_type == RawTrimKind::PointOnSurface {
+                    if trim.curve.is_some() {
+                        return Err(error(
+                            trim.source_range.start,
+                            "point-on-surface trim must not require C2",
+                        ));
+                    }
+                    None
+                } else {
+                    let Some(curve) = trim
+                        .curve
+                        .and_then(|curve| child_slot(&raw.c2, curve, RawBrepBaseType::Curve))
+                    else {
+                        return Err(error(
+                            trim.source_range.start,
+                            "trim C2 reference is invalid",
+                        ));
+                    };
+                    Some(curve)
+                };
+                let vertices = slot_pair(trim.vertices, raw.vertices.len(), "trim vertex")?;
+                let loop_index = slot(trim.loop_index, raw.loops.len(), "trim loop")?;
+                if !listed_trims[trim_index] {
+                    return Err(error(
+                        trim.source_range.start,
+                        "trim/loop reciprocity mismatch",
+                    ));
+                }
+                ordered_interval(trim.proxy_domain, "trim proxy domain")?;
+                ordered_interval(trim.domain, "trim domain")?;
+                let tolerances = [
+                    finite_tolerance(trim.tolerances[0], "trim tolerance")?,
+                    finite_tolerance(trim.tolerances[1], "trim tolerance")?,
+                ];
+                for tolerance in trim.legacy_tolerances {
+                    finite_tolerance(tolerance, "trim tolerance")?;
+                }
+                let edge = if matches!(
+                    trim.trim_type,
+                    RawTrimKind::Singular | RawTrimKind::PointOnSurface
+                ) {
+                    if trim.edge.is_some() || trim.vertices[0] != trim.vertices[1] {
+                        return Err(error(
+                            trim.source_range.start,
+                            "singular trim endpoints are invalid",
+                        ));
+                    }
+                    None
+                } else {
+                    let Some(edge) = trim.edge else {
+                        return Err(error(
+                            trim.source_range.start,
+                            "trim edge reference is out of range",
+                        ));
+                    };
+                    Some(slot(edge, raw.edges.len(), "trim edge")?)
+                };
+                resolved.trims.push(ResolvedTrim {
+                    curve,
+                    edge,
+                    vertices,
+                    loop_index,
+                    tolerances,
+                });
+            }
+            validate_edge_incidences(ctx, raw, &resolved)?;
+            let mut vertex_source = resolved.vertices[..].iter().enumerate();
+            for _ in 0..vertex_source.len() {
+                let (index, vertex) = ctx
+                    .next_charged(&mut vertex_source, "Rhino validate traversal")?
+                    .ok_or_else(|| {
+                        GeometryError::unpositioned("Brep traversal source ended early")
+                    })?;
+                let mut edge_source = vertex.edges.iter();
+                for _ in 0..edge_source.len() {
+                    let edge = ctx
+                        .next_charged(&mut edge_source, "Rhino validate traversal")?
+                        .ok_or_else(|| {
+                            GeometryError::unpositioned("Brep traversal source ended early")
+                        })?;
+                    if !resolved.edges[*edge].vertices.contains(&index) {
+                        return Err(error(
+                            raw.vertices[index].source_range.start,
+                            "vertex/edge reciprocity mismatch",
+                        ));
+                    }
+                }
+            }
+            let mut listed_loops = membership_storage.with_storage(|| {
+                ctx.alloc_filled(raw.loops.len(), false, "Rhino Brep loop membership")
+            })?;
+            let mut face_source = raw.faces[..].iter().enumerate();
+            for _ in 0..face_source.len() {
+                let (face_index, face) = ctx
+                    .next_charged(&mut face_source, "Rhino Brep loop membership")?
+                    .ok_or_else(|| {
+                        GeometryError::unpositioned("Brep traversal source ended early")
+                    })?;
+                for value in ctx
+                    .admit_iter(&face.loops[..], "Rhino Brep loop membership")
+                    .map_err(cadmpeg_core::CodecError::from)?
+                {
+                    if let Some(loop_index) =
+                        position(Some(*value)).filter(|&index| index < raw.loops.len())
+                    {
+                        if position(Some(raw.loops[loop_index].face)) == Some(face_index) {
+                            listed_loops[loop_index] = true;
+                        }
+                    }
+                }
+            }
+            let mut loop_record_source = raw.loops[..].iter().enumerate();
+            for _ in 0..loop_record_source.len() {
+                let (index, loop_record) = ctx
+                    .next_charged(&mut loop_record_source, "Rhino validate traversal")?
+                    .ok_or_else(|| {
+                        GeometryError::unpositioned("Brep traversal source ended early")
+                    })?;
+                let trims = slots(ctx, &loop_record.trims, raw.trims.len(), "loop trim")?;
+                unique(ctx, &loop_record.trims, "loop trim")?;
+                let face = slot(loop_record.face, raw.faces.len(), "loop face")?;
+                if !listed_loops[index] {
+                    return Err(error(
+                        loop_record.source_range.start,
+                        "loop/face reciprocity mismatch",
+                    ));
+                }
+                if loop_record.loop_type == RawLoopKind::Outer
+                    && position(raw.faces[face].loops.first().copied()) != Some(index)
+                {
+                    return Err(error(
+                        loop_record.source_range.start,
+                        "outer loop is not first",
+                    ));
+                }
+                resolved.loops.push(ResolvedLoop { trims, face });
+            }
+            let mut face_source = raw.faces[..].iter().enumerate();
+            for _ in 0..face_source.len() {
+                let (index, face) = ctx
+                    .next_charged(&mut face_source, "Rhino validate traversal")?
+                    .ok_or_else(|| {
+                        GeometryError::unpositioned("Brep traversal source ended early")
+                    })?;
+                let Some(surface) =
+                    child_slot(&raw.surfaces, face.surface, RawBrepBaseType::Surface)
+                else {
+                    return Err(error(
+                        face.source_range.start,
+                        "face surface reference is invalid",
+                    ));
+                };
+                let loops = slots(ctx, &face.loops, raw.loops.len(), "face loop")?;
+                let Some(outer) = loops.first() else {
+                    return Err(error(face.source_range.start, "face has no loops"));
+                };
+                if raw.loops[*outer].loop_type != RawLoopKind::Outer {
+                    return Err(error(
+                        face.source_range.start,
+                        "face first loop is not outer",
+                    ));
+                }
+                let mut loop_index_source = loops[1..].iter();
+                for _ in 0..loop_index_source.len() {
+                    let loop_index = ctx
+                        .next_charged(&mut loop_index_source, "Rhino validate traversal")?
+                        .ok_or_else(|| {
+                            GeometryError::unpositioned("Brep traversal source ended early")
+                        })?;
+                    let loop_type = raw.loops[*loop_index].loop_type;
+                    if matches!(loop_type, RawLoopKind::Unknown | RawLoopKind::Outer) {
+                        return Err(error(
+                            face.source_range.start,
+                            "face boundary loop convention is invalid",
+                        ));
+                    }
+                }
+                let mut loop_index_source = loops[..].iter();
+                for _ in 0..loop_index_source.len() {
+                    let loop_index = ctx
+                        .next_charged(&mut loop_index_source, "Rhino validate traversal")?
+                        .ok_or_else(|| {
+                            GeometryError::unpositioned("Brep traversal source ended early")
+                        })?;
+                    if resolved.loops[*loop_index].face != index {
+                        return Err(error(
+                            face.source_range.start,
+                            "face/loop reciprocity mismatch",
+                        ));
+                    }
+                }
+                resolved.faces.push(ResolvedFace { surface, loops });
+            }
+            validate_rings(ctx, raw, &resolved)?;
+            if raw.minor >= 3 && (!raw.face_sides.is_empty() || !raw.regions.is_empty()) {
+                match validate_regions(ctx, raw) {
+                    Ok(face_sides) => resolved.face_sides = face_sides,
+                    Err(error @ GeometryError::Codec(_)) => return Err(error),
+                    Err(_) => {
+                        raw.face_sides = Vec::new();
+                        raw.regions = Vec::new();
+                        if let Some(storage) = region_storage {
+                            *storage = ctx.reserve_scoped(0, "Rhino Brep region input")?;
+                        }
+                        warnings.push_coded_admitted(
+                            ctx,
+                            crate::loss::RhinoLossCode::RedundantFieldRepaired,
+                            format_args!("invalid optional Brep region topology discarded"),
+                        )?;
+                    }
+                }
+            }
+            for face in ctx
+                .admit_iter(&mut raw.faces[..], "Rhino repaired face traversal")
                 .map_err(cadmpeg_core::CodecError::from)?
             {
-                if let Some(loop_index) =
-                    position(Some(*value)).filter(|&index| index < raw.loops.len())
-                {
-                    if position(Some(raw.loops[loop_index].face)) == Some(face_index) {
-                        listed_loops[loop_index] = true;
-                    }
+                if face.material_channel < 0 {
+                    face.material_channel = 0;
                 }
             }
-        }
-        let mut loop_record_source = raw.loops[..].iter().enumerate();
-        for _ in 0..loop_record_source.len() {
-            let (index, loop_record) = ctx
-                .next_charged(&mut loop_record_source, "Rhino validate traversal")?
-                .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
-            let trims = slots(ctx, &loop_record.trims, raw.trims.len(), "loop trim")?;
-            unique(ctx, &loop_record.trims, "loop trim")?;
-            let face = slot(loop_record.face, raw.faces.len(), "loop face")?;
-            if !listed_loops[index] {
-                return Err(error(
-                    loop_record.source_range.start,
-                    "loop/face reciprocity mismatch",
-                ));
-            }
-            if loop_record.loop_type == RawLoopKind::Outer
-                && position(raw.faces[face].loops.first().copied()) != Some(index)
-            {
-                return Err(error(
-                    loop_record.source_range.start,
-                    "outer loop is not first",
-                ));
-            }
-            resolved.loops.push(ResolvedLoop { trims, face });
-        }
-        let mut face_source = raw.faces[..].iter().enumerate();
-        for _ in 0..face_source.len() {
-            let (index, face) = ctx
-                .next_charged(&mut face_source, "Rhino validate traversal")?
-                .ok_or_else(|| GeometryError::unpositioned("Brep traversal source ended early"))?;
-            let Some(surface) = child_slot(&raw.surfaces, face.surface, RawBrepBaseType::Surface)
-            else {
-                return Err(error(
-                    face.source_range.start,
-                    "face surface reference is invalid",
-                ));
-            };
-            let loops = slots(ctx, &face.loops, raw.loops.len(), "face loop")?;
-            let Some(outer) = loops.first() else {
-                return Err(error(face.source_range.start, "face has no loops"));
-            };
-            if raw.loops[*outer].loop_type != RawLoopKind::Outer {
-                return Err(error(
-                    face.source_range.start,
-                    "face first loop is not outer",
-                ));
-            }
-            let mut loop_index_source = loops[1..].iter();
-            for _ in 0..loop_index_source.len() {
-                let loop_index = ctx
-                    .next_charged(&mut loop_index_source, "Rhino validate traversal")?
-                    .ok_or_else(|| {
-                        GeometryError::unpositioned("Brep traversal source ended early")
-                    })?;
-                let loop_type = raw.loops[*loop_index].loop_type;
-                if matches!(loop_type, RawLoopKind::Unknown | RawLoopKind::Outer) {
-                    return Err(error(
-                        face.source_range.start,
-                        "face boundary loop convention is invalid",
-                    ));
-                }
-            }
-            let mut loop_index_source = loops[..].iter();
-            for _ in 0..loop_index_source.len() {
-                let loop_index = ctx
-                    .next_charged(&mut loop_index_source, "Rhino validate traversal")?
-                    .ok_or_else(|| {
-                        GeometryError::unpositioned("Brep traversal source ended early")
-                    })?;
-                if resolved.loops[*loop_index].face != index {
-                    return Err(error(
-                        face.source_range.start,
-                        "face/loop reciprocity mismatch",
-                    ));
-                }
-            }
-            resolved.faces.push(ResolvedFace { surface, loops });
-        }
-        validate_rings(ctx, raw, &resolved)?;
-        if raw.minor >= 3 && (!raw.face_sides.is_empty() || !raw.regions.is_empty()) {
-            match validate_regions(ctx, raw) {
-                Ok(face_sides) => resolved.face_sides = face_sides,
-                Err(error @ GeometryError::Codec(_)) => return Err(error),
-                Err(_) => {
-                    raw.face_sides = Vec::new();
-                    raw.regions = Vec::new();
-                    if let Some(storage) = region_storage {
-                        *storage = ctx.reserve_scoped(0, "Rhino Brep region input")?;
-                    }
-                    warnings.push_coded_admitted(
-                        ctx,
-                        crate::loss::RhinoLossCode::RedundantFieldRepaired,
-                        format_args!("invalid optional Brep region topology discarded"),
-                    )?;
-                }
-            }
-        }
-        for face in ctx
-            .admit_iter(&mut raw.faces[..], "Rhino repaired face traversal")
-            .map_err(cadmpeg_core::CodecError::from)?
-        {
-            if face.material_channel < 0 {
-                face.material_channel = 0;
-            }
-        }
-        Ok((resolved, warnings))
+            Ok((resolved, warnings))
+        })?;
+        Ok(candidate_storage.commit_value(candidate)?)
     }
 
     /// Returns every reference of the payload, resolved to an array position.
@@ -3115,9 +3136,6 @@ fn validate_rings(
     raw: &RawBrep,
     resolved: &ResolvedBrep,
 ) -> Result<(), GeometryError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal).into());
-    }
     let mut loop_record_source = raw.loops.iter().enumerate();
     for _ in 0..loop_record_source.len() {
         let (loop_index, loop_record) = ctx
