@@ -110,11 +110,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### DI-17. `PRTSketch` and `Sketch` payload roles
 
-**Question.** What does each atom, list, and reference in a `PRTSketch` or `Sketch` field represent?
+**Question.** Which contextual productions assign roles to the remaining atoms and standalone reference vectors in `PRTSketch` and `Sketch` fields?
 
-**Known.** The object graph retains these payloads, their schemas, references, and owner groups.
+**Known.** `catia.md` §7.3 "`PRTSketch` and `Sketch` select field schemas" separates the field schema from the generic payload grammar. Only the complete `Sketch` owner declaration assigns the initial list a member-roster role. Standalone runs retain separate native incidences, including count-coherent runs and targets repeated from the roster. A class name or count-complete list alone does not assign sketch identity or geometry.
 
-**Need.** We must know the roles to transfer sketch membership and geometry.
+**Need.** We must identify complete contextual productions before assigning neutral roles to the remaining atoms and standalone vectors.
 
 ### DI-18. Range semantic owner
 
