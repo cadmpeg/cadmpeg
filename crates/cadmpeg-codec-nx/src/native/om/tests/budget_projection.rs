@@ -4,17 +4,19 @@ use super::super::{external_reference_records, external_reference_tail_reference
 use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
 
-fn external_container() -> crate::container::Container<'static> {
-    let file = crate::test_support::test_prt::prt_with_named_payloads(&[(
+fn external_file() -> Vec<u8> {
+    crate::test_support::test_prt::prt_with_named_payloads(&[(
         "/Root/ExternalReferences",
         crate::test_support::test_streams::external_reference_stream(),
-    )]);
-    crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file)).unwrap()
+    )])
 }
 
 #[test]
 fn native_external_handles_transfer_to_retained_output() {
-    let container = external_container();
+    let file = external_file();
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .unwrap();
     let records =
         crate::test_support::with_decode_context(|ctx| external_reference_records(ctx, &container))
             .unwrap();
@@ -33,7 +35,10 @@ fn native_external_handles_transfer_to_retained_output() {
 
 #[test]
 fn native_external_tail_pair_scratch_is_released_after_projection() {
-    let container = external_container();
+    let file = external_file();
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .unwrap();
     let records =
         crate::test_support::with_decode_context(|ctx| external_reference_records(ctx, &container))
             .unwrap();
@@ -90,7 +95,7 @@ fn native_control_index_value_projection_visits_are_charged() {
 fn om_text_projection_copies_the_checked_value() {
     let file = crate::test_support::test_prt::prt_with_indexed_om_section();
     let container =
-        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
             .unwrap();
     let rows = crate::test_support::with_decode_context(|ctx| {
         super::super::string_values(ctx, &container)
