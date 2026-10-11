@@ -288,8 +288,8 @@ fn clamp_conversion_refuses_at_candidate_publication() {
             policy.limits.max_retained_bytes = cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let result = super::clamp_nurbs_curve_to_domain(&ctx, &source, [0.5, 1.5]);
-            let Err(crate::brep::graph::nurbs_pcurves::NurbsPcurveFailure::Resource(error)) =
-                result
+            let Some(crate::brep::graph::nurbs_pcurves::NurbsPcurveFailure::Resource(error)) =
+                result.err()
             else {
                 return Ok(());
             };
@@ -397,6 +397,16 @@ fn clamp_finite_rational_source_reaches_original_nonfinite_carrier_refusal() {
     .unwrap();
     assert_eq!(source.pole_rows().point_at(0).unwrap().get().x, f64::MAX);
     assert_eq!(source.pole_rows().weight_at(0), Some(2.0));
+    let error = crate::test_support::work_refusal_at("copy clamped NURBS refusal", |ctx| {
+        match super::clamp_nurbs_curve_to_domain(ctx, &source, [0.25, 0.75]) {
+            Err(crate::brep::graph::nurbs_pcurves::NurbsPcurveFailure::Resource(error)) => Err(error),
+            _ => Ok(()),
+        }
+    });
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("diagnostic copy work refusal");
+    };
+    assert_eq!(limit.additional, u64::try_from("control_points contains a non-finite point".len()).unwrap());
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = SCRATCH_BYTES;
@@ -406,19 +416,28 @@ fn clamp_finite_rational_source_reaches_original_nonfinite_carrier_refusal() {
     let result = super::clamp_nurbs_curve_to_domain(&ctx, &source, [0.25, 0.75]);
     let Err(crate::brep::graph::nurbs_pcurves::NurbsPcurveFailure::Carrier(NurbsError::Structure(
         message,
-    ))) = &result
+    ), Some(_))) = &result
     else {
         panic!("finite source overflow reaches the original carrier refusal");
     };
     assert_eq!(message, "control_points contains a non-finite point");
     assert!(ctx.resource_refusal().is_none());
-    // Only the escaping diagnostic remains retained; all candidate backing
-    // and raw/homogeneous workspace have expired.
+    // The diagnostic alone remains materialized until its consumer drops it.
+    let diagnostic_bytes = u64::try_from(message.len()).unwrap();
     drop(
-        ctx.reserve_scoped(SCRATCH_BYTES, "reuse rejected clamp workspaces")
+        ctx.reserve_scoped(SCRATCH_BYTES - diagnostic_bytes, "reuse rejected clamp workspaces")
             .unwrap(),
     );
     drop(result);
+    drop(ctx.reserve_scoped(SCRATCH_BYTES, "reuse dropped clamp diagnostic").unwrap());
+    // The original retained cap admits repeated rejected candidates.
+    let result = super::clamp_nurbs_curve_to_domain(&ctx, &source, [0.25, 0.75]);
+    assert!(matches!(&result, Err(crate::brep::graph::nurbs_pcurves::NurbsPcurveFailure::Carrier(
+        NurbsError::Structure(message), Some(_)
+    )) if message == "control_points contains a non-finite point"));
+    drop(result);
+    let retained = ctx.copy_retained_text("control_points contains a non-finite point", "reuse retained allowance after clamp").unwrap();
+    assert_eq!(retained, "control_points contains a non-finite point");
     ctx.finish_session().unwrap();
 }
 
