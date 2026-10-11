@@ -44,6 +44,7 @@ fn carrier(name: &str) -> Record<'static> {
     }
     tokens.push(Token::SubtypeClose);
     crate::test_support::sab::record(0, "spline".into(), tokens.into(), 0, 0)
+        .expect("indexed record fixture")
 }
 
 #[test]

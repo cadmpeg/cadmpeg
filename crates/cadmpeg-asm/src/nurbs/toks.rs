@@ -1099,21 +1099,19 @@ pub fn test_table(
     bytes: &[u8],
     ref_width: RefWidth,
 ) -> Result<SubtypeTable, crate::stream_error::StreamError> {
-    let record =
-        crate::test_support::sab::record(0, String::new(), lex_test_span(bytes, ref_width)?, 0, 0);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .map_err(|error| crate::stream_error::StreamError {
-            format: crate::stream_error::StreamFormat::Binary,
-            offset: 0,
-            reason: error.to_string(),
-        })?;
-    SubtypeTable::from_records(&ctx, &[record]).map_err(|error| crate::stream_error::StreamError {
+    let fixture_error = |error: cadmpeg_core::CodecError| crate::stream_error::StreamError {
         format: crate::stream_error::StreamFormat::Binary,
         offset: 0,
         reason: error.to_string(),
-    })
+    };
+    let record =
+        crate::test_support::sab::record(0, String::new(), lex_test_span(bytes, ref_width)?, 0, 0)
+            .map_err(fixture_error)?;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .map_err(fixture_error)?;
+    SubtypeTable::from_records(&ctx, &[record]).map_err(fixture_error)
 }
 
 #[cfg(test)]
@@ -1233,7 +1231,8 @@ mod tests {
             .into(),
             0,
             0,
-        );
+        )
+        .expect("indexed record fixture");
         let limit = crate::test_support::resource_limit_at(
             &[],
             ResourceDimension::CollectionItems,
@@ -1268,6 +1267,7 @@ mod tests {
                     0,
                     0,
                 )
+                .expect("indexed record fixture")
             })
             .collect();
         let table = with_ctx(|ctx| super::SubtypeTable::from_records(ctx, &records).unwrap());
@@ -1304,7 +1304,8 @@ mod tests {
             Token::SubtypeClose,
         ]
         .into();
-        let record = crate::test_support::sab::record(0, "node".into(), tokens, 0, 0);
+        let record = crate::test_support::sab::record(0, "node".into(), tokens, 0, 0)
+            .expect("indexed record fixture");
         let records = [record];
         let table = with_ctx(|ctx| super::SubtypeTable::from_records(ctx, &records).unwrap());
         let limit = crate::test_support::resource_limit_at(
@@ -1331,26 +1332,16 @@ mod tests {
             Token::Long(1),
             Token::SubtypeClose,
         ];
-        let records = [crate::test_support::sab::record(
-            0,
-            "spline".into(),
-            tokens.clone().into(),
-            0,
-            0,
-        )];
+        let records = [crate::test_support::sab::record(0, "spline".into(), tokens.clone().into(), 0, 0)
+                    .expect("indexed record fixture")];
         let table = with_ctx(|ctx| super::SubtypeTable::from_records(ctx, &records).unwrap());
         assert!(table.span(0).is_none());
         assert_eq!(table.span(1).unwrap().tokens(), &tokens[3..6]);
         assert!(table.span(2).is_none());
         let mut complete = tokens;
         complete.push(Token::SubtypeClose);
-        let records = [crate::test_support::sab::record(
-            0,
-            "spline".into(),
-            complete.clone().into(),
-            0,
-            0,
-        )];
+        let records = [crate::test_support::sab::record(0, "spline".into(), complete.clone().into(), 0, 0)
+                    .expect("indexed record fixture")];
         let table = with_ctx(|ctx| super::SubtypeTable::from_records(ctx, &records).unwrap());
         assert_eq!(table.span(0).unwrap().tokens(), &complete[1..]);
         assert_eq!(table.span(1).unwrap().interior(), &[ident("child")]);
@@ -1676,7 +1667,8 @@ mod tests {
             Token::SubtypeClose,
         ];
         tokens.extend((0..256).map(|_| Token::Double(0.0)));
-        let record = crate::test_support::sab::record(0, "pcurve".into(), tokens.into(), 0, 0);
+        let record = crate::test_support::sab::record(0, "pcurve".into(), tokens.into(), 0, 0)
+            .expect("indexed record fixture");
 
         // Lookup scans the 7-token payload prefix, reads the matching name,
         // then validates the 4-token scope from its original base.
@@ -1861,7 +1853,7 @@ mod tests {
         }
     }
 
-#[test]
+    #[test]
     fn subtype_span_no_open_executes_zero_work() {
         use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 
@@ -1875,13 +1867,14 @@ mod tests {
             .expect("no scan occurs")
             .is_none());
         ctx.finish_session().expect("no-open is a fixed O(1) check");
-}
+    }
 
-#[test]
+    #[test]
     fn payload_subtype_missing_chunk_executes_zero_work() {
         use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 
-        let record = crate::test_support::sab::record(0, "pcurve".into(), Vec::new().into(), 0, 0);
+        let record = crate::test_support::sab::record(0, "pcurve".into(), Vec::new().into(), 0, 0)
+            .expect("indexed record fixture");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 0;
@@ -1891,5 +1884,5 @@ mod tests {
             .expect("empty lookup does not scan")
             .is_none());
         ctx.finish_session().expect("empty lookup uses no work");
-}
+    }
 }

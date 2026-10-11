@@ -18,7 +18,8 @@ fn source_attribute_string_refuses_retained_limit() {
         vec![Token::Str("value".into())].into(),
         0,
         0,
-    );
+    )
+    .expect("indexed record fixture");
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::RetainedBytes,
         "ASM attribute string",
@@ -45,7 +46,8 @@ fn source_attribute_record_name_refuses_retained_limit() {
     use cadmpeg_ir::attributes::AttributeTarget;
 
     let record =
-        crate::test_support::sab::record(1, "empty-st-attrib".into(), Vec::new().into(), 0, 0);
+        crate::test_support::sab::record(1, "empty-st-attrib".into(), Vec::new().into(), 0, 0)
+            .expect("indexed record fixture");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
@@ -65,7 +67,8 @@ fn unknown_record_kind_refuses_materialized_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    let record = crate::test_support::sab::record(1, "unknown".into(), Vec::new().into(), 0, 0);
+    let record = crate::test_support::sab::record(1, "unknown".into(), Vec::new().into(), 0, 0)
+        .expect("indexed record fixture");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = 0;
@@ -85,7 +88,8 @@ fn decimal_attribute_color_refuses_work_before_parsing() {
     use std::collections::HashMap;
 
     let entity =
-        crate::test_support::sab::record(0, "face".into(), vec![Token::Ref(1)].into(), 0, 0);
+        crate::test_support::sab::record(0, "face".into(), vec![Token::Ref(1)].into(), 0, 0)
+            .expect("indexed record fixture");
     let decimal = crate::test_support::sab::record(
         1,
         "entatt_color-bt-attrib".into(),
@@ -100,7 +104,8 @@ fn decimal_attribute_color_refuses_work_before_parsing() {
         .into(),
         0,
         0,
-    );
+    )
+    .expect("indexed record fixture");
     let by_index = HashMap::from([(1, &decimal)]);
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::WorkUnits,

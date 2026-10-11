@@ -88,7 +88,8 @@ fn subtype_definition_index_refuses_collection_limit_before_construction() {
         .into(),
         0,
         0,
-    )];
+    )
+    .expect("indexed record fixture")];
     let bytes = [0_u8];
     let error = cadmpeg_test_support::refusal::resource_limit_at(
         ResourceDimension::CollectionItems,
@@ -560,6 +561,7 @@ fn asm_stream_delimiters_are_not_application_records() {
 fn saved_top_level_edge_projects_as_a_wire_body() {
     let record = |index, name: &str, tokens: Vec<Token>| {
         crate::test_support::sab::record(index, name.into(), tokens.into(), 0, 0)
+            .expect("indexed record fixture")
     };
     let records = vec![
         record(0, "asmheader", Vec::new()),
@@ -692,6 +694,7 @@ fn nested_attributes_inherit_their_topology_owner() {
             0,
             0,
         )
+        .expect("indexed record fixture")
     };
     let legacy_attribute = |index, owner| {
         crate::test_support::sab::record(
@@ -707,6 +710,7 @@ fn nested_attributes_inherit_their_topology_owner() {
             0,
             0,
         )
+        .expect("indexed record fixture")
     };
     let ctx = cadmpeg_test_support::service_decode_context();
     let parent = current_attribute(7, 3);
@@ -783,9 +787,11 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
         ];
         tokens.extend(payload);
         crate::test_support::sab::record(index, name.into(), tokens.into(), 0, 0)
+            .expect("indexed record fixture")
     };
     let entity =
-        crate::test_support::sab::record(0, "face".into(), vec![Token::Ref(1)].into(), 0, 0);
+        crate::test_support::sab::record(0, "face".into(), vec![Token::Ref(1)].into(), 0, 0)
+            .expect("indexed record fixture");
     let attributes = [
         record(1, "color-adesk-attrib", 2, vec![Token::Long(5)]),
         record(
@@ -903,7 +909,8 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
     .expect("test decode context");
 
     let entity =
-        crate::test_support::sab::record(0, "face".into(), vec![Token::Ref(1)].into(), 0, 0);
+        crate::test_support::sab::record(0, "face".into(), vec![Token::Ref(1)].into(), 0, 0)
+            .expect("indexed record fixture");
     let color = crate::test_support::sab::record(
         1,
         "rgb_color-st-attrib".into(),
@@ -919,7 +926,8 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
         .into(),
         0,
         0,
-    );
+    )
+    .expect("indexed record fixture");
     let name = crate::test_support::sab::record(
         2,
         "string_attrib-name_attrib-gen-attrib".into(),
@@ -934,7 +942,8 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
         .into(),
         0,
         0,
-    );
+    )
+    .expect("indexed record fixture");
     let by_index = HashMap::from([(1, &color), (2, &name)]);
 
     let (carrier, decoded) =
@@ -998,6 +1007,7 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
 
     let record = |index, name: &str, tokens: Vec<Token>| {
         crate::test_support::sab::record(index, name.into(), tokens.into(), 0, 0)
+            .expect("indexed record fixture")
     };
     let records = vec![
         record(0, "asmheader", vec![]),
@@ -1082,6 +1092,7 @@ fn lump_named_attributes_bind_to_their_owning_body() {
 
     let record = |index, name: &str, tokens: Vec<Token>| {
         crate::test_support::sab::record(index, name.into(), tokens.into(), 0, 0)
+            .expect("indexed record fixture")
     };
     let records = vec![
         record(1, "body", vec![Token::Ref(-1)]),
@@ -1280,7 +1291,8 @@ fn classify_edge_curve_senses_refuses_collection_limit() {
         .into(),
         0,
         0,
-    )];
+    )
+    .expect("indexed record fixture")];
     let mut reach = Reachable::default();
     reach.edges.insert(1);
     reach.curves.insert(2);
@@ -1343,7 +1355,8 @@ fn reversed_edge_negates_its_pcurve_validation_interval() {
         .into(),
         0,
         0,
-    );
+    )
+    .expect("indexed record fixture");
 
     assert_eq!(
         edge_pcurve_parameter_ranges(&edge),
@@ -1388,7 +1401,8 @@ fn carrierless_edge_retains_raw_parameter_range_without_a_domain() {
         .into(),
         0,
         0,
-    );
+    )
+    .expect("indexed record fixture");
     let records = [edge];
     let by_index = records
         .iter()
@@ -1458,7 +1472,8 @@ fn tolerant_edge_tail_admits_only_nonnegative_finite_source_tolerance() {
             .into(),
             0,
             0,
-        );
+        )
+        .expect("indexed record fixture");
         let records = [edge];
         let by_index = records
             .iter()
@@ -1651,7 +1666,8 @@ fn a_non_finite_attribute_double_is_refused() {
         .into(),
         0,
         0,
-    );
+    )
+    .expect("indexed record fixture");
     let error = source_attribute(&resource_ctx, &record, AttributeTarget::Document, FORMAT)
         .expect_err("a NaN attribute double is refused");
     assert_eq!(
@@ -1673,7 +1689,8 @@ fn attribute_values_refuse_collection_limit() {
         vec![Token::Double(1.0)].into(),
         0,
         0,
-    );
+    )
+    .expect("indexed record fixture");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -1694,14 +1711,16 @@ fn attribute_chain_tracking_refuses_collection_limit() {
     use cadmpeg_ir::attributes::AttributeTarget;
 
     let entity =
-        crate::test_support::sab::record(0, "face".into(), vec![Token::Ref(1)].into(), 0, 0);
+        crate::test_support::sab::record(0, "face".into(), vec![Token::Ref(1)].into(), 0, 0)
+            .expect("indexed record fixture");
     let attribute = crate::test_support::sab::record(
         1,
         "rgb_color-st-attrib".into(),
         vec![Token::Ref(-1)].into(),
         0,
         0,
-    );
+    )
+    .expect("indexed record fixture");
     let by_index = HashMap::from([(1, &attribute)]);
     let mut emitted = HashSet::new();
     let mut out = Vec::new();
@@ -1738,7 +1757,8 @@ fn attribute_chain_name_refuses_retained_limit() {
     use cadmpeg_core::CodecError;
 
     let entity =
-        crate::test_support::sab::record(0, "face".into(), vec![Token::Ref(1)].into(), 0, 0);
+        crate::test_support::sab::record(0, "face".into(), vec![Token::Ref(1)].into(), 0, 0)
+            .expect("indexed record fixture");
     let attribute = crate::test_support::sab::record(
         1,
         "string_attrib-name_attrib-gen-attrib".into(),
@@ -1750,7 +1770,8 @@ fn attribute_chain_name_refuses_retained_limit() {
         .into(),
         0,
         0,
-    );
+    )
+    .expect("indexed record fixture");
     let by_index = HashMap::from([(1, &attribute)]);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -1856,7 +1877,8 @@ fn inherited_attribute_queries_preserve_work_refusals() {
         .into(),
         0,
         0,
-    );
+    )
+    .expect("indexed record fixture");
     let records = HashMap::from([(7, &parent)]);
     let expected = cadmpeg_ir::attributes::AttributeTarget::Edge(
         EdgeId::mint("test:model:edge#0").expect("identity grammar"),

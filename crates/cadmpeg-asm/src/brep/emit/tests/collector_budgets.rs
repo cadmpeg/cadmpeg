@@ -111,7 +111,8 @@ fn shell_member_boundary(count: usize, vertices: bool) -> u64 {
         .into(),
         0,
         0,
-    )];
+    )
+    .expect("indexed record fixture")];
     let by_index = std::collections::HashMap::from([(0, &records[0])]);
     let members = (2..count + 2)
         .map(|index| i64::try_from(index).unwrap())

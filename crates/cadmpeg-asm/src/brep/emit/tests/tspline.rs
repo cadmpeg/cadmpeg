@@ -65,6 +65,7 @@ fn record(
     tokens.extend(subtransform);
     tokens.extend([Token::SubtypeClose, Token::Long(9), Token::SubtypeClose]);
     crate::test_support::sab::record(0, "spline".into(), tokens.into(), 0, 0)
+        .expect("indexed record fixture")
 }
 
 fn inline(program: &str) -> Vec<Token> {

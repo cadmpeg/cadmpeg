@@ -1742,7 +1742,8 @@ fn projection_layout_walks_both_tail_forms_at_both_widths() {
                             Vec::new().into(),
                             0,
                             malformed.len(),
-                        );
+                        )
+                        .expect("indexed record fixture");
                         let edits = crate::edit::AsmEditSet::from_framed(
                             vec![record.clone()],
                             int_width,

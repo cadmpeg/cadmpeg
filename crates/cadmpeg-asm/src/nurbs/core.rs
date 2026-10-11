@@ -1219,7 +1219,8 @@ mod tests {
             .into(),
             0,
             0,
-        );
+        )
+        .expect("indexed record fixture");
         let table = SubtypeTable::from_records(&table_ctx, &[record]).unwrap();
         let tokens = [Token::SubtypeOpen, Token::Long(0), Token::SubtypeClose];
         for returns_cache in [false, true] {

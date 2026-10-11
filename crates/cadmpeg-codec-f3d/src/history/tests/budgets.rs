@@ -215,6 +215,7 @@ fn archive_record() -> cadmpeg_asm::sab::Record<'static> {
         0,
         0,
     )
+    .expect("indexed record fixture")
 }
 
 fn archive_error(max_items: u64) -> cadmpeg_core::CodecError {
@@ -304,6 +305,7 @@ fn history_token_text_copy_refuses_retained_limit() {
             base.offset,
             base.len,
         )
+        .expect("indexed record fixture")
     };
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = match cadmpeg_test_support::refusal::resource_limit_at(

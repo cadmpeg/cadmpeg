@@ -1141,7 +1141,8 @@ mod reference_allocation_tests {
             .into(),
             0,
             0,
-        );
+        )
+        .expect("indexed record fixture");
         SubtypeTable::from_records(&ctx, &[record]).unwrap()
     }
 
@@ -4276,7 +4277,8 @@ mod cache_form_tests {
             target.extend(point.map(Token::Double));
         }
         target.push(Token::SubtypeClose);
-        let record = crate::test_support::sab::record(0, "spline".into(), target.into(), 0, 0);
+        let record = crate::test_support::sab::record(0, "spline".into(), target.into(), 0, 0)
+            .expect("indexed record fixture");
         let table = crate::nurbs::toks::SubtypeTable::from_records(
             &cadmpeg_test_support::service_decode_context(),
             &[record],

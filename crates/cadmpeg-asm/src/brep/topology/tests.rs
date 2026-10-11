@@ -21,6 +21,7 @@ fn ref_record(index: usize, name: &str, refs: &[i64]) -> Record<'static> {
         0,
         0,
     )
+    .expect("indexed record fixture")
 }
 
 fn with_collection_limit(
@@ -678,6 +679,7 @@ fn history_pcurve_use_has_no_invented_parameter_interval() {
             0,
             0,
         )
+        .expect("indexed record fixture")
     };
     let records = [
         record(0, "face", &[-1, -1, -1, -1, 1]),
@@ -767,7 +769,8 @@ fn model_pcurve_parameter_range_refuses_collection_limit() {
             .into(),
             0,
             0,
-        ),
+        )
+        .expect("indexed record fixture"),
     ];
     let by_index = records
         .iter()
@@ -829,7 +832,8 @@ fn model_pcurve_subtype_lookup_propagates_work_refusal() {
             .into(),
             0,
             0,
-        ),
+        )
+        .expect("indexed record fixture"),
     ];
     let by_index = indexed_records(&records);
     let error = with_work_limit("ASM payload subtype token scan", |ctx| {
@@ -878,7 +882,8 @@ fn history_construction_kind_does_not_consume_retained_storage() {
             .into(),
             0,
             0,
-        ),
+        )
+        .expect("indexed record fixture"),
     ];
     let by_index = indexed_records(&records);
     let token_table = nurbs::toks::SubtypeTable::from_records(

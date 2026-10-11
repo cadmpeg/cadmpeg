@@ -166,7 +166,11 @@ impl<'ctx> AsmEditSet<'ctx> {
         let ref_width = header.width;
         let records = sab::frame(ctx, bytes, start, limit, ref_width, None).map_err(|failure| {
             failure.into_codec_error(ctx, |error| {
-                ctx.format_retained(format_args!("cannot frame active BREP: {error}"), "ASM active BREP framing error text").map(CodecError::Malformed)
+                ctx.format_retained(
+                    format_args!("cannot frame active BREP: {error}"),
+                    "ASM active BREP framing error text",
+                )
+                .map(CodecError::Malformed)
             })
         })?;
         let header_scale = header.metadata.scale.unwrap_or(1.0);
@@ -2308,7 +2312,8 @@ mod tests {
             Vec::new().into(),
             0,
             bytes.len(),
-        );
+        )
+        .expect("indexed record fixture");
         (bytes, record)
     }
 

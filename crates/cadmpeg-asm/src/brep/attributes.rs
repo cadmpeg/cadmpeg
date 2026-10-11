@@ -594,7 +594,8 @@ mod tests {
             vec![Token::Double(f64::NAN)].into(),
             0,
             0,
-        );
+        )
+        .expect("indexed record fixture");
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_retained_bytes = 1024;
@@ -618,7 +619,8 @@ mod tests {
         use cadmpeg_core::CodecError;
 
         let record =
-            crate::test_support::sab::record(1, "mystery".into(), std::sync::Arc::from([]), 0, 0);
+            crate::test_support::sab::record(1, "mystery".into(), std::sync::Arc::from([]), 0, 0)
+                .expect("indexed record fixture");
         let expected = "f3d:brep:mystery#1";
         let error = cadmpeg_test_support::refusal::resource_limit_at(
             ResourceDimension::RetainedBytes,
@@ -653,7 +655,8 @@ mod tests {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
         let record =
-            crate::test_support::sab::record(1, "mystery".into(), std::sync::Arc::from([]), 0, 0);
+            crate::test_support::sab::record(1, "mystery".into(), std::sync::Arc::from([]), 0, 0)
+                .expect("indexed record fixture");
         let expected = "f3d:brep:mystery#1";
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -707,9 +710,11 @@ mod tests {
         use std::collections::{HashMap, HashSet};
 
         let entity =
-            crate::test_support::sab::record(0, "entity".into(), vec![Token::Ref(1)].into(), 0, 0);
+            crate::test_support::sab::record(0, "entity".into(), vec![Token::Ref(1)].into(), 0, 0)
+                .expect("indexed record fixture");
         let attribute =
-            crate::test_support::sab::record(1, "empty-st-attrib".into(), Vec::new().into(), 0, 0);
+            crate::test_support::sab::record(1, "empty-st-attrib".into(), Vec::new().into(), 0, 0)
+                .expect("indexed record fixture");
         let by_index = HashMap::from([(1, &attribute)]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -751,6 +756,7 @@ mod tests {
             0,
             0,
         )
+        .expect("indexed record fixture")
     }
 
     #[test]

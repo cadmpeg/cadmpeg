@@ -12,7 +12,8 @@ fn record_index_preserves_value_positions_and_exact_iterator_length() {
         tokens.push(Token::SubIdent("part".into()));
         tokens.push(Token::Ref(index));
     }
-    let record = crate::test_support::sab::record(7, "cone-surface".into(), tokens.into(), 3, 9);
+    let record = crate::test_support::sab::record(7, "cone-surface".into(), tokens.into(), 3, 9)
+        .expect("indexed record fixture");
     assert_eq!(record.head(), "cone");
     assert_eq!(record.chunk_len(), 4096);
     assert_eq!(record.chunks().len(), 4096);
@@ -50,7 +51,8 @@ fn record_index_refuses_before_visiting_each_token() {
 #[test]
 fn record_clone_shares_the_value_index_without_visiting_payload() {
     let record =
-        crate::test_support::sab::record(0, String::new(), vec![Token::False; 4096].into(), 0, 0);
+        crate::test_support::sab::record(0, String::new(), vec![Token::False; 4096].into(), 0, 0)
+            .expect("indexed record fixture");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;

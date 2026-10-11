@@ -19,6 +19,7 @@ fn records() -> [Record<'static>; 3] {
             0,
             0,
         )
+        .expect("indexed record fixture")
     })
 }
 
@@ -86,7 +87,8 @@ fn manual_subtype_reference_walk_does_not_scan_exhausted_stack_frames() {
         SubtypeTable::from_records(&cadmpeg_test_support::service_decode_context(), &[]).unwrap();
     for count in [0_usize, 1, 64] {
         let record =
-            crate::test_support::sab::record(0, "x".into(), vec![Token::False; count].into(), 0, 0);
+            crate::test_support::sab::record(0, "x".into(), vec![Token::False; count].into(), 0, 0)
+                .expect("indexed record fixture");
         let required = u64::try_from(1 + count).unwrap();
         for cap in [1, required - 1, required] {
             let arena = DecodeArena::new();

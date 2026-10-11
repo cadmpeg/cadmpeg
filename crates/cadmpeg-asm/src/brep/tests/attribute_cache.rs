@@ -28,6 +28,7 @@ fn inherited_attributes_cache_shared_and_cyclic_owner_paths() {
                     0,
                     0,
                 )
+                .expect("indexed record fixture")
             })
             .collect();
         let by_index = records

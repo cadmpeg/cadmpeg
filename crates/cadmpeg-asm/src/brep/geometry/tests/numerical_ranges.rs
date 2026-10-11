@@ -156,7 +156,8 @@ fn numerical_audit_pcurve_ranges_keep_active_domain_and_nonzero_intervals() {
             .into(),
             0,
             0,
-        );
+        )
+        .expect("indexed record fixture");
         assert_eq!(
             super::super::pcurve_ranges_on_domain(&c, Some(&edge)).map(Iterator::collect::<Vec<_>>),
             Some(vec![[0., d]])
