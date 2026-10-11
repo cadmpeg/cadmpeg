@@ -5136,8 +5136,9 @@ pub(super) fn feature_payload_strings(
                     continue;
                 };
                 ctx.reserve_vec(&mut strings, 1, "NX feature payload strings")?;
-                let text =
-                    ctx.copy_retained_text(value.value.as_str(), "NX feature payload string text")?;
+                let text = value
+                    .value
+                    .try_into_owned_for_decode(ctx, "NX feature payload string text")?;
                 strings.push(FeaturePayloadString {
                     id: format_feature_history_id(
                         ctx,
@@ -5154,13 +5155,7 @@ pub(super) fn feature_payload_strings(
                         None,
                     )?,
                     ordinal: ordinal_u32,
-                    value: crate::payload_text::PayloadText::new(text).map_err(|error| {
-                        ctx.format_retained(
-                            format_args!("{error}"),
-                            "NX feature payload string error",
-                        )
-                        .map_or_else(|limit| limit, CodecError::InvalidInput)
-                    })?,
+                    value: text,
                     source_offset,
                 });
             }
@@ -6363,9 +6358,16 @@ pub(super) fn feature_datum_plane_payloads(
         else {
             continue;
         };
-        let (lanes, _lanes_storage, _lane_tokens_storage) =
+        let (lanes, lane_tokens_storage, lanes_storage) =
             crate::om::datum_index::scan(ctx, joined.bytes())?;
-        let lane = <[_; 1]>::try_from(lanes).ok().map(|[lane]| lane);
+        let lane = match <[_; 1]>::try_from(lanes) {
+            Ok([lane]) => Some(lane_tokens_storage.commit_value(lane.into_u64())?),
+            Err(_) => {
+                drop(lane_tokens_storage);
+                None
+            }
+        };
+        drop(lanes_storage);
         let key = identity_key(ctx, &header.id, "NX datum plane payload identity")?;
         let id = ctx.format_retained(
             format_args!("nx:feature-history:datum-plane-payload#{key}"),
@@ -6383,7 +6385,7 @@ pub(super) fn feature_datum_plane_payloads(
             operation_label,
             datum_plane_header,
             content,
-            index_lane: lane.map(crate::om::datum_index::DatumIndexLane::into_u64),
+            index_lane: lane,
         });
     }
     Ok(output)
