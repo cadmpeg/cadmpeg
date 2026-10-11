@@ -16,14 +16,17 @@ fn parsed_brep(data: &[u8]) -> super::super::LegacyBrep {
     )
     .unwrap();
     let mut storage = ctx.reserve_scoped(0, "test parsing workspace").unwrap();
-    super::super::legacy_brep(
+    let mut surface_storage = ctx.reserve_scoped(0, "test surface candidates").unwrap();
+    let brep = super::super::legacy_brep(
         &ctx,
         &mut storage,
+        &mut surface_storage,
         data,
         &face,
         super::super::MillimeterScale::IDENTITY,
     )
-    .unwrap()
+    .unwrap();
+    surface_storage.commit_value(brep).unwrap()
 }
 
 #[test]
@@ -561,4 +564,93 @@ fn joined_v1_curve_error_storage_lives_until_diagnostic_copy() {
             drop(probe.expect("dropping the error and its owner releases every scratch byte"));
         }
     }
+}
+
+fn face_with_missing_boundary(rational: bool) -> Vec<u8> {
+    const ROWS: u16 = 16;
+    let mut surface = vec![3, 0, 1, 1];
+    surface.extend((ROWS - 1).to_le_bytes());
+    surface.extend((ROWS - 1).to_le_bytes());
+    surface.extend([u8::from(rational), 0, 0, 0, 0, 0]);
+    surface.extend([0; 48]);
+    for _ in 0..2 {
+        for knot in 0..ROWS {
+            surface.extend(f64::from(knot).to_le_bytes());
+        }
+    }
+    for u in 0..ROWS {
+        for v in 0..ROWS {
+            for value in [f64::from(u), f64::from(v), 0.0] {
+                surface.extend(value.to_le_bytes());
+            }
+            if rational {
+                surface.extend(2.0_f64.to_le_bytes());
+            }
+        }
+    }
+    let surface = super::legacy_chunk(
+        super::TCODE_LEGACY_SRF,
+        &super::legacy_chunk(super::TCODE_LEGACY_SRFSTUFF, &surface),
+    );
+    let mut face = Vec::new();
+    for value in [0_i32, 0, 3] {
+        face.extend(value.to_le_bytes());
+    }
+    face.extend([0; 48]);
+    face.extend(0_i32.to_le_bytes());
+    face.extend(surface);
+    // The flags require one boundary, but no boundary header follows the surface.
+    super::legacy_chunk(
+        super::TCODE_LEGACY_FAC,
+        &super::legacy_chunk(super::TCODE_LEGACY_FACSTUFF, &face),
+    )
+}
+
+#[test]
+fn rejected_v1_brep_surfaces_do_not_consume_retained_allowance() {
+    const RECORDS: usize = 16;
+    const SCRATCH_BYTES: u64 = 64 * 1024;
+    for rational in [false, true] {
+        let record = face_with_missing_boundary(rational);
+        let mut data = super::archive(&[]);
+        for _ in 0..RECORDS {
+            data.extend(&record);
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = SCRATCH_BYTES;
+        // Retain the source bytes and output diagnostics, with no allowance for
+        // the sixteen discarded 16-by-16 surface grids.
+        policy.limits.max_retained_bytes = u64::try_from(data.len()).unwrap() + 16 * 1024;
+        let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
+        let decoded = super::super::decode_v1(&ctx, &data).unwrap();
+        assert_eq!(decoded.ir.model.entity_count(), 0);
+        assert_eq!(decoded.source_fidelity.retained_records().len(), RECORDS);
+        for retained in decoded.source_fidelity.retained_records().values() {
+            assert_eq!(retained.data(), Some(record.as_slice()));
+        }
+        assert_eq!(decoded.body.notes.iter().filter(|note| {
+            note.starts_with("V1 Brep at offset ")
+                && note.ends_with("V1 face boundary count exceeds the remaining bytes")
+        }).count(), RECORDS);
+        drop(ctx.reserve_scoped(SCRATCH_BYTES, "released Brep candidates")
+            .expect("surface fields and parsing scratch are released after decode"));
+        ctx.finish_session().unwrap();
+    }
+}
+
+#[test]
+fn committed_v1_brep_surfaces_require_retained_admission() {
+    let data = legacy_face_archive();
+    cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes,
+        "Rhino V1 Brep surface candidates",
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy)?;
+            super::super::decode_v1(&ctx, &data)
+        },
+    );
 }
