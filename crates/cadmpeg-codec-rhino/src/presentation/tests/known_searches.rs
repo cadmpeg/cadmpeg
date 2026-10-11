@@ -3,7 +3,6 @@
 
 use cadmpeg_core::decode::refusal_probe::RefusalProbe;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
 use crate::chunks::{ArchiveVersion, FramingError};
 use crate::wire::Uuid;
 
@@ -50,25 +49,6 @@ fn complete_rdk_opaque_search_visits_only_the_source_items() {
     assert_rdk_no_terminal_visit(true, 1024);
 }
 
-#[test]
-fn empty_rdk_searches_keep_the_original_refusal() {
-    for opaque in [false, true] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let CodecError::ResourceLimit(original) = ctx.charge_work(1, "Rhino original RDK search refusal").unwrap_err()
-            else { panic!("original work refusal"); };
-        let error = if opaque {
-            crate::presentation::rdk_material_userdata_requires_opaque(&ctx, &[], &[]).map(|_| ())
-        } else {
-            crate::presentation::legacy_rdk_material_instance_id(&ctx, &[], &[]).map(|_| ())
-        }.unwrap_err();
-        assert!(matches!(error, CodecError::ResourceLimit(refusal) if refusal == original));
-        assert_eq!(ctx.resource_refusal(), Some(original));
-        assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original));
-    }
-}
 
 #[test]
 fn absent_rdk_instance_attribute_preserves_the_structural_error_without_a_visit() {
