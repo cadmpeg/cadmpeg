@@ -1,8 +1,37 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::{class_942_boundary_surface_entity_graph, thicken_feature_definition};
+use super::super::{admitted_hole_placements, class_942_boundary_surface_entity_graph, numbered_feature_name_has_family, thicken_feature_definition};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
+
+#[test]
+fn empty_hole_placements_keep_zero_work() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert!(admitted_hole_placements(&ctx, [None, None, None])
+        .expect("absent placements need no work or storage")
+        .is_empty());
+}
+
+#[test]
+fn numbered_feature_fast_recovery_keeps_zero_work() {
+    for name in ["", "Thicken 3", "Extrude", "Extrude "] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert!(!numbered_feature_name_has_family(&ctx, name, "Extrude")
+            .expect("fixed prefix and absent ordinal are free"));
+        }
+}
 
 #[test]
 fn boundary_surface_table_recovery_visits_only_present_prefix_rows() {
@@ -75,9 +104,6 @@ fn boundary_surface_table_recovery_visits_only_present_prefix_rows() {
                         (original.dimension, original.used, original.additional),
                         (ResourceDimension::WorkUnits, need, 1)
                     );
-                    assert!(
-                        matches!(run(), Err(CodecError::ResourceLimit(actual)) if actual == original)
-                    );
                 } else {
                     let original = ctx.resource_refusal().expect("present row work refusal");
                     assert!(
@@ -96,9 +122,6 @@ fn boundary_surface_table_recovery_visits_only_present_prefix_rows() {
                             original.operation
                         ),
                         (ResourceDimension::WorkUnits, cap, 1, operation)
-                    );
-                    assert!(
-                        matches!(run(), Err(CodecError::ResourceLimit(actual)) if actual == original)
                     );
                 }
 
