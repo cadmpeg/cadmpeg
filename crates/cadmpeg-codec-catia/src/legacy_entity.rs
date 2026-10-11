@@ -477,11 +477,11 @@ fn parse_runs_with_directory_offset(
     // last place where the entity ids stop increasing.
     let candidates = scratch.with_storage(|| {
         ctx.collect_vec(
-            ctx.admit_iter(
-                0..last_catalog.saturating_sub(5),
-                "catia_legacy_identity_scan",
-            )?
-            .filter_map(|offset| identity_candidate(offset, &data[offset..offset + 6])),
+            ctx.admit_iter(5..last_catalog, "catia_legacy_identity_scan")?
+                .filter_map(|last_byte| {
+                    let offset = last_byte - 5;
+                    identity_candidate(offset, &data[offset..=last_byte])
+                }),
             "catia_legacy_candidate_identities",
         )
     })?;
@@ -1677,12 +1677,9 @@ fn parse_schema_fields(
     // Roles are in offset order. The next-role bound makes queried field offsets unique.
     let mut text_index = None;
     let mut fields = Vec::new();
-    for index in ctx.admit_iter(
-        0..roles.len().saturating_sub(1),
-        "catia_legacy_schema_role_pairs",
-    )? {
-        let role = &roles[index];
-        let boundary = &roles[index + 1];
+    for boundary_index in ctx.admit_iter(1..roles.len(), "catia_legacy_schema_role_pairs")? {
+        let role = &roles[boundary_index - 1];
+        let boundary = &roles[boundary_index];
         if role.entity_id != boundary.entity_id {
             continue;
         }
