@@ -400,6 +400,88 @@ fn malformed_attribute_definition_keeps_resolved_prefix_references() {
 }
 
 #[test]
+fn native_attribute_width_cache_refuses_work_nodes_and_scoped_storage() {
+    use crate::parameter::AttributeDefinitionWidth;
+    use cadmpeg_core::CodecError;
+    use std::mem::{align_of, size_of};
+
+    let bytes = owned_test_file_with_structures(
+        &[
+            entity(322, 0, "322,4HMETA,1,1,10,1,1;"),
+            entity(422, 1, "422,1,7;"),
+            entity(322, 0, "322,4HPAIR,1,1,10,1,1;"),
+            entity(422, 1, "422,1,7;"),
+        ],
+        &[(3, -1), (7, -5)],
+    );
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = decoded.ir().native.namespace("iges").unwrap();
+    assert_eq!(native.arenas()["attribute_table_definitions"].len(), 2);
+    let instances = &native.arenas()["attribute_table_instances"];
+    assert_eq!(instances.len(), 2);
+    for (instance, definition) in instances.iter().zip([1, 5]) {
+        assert_eq!(
+            instance.fields()["definition"],
+            format!("iges:product:attribute-definition#D{definition}")
+        );
+        assert_eq!(
+            instance.fields()["rows"],
+            serde_json::json!([[{"kind":"integer","value":7}]])
+        );
+    }
+
+    // The first definition is inline. The second admits one B-tree node:
+    // eleven key/value lanes, sixteen pointer-width slots and alignment.
+    let alignment = align_of::<u32>()
+        .max(align_of::<AttributeDefinitionWidth>())
+        .max(align_of::<usize>());
+    let node_bytes = u64::try_from(
+        11 * (size_of::<u32>() + size_of::<AttributeDefinitionWidth>())
+            + 16 * size_of::<usize>()
+            + 2 * alignment,
+    )
+    .unwrap();
+    let operation = "iges parameter attribute width nodes";
+    for (dimension, additional) in [
+        (ResourceDimension::WorkUnits, 3 * node_bytes),
+        (ResourceDimension::CollectionItems, 1),
+        (ResourceDimension::MaterializedBytes, node_bytes),
+    ] {
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            dimension,
+            operation,
+            |cap| {
+                let mut policy = DecodePolicy::service();
+                match dimension {
+                    ResourceDimension::WorkUnits => policy.limits.max_work_units = cap,
+                    ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                    ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = cap,
+                    _ => panic!("attribute width cache dimension"),
+                }
+                IgesCodec
+                    .decode(&mut Cursor::new(&bytes), &DecodeOptions {
+                        policy,
+                        ..DecodeOptions::default()
+                    })
+                    .map_err(|failure| match failure {
+                        DecodeFailure::Codec(error) => error,
+                        other => panic!("unexpected decode failure: {other:?}"),
+                    })
+            },
+        );
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("attribute width cache refusal");
+        };
+        assert_eq!(limit.dimension, dimension);
+        assert_eq!(limit.operation, operation);
+        assert_eq!(limit.additional, additional);
+        assert_eq!(limit.used + limit.additional, limit.limit + 1);
+    }
+}
+
+#[test]
 fn native_attribute_instances_reuse_parameter_widths_and_defects() {
     use cadmpeg_core::decode::refusal_probe::RefusalProbe;
     for (definition, rows, loss) in [
