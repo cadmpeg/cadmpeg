@@ -1409,6 +1409,7 @@ pub(in super::super) fn with_test_locus<T>(
 
 #[cfg(test)]
 mod tests {
+    mod saved_entity;
     mod admission_visits;
 
     use super::{
