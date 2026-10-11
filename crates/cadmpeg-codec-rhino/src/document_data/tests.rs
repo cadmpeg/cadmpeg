@@ -1036,12 +1036,15 @@ fn document_digest_keeps_hex_and_retained_admission() {
         policy.limits.max_work_units = 256;
         policy.limits.max_retained_bytes = retained;
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let result = super::retained_sha256(&ctx, &bytes, "document digest");
         if retained == 0 {
-            assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            assert!(
+                matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                    && limit.operation == "document digest"));
+                    && limit.operation == "document digest")
+            );
         } else {
             assert_eq!(result.unwrap(), EXPECTED);
             ctx.finish_session().unwrap();
@@ -1070,9 +1073,11 @@ fn render_userdata_keeps_corrupt_header_without_discarded_diagnostics() {
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_materialized_bytes = SCRATCH_BYTES;
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
     let mut storage = ctx.reserve_scoped(0, "render userdata descriptor").unwrap();
-    let descriptor = storage.with_storage(|| render_userdata(&ctx, &data, &record, archive))
+    let descriptor = storage
+        .with_storage(|| render_userdata(&ctx, &data, &record, archive))
         .expect("only the surviving userdata descriptor consumes a collection slot");
     assert_eq!(descriptor.items.len(), 1);
     assert!(descriptor.unknown_chunks.is_empty());
@@ -1086,10 +1091,16 @@ fn render_userdata_keeps_corrupt_header_without_discarded_diagnostics() {
     assert_eq!(item.copy_count, 7);
     assert_eq!(item.application_uuid, None);
     assert_eq!(item.save_context, None);
-    assert_eq!(&data[item.payload_range.clone()], &[1, 0, 0, 0, 0, 0, 0, 0, 0x55]);
+    assert_eq!(
+        &data[item.payload_range.clone()],
+        &[1, 0, 0, 0, 0, 0, 0, 0, 0x55]
+    );
     drop(descriptor);
     drop(storage);
-    drop(ctx.reserve_scoped(SCRATCH_BYTES, "released render userdata descriptor").unwrap());
+    drop(
+        ctx.reserve_scoped(SCRATCH_BYTES, "released render userdata descriptor")
+            .unwrap(),
+    );
     ctx.finish_session().unwrap();
 }
 

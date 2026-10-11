@@ -966,8 +966,13 @@ pub(crate) fn checksum_children_through_class_end(
                 )
                 .into());
         }
-        ctx.reserve_scoped_vec(&mut backing_storage, &mut children, 1, "Rhino class-end checksum children")
-            .map_err(crate::chunks::FramingError::from)?;
+        ctx.reserve_scoped_vec(
+            &mut backing_storage,
+            &mut children,
+            1,
+            "Rhino class-end checksum children",
+        )
+        .map_err(crate::chunks::FramingError::from)?;
         children.push(child.range());
         reader.skip(child.next_offset() - start)?;
         if child.typecode == TCODE_CLASS_END {
@@ -980,7 +985,9 @@ pub(crate) fn checksum_children_through_class_end(
                     )?,
                 ));
             }
-            return backing_storage.commit_value(children).map_err(FramingError::from);
+            return backing_storage
+                .commit_value(children)
+                .map_err(FramingError::from);
         }
     }
 }

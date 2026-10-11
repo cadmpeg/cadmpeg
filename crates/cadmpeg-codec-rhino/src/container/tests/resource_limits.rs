@@ -391,33 +391,53 @@ fn checksum_child_error_storage_lives_through_warning_copy() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_materialized_bytes = u64::try_from(expected.len()).unwrap();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let mut output_storage = ctx.reserve_scoped(0, "checksum warning output").unwrap();
-    let error = output_storage.with_storage(|| super::super::checksum_warning(
-        &ctx, &bytes, chunk.typecode, 0, bytes.len(), archive,
-    )).expect_err("the live child error and its warning need separate storage");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+    let error = output_storage
+        .with_storage(|| {
+            super::super::checksum_warning(&ctx, &bytes, chunk.typecode, 0, bytes.len(), archive)
+        })
+        .expect_err("the live child error and its warning need separate storage");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_materialized_bytes = 64 * 1024;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let warning = super::super::checksum_warning(&ctx, &bytes, chunk.typecode, 0, bytes.len(), archive)
-        .unwrap().unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let warning =
+        super::super::checksum_warning(&ctx, &bytes, chunk.typecode, 0, bytes.len(), archive)
+            .unwrap()
+            .unwrap();
     assert_eq!(warning, expected);
     drop(warning);
-    drop(ctx.reserve_scoped(policy.limits.max_materialized_bytes, "released checksum child error")
-        .expect("child workspace is released after warning creation"));
+    drop(
+        ctx.reserve_scoped(
+            policy.limits.max_materialized_bytes,
+            "released checksum child error",
+        )
+        .expect("child workspace is released after warning creation"),
+    );
     ctx.finish_session().unwrap();
 }
 
 fn scan_warning_fixture(property: Vec<u8>, object: Option<Vec<u8>>) -> Vec<u8> {
     let archive = ArchiveVersion::V5;
-    crate::test_support::test_dump::minimal_document("50", &[
-        crate::test_support::test_dump::table(archive, 0x1000_0014, &[property]),
-        crate::test_support::test_dump::table(archive, 0x1000_0015, &[]),
-        crate::test_support::test_dump::table(archive, 0x1000_0013, &object.into_iter().collect::<Vec<_>>()),
-    ])
+    crate::test_support::test_dump::minimal_document(
+        "50",
+        &[
+            crate::test_support::test_dump::table(archive, 0x1000_0014, &[property]),
+            crate::test_support::test_dump::table(archive, 0x1000_0015, &[]),
+            crate::test_support::test_dump::table(
+                archive,
+                0x1000_0013,
+                &object.into_iter().collect::<Vec<_>>(),
+            ),
+        ],
+    )
 }
 
 fn assert_scan_warning_storage(bytes: &[u8], expected: &str, degraded: bool) {
@@ -426,19 +446,28 @@ fn assert_scan_warning_storage(bytes: &[u8], expected: &str, degraded: bool) {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     policy.limits.max_materialized_bytes = SCRATCH_BYTES;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
     let scan = super::super::scan(&ctx, bytes)
         .expect("scan diagnostics and descriptors consume scratch, not retained allowance");
-    assert!(scan.warnings.iter().any(|warning| warning.message.starts_with(expected)));
+    assert!(scan
+        .warnings
+        .iter()
+        .any(|warning| warning.message.starts_with(expected)));
     if degraded {
-        assert!(matches!(&scan.objects[0], crate::objects::ObjectRecord::Degraded { warning, .. }
-            if warning.starts_with("bounded object record at ")));
+        assert!(
+            matches!(&scan.objects[0], crate::objects::ObjectRecord::Degraded { warning, .. }
+            if warning.starts_with("bounded object record at "))
+        );
     }
-    let summary = super::super::summarize(&cadmpeg_test_support::service_decode_context(), &scan).unwrap();
+    let summary =
+        super::super::summarize(&cadmpeg_test_support::service_decode_context(), &scan).unwrap();
     assert!(summary.notes.iter().any(|note| note.starts_with(expected)));
     drop(scan);
-    drop(ctx.reserve_scoped(SCRATCH_BYTES, "released scan diagnostic storage")
-        .expect("all scan-owned backing and text is released with the scan"));
+    drop(
+        ctx.reserve_scoped(SCRATCH_BYTES, "released scan diagnostic storage")
+            .expect("all scan-owned backing and text is released with the scan"),
+    );
     ctx.finish_session().unwrap();
 }
 
@@ -470,7 +499,7 @@ fn degraded_object_scan_diagnostics_are_scoped() {
 
 fn assert_failed_checksum_backing_released(
     bytes: &[u8],
-    error: crate::chunks::FramingError,
+    error: &crate::chunks::FramingError,
     admitted_error_text: usize,
     child_count: usize,
     parse: impl Fn(
@@ -482,38 +511,60 @@ fn assert_failed_checksum_backing_released(
 ) {
     let archive = ArchiveVersion::V5;
     let chunk = crate::chunks::chunk_at(bytes, 0, bytes.len(), archive, false).unwrap();
-    let expected = format!("checksum child framing at offset 0 for typecode {:#x} could not be verified: {error}", chunk.typecode);
+    let expected = format!(
+        "checksum child framing at offset 0 for typecode {:#x} could not be verified: {error}",
+        chunk.typecode
+    );
     // Amortized growth holds the new backing and the previous half-sized
     // backing together. After failure only the escaping error text stays live.
     let backing = child_count.max(4) * std::mem::size_of::<std::ops::Range<usize>>();
-    let cap = u64::try_from((backing + backing / 2 + admitted_error_text).max(expected.len() + admitted_error_text)).unwrap();
+    let cap = u64::try_from(
+        (backing + backing / 2 + admitted_error_text).max(expected.len() + admitted_error_text),
+    )
+    .unwrap();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_materialized_bytes = cap;
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
     let mut error_storage = ctx.reserve_scoped(0, "checksum helper error").unwrap();
-    let actual_error = error_storage.with_storage(|| parse(&ctx, bytes, &chunk, archive)).unwrap_err();
-    assert_eq!(actual_error, error);
-    drop(ctx.reserve_scoped(cap - u64::try_from(admitted_error_text).unwrap(), "released failed checksum children")
-        .expect("dead backing is released while the escaping error remains live"));
+    let actual_error = error_storage
+        .with_storage(|| parse(&ctx, bytes, &chunk, archive))
+        .unwrap_err();
+    assert_eq!(&actual_error, error);
+    drop(
+        ctx.reserve_scoped(
+            cap - u64::try_from(admitted_error_text).unwrap(),
+            "released failed checksum children",
+        )
+        .expect("dead backing is released while the escaping error remains live"),
+    );
     let mut copy_storage = ctx.reserve_scoped(0, "checksum helper error copy").unwrap();
-    let copy = copy_storage.with_storage(|| super::super::checksum_children_warning(
-        &ctx, chunk.typecode, 0, &actual_error,
-    )).unwrap();
+    let copy = copy_storage
+        .with_storage(|| {
+            super::super::checksum_children_warning(&ctx, chunk.typecode, 0, &actual_error)
+        })
+        .unwrap();
     assert_eq!(copy, expected);
     drop(copy);
     drop(copy_storage);
     drop(actual_error);
     drop(error_storage);
     let mut output_storage = ctx.reserve_scoped(0, "checksum diagnostic output").unwrap();
-    let note = output_storage.with_storage(|| super::super::checksum_warning(
-        &ctx, bytes, chunk.typecode, 0, bytes.len(), archive,
-    )).unwrap().unwrap();
+    let note = output_storage
+        .with_storage(|| {
+            super::super::checksum_warning(&ctx, bytes, chunk.typecode, 0, bytes.len(), archive)
+        })
+        .unwrap()
+        .unwrap();
     assert_eq!(note, expected);
     drop(note);
     drop(output_storage);
-    drop(ctx.reserve_scoped(cap, "released checksum backing and diagnostic").unwrap());
+    drop(
+        ctx.reserve_scoped(cap, "released checksum backing and diagnostic")
+            .unwrap(),
+    );
     ctx.finish_session().unwrap();
 }
 
@@ -522,16 +573,30 @@ fn missing_class_end_releases_checksum_children_before_warning_copy() {
     let archive = ArchiveVersion::V5;
     let mut body = Vec::new();
     for _ in 0..64 {
-        body.extend(crate::test_support::test_dump::short_chunk(archive, 0x8000_1234, 0));
+        body.extend(crate::test_support::test_dump::short_chunk(
+            archive,
+            0x8000_1234,
+            0,
+        ));
     }
     let bytes = crc_chunk(archive, 0x2000_8136, &body);
     let chunk = crate::chunks::chunk_at(&bytes, 0, bytes.len(), archive, false).unwrap();
     let message = "render-settings userdata is missing its class end";
-    assert_failed_checksum_backing_released(&bytes,
-        crate::chunks::FramingError::structural(chunk.body().end, message), message.len(), 64,
-        |ctx, data, chunk, archive| crate::chunks::checksum_children_through_class_end(
-            ctx, data, chunk.body(), archive, "render-settings userdata",
-        ));
+    assert_failed_checksum_backing_released(
+        &bytes,
+        &crate::chunks::FramingError::structural(chunk.body().end, message),
+        message.len(),
+        64,
+        |ctx, data, chunk, archive| {
+            crate::chunks::checksum_children_through_class_end(
+                ctx,
+                data,
+                chunk.body(),
+                archive,
+                "render-settings userdata",
+            )
+        },
+    );
 }
 
 #[test]
@@ -543,13 +608,23 @@ fn malformed_plugin_releases_checksum_children_before_warning_copy() {
         body.extend(crc_chunk(archive, 0x4000_8000, &[]));
     }
     let failure = body.len();
-    body.extend(crate::test_support::test_dump::short_chunk(archive, 0x8000_1234, 0));
+    body.extend(crate::test_support::test_dump::short_chunk(
+        archive,
+        0x8000_1234,
+        0,
+    ));
     let bytes = crc_chunk(archive, 0x2000_8135, &body);
     let chunk = crate::chunks::chunk_at(&bytes, 0, bytes.len(), archive, false).unwrap();
-    assert_failed_checksum_backing_released(&bytes,
-        crate::chunks::FramingError::structural(chunk.body().start + failure,
-            "plugin-list child must be an anonymous long chunk"), 0, 64,
-        super::super::plugin_list_checksum_children);
+    assert_failed_checksum_backing_released(
+        &bytes,
+        &crate::chunks::FramingError::structural(
+            chunk.body().start + failure,
+            "plugin-list child must be an anonymous long chunk",
+        ),
+        0,
+        64,
+        super::super::plugin_list_checksum_children,
+    );
 }
 
 #[test]
@@ -557,18 +632,30 @@ fn truncated_view_list_releases_checksum_children_before_warning_copy() {
     let archive = ArchiveVersion::V5;
     let mut body = 65_i32.to_le_bytes().to_vec();
     for _ in 0..64 {
-        body.extend(crate::test_support::test_dump::short_chunk(archive, 0x8000_1234, 0));
+        body.extend(crate::test_support::test_dump::short_chunk(
+            archive,
+            0x8000_1234,
+            0,
+        ));
     }
     let failure = body.len();
     body.push(0);
     let bytes = crc_chunk(archive, 0x2000_8037, &body);
     let chunk = crate::chunks::chunk_at(&bytes, 0, bytes.len(), archive, false).unwrap();
-    assert_failed_checksum_backing_released(&bytes,
-        crate::chunks::FramingError::OutOfBounds { offset: chunk.body().start + failure, end: chunk.body().start + failure + 4, bound: chunk.body().end }, 0, 64,
+    assert_failed_checksum_backing_released(
+        &bytes,
+        &crate::chunks::FramingError::OutOfBounds {
+            offset: chunk.body().start + failure,
+            end: chunk.body().start + failure + 4,
+            bound: chunk.body().end,
+        },
+        0,
+        64,
         |ctx, data, chunk, archive| {
             let mut storage = ctx.reserve_scoped(0, "view checksum error")?;
             super::super::list_checksum_children(ctx, data, chunk, archive, &mut storage)
-        });
+        },
+    );
 }
 
 #[test]
@@ -585,9 +672,13 @@ fn malformed_settings_releases_checksum_children_before_warning_copy() {
     let bytes = crc_chunk(archive, 0x2000_8134, &body);
     let chunk = crate::chunks::chunk_at(&bytes, 0, bytes.len(), archive, false).unwrap();
     let message = "settings-attributes earth anchor must be an anonymous long chunk";
-    assert_failed_checksum_backing_released(&bytes,
-        crate::chunks::FramingError::structural(chunk.body().start + failure, message), message.len(), 1,
-        super::super::settings_attributes_checksum_children);
+    assert_failed_checksum_backing_released(
+        &bytes,
+        &crate::chunks::FramingError::structural(chunk.body().start + failure, message),
+        message.len(),
+        1,
+        super::super::settings_attributes_checksum_children,
+    );
 }
 
 #[test]
@@ -613,7 +704,11 @@ fn malformed_preview_releases_checksum_children_before_warning_copy() {
     let bytes = crc_chunk(archive, 0x2000_8025, &body);
     let chunk = crate::chunks::chunk_at(&bytes, 0, bytes.len(), archive, false).unwrap();
     let message = "compressed preview image buffer has unsupported compression method 99";
-    assert_failed_checksum_backing_released(&bytes,
-        crate::chunks::FramingError::structural(chunk.body().start + failure, message), message.len(), 1,
-        super::super::compressed_preview_checksum_children);
+    assert_failed_checksum_backing_released(
+        &bytes,
+        &crate::chunks::FramingError::structural(chunk.body().start + failure, message),
+        message.len(),
+        1,
+        super::super::compressed_preview_checksum_children,
+    );
 }

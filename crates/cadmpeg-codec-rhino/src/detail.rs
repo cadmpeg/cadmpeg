@@ -258,18 +258,22 @@ mod tests {
                 let mut policy = cadmpeg_core::decode::DecodePolicy::service();
                 policy.limits.max_work_units = 0;
                 policy.limits.max_retained_bytes = retained;
-                let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                    &bytes, &arena, &policy,
-                ).unwrap();
-                let error = super::decode(&ctx, &bytes, 0..bytes.len(), ArchiveVersion::V5)
-                    .unwrap_err();
+                let (ctx, _) =
+                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                        .unwrap();
+                let error =
+                    super::decode(&ctx, &bytes, 0..bytes.len(), ArchiveVersion::V5).unwrap_err();
                 if retained == 0 {
-                    assert!(matches!(error, crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                    assert!(
+                        matches!(error, crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                            && limit.operation == "Rhino detail version message"));
+                            && limit.operation == "Rhino detail version message")
+                    );
                 } else {
-                    assert!(matches!(error, crate::curves::GeometryError::UnsupportedVersion { offset: 0, message }
-                        if message == expected));
+                    assert!(
+                        matches!(error, crate::curves::GeometryError::UnsupportedVersion { offset: 0, message }
+                        if message == expected)
+                    );
                     ctx.finish_session().unwrap();
                 }
             }
