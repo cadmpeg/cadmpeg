@@ -1584,3 +1584,29 @@ offset = 11
 type = "u8"
 source = "spec"
 anchor = "closing count at offset eleven"
+
+# --- §9 E5 parameter tuples --------------------------------------------------
+
+[[record]]
+name = "e5_bound_parameter"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/e5/graph.rs"
+kind = "byte"
+section = "9"
+anchor = "Each bound pairs its counted representation refs positionally with 12-byte"
+size = 12
+endianness = "little"
+note = "Each tuple belongs to the representation at the same position in the counted reference lane. Repeated identities remain separate entries."
+
+[[record.field]]
+name = "local_parameter"
+offset = 0
+type = "f64"
+source = "spec"
+anchor = "the local parameter occupies bytes `0..8`"
+
+[[record.field]]
+name = "arc_number_bits"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "the arc-number bits occupy bytes `8..12`"

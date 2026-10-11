@@ -474,7 +474,7 @@ fn derive_e5_vertices(
                     return Ok(None);
                 };
                 let Some(reversed) =
-                    e5_stored_pcurve_reversed(topology, edge_ref, pcurve_ref, range)
+                    e5_stored_pcurve_reversed(ctx, topology, edge_ref, pcurve_ref, range)?
                 else {
                     return Ok(None);
                 };
@@ -1527,8 +1527,9 @@ fn plan_e5_boundary<'a>(
                 // positions are an independent constraint, but they only
                 // select a direction when exactly one order meets the model
                 // tolerance. Never choose the smaller of two failing errors.
-                let reversed = e5_stored_pcurve_reversed(topology, edge_ref, pcurve_ref, range)
-                    .or_else(|| unique_endpoint_direction(forward, reverse_error));
+                let reversed =
+                    e5_stored_pcurve_reversed(ctx, topology, edge_ref, pcurve_ref, range)?
+                        .or_else(|| unique_endpoint_direction(forward, reverse_error));
                 let Some(reversed) = reversed else {
                     return Ok(None);
                 };
@@ -1714,7 +1715,7 @@ fn plan_e5_boundary<'a>(
             let reverse_error = endpoints[0]
                 .distance(*end)
                 .max(endpoints[1].distance(*start));
-            let reversed = e5_stored_pcurve_reversed(topology, edge_ref, *pcurve_ref, range)
+            let reversed = e5_stored_pcurve_reversed(ctx, topology, edge_ref, *pcurve_ref, range)?
                 .or_else(|| unique_endpoint_direction(forward, reverse_error));
             let Some(reversed) = reversed else {
                 continue;
@@ -2819,13 +2820,17 @@ fn emit_e5_faces_loops_coedges(
 }
 
 fn e5_stored_pcurve_reversed(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     topology: &crate::families::e5::graph::E5Topology,
     edge_ref: u32,
     pcurve_ref: u32,
     native_range: [f64; 2],
-) -> Option<bool> {
-    let parameters = topology.edge_representation_parameters(edge_ref, pcurve_ref)?;
-    parameter_ranges_reversed(parameters.map(FiniteReal::get), native_range)
+) -> Result<Option<bool>, cadmpeg_core::CodecError> {
+    Ok(topology
+        .edge_representation_parameters(ctx, edge_ref, pcurve_ref)?
+        .and_then(|parameters| {
+            parameter_ranges_reversed(parameters.map(FiniteReal::get), native_range)
+        }))
 }
 
 fn unique_endpoint_direction(forward_error: f64, reverse_error: f64) -> Option<bool> {
@@ -4448,7 +4453,15 @@ mod route_tests {
                     tail: Vec::new(),
                 },
             )]),
-            pcurves: BTreeMap::new(),
+            pcurves: BTreeMap::from([(
+                20,
+                E5Pcurve::Line {
+                    surface: 1,
+                    origin: finite_pair([0.0, 0.0]),
+                    direction: finite_pair([1.0, 0.0]),
+                    range: finite_pair([0.0, 1.0]),
+                },
+            )]),
             bounds: BTreeMap::from([
                 (
                     10,
@@ -4456,7 +4469,7 @@ mod route_tests {
                         entries: vec![E5BoundEntry {
                             representation: 20,
                             parameter: crate::test_support::test_b5::finite(1.0),
-                            code: 0,
+                            code: 1,
                         }],
                     },
                 ),
@@ -4466,7 +4479,7 @@ mod route_tests {
                         entries: vec![E5BoundEntry {
                             representation: 20,
                             parameter: crate::test_support::test_b5::finite(1.0),
-                            code: 0,
+                            code: 1,
                         }],
                     },
                 ),
@@ -4476,7 +4489,14 @@ mod route_tests {
         };
 
         assert_eq!(
-            e5_stored_pcurve_reversed(&topology, 1, 20, [0.0, 1.0]),
+            crate::test_support::with_service_context(|ctx| e5_stored_pcurve_reversed(
+                ctx,
+                &topology,
+                1,
+                20,
+                [0.0, 1.0]
+            ))
+            .expect("bound budget"),
             None
         );
     }
@@ -4541,7 +4561,7 @@ mod route_tests {
                         entries: vec![E5BoundEntry {
                             representation: 20,
                             parameter: crate::test_support::test_b5::finite(0.0),
-                            code: 0,
+                            code: 1,
                         }],
                     },
                 ),
@@ -4551,7 +4571,7 @@ mod route_tests {
                         entries: vec![E5BoundEntry {
                             representation: 20,
                             parameter: crate::test_support::test_b5::finite(0.0),
-                            code: 0,
+                            code: 1,
                         }],
                     },
                 ),

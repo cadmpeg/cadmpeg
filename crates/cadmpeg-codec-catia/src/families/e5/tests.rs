@@ -238,9 +238,9 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         }
         bound_payload.push(0x82);
         bound_payload.extend_from_slice(&le_f64(0.5));
-        bound_payload.extend_from_slice(&0_u32.to_le_bytes());
+        bound_payload.extend_from_slice(&1_u32.to_le_bytes());
         bound_payload.extend_from_slice(&le_f64(0.5));
-        bound_payload.extend_from_slice(&0_u32.to_le_bytes());
+        bound_payload.extend_from_slice(&1_u32.to_le_bytes());
         append_e5_record(&mut bytes, 0x0e, bound, &bound_payload);
     }
     let mut bound_payload = vec![0x82, 0x18, 144, 1, 0x08, 200, 0x82];

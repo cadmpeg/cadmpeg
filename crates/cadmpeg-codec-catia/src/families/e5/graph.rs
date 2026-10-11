@@ -48,27 +48,31 @@ impl E5Topology {
     /// Resolve one edge's start/end parameter records for a referenced
     /// representation. Each bound must contain that representation exactly
     /// once.
-    #[must_use]
     pub(super) fn edge_representation_parameters(
         &self,
+        ctx: &DecodeContext<'_>,
         edge_ref: u32,
         representation: u32,
-    ) -> Option<[FiniteReal; 2]> {
-        let edge = self.edges.get(&edge_ref)?;
-        Some([
-            bound_representation_parameter(
-                &self.bounds,
-                &self.pcurves,
-                edge.parameter_start,
-                representation,
-            )?,
-            bound_representation_parameter(
-                &self.bounds,
-                &self.pcurves,
-                edge.parameter_end,
-                representation,
-            )?,
-        ])
+    ) -> Result<Option<[FiniteReal; 2]>, CodecError> {
+        let Some(edge) = self.edges.get(&edge_ref) else {
+            return Ok(None);
+        };
+        for _ in 0..2 {
+            charge_bound_arc_scan(ctx, &self.pcurves, representation)?;
+        }
+        Ok(bound_representation_parameter(
+            &self.bounds,
+            &self.pcurves,
+            edge.parameter_start,
+            representation,
+        )
+        .zip(bound_representation_parameter(
+            &self.bounds,
+            &self.pcurves,
+            edge.parameter_end,
+            representation,
+        ))
+        .map(|(start, end)| [start, end]))
     }
 }
 
@@ -143,8 +147,8 @@ pub(super) struct E5BoundEntry {
     pub(super) representation: u32,
     /// Finite LE-f64 bound parameter for this representation.
     pub(super) parameter: FiniteReal,
-    /// One-based knot-span index for a degree-5 jet; retained without
-    /// interpretation for other representations.
+    /// Raw arc-number bits. Jet and NURBS arcs use one-based distinct
+    /// knot spans; current line and circle productions use arc one.
     pub(super) code: u32,
 }
 
@@ -617,6 +621,11 @@ pub(crate) fn parse_topology(
                     }
                 }
                 for (pcurve_id, edge_id) in raw.pcurves.iter().zip(&raw.edges) {
+                    for _ in 0..2 {
+                        if let Err(error) = charge_bound_arc_scan(ctx, &pcurves, *pcurve_id) {
+                            return Some(Err(error));
+                        }
+                    }
                     let edge = edges.get(edge_id)?;
                     if !vertex_ids.contains(&edge.start_vertex)
                         || !vertex_ids.contains(&edge.end_vertex)
@@ -866,6 +875,17 @@ fn curve_support_reference_closes(
     Ok(true)
 }
 
+fn charge_bound_arc_scan(
+    ctx: &DecodeContext<'_>,
+    pcurves: &BTreeMap<u32, E5Pcurve>,
+    representation: u32,
+) -> Result<(), CodecError> {
+    if let Some(E5Pcurve::Nurbs { knots, .. }) = pcurves.get(&representation) {
+        ctx.charge_work(u64_from_index(knots.len()), "catia_e5_bound_arc_scan")?;
+    }
+    Ok(())
+}
+
 fn bound_representation_parameter(
     bounds: &BTreeMap<u32, E5Bounds>,
     pcurves: &BTreeMap<u32, E5Pcurve>,
@@ -881,12 +901,23 @@ fn bound_representation_parameter(
     if entries.next().is_some() {
         return None;
     }
-    let Some(E5Pcurve::Jet { sites, .. }) = pcurves.get(&representation) else {
-        return Some(entry.parameter);
-    };
     let span = usize::try_from(entry.code.checked_sub(1)?).ok()?;
-    let start = sites.get(span)?.knot.get();
-    let end = sites.get(span.checked_add(1)?)?.knot.get();
+    let (start, end) = match pcurves.get(&representation)? {
+        E5Pcurve::Jet { sites, .. } => (
+            sites.get(span)?.knot.get(),
+            sites.get(span.checked_add(1)?)?.knot.get(),
+        ),
+        E5Pcurve::Nurbs { knots, .. } => {
+            let interval = knots
+                .windows(2)
+                .filter(|pair| pair[0] < pair[1])
+                .nth(span)?;
+            (interval[0].get(), interval[1].get())
+        }
+        E5Pcurve::Line { .. } | E5Pcurve::Circle { .. } => {
+            return (entry.code == 1).then_some(entry.parameter);
+        }
+    };
     let parameter = start + entry.parameter.get();
     let tolerance = EPS_PARAMETER_ENDPOINT * (1.0 + start.abs().max(end.abs()));
     if end <= start || parameter < start - tolerance || parameter > end + tolerance {
@@ -2252,7 +2283,7 @@ mod tests {
         bound_payload.push(0x83);
         for parameter in [0.0_f64, 0.5, 1.0] {
             bound_payload.extend_from_slice(&parameter.to_le_bytes());
-            bound_payload.extend_from_slice(&0_u32.to_le_bytes());
+            bound_payload.extend_from_slice(&1_u32.to_le_bytes());
         }
         append_e5_record(&mut bytes, 0x0e, 0, &bound_payload);
 
@@ -2846,6 +2877,7 @@ mod tests {
 
     #[test]
     fn edge_parameters_resolve_one_entry_from_each_bound() {
+        e5_test_context!(ctx);
         let edge = E5Edge {
             support: 0,
             start_vertex: 0,
@@ -2858,21 +2890,31 @@ mod tests {
             entries: vec![E5BoundEntry {
                 representation: 20,
                 parameter: crate::test_support::test_b5::finite(parameter),
-                code: 7,
+                code: 1,
             }],
         };
         let mut topology = E5Topology {
             bodies: Vec::new(),
             faces: Vec::new(),
             edges: BTreeMap::from([(1, edge)]),
-            pcurves: BTreeMap::new(),
+            pcurves: BTreeMap::from([(
+                20,
+                E5Pcurve::Line {
+                    surface: 1,
+                    origin: finite_pair([0.0, 0.0]),
+                    direction: finite_pair([1.0, 0.0]),
+                    range: finite_pair([0.0, 1.0]),
+                },
+            )]),
             bounds: BTreeMap::from([(10, bound(0.25)), (11, bound(0.75))]),
             curve_supports: BTreeMap::new(),
             vertex_refs: Vec::new(),
         };
 
         assert_eq!(
-            topology.edge_representation_parameters(1, 20),
+            topology
+                .edge_representation_parameters(&ctx, 1, 20)
+                .expect("bound budget"),
             Some(crate::test_support::test_b5::finite_pair([0.25, 0.75]))
         );
         topology
@@ -2885,7 +2927,21 @@ mod tests {
                 parameter: crate::test_support::test_b5::finite(1.0),
                 code: 8,
             });
-        assert_eq!(topology.edge_representation_parameters(1, 20), None);
+        assert_eq!(
+            topology
+                .edge_representation_parameters(&ctx, 1, 20)
+                .expect("bound budget"),
+            None
+        );
+        let end = topology.bounds.get_mut(&11).expect("end bound");
+        end.entries.truncate(1);
+        end.entries[0].code = 0;
+        assert_eq!(
+            topology
+                .edge_representation_parameters(&ctx, 1, 20)
+                .expect("bound budget"),
+            None
+        );
     }
 
     #[test]
@@ -2934,6 +2990,55 @@ mod tests {
         assert_eq!(resolve(0.0, 8), None);
         assert_eq!(resolve(-1.0, 2), None);
         assert_eq!(resolve(5.0, 2), None);
+    }
+
+    #[test]
+    fn nurbs_bounds_use_distinct_arcs_and_nonzero_first_knot() {
+        let pcurves = BTreeMap::from([(
+            20,
+            E5Pcurve::Nurbs {
+                surface: 1,
+                degree: 1,
+                knots: finite_lane(&[-23.0, -23.0, -22.5, -22.0, -22.0]),
+                control_points: vec![finite_pair([0.0, 0.0]); 3],
+                range: finite_pair([-23.0, -22.0]),
+            },
+        )]);
+        let resolve = |local, code, representation| {
+            let bounds = BTreeMap::from([(
+                10,
+                E5Bounds {
+                    entries: vec![E5BoundEntry {
+                        representation,
+                        parameter: finite(local),
+                        code,
+                    }],
+                },
+            )]);
+            super::bound_representation_parameter(&bounds, &pcurves, 10, representation)
+                .map(cadmpeg_ir::scalar::FiniteReal::get)
+        };
+        assert_eq!(resolve(0.0, 1, 20), Some(-23.0));
+        assert_eq!(resolve(0.5, 1, 20), Some(-22.5));
+        assert_eq!(resolve(0.5, 2, 20), Some(-22.0));
+        assert_eq!(resolve(0.0, 2, 20), Some(-22.5));
+        assert_eq!(resolve(0.0, 0, 20), None);
+        assert_eq!(resolve(0.0, 3, 20), None);
+        assert_eq!(resolve(0.0, u32::MAX, 20), None);
+        assert_eq!(resolve(0.6, 2, 20), None);
+        assert_eq!(resolve(0.0, 1, 21), None);
+        let error = crate::test_support::with_work_limit(0, |ctx| {
+            super::charge_bound_arc_scan(ctx, &pcurves, 20)
+        })
+        .expect_err("expanded knot scan requires work");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "catia_e5_bound_arc_scan")
+        );
+        assert!(crate::test_support::with_work_limit(5, |ctx| {
+            super::charge_bound_arc_scan(ctx, &pcurves, 20)
+        })
+        .is_ok());
     }
 
     #[test]

@@ -461,7 +461,7 @@ fn e5_derived_vertices_refuse_before_candidate_collections() {
                     entries: vec![E5BoundEntry {
                         representation: 20,
                         parameter: finite(0.0),
-                        code: 0,
+                        code: 1,
                     }],
                 },
             ),
@@ -471,7 +471,7 @@ fn e5_derived_vertices_refuse_before_candidate_collections() {
                     entries: vec![E5BoundEntry {
                         representation: 20,
                         parameter: finite(1.0),
-                        code: 0,
+                        code: 1,
                     }],
                 },
             ),

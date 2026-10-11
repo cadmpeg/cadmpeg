@@ -534,14 +534,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the fields to read and write the complete support record.
 
-### E5-08. Bound parameter code
-
-**Question.** What does the trailing `u32` code after each E5 bound parameter control?
-
-**Known.** `catia.md` §9 "**Topology:**" defines the bound parameter value and its edge incidence. For a degree-5 `0xa0` jet, the code selects a one-based knot span and the scalar is local to that span.
-
-**Need.** We must know the arc decomposition and local-to-global conversion for the other representations.
-
 ### E5-09. Edge-use trailing fields
 
 **Question.** What fields occur after the five counted references in an E5 edge-use record?

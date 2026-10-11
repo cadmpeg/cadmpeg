@@ -577,6 +577,20 @@ Spec §7.3 · layout: byte offsets · size: 12 B
 | 7 | 4 | `field_selector` | `u32` | little | spec | field selector `u32le` at offset seven |
 | 11 | 1 | `close_count` | `u8` | little | spec | closing count at offset eleven |
 
+## `e5_bound_parameter`
+
+Spec §9 · layout: byte offsets · size: 12 B
+
+Each tuple belongs to the representation at the same position in the counted reference lane. Repeated identities remain separate entries.
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/e5/graph.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `local_parameter` | `f64` | little | spec | the local parameter occupies bytes `0..8` |
+| 8 | 4 | `arc_number_bits` | `u32` | little | spec | the arc-number bits occupy bytes `8..12` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
