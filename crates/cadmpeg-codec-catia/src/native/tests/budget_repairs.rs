@@ -365,6 +365,47 @@ fn native_extent_index_preserves_strict_containment_and_overlap_boundaries() {
 }
 
 #[test]
+fn native_extent_prefixes_admit_their_source_once() {
+    for count in [0, 1, 4, 5, 64] {
+        let sources = (0..count)
+            .rev()
+            .map(|index| (index * 2, 8 - index % 8))
+            .collect::<Vec<(usize, usize)>>();
+        // Vector growth admits moved inline bytes; source steps belong only
+        // to the ordered walk, including the empty case with no visits.
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            "catia_native_extent_prefixes",
+            Some(1),
+        );
+        with_work_limit(u64::MAX, |ctx| -> Result<(), CodecError> {
+            let index = super::super::NativeExtentIndex::new(ctx, &sources, |&extent| extent)?;
+            assert_eq!(index.0.len(), count);
+            let mut maximum = 0;
+            for (ordinal, &(start, end)) in index.0.iter().enumerate() {
+                let expected_start = ordinal * 2;
+                maximum = maximum.max(expected_start + 8 - ordinal % 8);
+                assert_eq!(start, expected_start);
+                assert_eq!(end, maximum);
+            }
+            assert_eq!(ctx.resource_refusal(), None);
+            Ok(())
+        })
+        .expect("prefix construction has no second source-step charge");
+    }
+    let sources = (0..64_usize)
+        .map(|index| (index * 2, 8))
+        .collect::<Vec<_>>();
+    let error =
+        crate::test_support::with_work_refusal("catia_native_extent_prefix_visits", |ctx| {
+            super::super::NativeExtentIndex::new(ctx, &sources, |&extent| extent).map(|_| ())
+        })
+        .expect_err("the ordered source walk still needs admission");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.operation == "catia_native_extent_prefix_visits" && limit.additional == 64));
+}
+
+#[test]
 fn native_inventory_overlap_filter_has_bounded_work_and_preserves_source_order() {
     let mut graphs: Vec<_> = (0..8192)
         .rev()

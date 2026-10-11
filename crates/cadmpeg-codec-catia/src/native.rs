@@ -10518,15 +10518,12 @@ impl<Extent: ByteExtent + DecodeCost> NativeExtentIndex<Extent> {
             })?;
         }
         let mut max_end = None;
-        let prefixes = ctx.collect_vec(
-            ctx.admit_iter(&starts, "catia_native_extent_prefix_visits")?
-                .map(|(&start, &end)| {
-                    let high = max_end.map_or(end, |previous: Extent| previous.max(end));
-                    max_end = Some(high);
-                    (start, high)
-                }),
-            "catia_native_extent_prefixes",
-        )?;
+        let mut prefixes = Vec::new();
+        for (&start, &end) in ctx.admit_iter(&starts, "catia_native_extent_prefix_visits")? {
+            let high = max_end.map_or(end, |previous: Extent| previous.max(end));
+            max_end = Some(high);
+            ctx.push_vec(&mut prefixes, (start, high), "catia_native_extent_prefixes")?;
+        }
         Ok(Self(prefixes))
     }
 
