@@ -1682,6 +1682,11 @@ pub(in crate::families) fn resolved_offset_surface(
     let Some(offset) = graph.offset_surfaces.get(&construction_id) else {
         return Ok(None);
     };
+    // The explicit cone carries its translated native chart. An identity-chart
+    // neutral offset would replace that chart and its stored normal orientation.
+    if offset.carrier_kind == super::graph::B5OffsetCarrierKind::Cone {
+        return Ok(None);
+    }
     let support = if let Some(geometry) =
         resolved_surface_geometry(ctx, graph, offset.source_surface, refusal)?
     {

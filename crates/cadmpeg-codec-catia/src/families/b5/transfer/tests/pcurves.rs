@@ -537,6 +537,7 @@ fn analytic_isocurves_accept_finite_nonzero_scales() {
         direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
         radial_angle: crate::test_support::test_b5::positive_angle(std::f64::consts::FRAC_PI_6),
         reference_radius: crate::test_support::test_b5::finite(0.0),
+        slant_shift: crate::test_support::test_b5::finite(0.0),
         angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
         slant_range: crate::test_support::test_b5::increasing([0.0, scale]),
         angular_scale: crate::test_support::test_b5::positive(1.0),
@@ -962,6 +963,7 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
         radial_angle: crate::test_support::test_b5::positive_angle(radial_angle),
         reference_radius: crate::test_support::test_b5::finite(0.0),
+        slant_shift: crate::test_support::test_b5::finite(0.0),
         angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
         slant_range: crate::test_support::test_b5::increasing([-4.0, 0.0]),
         angular_scale: crate::test_support::test_b5::positive(2.0),
@@ -1083,6 +1085,7 @@ fn cone_chart_normalizes_arc_length_and_slant_coordinates() {
         direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
         radial_angle: crate::test_support::test_b5::positive_angle(radial_angle),
         reference_radius: crate::test_support::test_b5::finite(4.0),
+        slant_shift: crate::test_support::test_b5::finite(0.0),
         angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
         slant_range: crate::test_support::test_b5::increasing([2.0, 8.0]),
         angular_scale: crate::test_support::test_b5::positive(3.0),
@@ -1139,6 +1142,39 @@ fn cone_chart_normalizes_arc_length_and_slant_coordinates() {
     assert_eq!(center, Point3::new(0.0, 0.0, 4.0 * radial_angle.sin()));
     assert_eq!(*axis, Vector3::new(0.0, 0.0, 1.0));
     assert!((radius - (4.0 + 4.0 * radial_angle.cos())).abs() < EPS_PCURVE_CONE_GEOMETRY);
+    let opposite_geometry =
+        lifted_curve_geometry(&pcurve, &opposite_handed).expect("left-handed latitude carrier");
+    assert!(oriented_circle_plan(
+        &pcurve,
+        &opposite_handed,
+        &opposite_geometry,
+        [0.0, 3.0 * std::f64::consts::PI],
+        [radius, 0.0, -4.0 * radial_angle.sin()],
+        [-radius, 0.0, -4.0 * radial_angle.sin()],
+    )
+    .is_some());
+    let mut shifted_cone = cone.clone();
+    let B5Surface::Cone { slant_shift, .. } = &mut shifted_cone else {
+        unreachable!();
+    };
+    *slant_shift = crate::test_support::test_b5::finite(1.25);
+    let shifted_pcurve = B5Pcurve {
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([0.0, 5.25]),
+            crate::test_support::test_b5::finite_vector([3.0 * std::f64::consts::PI, 5.25]),
+        ],
+        ..pcurve.clone()
+    };
+    assert_eq!(
+        neutral_pcurve_point([0.0, 5.25], &shifted_cone),
+        neutral_pcurve_point([0.0, 4.0], &cone)
+    );
+    let Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(shifted_circle))) =
+        lifted_curve_geometry(&shifted_pcurve, &shifted_cone)
+    else {
+        panic!("expected shifted cone latitude circle");
+    };
+    assert_eq!(shifted_circle, circle_curve);
     let generator = B5Pcurve {
         control_points: vec![
             crate::test_support::test_b5::finite_vector([0.0, 3.0]),

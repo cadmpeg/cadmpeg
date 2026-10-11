@@ -320,13 +320,15 @@ pub(in crate::families) enum B5Surface {
         angular_range: IncreasingParameterInterval,
         /// Native slant-coordinate range.
         slant_range: IncreasingParameterInterval,
+        /// Subtract this value from native V to obtain local generator length.
+        slant_shift: FiniteReal,
         /// Positive divisor mapping native U to azimuth.
         angular_scale: PositiveReal,
         /// Full-turn azimuth chart domain.
         angular_domain: IncreasingParameterInterval,
         /// Neutral carrier: its origin is the axis point at the slant-interval
         /// start and its radius is the cross-section radius there. Absent
-        /// when that origin is not finite.
+        /// when the origin or radius cannot be admitted.
         surface: Option<ConeSurface>,
     },
     /// `b5 03 2a`: a sphere with a radius-scaled right-handed frame.
@@ -414,6 +416,8 @@ pub(super) enum B5OffsetCarrierKind {
     Sphere,
     /// The torus carrier form.
     Torus,
+    /// The canonical cone carrier form.
+    Cone,
     /// The plane carrier form.
     Plane,
     /// The rollingball carrier form.
@@ -429,6 +433,7 @@ impl B5OffsetCarrierKind {
             0x05 => Some(Self::Cylinder),
             0x09 => Some(Self::Sphere),
             0x0d => Some(Self::Torus),
+            0x11 => Some(Self::Cone),
             0x15 => Some(Self::Plane),
             0x19 => Some(Self::RollingBall),
             0x21 => Some(Self::Extrusion),
@@ -3709,12 +3714,12 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 f64_le(&record.payload, b5_cone_payload::ANGULAR_DOMAIN)?.get(),
                 f64_le(&record.payload, b5_cone_payload::ANGULAR_DOMAIN + 8)?.get(),
             ];
+            let slant_shift = f64_le(&record.payload, b5_cone_payload::PARAMETER_SHIFT)?;
             let (frame, direction_y) = cone_frame(axis, direction_x, direction_y)?;
             let positive_radial_angle = PositiveAngle::new(radial_angle.get())?;
             (radial_angle.get() < std::f64::consts::FRAC_PI_2
                 && periodic_angular_range_is_valid(angular_range, angular_domain)
-                && f64_le(&record.payload, b5_cone_payload::PARAMETER_SCALE)?.get() == 1.0
-                && f64_le(&record.payload, b5_cone_payload::PARAMETER_SHIFT)?.get() == 0.0)
+                && f64_le(&record.payload, b5_cone_payload::PARAMETER_SCALE)?.get() == 1.0)
                 .then_some(())?;
             // The angular check admits a strictly increasing range inside a
             // strictly increasing full-turn domain.
@@ -3739,6 +3744,7 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 reference_radius,
                 angular_range,
                 slant_range,
+                slant_shift,
                 angular_scale,
                 angular_domain,
                 surface: FinitePoint3::new(Point3::from(origin)).zip(radius).map(
@@ -3996,6 +4002,13 @@ fn parse_offset_surface(
         }
     }
     let expected_kind = match surfaces.get(&carrier_surface) {
+        Some(carrier @ B5Surface::Cone { .. }) => cone_offset_construction_agrees(
+            surfaces.get(&source_surface)?,
+            carrier,
+            distance.get(),
+            [u_bounds, v_bounds],
+        )
+        .then_some(B5OffsetCarrierKind::Cone)?,
         Some(carrier @ B5Surface::Plane { .. }) => analytic_offset_magnitude_agrees(
             carrier,
             surfaces.get(&source_surface)?,
@@ -4060,6 +4073,102 @@ fn parse_offset_surface(
         }
     };
     (carrier_kind == expected_kind).then_some(fields)
+}
+
+fn cone_offset_construction_agrees(
+    source: &B5Surface,
+    carrier: &B5Surface,
+    distance: f64,
+    [u_bounds, v_bounds]: [IncreasingParameterInterval; 2],
+) -> bool {
+    let (
+        B5Surface::Cone {
+            origin: source_origin,
+            frame: source_frame,
+            direction_y: source_y,
+            radial_angle: source_angle,
+            reference_radius: source_radius,
+            angular_scale: source_scale,
+            slant_shift: source_shift,
+            surface: Some(_),
+            ..
+        },
+        B5Surface::Cone {
+            origin,
+            frame,
+            direction_y,
+            radial_angle,
+            reference_radius,
+            angular_scale,
+            angular_range,
+            slant_range,
+            slant_shift,
+            surface: Some(_),
+            ..
+        },
+    ) = (source, carrier)
+    else {
+        return false;
+    };
+    if frame != source_frame
+        || direction_y != source_y
+        || radial_angle != source_angle
+        || angular_scale != source_scale
+    {
+        return false;
+    }
+    let source_origin = coordinates(*source_origin);
+    let origin = coordinates(*origin);
+    let delta = std::array::from_fn::<_, 3, _>(|i| origin[i] - source_origin[i]);
+    let axis = components(frame.axis());
+    let axial = delta.into_iter().zip(axis).map(|(x, a)| x * a).sum::<f64>();
+    let radial = reference_radius.get() - source_radius.get();
+    let (sin, cos) = radial_angle.get().sin_cos();
+    let handedness = cross(components(frame.reference()), components(direction_y))
+        .into_iter()
+        .zip(axis)
+        .map(|(x, a)| x * a)
+        .sum::<f64>()
+        .signum();
+    let translation = axial * sin + radial * cos;
+    let measured = handedness * (radial * sin - axial * cos);
+    let transverse = std::array::from_fn::<_, 3, _>(|i| delta[i] - axial * axis[i]);
+    let transverse_length = transverse[0].hypot(transverse[1]).hypot(transverse[2]);
+    let length_scale = axial.abs().max(radial.abs()).max(distance.abs());
+    let arithmetic_tolerance = 4.0 * f64::EPSILON * length_scale;
+    let transverse_tolerance = EPS_B5_GRAPH_DEGENERATE * length_scale;
+    let distance_tolerance =
+        EPS_B5_GRAPH_DEGENERATE * measured.abs().max(distance.abs()) + arithmetic_tolerance;
+    let shift = slant_shift.get() - source_shift.get();
+    let shift_tolerance =
+        EPS_B5_GRAPH_DEGENERATE * translation.abs().max(shift.abs()) + arithmetic_tolerance;
+    if ![
+        translation,
+        measured,
+        transverse_length,
+        distance_tolerance,
+        shift_tolerance,
+    ]
+    .into_iter()
+    .all(f64::is_finite)
+        || transverse_length > transverse_tolerance
+        || (measured - distance).abs() > distance_tolerance
+        || (shift - translation).abs() > shift_tolerance
+    {
+        return false;
+    }
+    let [u0, u1] = u_bounds.endpoints().map(|u| u / angular_scale.get());
+    u0 >= angular_range.lower() - EPS_B5_GRAPH_GEOMETRY
+        && u1 <= angular_range.upper() + EPS_B5_GRAPH_GEOMETRY
+        && slant_range
+            .endpoints()
+            .into_iter()
+            .zip(v_bounds.endpoints())
+            .all(|(local, native)| {
+                let tolerance = EPS_B5_GRAPH_DEGENERATE
+                    * local.abs().max(native.abs()).max(slant_shift.get().abs());
+                (local - (native - slant_shift.get())).abs() <= tolerance
+            })
 }
 
 fn extrusion_offset_construction_agrees(
@@ -5025,8 +5134,10 @@ fn lift_pcurve_endpoints(
                 radial_angle,
                 angular_scale,
                 reference_radius,
+                slant_shift,
                 ..
             } => Some(endpoints.map(|[u, v]| {
+                let v = v - slant_shift.get();
                 let angle = u / angular_scale.get();
                 let radial = add(
                     scale(components(frame.reference()), angle.cos()),

@@ -943,6 +943,9 @@ pub(super) fn emit_surfaces(
         let Some(offset) = graph.offset_surfaces.get(&construction_id) else {
             continue;
         };
+        if offset.carrier_kind == super::super::graph::B5OffsetCarrierKind::Cone {
+            continue;
+        }
         let (Some(surface), Some(support)) = (
             surface_ids.get(&object_id),
             surface_ids.get(&offset.source_surface),

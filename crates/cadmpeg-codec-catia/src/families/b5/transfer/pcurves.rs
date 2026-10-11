@@ -251,10 +251,18 @@ fn isoparametric_angle_coordinate(
         {
             Some((0, *angular_scale))
         }
-        B5Surface::Cone { angular_scale, .. }
-            if constant_coordinate(&pcurve.control_points, 1).is_some() =>
-        {
-            Some((0, (*angular_scale).into()))
+        B5Surface::Cone {
+            angular_scale,
+            frame,
+            direction_y,
+            ..
+        } if constant_coordinate(&pcurve.control_points, 1).is_some() => {
+            let handedness = dot(
+                cross(components(frame.reference()), components(direction_y)),
+                components(frame.axis()),
+            )
+            .signum();
+            Some((0, FiniteReal::new(angular_scale.get() * handedness)?))
         }
         B5Surface::Torus { minor_scale, .. }
             if constant_coordinate(&pcurve.control_points, 0).is_some() =>
@@ -408,6 +416,7 @@ pub(super) fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Poin
             direction_y,
             radial_angle,
             slant_range,
+            slant_shift,
             angular_scale,
             ..
         } => Point2::new(
@@ -418,7 +427,7 @@ pub(super) fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Poin
             .signum()
                 * point[0]
                 / angular_scale.get(),
-            (point[1] - slant_range.lower()) * radial_angle.get().sin(),
+            (point[1] - slant_shift.get() - slant_range.lower()) * radial_angle.get().sin(),
         ),
         B5Surface::Torus {
             major_scale,
@@ -596,9 +605,10 @@ pub(super) fn lifted_curve_geometry(
                 frame,
                 radial_angle,
                 reference_radius,
+                slant_shift,
                 ..
             } => {
-                let slant = constant_coordinate(&pcurve.control_points, 1)?;
+                let slant = constant_coordinate(&pcurve.control_points, 1)? - slant_shift.get();
                 let radius = reference_radius.get() + slant * radial_angle.get().cos();
                 Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                     cadmpeg_ir::geometry::analytic::CircleCurve::new(

@@ -537,9 +537,12 @@ current levels require those matrices and representative fixtures.
   orthonormal frame, and zero tail; malformed frame, tail, or range/domain
   relations reject the complete record.
   Consolidated and object-stream cones retain their active azimuth interval,
-  centered full-turn domain, slant interval, and fixed chart-tail scalars.
-  Object-stream cones additionally require the complete lead and signed
-  orthonormal frame; neutral pcurve transfer preserves its handedness.
+  centered full-turn domain and slant interval. Consolidated cones require
+  their fixed chart-tail scalars. Object-stream cones require the complete
+  lead, signed orthonormal frame and unit parameter coefficient. Their finite
+  V shift maps the external chart to local generator length. Neutral geometry
+  includes the reference radius and radial-plane generator angle; pcurve and
+  isoparametric circle transfer preserve the stored frame handedness.
   Malformed frame or chart relations reject the complete record.
   A consolidated sphere retains active azimuth and latitude intervals and
   validates its repeated radius and redundant centered-domain origin exactly.
@@ -715,8 +718,13 @@ current levels require those matrices and representative fixtures.
   affine parameter map. The neutral surface offset retains the defining source
   extrusion directly. Face-local class-`30`
   analytic offsets also resolve from length-closed surface frames when their
-  result carrier, source carrier, kind code, and signed distance equation agree,
-  without requiring the surrounding topology run to close.
+  result and source carriers have the same family, kind code, and distance
+  magnitude required for planes, cylinders, spheres, and tori,
+  without requiring the surrounding topology run to close. Cone kind `11`
+  requires matching oriented frames and a signed native-normal distance, with
+  the generator translation matching the source/result V-shift difference.
+  Its explicit result cone supplies the neutral geometry and translated chart;
+  the complete native offset construction remains retained.
   Exact circular-helix constructions retain degree-1 sampled caches whose first
   and last knots are bit-identical to the analytic angular interval, so their
   edge ranges remain inside the canonical cache domain.

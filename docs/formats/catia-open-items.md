@@ -458,14 +458,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the operation and fields to construct the result surface directly.
 
-### OS-16. Cone chart tail scalars
-
-**Question.** How do the class-`29` tail scalars at payload offsets `+153` and `+161` map external UV parameters to the cone's local chart?
-
-**Known.** The pair `(1,0)` gives the identity chart in `catia.md` §6.7 "For the identity parameter map". A canonical class-`30` cone result can retain a nonzero second scalar equal to its generator-chart translation from the source.
-
-**Need.** Native pcurve and vertex-incidence joins must determine whether the second scalar changes pcurve evaluation or records the construction's chart placement.
-
 
 ## 5. Zero-entity `a9 03`
 
