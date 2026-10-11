@@ -667,3 +667,5 @@ mod parameter_index;
 mod identity_custody;
 
 mod candidate_storage;
+
+mod fixed_routes;

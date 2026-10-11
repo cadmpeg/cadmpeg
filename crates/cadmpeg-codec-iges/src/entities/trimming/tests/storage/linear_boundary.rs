@@ -425,3 +425,58 @@ fn ring_slot_and_point_allocations_keep_original_refusal() {
         );
     }
 }
+
+#[test]
+fn empty_linear_boundary_rings_have_no_boundary_or_work() {
+    {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        
+            assert!(
+                linear_boundary_rings(std::iter::empty(), BoundarySpace::Model, &ctx)
+                    .unwrap()
+                    .is_none()
+            );
+            ctx.finish_session().unwrap();
+        
+    }
+}
+
+#[test]
+fn unsupported_linear_boundary_has_no_rings_or_work() {
+    let ir = CadIr::empty();
+    let index = cadmpeg_ir::index::ModelIndex::build(&ir, cadmpeg_ir::index::StandardIndex);
+    let unsupported = SurfaceGeometry::Procedural {
+        construction: cadmpeg_ir::ids::ProceduralSurfaceId::mint(
+            "test:model:procedural-surface#unsupported",
+        )
+        .unwrap(),
+        cache: None,
+    };
+    {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        
+            assert!(linear_boundary_geometry(
+                &[],
+                &index,
+                &unsupported,
+                0.0,
+                0.0,
+                BoundarySurfaceKind::Trimmed,
+                &ctx,
+            )
+            .unwrap()
+            .is_none());
+            ctx.finish_session().unwrap();
+        
+    }
+}
