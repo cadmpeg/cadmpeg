@@ -612,13 +612,8 @@ fn transformed_surface_kind_walks_bases_and_preserves_family() {
         );
     }
     let geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(geometry);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert_eq!(
-        super::surface_kind_for_geometry(&ctx, &geometry).expect("bounded basis walk"),
+        super::surface_kind_for_geometry(&geometry),
         Some(crate::surface::SurfaceKind::Plane)
     );
 }

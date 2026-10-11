@@ -347,7 +347,6 @@ fn legacy_pruning_visits_only_expired_rows_and_preserves_records() {
 #[test]
 fn object_array_complete_shape_uses_stored_completeness() {
     use super::super::ObjectPayload;
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
     let payload = ObjectPayload::Array {
         dimensions: vec![2, 2],
         elements: [
@@ -360,14 +359,5 @@ fn object_array_complete_shape_uses_stored_completeness() {
         .to_vec(),
         complete: true,
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    policy.limits.max_materialized_bytes = 0;
-    policy.limits.max_retained_bytes = 0;
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    assert!(payload
-        .is_complete(&ctx)
-        .expect("stored completeness is free"));
+    assert!(payload.is_complete());
 }

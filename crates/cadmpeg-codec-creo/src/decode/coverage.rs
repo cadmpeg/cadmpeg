@@ -598,7 +598,7 @@ pub(super) fn surface_transfer_coverage(
                 ctx.insert_btree_set(&mut unknown_ids, id, "creo unknown surface ID nodes")
             })?;
         }
-        let Some(kind) = surface_kind_for_geometry(ctx, &surface.geometry)? else {
+        let Some(kind) = surface_kind_for_geometry(&surface.geometry) else {
             continue;
         };
         let extrusion = ctx.contains_btree_set(
