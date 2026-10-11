@@ -416,6 +416,7 @@ fn hem_geometry_fixture() -> (
     (scope, histories)
 }
 
+mod empty_geometry;
 mod reached_carrier;
 
 #[test]

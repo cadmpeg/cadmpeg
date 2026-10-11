@@ -178,32 +178,27 @@ fn active_edge_absent_local_reference_pays_each_group_once_and_retains_only_fina
 }
 
 #[test]
-fn active_edge_one_below_group_count_preserves_original_refusal_and_native_input() {
-    let mut operand = operand(vec![reference(None)]);
-    let original_operand = operand.clone();
-    let topology = AsmHistoricalTopology::default();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    crate::test_support::with_decode_policy(&policy, |ctx| {
-        let Err(CodecError::ResourceLimit(original)) =
-            bind_active_edge_operand_candidates(ctx, &mut operand, &[(99, &topology)])
-        else {
-            panic!("second actual group refuses")
-        };
-        assert_eq!(original.dimension, ResourceDimension::CollectionItems);
-        assert_eq!(original.operation, "collect F3D reference edge sets");
-        assert_eq!(original.used, 1);
-        assert_eq!(original.additional, 1);
-        assert_eq!(operand, original_operand);
-        assert_eq!(ctx.resource_refusal(), Some(original));
-        let Err(CodecError::ResourceLimit(sticky)) =
-            bind_active_edge_operand_candidates(ctx, &mut operand, &[])
-        else {
-            panic!("original refusal before empty source")
-        };
-        assert_eq!(sticky, original);
-        assert_eq!(operand, original_operand);
-    });
+fn active_edge_reference_sets_refusal_preserves_native_input() {
+    let error = crate::test_support::resource_refusal_at(
+        ResourceDimension::CollectionItems,
+        "collect F3D reference edge sets",
+        0,
+        |ctx| {
+            let mut operand = operand(vec![reference(None)]);
+            let original_operand = operand.clone();
+            let topology = AsmHistoricalTopology::default();
+            let result = bind_active_edge_operand_candidates(ctx, &mut operand, &[(99, &topology)]);
+            assert_eq!(operand, original_operand);
+            result
+        },
+    );
+    let CodecError::ResourceLimit(original) = error else {
+        panic!("second actual group refuses")
+    };
+    assert_eq!(original.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(original.operation, "collect F3D reference edge sets");
+    assert_eq!(original.used, 1);
+    assert_eq!(original.additional, 1);
 }
 
 #[test]
@@ -253,11 +248,7 @@ fn active_edge_ambiguous_topologies_release_discarded_candidates_across_repeated
 }
 
 #[test]
-fn active_edge_actual_query_and_commit_phases_preserve_original_refusal() {
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = u64::MAX;
-    policy.limits.max_collection_items = u64::MAX;
-    policy.limits.max_retained_bytes = u64::MAX;
+fn active_edge_actual_query_and_commit_phases_refuse_before_native_mutation() {
     for (dimension, operation, additional) in [
         (
             ResourceDimension::WorkUnits,
@@ -311,7 +302,7 @@ fn active_edge_actual_query_and_commit_phases_preserve_original_refusal() {
         ),
         (
             ResourceDimension::WorkUnits,
-            "scan F3D shared edge sets",
+            "f3d edge intersection reference query",
             Some(1),
         ),
         (
@@ -320,32 +311,21 @@ fn active_edge_actual_query_and_commit_phases_preserve_original_refusal() {
             None,
         ),
     ] {
-        let (mut operand, topology) = native_inputs();
-        let original_operand = operand.clone();
-        crate::test_support::with_decode_policy(&policy, |ctx| {
-            let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-                dimension, operation, additional,
-            );
-            let Err(CodecError::ResourceLimit(original)) =
-                bind_active_edge_operand_candidates(ctx, &mut operand, &[(99, &topology)])
-            else {
-                panic!("reached active edge phase {operation}")
-            };
-            assert_eq!(original.operation, operation);
-            assert_eq!(original.dimension, dimension);
-            assert!(original.additional > 0);
-            if let Some(additional) = additional {
-                assert_eq!(original.additional, additional);
-            }
+        let error = crate::test_support::resource_refusal_at(dimension, operation, 0, |ctx| {
+            let (mut operand, topology) = native_inputs();
+            let original_operand = operand.clone();
+            let result = bind_active_edge_operand_candidates(ctx, &mut operand, &[(99, &topology)]);
             assert_eq!(operand, original_operand);
-            assert_eq!(ctx.resource_refusal(), Some(original));
-            let Err(CodecError::ResourceLimit(sticky)) =
-                bind_active_edge_operand_candidates(ctx, &mut operand, &[])
-            else {
-                panic!("sticky active edge phase")
-            };
-            assert_eq!(sticky, original);
-            assert_eq!(operand, original_operand);
+            result
         });
+        let CodecError::ResourceLimit(original) = error else {
+            panic!("reached active edge phase {operation}")
+        };
+        assert_eq!(original.operation, operation);
+        assert_eq!(original.dimension, dimension);
+        assert!(original.additional > 0);
+        if let Some(additional) = additional {
+            assert_eq!(original.additional, additional);
+        }
     }
 }

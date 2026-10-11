@@ -180,6 +180,23 @@ fn nonnull_locus_conversion_admits_only_reached_validation_steps() {
 }
 
 #[test]
+fn nonnull_locus_empty_conversion_is_free() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        assert!(
+            DesignDimensionLocusPairs::from_pairs_charged(ctx, Vec::new())
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(ctx.resource_refusal(), None);
+    });
+}
+
+#[test]
 fn nonnull_locus_first_invalid_pair_leaves_the_validation_suffix_unread() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 

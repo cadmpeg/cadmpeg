@@ -67,6 +67,29 @@ fn selected_body_proof_does_not_visit_unread_reference_tail() {
 }
 
 #[test]
+fn empty_body_face_query_is_free() {
+    let mut draft = operand(0, 0).into_draft();
+    draft.references.clear();
+    draft.nested_record_index_offset -= 12;
+    draft.asset_id_offset -= 12;
+    let operand = DesignBodyRecipeOperand::try_new(draft).unwrap();
+    let (body, _, _) = face_geometry();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    crate::test_support::with_decode_policy(&policy, |ctx| {
+        let external = external_bodies(&[], &[], &[]);
+        assert_eq!(
+            body_recipe_face_body_candidates(ctx, &operand, &body.id, &external).unwrap(),
+            (false, false)
+        );
+        assert_eq!(ctx.resource_refusal(), None);
+    });
+}
+
+#[test]
 fn body_face_query_preserves_absent_and_other_body_results() {
     let (body, region, shell) = face_geometry();
     let selected = cadmpeg_ir::ids::BodyId::mint("f3d:brep:body#2").unwrap();
