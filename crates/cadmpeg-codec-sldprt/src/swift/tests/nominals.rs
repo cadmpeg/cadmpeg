@@ -1581,7 +1581,7 @@ fn rendered_nominal_ambiguity_skips_unvisited_values() {
         assert!(query(&ctx).unwrap().is_none());
         drop(probe);
         ctx.finish_session().unwrap();
-        let error = crate::test_support::work_refusal_at("scan SWIFT rendered dimension values", |ctx| query(ctx));
+        let error = crate::test_support::work_refusal_at("scan SWIFT rendered dimension values", query);
         let CodecError::ResourceLimit(limit) = error else { panic!("rendered nominal step boundary"); };
         assert_eq!(limit.additional, 1);
         let error = crate::test_support::work_refusal_at("measure ambiguous rendered nominal work", |ctx| {
