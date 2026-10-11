@@ -236,21 +236,38 @@ mod original_context;
 
 fn committed_shared_ancestry_work(count: u64, rejected_first: bool, shared_shell: bool) -> u64 {
     // Admit the configured depth without exhausting a debug test thread's stack.
-    std::thread::Builder::new().stack_size(16 * 1024 * 1024)
+    std::thread::Builder::new()
+        .stack_size(16 * 1024 * 1024)
         .spawn(move || committed_shared_ancestry_work_inner(count, rejected_first, shared_shell))
-        .expect("ancestry thread starts").join().expect("ancestry thread completes")
+        .expect("ancestry thread starts")
+        .join()
+        .expect("ancestry thread completes")
 }
 
-fn committed_shared_ancestry_work_inner(count: u64, rejected_first: bool, shared_shell: bool) -> u64 {
+fn committed_shared_ancestry_work_inner(
+    count: u64,
+    rejected_first: bool,
+    shared_shell: bool,
+) -> u64 {
     let fixture = include_str!("../../../../tests/fixtures/ap214_sheet.p21");
     let (header, _) = fixture.split_once("DATA;\n").expect("fixture DATA section");
     let mut source = format!("{header}DATA;\n");
     for record in fixture.lines().filter(|line| line.starts_with('#')) {
-        if ["#30=", "#31=", "#32=", "#33="].iter().any(|prefix| record.starts_with(prefix)) {
+        if ["#30=", "#31=", "#32=", "#33="]
+            .iter()
+            .any(|prefix| record.starts_with(prefix))
+        {
             continue;
         }
-        writeln!(source, "{}", record.replace("#19=EDGE_CURVE('',#6,#7,#57,.T.);", "#19=EDGE_CURVE('',#6,#7,#16,.T.);"))
-            .expect("append carrier record");
+        writeln!(
+            source,
+            "{}",
+            record.replace(
+                "#19=EDGE_CURVE('',#6,#7,#57,.T.);",
+                "#19=EDGE_CURVE('',#6,#7,#16,.T.);"
+            )
+        )
+        .expect("append carrier record");
     }
     let mut parent = 29;
     for index in 0..count {
@@ -263,7 +280,11 @@ fn committed_shared_ancestry_work_inner(count: u64, rejected_first: bool, shared
         writeln!(source, "#30=OPEN_SHELL('',(#{parent}));").expect("append shared base shell");
         for index in 0..count {
             let id = 20_000 + index;
-            writeln!(source, "#{id}=ORIENTED_OPEN_SHELL('',*,#{shell_parent},.T.);").expect("append shell ancestor");
+            writeln!(
+                source,
+                "#{id}=ORIENTED_OPEN_SHELL('',*,#{shell_parent},.T.);"
+            )
+            .expect("append shell ancestor");
             shell_parent = id;
         }
     }
@@ -274,22 +295,30 @@ fn committed_shared_ancestry_work_inner(count: u64, rejected_first: bool, shared
     for index in 0..count {
         let root = 100_000 + index;
         let shell = 200_000 + index;
-        let shell_references = if shared_shell { format!("#{shell_parent},#{shell}") } else { format!("#{shell}") };
+        let shell_references = if shared_shell {
+            format!("#{shell_parent},#{shell}")
+        } else {
+            format!("#{shell}")
+        };
         writeln!(source, "#{root}=SHELL_BASED_SURFACE_MODEL('',({shell_references}));\n#{shell}=OPEN_SHELL('',(#{parent}));")
             .expect("append independent root");
     }
     source.push_str("ENDSEC;\nEND-ISO-10303-21;\n");
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
-        .expect("shared ancestor roots parse");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("shared ancestor roots parse");
     let setup = cadmpeg_test_support::service_decode_context();
     let mut ir = cadmpeg_ir::CadIr::empty();
     crate::reader::geometry::decode(&exchange, &mut ir, &setup).expect("shared face geometry");
-    let carriers = crate::reader::index::CarrierIndex::from_ir(&ir, &setup).expect("predecoded carriers");
+    let carriers =
+        crate::reader::index::CarrierIndex::from_ir(&ir, &setup).expect("predecoded carriers");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::desktop();
     policy.limits.max_recursion_depth = 1024;
-    let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy).expect("source fits");
-    let outcome = super::super::decode(&exchange, &mut ir, &carriers, &ctx).expect("independent roots commit");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy).expect("source fits");
+    let outcome = super::super::decode(&exchange, &mut ir, &carriers, &ctx)
+        .expect("independent roots commit");
     let count_usize = usize::try_from(count).expect("root count fits");
     let bodies = count_usize * if shared_shell { 2 } else { 1 };
     assert_eq!(ir.model.bodies.len(), bodies);
@@ -300,19 +329,29 @@ fn committed_shared_ancestry_work_inner(count: u64, rejected_first: bool, shared
     }
     if shared_shell {
         for id in 20_000..20_000 + count {
-            assert!(outcome.claims.contains(&id), "shell ancestor #{id} is claimed");
+            assert!(
+                outcome.claims.contains(&id),
+                "shell ancestor #{id} is claimed"
+            );
         }
     }
     assert!(!outcome.claims.contains(&90));
     assert!(!outcome.claims.contains(&91));
     assert!(!outcome.claims.contains(&92));
     if rejected_first {
-        assert!(outcome.losses.iter().any(|loss| loss.message.contains("face carrier #92")));
+        assert!(outcome
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("face carrier #92")));
     } else {
         assert!(outcome.losses.is_empty());
     }
-    let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "committed face ancestry work probe")
-        .expect_err("probe work counter") else { panic!("work refusal"); };
+    let CodecError::ResourceLimit(limit) = ctx
+        .charge_work(u64::MAX, "committed face ancestry work probe")
+        .expect_err("probe work counter")
+    else {
+        panic!("work refusal");
+    };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     limit.used
 }
@@ -321,14 +360,20 @@ fn committed_shared_ancestry_work_inner(count: u64, rejected_first: bool, shared
 fn independent_roots_claim_shared_face_ancestors_once_per_stage() {
     let small = committed_shared_ancestry_work(128, false, false);
     let large = committed_shared_ancestry_work(256, false, false);
-    assert!(large < 3 * small, "committed ancestry work grew from {small} to {large}");
+    assert!(
+        large < 3 * small,
+        "committed ancestry work grew from {small} to {large}"
+    );
 }
 
 #[test]
 fn independent_roots_claim_shared_shell_ancestors_once_per_stage() {
     let small = committed_shared_ancestry_work(128, false, true);
     let large = committed_shared_ancestry_work(256, false, true);
-    assert!(large < 3 * small, "committed shell ancestry work grew from {small} to {large}");
+    assert!(
+        large < 3 * small,
+        "committed shell ancestry work grew from {small} to {large}"
+    );
 }
 
 #[test]
@@ -341,11 +386,21 @@ fn shared_complex_root_work(count: usize) -> u64 {
     let (header, _) = fixture.split_once("DATA;\n").expect("fixture DATA section");
     let mut source = format!("{header}DATA;\n");
     for record in fixture.lines().filter(|line| line.starts_with('#')) {
-        if ["#30=", "#31=", "#32=", "#33="].iter().any(|prefix| record.starts_with(prefix)) {
+        if ["#30=", "#31=", "#32=", "#33="]
+            .iter()
+            .any(|prefix| record.starts_with(prefix))
+        {
             continue;
         }
-        writeln!(source, "{}", record.replace("#19=EDGE_CURVE('',#6,#7,#57,.T.);", "#19=EDGE_CURVE('',#6,#7,#16,.T.);"))
-            .expect("append carrier record");
+        writeln!(
+            source,
+            "{}",
+            record.replace(
+                "#19=EDGE_CURVE('',#6,#7,#57,.T.);",
+                "#19=EDGE_CURVE('',#6,#7,#16,.T.);"
+            )
+        )
+        .expect("append carrier record");
     }
     let mut shells = Vec::new();
     for index in 0..count {
@@ -357,25 +412,39 @@ fn shared_complex_root_work(count: usize) -> u64 {
     for index in 0..64 * count {
         write!(source, "UNRELATED{index}() ").expect("append unrelated partial");
     }
-    writeln!(source, "SHELL_BASED_SURFACE_MODEL(({})));\nENDSEC;\nEND-ISO-10303-21;", shells.join(","))
-        .expect("append complex root");
+    writeln!(
+        source,
+        "SHELL_BASED_SURFACE_MODEL(({})));\nENDSEC;\nEND-ISO-10303-21;",
+        shells.join(",")
+    )
+    .expect("append complex root");
     let mut parse_policy = DecodePolicy::desktop();
     // Parsing diagnostics are setup; topology work is measured below.
     parse_policy.limits.max_work_units = 16_000_000_000;
-    let (exchange, _) = crate::test_support::with_policy_context(source.as_bytes(), &parse_policy, crate::parse::parse_inner)
-        .expect("complex root parses");
+    let (exchange, _) = crate::test_support::with_policy_context(
+        source.as_bytes(),
+        &parse_policy,
+        crate::parse::parse_inner,
+    )
+    .expect("complex root parses");
     let setup = cadmpeg_test_support::service_decode_context();
     let mut ir = cadmpeg_ir::CadIr::empty();
     crate::reader::geometry::decode(&exchange, &mut ir, &setup).expect("sheet geometry");
-    let carriers = crate::reader::index::CarrierIndex::from_ir(&ir, &setup).expect("predecoded carriers");
+    let carriers =
+        crate::reader::index::CarrierIndex::from_ir(&ir, &setup).expect("predecoded carriers");
     let ctx = cadmpeg_test_support::service_decode_context();
-    let outcome = super::super::decode(&exchange, &mut ir, &carriers, &ctx).expect("root shells commit");
+    let outcome =
+        super::super::decode(&exchange, &mut ir, &carriers, &ctx).expect("root shells commit");
     assert_eq!(ir.model.bodies.len(), count);
     assert_eq!(ir.model.faces.len(), count);
     assert!(outcome.losses.is_empty());
     assert!(outcome.claims.contains(&31));
-    let CodecError::ResourceLimit(limit) = ctx.charge_work(u64::MAX, "complex root work probe")
-        .expect_err("probe work counter") else { panic!("work refusal"); };
+    let CodecError::ResourceLimit(limit) = ctx
+        .charge_work(u64::MAX, "complex root work probe")
+        .expect_err("probe work counter")
+    else {
+        panic!("work refusal");
+    };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     limit.used
 }
@@ -384,5 +453,8 @@ fn shared_complex_root_work(count: usize) -> u64 {
 fn shared_complex_root_is_classified_once_before_body_builds() {
     let small = shared_complex_root_work(128);
     let large = shared_complex_root_work(256);
-    assert!(large < 3 * small, "complex root work grew from {small} to {large}");
+    assert!(
+        large < 3 * small,
+        "complex root work grew from {small} to {large}"
+    );
 }
