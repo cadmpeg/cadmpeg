@@ -147,6 +147,13 @@ fn circular_extrusion_coedge_rows_transfer_both_radial_pairs_in_order() {
         &[
             "creo circular extrusion identity",
             "creo circular extrusion identity copy",
+            "creo circular cap ring coedges",
+            "creo circular cap coedge pcurves",
+            "creo circular cap face loops",
+            "creo circular side ring coedges",
+            "creo circular side coedge pcurves",
+            "creo circular region shells",
+            "creo circular body regions",
         ],
         transfer,
     );

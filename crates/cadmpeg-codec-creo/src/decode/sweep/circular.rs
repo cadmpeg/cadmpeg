@@ -51,17 +51,6 @@ where
     )
 }
 
-fn circular_item<T>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    value: T,
-    operation: &'static str,
-) -> Result<Vec<T>, cadmpeg_core::CodecError> {
-    let mut values = Vec::new();
-    ctx.reserve_vec(&mut values, 1, operation)?;
-    values.push(value);
-    Ok(values)
-}
-
 pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
@@ -354,14 +343,14 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                     cadmpeg_ir::topology::LoopRing::new(
                         ctx,
-                        circular_item(
-                            ctx,
-                            cap_coedge.try_clone_for_decode(
+                        {
+let mut coedges = Vec::new();
+ctx.push_vec(&mut coedges, cap_coedge.try_clone_for_decode(
                                 ctx,
                                 "creo circular extrusion identity copy",
-                            )?,
-                            "creo circular cap ring coedges",
-                        )?,
+                            )?, "creo circular cap ring coedges")?;
+coedges
+},
                         Vec::new(),
                     )
                     .map_err(cadmpeg_core::CodecError::from)?
@@ -386,15 +375,15 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                     } else {
                         Sense::Forward
                     },
-                    pcurves: circular_item(
-                        ctx,
-                        PcurveUse {
+                    pcurves: {
+let mut pcurves = Vec::new();
+ctx.push_vec(&mut pcurves, PcurveUse {
                             pcurve: cap_pcurve,
                             isoparametric: None,
                             parameter_range: None,
-                        },
-                        "creo circular cap coedge pcurves",
-                    )?,
+                        }, "creo circular cap coedge pcurves")?;
+pcurves
+},
                     use_curve: None,
                 },
             )?;
@@ -413,11 +402,11 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                     } else {
                         Sense::Forward
                     },
-                    loops: cadmpeg_ir::topology::FaceLoops::unspecified(circular_item(
-                        ctx,
-                        cap_loop,
-                        "creo circular cap face loops",
-                    )?),
+                    loops: cadmpeg_ir::topology::FaceLoops::unspecified({
+let mut loops = Vec::new();
+ctx.push_vec(&mut loops, cap_loop, "creo circular cap face loops")?;
+loops
+}),
                     name: None,
                     color: None,
                     tolerance: None,
@@ -460,14 +449,14 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                     cadmpeg_ir::topology::LoopRing::new(
                         ctx,
-                        circular_item(
-                            ctx,
-                            coedge.try_clone_for_decode(
+                        {
+let mut coedges = Vec::new();
+ctx.push_vec(&mut coedges, coedge.try_clone_for_decode(
                                 ctx,
                                 "creo circular extrusion identity copy",
-                            )?,
-                            "creo circular side ring coedges",
-                        )?,
+                            )?, "creo circular side ring coedges")?;
+coedges
+},
                         Vec::new(),
                     )
                     .map_err(cadmpeg_core::CodecError::from)?
@@ -489,15 +478,15 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                     } else {
                         Sense::Reversed
                     },
-                    pcurves: circular_item(
-                        ctx,
-                        PcurveUse {
+                    pcurves: {
+let mut pcurves = Vec::new();
+ctx.push_vec(&mut pcurves, PcurveUse {
                             pcurve,
                             isoparametric: None,
                             parameter_range: None,
-                        },
-                        "creo circular side coedge pcurves",
-                    )?,
+                        }, "creo circular side coedge pcurves")?;
+pcurves
+},
                     use_curve: None,
                 },
             )?;
@@ -551,7 +540,11 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         ir.model.regions.push(Region {
             id: region_id.try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
             body: body_id.try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
-            shells: circular_item(ctx, shell_id, "creo circular region shells")?,
+            shells: {
+let mut shells = Vec::new();
+ctx.push_vec(&mut shells, shell_id, "creo circular region shells")?;
+shells
+},
         });
         ctx.charge_entities(1, "admit Creo model bodies")?;
         source_carriers.admit_body(
@@ -560,7 +553,11 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             Body {
                 id: body_id_storage.commit_value(body_id)?,
                 kind: BodyKind::Solid,
-                regions: circular_item(ctx, region_id, "creo circular body regions")?,
+                regions: {
+let mut regions = Vec::new();
+ctx.push_vec(&mut regions, region_id, "creo circular body regions")?;
+regions
+},
                 transform: None,
                 name: None,
                 color: None,
