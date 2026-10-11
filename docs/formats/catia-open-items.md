@@ -128,11 +128,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### DI-19. Sketch placement
 
-**Question.** Which fields give a constructed sketch placement frame? Which fields give a support-face sketch placement frame?
+**Question.** Which exact incidence selects a sketch support face or surface? Which complete value productions encode placements outside the nine-control frame program?
 
-**Known.** Object identity, field schema, references, and structural ownership are retained.
+**Known.** `catia.md` §7.3 defines the first-roster-item placement join, its containing field group, and the horizontal-axis, vertical-axis, and origin controls. Empty `Position`, `AbsoluteAxis`, and `_Supports` fields carry no frame or support incidence. The model-space frame does not itself identify a support face.
 
-**Need.** We must know the frame to place sketch geometry in model space.
+**Need.** We must identify a complete support incidence and the remaining placement productions.
 
 ### DI-20. Sketch construction state and profile membership
 

@@ -406,6 +406,20 @@ The count atom starts at payload offset one. Its variable width and the declared
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 1 | `list_marker` | `u8` | little | spec | Its first byte is `3B`; the count atom follows at payload offset one. · value `59` |
 
+## `sketch_placement_controls`
+
+Spec §7.3 · layout: byte offsets · size: 18 B
+
+Token-selected program. E7 denotes one and E8 denotes zero. Components encode horizontal axis, vertical axis, and origin; origin is in millimetres.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `prefix` | `bytes[8]` | little | spec | Its complete token production is `82 86 E8 E0 07 37 8A 81 |
+| 8 | 3 | `horizontal` | `bytes[3]` | little | spec | The nine components start at program offset eight |
+| 11 | 3 | `vertical` | `bytes[3]` | little | spec | They encode the horizontal axis, vertical axis, and origin, in that order. |
+| 14 | 3 | `origin` | `bytes[3]` | little | spec | They encode the horizontal axis, vertical axis, and origin, in that order. |
+| 17 | 1 | `terminator` | `u8` | little | spec | the terminator is at offset seventeen. · value `254` |
+
 ## `value_block_7c0b`
 
 Spec §7.4 · layout: byte offsets · size: 6 B

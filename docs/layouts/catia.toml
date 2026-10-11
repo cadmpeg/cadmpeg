@@ -987,6 +987,50 @@ value = 59
 
 
 [[record]]
+name = "sketch_placement_controls"
+kind = "byte"
+section = "7.3"
+anchor = "Its complete token production is `82 86 E8 E0 07 37 8A 81 <H[3]> <V[3]> <O[3]> FE`"
+size = 18
+note = "Token-selected program. E7 denotes one and E8 denotes zero. Components encode horizontal axis, vertical axis, and origin; origin is in millimetres."
+
+[[record.field]]
+name = "prefix"
+offset = 0
+type = "bytes[8]"
+source = "spec"
+anchor = "Its complete token production is `82 86 E8 E0 07 37 8A 81"
+
+[[record.field]]
+name = "horizontal"
+offset = 8
+type = "bytes[3]"
+source = "spec"
+anchor = "The nine components start at program offset eight"
+
+[[record.field]]
+name = "vertical"
+offset = 11
+type = "bytes[3]"
+source = "spec"
+anchor = "They encode the horizontal axis, vertical axis, and origin, in that order."
+
+[[record.field]]
+name = "origin"
+offset = 14
+type = "bytes[3]"
+source = "spec"
+anchor = "They encode the horizontal axis, vertical axis, and origin, in that order."
+
+[[record.field]]
+name = "terminator"
+offset = 17
+type = "u8"
+source = "spec"
+anchor = "the terminator is at offset seventeen."
+value = 254
+
+[[record]]
 name = "value_block_7c0b"
 kind = "byte"
 section = "7.4"

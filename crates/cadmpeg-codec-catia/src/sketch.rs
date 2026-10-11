@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transfer of source-closed CATIA sketch relations.
 
+mod frame;
+
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::unique_index::UniqueIndex;
@@ -103,6 +105,23 @@ pub(crate) fn transfer_native_sketch_entities(
             || owner_record.design_object.as_deref() != sketch_object.owner_design_object.as_deref()
         {
             continue;
+        }
+
+        if let Some(placement) = frame::placement(
+            ctx,
+            owner_record,
+            &object_records,
+            &entity_records,
+            &design_objects,
+        )? {
+            if let Some(sketch) = ir
+                .model
+                .sketches
+                .iter_mut()
+                .find(|sketch| sketch.id == sketch_id)
+            {
+                sketch.placement = placement;
+            }
         }
 
         let mut seen_fields = HashSet::new();
