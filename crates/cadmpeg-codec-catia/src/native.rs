@@ -8345,15 +8345,18 @@ fn legacy_entity_runs(
                     "catia_native_legacy_run_id",
                 )?;
                 let byte_offset = run.first_identity.offset;
-                let identities = ctx.collect_vec(
-                    run.identities(ctx)?
-                        .map(|identity| CatiaLegacyEntityIdentity {
+                let mut identities = Vec::new();
+                for identity in run.identities(ctx)? {
+                    ctx.push_vec(
+                        &mut identities,
+                        CatiaLegacyEntityIdentity {
                             byte_offset: u64_from_index(identity.offset),
                             entity_id: identity.entity_id,
                             lead: identity.lead,
-                        }),
-                    "catia_native_legacy_identities",
-                )?;
+                        },
+                        "catia_native_legacy_identities",
+                    )?;
+                }
                 let schema_program = run
                     .schema_program
                     .map(|program| -> Result<_, CodecError> {
