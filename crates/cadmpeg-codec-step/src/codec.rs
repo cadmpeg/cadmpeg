@@ -65,10 +65,10 @@ impl CodecBackend for StepCodec {
         if is_part26_hdf5(prefix) {
             return Ok(Confidence::Medium);
         }
-        if is_part28_xml(ctx, prefix)? {
+        if is_part28_xml(prefix) {
             return Ok(Confidence::Medium);
         }
-        if is_ap242_bo_model_xml(ctx, prefix)? {
+        if is_ap242_bo_model_xml(prefix) {
             return Ok(Confidence::Medium);
         }
         Ok(if archive::has_zip_magic(prefix) {
@@ -218,7 +218,6 @@ fn inspect_parsed_exchange(
         "step_codec_notes",
     )?;
     let mut visited_items = (diagnostics).iter();
-    ctx.charge_work(0, "STEP inspect parsed exchange traversal")?;
     for _ in 0..visited_items.len() {
         let diagnostic = ctx
             .next_charged(&mut visited_items, "STEP inspect parsed exchange traversal")?
@@ -314,7 +313,6 @@ fn inspect_logical_entries(
         )?;
     }
     let mut visited_items = (exchange.data()).iter().enumerate();
-    ctx.charge_work(0, "STEP inspect parsed exchange traversal")?;
     for _ in 0..visited_items.len() {
         let (index, section) = ctx
             .next_charged(&mut visited_items, "STEP inspect parsed exchange traversal")?
@@ -322,7 +320,6 @@ fn inspect_logical_entries(
         let mut counts_storage = ctx.reserve_scoped(0, "STEP inspect unknown count storage")?;
         let mut counts = BTreeMap::<&str, usize>::new();
         let mut visited_items = ((section.records)[..]).iter();
-        ctx.charge_work(0, "STEP inspect parsed exchange traversal")?;
         for _ in 0..visited_items.len() {
             let id = ctx
                 .next_charged(&mut visited_items, "STEP inspect parsed exchange traversal")?
@@ -340,7 +337,6 @@ fn inspect_logical_entries(
                 continue;
             }
             let mut visited_items = (record.partials[..]).iter();
-            ctx.charge_work(0, "STEP inspect parsed exchange traversal")?;
             for _ in 0..visited_items.len() {
                 let partial = ctx
                     .next_charged(&mut visited_items, "STEP inspect parsed exchange traversal")?
@@ -393,7 +389,6 @@ fn inspect_logical_entries(
         ctx.temporary_vec(0, "STEP inspect dependency storage")?;
     let mut external_dependencies = dependency_buffer;
     let mut notes = dependency_notes.iter();
-    ctx.charge_work(0, "STEP inspect dependency traversal")?;
     for _ in 0..notes.len() {
         let note = ctx
             .next_charged(&mut notes, "STEP inspect dependency traversal")?
@@ -442,7 +437,6 @@ fn inspect_logical_entries(
         )?;
     }
     let mut visited_items = (exchange.signatures()).iter().enumerate();
-    ctx.charge_work(0, "STEP inspect parsed exchange traversal")?;
     for _ in 0..visited_items.len() {
         let (index, signature) = ctx
             .next_charged(&mut visited_items, "STEP inspect parsed exchange traversal")?
@@ -473,7 +467,6 @@ fn inspect_logical_entries(
 
 fn starts_with_step_magic(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool, CodecError> {
     let mut at = 0;
-    ctx.charge_work(0, "STEP magic cursor traversal")?;
     while at < bytes.len() {
         ctx.charge_work(1, "STEP magic cursor traversal")?;
         while bytes
@@ -663,29 +656,23 @@ pub(crate) fn is_part26_hdf5(bytes: &[u8]) -> bool {
     false
 }
 
-pub(crate) fn is_part28_xml(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<bool, CodecError> {
-    let bytes = &bytes[..bytes.len().min(4096)];
-    let Some(XmlRootTag { name, attributes }) = xml_root_start_tag(ctx, bytes)? else {
-        return Ok(false);
+pub(crate) fn is_part28_xml(bytes: &[u8]) -> bool {
+    let Some(XmlRootTag { name, attributes }) = xml_root_start_tag(bytes) else {
+        return false;
     };
-    let local_name = ctx
-        .rposition_by(
-            name,
-            |byte| Ok(*byte == b':'),
-            "STEP XML qualified name traversal",
-        )?
+    let local_name = name.iter().rposition(|byte| *byte == b':')
         .map_or(name, |separator| &name[separator + 1..]);
     if local_name.eq_ignore_ascii_case(b"iso_10303_28")
         || ascii_starts_with(local_name, b"iso_10303_28_")
     {
-        return Ok(true);
+        return true;
     }
 
     // A configured UOS can use a local name other than the document marker.
     // Its governing-schema namespace varies by AP, but the Part 28 common
     // namespace remains the bounded admission marker. Schema selection and
     // the derived XML Schema remain caller inputs.
-    has_namespace_value(ctx, attributes, &PART28_COMMON_NAMESPACES)
+    has_namespace_value(attributes, &PART28_COMMON_NAMESPACES)
 }
 
 const PART28_COMMON_NAMESPACES: [&[u8]; 3] = [
@@ -707,36 +694,30 @@ struct XmlRootTag<'a> {
     attributes: &'a [u8],
 }
 
-fn xml_root_start_tag<'a>(
-    ctx: &DecodeContext<'_>,
-    bytes: &'a [u8],
-) -> Result<Option<XmlRootTag<'a>>, CodecError> {
+const XML_PROBE_BYTES: usize = 4096;
+
+fn xml_root_start_tag(bytes: &[u8]) -> Option<XmlRootTag<'_>> {
+    let bytes = &bytes[..bytes.len().min(XML_PROBE_BYTES)];
     let mut cursor = if bytes.starts_with(b"\xef\xbb\xbf") {
         3
     } else {
         0
     };
-    ctx.charge_work(0, "STEP XML root cursor traversal")?;
+
     while cursor < bytes.len() {
-        ctx.charge_work(1, "STEP XML root cursor traversal")?;
         while bytes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
-            ctx.charge_work(1, "STEP XML root cursor traversal")?;
             cursor += 1;
         }
         if bytes.get(cursor) != Some(&b'<') {
-            return Ok(None);
+            return None;
         }
         if bytes.get(cursor + 1) == Some(&b'?') {
             let Some(tail) = bytes.get(cursor + 2..) else {
-                return Ok(None);
+                return None;
             };
-            let Some(relative_end) = ctx.position_by(
-                tail.windows(2),
-                |window| Ok(window == b"?>"),
-                "STEP XML processing instruction traversal",
-            )?
+            let Some(relative_end) = tail.windows(2).position(|window| window == b"?>")
             else {
-                return Ok(None);
+                return None;
             };
             let end = relative_end + cursor + 2;
             cursor = end + 2;
@@ -744,15 +725,11 @@ fn xml_root_start_tag<'a>(
         }
         if bytes.get(cursor + 1..cursor + 4) == Some(b"!--") {
             let Some(tail) = bytes.get(cursor + 4..) else {
-                return Ok(None);
+                return None;
             };
-            let Some(relative_end) = ctx.position_by(
-                tail.windows(3),
-                |window| Ok(window == b"-->"),
-                "STEP XML comment traversal",
-            )?
+            let Some(relative_end) = tail.windows(3).position(|window| window == b"-->")
             else {
-                return Ok(None);
+                return None;
             };
             let end = relative_end + cursor + 4;
             cursor = end + 3;
@@ -760,15 +737,11 @@ fn xml_root_start_tag<'a>(
         }
         if bytes.get(cursor + 1) == Some(&b'!') {
             let Some(tail) = bytes.get(cursor + 2..) else {
-                return Ok(None);
+                return None;
             };
-            let Some(relative_end) = ctx.position_by(
-                tail,
-                |byte| Ok(*byte == b'>'),
-                "STEP XML declaration traversal",
-            )?
+            let Some(relative_end) = tail.iter().position(|byte| *byte == b'>')
             else {
-                return Ok(None);
+                return None;
             };
             let end = relative_end + cursor + 2;
             cursor = end + 1;
@@ -778,70 +751,62 @@ fn xml_root_start_tag<'a>(
     }
 
     if cursor == bytes.len() {
-        return Ok(None);
+        return None;
     }
-    let Some(tag_end) = find_xml_tag_end(ctx, bytes, cursor + 1)? else {
-        return Ok(None);
+    let Some(tag_end) = find_xml_tag_end(bytes, cursor + 1) else {
+        return None;
     };
     let mut name_end = cursor + 1;
     while bytes
         .get(name_end)
         .is_some_and(|byte| !byte.is_ascii_whitespace() && *byte != b'/' && *byte != b'>')
     {
-        ctx.charge_work(1, "STEP XML root cursor traversal")?;
         name_end += 1;
     }
     if name_end == cursor + 1 {
-        return Ok(None);
+        return None;
     }
-    Ok(Some(XmlRootTag {
+    Some(XmlRootTag {
         name: &bytes[cursor + 1..name_end],
         attributes: &bytes[name_end..tag_end],
-    }))
+    })
 }
 
 fn find_xml_tag_end(
-    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     mut cursor: usize,
-) -> Result<Option<usize>, CodecError> {
+) -> Option<usize> {
     let mut quote = None;
     while let Some(byte) = bytes.get(cursor).copied() {
-        ctx.charge_work(1, "STEP XML tag cursor traversal")?;
         match quote {
             Some(delimiter) if byte == delimiter => quote = None,
             Some(_) => {}
             None if byte == b'\'' || byte == b'"' => quote = Some(byte),
-            None if byte == b'>' => return Ok(Some(cursor)),
+            None if byte == b'>' => return Some(cursor),
             None => {}
         }
         cursor += 1;
     }
-    Ok(None)
+    None
 }
 
 fn has_namespace_value(
-    ctx: &DecodeContext<'_>,
     attributes: &[u8],
     namespaces: &[&[u8]],
-) -> Result<bool, CodecError> {
+) -> bool {
     // Every caller supplies a fixed catalog of namespace literals.
-    Ok(xml_attribute_value(ctx, attributes, |_, name, value| {
-        Ok((name == b"xmlns" || name.starts_with(b"xmlns:")) && namespaces.contains(&value))
-    })?
-    .is_some())
+    xml_attribute_value(attributes, |name, value| {
+        (name == b"xmlns" || name.starts_with(b"xmlns:")) && namespaces.contains(&value)
+    }).is_some()
 }
 
 fn xml_attribute_value<'a>(
-    ctx: &DecodeContext<'_>,
     attributes: &'a [u8],
-    mut matches: impl FnMut(&DecodeContext<'_>, &[u8], &[u8]) -> Result<bool, CodecError>,
-) -> Result<Option<&'a [u8]>, CodecError> {
+    mut matches: impl FnMut(&[u8], &[u8]) -> bool,
+) -> Option<&'a [u8]> {
     let mut cursor = 0;
     while cursor < attributes.len() {
-        ctx.charge_work(1, "STEP XML attribute cursor traversal")?;
         while attributes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
-            ctx.charge_work(1, "STEP XML attribute cursor traversal")?;
             cursor += 1;
         }
         if attributes.get(cursor).is_none_or(|byte| *byte == b'/') {
@@ -852,27 +817,24 @@ fn xml_attribute_value<'a>(
             .get(cursor)
             .is_some_and(|byte| !byte.is_ascii_whitespace() && *byte != b'=' && *byte != b'/')
         {
-            ctx.charge_work(1, "STEP XML attribute cursor traversal")?;
             cursor += 1;
         }
         let name = &attributes[name_start..cursor];
         while attributes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
-            ctx.charge_work(1, "STEP XML attribute cursor traversal")?;
             cursor += 1;
         }
         if attributes.get(cursor) != Some(&b'=') {
-            return Ok(None);
+            return None;
         }
         cursor += 1;
         while attributes.get(cursor).is_some_and(u8::is_ascii_whitespace) {
-            ctx.charge_work(1, "STEP XML attribute cursor traversal")?;
             cursor += 1;
         }
         let Some(&delimiter) = attributes.get(cursor) else {
-            return Ok(None);
+            return None;
         };
         if delimiter != b'\'' && delimiter != b'"' {
-            return Ok(None);
+            return None;
         }
         cursor += 1;
         let value_start = cursor;
@@ -880,40 +842,30 @@ fn xml_attribute_value<'a>(
             .get(cursor)
             .is_some_and(|byte| *byte != delimiter)
         {
-            ctx.charge_work(1, "STEP XML attribute cursor traversal")?;
             cursor += 1;
         }
         let value = &attributes[value_start..cursor];
         cursor += 1;
-        if matches(ctx, name, value)? {
-            return Ok(Some(value));
+        if matches(name, value) {
+            return Some(value);
         }
     }
-    Ok(None)
+    None
 }
 
-pub(crate) fn is_ap242_bo_model_xml(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-) -> Result<bool, CodecError> {
-    let bytes = &bytes[..bytes.len().min(4096)];
-    let Some(XmlRootTag { name, attributes }) = xml_root_start_tag(ctx, bytes)? else {
-        return Ok(false);
+pub(crate) fn is_ap242_bo_model_xml(bytes: &[u8]) -> bool {
+    let Some(XmlRootTag { name, attributes }) = xml_root_start_tag(bytes) else {
+        return false;
     };
-    let local_name = ctx
-        .rposition_by(
-            name,
-            |byte| Ok(*byte == b':'),
-            "STEP XML qualified name traversal",
-        )?
+    let local_name = name.iter().rposition(|byte| *byte == b':')
         .map_or(name, |separator| &name[separator + 1..]);
     // BM-03: the published namespace must be bound on the Uos document
     // element. Text, comments, schemaLocation values, and local names do not
     // identify the alternate encoding.
     if local_name != b"Uos" {
-        return Ok(false);
+        return false;
     }
-    has_namespace_value(ctx, attributes, &BO_MODEL_NAMESPACES)
+    has_namespace_value(attributes, &BO_MODEL_NAMESPACES)
 }
 
 const BO_MODEL_NAMESPACES: [&[u8]; 2] = [
@@ -1145,37 +1097,18 @@ mod tests {
 
     #[test]
     fn header_cursor_walks_refuse_work_before_advancing() {
-        for (source, operation) in [
-            (
-                b" \0 ISO-10303-21;".as_slice(),
-                "STEP magic cursor traversal",
-            ),
-            (
-                b" \n <Uos a='v'>".as_slice(),
-                "STEP XML root cursor traversal",
-            ),
-            (b"<Uos a='v'>".as_slice(), "STEP XML tag cursor traversal"),
-            (
-                b"<Uos xmlns='urn:test'>".as_slice(),
-                "STEP XML attribute cursor traversal",
-            ),
-        ] {
-            cadmpeg_test_support::refusal::resource_limit_at(
-                ResourceDimension::WorkUnits,
-                operation,
-                |cap| {
-                    let arena = DecodeArena::new();
-                    let mut policy = DecodePolicy::service();
-                    policy.limits.max_work_units = cap;
-                    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).unwrap();
-                    if operation == "STEP magic cursor traversal" {
-                        starts_with_step_magic(&ctx, source)
-                    } else {
-                        super::is_ap242_bo_model_xml(&ctx, source)
-                    }
-                },
-            );
-        }
+        cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits,
+            "STEP magic cursor traversal",
+            |cap| {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_work_units = cap;
+                let source = b" \0 ISO-10303-21;";
+                let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy).unwrap();
+                starts_with_step_magic(&ctx, source)
+            },
+        );
     }
 
     #[test]
@@ -1197,61 +1130,9 @@ mod tests {
     #[test]
     fn xml_namespace_values_match_literal_namespaces() {
         let attributes = b" xmlns='urn:test:namespace'";
-        let service = cadmpeg_test_support::service_decode_context();
-        assert!(super::has_namespace_value(
-            &service,
-            attributes,
-            &[b"urn:test:namespace".as_slice()]
-        )
-        .unwrap());
-        assert!(!super::has_namespace_value(
-            &service,
-            attributes,
-            &[b"urn:test:different".as_slice()]
-        )
-        .unwrap());
-        assert!(!super::has_namespace_value(
-            &service,
-            b" xmlns",
-            &[b"urn:test:namespace".as_slice()]
-        )
-        .unwrap());
-    }
-
-    #[test]
-    fn namespace_match_leaves_following_attributes_unvisited() {
-        fn work(attributes: &[u8], namespaces: &[&[u8]]) -> u64 {
-            crate::test_support::with_service_context(attributes, |_, ctx| {
-                assert!(super::has_namespace_value(ctx, attributes, namespaces)
-                    .expect("literal namespace matches"));
-                let CodecError::ResourceLimit(refusal) = ctx
-                    .charge_work(u64::MAX, "test completed XML namespace work")
-                    .expect_err("work probe refuses")
-                else {
-                    panic!("work refusal required");
-                };
-                refusal.used
-            })
-        }
-        for namespaces in [
-            super::PART28_COMMON_NAMESPACES.as_slice(),
-            super::BO_MODEL_NAMESPACES.as_slice(),
-        ] {
-            let namespace = std::str::from_utf8(namespaces.last().expect("catalog is nonempty"))
-                .expect("namespace literal is UTF-8");
-            let attributes = format!(" xmlns='{namespace}'");
-            let extended = [
-                attributes.as_bytes(),
-                b" ignored='".as_slice(),
-                &[b'x'; 1024],
-                b"'".as_slice(),
-            ]
-            .concat();
-            assert_eq!(
-                work(attributes.as_bytes(), namespaces),
-                work(&extended, namespaces)
-            );
-        }
+        assert!(super::has_namespace_value(attributes, &[b"urn:test:namespace".as_slice()]));
+        assert!(!super::has_namespace_value(attributes, &[b"urn:test:different".as_slice()]));
+        assert!(!super::has_namespace_value(b" xmlns", &[b"urn:test:namespace".as_slice()]));
     }
 
     const INSPECTION_TEXT_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";

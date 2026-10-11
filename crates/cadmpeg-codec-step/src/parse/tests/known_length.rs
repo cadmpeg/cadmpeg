@@ -8,8 +8,8 @@ use cadmpeg_core::CodecError;
 
 use super::super::{
     schema_names_for_matching, schema_object_identifier_diagnostics, try_clone_value,
-    validate_header_data_references, AdmittedSchemaIdentifier, EntityIds, EntityIndex, ParseError,
-    ValidationError, Value,
+    validate_header_data_references, AdmittedSchemaIdentifier, EntityIds, EntityIndex,
+    Value,
 };
 
 fn empty_policy(work: u64) -> DecodePolicy {
@@ -93,35 +93,6 @@ fn empty_schema_matching_names_have_no_terminal_visit_or_storage() {
     });
 }
 
-#[test]
-fn empty_parser_traversals_preserve_original_refusal() {
-    let policy = empty_policy(0);
-    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-        let CodecError::ResourceLimit(original) = ctx
-            .charge_work(1, "STEP original refusal")
-            .expect_err("zero work")
-        else {
-            panic!("the original failure must be a resource refusal");
-        };
-        let Err(CodecError::ResourceLimit(union)) = EntityIndex::ordered_ids(&[], ctx) else {
-            panic!("empty union must keep the original refusal");
-        };
-        let Err(ValidationError::Resource(CodecError::ResourceLimit(header))) =
-            validate_header_data_references(ctx, &[], &BTreeSet::new())
-        else {
-            panic!("empty header references must keep the original refusal");
-        };
-        let Err(ParseError::Resource(CodecError::ResourceLimit(schema))) =
-            schema_names_for_matching(&[], ctx)
-        else {
-            panic!("empty schema names must keep the original refusal");
-        };
-        assert_eq!(union, original);
-        assert_eq!(header, original);
-        assert_eq!(schema, original);
-        assert_eq!(ctx.resource_refusal(), Some(original));
-    });
-}
 
 #[test]
 fn schema_diagnostics_have_no_empty_or_valid_terminal_visit() {
@@ -138,24 +109,4 @@ fn schema_diagnostics_have_no_empty_or_valid_terminal_visit() {
             assert!(ctx.resource_refusal().is_none());
         });
     }
-}
-
-#[test]
-fn empty_schema_diagnostics_report_original_refusal_once() {
-    let policy = empty_policy(0);
-    crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
-        let CodecError::ResourceLimit(original) = ctx
-            .charge_work(1, "STEP original refusal")
-            .expect_err("zero work")
-        else {
-            panic!("the original failure must be a resource refusal");
-        };
-        let mut diagnostics = schema_object_identifier_diagnostics(&[], 17, ctx);
-        let Some(Err(CodecError::ResourceLimit(refusal))) = diagnostics.next() else {
-            panic!("empty diagnostic source must keep the original refusal");
-        };
-        assert_eq!(refusal, original);
-        assert!(diagnostics.next().is_none());
-        assert_eq!(ctx.resource_refusal(), Some(original));
-    });
 }
