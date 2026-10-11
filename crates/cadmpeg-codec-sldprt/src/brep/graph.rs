@@ -1215,6 +1215,9 @@ fn unique_face_colors(
     colors: Vec<entity::FaceColor>,
     versions: Vec<entity::FaceColorVersion>,
 ) -> Result<(Vec<entity::FaceColor>, usize), cadmpeg_core::CodecError> {
+    if colors.is_empty() {
+        return Ok((Vec::new(), 0));
+    }
     let mut current_versions_storage =
         ctx.reserve_scoped(0, "select current Parasolid face colors")?;
     let current_versions = current_versions_storage.with_storage(|| {
@@ -1324,6 +1327,9 @@ fn typed_body_records(
     facts: &typed::Facts,
     tables: &topology::Tables,
 ) -> Result<Option<Vec<BodyRecord>>, cadmpeg_core::CodecError> {
+    if facts.bodies.is_empty() {
+        return Ok(None);
+    }
     let _bridge_attrs_storage;
     let bridge_attrs;
     (bridge_attrs, _bridge_attrs_storage) =
@@ -1508,7 +1514,7 @@ fn bind_bridges(
 ) -> Result<BridgeBindings, cadmpeg_core::CodecError> {
     const INDEX: &str = "index Parasolid body references";
     const BIND: &str = "bind Parasolid face bridges";
-    if faces.is_empty() {
+    if faces.is_empty() || body_records.is_empty() {
         return Ok((BTreeMap::new(), BTreeMap::new()));
     }
     let _reference_storage;
@@ -1929,6 +1935,72 @@ mod binding_color_storage_tests {
         let error = crate::test_support::work_refusal_at(PROBE, |ctx| {
             let bindings = bind_bridges(ctx, &topology::Tables::default(), &bodies(), &[])?;
             assert!(bindings.0.is_empty() && bindings.1.is_empty());
+            ctx.charge_work(1, PROBE)
+        });
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("work refusal")
+        };
+        assert_eq!((limit.used, limit.additional), (0, 1));
+    }
+
+    #[test]
+    fn bridge_binding_does_no_work_without_body_records() {
+        let error = crate::test_support::work_refusal_at(PROBE, |ctx| {
+            let face = WalkedFace {
+                bridge_attr: 10,
+                surface_attr: 20,
+                sense: Sense::Forward,
+                loops: Vec::new(),
+            };
+            let bindings = bind_bridges(ctx, &topology::Tables::default(), &[], &[face])?;
+            assert!(bindings.0.is_empty() && bindings.1.is_empty());
+            ctx.charge_work(1, PROBE)
+        });
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("work refusal")
+        };
+        assert_eq!((limit.used, limit.additional), (0, 1));
+    }
+
+    #[test]
+    fn face_color_versions_are_not_indexed_without_colors() {
+        let error = crate::test_support::work_refusal_at(PROBE, |ctx| {
+            let (colors, unresolved) = unique_face_colors(
+                ctx,
+                Vec::new(),
+                vec![entity::FaceColorVersion {
+                    face_attr: 10,
+                    seq: 1,
+                    stream_order: 0,
+                }],
+            )?;
+            assert!(colors.is_empty());
+            assert_eq!(unresolved, 0);
+            ctx.charge_work(1, PROBE)
+        });
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("work refusal")
+        };
+        assert_eq!((limit.used, limit.additional), (0, 1));
+    }
+
+    #[test]
+    fn body_bridges_are_not_indexed_without_typed_bodies() {
+        let mut tables = topology::Tables::default();
+        tables.insert_bridge(
+            &cadmpeg_test_support::service_decode_context(),
+            topology::Bridge {
+                attr: 10,
+                refs: [0; 5],
+                sequence: 0,
+                sense: Sense::Forward,
+                owner: None,
+                offset: 0,
+            },
+        ).expect("fixture bridge");
+        let error = crate::test_support::work_refusal_at(PROBE, |ctx| {
+            let records = super::typed_body_records(ctx, &super::typed::Facts::default(), &tables)?;
+            assert!(records.is_none());
             ctx.charge_work(1, PROBE)
         });
         let CodecError::ResourceLimit(limit) = error else {
