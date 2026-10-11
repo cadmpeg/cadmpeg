@@ -1923,3 +1923,41 @@ offset = 24
 type = "u32"
 source = "spec"
 anchor = "| `+24` | `u32le` | zero sampled terminal |"
+
+[[record]]
+name = "b5_loop_numeric_terminal"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/b5/graph.rs"
+kind = "byte"
+section = "6.7"
+endianness = "little"
+size = 62
+anchor = "The numeric object-loop terminal is exactly 62 bytes"
+note = "Terminal-relative offsets; all six compact controls use the canonical one-byte form."
+
+[[record.field]]
+name = "lead"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "| `+0` | `u8` | compact lead control |"
+
+[[record.field]]
+name = "scalars"
+offset = 1
+type = "f64[4]"
+source = "spec"
+anchor = "| `+1` | `4×f64le` | four finite source scalars |"
+
+[[record.field]]
+name = "trailing_controls"
+offset = 33
+type = "u8[5]"
+source = "spec"
+anchor = "| `+33` | `5×u8` | remaining compact controls |"
+
+[[record.field]]
+name = "bounds"
+offset = 38
+type = "f32[6]"
+source = "spec"
+anchor = "| `+38` | `6×f32le` | six finite source bound values |"

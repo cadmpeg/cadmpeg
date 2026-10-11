@@ -688,6 +688,22 @@ Parsed by:
 | 16 | 8 | `fit_tolerance` | `f64` | little | spec | \| `+16` \| `f64le` \| sampled fit tolerance \| |
 | 24 | 4 | `terminal` | `u32` | little | spec | \| `+24` \| `u32le` \| zero sampled terminal \| |
 
+## `b5_loop_numeric_terminal`
+
+Spec §6.7 · layout: byte offsets · size: 62 B
+
+Terminal-relative offsets; all six compact controls use the canonical one-byte form.
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/b5/graph.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `lead` | `u8` | little | spec | \| `+0` \| `u8` \| compact lead control \| |
+| 1 | 32 | `scalars` | `f64[4]` | little | spec | \| `+1` \| `4×f64le` \| four finite source scalars \| |
+| 33 | 5 | `trailing_controls` | `u8[5]` | little | spec | \| `+33` \| `5×u8` \| remaining compact controls \| |
+| 38 | 24 | `bounds` | `f32[6]` | little | spec | \| `+38` \| `6×f32le` \| six finite source bound values \| |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

@@ -407,3 +407,23 @@ pub(crate) mod inline_schema_words {
     /// Offset of `close_count` (`u8`). Spec §7.3.
     pub(crate) const CLOSE_COUNT: usize = 11;
 }
+
+/// Byte offsets for the `b5_loop_numeric_terminal` record.
+///
+/// Spec §6.7. Record length 62 B.
+///
+/// ```text
+/// Terminal-relative offsets; all six compact controls use the canonical one-byte form.
+/// ```
+pub(crate) mod b5_loop_numeric_terminal {
+    /// Record length in bytes. Spec §6.7.
+    pub(crate) const LEN: usize = 62;
+    /// Offset of `lead` (`u8`). Spec §6.7.
+    pub(crate) const LEAD: usize = 0;
+    /// Offset of `scalars` (`f64[4]`, little-endian). Spec §6.7.
+    pub(crate) const SCALARS: usize = 1;
+    /// Offset of `trailing_controls` (`u8[5]`). Spec §6.7.
+    pub(crate) const TRAILING_CONTROLS: usize = 33;
+    /// Offset of `bounds` (`f32[6]`, little-endian). Spec §6.7.
+    pub(crate) const BOUNDS: usize = 38;
+}

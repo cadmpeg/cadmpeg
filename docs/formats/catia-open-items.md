@@ -528,14 +528,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 7. FBB-only and float-packed variants
 
-### FV-04. Variant loop-node payloads
-
-**Question.** What payload grammar do loop nodes use outside the length-framed `b5 03 62` and `a8 03 62` forms?
-
-**Known.** `catia.md` §10 "edge_table :=" defines both length-framed forms.
-
-**Need.** We must know the other grammars to reconstruct variant loops.
-
 ### FV-05. Object-stream loop controls
 
 **Question.** What does the object-stream loop control select?

@@ -40,6 +40,7 @@ use controls::{B5EdgeTerminalControl, B5FramingControl, B5VertexIncidenceControl
 use super::vecmath::{add, components, coordinates, cross, scale};
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
 use crate::checked::ExactUnitVector3;
+use crate::layout::b5_loop_numeric_terminal;
 use crate::wire;
 use crate::wire::bytes::{f64_le, f64_point, read_f64_array};
 
@@ -831,8 +832,8 @@ pub(in crate::families) struct B5LoopMetadata {
 pub(in crate::families) struct B5LoopMetadataExtension {
     /// Four finite binary64 fields in serialized order.
     scalars: [FiniteReal; 4],
-    /// Exact admitted odd extension control.
-    control: u8,
+    /// Six canonical one-byte compact controls in serialized order.
+    controls: [u8; 6],
     /// Six finite binary32 fields in serialized order.
     floats: [f32; 6],
 }
@@ -7487,22 +7488,24 @@ fn loop_metadata(ctx: &DecodeContext<'_>, bytes: &[u8], edge_count: usize) -> Lo
     let extension = (|| -> Option<_> {
         Some(match bytes.get(controls_end..)? {
             [0x01] => None,
-            extended
-                if extended.len() == 62
-                    && extended[0] == 0x0d
-                    && extended.get(33..35) == Some(&[0x05, 0x05])
-                    && extended[35] & 1 == 1
-                    && extended.get(36..38) == Some(&[0x05, 0x01]) =>
-            {
+            extended if extended.len() == b5_loop_numeric_terminal::LEN => {
+                let mut controls = [0; 6];
+                controls[0] = *extended.get(b5_loop_numeric_terminal::LEAD)?;
+                controls[1..].copy_from_slice(extended.get(
+                    b5_loop_numeric_terminal::TRAILING_CONTROLS..b5_loop_numeric_terminal::BOUNDS,
+                )?);
+                if controls.iter().any(|control| control % 4 != 1) {
+                    return None;
+                }
                 let mut view = View::over_retained(extended);
-                view.seek(1)?;
+                view.seek(b5_loop_numeric_terminal::SCALARS)?;
                 let scalars = [
                     FiniteReal::new(view.f64_le()?)?,
                     FiniteReal::new(view.f64_le()?)?,
                     FiniteReal::new(view.f64_le()?)?,
                     FiniteReal::new(view.f64_le()?)?,
                 ];
-                view.seek(38)?;
+                view.seek(b5_loop_numeric_terminal::BOUNDS)?;
                 let floats = [
                     view.f32_le()?,
                     view.f32_le()?,
@@ -7516,7 +7519,7 @@ fn loop_metadata(ctx: &DecodeContext<'_>, bytes: &[u8], edge_count: usize) -> Lo
                 }
                 Some(B5LoopMetadataExtension {
                     scalars,
-                    control: extended[35],
+                    controls,
                     floats,
                 })
             }

@@ -371,7 +371,7 @@ fn loop_metadata_accepts_exact_base_and_extended_forms() {
                     crate::test_support::test_b5::finite(3.5),
                     crate::test_support::test_b5::finite(4.25)
                 ],
-                control: metadata_control,
+                controls: [0x0d, 0x05, 0x05, metadata_control, 0x05, 0x01],
                 floats: [1.0, -2.0, 3.5, 4.25, 5.5, -6.75],
             })
         );
@@ -471,7 +471,7 @@ fn loop_metadata_rejects_every_malformed_boundary_and_numeric_domain() {
     )
     .is_none());
 
-    for metadata_control in [0x00, 0x04, 0x20, 0x70] {
+    for metadata_control in [0x00, 0x03, 0x04, 0x07, 0x20, 0x70, 0xff] {
         assert!(loop_metadata(&extended_loop_metadata(metadata_control), 1).is_none());
     }
 
@@ -482,6 +482,40 @@ fn loop_metadata_rejects_every_malformed_boundary_and_numeric_domain() {
     let mut non_finite_float = extended_loop_metadata(0x05);
     non_finite_float[47..51].copy_from_slice(&f32::INFINITY.to_le_bytes());
     assert!(loop_metadata(&non_finite_float, 1).is_none());
+}
+
+#[test]
+fn loop_numeric_terminal_retains_all_six_canonical_controls() {
+    for controls in [
+        [0x0d, 0x05, 0x05, 0x09, 0x09, 0x01],
+        [0x05, 0x05, 0x05, 0x05, 0x05, 0x01],
+        [0x01, 0xfd, 0x09, 0x15, 0x21, 0x01],
+    ] {
+        let mut bytes = extended_loop_metadata(0x05);
+        let positions = [9, 42, 43, 44, 45, 46];
+        for (position, control) in positions.into_iter().zip(controls) {
+            bytes[position] = control;
+        }
+        let (metadata, edge_controls) =
+            loop_metadata(&bytes, 1).expect("complete numeric terminal");
+        assert_eq!(
+            metadata.extension.expect("numeric terminal").controls,
+            controls
+        );
+        assert_eq!(edge_controls, [[1, -1, 1]]);
+        for position in positions {
+            for invalid in [0, 2, 3, 4, 255] {
+                let mut malformed = bytes.clone();
+                malformed[position] = invalid;
+                assert!(loop_metadata(&malformed, 1).is_none());
+            }
+        }
+        let mut truncated = bytes.clone();
+        truncated.pop();
+        assert!(loop_metadata(&truncated, 1).is_none());
+        bytes.push(0x01);
+        assert!(loop_metadata(&bytes, 1).is_none());
+    }
 }
 
 #[test]
