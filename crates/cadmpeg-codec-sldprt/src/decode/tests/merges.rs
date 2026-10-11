@@ -83,7 +83,10 @@ fn brep_merge_admits_destination_arena_storage_and_moves() {
                 policy.limits.max_work_units = cap;
             }
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let replay_source = Brep { points: source.points.clone(), ..Brep::default() };
+            let replay_source = Brep {
+                points: source.points.clone(),
+                ..Brep::default()
+            };
             let result = merge_brep(&ctx, &mut target, replay_source);
             assert!(target.points.is_empty());
             if let Err(CodecError::ResourceLimit(limit)) = &result {
@@ -117,8 +120,10 @@ fn brep_merge_admits_destination_arena_storage_and_moves() {
         );
         assert!(target.points.is_empty());
         if dimension == ResourceDimension::WorkUnits {
-            assert_eq!(limit.additional,
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Point>()));
+            assert_eq!(
+                limit.additional,
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Point>())
+            );
         }
     }
     let mut target = Brep::default();

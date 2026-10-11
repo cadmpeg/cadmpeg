@@ -405,25 +405,25 @@ fn unknown_record_retention_preserves_its_resource_refusal() {
         |cap| {
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = cap;
-                let arena = DecodeArena::new();
-                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-                    .expect("test input fits caller policy");
-                let mut brep = cadmpeg_asm::brep::AsmBrep::default();
-                brep.unknowns.push(unknown.clone());
-                let result = super::build_result(
-                    &ctx,
-                    Some(brep),
-                    std::collections::BTreeMap::new(),
-                    &header,
-                    None,
-                    matched.clone(),
-                    kernel.clone(),
-                );
-                if let Err(CodecError::ResourceLimit(limit)) = &result {
-                    assert!(matches!(ctx.finish_session(),
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("test input fits caller policy");
+            let mut brep = cadmpeg_asm::brep::AsmBrep::default();
+            brep.unknowns.push(unknown.clone());
+            let result = super::build_result(
+                &ctx,
+                Some(brep),
+                std::collections::BTreeMap::new(),
+                &header,
+                None,
+                matched.clone(),
+                kernel.clone(),
+            );
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert!(matches!(ctx.finish_session(),
                         Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
-                }
-                result
+            }
+            result
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)

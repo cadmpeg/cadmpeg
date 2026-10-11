@@ -238,7 +238,13 @@ mod tests {
             assert!(original.additional > 0);
             assert_eq!(ctx.resource_refusal(), Some(original));
             assert_eq!(
-                super::nurbs_surface_parameter_near_point(&ctx, &surface, Point3::new(f64::NAN, 0.0, 0.0), None).unwrap(),
+                super::nurbs_surface_parameter_near_point(
+                    &ctx,
+                    &surface,
+                    Point3::new(f64::NAN, 0.0, 0.0),
+                    None
+                )
+                .unwrap(),
                 None
             );
             // Rejecting a non-finite point needs no input-sized work. The

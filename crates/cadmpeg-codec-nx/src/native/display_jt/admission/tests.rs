@@ -236,17 +236,17 @@ fn display_jt_native_validation_propagates_resource_limit() {
         ResourceDimension::WorkUnits,
         "load typed native record",
         |cap| {
-                    let arena = DecodeArena::new();
-                    let mut policy = DecodePolicy::service();
-                    policy.limits.max_work_units = cap;
-                    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-                        .expect("test root is admitted");
-                    let result = crate::NxCodec::validate_native(&ctx, &ir);
-                    if let Err(CodecError::ResourceLimit(limit)) = &result {
-                        assert!(matches!(ctx.finish_session(),
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("test root is admitted");
+            let result = crate::NxCodec::validate_native(&ctx, &ir);
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert!(matches!(ctx.finish_session(),
                             Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
-                    }
-                    result
+            }
+            result
         },
     );
     assert!(matches!(error, CodecError::ResourceLimit(limit)
