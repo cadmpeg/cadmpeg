@@ -650,3 +650,16 @@ fn protected_root_copy_refuses_collection_limit() {
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "step_unowned_protected_root_copy"));
 }
+
+#[test]
+fn source_attribute_entries_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;ENDSEC;END-ISO-10303-21;";
+    let (exchange, diagnostics) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).expect("root");
+    assert!(matches!(super::super::StepDecodeSession::new(&exchange, &diagnostics, &ctx, super::super::DecodeMode::Decode(Packaging::Bare)), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "step_source_attribute_entries"));
+}
