@@ -782,3 +782,67 @@ fn positional_triples_replay_nullable_relation_joins() {
     assert_eq!(triples[1].relation_id, Some(2));
     assert_eq!(triples[1].skamp_id, Some(5));
 }
+
+#[test]
+fn positional_relation_triples_stop_at_definition_end() {
+    let definition = b"\xf8\x01\xf7\x58\xfb\xe2\xf7\x59";
+    let mut payload = definition.to_vec();
+    payload.extend_from_slice(b"feat_defs_2\0");
+    let table = crate::decode::with_test_decode_ctx(|ctx| {
+        parse_positional_relation_triples(ctx, &payload, 0, definition.len(), 88)
+    }).expect("bounded table").expect("declared table");
+    let crate::feature::definitions::SolverSubtable::Declared { header, rows } = table else {
+        panic!("declared table");
+    };
+    assert_eq!((header.declared_count, header.entity_ref, header.offset), (1, 88, 0));
+    assert!(rows.is_empty());
+}
+
+#[test]
+fn positional_relation_triples_header_and_multibyte_rows_stay_in_definition() {
+    let mut payload = b"\xf8\x01\xf7\x80\x80\xfb\xe2\xf7\x80\x81\x80\x80\xc0\0\x02\xea\x03\0\0".to_vec();
+    let definition_end = payload.len();
+    payload.extend_from_slice(b"feat_defs_2\0");
+    for end in 0..definition_end {
+        let table = crate::decode::with_test_decode_ctx(|ctx| {
+            parse_positional_relation_triples(ctx, &payload, 0, end, 128)
+        }).expect("bounded truncated table");
+        if end < 7 {
+            assert!(table.is_none(), "incomplete header at {end}");
+        } else {
+            let table = table.expect("complete header");
+            assert!(table.rows().is_empty(), "incomplete row at {end}");
+        }
+    }
+    let rows = positional_relation_triples(&payload, 0, definition_end, 128);
+    assert_eq!(rows.len(), 1);
+    assert_eq!((rows[0].relation_id, rows[0].equation_id, rows[0].skamp_id),
+        (Some(128), Some(2), Some(3)));
+    assert_eq!(rows[0].offset, 10);
+}
+
+#[test]
+fn positional_relation_triples_do_not_charge_an_absent_bounded_row() {
+    let mut payload = b"\xf8\x01\xf7\x58\xfb\xe2\xf7\x59".to_vec();
+    payload.extend_from_slice(b"feat_defs_2\0");
+    // Uniqueness visits seven offsets and performs its charged end probe.
+    let operations = std::iter::once("creo positional array header search")
+        .chain(std::iter::repeat_n("creo positional array header uniqueness", 8))
+        .collect::<Vec<_>>();
+    crate::test_support::assert_refusal_order(ResourceDimension::WorkUnits, &operations, |cap| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let table = parse_positional_relation_triples(&ctx, &payload, 0, 8, 88)?
+            .expect("complete header");
+        assert!(table.rows().is_empty());
+        let refusal = ctx.charge_work_limit(1, "measure bounded triples")
+            .expect_err("header scans use the complete cap");
+        assert_eq!((refusal.used, refusal.additional), (9, 1));
+        Ok::<_, CodecError>(())
+    });
+}
