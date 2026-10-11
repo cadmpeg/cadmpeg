@@ -130,7 +130,11 @@ fn candidate_at<'ctx>(
             Err(cadmpeg_core::CodecError::Malformed(_)) => return Ok(None),
             Err(error) => return Err(error),
         };
-    if !ctx.any_by(decoded.chars(), |character| Ok(!character.is_whitespace()), "validate SLDPRT appearance name")? {
+    if !ctx.any_by(
+        decoded.chars(),
+        |character| Ok(!character.is_whitespace()),
+        "validate SLDPRT appearance name",
+    )? {
         return Ok(None);
     }
     Ok(Some(AppearanceCandidate {
@@ -152,7 +156,12 @@ fn materialize_candidate(
     drop(candidate.name);
     drop(candidate.name_storage);
     let source_name = clone_stream_name(ctx, section.source_stream())?;
-    Ok(AppearanceDefinition { name, color, source_name, record_offset })
+    Ok(AppearanceDefinition {
+        name,
+        color,
+        source_name,
+        record_offset,
+    })
 }
 
 fn definition_at(
@@ -206,7 +215,8 @@ fn inline_definition<'ctx>(
         "scan inline SLDPRT appearances",
     )? {
         let offset = start + relative;
-        let Some(candidate) = candidate_at(ctx, section, offset + inline_visual::PACKED_COLOR)? else {
+        let Some(candidate) = candidate_at(ctx, section, offset + inline_visual::PACKED_COLOR)?
+        else {
             continue;
         };
         if selected.is_some() {
@@ -214,12 +224,13 @@ fn inline_definition<'ctx>(
         }
         selected = Some((candidate, offset));
     }
-    selected.map(|(candidate, offset)| {
-        ctx.with_scoped_storage("SLDPRT inline appearance candidate", || {
-            materialize_candidate(ctx, section, candidate, offset)
+    selected
+        .map(|(candidate, offset)| {
+            ctx.with_scoped_storage("SLDPRT inline appearance candidate", || {
+                materialize_candidate(ctx, section, candidate, offset)
+            })
         })
-    }).transpose()
-
+        .transpose()
 }
 
 /// Decode body/default and face-local assignments from `DisplayLists`.
@@ -361,7 +372,10 @@ struct FeatureAppearanceRecord {
 fn visit_feature_appearances<'scan>(
     ctx: &DecodeContext<'_>,
     scan: &'scan ContainerScan,
-    mut visit: impl FnMut(Section<'scan>, FeatureAppearanceRecord) -> Result<(), cadmpeg_core::CodecError>,
+    mut visit: impl FnMut(
+        Section<'scan>,
+        FeatureAppearanceRecord,
+    ) -> Result<(), cadmpeg_core::CodecError>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for section in scan
         .sections(ctx)?
@@ -422,12 +436,15 @@ fn visit_feature_appearances<'scan>(
             let Some(packed_color) = View::u32_le_at(record, feature_visual::PACKED_COLOR) else {
                 continue;
             };
-            visit(section, FeatureAppearanceRecord {
-                source_id: feature_source_id,
-                timestamp: feature_timestamp,
-                packed_color,
-                offset: record_offset,
-            })?;
+            visit(
+                section,
+                FeatureAppearanceRecord {
+                    source_id: feature_source_id,
+                    timestamp: feature_timestamp,
+                    packed_color,
+                    offset: record_offset,
+                },
+            )?;
         }
     }
     Ok(())
@@ -460,7 +477,10 @@ pub(crate) fn feature_assignments<'scan>(
 /// Each is built at its first query and owns its temporary storage.
 #[derive(Default)]
 pub(crate) struct FeatureAppearances<'scan, 'ctx> {
-    records: OnceCell<(Vec<FeatureAppearanceAssignment<'scan>>, ScopedReservation<'ctx>)>,
+    records: OnceCell<(
+        Vec<FeatureAppearanceAssignment<'scan>>,
+        ScopedReservation<'ctx>,
+    )>,
     index: OnceCell<(
         HashMap<FeatureSourceId, Option<usize>>,
         ScopedReservation<'ctx>,
@@ -548,13 +568,19 @@ impl<'scan, 'ctx> FeatureAppearances<'scan, 'ctx> {
     ) -> Result<BTreeSet<FeatureSourceId>, cadmpeg_core::CodecError> {
         if let Some((records, _)) = self.records.get() {
             return ctx.collect_btree_set(
-                records.iter().map(|assignment| assignment.feature_source_id),
+                records
+                    .iter()
+                    .map(|assignment| assignment.feature_source_id),
                 "index SLDPRT feature appearance sources",
             );
         }
         let mut sources = BTreeSet::new();
         visit_feature_appearances(ctx, scan, |_, record| {
-            ctx.insert_btree_set(&mut sources, record.source_id, "index SLDPRT feature appearance sources")?;
+            ctx.insert_btree_set(
+                &mut sources,
+                record.source_id,
+                "index SLDPRT feature appearance sources",
+            )?;
             Ok(())
         })?;
         Ok(sources)

@@ -1392,7 +1392,9 @@ fn read_related(
     }
     let mut related = Vec::new();
     let mut descriptors = descriptors.into_iter();
-    while let Some((name, class)) = ctx.next_charged(&mut descriptors, "scan SWIFT related descriptors")? {
+    while let Some((name, class)) =
+        ctx.next_charged(&mut descriptors, "scan SWIFT related descriptors")?
+    {
         let next_depth = depth.checked_add(1).ok_or_else(|| {
             ctx.refuse_codec_limit(
                 "advance SWIFT recursion depth",
@@ -1857,10 +1859,9 @@ fn project_with_topology<'model, 'ctx>(
                         format_args!("{}:datum-system", id.as_str()),
                         "format SWIFT datum-system ID",
                     )?;
-                    let system_id = PmiId::mint_for_decode(
-                        ctx, system_id, "validate SWIFT datum-system ID",
-                    )?
-                        .map_err(|_| CodecError::malformed("invalid SWIFT datum-system ID"))?;
+                    let system_id =
+                        PmiId::mint_for_decode(ctx, system_id, "validate SWIFT datum-system ID")?
+                            .map_err(|_| CodecError::malformed("invalid SWIFT datum-system ID"))?;
                     let datum_system =
                         system_id.try_clone_for_decode(ctx, "copy SWIFT PMI identity")?;
                     system_storage.with_storage(|| {
@@ -2079,7 +2080,9 @@ impl<'root, 'ctx> DatumIdentities<'root, 'ctx> {
             .entries
             .get()
             .ok_or_else(|| CodecError::malformed("missing SWIFT datum identities"))?;
-        Ok(ctx.get_btree_set(entries, source_id, "look up SLDPRT ordered key")?.copied())
+        Ok(ctx
+            .get_btree_set(entries, source_id, "look up SLDPRT ordered key")?
+            .copied())
     }
 }
 
@@ -2146,7 +2149,8 @@ fn project_lower_profile_tier(
         "format SWIFT lower-tier ID",
     )?;
     drop((id, identity_storage));
-    let id = PmiId::mint_for_decode(ctx, text, "validate SWIFT lower-tier ID")?.map_err(|_| CodecError::malformed("invalid SWIFT lower-tier ID"))?;
+    let id = PmiId::mint_for_decode(ctx, text, "validate SWIFT lower-tier ID")?
+        .map_err(|_| CodecError::malformed("invalid SWIFT lower-tier ID"))?;
     let name = ctx
         .get_btree_map(&entity.strings, "ObjectName", "look up SWIFT attribute")?
         .filter(|name| !name.is_empty())
@@ -2862,7 +2866,10 @@ where
         let ctx = self.ctx;
         ctx.charge_work(1, self.operation)?;
         if ctx.contains_btree_set(&self.active, id, "check SWIFT traversal path")? {
-            return Ok(FeatureListCompletion::Complete { cacheable: false, has_values: false });
+            return Ok(FeatureListCompletion::Complete {
+                cacheable: false,
+                has_values: false,
+            });
         }
         admit_swift_depth(ctx, depth, self.operation)?;
         let _depth = ctx.enter_nested(self.operation)?;
@@ -2878,7 +2885,10 @@ where
                         }
                     }
                 }
-                return Ok(FeatureListCompletion::Complete { cacheable: true, has_values: !cached.is_empty() });
+                return Ok(FeatureListCompletion::Complete {
+                    cacheable: true,
+                    has_values: !cached.is_empty(),
+                });
             }
         }
         let (_, path_storage) = ctx.with_scoped_storage("SWIFT traversal path storage", || {
@@ -2915,20 +2925,25 @@ where
                             u64::MAX,
                         )
                     })?;
-                    let mut visit_child = |child| {
-                        match self.walk(child, next_depth, consumer)? {
-                            FeatureListCompletion::Complete { cacheable: child_cacheable, has_values: child_values } => {
-                                cacheable &= child_cacheable;
-                                has_values |= child_values;
-                                Ok(true)
-                            }
-                            FeatureListCompletion::Stopped => Ok(false),
+                    let mut visit_child = |child| match self.walk(child, next_depth, consumer)? {
+                        FeatureListCompletion::Complete {
+                            cacheable: child_cacheable,
+                            has_values: child_values,
+                        } => {
+                            cacheable &= child_cacheable;
+                            has_values |= child_values;
+                            Ok(true)
                         }
+                        FeatureListCompletion::Stopped => Ok(false),
                     };
                     // Visit embedded references before inspecting a separate
                     // SubFeatures collection that the consumer may never need.
                     if !ctx.all_by(
-                        feature.features.references.iter().map(|reference| reference.id.as_str()),
+                        feature
+                            .features
+                            .references
+                            .iter()
+                            .map(|reference| reference.id.as_str()),
                         &mut visit_child,
                         "scan SWIFT child features",
                     )? {
@@ -2947,7 +2962,10 @@ where
                         let values = output.get(first_value..).ok_or_else(|| {
                             CodecError::malformed("invalid SWIFT traversal result range")
                         })?;
-                        Some(self.cache_storage.with_storage(|| ctx.copy_slice(values, CACHE_COPY))?)
+                        Some(
+                            self.cache_storage
+                                .with_storage(|| ctx.copy_slice(values, CACHE_COPY))?,
+                        )
                     }
                     // Streaming keeps no owned contributor list. Empty results
                     // still cache shared subgraphs that yield no values.
@@ -2956,17 +2974,24 @@ where
                 };
                 if let Some(cached_values) = cached_values {
                     self.cache_storage.with_storage(|| {
-                        ctx.insert_btree_map(&mut self.completed, (id, depth), cached_values, CACHE_INSERT)
+                        ctx.insert_btree_map(
+                            &mut self.completed,
+                            (id, depth),
+                            cached_values,
+                            CACHE_INSERT,
+                        )
                     })?;
                 }
             }
-            Ok(FeatureListCompletion::Complete { cacheable, has_values })
+            Ok(FeatureListCompletion::Complete {
+                cacheable,
+                has_values,
+            })
         })();
         ctx.remove_btree_set(&mut self.active, id, self.path_operation)?;
         drop(path_storage);
         result
     }
-
 }
 
 fn diameter_nominal(
@@ -3993,7 +4018,6 @@ where
     }
 }
 
-
 fn nominal_radius(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     feature: &Entity,
@@ -4188,7 +4212,6 @@ fn unique_measurement<T: Copy + Into<f64>>(
         .then_some(first))
 }
 
-
 fn diameters_equivalent(left: f64, right: f64) -> bool {
     approximately_equal(left, right) || (left - right).abs() <= DIAMETER_EQUIVALENCE_MM
 }
@@ -4309,20 +4332,14 @@ fn unique_related<'a>(
 ) -> Result<Option<&'a RelatedObject>, CodecError> {
     const OPERATION: &str = "find SWIFT related object";
     let mut remaining = entity.related.iter();
-    let Some(object) = ctx.find_by(
-        &mut remaining,
-        |object| Ok(object.name == name),
-        OPERATION,
-    )?
+    let Some(object) = ctx.find_by(&mut remaining, |object| Ok(object.name == name), OPERATION)?
     else {
         return Ok(None);
     };
-    Ok((!ctx.any_by(
-        &mut remaining,
-        |object| Ok(object.name == name),
-        OPERATION,
-    )?)
-    .then_some(object))
+    Ok(
+        (!ctx.any_by(&mut remaining, |object| Ok(object.name == name), OPERATION)?)
+            .then_some(object),
+    )
 }
 
 fn feature_index<'a>(
@@ -4360,7 +4377,9 @@ fn targets(
             let mut seen = BTreeSet::new();
             let mut targets = Vec::new();
             let mut references = entity.features.references.iter();
-            while let Some(reference) = ctx.next_charged(&mut references, "scan SLDPRT targets values")? {
+            while let Some(reference) =
+                ctx.next_charged(&mut references, "scan SLDPRT targets values")?
+            {
                 let valid = visit_expanded_feature_ids(
                     ctx,
                     &reference.id,
@@ -4593,7 +4612,10 @@ fn tolerance_modifiers(
         {
             ctx.push_vec(
                 &mut values,
-                ctx.format_retained(format_args!("projected_zone:{}_mm", value.get()), "format SWIFT PMI modifier")?,
+                ctx.format_retained(
+                    format_args!("projected_zone:{}_mm", value.get()),
+                    "format SWIFT PMI modifier",
+                )?,
                 "collect SWIFT PMI modifiers",
             )?;
         } else {
@@ -4618,7 +4640,10 @@ fn tolerance_modifiers(
         {
             ctx.push_vec(
                 &mut values,
-                ctx.format_retained(format_args!("maximum_tolerance:{}_mm", value.get()), "format SWIFT PMI modifier")?,
+                ctx.format_retained(
+                    format_args!("maximum_tolerance:{}_mm", value.get()),
+                    "format SWIFT PMI modifier",
+                )?,
                 "collect SWIFT PMI modifiers",
             )?;
         } else {
@@ -4632,11 +4657,20 @@ fn tolerance_modifiers(
     Ok::<_, cadmpeg_core::CodecError>(values)
 }
 
-fn integer_modifier(ctx: &DecodeContext<'_>, value: Option<i32>) -> Result<Vec<String>, CodecError> {
+fn integer_modifier(
+    ctx: &DecodeContext<'_>,
+    value: Option<i32>,
+) -> Result<Vec<String>, CodecError> {
     let modifier = match value {
-        Some(1) => ctx.copy_retained_text("maximum_material_requirement", "copy SWIFT PMI modifier")?,
-        Some(2) => ctx.copy_retained_text("least_material_requirement", "copy SWIFT PMI modifier")?,
-        Some(value) if value != 0 => ctx.format_retained(format_args!("sldprt:{value}"), "format SWIFT PMI modifier")?,
+        Some(1) => {
+            ctx.copy_retained_text("maximum_material_requirement", "copy SWIFT PMI modifier")?
+        }
+        Some(2) => {
+            ctx.copy_retained_text("least_material_requirement", "copy SWIFT PMI modifier")?
+        }
+        Some(value) if value != 0 => {
+            ctx.format_retained(format_args!("sldprt:{value}"), "format SWIFT PMI modifier")?
+        }
         _ => return Ok(Vec::new()),
     };
     let mut modifiers = Vec::new();
@@ -4693,8 +4727,19 @@ fn defined_area(ctx: &DecodeContext<'_>, entity: &Entity) -> Result<DefinedArea,
                 Some(ctx.copy_retained_text("circular", "copy SWIFT defined-area unit")?),
                 None,
             ),
-            Some(kind) => (None, Some(ctx.format_retained(format_args!("sldprt:{kind}"), "format SWIFT defined-area unit")?), None),
-            None => (None, Some(ctx.copy_retained_text("sldprt:unspecified", "copy SWIFT defined-area unit")?), None),
+            Some(kind) => (
+                None,
+                Some(ctx.format_retained(
+                    format_args!("sldprt:{kind}"),
+                    "format SWIFT defined-area unit",
+                )?),
+                None,
+            ),
+            None => (
+                None,
+                Some(ctx.copy_retained_text("sldprt:unspecified", "copy SWIFT defined-area unit")?),
+                None,
+            ),
         },
     )
 }
