@@ -559,7 +559,8 @@ fn tessellation_fixed_identity_retains_exact_storage_without_work() {
             &[],
             |policy| {
                 policy.limits.max_work_units = 0;
-                policy.limits.max_retained_bytes = expected.len() as u64;
+                policy.limits.max_retained_bytes =
+                    cadmpeg_core::decode::u64_from_index(expected.len());
             },
             |ctx| {
                 let id = retain_jt_tessellation_id(ctx, offset, object_id, None).unwrap();
@@ -577,7 +578,10 @@ fn tessellation_fixed_identity_retains_exact_storage_without_work() {
             panic!("identity storage refusal");
         };
         assert_eq!(limit.used, 0);
-        assert_eq!(limit.additional, expected.len() as u64);
+        assert_eq!(
+            limit.additional,
+            cadmpeg_core::decode::u64_from_index(expected.len())
+        );
     }
 }
 
@@ -627,7 +631,9 @@ fn tessellation_shaded_rows_are_retained_and_admitted_directly() {
     for (dimension, additional) in [
         (
             ResourceDimension::RetainedBytes,
-            (3 * std::mem::size_of::<ShadedVertex<FinitePoint3, FiniteVector3>>()) as u64,
+            cadmpeg_core::decode::u64_from_index(
+                3 * std::mem::size_of::<ShadedVertex<FinitePoint3, FiniteVector3>>(),
+            ),
         ),
         (ResourceDimension::CollectionItems, 1),
     ] {
