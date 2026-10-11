@@ -1663,39 +1663,7 @@ fn project_with_topology<'model, 'ctx>(
             .ok_or_else(|| CodecError::malformed("missing SWIFT feature index"))?
             .0)
     };
-    let mut datum_storage = ctx.reserve_scoped(0, "SWIFT datum identity workspace")?;
-    let mut datum_ids = BTreeMap::new();
-    for (reference, entity) in ctx
-        .admit_iter(
-            &root.annotations.references,
-            "scan SWIFT annotation references",
-        )?
-        .zip(ctx.admit_iter(&root.annotations.entities, "scan SWIFT annotation entities")?)
-    {
-        if !(short_class(ctx, &entity.class)? == "GdtDatum"
-            && !suppressed(ctx, entity)?
-            && ctx
-                .get_btree_map(
-                    &entity.strings,
-                    "DatumIdentifier",
-                    "look up SWIFT attribute",
-                )?
-                .is_some_and(|value| !value.is_empty()))
-        {
-            continue;
-        }
-        let Some(id) = datum_storage.with_storage(|| pmi_id_charged(ctx, &reference.id))? else {
-            continue;
-        };
-        datum_storage.with_storage(|| {
-            ctx.insert_btree_map(
-                &mut datum_ids,
-                reference.id.as_str(),
-                id,
-                "index SWIFT datum IDs",
-            )
-        })?;
-    }
+    let datum_ids = DatumIdentities::new(root);
     let mut projected = Vec::new();
     // Positions of the datum systems in `projected`, bucketed by a hash of
     // their references.
@@ -1786,7 +1754,10 @@ fn project_with_topology<'model, 'ctx>(
             )?;
             continue;
         };
-        let disposition = if let Some(tolerance) = project_tolerance(ctx, entity, &datum_ids)? {
+        let (tolerance, tolerance_storage) = ctx.with_scoped_storage("SWIFT tolerance reference workspace", || {
+            project_tolerance(ctx, entity, &datum_ids)
+        })?;
+        let disposition = if let Some(tolerance) = tolerance {
             const SYSTEMS: &str = "match SWIFT datum-system references";
             let Some(targets) = targets(ctx, entity, features(entity)?, &geometry)? else {
                 drop(identity_storage);
@@ -1800,6 +1771,10 @@ fn project_with_topology<'model, 'ctx>(
                 )?;
                 continue;
             };
+            let datum_system = if tolerance.references.as_slice().is_empty() {
+                drop((tolerance.references, tolerance_storage));
+                None
+            } else {
             let bucket = {
                 let _key_storage;
                 let key;
@@ -1841,11 +1816,11 @@ fn project_with_topology<'model, 'ctx>(
                 )?,
                 None => None,
             };
-            let datum_system = if tolerance.references.as_slice().is_empty() {
-                None
-            } else if let Some(existing) = existing_system {
+            if let Some(existing) = existing_system {
+                drop((tolerance.references, tolerance_storage));
                 Some(existing.try_clone_for_decode(ctx, "copy SWIFT PMI identity")?)
             } else {
+                let references = tolerance_storage.commit_value(tolerance.references)?;
                 let system_id = ctx.format_retained(
                     format_args!("{}:datum-system", id.as_str()),
                     "format SWIFT datum-system ID",
@@ -1869,11 +1844,10 @@ fn project_with_topology<'model, 'ctx>(
                     name: None,
                     visible: None,
                     targets: Vec::new(),
-                    definition: PmiDefinition::DatumSystem {
-                        references: tolerance.references,
-                    },
+                    definition: PmiDefinition::DatumSystem { references },
                 });
                 Some(datum_system)
+            }
             };
             let (defined_unit, defined_area_unit, defined_area_second_unit) =
                 defined_area(ctx, entity)?;
@@ -1907,7 +1881,9 @@ fn project_with_topology<'model, 'ctx>(
                 }
             }
             AnnotationDisposition::Projected
-        } else if let Some(annotation) = project_dimension(
+        } else {
+            drop(tolerance_storage);
+            if let Some(annotation) = project_dimension(
             ctx,
             id,
             &counterbores,
@@ -1923,6 +1899,7 @@ fn project_with_topology<'model, 'ctx>(
         } else {
             drop(identity_storage);
             missing_projection(ctx, entity)?
+            }
         };
         record_projection(
             ctx,
@@ -2000,16 +1977,75 @@ fn project_datum<'index, 'feature: 'index>(
     }))
 }
 
+/// Datum identities built once at the first reference lookup.
+struct DatumIdentities<'root, 'ctx> {
+    root: &'root Entity,
+    entries: OnceCell<(BTreeMap<&'root str, PmiId>, cadmpeg_core::decode::ScopedReservation<'ctx>)>,
+}
+
+impl<'root, 'ctx> DatumIdentities<'root, 'ctx> {
+    fn new(root: &'root Entity) -> Self {
+        Self { root, entries: OnceCell::new() }
+    }
+
+    fn lookup(
+        &self,
+        ctx: &'ctx DecodeContext<'_>,
+        source_id: &str,
+    ) -> Result<Option<&PmiId>, CodecError> {
+        if self.entries.get().is_none() {
+            let entries = ctx.with_scoped_storage("SWIFT datum identity workspace", || -> Result<_, CodecError> {
+                let root = self.root;
+                let mut datum_ids = BTreeMap::new();
+    for (reference, entity) in ctx
+        .admit_iter(
+            &root.annotations.references,
+            "scan SWIFT annotation references",
+        )?
+        .zip(ctx.admit_iter(&root.annotations.entities, "scan SWIFT annotation entities")?)
+    {
+        if !(short_class(ctx, &entity.class)? == "GdtDatum"
+            && !suppressed(ctx, entity)?
+            && ctx
+                .get_btree_map(
+                    &entity.strings,
+                    "DatumIdentifier",
+                    "look up SWIFT attribute",
+                )?
+                .is_some_and(|value| !value.is_empty()))
+        {
+            continue;
+        }
+        let Some(id) = pmi_id_charged(ctx, &reference.id)? else {
+            continue;
+        };
+        ctx.insert_btree_map(
+                &mut datum_ids,
+                reference.id.as_str(),
+                id,
+                "index SWIFT datum IDs",
+            )?;
+    }
+
+                Ok(datum_ids)
+            })?;
+            self.entries.set(entries).map_err(|_| CodecError::malformed("SWIFT datum identities initialized twice"))?;
+        }
+        let (entries, _) = self.entries.get().ok_or_else(|| CodecError::malformed("missing SWIFT datum identities"))?;
+        ctx.get_btree_map(entries, source_id, "look up SLDPRT ordered key")
+    }
+}
+
 struct ProjectedTolerance {
     kind: GeometricToleranceKind,
     magnitude: cadmpeg_ir::pmi::PmiMagnitude,
     references: cadmpeg_ir::pmi::DatumReferences,
 }
 
-fn project_tolerance(
-    ctx: &DecodeContext<'_>,
+fn project_tolerance<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     entity: &Entity,
-    datum_ids: &BTreeMap<&str, PmiId>,
+    datum_ids: &DatumIdentities<'_, 'ctx>,
 ) -> Result<Option<ProjectedTolerance>, CodecError> {
     let Some(kind) = tolerance_kind(short_class(ctx, &entity.class)?) else {
         return Ok(None);
@@ -4095,12 +4131,12 @@ const PRIMARY_DATUM_PRECEDENCE: NonZeroU32 = NonZeroU32::MIN;
 const SECONDARY_DATUM_PRECEDENCE: Option<NonZeroU32> = NonZeroU32::new(2);
 const TERTIARY_DATUM_PRECEDENCE: Option<NonZeroU32> = NonZeroU32::new(3);
 
-fn datum_references(
-    ctx: &DecodeContext<'_>,
+fn datum_references<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     entity: &Entity,
-    datum_ids: &BTreeMap<&str, PmiId>,
+    datum_ids: &DatumIdentities<'_, 'ctx>,
 ) -> Result<Vec<DatumReference>, CodecError> {
-    let mut result = Vec::new();
+    let mut result: Vec<DatumReference> = Vec::new();
     for (name, precedence) in [
         ("PrimaryDatums", Some(PRIMARY_DATUM_PRECEDENCE)),
         ("SecondaryDatums", SECONDARY_DATUM_PRECEDENCE),
@@ -4112,25 +4148,24 @@ fn datum_references(
         let Some(collection) = unique_related(ctx, entity, name)? else {
             continue;
         };
-        let applied_count = ctx
-            .admit_iter(
-                &collection.entity.related[..],
-                "scan SLDPRT datum_references values",
-            )?
-            .filter(|object| object.class.ends_with(".GdtAppliedDatum"))
-            .count();
+        let first_result = result.len();
+        let mut had_applied = false;
+        let mut common_group = None;
         for datum in ctx
             .admit_iter(&collection.entity.related, "project SWIFT datum references")?
             .filter(|object| object.class.ends_with(".GdtAppliedDatum"))
         {
+            if had_applied && common_group.is_none() {
+                common_group = Some(precedence.get());
+                if let Some(first) = result.get_mut(first_result) {
+                    first.common_group = common_group;
+                }
+            }
+            had_applied = true;
             let [reference] = datum.entity.annotations.references.as_slice() else {
                 continue;
             };
-            let Some(id) = ctx.get_btree_map(
-                datum_ids,
-                reference.id.as_str(),
-                "look up SLDPRT ordered key",
-            )?
+            let Some(id) = datum_ids.lookup(ctx, reference.id.as_str())?
             else {
                 continue;
             };
@@ -4138,7 +4173,7 @@ fn datum_references(
             result.push(DatumReference {
                 datum: id.try_clone_for_decode(ctx, "copy SWIFT PMI identity")?,
                 precedence,
-                common_group: (applied_count > 1).then_some(precedence.get()),
+                common_group,
                 modifiers: integer_modifier(
                     ctx.get_btree_map(
                         &datum.entity.integers,

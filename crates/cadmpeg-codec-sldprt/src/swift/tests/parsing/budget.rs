@@ -1,6 +1,6 @@
-use super::super::{dimension_nominal, entity, length, reference};
+use super::super::{dimension_nominal, entity, length, reference, semantic_root};
 use super::encode_entity;
-use crate::swift::{annotations, parse_unique_root, pmi_id, project_lower_profile_tier, Entity};
+use crate::swift::{annotations, parse_unique_root, pmi_id, project_lower_profile_tier, Entity, RelatedObject};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
@@ -270,4 +270,139 @@ fn swift_rejected_targets_release_partial_output_and_skip_datum_copy() {
     drop(reuse);
     drop(geometry);
     ctx.finish_session().unwrap();
+}
+
+#[test]
+fn swift_datum_only_roster_skips_reference_identity_index() {
+    let mut root = Entity { class: crate::swift::ROOT_CLASS.into(), ..Entity::default() };
+    for ordinal in 0..64 {
+        let mut datum = entity("GdtDatum");
+        datum.strings.insert("DatumIdentifier".into(), "A".into());
+        root.annotations.references.push(reference(&format!("A{ordinal}"), "GdtDatum"));
+        root.annotations.entities.push(datum);
+    }
+    let mut tolerance = entity("GdtFlatness");
+    tolerance.doubles.insert("Tolerance".into(), 0.25);
+    root.annotations.references.push(reference("A80", "GdtFlatness"));
+    root.annotations.entities.push(tolerance);
+    for operation in ["index SWIFT datum IDs", "match SWIFT datum-system references"] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits, operation, None,
+        );
+        let projection = crate::swift::project_with_topology(&ctx, &root, None,
+            &crate::swift::RenderedDimensions::Borrowed(&[]), None, None).unwrap();
+        assert_eq!(projection.annotations.len(), 65);
+        assert_eq!(projection.annotations.iter().filter(|annotation| matches!(annotation.definition,
+            cadmpeg_ir::pmi::PmiDefinition::Datum { .. })).count(), 64);
+        assert_eq!(projection.annotations.iter().filter(|annotation| matches!(annotation.definition,
+            cadmpeg_ir::pmi::PmiDefinition::GeometricTolerance { .. })).count(), 1);
+        drop((projection, probe));
+        ctx.finish_session().unwrap();
+    }
+}
+
+#[test]
+fn swift_datum_identity_index_is_admitted_once_and_releases_scratch() {
+    let root = semantic_root();
+    crate::test_support::work_refusal_at("index SWIFT datum IDs", |ctx| {
+        let identities = crate::swift::DatumIdentities::new(&root);
+        identities.lookup(ctx, "A10").map(|_| ())
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::MAX;
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 1024 * 1024;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let identities = crate::swift::DatumIdentities::new(&root);
+    assert_eq!(identities.lookup(&ctx, "A10").unwrap(), Some(&pmi_id("A10").unwrap()));
+    let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits, "index SWIFT datum IDs", None,
+    );
+    assert_eq!(identities.lookup(&ctx, "A10").unwrap(), Some(&pmi_id("A10").unwrap()));
+    assert!(identities.lookup(&ctx, "A20").unwrap().is_none());
+    drop((identities, probe));
+    let reuse = ctx.reserve_scoped(policy.limits.max_materialized_bytes, "reuse datum identity storage").unwrap();
+    drop(reuse);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn swift_datum_grouping_counts_unresolved_applied_records_in_one_pass() {
+    let root = semantic_root();
+    for (class, expected_group) in [("GdtUnrecognized", None), ("GdtAppliedDatum", Some(1))] {
+        let mut tolerance = root.annotations.entities.get(1).unwrap().clone();
+        let collection = tolerance.related.first_mut().unwrap();
+        assert_eq!(collection.name, "PrimaryDatums");
+        let extra = entity(class);
+        collection.entity.related.push(RelatedObject {
+            name: "SubAnnotation1".into(), class: extra.class.clone(), entity: extra,
+        });
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::MAX;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let identities = crate::swift::DatumIdentities::new(&root);
+        let probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits, "scan SLDPRT datum_references values", None,
+        );
+        let references = crate::swift::datum_references(&ctx, &tolerance, &identities).unwrap();
+        assert_eq!(references.len(), 1);
+        let first = references.first().unwrap();
+        assert_eq!(first.datum, pmi_id("A10").unwrap());
+        assert_eq!(first.precedence.get(), 1);
+        assert_eq!(first.common_group, expected_group);
+        drop((identities, probe));
+        ctx.finish_session().unwrap();
+    }
+}
+
+#[test]
+fn swift_reused_datum_system_drops_temporary_reference_storage() {
+    use std::cell::Cell;
+    let retained = |count: usize| {
+        let source = semantic_root();
+        let mut root = Entity { class: crate::swift::ROOT_CLASS.into(), ..Entity::default() };
+        root.annotations.references.push(reference("A10", "GdtDatum"));
+        root.annotations.entities.push(source.annotations.entities.first().unwrap().clone());
+        let mut tolerance = entity("GdtPosition");
+        tolerance.doubles.insert("Tolerance".into(), 0.25);
+        tolerance.related = source.annotations.entities.get(1).unwrap().related.clone();
+        for id in ["A20", "A21"].into_iter().take(count) {
+            root.annotations.references.push(reference(id, "GdtPosition"));
+            root.annotations.entities.push(tolerance.clone());
+        }
+        let arena = DecodeArena::new();
+        let capacity = Cell::new(0);
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes, "measure SWIFT tolerance output storage", |cap| {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = cap;
+                policy.limits.max_work_units = u64::MAX;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+                let projection = crate::swift::project_with_topology(&ctx, &root, None,
+                    &crate::swift::RenderedDimensions::Borrowed(&[]), None, None)?;
+                assert_eq!(projection.annotations.len(), count.checked_add(2).unwrap());
+                assert_eq!(projection.annotations.iter().filter(|annotation| matches!(annotation.definition,
+                    cadmpeg_ir::pmi::PmiDefinition::DatumSystem { .. })).count(), 1);
+                capacity.set(projection.annotations.capacity());
+                let measurement = ctx.copy_retained_text("x", "measure SWIFT tolerance output storage");
+                drop(projection);
+                measurement
+            });
+        let CodecError::ResourceLimit(limit) = error else { panic!("tolerance output storage measurement"); };
+        (limit.used, capacity.get())
+    };
+    let (first, first_capacity) = retained(1);
+    let (second, second_capacity) = retained(2);
+    assert_eq!(first_capacity, second_capacity);
+    let extra_id = pmi_id("A21").unwrap();
+    let system_id = format!("{}:datum-system", pmi_id("A20").unwrap().as_str());
+    let expected = u64::try_from(extra_id.as_str().len().checked_add(system_id.len()).unwrap()).unwrap();
+    assert_eq!(second.checked_sub(first).unwrap(), expected,
+        "the extra tolerance retains its two output identities, not a discarded reference vector");
 }
