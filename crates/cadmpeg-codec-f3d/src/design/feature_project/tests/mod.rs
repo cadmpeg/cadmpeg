@@ -8,19 +8,14 @@
 
 mod body_selection;
 mod boundary_fill_limits;
-mod coil;
 mod combine_limits;
 mod direct_face_limits;
 mod dispatcher;
-mod extrude;
-mod extrude_limits;
 mod hole_limits;
 mod loft_limits;
-mod mirror;
 mod native_scope_definition_limits;
 mod parameter_cycles;
 mod parameters;
-mod pattern;
 mod pipe;
 mod replace_face;
 mod query_admission;
@@ -29,7 +24,7 @@ mod scope_properties_limits;
 mod sheet_metal;
 mod simple_native_limits;
 mod sketch_binding_limits;
-mod spatial_profiles;
+mod sketch_inputs;
 mod split;
 mod surface;
 mod surface_patch_storage;
