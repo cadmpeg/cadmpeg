@@ -3,7 +3,6 @@
 
 use super::{orders::Orders, record_finding};
 use crate::document::CadIr;
-use crate::index::identities::BorrowedIdentities;
 use crate::index::ModelIndex;
 use crate::presentation::PresentationItem;
 use crate::report::{
@@ -80,128 +79,33 @@ pub(super) fn check_presentation(
         }
     }
 
-    let bodies = BorrowedIdentities::build(ctx, |add| {
-        for item in ctx.admit_iter(
-            ir.model.bodies.as_slice(),
-            "presentation body identity source scan",
-        )? {
-            add(item.id.as_str(), ())?;
-        }
-        Ok(())
-    })?;
-    let faces = BorrowedIdentities::build(ctx, |add| {
-        for item in ctx.admit_iter(
-            ir.model.faces.as_slice(),
-            "presentation face identity source scan",
-        )? {
-            add(item.id.as_str(), ())?;
-        }
-        Ok(())
-    })?;
-    let edges = BorrowedIdentities::build(ctx, |add| {
-        for item in ctx.admit_iter(
-            ir.model.edges.as_slice(),
-            "presentation edge identity source scan",
-        )? {
-            add(item.id.as_str(), ())?;
-        }
-        Ok(())
-    })?;
-    let vertices = BorrowedIdentities::build(ctx, |add| {
-        for item in ctx.admit_iter(
-            ir.model.vertices.as_slice(),
-            "presentation vertex identity source scan",
-        )? {
-            add(item.id.as_str(), ())?;
-        }
-        Ok(())
-    })?;
-    let points = BorrowedIdentities::build(ctx, |add| {
-        for item in ctx.admit_iter(
-            ir.model.points.as_slice(),
-            "presentation point identity source scan",
-        )? {
-            add(item.id.as_str(), ())?;
-        }
-        Ok(())
-    })?;
-    let curves = BorrowedIdentities::build(ctx, |add| {
-        for item in ctx.admit_iter(
-            ir.model.curves.as_slice(),
-            "presentation curve identity source scan",
-        )? {
-            add(item.id.as_str(), ())?;
-        }
-        Ok(())
-    })?;
-    let surfaces = BorrowedIdentities::build(ctx, |add| {
-        for item in ctx.admit_iter(
-            ir.model.surfaces.as_slice(),
-            "presentation surface identity source scan",
-        )? {
-            add(item.id.as_str(), ())?;
-        }
-        Ok(())
-    })?;
-    let products = BorrowedIdentities::build(ctx, |add| {
-        for item in ctx.admit_iter(
-            ir.model.product_definitions.as_slice(),
-            "presentation product definition identity source scan",
-        )? {
-            add(item.id.as_str(), ())?;
-        }
-        Ok(())
-    })?;
-    let occurrences = BorrowedIdentities::build(ctx, |add| {
-        for item in ctx.admit_iter(
-            ir.model.occurrences.as_slice(),
-            "presentation occurrence identity source scan",
-        )? {
-            add(item.id.as_str(), ())?;
-        }
-        Ok(())
-    })?;
-    let pmi = BorrowedIdentities::build(ctx, |add| {
-        for item in ctx.admit_iter(
-            ir.model.pmi.as_slice(),
-            "presentation PMI identity source scan",
-        )? {
-            add(item.id.as_str(), ())?;
-        }
-        Ok(())
-    })?;
-    let tessellations = BorrowedIdentities::build(ctx, |add| {
-        for item in ctx.admit_iter(
-            ir.model.tessellations.as_slice(),
-            "presentation tessellation identity source scan",
-        )? {
-            add(item.id.as_str(), ())?;
-        }
-        Ok(())
-    })?;
     for layer in &ir.model.presentation_layers {
         ctx.charge_work(1, "presentation layer scan")?;
         for item in &layer.items {
             ctx.charge_work(1, "presentation layer item scan")?;
             let resolved = match item {
-                PresentationItem::Body { body } => bodies.contains(ctx, body.as_str())?,
-                PresentationItem::Face { face } => faces.contains(ctx, face.as_str())?,
-                PresentationItem::Edge { edge } => edges.contains(ctx, edge.as_str())?,
-                PresentationItem::Vertex { vertex } => vertices.contains(ctx, vertex.as_str())?,
-                PresentationItem::Point { point } => points.contains(ctx, point.as_str())?,
-                PresentationItem::Curve { curve } => curves.contains(ctx, curve.as_str())?,
+                PresentationItem::Body { body } => all_ids.bodies(body.as_str(), ctx)?.is_some(),
+                PresentationItem::Face { face } => all_ids.faces(face.as_str(), ctx)?.is_some(),
+                PresentationItem::Edge { edge } => all_ids.edges(edge.as_str(), ctx)?.is_some(),
+                PresentationItem::Vertex { vertex } => {
+                    all_ids.vertices(vertex.as_str(), ctx)?.is_some()
+                }
+                PresentationItem::Point { point } => all_ids.points(point.as_str(), ctx)?.is_some(),
+                PresentationItem::Curve { curve } => all_ids.curves(curve.as_str(), ctx)?.is_some(),
                 PresentationItem::Surface { surface } => {
-                    surfaces.contains(ctx, surface.as_str())?
+                    all_ids.surfaces(surface.as_str(), ctx)?.is_some()
                 }
-                PresentationItem::Product { product } => {
-                    products.contains(ctx, product.as_str())?
-                }
+                PresentationItem::Product { product } => all_ids
+                    .product_definitions(product.as_str(), ctx)?
+                    .is_some(),
                 PresentationItem::Occurrence { occurrence } => {
-                    occurrences.contains(ctx, occurrence.as_str())?
+                    all_ids.occurrences(occurrence.as_str(), ctx)?.is_some()
                 }
-                PresentationItem::Pmi { annotation } => pmi.contains(ctx, annotation.as_str())?,
+                PresentationItem::Pmi { annotation } => {
+                    all_ids.pmi(annotation.as_str(), ctx)?.is_some()
+                }
                 PresentationItem::Tessellation { tessellation } => {
-                    tessellations.contains(ctx, tessellation.as_str())?
+                    all_ids.tessellations(tessellation.as_str(), ctx)?.is_some()
                 }
                 PresentationItem::Source { .. } => true,
             };
@@ -223,55 +127,68 @@ pub(super) fn check_presentation(
 #[cfg(test)]
 mod tests {
     use crate::index::ModelIndex;
-    #[test]
-    fn presentation_typed_indexes_preserve_resource_refusals_and_release_storage() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-        use cadmpeg_core::CodecError;
+    use crate::presentation::{PresentationItem, PresentationLayer};
+
+    fn layered_ir() -> crate::CadIr {
         let mut ir = crate::CadIr::empty();
         ir.model.points.push(crate::topology::Point::new(
             "test:model:point#source".try_into().unwrap(),
             crate::features::FinitePoint3::ZERO,
             None,
         ));
-        let ids = ModelIndex::build(&ir, crate::index::StandardIndex);
-        for dimension in [
-            ResourceDimension::MaterializedBytes,
-            ResourceDimension::CollectionItems,
-            ResourceDimension::WorkUnits,
-        ] {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            match dimension {
-                ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
-                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-                ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
-                _ => unreachable!(),
-            }
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let mut findings = Vec::new();
-            let Err(CodecError::ResourceLimit(limit)) =
-                super::check_presentation(&ctx, &ir, &ids, &mut findings)
-            else {
-                panic!("presentation index must refuse");
-            };
-            assert_eq!(limit.dimension, dimension);
-            assert!(findings.is_empty());
-            assert!(
-                matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
-            );
-        }
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        policy.limits.max_materialized_bytes = 8192;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        ir.model.presentation_layers.push(PresentationLayer {
+            id: crate::ids::LayerId::mint("test:presentation:layer#items").unwrap(),
+            name: "items".into(),
+            description: None,
+            visible: None,
+            items: vec![
+                PresentationItem::Point {
+                    point: "test:model:point#source".try_into().unwrap(),
+                },
+                PresentationItem::Face {
+                    face: "test:model:point#source".try_into().unwrap(),
+                },
+            ],
+        });
+        ir
+    }
+
+    #[test]
+    fn presentation_items_resolve_in_their_own_arena() {
+        let ir = layered_ir();
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let ids = ModelIndex::build(&ir, &ctx).unwrap();
         let mut findings = Vec::new();
         super::check_presentation(&ctx, &ir, &ids, &mut findings).unwrap();
-        assert!(findings.is_empty());
-        drop(
-            ctx.reserve_scoped(8192, "presentation indexes released")
-                .unwrap(),
+        // The point resolves; the same identity named as a face does not.
+        assert_eq!(findings.len(), 1);
+        assert_eq!(
+            findings[0].entity.as_deref(),
+            Some("test:presentation:layer#items")
         );
-        ctx.finish_session().unwrap();
+    }
+
+    #[test]
+    fn presentation_item_lookup_preserves_work_refusal() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        let ir = layered_ir();
+        let service = cadmpeg_test_support::service_decode_context();
+        let ids = ModelIndex::build(&ir, &service).unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut findings = Vec::new();
+        let Err(CodecError::ResourceLimit(limit)) =
+            super::check_presentation(&ctx, &ir, &ids, &mut findings)
+        else {
+            panic!("presentation lookup must refuse");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert!(findings.is_empty());
+        assert!(
+            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
+        );
     }
 }

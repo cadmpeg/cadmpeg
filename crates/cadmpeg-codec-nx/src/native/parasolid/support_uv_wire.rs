@@ -65,7 +65,7 @@ impl From<ParasolidSupportUvRecord> for SupportUvWire {
 impl TryFrom<SupportUvWire> for ParasolidSupportUvRecord {
     type Error = &'static str;
     fn try_from(wire: SupportUvWire) -> Result<Self, Self::Error> {
-        let values = SupportUvValues::new(SupportUvPacking::try_from(wire.marker)?, wire.values)?;
+        let values = SupportUvValues::new(SupportUvPacking::try_from(wire.marker)?, &wire.values)?;
         if wire.count != values.count() {
             return Err("count: does not match values length");
         }

@@ -66,5 +66,23 @@ pub fn equal<P: TextWork>(
     Ok(compare_bytes(ctx, first, second, operation)? == Ordering::Equal)
 }
 
+/// Sort values stably by identity text, leaving values already in order
+/// unsorted.
+///
+/// Arenas are usually stored in identity order already, so the common case
+/// costs core's charged neighbour pass, and an out-of-order input pays for that
+/// pass and the charged sort.
+pub(crate) fn stable_sort_by_identity<T>(
+    ctx: &DecodeContext<'_>,
+    values: &mut [T],
+    identity: impl Fn(&T) -> &str,
+    operation: &'static str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    if !ctx.is_sorted_by(values, &identity, Ord::cmp, operation)? {
+        ctx.stable_sort_by(values, identity, Ord::cmp, operation)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests;

@@ -113,33 +113,11 @@ fn set_limit(policy: &mut DecodePolicy, dimension: ResourceDimension, limit: u64
 
 fn assert_copy_limit(dimension: ResourceDimension) {
     copy_curves(&DecodePolicy::service()).unwrap();
-    let mut upper = 1;
-    let mut policy = DecodePolicy::service();
-    loop {
-        set_limit(&mut policy, dimension, upper);
-        if copy_curves(&policy).is_ok() {
-            break;
-        }
-        upper *= 2;
-        assert!(upper <= 65536);
-    }
-    let mut lower = 0;
-    while lower < upper {
-        let middle = lower + (upper - lower) / 2;
-        set_limit(&mut policy, dimension, middle);
-        if copy_curves(&policy).is_ok() {
-            upper = middle;
-        } else {
-            lower = middle + 1;
-        }
-    }
-    assert!(upper > 0);
-    set_limit(&mut policy, dimension, upper);
-    copy_curves(&policy).unwrap();
-    set_limit(&mut policy, dimension, upper - 1);
-    assert!(
-        matches!(copy_curves(&policy), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
-    );
+    cadmpeg_test_support::refusal::resource_limit_at(dimension, "copy test curve", |cap| {
+        let mut policy = DecodePolicy::service();
+        set_limit(&mut policy, dimension, cap);
+        copy_curves(&policy)
+    });
 }
 
 #[test]

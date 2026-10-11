@@ -4,7 +4,7 @@
 use cadmpeg_ir::ids::Identity;
 
 use super::frame::FiniteFrame;
-use super::LinkTarget;
+use super::{LinkTarget, PropertyRecord};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -32,10 +32,16 @@ impl PairedJointFamily {
 
 /// A checked joint parameter value that retains its source spelling.
 #[derive(Debug, Clone, PartialEq)]
-enum JointParameter {
-    Scalar { raw: String, value: FiniteReal },
-    Boolean { raw: String, value: bool },
-    Native { raw: String },
+pub(crate) struct JointParameter {
+    raw: String,
+    value: JointParameterValue,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum JointParameterValue {
+    Scalar(FiniteReal),
+    Boolean(bool),
+    Native,
 }
 
 enum ParameterKind {
@@ -56,29 +62,93 @@ fn parameter_kind(name: &str) -> ParameterKind {
 
 impl JointParameter {
     fn from_raw(name: &str, raw: String) -> Result<Self, String> {
-        match parameter_kind(name) {
+        let value = match parameter_kind(name) {
             ParameterKind::Scalar => {
                 let value = raw
                     .parse::<f64>()
-                    .map_err(|_| format!("joint parameter {name} has an invalid value {raw:?}"))?;
-                let value = FiniteReal::new(value).ok_or_else(|| {
-                    format!("joint parameter {name} has an invalid value {raw:?}")
-                })?;
-                Ok(Self::Scalar { raw, value })
+                    .ok()
+                    .and_then(FiniteReal::new)
+                    .ok_or_else(|| {
+                        format!("joint parameter {name} has an invalid value {raw:?}")
+                    })?;
+                JointParameterValue::Scalar(value)
             }
-            ParameterKind::Boolean => Ok(Self::Boolean {
-                value: raw == "true",
-                raw,
-            }),
-            ParameterKind::Native => Ok(Self::Native { raw }),
-        }
+            ParameterKind::Boolean => JointParameterValue::Boolean(raw == "true"),
+            ParameterKind::Native => JointParameterValue::Native,
+        };
+        Ok(Self { raw, value })
     }
 
     fn raw(&self) -> &str {
-        match self {
-            Self::Scalar { raw, .. } | Self::Boolean { raw, .. } | Self::Native { raw } => raw,
-        }
+        &self.raw
     }
+}
+
+pub(crate) fn parameter_from_property(
+    ctx: &DecodeContext<'_>,
+    property: &PropertyRecord,
+) -> Result<Option<JointParameter>, CodecError> {
+    let (expected_type, expected_tag) = match property.name.as_str() {
+        "Angle" | "AngleMin" | "AngleMax" => ("App::PropertyAngle", "Float"),
+        "Distance" | "Distance2" | "LengthMin" | "LengthMax" => ("App::PropertyLength", "Float"),
+        "EnableAngleMin" | "EnableAngleMax" | "EnableLengthMin" | "EnableLengthMax" | "Detach1"
+        | "Detach2" | "Suppressed" => ("App::PropertyBool", "Bool"),
+        _ => return Ok(None),
+    };
+    if property.type_name != expected_type {
+        return Err(crate::resource::malformed_charged(
+            ctx,
+            format_args!(
+                "joint parameter property {} has runtime type {}, expected {expected_type}",
+                property.id, property.type_name
+            ),
+            "fcstd joint diagnostic",
+        ));
+    }
+    let [value] = property.values() else {
+        return Err(crate::resource::malformed_charged(
+            ctx,
+            format_args!(
+                "joint parameter property {} requires one {expected_tag} value",
+                property.id
+            ),
+            "fcstd joint diagnostic",
+        ));
+    };
+    if value.tag != expected_tag {
+        return Err(crate::resource::malformed_charged(
+            ctx,
+            format_args!(
+                "joint parameter property {} requires a {expected_tag} value",
+                property.id
+            ),
+            "fcstd joint diagnostic",
+        ));
+    }
+    let value = ctx
+        .get_btree_map(&value.attributes, "value", "fcstd joint scalar attribute")?
+        .ok_or_else(|| {
+            crate::resource::malformed_charged(
+                ctx,
+                format_args!("joint parameter property {} has no value", property.id),
+                "fcstd joint diagnostic",
+            )
+        })?;
+    let checked = if expected_tag == "Float" {
+        let checked = ctx.parse_text::<f64>(value, "fcstd joint scalar parse")?
+            .ok().and_then(FiniteReal::new).ok_or_else(|| {
+                crate::resource::malformed_charged(ctx,
+                    format_args!("joint parameter property {}: joint parameter {} has an invalid value {value:?}", property.id, property.name),
+                    "fcstd joint diagnostic")
+            })?;
+        JointParameterValue::Scalar(checked)
+    } else {
+        JointParameterValue::Boolean(value == "true")
+    };
+    Ok(Some(JointParameter {
+        raw: ctx.copy_retained_text(value, "fcstd joint scalar parameter")?,
+        value: checked,
+    }))
 }
 
 /// Checked joint parameters with lossless source text.
@@ -86,47 +156,20 @@ impl JointParameter {
 pub(crate) struct JointParameters(BTreeMap<String, JointParameter>);
 
 impl JointParameters {
-    fn from_raw_charged(
+    pub(crate) fn insert(
+        &mut self,
         ctx: &DecodeContext<'_>,
-        parameters: BTreeMap<String, String>,
-        joint_id: &str,
-    ) -> Result<Self, CodecError> {
-        let mut checked = BTreeMap::new();
-        for (name, raw) in parameters {
-            let parameter = match parameter_kind(&name) {
-                ParameterKind::Scalar => {
-                    let value = raw
-                        .parse::<f64>()
-                        .ok()
-                        .and_then(FiniteReal::new)
-                        .ok_or_else(|| {
-                            crate::resource::malformed_charged(
-                                ctx,
-                                format_args!(
-                            "joint {joint_id}: joint parameter {name} has an invalid value {raw:?}"
-                        ),
-                                "fcstd joint checked parameter diagnostic",
-                            )
-                        })?;
-                    JointParameter::Scalar { raw, value }
-                }
-                ParameterKind::Boolean => JointParameter::Boolean {
-                    value: raw == "true",
-                    raw,
-                },
-                ParameterKind::Native => JointParameter::Native { raw },
-            };
-            ctx.insert_btree_map(
-                &mut checked,
-                name,
-                parameter,
-                "fcstd joint checked parameters",
-            )?;
-        }
-        Ok(Self(checked))
+        name: String,
+        value: JointParameter,
+    ) -> Result<(), CodecError> {
+        ctx.insert_btree_map(&mut self.0, name, value, "fcstd joint parameters")?;
+        Ok(())
     }
 
-    fn from_raw(parameters: BTreeMap<String, String>, joint_id: &str) -> Result<Self, String> {
+    pub(crate) fn from_raw(
+        parameters: BTreeMap<String, String>,
+        joint_id: &str,
+    ) -> Result<Self, String> {
         parameters
             .into_iter()
             .map(|(name, raw)| {
@@ -143,18 +186,36 @@ impl JointParameters {
         self.0.get(name).map(JointParameter::raw)
     }
 
-    pub(crate) fn bool_value(&self, name: &str) -> Option<bool> {
-        match self.0.get(name) {
-            Some(JointParameter::Boolean { value, .. }) => Some(*value),
-            _ => None,
-        }
+    pub(crate) fn bool_value(
+        &self,
+        ctx: &DecodeContext<'_>,
+        name: &str,
+    ) -> Result<Option<bool>, CodecError> {
+        Ok(
+            match ctx.get_btree_map(&self.0, name, "fcstd joint boolean lookup")? {
+                Some(JointParameter {
+                    value: JointParameterValue::Boolean(value),
+                    ..
+                }) => Some(*value),
+                _ => None,
+            },
+        )
     }
 
-    pub(crate) fn scalar_value(&self, name: &str) -> Option<FiniteReal> {
-        match self.0.get(name) {
-            Some(JointParameter::Scalar { value, .. }) => Some(*value),
-            _ => None,
-        }
+    pub(crate) fn scalar_value(
+        &self,
+        ctx: &DecodeContext<'_>,
+        name: &str,
+    ) -> Result<Option<FiniteReal>, CodecError> {
+        Ok(
+            match ctx.get_btree_map(&self.0, name, "fcstd joint scalar lookup")? {
+                Some(JointParameter {
+                    value: JointParameterValue::Scalar(value),
+                    ..
+                }) => Some(*value),
+                _ => None,
+            },
+        )
     }
 }
 
@@ -203,15 +264,32 @@ pub(crate) struct JointConnectorRecord {
 }
 
 fn admit_joint_identities(id: String, object: String) -> Result<(Identity, Identity), String> {
-    let id = Identity::new(id).map_err(|_| "joint id is invalid".to_owned())?;
-    let object = Identity::new(object).map_err(|_| "joint object is invalid".to_owned())?;
+    match admit_joint_identities_with(id, object, |_, _| Ok::<(), std::convert::Infallible>(())) {
+        Ok(result) => result.map_err(str::to_owned),
+        Err(never) => match never {},
+    }
+}
+
+fn admit_joint_identities_with<E>(
+    id: String,
+    object: String,
+    mut admit: impl FnMut(usize, &'static str) -> Result<(), E>,
+) -> Result<Result<(Identity, Identity), &'static str>, E> {
+    admit(id.len(), "FCStd joint identity admission")?;
+    let Ok(id) = Identity::new(id) else {
+        return Ok(Err("joint id is invalid"));
+    };
+    admit(object.len(), "FCStd joint identity admission")?;
+    let Ok(object) = Identity::new(object) else {
+        return Ok(Err("joint object is invalid"));
+    };
     if !id.as_str().starts_with("fcstd:native:joint#") {
-        return Err("joint id must name an FCStd native joint".to_owned());
+        return Ok(Err("joint id must name an FCStd native joint"));
     }
     if !object.as_str().starts_with("fcstd:native:object#") {
-        return Err("joint object must name an FCStd native object".to_owned());
+        return Ok(Err("joint object must name an FCStd native object"));
     }
-    Ok((id, object))
+    Ok(Ok((id, object)))
 }
 
 impl JointRecord {
@@ -220,19 +298,12 @@ impl JointRecord {
         id: String,
         object: String,
         body: JointBody,
-        parameters: BTreeMap<String, String>,
+        parameters: JointParameters,
     ) -> Result<Self, CodecError> {
-        // Identity admission scans separators, key bytes, whitespace and namespace.
-        for value in [&id, &object] {
-            let work = cadmpeg_core::decode::u64_from_index(value.len())
-                .checked_mul(4)
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("FCStd joint identity admission", u64::MAX, u64::MAX)
-                })?;
-            ctx.charge_work(work, "FCStd joint identity admission")?;
-        }
-        let (id, object) = admit_joint_identities(id, object).map_err(CodecError::Malformed)?;
-        let parameters = JointParameters::from_raw_charged(ctx, parameters, id.as_str())?;
+        let (id, object) = admit_joint_identities_with(id, object, |length, operation| {
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)
+        })?
+        .map_err(CodecError::malformed)?;
         Ok(Self {
             id,
             object,
@@ -462,11 +533,49 @@ impl TryFrom<JointRecordWire> for JointRecord {
 
 #[cfg(test)]
 mod tests {
+    mod residual_admission;
+
     use std::collections::BTreeMap;
 
     use cadmpeg_ir::scalar::FiniteReal;
 
     use super::{JointBody, JointConnectorRecord, JointRecord, JointRecordWire, PairedJointFamily};
+
+    #[test]
+    fn checked_joint_parameter_lookups_refuse_at_work_boundary() {
+        let record = crate::test_support::with_service_context(&[], |ctx| {
+            JointRecord::try_new(
+                ctx,
+                "fcstd:native:joint#Joint".into(),
+                "fcstd:native:object#Joint".into(),
+                JointBody::Grounded {
+                    reference: None,
+                    placement: super::FiniteFrame::default(),
+                },
+                super::JointParameters::from_raw(
+                    BTreeMap::from([
+                        ("Angle".into(), "15.5".into()),
+                        ("Suppressed".into(), "true".into()),
+                    ]),
+                    "fcstd:native:joint#Joint",
+                )
+                .expect("checked values"),
+            )
+            .expect("checked parameters")
+        });
+        crate::test_support::refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            &[],
+            "fcstd joint scalar lookup",
+            |ctx| record.parameters().scalar_value(ctx, "Angle"),
+        );
+        crate::test_support::refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            &[],
+            "fcstd joint boolean lookup",
+            |ctx| record.parameters().bool_value(ctx, "Suppressed"),
+        );
+    }
 
     #[test]
     fn joint_identity_admission_rejects_invalid_joint_and_object_ids() {
@@ -487,7 +596,7 @@ mod tests {
                             reference: None,
                             placement: super::FiniteFrame::default()
                         },
-                        BTreeMap::new()
+                        super::JointParameters::default()
                     ),
                     Err(cadmpeg_core::CodecError::Malformed(_))
                 ));
@@ -499,101 +608,66 @@ mod tests {
 
     #[test]
     fn joint_identity_grammar_scans_refuse_at_small_work_allowance() {
-        crate::test_support::with_service_context(&[], |ctx| {
-            ctx.charge_work(
-                ctx.policy().limits.max_work_units - 60,
-                "reserve joint identity work",
-            )
-            .expect("leave a small allowance");
-            let error = JointRecord::try_new(
-                ctx,
-                "fcstd:native:joint#Joint".to_owned(),
-                "fcstd:native:object#Joint".to_owned(),
-                JointBody::Grounded {
-                    reference: None,
-                    placement: super::FiniteFrame::default(),
-                },
-                BTreeMap::new(),
-            )
-            .expect_err("grammar scans exceed allowance");
-            assert!(
-                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.operation == "FCStd joint identity admission"
-                    && limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                    && Some(limit) == ctx.resource_refusal())
-            );
-        });
-    }
-
-    #[test]
-    fn checked_joint_parameter_map_refuses_at_caller_limit() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within policy");
-        let error = JointRecord::try_new(
-            &ctx,
-            "fcstd:native:joint#Joint".into(),
-            "fcstd:native:object#Joint".into(),
-            JointBody::Grounded {
-                reference: None,
-                placement: super::FiniteFrame::default(),
+        crate::test_support::refusal_at(
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            &[],
+            "FCStd joint identity admission",
+            |ctx| {
+                JointRecord::try_new(
+                    ctx,
+                    "fcstd:native:joint#Joint".to_owned(),
+                    "fcstd:native:object#Joint".to_owned(),
+                    JointBody::Grounded {
+                        reference: None,
+                        placement: super::FiniteFrame::default(),
+                    },
+                    super::JointParameters::default(),
+                )
             },
-            BTreeMap::from([("Angle".into(), "1".into())]),
-        )
-        .expect_err("checked parameter map must charge each entry");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
-            if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && failure.operation == "fcstd joint checked parameters"),
-            "{error:?}"
         );
     }
 
     #[test]
-    fn checked_joint_parameter_diagnostic_refuses_at_retained_limit() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let service = cadmpeg_core::decode::DecodePolicy::service();
-        let (admitted, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &service)
-                .expect("empty root is within policy");
-        let message = JointRecord::try_new(
-            &admitted,
-            "fcstd:native:joint#Joint".into(),
-            "fcstd:native:object#Joint".into(),
-            JointBody::Grounded {
-                reference: None,
-                placement: super::FiniteFrame::default(),
-            },
-            BTreeMap::from([("Angle".into(), "NaN".into())]),
-        )
-        .expect_err("nonfinite scalar is malformed")
-        .to_string();
+    fn joint_identity_work_matches_admitted_inputs_and_stops_after_invalid_id() {
+        let object = "fcstd:native:object#Joint";
+        for (id, valid) in [("fcstd:native:joint#Joint", true), ("invalid", false)] {
+            crate::test_support::with_service_context(&[], |ctx| {
+                let result = JointRecord::try_new(
+                    ctx,
+                    id.into(),
+                    object.into(),
+                    JointBody::Grounded {
+                        reference: None,
+                        placement: super::FiniteFrame::default(),
+                    },
+                    super::JointParameters::default(),
+                );
+                if valid {
+                    assert!(result.is_ok());
+                } else {
+                    assert!(matches!(
+                        result,
+                        Err(cadmpeg_core::CodecError::Malformed(_))
+                    ));
+                }
+                let cadmpeg_core::CodecError::ResourceLimit(limit) =
+                    ctx.charge_work(u64::MAX, "probe").unwrap_err()
+                else {
+                    panic!("work refusal");
+                };
+                let expected = id.len() + if valid { object.len() } else { 0 };
+                assert_eq!(limit.used, cadmpeg_core::decode::u64_from_index(expected));
+            });
+        }
+    }
+
+    #[test]
+    fn wire_joint_parameter_diagnostics_preserve_nonfinite_message() {
+        let wire = serde_json::json!({"id":"fcstd:native:joint#Joint", "object":"fcstd:native:object#Joint", "kind":"grounded", "references":[], "placements":[super::FiniteFrame::default().rows()], "offsets":[], "parameters":{"Angle":"NaN"}});
+        let error = serde_json::from_value::<JointRecord>(wire).expect_err("nonfinite scalar");
         assert_eq!(
-            message,
-            "malformed container: joint fcstd:native:joint#Joint: joint parameter Angle has an invalid value \"NaN\""
-        );
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root is within policy");
-        let error = JointRecord::try_new(
-            &ctx,
-            "fcstd:native:joint#Joint".into(),
-            "fcstd:native:object#Joint".into(),
-            JointBody::Grounded {
-                reference: None,
-                placement: super::FiniteFrame::default(),
-            },
-            BTreeMap::from([("Angle".into(), "NaN".into())]),
-        )
-        .expect_err("checked parameter diagnostic must be admitted");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
-            if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && failure.operation == "fcstd joint checked parameter diagnostic"),
-            "{error:?}"
+            error.to_string(),
+            "joint fcstd:native:joint#Joint: joint parameter Angle has an invalid value \"NaN\""
         );
     }
 
@@ -680,7 +754,7 @@ mod tests {
                 kind: PairedJointFamily::new("CustomCoupling".into()).unwrap(),
                 connectors: Box::new([connector.clone(), connector]),
             },
-            BTreeMap::new(),
+            super::JointParameters::default(),
         )
         .unwrap();
         let wire = serde_json::to_value(&record).unwrap();
@@ -754,7 +828,11 @@ mod tests {
                 .expect("valid known parameter values remain admissible");
             if name == "Angle" {
                 assert_eq!(
-                    record.parameters().scalar_value(name).map(FiniteReal::get),
+                    crate::test_support::with_service_context(&[], |ctx| record
+                        .parameters()
+                        .scalar_value(ctx, name)
+                        .expect("parameter lookup"))
+                    .map(FiniteReal::get),
                     Some(15.5)
                 );
             }
@@ -785,7 +863,13 @@ mod tests {
             let record = serde_json::from_value::<JointRecord>(wire.clone())
                 .expect("primary bool spellings remain admissible");
             assert_eq!(record.parameters().raw("Suppressed"), Some(raw));
-            assert_eq!(record.parameters().bool_value("Suppressed"), Some(expected));
+            assert_eq!(
+                crate::test_support::with_service_context(&[], |ctx| record
+                    .parameters()
+                    .bool_value(ctx, "Suppressed")
+                    .expect("parameter lookup")),
+                Some(expected)
+            );
             assert_eq!(serde_json::to_value(record).unwrap(), wire);
         }
     }

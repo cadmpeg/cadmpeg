@@ -174,7 +174,7 @@ fn homogeneous_weights_admit_actual_scans_and_copies() {
 }
 
 #[test]
-fn homogeneous_weights_preserve_early_missing_and_empty_fuse() {
+fn homogeneous_weights_preserve_early_missing_and_empty_output() {
     let missing = [
         weight_sum(None),
         weight_sum(crate::math::sum::scaled_finite(1.0)),
@@ -195,17 +195,6 @@ fn homogeneous_weights_preserve_early_missing_and_empty_fuse() {
         assert_eq!(Homogeneous::weights(&scratch, values).unwrap(), expected);
         drop(scratch);
         ctx.finish_session().unwrap();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let original = ctx
-            .charge_work_limit(work + 1, "original empty weights refusal")
-            .unwrap_err();
-        let scratch = Scratch::new(&ctx);
-        assert_eq!(Homogeneous::weights(&scratch, &[]).unwrap_err(), original);
-        assert_eq!(scratch.refused(), Some(original));
-        drop(scratch);
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
-        );
     }
 }
 

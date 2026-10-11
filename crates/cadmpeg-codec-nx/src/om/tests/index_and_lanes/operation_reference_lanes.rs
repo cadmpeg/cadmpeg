@@ -159,11 +159,13 @@ fn om_projected_curve_references_require_one_complete_field() {
     let payload =
         b"\0\x01\x02\xf1\x02\xc8\xf1\x02\xc9\x80\x57\x00\x02\x01\xf1\x02\xca\xff\x01\x02\x02\x7d\0";
     let record = crate::om::operation_record::OperationPayload::new(payload, 200, label).unwrap();
-    let field = ProjectedCurveReferences::read(record).expect("complete field");
+    let field =
+        crate::test_support::with_decode_context(|ctx| ProjectedCurveReferences::read(ctx, record))
+            .unwrap()
+            .expect("complete field");
     assert_eq!(
         field
             .into_references()
-            .iter()
             .map(|reference| (reference.token.value(), reference.offset))
             .collect::<Vec<_>>(),
         [(712, 203), (713, 206), (714, 214)]
@@ -171,26 +173,34 @@ fn om_projected_curve_references_require_one_complete_field() {
 
     let mut malformed = payload.to_vec();
     malformed[17] = 0x00;
-    assert!(ProjectedCurveReferences::read(
-        crate::om::operation_record::OperationPayload::new(
-            &malformed,
-            record.payload_offset(),
-            record.name()
-        )
+    assert!(
+        crate::test_support::with_decode_context(|ctx| ProjectedCurveReferences::read(
+            ctx,
+            crate::om::operation_record::OperationPayload::new(
+                &malformed,
+                record.payload_offset(),
+                record.name()
+            )
+            .unwrap()
+        ))
         .unwrap()
-    )
-    .is_none());
+        .is_none()
+    );
 
     let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
-    assert!(ProjectedCurveReferences::read(
-        crate::om::operation_record::OperationPayload::new(
-            &ambiguous,
-            record.payload_offset(),
-            record.name()
-        )
+    assert!(
+        crate::test_support::with_decode_context(|ctx| ProjectedCurveReferences::read(
+            ctx,
+            crate::om::operation_record::OperationPayload::new(
+                &ambiguous,
+                record.payload_offset(),
+                record.name()
+            )
+            .unwrap()
+        ))
         .unwrap()
-    )
-    .is_none());
+        .is_none()
+    );
 }
 
 #[test]
@@ -198,11 +208,13 @@ fn om_combined_projected_curve_references_require_the_complete_graph() {
     let label = "CPROJ_CMB";
     let payload = b"\x3c\x32\x01\x02\x32\x01\x04\x36\x01\x33\xf1\x03\x18\x33\xf1\x03\x19\x00\xf1\x03\x1a\x00\x00\x00\x00\x00\x00\xf1\x03\x1b\x16\x01\x02\xf1\x03\x18\x01\x02\x00\x00\x00\x00\x00\xff\x01\x02\xf1\x03\x1c\x00\x81\x5c\x16\x01\x02\xf1\x03\x19\x01\x02\x00\x00\x00\x00\x00\xff\x01\x02\xf1\x03\x1d\x00\x81\x5c\xff\x01\xff\x01\xf1\x03\x1e\xf1\x03\x1f\x04\x02";
     let record = crate::om::operation_record::OperationPayload::new(payload, 200, label).unwrap();
-    let field = ProjectedCurveReferences::read(record).expect("complete graph");
+    let field =
+        crate::test_support::with_decode_context(|ctx| ProjectedCurveReferences::read(ctx, record))
+            .unwrap()
+            .expect("complete graph");
     assert_eq!(
         field
             .into_references()
-            .iter()
             .map(|reference| (reference.token.value(), reference.offset))
             .collect::<Vec<_>>(),
         [
@@ -219,38 +231,50 @@ fn om_combined_projected_curve_references_require_the_complete_graph() {
 
     let mut inconsistent = payload.to_vec();
     inconsistent[35] = 0x19;
-    assert!(ProjectedCurveReferences::read(
-        crate::om::operation_record::OperationPayload::new(
-            &inconsistent,
-            record.payload_offset(),
-            record.name()
-        )
+    assert!(
+        crate::test_support::with_decode_context(|ctx| ProjectedCurveReferences::read(
+            ctx,
+            crate::om::operation_record::OperationPayload::new(
+                &inconsistent,
+                record.payload_offset(),
+                record.name()
+            )
+            .unwrap()
+        ))
         .unwrap()
-    )
-    .is_none());
+        .is_none()
+    );
 
     let mut malformed = payload.to_vec();
     malformed[84] = 0x00;
-    assert!(ProjectedCurveReferences::read(
-        crate::om::operation_record::OperationPayload::new(
-            &malformed,
-            record.payload_offset(),
-            record.name()
-        )
+    assert!(
+        crate::test_support::with_decode_context(|ctx| ProjectedCurveReferences::read(
+            ctx,
+            crate::om::operation_record::OperationPayload::new(
+                &malformed,
+                record.payload_offset(),
+                record.name()
+            )
+            .unwrap()
+        ))
         .unwrap()
-    )
-    .is_none());
+        .is_none()
+    );
 
     let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
-    assert!(ProjectedCurveReferences::read(
-        crate::om::operation_record::OperationPayload::new(
-            &ambiguous,
-            record.payload_offset(),
-            record.name()
-        )
+    assert!(
+        crate::test_support::with_decode_context(|ctx| ProjectedCurveReferences::read(
+            ctx,
+            crate::om::operation_record::OperationPayload::new(
+                &ambiguous,
+                record.payload_offset(),
+                record.name()
+            )
+            .unwrap()
+        ))
         .unwrap()
-    )
-    .is_none());
+        .is_none()
+    );
 }
 
 #[test]
@@ -258,7 +282,10 @@ fn om_pattern_reference_graph_preserves_nullable_terminal_slot() {
     let label = "Pattern Geometry";
     let nullable = b"\x61\xf1\x1b\x08\xff\x00\xff\x01\xf1\x1b\x09\xf1\x1b\x0a\x61\xf1\x1b\x0b\xff\x00\xff\x01\xf1\x1b\x0c\xf1\x1b\x0d\xff\x62\xf1\x1b\x0e\xf1\x1b\x0f\xff\x00\x00\x01\xf1\x1b\x10\xff\xff\xff\x01";
     let record = crate::om::operation_record::OperationPayload::new(nullable, 200, label).unwrap();
-    let field = PatternReferences::read(record).expect("complete graph");
+    let field =
+        crate::test_support::with_decode_context(|ctx| PatternReferences::read(ctx, record))
+            .unwrap()
+            .expect("complete graph");
     assert_eq!(
         field.layout(),
         PatternPayloadReferenceLayout::CanonicalGraph
@@ -266,53 +293,63 @@ fn om_pattern_reference_graph_preserves_nullable_terminal_slot() {
     assert_eq!(
         field
             .into_references()
-            .iter()
             .map(|reference| reference.token.value())
             .collect::<Vec<_>>(),
         (6920..=6928).collect::<Vec<_>>()
     );
 
     let populated = [&nullable[..nullable.len() - 4], b"\xf1\x1b\x11\xff\xff\x01"].concat();
-    let field = PatternReferences::read(
-        crate::om::operation_record::OperationPayload::new(
-            &populated,
-            record.payload_offset(),
-            "Pattern Feature",
+    let field = crate::test_support::with_decode_context(|ctx| {
+        PatternReferences::read(
+            ctx,
+            crate::om::operation_record::OperationPayload::new(
+                &populated,
+                record.payload_offset(),
+                "Pattern Feature",
+            )
+            .unwrap(),
         )
-        .unwrap(),
-    )
+    })
+    .unwrap()
     .expect("populated terminal slot");
-    let references = field.into_references();
+    let references: Vec<_> = field.into_references().collect();
     assert_eq!(references.len(), 10);
     assert_eq!(references[9].token.value(), 6929);
 
     let mut malformed = nullable.to_vec();
     malformed[18] = 0x60;
-    assert!(PatternReferences::read(
-        crate::om::operation_record::OperationPayload::new(
-            &malformed,
-            record.payload_offset(),
-            record.name()
-        )
+    assert!(
+        crate::test_support::with_decode_context(|ctx| PatternReferences::read(
+            ctx,
+            crate::om::operation_record::OperationPayload::new(
+                &malformed,
+                record.payload_offset(),
+                record.name()
+            )
+            .unwrap()
+        ))
         .unwrap()
-    )
-    .is_none());
+        .is_none()
+    );
 
     let compact = b"\x3b\xf1\x1b\x20\xff\x00\x01\xf1\x1b\x21\xf1\x1b\x22\x3b\xf1\x1b\x23\xff\x00\x01\xf1\x1b\x24\xf1\x1b\x25\xff\x3c\xf1\x1b\x26\xf1\x1b\x27\xff\x00\x00\x01\xf1\x1b\x28\xff\xff\xff\x01";
-    let field = PatternReferences::read(
-        crate::om::operation_record::OperationPayload::new(
-            compact,
-            record.payload_offset(),
-            record.name(),
+    let field = crate::test_support::with_decode_context(|ctx| {
+        PatternReferences::read(
+            ctx,
+            crate::om::operation_record::OperationPayload::new(
+                compact,
+                record.payload_offset(),
+                record.name(),
+            )
+            .unwrap(),
         )
-        .unwrap(),
-    )
+    })
+    .unwrap()
     .expect("complete compact graph");
     assert_eq!(field.layout(), PatternPayloadReferenceLayout::CompactGraph);
     assert_eq!(
         field
             .into_references()
-            .iter()
             .map(|reference| reference.token.value())
             .collect::<Vec<_>>(),
         (0x1b20..=0x1b28).collect::<Vec<_>>()
@@ -616,5 +653,45 @@ fn pattern_transform_refuses_work_limit() {
     let error = pattern_transform_refusal(|policy| policy.limits.max_work_units = 0);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
+#[test]
+fn projected_reference_candidate_range_refusal_precedes_rejection() {
+    let bytes = [1, 2, 0, 0];
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| policy.limits.max_work_units = 2,
+        |ctx| {
+            let record =
+                crate::om::operation_record::OperationPayload::new(&bytes, 0, "CPROJ").unwrap();
+            let error = ProjectedCurveReferences::read(ctx, record).unwrap_err();
+            assert!(
+                matches!(&error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "NX projected curve reference candidate search"
+                && limit.additional == 1)
+            );
+            if let cadmpeg_core::CodecError::ResourceLimit(limit) = error {
+                assert_eq!(ctx.resource_refusal(), Some(limit));
+            }
+        },
+    );
+}
+
+#[test]
+fn pattern_transform_row_traversal_refusal_propagates() {
+    let bytes = b"\x01\x03\x60\x01\x00\x00\x50\x54\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x02\x01\x01\x00\x00\xff\x00\x00\x60\x01\x00\x00\xd0\x54\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x9f\xfe\x01\x02\x00\x00\xff\x00\x00\x5f\x00\x00\x01";
+
+    let record =
+        crate::om::operation_record::OperationPayload::new(bytes, 0, "Pattern Feature").unwrap();
+    let error = crate::test_support::resource_refusal_at(
+        &[],
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX pattern transform row traversal",
+        |ctx| crate::om::pattern_payload_transform_lane(ctx, record),
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 1)
     );
 }

@@ -620,7 +620,7 @@ pub(super) fn resolve_parasolid_group_member_targets(
             continue;
         };
         let graph = parsed.stream(partition).view_for_geometry().graph.as_ref();
-        member.target = member.target.resolve(graph, member.member_xmt);
+        member.target = member.target.resolve(ctx, graph, member.member_xmt)?;
     }
     Ok(())
 }
@@ -1401,7 +1401,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
             None => crate::deltas::census::walk(ctx, &stream.inflated)?,
         };
         let mut residual_start = 0;
-        let covered_spans = census.covered_spans(ctx)?;
+        let (covered_spans, _covered_spans_storage) = census.covered_spans(ctx)?;
         for &(covered_start, covered_end) in
             ctx.admit_iter(&covered_spans, "NX deltas residual spans")?
         {

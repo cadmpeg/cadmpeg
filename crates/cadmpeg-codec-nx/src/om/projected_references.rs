@@ -27,14 +27,17 @@ enum Body {
 }
 
 impl ProjectedCurveReferences {
-    pub(crate) fn read(record: OperationPayload<'_>) -> Option<Self> {
+    pub(crate) fn read(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        record: OperationPayload<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
         let bytes = record.payload();
         let read_token = |at: &mut usize| {
             let token = PayloadIndexToken::read(bytes.get(*at..)?)?;
             *at += token.raw().len();
             Some(token)
         };
-        let consume = |at: &mut usize, expected: &[u8]| {
+        let consume = |at: &mut usize, expected: &[u8]| -> Option<()> {
             let end = at.checked_add(expected.len())?;
             if bytes.get(*at..end) != Some(expected) {
                 return None;
@@ -91,27 +94,44 @@ impl ProjectedCurveReferences {
         let marker = match record.name() {
             "CPROJ" => &[1, 2][..],
             "CPROJ_CMB" => &CMB_PREFIX[..],
-            _ => return None,
+            _ => return Ok(None),
         };
-        super::unique_candidate(
-            bytes
-                .len()
-                .checked_sub(marker.len())
-                .into_iter()
-                .flat_map(|last| 0..=last)
-                .filter_map(|start| {
-                    if bytes.get(start..start + marker.len()) != Some(marker) {
-                        return None;
-                    }
-                    decode(start)
-                }),
-        )
+        let Some(candidate_end) = bytes.len().checked_sub(marker.len()) else {
+            return Ok(None);
+        };
+        let mut candidate = None;
+        let mut starts = 0..=candidate_end;
+        while let Some(start) =
+            ctx.next_charged(&mut starts, "NX projected curve reference candidate search")?
+        {
+            if bytes.get(start..start + marker.len()) != Some(marker) {
+                continue;
+            }
+            if let Some(parsed) = decode(start) {
+                if candidate.is_some() {
+                    return Ok(None);
+                }
+                candidate = Some(parsed);
+            }
+        }
+        Ok(candidate)
     }
 
-    pub(crate) fn into_references(self) -> Vec<PayloadObjectReference<PayloadIndexToken>> {
-        let mut references = Vec::new();
+    pub(crate) fn into_references(
+        self,
+    ) -> impl ExactSizeIterator<Item = PayloadObjectReference<PayloadIndexToken>> {
+        let first = match self.body {
+            Body::Projected(tokens) => tokens[0],
+            Body::Combined(tokens) => tokens[0],
+        };
+        let mut references: [_; 8] = std::array::from_fn(|_| PayloadObjectReference {
+            offset: self.offset,
+            token: first,
+        });
+        let mut len = 0;
         let mut append = |at: &mut usize, token: PayloadIndexToken| {
-            references.push(PayloadObjectReference { offset: *at, token });
+            references[len] = PayloadObjectReference { offset: *at, token };
+            len += 1;
             *at += token.raw().len();
         };
         match self.body {
@@ -141,6 +161,24 @@ impl ProjectedCurveReferences {
                 append(&mut at, eighth);
             }
         }
-        references
+        references.into_iter().take(len)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn projected_reference_search_refusal_propagates() {
+        let bytes = [1, 2, 0xf0, 1];
+        let payload = super::OperationPayload::new(&bytes, 100, "CPROJ").unwrap();
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            "NX projected curve reference candidate search",
+            |ctx| super::ProjectedCurveReferences::read(ctx, payload),
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.additional == 1)
+        );
     }
 }

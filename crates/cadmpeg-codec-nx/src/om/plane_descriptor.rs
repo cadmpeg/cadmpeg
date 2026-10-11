@@ -51,19 +51,20 @@ impl PlaneDescriptor {
         })
     }
 
-    pub(crate) fn read_charged(
+    pub(crate) fn from_bytes(
         ctx: &DecodeContext<'_>,
         bytes: &[u8],
     ) -> Result<Option<Self>, CodecError> {
         let Some((identity, schema, label)) = Self::parse(bytes) else {
             return Ok(None);
         };
-        let identity = ctx.copy_retained(identity, "NX datum plane descriptor identity")?;
-        let label = ctx.copy_retained(label, "NX datum plane descriptor label")?;
-        let (Ok(identity), Ok(label)) = (String::from_utf8(identity), String::from_utf8(label))
-        else {
+        let identity = std::str::from_utf8(identity);
+        let label = std::str::from_utf8(label);
+        let (Ok(identity), Ok(label)) = (identity, label) else {
             return Ok(None);
         };
+        let identity = ctx.copy_retained_text(identity, "NX datum plane descriptor identity")?;
+        let label = ctx.copy_retained_text(label, "NX datum plane descriptor label")?;
         Ok(Some(Self {
             identity,
             schema,
@@ -121,6 +122,34 @@ mod tests {
     use super::PlaneDescriptor;
 
     #[test]
+    fn plane_descriptor_text_copy_refusals_propagate() {
+        let bytes = b"012345678901234567890123456789?A\x00\xff\x02\x01abcd";
+        let descriptor =
+            crate::test_support::with_decode_context(|ctx| PlaneDescriptor::from_bytes(ctx, bytes))
+                .unwrap()
+                .unwrap();
+        assert_eq!(descriptor.identity(), "012345678901234567890123456789");
+        assert_eq!(descriptor.label(), "abcd");
+        assert_eq!(descriptor.schema_index(), 0);
+        for (operation, additional) in [
+            ("NX datum plane descriptor identity", 30),
+            ("NX datum plane descriptor label", 4),
+        ] {
+            let error = crate::test_support::resource_refusal_at(
+                &[],
+                cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                operation,
+                |ctx| PlaneDescriptor::from_bytes(ctx, bytes),
+            );
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.additional == additional
+            ));
+        }
+    }
+
+    #[test]
     fn descriptor_retains_exact_schema_token_width() {
         for (schema, label) in [(&[0][..], "abcd"), (&[0x80, 0][..], "abc")] {
             let mut bytes = b"012345678901234567890123456789?A".to_vec();
@@ -148,5 +177,24 @@ mod tests {
             bytes.pop();
             assert!(PlaneDescriptor::read(&bytes).is_none());
         }
+    }
+
+    #[test]
+    fn plane_descriptor_identity_copy_refusal_propagates() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "NX datum plane descriptor identity",
+            |ctx| {
+                PlaneDescriptor::from_bytes(
+                    ctx,
+                    b"012345678901234567890123456789?A\x00\xff\x02\x01abcd",
+                )
+            },
+        );
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits && limit.operation == "NX datum plane descriptor identity"));
     }
 }

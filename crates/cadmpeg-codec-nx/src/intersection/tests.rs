@@ -25,94 +25,99 @@ use cadmpeg_ir::math::Point2;
 use std::collections::BTreeMap;
 
 fn blend_bound_limit_error(
-    adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    dimension: cadmpeg_core::decode::ResourceDimension,
+    operation: &'static str,
 ) -> cadmpeg_core::CodecError {
     let stream = blend_bound_charted_intersection_curve_stream();
-
-    crate::test_support::with_decode_context_over(&stream, adjust, |ctx| {
-        crate::intersection::blend_bounds(ctx, &stream).expect_err("blend-bound resource refusal")
+    crate::test_support::resource_refusal_at(&stream, dimension, operation, |ctx| {
+        crate::intersection::blend_bounds(ctx, &stream)
     })
 }
 
 #[test]
 fn intersection_blend_bound_route_refuses_collection_limit() {
-    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_collection_items = 0;
-    };
+    let error = blend_bound_limit_error(
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "NX blend-bound records",
+    );
     assert!(
-        matches!(blend_bound_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems && limit.operation == "NX blend-bound records")
     );
 }
 
 #[test]
 fn intersection_blend_bound_route_refuses_retained_limit() {
-    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_retained_bytes = 0;
-    };
+    let error = blend_bound_limit_error(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "NX blend-bound records",
+    );
     assert!(
-        matches!(blend_bound_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes && limit.operation == "NX blend-bound records")
     );
 }
 
 #[test]
 fn intersection_blend_bound_route_refuses_scoped_limit() {
-    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_materialized_bytes = 0;
-    };
+    let error = blend_bound_limit_error(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "NX blend-bound identity index",
+    );
     assert!(
-        matches!(blend_bound_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes && limit.operation == "NX blend-bound identity index")
     );
 }
 
 #[test]
 fn intersection_blend_bound_route_refuses_work_limit() {
-    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
-        policy.limits.max_work_units = 0;
-    };
+    let error = blend_bound_limit_error(
+        cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        "NX blend-bound identity index",
+    );
     assert!(
-        matches!(blend_bound_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits && limit.operation == "NX blend-bound identity index")
     );
 }
 
 #[test]
 fn intersection_chart_route_refuses_scoped_limit() {
     let stream = ext11_charted_intersection_curve_stream();
-
-    crate::test_support::with_decode_context_over(
+    let error = crate::test_support::resource_refusal_at(
         &stream,
-        |policy| {
-            policy.limits.max_materialized_bytes = 0;
-        },
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "NX chart sample pairs",
         |ctx| {
-            assert!(
-                matches!(crate::intersection::curves(ctx, &stream, crate::intersection::ChartPointLayout::Ext11),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
-            );
+            crate::intersection::chart_source_records(
+                ctx,
+                &stream,
+                crate::intersection::ChartPointLayout::Ext11,
+            )
         },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes && limit.operation == "NX chart sample pairs")
     );
 }
 
 #[test]
 fn intersection_solved_route_refuses_retained_limit() {
     let stream = charted_intersection_curve_topology_partition_stream();
-
-    crate::test_support::with_decode_context_over(
+    let error = crate::test_support::resource_refusal_at(
         &stream,
-        |policy| {
-            policy.limits.max_retained_bytes = 0;
-        },
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "NX solved chart sample copy",
         |ctx| {
-            assert!(
-                matches!(crate::intersection::curves(ctx, &stream, crate::intersection::ChartPointLayout::Xyz3),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
-            );
+            crate::intersection::scan(ctx, &stream, crate::intersection::ChartPointLayout::Xyz3)
+                .map(|scan| scan.curves)
         },
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes && limit.operation == "NX solved chart sample copy")
     );
 }
 
@@ -775,15 +780,12 @@ fn intersection_chart_rejects_nonfinite_millimeter_tolerance() {
         .position(|window| window == [0, 40])
         .expect("chart record");
     put_f64(&mut stream, chart + 28, f64::MAX);
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::intersection::curves(
-            ctx,
-            &stream,
-            crate::intersection::ChartPointLayout::Xyz3
-        ))
-        .unwrap()
-        .is_empty()
-    );
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::intersection::scan(ctx, &stream, crate::intersection::ChartPointLayout::Xyz3)
+    })
+    .unwrap()
+    .curves
+    .is_empty());
 }
 
 #[test]
@@ -971,5 +973,204 @@ fn auxiliary_source_parsers_reject_reserved_record_identities() {
                 identity > 1
             );
         });
+    }
+}
+
+#[test]
+fn duplicate_uv_payloads_are_scratch_until_an_identity_survives() {
+    let mut bytes = record(204, 41);
+    bytes[2..6].copy_from_slice(&4_u32.to_be_bytes());
+    put_ref(&mut bytes, 6, 20);
+    bytes[8] = 2;
+    let duplicate = bytes.clone();
+    bytes.extend(duplicate);
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_retained_bytes = 0;
+        },
+        |ctx| {
+            assert!(super::support_uv_records(ctx, &bytes).unwrap().is_empty());
+        },
+    );
+}
+
+#[test]
+fn intersection_candidates_refuse_scoped_storage_before_the_named_construction() {
+    let mut stream = charted_intersection_curve_topology_partition_stream();
+    let mut construction = crate::test_support::with_decode_context(|ctx| {
+        let graph = crate::topology::Graph::parse(ctx, &stream).unwrap();
+        let node = &graph.of_kind(crate::framing::node_kind::NodeKind::Intersection)[0];
+        stream[node.pos()..node.end()].to_vec()
+    });
+    // Keep the complete chart setup. The larger construction lane must raise
+    // the scratch peak after the chart parser's temporary data is released.
+    for identity in 100..228 {
+        put_ref(&mut construction, 2, identity);
+        stream.extend_from_slice(&construction);
+    }
+    let graph =
+        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
+            .unwrap();
+    assert_eq!(
+        graph
+            .of_kind(crate::framing::node_kind::NodeKind::Intersection)
+            .len(),
+        129
+    );
+    crate::test_support::resource_refusal_at(
+        &stream,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "NX composite curves",
+        |ctx| super::scan_with_graph(ctx, &stream, &graph, super::ChartPointLayout::Xyz3),
+    );
+}
+
+#[test]
+fn intersection_twins_refuse_scoped_storage_before_the_named_construction() {
+    let stream = deltas_intersection_curve_stream();
+    crate::test_support::resource_refusal_at(
+        &stream,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        "NX intersection data curves",
+        |ctx| {
+            super::scan_with_graph(
+                ctx,
+                &stream,
+                &crate::topology::Graph::default(),
+                super::ChartPointLayout::Ext11,
+            )
+        },
+    );
+}
+
+#[test]
+fn intersection_selected_source_constructions_refuse_retention_at_the_named_boundary() {
+    let stream = deltas_intersection_curve_stream();
+    crate::test_support::resource_refusal_at(
+        &stream,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "NX selected source constructions",
+        |ctx| {
+            super::scan_with_graph(
+                ctx,
+                &stream,
+                &crate::topology::Graph::default(),
+                super::ChartPointLayout::Ext11,
+            )
+        },
+    );
+}
+
+#[test]
+fn intersection_fixed_replacements_release_each_stream_map() {
+    let mut term = record(41, 34);
+    term[2..6].copy_from_slice(&2_u32.to_be_bytes());
+    put_ref(&mut term, 6, 2);
+    term[8..10].copy_from_slice(b"TF");
+    let mut bridge = record(59, 24);
+    put_ref(&mut bridge, 2, 14);
+    bridge[4..8].copy_from_slice(&9_u32.to_be_bytes());
+    for at in [8, 10, 12, 14, 16] {
+        put_ref(&mut bridge, at, 1);
+    }
+    bridge[18] = b'+';
+    put_ref(&mut bridge, 19, 0);
+    put_ref(&mut bridge, 21, 13);
+    term.extend(bridge);
+    crate::test_support::with_decode_context(|ctx| {
+        assert_eq!(super::term_records(ctx, &term).unwrap().len(), 1);
+        assert_eq!(super::blend_bound_records(ctx, &term).unwrap().len(), 1);
+    });
+    let replacements = vec![term.as_slice(); 1024];
+    crate::test_support::with_decode_context_over(
+        &term,
+        |policy| {
+            policy.limits.max_materialized_bytes = 65_536;
+            policy.limits.max_retained_bytes = 0;
+        },
+        |ctx| {
+            let result = super::scan_with_auxiliary_replacements_and_graph(
+                ctx,
+                &[],
+                &term,
+                &replacements,
+                &crate::topology::Graph::default(),
+            )
+            .unwrap();
+            assert!(result.source_constructions.is_empty());
+            assert!(result.curves.is_empty());
+            assert_eq!(result.rejected.total(), 0);
+        },
+    );
+}
+
+#[test]
+fn intersection_owned_replacements_release_superseded_payloads() {
+    let base = charted_intersection_curve_topology_partition_stream();
+    let stream = ext11_charted_intersection_curve_stream();
+    let graph =
+        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
+            .unwrap();
+    let expected = crate::test_support::with_decode_context(|ctx| {
+        super::scan_with_graph(ctx, &stream, &graph, super::ChartPointLayout::Ext11)
+    })
+    .unwrap();
+    assert_eq!(expected.curves.len(), 1);
+    assert_eq!(expected.source_constructions.len(), 1);
+    let replacements = vec![stream.as_slice(); 256];
+    crate::test_support::with_decode_context_over(
+        &stream,
+        |policy| {
+            policy.limits.max_materialized_bytes = 65_536;
+        },
+        |ctx| {
+            let actual = super::scan_with_auxiliary_replacements_and_graph(
+                ctx,
+                &stream,
+                &base,
+                &replacements,
+                &graph,
+            )
+            .unwrap();
+            assert_eq!(actual.curves.len(), expected.curves.len());
+            assert_eq!(
+                actual.source_constructions.len(),
+                expected.source_constructions.len()
+            );
+            assert_eq!(actual.rejected, expected.rejected);
+            let actual = &actual.curves[0];
+            let expected = &expected.curves[0];
+            assert_eq!(actual.xmt, expected.xmt);
+            assert_eq!(actual.references, expected.references);
+            assert_eq!(actual.samples, expected.samples);
+            assert_eq!(actual.fit_tolerance, expected.fit_tolerance);
+            assert_eq!(actual.support_uv, expected.support_uv);
+            assert_eq!(actual.ext_support_uv, expected.ext_support_uv);
+        },
+    );
+}
+
+#[test]
+fn intersection_replacement_payload_copies_refuse_at_named_work_boundaries() {
+    let stream = ext11_charted_intersection_curve_stream();
+    for operation in [
+        "NX replacement chart payload copy",
+        "NX replacement UV payload copy",
+    ] {
+        crate::test_support::resource_refusal_at(
+            &stream,
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+            operation,
+            |ctx| {
+                super::scan_with_auxiliary_replacements_and_graph(
+                    ctx,
+                    &[],
+                    &[],
+                    &[&stream],
+                    &crate::topology::Graph::default(),
+                )
+            },
+        );
     }
 }

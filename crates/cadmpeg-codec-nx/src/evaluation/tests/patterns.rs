@@ -198,7 +198,8 @@ fn zero_occurrence_body_pattern_refuses_lineage() {
     feature
         .evaluation
         .set_outputs(cadmpeg_ir::features::DistinctMembers::default());
-    let mut bodies = std::collections::BTreeSet::from([seed.clone()]);
+    let replay_seed = seed.clone();
+    let mut bodies = std::collections::BTreeSet::from([&replay_seed]);
     let seeds = [PatternSeed::Bodies(BodySelection::Bodies(
         cadmpeg_ir::features::DistinctMembers::try_from(
             vec![seed],
@@ -207,7 +208,17 @@ fn zero_occurrence_body_pattern_refuses_lineage() {
         .unwrap(),
     ))];
     assert!(matches!(
-        super::super::apply_complete_body_pattern(&feature, &mut bodies, &seeds, Some(0), false),
-        Err((_, UnsupportedBodyCensusReason::InvalidOutputLineage))
+        crate::test_support::with_decode_context(|ctx| super::super::apply_complete_body_pattern(
+            ctx,
+            &feature,
+            &mut bodies,
+            &seeds,
+            Some(0),
+            false
+        )),
+        Err(super::super::CensusError::Unsupported(
+            _,
+            UnsupportedBodyCensusReason::InvalidOutputLineage
+        ))
     ));
 }

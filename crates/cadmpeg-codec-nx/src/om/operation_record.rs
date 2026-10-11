@@ -95,18 +95,39 @@ impl<'a> OperationBodyInput<'a> {
 }
 
 impl<'a> OperationRecord<'a> {
-    pub(super) fn new(bytes: &'a [u8], label: OperationLabel<'a>) -> Option<Self> {
+    pub(super) fn new(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        bytes: &'a [u8],
+        label: OperationLabel<'a>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
         let label_start = usize::from(label.header.byte_len());
-        let label_end = label_start.checked_add(label.value.len())?.checked_add(2)?;
-        if bytes.get(label_start) != Some(&0x03)
-            || usize::from(*bytes.get(label_start + 1)?) != label.value.len() + 2
-            || bytes.get(label_start + 2..label_end)? != label.value.as_bytes()
+        let Some(label_end) = label_start
+            .checked_add(label.value.len())
+            .and_then(|end| end.checked_add(2))
+        else {
+            return Ok(None);
+        };
+        let Some(declared) = bytes.get(label_start + 1).copied().map(usize::from) else {
+            return Ok(None);
+        };
+        let Some(raw) = bytes.get(label_start + 2..label_end) else {
+            return Ok(None);
+        };
+        if bytes.get(label_start) != Some(&3)
+            || declared != label.value.len() + 2
+            || !ctx.equal_bytes(
+                raw,
+                label.value.as_bytes(),
+                "NX operation record label equality",
+            )?
             || bytes.get(label_end) != Some(&0)
         {
-            return None;
+            return Ok(None);
         }
-        label.header.offset().checked_add(bytes.len())?;
-        Some(Self { bytes, label })
+        if label.header.offset().checked_add(bytes.len()).is_none() {
+            return Ok(None);
+        }
+        Ok(Some(Self { bytes, label }))
     }
 
     pub(crate) fn label(self) -> OperationLabel<'a> {
@@ -157,9 +178,79 @@ mod tests {
     }
 
     #[test]
+    fn record_label_byte_equality_refusal_propagates() {
+        let mut bytes = *b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\xff\xff\xff\xff\x03\x07BLOCK\0payload";
+        for mismatch in [false, true] {
+            if mismatch {
+                bytes[21] = b'X';
+            }
+            let error = crate::test_support::resource_refusal_at(
+                &[],
+                cadmpeg_core::decode::ResourceDimension::WorkUnits,
+                "NX operation record label equality",
+                |ctx| OperationRecord::new(ctx, &bytes, label(100)),
+            );
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                        && limit.used == 0 && limit.additional == 1)
+            );
+        }
+    }
+
+    #[test]
+    fn record_label_equality_admits_only_the_compared_prefix() {
+        let original = *b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\xff\xff\xff\xff\x03\x07BLOCK\0payload";
+        for mismatch in [None, Some(0), Some(4)] {
+            let mut bytes = original;
+            if let Some(index) = mismatch {
+                bytes[21 + index] = b'X';
+            }
+            let compared =
+                cadmpeg_core::decode::u64_from_index(mismatch.map_or(5, |index| index + 1));
+            for cap in [compared - 1, compared] {
+                crate::test_support::with_decode_context_over(
+                    &[],
+                    |policy| policy.limits.max_work_units = cap,
+                    |ctx| {
+                        let result = OperationRecord::new(ctx, &bytes, label(100));
+                        if cap < compared {
+                            let Err(cadmpeg_core::CodecError::ResourceLimit(first)) = result else {
+                                panic!("the next label byte must refuse");
+                            };
+                            assert_eq!(first.operation, "NX operation record label equality");
+                            assert_eq!(
+                                first.dimension,
+                                cadmpeg_core::decode::ResourceDimension::WorkUnits
+                            );
+                            assert_eq!(first.used, cap);
+                            assert_eq!(first.additional, 1);
+                            assert_eq!(ctx.resource_refusal(), Some(first));
+                        } else {
+                            assert_eq!(result.unwrap().is_some(), mismatch.is_none());
+                            assert_eq!(ctx.resource_refusal(), None);
+                            let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+                                ctx.charge_work(1, "label compared prefix boundary")
+                            else {
+                                panic!("the exact compared prefix exhausted the work cap");
+                            };
+                            assert_eq!(limit.used, compared);
+                            assert_eq!(limit.additional, 1);
+                        }
+                    },
+                );
+            }
+        }
+    }
+
+    #[test]
     fn record_payload_and_scan_ranges_derive_from_the_label_frame() {
         let bytes = b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\xff\xff\xff\xff\x03\x07BLOCK\0payload";
-        let record = OperationRecord::new(bytes, label(100)).unwrap();
+        let record = crate::test_support::with_decode_context(|ctx| {
+            OperationRecord::new(ctx, bytes, label(100))
+        })
+        .unwrap()
+        .unwrap();
         assert_eq!(record.bytes(), bytes);
         assert_eq!(record.label(), label(100));
         assert_eq!(record.offset(), 100);
@@ -175,18 +266,57 @@ mod tests {
         assert_eq!(body.payload_start(), 27);
         assert_eq!(body.payload_view(), payload);
         for end in 0..27 {
-            assert!(OperationRecord::new(&bytes[..end], label(100)).is_none());
+            assert!(
+                crate::test_support::with_decode_context(|ctx| OperationRecord::new(
+                    ctx,
+                    &bytes[..end],
+                    label(100)
+                ))
+                .unwrap()
+                .is_none()
+            );
         }
-        assert!(OperationRecord::new(&bytes[..27], label(100))
+        assert!(
+            crate::test_support::with_decode_context(|ctx| OperationRecord::new(
+                ctx,
+                &bytes[..27],
+                label(100)
+            ))
+            .unwrap()
             .unwrap()
             .payload()
-            .is_empty());
-        assert!(OperationRecord::new(bytes, label(usize::MAX - bytes.len())).is_some());
-        assert!(OperationRecord::new(bytes, label(usize::MAX - bytes.len() + 1)).is_none());
+            .is_empty()
+        );
+        assert!(
+            crate::test_support::with_decode_context(|ctx| OperationRecord::new(
+                ctx,
+                bytes,
+                label(usize::MAX - bytes.len())
+            ))
+            .unwrap()
+            .is_some()
+        );
+        assert!(
+            crate::test_support::with_decode_context(|ctx| OperationRecord::new(
+                ctx,
+                bytes,
+                label(usize::MAX - bytes.len() + 1)
+            ))
+            .unwrap()
+            .is_none()
+        );
         for (offset, value) in [(19, 4), (20, 6), (21, b'X'), (26, 1)] {
             let mut invalid = *bytes;
             invalid[offset] = value;
-            assert!(OperationRecord::new(&invalid, label(100)).is_none());
+            assert!(
+                crate::test_support::with_decode_context(|ctx| OperationRecord::new(
+                    ctx,
+                    &invalid,
+                    label(100)
+                ))
+                .unwrap()
+                .is_none()
+            );
         }
     }
 

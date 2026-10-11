@@ -217,6 +217,64 @@ fn feature_body_selection_uses_complete_offset_store_proof_for_colliding_index()
     });
 }
 #[test]
+fn offset_store_identity_comparison_refusal_propagates() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    for second_store in ["3", "4"] {
+        let roots = BTreeMap::from([(94, 94), (95, 95)]);
+        let blocks = BTreeMap::from([
+            (94, "nx:om-data-blocks-3:block#94".to_string()),
+            (95, format!("nx:om-data-blocks-{second_store}:block#95")),
+        ]);
+        let bodies = BTreeMap::new();
+        let native = "nx:om-object-indices#94,95".to_string();
+        let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            feature_body_selection_with_offset_blocks(
+                ctx,
+                &[94, 95],
+                &roots,
+                &blocks,
+                &bodies,
+                native.clone(),
+            )?
+            .into_selection(ctx)
+        };
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            "NX body selection offset store identity",
+            decode,
+        );
+        // The comparison reads the one-byte store identity.
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "NX body selection offset store identity"
+                && limit.additional == 1));
+        crate::test_support::with_decode_context(|ctx| {
+            let selection = decode(ctx).unwrap();
+            if second_store == "3" {
+                assert_eq!(
+                    selection,
+                    BodySelection::local(
+                        vec![
+                            "nx:om-data-blocks-3:block#94".to_string(),
+                            "nx:om-data-blocks-3:block#95".to_string(),
+                        ],
+                        native.clone(),
+                        ctx,
+                    )
+                    .unwrap()
+                    .unwrap()
+                );
+            } else {
+                assert_eq!(selection, BodySelection::Native(native.clone()));
+            }
+        });
+    }
+}
+
+#[test]
 fn native_primary_body_references_retain_only_proven_body_namespaces() {
     use crate::native::features::{
         FeatureBodyDataBlockUse, FeatureBodyReference, FeatureBodySegmentUse, FeatureInputBlock,
@@ -765,7 +823,7 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
             Some(&offset_prior)
         );
         assert_eq!(
-            boolean_target_writer(&definition, 401),
+            boolean_target_writer(ctx, &definition, 401).expect("writer selection"),
             (None, Some("nx:om-data-blocks-3:block#401"))
         );
 
@@ -782,7 +840,7 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
             keep_tools: false,
         });
         assert_eq!(
-            boolean_target_writer(&native_definition, 401),
+            boolean_target_writer(ctx, &native_definition, 401).expect("writer selection"),
             (Some(401), None)
         );
     });
@@ -932,4 +990,66 @@ fn boolean_offset_store_refuses_work_limit() {
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
     );
+}
+
+#[test]
+fn body_selection_lookup_and_parsing_refusals_reach_named_operations() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let roots = BTreeMap::from([(7, 7)]);
+    let blocks = BTreeMap::from([(7, "nx:om-data-blocks-3:block#7".to_string())]);
+    for operation in [
+        "NX body selection alias root lookup",
+        "NX body selection offset block lookup",
+        "NX body selection offset store parsing",
+    ] {
+        let error = crate::test_support::resource_refusal_at(
+            &[],
+            ResourceDimension::WorkUnits,
+            operation,
+            |ctx| {
+                feature_body_selection_with_offset_blocks(
+                    ctx,
+                    &[7],
+                    &roots,
+                    &blocks,
+                    &BTreeMap::new(),
+                    "nx:om-object-index#7".to_string(),
+                )?
+                .into_selection(ctx)
+            },
+        );
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == operation)
+        );
+    }
+}
+
+#[test]
+fn boolean_participant_stops_at_first_non_offset_body() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let selection = BodySelection::local(
+        vec![
+            "nx:om-body-object#7".to_string(),
+            "nx:om-data-blocks-3:block#7".to_string(),
+        ],
+        "nx:om-object-indices#7,8".to_string(),
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .expect("selection admission")
+    .expect("local selection");
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(boolean_participant_writer(
+        &ctx,
+        &selection,
+        7,
+        None,
+        &BTreeMap::new(),
+        &BodyWriterHistory::default(),
+    )
+    .expect("only the first body is visited")
+    .is_none());
 }

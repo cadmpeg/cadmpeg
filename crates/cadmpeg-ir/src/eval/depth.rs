@@ -108,13 +108,6 @@ impl<'budget, 'session> ModelEvaluationDepthGuard<'budget, 'session> {
         admission: EvaluationAdmission<'_, '_>,
         result: Result<T, EvaluationFailure<R>>,
     ) -> Result<T, EvaluationFailure<R>> {
-        // An attached work refusal can pass through an optional evaluator branch.
-        // A zero-byte reservation reads the session's first refusal without growing storage.
-        if let Some(budget) = admission.work_slice() {
-            let _boundary = budget
-                .reserve_scratch(0, "finish model evaluation")
-                .map_err(EvaluationFailure::ResourceLimit)?;
-        }
         if let Some(limit) = MODEL_EVALUATION_REFUSAL.with(Cell::get) {
             Err(EvaluationFailure::ResourceLimit(limit))
         } else if MODEL_EVALUATION_CYCLE.with(Cell::get) {
@@ -267,7 +260,7 @@ mod tests {
                 // frame copies and compares the active identity path.
                 assert_eq!(
                     first.used,
-                    frame_bytes + 1 + cadmpeg_core::decode::u64_from_index(surface.as_str().len())
+                    frame_bytes + cadmpeg_core::decode::u64_from_index(surface.as_str().len())
                 );
                 assert_eq!(first.additional, frame_bytes * 2 + 1);
                 assert_eq!(first.operation, "model evaluation cycle path");
