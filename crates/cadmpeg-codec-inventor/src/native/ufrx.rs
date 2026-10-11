@@ -721,10 +721,10 @@ impl Serialize for ExternalReferenceRecord {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct ExternalReferenceRecordWire {
+pub(crate) struct ExternalReferenceRecordWire<Path = String> {
     pub(crate) id: String,
     pub(crate) ordinal: u32,
-    pub(crate) path: String,
+    pub(crate) path: Path,
     pub(crate) library_id: i32,
     pub(crate) library_name: String,
     pub(crate) display_name: String,
@@ -749,6 +749,17 @@ impl ExternalReferenceRecordWire {
     pub(crate) fn into_record(
         self,
         ctx: &DecodeContext<'_>,
+    ) -> Result<ExternalReferenceRecord, CodecError> {
+        self.into_record_with_path(|path| {
+            Ok(NonBlankString::for_decode(ctx, path, "validate path")?)
+        })
+    }
+}
+
+impl<Path> ExternalReferenceRecordWire<Path> {
+    pub(crate) fn into_record_with_path(
+        self,
+        convert_path: impl FnOnce(Path) -> Result<Option<NonBlankString>, CodecError>,
     ) -> Result<ExternalReferenceRecord, CodecError> {
         let suffix = required(
             self.id.strip_prefix("inventor:ufrx:external-reference#"),
@@ -786,7 +797,7 @@ impl ExternalReferenceRecordWire {
             }
             None => None,
         };
-        let path = NonBlankString::for_decode(ctx, self.path, "validate path")?;
+        let path = convert_path(self.path)?;
         let identity = match (path, document_id) {
             (Some(path), document_id) => ExternalReferenceIdentity::Path { path, document_id },
             (None, Some(document_id)) => ExternalReferenceIdentity::DocumentId(document_id),

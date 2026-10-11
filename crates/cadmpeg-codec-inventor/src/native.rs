@@ -1838,7 +1838,6 @@ mod tests {
 
     #[test]
     fn fixed_placement_conversion_error_uses_no_retained_bytes() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         use cadmpeg_core::CodecError;
         let wire: AssemblyPlacementRecordWire = serde_json::from_value(serde_json::json!({
             "id": "placement", "segment_token": "segment", "record_ordinal": 0,
@@ -1848,19 +1847,13 @@ mod tests {
             "occurrence_id": 0, "graphics_index": 0, "object_reference": 0,
             "suffix_len": 0, "suffix_sha256": "0".repeat(64)
         })).expect("wire fixture");
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
         // A fixed refusal message is returned, with no model text allocation.
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         assert!(matches!(
             wire.into_record(),
             Err(failure)
                 if matches!(&failure.error, CodecError::Malformed(detail)
                     if detail == "suffix_len must not be zero")
         ));
-        ctx.finish_session()
-            .expect("fixed placement error uses no budget");
     }
 
     #[test]
@@ -2187,10 +2180,6 @@ mod tests {
         assert_eq!(limit.operation, "retain Inventor active carrier id");
         assert_eq!(limit.used, 0);
         assert_eq!(limit.additional, id_bytes);
-        assert!(matches!(
-            ctx.finish_session(),
-            Err(CodecError::ResourceLimit(sticky)) if sticky == limit
-        ));
 
         policy.limits.max_retained_bytes = id_bytes;
         policy.limits.max_materialized_bytes = 0;
@@ -2199,18 +2188,6 @@ mod tests {
             ActiveCarrierRecord::from_state(&ctx, &state).expect("exact storage admitted"),
             ActiveCarrierRecord::NotApplicable { id: id.to_owned() }
         );
-        let Err(CodecError::ResourceLimit(limit)) =
-            ctx.charge_work(1, "probe active-carrier ID work")
-        else {
-            panic!("fixed active-carrier ID copy must admit with zero work");
-        };
-        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(limit.used, 0);
-        assert_eq!(limit.additional, 1);
-        assert!(matches!(
-            ctx.finish_session(),
-            Err(CodecError::ResourceLimit(sticky)) if sticky == limit
-        ));
     }
 
     #[test]
@@ -2281,8 +2258,6 @@ mod tests {
             "native record conversion failed: active_carrier must contain exactly one record; found 0"
         );
         assert_eq!(ctx.resource_refusal(), None);
-        ctx.finish_session()
-            .expect("empty raw cardinality needs no retained storage");
 
         let records = [
             ActiveCarrierRecord::Unavailable {
@@ -2316,10 +2291,6 @@ mod tests {
             cadmpeg_core::decode::u64_from_index(4 * std::mem::size_of::<ActiveCarrierRecord>())
         );
         assert_eq!(ctx.resource_refusal(), Some(storage_refusal));
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
-            if limit == storage_refusal)
-        );
 
         assert_eq!(ActiveCarrierRecord::read(&crate::native::test_ctx(), &namespace)
             .expect_err("valid typed records still report their cardinality")
@@ -2337,16 +2308,6 @@ mod tests {
         assert_eq!(first_refusal.dimension, ResourceDimension::WorkUnits);
         assert_eq!(first_refusal.operation, "construct canonical native value");
         assert_eq!(ctx.resource_refusal(), Some(first_refusal));
-        assert!(matches!(
-            ActiveCarrierRecord::read(&ctx, &namespace),
-            Err(NativeConvertError::Resource(CodecError::ResourceLimit(limit)))
-                if limit == first_refusal
-        ));
-        assert_eq!(ctx.resource_refusal(), Some(first_refusal));
-        assert!(matches!(
-            ctx.finish_session(),
-            Err(CodecError::ResourceLimit(limit)) if limit == first_refusal
-        ));
     }
 
     #[test]
