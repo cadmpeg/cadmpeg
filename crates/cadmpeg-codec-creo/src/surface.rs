@@ -3644,11 +3644,13 @@ fn row_candidates_with_boundaries(
         Ord::cmp,
         "creo rows with boundaries result ordering",
     )?;
-    ctx.dedup_by_key(
-        &mut result,
-        |row| Ok(row.offset),
-        "creo rows with boundaries result deduplication",
-    )?;
+    if result.len() > 1 {
+        ctx.dedup_by_key(
+            &mut result,
+            |row| Ok(row.offset),
+            "creo rows with boundaries result deduplication",
+        )?;
+    }
     let mut scratch = ctx.reserve_scoped(0, "creo surface row scratch")?;
     let mut id_counts = std::collections::HashMap::<u32, usize>::new();
     for row in ctx.admit_iter(&result, "creo surface row identities")? {
@@ -4212,10 +4214,12 @@ fn named_prototype_frames<'a>(
             Ord::cmp,
             "creo named prototype field position sort",
         )?;
-        ctx.dedup_vec(
-            &mut named,
-            "creo named prototype field position deduplication",
-        )?;
+        if named.len() > 1 {
+            ctx.dedup_vec(
+                &mut named,
+                "creo named prototype field position deduplication",
+            )?;
+        }
         let mut owned_scalar_end = close + 2;
         ctx.retain_vec(
             &mut named,
