@@ -1833,6 +1833,7 @@ fn linear_nurbs_boundary_points(
     nurbs: &NurbsCurve,
     parameter_range: [f64; 2],
     transform: Transform,
+    proof: Option<&PlaneBoundaryMeasurements>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<Point3>>, CodecError> {
     let knots = nurbs.knots().as_slice();
@@ -1885,6 +1886,9 @@ fn linear_nurbs_boundary_points(
             return Ok(false);
         };
         ctx.push_vec(&mut points, point.get(), "iges plane NURBS boundary points")?;
+        if let Some(measurements) = proof {
+            measurements.record(point.get());
+        }
         Ok(true)
     };
     if !append_sample(parameter_range[0])? {
@@ -1905,10 +1909,18 @@ fn linear_nurbs_boundary_points(
     Ok(Some(points))
 }
 
-/// Measurements accumulated during the admitted simplicity comparisons.
+/// Coordinate bounds and orientation margin for one boundary proof.
 struct PlaneBoundaryMeasurements {
     orientation_margin: std::cell::Cell<f64>,
     lattice: std::cell::Cell<TranslationLattice>,
+}
+
+impl PlaneBoundaryMeasurements {
+    fn record(&self, point: Point3) {
+        let mut lattice = self.lattice.get();
+        lattice.record(point);
+        self.lattice.set(lattice);
+    }
 }
 
 fn linear_nurbs_is_simple_closed(
@@ -1922,7 +1934,7 @@ fn linear_nurbs_is_simple_closed(
 ) -> Result<bool, CodecError> {
     let mut storage = ctx.reserve_scoped(0, "iges plane boundary samples")?;
     let Some(points) = storage
-        .with_storage(|| linear_nurbs_boundary_points(nurbs, parameter_range, transform, ctx))?
+        .with_storage(|| linear_nurbs_boundary_points(nurbs, parameter_range, transform, proof, ctx))?
     else {
         return Ok(false);
     };
@@ -1930,15 +1942,7 @@ fn linear_nurbs_is_simple_closed(
         || !points_coincident(points[0], *points.last().unwrap_or(&points[0]), resolution)
         || super::geometry::closed_polyline_has_duplicate(
             &points,
-            |left, right| {
-                if let Some(measurements) = proof {
-                    let mut lattice = measurements.lattice.get();
-                    lattice.record(*left);
-                    lattice.record(*right);
-                    measurements.lattice.set(lattice);
-                }
-                points_coincident(*left, *right, resolution)
-            },
+            |left, right| points_coincident(*left, *right, resolution),
             ctx,
         )?
     {
@@ -2131,7 +2135,13 @@ fn bounded_plane_curve_is_simple(
                         context
                             .transform
                             .apply_point(point.get())
-                            .map(cadmpeg_ir::features::FinitePoint3::get)
+                            .map(|point| {
+                                let point = point.get();
+                                if let Some(measurements) = proof {
+                                    measurements.record(point);
+                                }
+                                point
+                            })
                     }),
                     "iges plane polyline points",
                 )
@@ -2147,15 +2157,7 @@ fn bounded_plane_curve_is_simple(
                 )
                 && !super::geometry::closed_polyline_has_duplicate(
                     &points,
-                    |left, right| {
-                        if let Some(measurements) = proof {
-                            let mut lattice = measurements.lattice.get();
-                            lattice.record(*left);
-                            lattice.record(*right);
-                            measurements.lattice.set(lattice);
-                        }
-                        points_coincident(*left, *right, context.resolution)
-                    },
+                    |left, right| points_coincident(*left, *right, context.resolution),
                     context.ctx,
                 )?)
             {

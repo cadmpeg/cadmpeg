@@ -37,7 +37,7 @@ fn finer(left: Option<f64>, right: Option<f64>) -> Option<f64> {
 }
 
 impl TranslationLattice {
-    /// Records a point during the admitted duplicate comparisons.
+    /// Records an admitted world-space boundary sample.
     pub(super) fn record(&mut self, point: Point3) {
         for (axis, value) in [point.x, point.y, point.z].into_iter().enumerate() {
             self.spacing[axis] = finer(self.spacing[axis], dyadic_spacing(value));

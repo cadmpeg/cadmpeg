@@ -94,6 +94,7 @@ fn plane_nurbs_boundary_points_refuse_collection_limit() {
                 &nurbs,
                 [0.0, 4.0],
                 Transform::identity(),
+                None,
                 &ctx,
             )
         },
@@ -111,6 +112,7 @@ fn plane_nurbs_boundary_points_refuse_collection_limit() {
                 &nurbs,
                 [0.0, 4.0],
                 Transform::identity(),
+                None,
                 &ctx,
             )
         },
@@ -119,7 +121,7 @@ fn plane_nurbs_boundary_points_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let points =
-        super::super::linear_nurbs_boundary_points(&nurbs, [0.0, 4.0], Transform::identity(), &ctx)
+        super::super::linear_nurbs_boundary_points(&nurbs, [0.0, 4.0], Transform::identity(), None, &ctx)
             .unwrap()
             .unwrap();
     assert_eq!(points.len(), 5);
@@ -131,7 +133,7 @@ fn plane_nurbs_boundary_points_refuse_collection_limit() {
     ])
     .unwrap();
     assert_eq!(
-        super::super::linear_nurbs_boundary_points(&nurbs, [0.0, 4.0], translated, &ctx)
+        super::super::linear_nurbs_boundary_points(&nurbs, [0.0, 4.0], translated, None, &ctx)
             .unwrap()
             .unwrap(),
         vec![
@@ -149,7 +151,7 @@ fn plane_nurbs_boundary_points_refuse_collection_limit() {
     ])
     .unwrap();
     assert!(
-        super::super::linear_nurbs_boundary_points(&nurbs, [0.0, 4.0], overflowing, &ctx)
+        super::super::linear_nurbs_boundary_points(&nurbs, [0.0, 4.0], overflowing, None, &ctx)
             .unwrap()
             .is_none()
     );
@@ -604,6 +606,7 @@ fn plane_nurbs_weight_validation_charges_only_rational_poles() {
                         &nurbs,
                         [0.0, 4.0],
                         Transform::identity(),
+                        None,
                         ctx,
                     )
                 })
@@ -614,6 +617,7 @@ fn plane_nurbs_weight_validation_charges_only_rational_poles() {
                 &nurbs,
                 [0.0, 4.0],
                 Transform::identity(),
+                None,
                 ctx,
             )
         })
@@ -836,6 +840,7 @@ fn plane_nurbs_scalar_rejections_do_not_visit_lanes() {
             &nurbs,
             range,
             Transform::identity(),
+            None,
             &ctx
         )
         .unwrap()
