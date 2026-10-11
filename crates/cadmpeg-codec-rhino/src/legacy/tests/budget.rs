@@ -544,9 +544,13 @@ fn joined_v1_curve_error_storage_lives_until_diagnostic_copy() {
         let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
         let mut storage = ctx.reserve_scoped(0, "joined curve result").unwrap();
         let error = super::super::legacy_curve(
-            &ctx, &mut storage, &data, chunk.body(),
+            &ctx,
+            &mut storage,
+            &data,
+            chunk.body(),
             super::super::MillimeterScale::IDENTITY,
-        ).unwrap_err();
+        )
+        .unwrap_err();
         let cadmpeg_core::CodecError::Malformed(message) = error else {
             panic!("nonfinite pole is malformed");
         };
@@ -558,8 +562,10 @@ fn joined_v1_curve_error_storage_lives_until_diagnostic_copy() {
         }
         let probe = ctx.reserve_scoped(4096, "joined error storage probe");
         if keep_error {
-            assert!(matches!(probe, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::MaterializedBytes && limit.used >= message_len));
+            assert!(
+                matches!(probe, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::MaterializedBytes && limit.used >= message_len)
+            );
         } else {
             drop(probe.expect("dropping the error and its owner releases every scratch byte"));
         }
@@ -629,12 +635,22 @@ fn rejected_v1_brep_surfaces_do_not_consume_retained_allowance() {
         for retained in decoded.source_fidelity.retained_records().values() {
             assert_eq!(retained.data(), Some(record.as_slice()));
         }
-        assert_eq!(decoded.body.notes.iter().filter(|note| {
-            note.starts_with("V1 Brep at offset ")
-                && note.ends_with("V1 face boundary count exceeds the remaining bytes")
-        }).count(), RECORDS);
-        drop(ctx.reserve_scoped(SCRATCH_BYTES, "released Brep candidates")
-            .expect("surface fields and parsing scratch are released after decode"));
+        assert_eq!(
+            decoded
+                .body
+                .notes
+                .iter()
+                .filter(|note| {
+                    note.starts_with("V1 Brep at offset ")
+                        && note.ends_with("V1 face boundary count exceeds the remaining bytes")
+                })
+                .count(),
+            RECORDS
+        );
+        drop(
+            ctx.reserve_scoped(SCRATCH_BYTES, "released Brep candidates")
+                .expect("surface fields and parsing scratch are released after decode"),
+        );
         ctx.finish_session().unwrap();
     }
 }
@@ -685,11 +701,19 @@ fn work_with_records_between_breps(
     assert_eq!(decoded.ir.model.bodies.len(), count * (1 + added[0]));
     assert_eq!(decoded.ir.model.curves.len(), count * (4 + added[1]));
     assert_eq!(decoded.ir.model.tessellations.len(), count * added[2]);
-    assert_eq!(decoded.source_fidelity.retained_records().len(), count * (1 + usize::from(retained)));
-    assert!(!decoded.body.notes.iter().any(|note| note.starts_with("V1 Brep at offset ")));
+    assert_eq!(
+        decoded.source_fidelity.retained_records().len(),
+        count * (1 + usize::from(retained))
+    );
+    assert!(!decoded
+        .body
+        .notes
+        .iter()
+        .any(|note| note.starts_with("V1 Brep at offset ")));
     // A final refusal exposes completed work without pinning individual charges.
-    let cadmpeg_core::CodecError::ResourceLimit(limit) =
-        ctx.charge_work(u64::MAX, "completed interleaved V1 work").unwrap_err()
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx
+        .charge_work(u64::MAX, "completed interleaved V1 work")
+        .unwrap_err()
     else {
         panic!("work counter probe refuses");
     };
@@ -702,29 +726,45 @@ fn v1_units_between_breps_keep_linear_identity_index_work() {
     let record = units_record(2);
     let small = work_with_records_between_breps(64, &record, [0, 0, 0], false);
     let large = work_with_records_between_breps(128, &record, [0, 0, 0], false);
-    assert!(large < 3 * small,
-        "doubling records must remain below quadratic growth: {small} -> {large}");
+    assert!(
+        large < 3 * small,
+        "doubling records must remain below quadratic growth: {small} -> {large}"
+    );
 }
 
 #[test]
 fn v1_points_between_breps_keep_linear_identity_index_work() {
-    let coordinates = [1.0_f64, 2.0, 3.0].into_iter().flat_map(f64::to_le_bytes).collect::<Vec<_>>();
+    let coordinates = [1.0_f64, 2.0, 3.0]
+        .into_iter()
+        .flat_map(f64::to_le_bytes)
+        .collect::<Vec<_>>();
     let record = super::chunk(super::super::TCODE_RH_POINT, &coordinates);
     let small = work_with_records_between_breps(64, &record, [1, 0, 0], true);
     let large = work_with_records_between_breps(128, &record, [1, 0, 0], true);
-    assert!(large < 3 * small,
-        "doubling records must remain below quadratic growth: {small} -> {large}");
+    assert!(
+        large < 3 * small,
+        "doubling records must remain below quadratic growth: {small} -> {large}"
+    );
 }
 
 #[test]
 fn v1_units_preserve_geometry_scaling_order_and_final_tolerances() {
     let mut data = super::archive(&[[1.0, 2.0, 3.0]]);
     data.extend(units_record(4));
-    let coordinates = [1.0_f64, 2.0, 3.0].into_iter().flat_map(f64::to_le_bytes).collect::<Vec<_>>();
+    let coordinates = [1.0_f64, 2.0, 3.0]
+        .into_iter()
+        .flat_map(f64::to_le_bytes)
+        .collect::<Vec<_>>();
     data.extend(super::chunk(super::super::TCODE_RH_POINT, &coordinates));
     let decoded = super::decode_v1(&data).unwrap();
-    assert_eq!(decoded.ir.model.points[0].position().get(), Point3::new(1.0, 2.0, 3.0));
-    assert_eq!(decoded.ir.model.points[1].position().get(), Point3::new(1000.0, 2000.0, 3000.0));
+    assert_eq!(
+        decoded.ir.model.points[0].position().get(),
+        Point3::new(1.0, 2.0, 3.0)
+    );
+    assert_eq!(
+        decoded.ir.model.points[1].position().get(),
+        Point3::new(1000.0, 2000.0, 3000.0)
+    );
     assert_eq!(decoded.ir.model.bodies.len(), 2);
     assert_eq!(decoded.ir.tolerances.linear.get(), 10.0);
     assert_eq!(decoded.ir.tolerances.angular.get(), 0.03);
@@ -737,8 +777,10 @@ fn v1_curves_between_breps_keep_linear_identity_index_work() {
     let record = super::legacy_line([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], 3);
     let small = work_with_records_between_breps(64, &record, [1, 1, 0], true);
     let large = work_with_records_between_breps(128, &record, [1, 1, 0], true);
-    assert!(large < 3 * small,
-        "doubling records must remain below quadratic growth: {small} -> {large}");
+    assert!(
+        large < 3 * small,
+        "doubling records must remain below quadratic growth: {small} -> {large}"
+    );
 }
 
 #[test]
@@ -764,8 +806,10 @@ fn v1_meshes_between_breps_keep_linear_identity_index_work() {
     );
     let small = work_with_records_between_breps(64, &record, [0, 0, 1], true);
     let large = work_with_records_between_breps(128, &record, [0, 0, 1], true);
-    assert!(large < 3 * small,
-        "doubling records must remain below quadratic growth: {small} -> {large}");
+    assert!(
+        large < 3 * small,
+        "doubling records must remain below quadratic growth: {small} -> {large}"
+    );
 }
 
 fn joined_line_fixture(invalid_last: bool, gap: f64) -> Vec<u8> {
@@ -774,15 +818,35 @@ fn joined_line_fixture(invalid_last: bool, gap: f64) -> Vec<u8> {
     body.extend(SEGMENTS.to_le_bytes());
     body.extend([0; 48]);
     for index in 0..SEGMENTS {
-        let start = if invalid_last && index + 1 == SEGMENTS { f64::NAN } else { f64::from(index) + if index == 0 { 0.0 } else { gap } };
+        let start = if invalid_last && index + 1 == SEGMENTS {
+            f64::NAN
+        } else {
+            f64::from(index) + if index == 0 { 0.0 } else { gap }
+        };
         let line = super::legacy_line([start, 0.0, 0.0], [f64::from(index + 1), 0.0, 0.0], 3);
         let curve = chunk_at(&line, 0, line.len(), ArchiveVersion::V1, false).unwrap();
-        let stuff = chunk_at(&line, curve.body().start, line.len(), ArchiveVersion::V1, false).unwrap();
-        let spline = chunk_at(&line, stuff.body().start + 52, stuff.body().end, ArchiveVersion::V1, false).unwrap();
+        let stuff = chunk_at(
+            &line,
+            curve.body().start,
+            line.len(),
+            ArchiveVersion::V1,
+            false,
+        )
+        .unwrap();
+        let spline = chunk_at(
+            &line,
+            stuff.body().start + 52,
+            stuff.body().end,
+            ArchiveVersion::V1,
+            false,
+        )
+        .unwrap();
         body.extend_from_slice(&line[spline.range()]);
     }
-    super::legacy_chunk(super::TCODE_LEGACY_CRV,
-        &super::legacy_chunk(super::TCODE_LEGACY_CRVSTUFF, &body))
+    super::legacy_chunk(
+        super::TCODE_LEGACY_CRV,
+        &super::legacy_chunk(super::TCODE_LEGACY_CRVSTUFF, &body),
+    )
 }
 
 #[test]
@@ -796,16 +860,31 @@ fn joined_v1_curve_releases_sources_before_final_assembly() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
     let mut storage = ctx.reserve_scoped(0, "joined curve output").unwrap();
-    let curve = super::super::legacy_curve(&ctx, &mut storage, &data, chunk.body(),
-        super::super::MillimeterScale::IDENTITY).expect("source owners release with source geometry");
+    let curve = super::super::legacy_curve(
+        &ctx,
+        &mut storage,
+        &data,
+        chunk.body(),
+        super::super::MillimeterScale::IDENTITY,
+    )
+    .expect("source owners release with source geometry");
     assert_eq!(curve.degree(), 1);
     assert_eq!(curve.pole_count(), 33);
-    assert_eq!(curve.pole_rows().point_at(0).unwrap().get(), Point3::new(0.0, 0.0, 0.0));
-    assert_eq!(curve.pole_rows().point_at(32).unwrap().get(), Point3::new(32.0, 0.0, 0.0));
+    assert_eq!(
+        curve.pole_rows().point_at(0).unwrap().get(),
+        Point3::new(0.0, 0.0, 0.0)
+    );
+    assert_eq!(
+        curve.pole_rows().point_at(32).unwrap().get(),
+        Point3::new(32.0, 0.0, 0.0)
+    );
     assert!(curve.weights().is_none());
     drop(curve);
     drop(storage);
-    drop(ctx.reserve_scoped(SCRATCH_BYTES, "released joined sources and output").unwrap());
+    drop(
+        ctx.reserve_scoped(SCRATCH_BYTES, "released joined sources and output")
+            .unwrap(),
+    );
     ctx.finish_session().unwrap();
 }
 
@@ -820,16 +899,29 @@ fn rejected_v1_curve_releases_tuple_backing_before_diagnostic_copy() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
     let mut storage = ctx.reserve_scoped(0, "joined curve error").unwrap();
-    let error = super::super::legacy_curve(&ctx, &mut storage, &data, chunk.body(),
-        super::super::MillimeterScale::IDENTITY).unwrap_err();
-    assert!(matches!(&error, cadmpeg_core::CodecError::Malformed(message) if message.contains("finite")));
+    let error = super::super::legacy_curve(
+        &ctx,
+        &mut storage,
+        &data,
+        chunk.body(),
+        super::super::MillimeterScale::IDENTITY,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(&error, cadmpeg_core::CodecError::Malformed(message) if message.contains("finite"))
+    );
     // The escaped error and one failed segment fit in 1 KiB. The discarded
     // 32-entry tuple backing and preceding valid segment lanes do not.
-    drop(ctx.reserve_scoped(SCRATCH_BYTES - 1024, "released rejected curve tuples")
-        .expect("rejected source backing is released while the error remains live"));
+    drop(
+        ctx.reserve_scoped(SCRATCH_BYTES - 1024, "released rejected curve tuples")
+            .expect("rejected source backing is released while the error remains live"),
+    );
     drop(error);
     drop(storage);
-    drop(ctx.reserve_scoped(SCRATCH_BYTES, "released joined error").unwrap());
+    drop(
+        ctx.reserve_scoped(SCRATCH_BYTES, "released joined error")
+            .unwrap(),
+    );
     ctx.finish_session().unwrap();
 }
 
@@ -848,15 +940,24 @@ fn unavailable_v1_source_digest_keeps_hex_and_retained_admission() {
         let result = super::super::retain_v1_record(&ctx, &data, &chunk, &mut retained_bytes);
         assert_eq!(retained_bytes, crate::decode::RETAINED_DOCUMENT_CAP);
         if retained == 0 {
-            assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            assert!(
+                matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "Rhino V1 source digest text"));
+                    && limit.operation == "Rhino V1 source digest text")
+            );
         } else {
             let record = result.unwrap();
             assert_eq!(record.data(), None);
-            assert_eq!(record, cadmpeg_ir::UnknownRecord::unavailable(
-                record.id().clone(), 0, u64::try_from(data.len()).unwrap(), EXPECTED, Vec::new(),
-            ));
+            assert_eq!(
+                record,
+                cadmpeg_ir::UnknownRecord::unavailable(
+                    record.id().clone(),
+                    0,
+                    u64::try_from(data.len()).unwrap(),
+                    EXPECTED,
+                    Vec::new(),
+                )
+            );
             ctx.finish_session().unwrap();
         }
     }
@@ -871,12 +972,21 @@ fn v1_join_gap_preserves_midpoints_without_discarded_diagnostics() {
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&contiguous, &arena, &policy).unwrap();
     let mut storage = ctx.reserve_scoped(0, "contiguous joined output").unwrap();
-    let curve = super::super::legacy_curve(&ctx, &mut storage, &contiguous, chunk.body(),
-        super::super::MillimeterScale::IDENTITY).unwrap();
+    let curve = super::super::legacy_curve(
+        &ctx,
+        &mut storage,
+        &contiguous,
+        chunk.body(),
+        super::super::MillimeterScale::IDENTITY,
+    )
+    .unwrap();
     assert_eq!(curve.pole_count(), 33);
-    let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx.charge_collection_items(
-        u64::MAX, "completed contiguous join slots",
-    ).unwrap_err() else { panic!("collection counter probe refuses"); };
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = ctx
+        .charge_collection_items(u64::MAX, "completed contiguous join slots")
+        .unwrap_err()
+    else {
+        panic!("collection counter probe refuses");
+    };
     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
     let collection_limit = limit.used;
     drop(curve);
@@ -891,20 +1001,40 @@ fn v1_join_gap_preserves_midpoints_without_discarded_diagnostics() {
     policy.limits.max_materialized_bytes = SCRATCH_BYTES;
     let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
     let mut storage = ctx.reserve_scoped(0, "gapped joined output").unwrap();
-    let curve = super::super::legacy_curve(&ctx, &mut storage, &data, chunk.body(),
-        super::super::MillimeterScale::IDENTITY)
-        .expect("gaps need no discarded diagnostic collection slots");
+    let curve = super::super::legacy_curve(
+        &ctx,
+        &mut storage,
+        &data,
+        chunk.body(),
+        super::super::MillimeterScale::IDENTITY,
+    )
+    .expect("gaps need no discarded diagnostic collection slots");
     assert_eq!(curve.degree(), 1);
     assert_eq!(curve.pole_count(), 33);
     assert!(curve.weights().is_none());
-    assert_eq!(curve.pole_rows().point_at(0).unwrap().get(), Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(
+        curve.pole_rows().point_at(0).unwrap().get(),
+        Point3::new(0.0, 0.0, 0.0)
+    );
     for index in 1..32_u32 {
-        assert_eq!(curve.pole_rows().point_at(usize::try_from(index).unwrap()).unwrap().get(),
-            Point3::new(f64::from(index) + 0.25, 0.0, 0.0));
+        assert_eq!(
+            curve
+                .pole_rows()
+                .point_at(usize::try_from(index).unwrap())
+                .unwrap()
+                .get(),
+            Point3::new(f64::from(index) + 0.25, 0.0, 0.0)
+        );
     }
-    assert_eq!(curve.pole_rows().point_at(32).unwrap().get(), Point3::new(32.0, 0.0, 0.0));
+    assert_eq!(
+        curve.pole_rows().point_at(32).unwrap().get(),
+        Point3::new(32.0, 0.0, 0.0)
+    );
     drop(curve);
     drop(storage);
-    drop(ctx.reserve_scoped(SCRATCH_BYTES, "released gapped join output").unwrap());
+    drop(
+        ctx.reserve_scoped(SCRATCH_BYTES, "released gapped join output")
+            .unwrap(),
+    );
     ctx.finish_session().unwrap();
 }
