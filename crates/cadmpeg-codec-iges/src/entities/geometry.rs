@@ -30,17 +30,15 @@ use std::fmt;
 
 const MAX_TRANSFORM_DEPTH: usize = 64;
 const COMPUTATION_TOLERANCE: f64 = 64.0 * f64::EPSILON;
-const CURVE_PLANE_NORMAL_EPSILON: f64 = 1.0e-10;
+pub(super) const CURVE_PLANE_NORMAL_EPSILON: f64 = 1.0e-10;
 
 pub(super) type ScopedValues<'ctx, T> = (Vec<T>, cadmpeg_core::decode::ScopedReservation<'ctx>);
 
 pub(super) fn planar_polyline_has_self_intersection(
     points: &[[f64; 2]],
+    margin: Option<&std::cell::Cell<f64>>,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if points.len() < 3 {
         return Ok(false);
     }
@@ -69,6 +67,7 @@ pub(super) fn planar_polyline_has_self_intersection(
                         [point_at(first_index), point_at(first_index + 1)],
                         [point_at(second_index), point_at(second_index + 1)],
                         allowed_endpoint,
+                        margin,
                     ))
                 },
                 "iges planar self-intersection comparisons",
@@ -92,6 +91,7 @@ pub(super) fn planar_polylines_intersect(
                     Ok(planar_segments_intersect_beyond_endpoint(
                         [first_segment[0], first_segment[1]],
                         [second_segment[0], second_segment[1]],
+                        None,
                         None,
                     ))
                 },
@@ -132,9 +132,6 @@ pub(super) fn plane_coordinates(
     plane: (Point3, Vector3),
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<[f64; 2]>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(normal) = plane.1.unit() else {
         return Ok(None);
     };
@@ -172,9 +169,6 @@ pub(super) fn linear_nurbs_parameters<'ctx>(
     range: [f64; 2],
     ctx: &'ctx DecodeContext<'_>,
 ) -> Result<Option<ScopedValues<'ctx, f64>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some((degree, expected_knot_count)) = usize::try_from(degree).ok().and_then(|degree| {
         control_count
             .checked_add(degree)?
@@ -218,9 +212,6 @@ pub(super) fn linear_nurbs_parameters<'ctx>(
         "iges linear NURBS parameters",
     )?;
     let mut previous = range[0];
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(knots);
     while source_values.len() != 0 {
         let Some(&knot) =
@@ -263,6 +254,7 @@ fn planar_segments_intersect_beyond_endpoint(
     first: [[f64; 2]; 2],
     second: [[f64; 2]; 2],
     allowed_endpoint: Option<[f64; 2]>,
+    margin: Option<&std::cell::Cell<f64>>,
 ) -> bool {
     let [a, b] = first;
     let [c, d] = second;
@@ -272,6 +264,20 @@ fn planar_segments_intersect_beyond_endpoint(
         planar_cross(c, d, a),
         planar_cross(c, d, b),
     ];
+    if let Some(margin) = margin {
+        // A shared endpoint has an exact zero orientation. Every other
+        // orientation must stay away from zero before a placement can reuse it.
+        for (point, orientation) in [c, d, a, b].into_iter().zip(orientations) {
+            if Some(point) != allowed_endpoint {
+                let area = if orientation.is_finite() {
+                    orientation.abs()
+                } else {
+                    0.0
+                };
+                margin.set(margin.get().min(area));
+            }
+        }
+    }
     let opposite =
         |left: f64, right: f64| (left > 0.0 && right < 0.0) || (left < 0.0 && right > 0.0);
     if opposite(orientations[0], orientations[1]) && opposite(orientations[2], orientations[3]) {
@@ -307,9 +313,6 @@ fn point_display_symbol_valid(
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     Ok(match record.value(4) {
         None | Some(crate::parameter::TokenValue::Omitted) => true,
         Some(crate::parameter::TokenValue::Integer(0)) => true,
@@ -385,9 +388,6 @@ fn classify_control_point_plane(
     tolerance: f64,
     ctx: &DecodeContext<'_>,
 ) -> Result<ControlPointPlane, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(origin) = points.first().map(|point| point.get()) else {
         return Ok(ControlPointPlane::NoUniquePlane);
     };
@@ -439,9 +439,6 @@ fn control_points_fit_plane(
     tolerance: f64,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(origin) = points.first().map(|point| point.get()) else {
         return Ok(false);
     };
@@ -554,9 +551,6 @@ pub(super) fn type126_declared_control_points(
     precision: RealPrecision,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<[DeclaredInterval; 3]>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some((control_count, pole_start)) = (|| {
         let control_count = record.count(1)?.checked_add(1)?;
         let degree = usize::try_from(record.integer(2)?).ok()?;
@@ -573,7 +567,7 @@ pub(super) fn type126_declared_control_points(
     let mut controls =
         ctx.collection_vec(control_count, "iges Type126 declared control intervals")?;
     let mut point_iter = 0..control_count;
-    while !point_iter.is_empty() || ctx.resource_refusal().is_some() {
+    while !point_iter.is_empty() {
         let Some(point) =
             ctx.next_charged(&mut point_iter, "iges Type126 declared control traversal")?
         else {
@@ -613,9 +607,6 @@ pub(super) fn declared_affine_progression(
     uncertainties: &[f64],
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if values.len() < 2
         || values.len() != uncertainties.len()
         || ctx.any_by(
@@ -635,14 +626,14 @@ pub(super) fn declared_affine_progression(
     let mut lower = f64::NEG_INFINITY;
     let mut upper = f64::INFINITY;
     let mut first_iter = 0..values.len();
-    while !first_iter.is_empty() || ctx.resource_refusal().is_some() {
+    while !first_iter.is_empty() {
         let Some(first) = ctx.next_charged(&mut first_iter, "iges affine progression origins")?
         else {
             break;
         };
         let first_interval = DeclaredInterval::around(values[first], uncertainties[first]);
         let mut second_iter = first + 1..values.len();
-        while !second_iter.is_empty() || ctx.resource_refusal().is_some() {
+        while !second_iter.is_empty() {
             let Some(second) =
                 ctx.next_charged(&mut second_iter, "iges affine progression pairs")?
             else {
@@ -880,9 +871,6 @@ pub(crate) fn resolve_transform(
     path: &mut BTreeSet<u32>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Transform, TransformResolutionError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(CodecError::ResourceLimit(refusal).into());
-    }
     if sequence == 0 {
         return Ok(Transform::identity());
     }
@@ -1026,7 +1014,7 @@ pub(crate) fn enforce_transform_depth(
             policy.min(MAX_TRANSFORM_DEPTH)
         });
     let mut entry_iter = directory.iter();
-    while entry_iter.len() != 0 || ctx.resource_refusal().is_some() {
+    while entry_iter.len() != 0 {
         let Some(entry) = ctx.next_charged(
             &mut entry_iter,
             "iges transform preflight directory traversal",
@@ -1139,9 +1127,6 @@ impl BoundaryVertexDerivation {
         storage.with_storage(|| {
             let mut source_endpoints =
                 ctx.collection_vec(members.len(), "iges boundary derivation endpoints")?;
-            if let Some(refusal) = ctx.resource_refusal() {
-                return Err(refusal.into());
-            }
             let mut source_values = IntoIterator::into_iter(members);
             while source_values.len() != 0 {
                 let Some(member) = ctx.next_charged(
@@ -1195,9 +1180,6 @@ impl ProjectionOutcome<'_> {
         } = self;
         source_decoded_storage = result_decoded_storage;
         loss_slots_storage = result_loss_slots_storage;
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut source_values = IntoIterator::into_iter(source_decoded);
         while source_values.len() != 0 {
             let Some(sequence) =
@@ -1237,9 +1219,6 @@ impl WireProjectionOutcome<'_> {
         wire_edges: &mut Vec<EdgeId>,
         ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut source_values = IntoIterator::into_iter(self.decoded);
         while source_values.len() != 0 {
             let Some(sequence) =
@@ -1337,9 +1316,6 @@ fn consumed_support_sequences<'ctx>(
         let Some(count) = record.count(1) else {
             continue;
         };
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut source_values = IntoIterator::into_iter(0..count.min(record.parameter_end()));
         while !source_values.is_empty() {
             let Some(index) =
@@ -1416,7 +1392,7 @@ fn consumed_support_sequences<'ctx>(
     }
 
     let mut consumed = direction_sequences;
-    while !transform_sequences.is_empty() || ctx.resource_refusal().is_some() {
+    while !transform_sequences.is_empty() {
         let Some(sequence) = ctx
             .next_charged(
                 &mut transform_sequences.iter(),
@@ -1496,21 +1472,86 @@ pub(super) fn curve_geometry_coplanar(
     active: &mut BTreeSet<CurveId>,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
+    curve_geometry_coplanar_inner(
+        geometry,
+        index,
+        transform,
+        plane,
+        resolution,
+        (active, None),
+        ctx,
+    )
+}
+
+pub(super) fn curve_geometry_coplanar_proof(
+    geometry: &SolvedCurveGeometry,
+    index: &ModelIndex<'_>,
+    transform: Transform,
+    plane: (Point3, Vector3),
+    resolution: f64,
+    active: &mut BTreeSet<CurveId>,
+    ctx: &DecodeContext<'_>,
+) -> Result<(bool, Option<super::plane_proof::CoplanarityEnvelope>), CodecError> {
+    let envelope = std::cell::Cell::new(super::plane_proof::CoplanarityEnvelope::default());
+    let valid = curve_geometry_coplanar_inner(
+        geometry,
+        index,
+        transform,
+        plane,
+        resolution,
+        (active, Some(&envelope)),
+        ctx,
+    )?;
+    Ok((valid, valid.then_some(envelope.get())))
+}
+
+fn curve_geometry_coplanar_inner(
+    geometry: &SolvedCurveGeometry,
+    index: &ModelIndex<'_>,
+    transform: Transform,
+    plane: (Point3, Vector3),
+    resolution: f64,
+    (active, envelope): (
+        &mut BTreeSet<CurveId>,
+        Option<&std::cell::Cell<super::plane_proof::CoplanarityEnvelope>>,
+    ),
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
     let _depth = ctx.enter_nested("iges coplanar curve recursion")?;
+    let record_angle = |residual: f64| {
+        if let Some(envelope) = envelope {
+            let mut bounds = envelope.get();
+            bounds.angular_residual = bounds.angular_residual.max(residual);
+            envelope.set(bounds);
+        }
+    };
     let point_valid = |point: Point3| {
-        transform
-            .apply_point(point)
-            .is_some_and(|point| point_on_plane(point.get(), plane, resolution))
+        transform.apply_point(point).is_some_and(|point| {
+            let point = point.get();
+            if let Some(envelope) = envelope {
+                let mut bounds = envelope.get();
+                bounds.record_point(point, point.vector_from(plane.0).dot(plane.1).abs());
+                envelope.set(bounds);
+            }
+            point_on_plane(point, plane, resolution)
+        })
     };
     let normal_valid = |normal: Vector3| {
-        transform
-            .apply_normal(normal)
-            .is_some_and(|normal| normal_matches_plane(*normal.as_raw(), plane.1))
+        transform.apply_normal(normal).is_some_and(|normal| {
+            if let (Some(normal), Some(plane_normal)) = (normal.as_raw().unit(), plane.1.unit()) {
+                record_angle(normal.cross(plane_normal).norm());
+            }
+            normal_matches_plane(*normal.as_raw(), plane.1)
+        })
     };
     let direction_valid = |direction: Vector3| {
-        transform
-            .apply_vector(direction)
-            .is_some_and(|direction| direction_in_plane(direction.get(), plane.1))
+        transform.apply_vector(direction).is_some_and(|direction| {
+            if let (Some(direction), Some(plane_normal)) = (direction.get().unit(), plane.1.unit())
+            {
+                record_angle(direction.dot(plane_normal).abs());
+            }
+            direction_in_plane(direction.get(), plane.1)
+        })
     };
     let valid = match geometry {
         SolvedCurveGeometry::Line(line_curve) => {
@@ -1564,7 +1605,7 @@ pub(super) fn curve_geometry_coplanar(
         SolvedCurveGeometry::Composite { segments, .. } => {
             let mut valid = true;
             let mut segment_iter = segments.iter();
-            while segment_iter.len() != 0 || ctx.resource_refusal().is_some() {
+            while segment_iter.len() != 0 {
                 let Some(segment) =
                     ctx.next_charged(&mut segment_iter, "iges coplanar composite segments")?
                 else {
@@ -1590,8 +1631,14 @@ pub(super) fn curve_geometry_coplanar(
                     ctx.insert_btree_set(active, active_id, "iges coplanar active curves")
                 })?;
                 let result = (|| {
-                    let valid = curve_geometry_coplanar(
-                        geometry, index, transform, plane, resolution, active, ctx,
+                    let valid = curve_geometry_coplanar_inner(
+                        geometry,
+                        index,
+                        transform,
+                        plane,
+                        resolution,
+                        (active, envelope),
+                        ctx,
                     )?;
                     ctx.remove_btree_set(active, &segment.curve, "iges coplanar active removal")?;
                     if active.is_empty() {
@@ -1616,13 +1663,13 @@ pub(super) fn curve_geometry_coplanar(
             valid
         }
         SolvedCurveGeometry::Transformed(placed) => match transform.compose(*placed.transform()) {
-            Ok(transform) => curve_geometry_coplanar(
+            Ok(transform) => curve_geometry_coplanar_inner(
                 placed.basis(),
                 index,
                 transform,
                 plane,
                 resolution,
-                active,
+                (active, envelope),
                 ctx,
             )?,
             Err(_) => false,
@@ -1789,9 +1836,6 @@ impl<'ctx> SourceSequences<'ctx> {
         stem: &crate::ids::Stem,
         ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         if let Some(sequence) = stem.origin() {
             Self::insert(
                 &mut self.storage,
@@ -2131,7 +2175,7 @@ pub(crate) fn project_geometry<'ctx>(
         }
     }
     let mut primitive_entries = directory.iter();
-    while primitive_entries.len() != 0 || ctx.resource_refusal().is_some() {
+    while primitive_entries.len() != 0 {
         let Some(entry) =
             ctx.next_charged(&mut primitive_entries, "iges geometry family traversal")?
         else {
@@ -2642,7 +2686,7 @@ pub(crate) fn project_geometry<'ctx>(
         })?;
     }
     let mut primitive_entries = directory.iter();
-    while primitive_entries.len() != 0 || ctx.resource_refusal().is_some() {
+    while primitive_entries.len() != 0 {
         let Some(entry) =
             ctx.next_charged(&mut primitive_entries, "iges geometry family traversal")?
         else {

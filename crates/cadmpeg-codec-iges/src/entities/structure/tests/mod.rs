@@ -1539,6 +1539,7 @@ fn legacy_single_parent_face_refuses_nested_topology_storage() {
                 );
                 let plane = super::plane_carrier(&index, 1, ctx)?.expect("fixture parent plane");
                 let mut proofs = super::PlaneBoundaryProofs {
+                    sequences: crate::entities::plane_proof::PlaneProofSequences::default(),
                     proven: BTreeMap::new(),
                     storage: ctx.reserve_scoped(0, "iges plane boundary proof cache")?,
                 };

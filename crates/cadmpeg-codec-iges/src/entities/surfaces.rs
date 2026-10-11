@@ -53,11 +53,8 @@ impl SurfaceGridWeight for NonZeroReal {
     fn admit(
         self,
         _index: usize,
-        ctx: &DecodeContext<'_>,
+        _ctx: &DecodeContext<'_>,
     ) -> Result<Result<NonZeroReal, NurbsError>, CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         Ok(Ok(self))
     }
 }
@@ -68,9 +65,6 @@ impl SurfaceGridWeight for f64 {
         index: usize,
         ctx: &DecodeContext<'_>,
     ) -> Result<Result<NonZeroReal, NurbsError>, CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         match NonZeroReal::new(self) {
             Some(value) => Ok(Ok(value)),
             None => Ok(Err(NurbsError::UnusableWeight {
@@ -92,9 +86,6 @@ fn pair_admitted_surface_poles<W: SurfaceGridWeight>(
     outer_operation: &'static str,
     inner_operation: &'static str,
 ) -> Result<Result<NurbsPoleGrid<FinitePoint3>, NurbsError>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(weights) = weights else {
         return Ok(Ok(NurbsPoleGrid::Polynomial { rows }));
     };
@@ -108,7 +99,7 @@ fn pair_admitted_surface_poles<W: SurfaceGridWeight>(
     }
     let mut paired = ctx.collection_vec(rows.len(), outer_operation)?;
     let mut row_pairs = rows.into_iter().zip(weights);
-    while row_pairs.len() != 0 || ctx.resource_refusal().is_some() {
+    while row_pairs.len() != 0 {
         let Some((row, weight_row)) =
             ctx.next_charged(&mut row_pairs, "iges surface weighted row traversal")?
         else {
@@ -126,7 +117,7 @@ fn pair_admitted_surface_poles<W: SurfaceGridWeight>(
         }
         let mut paired_row = ctx.collection_vec(row.len(), inner_operation)?;
         let mut poles = row.into_iter().zip(weight_row).enumerate();
-        while poles.len() != 0 || ctx.resource_refusal().is_some() {
+        while poles.len() != 0 {
             let Some((index, (point, weight))) =
                 ctx.next_charged(&mut poles, "iges surface weighted pole traversal")?
             else {
@@ -284,9 +275,6 @@ fn interval_certified_linear_bezier(
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if record.integer(0) != Some(126) {
         return Ok(false);
     }
@@ -395,7 +383,7 @@ fn interval_certified_linear_bezier(
         ctx.temporary_vec(control_count, "iges ruled linear interval controls")?;
     _interval_storage = result_interval_storage;
     let mut controls = 0..control_count;
-    while !controls.is_empty() || ctx.resource_refusal().is_some() {
+    while !controls.is_empty() {
         let Some(control) = ctx.next_charged(&mut controls, "iges ruled linear intervals")? else {
             break;
         };
@@ -412,7 +400,7 @@ fn interval_certified_linear_bezier(
         let mut lower = f64::NEG_INFINITY;
         let mut upper = f64::INFINITY;
         let mut first_controls = 0..control_count;
-        while !first_controls.is_empty() || ctx.resource_refusal().is_some() {
+        while !first_controls.is_empty() {
             let Some(first) =
                 ctx.next_charged(&mut first_controls, "iges ruled linear first controls")?
             else {
@@ -420,7 +408,7 @@ fn interval_certified_linear_bezier(
             };
             let first_interval = intervals[first][coordinate];
             let mut second_controls = first + 1..control_count;
-            while !second_controls.is_empty() || ctx.resource_refusal().is_some() {
+            while !second_controls.is_empty() {
                 let Some(second) =
                     ctx.next_charged(&mut second_controls, "iges ruled linear second controls")?
                 else {
@@ -456,9 +444,6 @@ fn equal_arc_length_parameterization(
     global: &ProjectedGlobal,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let [(first, first_sequence), (second, second_sequence)] = rails;
     let valid_interval = |interval: [f64; 2]| {
         interval[0].is_finite() && interval[1].is_finite() && interval[0] < interval[1]
@@ -533,9 +518,6 @@ fn source_parameter_interval(
     carrier_interval: [f64; 2],
     ctx: &DecodeContext<'_>,
 ) -> Result<[f64; 2], CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let is_line = match geometry.solved() {
         Some(SolvedCurveGeometry::Line(_)) => true,
         Some(SolvedCurveGeometry::Transformed(placed)) => {
@@ -578,7 +560,7 @@ fn homogeneous_bezier_spans<'ctx>(
         let mut weights =
             scratch.with_storage(|| ctx.collection_vec(count, "iges_surface_closure_weights"))?;
         let mut indices = 0..count;
-        while !indices.is_empty() || ctx.resource_refusal().is_some() {
+        while !indices.is_empty() {
             let Some(index) =
                 ctx.next_charged(&mut indices, "iges surface closure weight traversal")?
             else {
@@ -627,16 +609,13 @@ fn bernstein_binomial(
     k: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<f64>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if k > n {
         return Ok(None);
     }
     let k = k.min(n - k);
     let mut value = 1.0;
     let mut factors = 1..=k;
-    while !factors.is_empty() || ctx.resource_refusal().is_some() {
+    while !factors.is_empty() {
         let Some(factor) = ctx.next_charged(&mut factors, "iges Bernstein binomial factors")?
         else {
             break;
@@ -661,9 +640,6 @@ fn homogeneous_product_control(
     index: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<[f64; 4]>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     // C1=A/a and C2=B/b blend as ((1-v)A*b + v*B*a)/(a*b).
     let (Some(vector_degree), Some(scalar_degree)) = (
         vector_controls.len().checked_sub(1),
@@ -682,7 +658,7 @@ fn homogeneous_product_control(
     let mut control = [0.0; 4];
     if lower <= upper {
         let mut indices = lower..=upper;
-        while !indices.is_empty() || ctx.resource_refusal().is_some() {
+        while !indices.is_empty() {
             let Some(vector_index) =
                 ctx.next_charged(&mut indices, "iges Bernstein product controls")?
             else {
@@ -729,9 +705,6 @@ fn split_homogeneous_bezier_span(
     cut: f64,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<(HomogeneousBezierSpan, HomogeneousBezierSpan)>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if !cut.is_finite() || cut <= span.domain[0] || cut >= span.domain[1] {
         return Ok(None);
     }
@@ -753,13 +726,13 @@ fn split_homogeneous_bezier_span(
     left.push(current[0]);
     right.push(current[degree]);
     let mut levels = 1..=degree;
-    while !levels.is_empty() || ctx.resource_refusal().is_some() {
+    while !levels.is_empty() {
         let Some(level) = ctx.next_charged(&mut levels, "iges span split levels traversal")? else {
             break;
         };
         let remaining = degree + 1 - level;
         let mut indices = 0..remaining;
-        while !indices.is_empty() || ctx.resource_refusal().is_some() {
+        while !indices.is_empty() {
             let Some(index) =
                 ctx.next_charged(&mut indices, "iges span split level controls traversal")?
             else {
@@ -804,7 +777,7 @@ fn normalized_span_boundaries(
     };
     let mut boundaries = ctx.collection_vec(capacity, "iges span normalized boundaries")?;
     let mut source_spans = spans.iter();
-    while source_spans.len() != 0 || ctx.resource_refusal().is_some() {
+    while source_spans.len() != 0 {
         let Some(span) = ctx.next_charged(&mut source_spans, "iges span traversal")? else {
             break;
         };
@@ -840,7 +813,7 @@ fn partition_homogeneous_spans(
 ) -> Result<Option<Vec<HomogeneousBezierSpan>>, CodecError> {
     let mut partitioned = Vec::new();
     let mut source_spans = spans.iter();
-    while source_spans.len() != 0 || ctx.resource_refusal().is_some() {
+    while source_spans.len() != 0 {
         let Some(span) = ctx.next_charged(&mut source_spans, "iges span traversal")? else {
             break;
         };
@@ -869,7 +842,7 @@ fn partition_homogeneous_spans(
             controls,
         };
         let mut interior = boundaries[first..last].iter().copied();
-        while interior.len() != 0 || ctx.resource_refusal().is_some() {
+        while interior.len() != 0 {
             let Some(boundary) =
                 ctx.next_charged(&mut interior, "iges span interior boundaries")?
             else {
@@ -962,9 +935,6 @@ fn projectively_shared_weights(
     second: &NurbsCurve,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<NonZeroReal>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let count = first.pole_count();
     if count == 0 || count != second.pole_count() {
         return Ok(None);
@@ -1015,9 +985,6 @@ fn same_basis_ruled_surface(
             ctx.collection_vec(first.pole_count(), "iges ruled same-basis pole rows")
         })?
     };
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(0..first.pole_count());
     while !source_values.is_empty() {
         let Some(index) =
@@ -1048,9 +1015,6 @@ fn same_basis_ruled_surface(
         let mut rows = lane_storage.with_storage(|| {
             ctx.collection_vec(weights.len(), "iges ruled same-basis weight rows")
         })?;
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut source_values = IntoIterator::into_iter(weights);
         while source_values.len() != 0 {
             let Some(weight) =
@@ -1099,9 +1063,6 @@ fn admit_surface_pole_count(
     ctx: &DecodeContext<'_>,
     pole_count: usize,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if pole_count > MAX_SURFACE_POLES {
         return Err(ctx.refuse_codec_limit(
             "iges_surface_poles",
@@ -1233,9 +1194,6 @@ fn ruled_surface_span_lanes<'ctx>(
     second: &NurbsCurve,
     ctx: &'ctx DecodeContext<'_>,
 ) -> Result<Option<RuledSpanLanes<'ctx>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let (Ok(first_degree), Ok(second_degree)) = (
         usize::try_from(first.degree()),
         usize::try_from(second.degree()),
@@ -1282,7 +1240,7 @@ fn ruled_surface_span_lanes<'ctx>(
     };
     let mut u_knots = ctx.collection_vec(knot_count, "iges ruled homogeneous knots")?;
     let mut span_pairs = spans.iter().enumerate();
-    while span_pairs.len() != 0 || ctx.resource_refusal().is_some() {
+    while span_pairs.len() != 0 {
         let Some((span_index, (first_span, second_span))) =
             ctx.next_charged(&mut span_pairs, "iges ruled span traversal")?
         else {
@@ -1306,7 +1264,7 @@ fn ruled_surface_span_lanes<'ctx>(
         }
         let start = usize::from(span_index > 0);
         let mut products = start..=degree;
-        while !products.is_empty() || ctx.resource_refusal().is_some() {
+        while !products.is_empty() {
             let Some(index) = ctx.next_charged(&mut products, "iges ruled product traversal")?
             else {
                 break;
@@ -1350,7 +1308,7 @@ fn ruled_surface_span_lanes<'ctx>(
     let mut weights = weight_storage
         .with_storage(|| ctx.collection_vec(pole_count, "iges ruled surface weights"))?;
     let mut homogeneous = homogeneous.into_iter();
-    while homogeneous.len() != 0 || ctx.resource_refusal().is_some() {
+    while homogeneous.len() != 0 {
         let Some(control) =
             ctx.next_charged(&mut homogeneous, "iges ruled Euclidean pole traversal")?
         else {
@@ -1402,9 +1360,6 @@ fn homogeneous_curve_boundary_matches(
     range: [f64; 2],
     resolution: f64,
 ) -> Result<Option<bool>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if !resolution.is_finite()
         || resolution < 0.0
         || !range[0].is_finite()
@@ -1433,7 +1388,7 @@ fn homogeneous_curve_boundary_matches(
         return Ok(None);
     }
     let mut span_pairs = first_spans.iter().zip(second_spans);
-    while span_pairs.len() != 0 || ctx.resource_refusal().is_some() {
+    while span_pairs.len() != 0 {
         let Some((first_span, second_span)) =
             ctx.next_charged(&mut span_pairs, "iges surface closure spans")?
         else {
@@ -1519,9 +1474,6 @@ fn angular_basis<'ctx>(
     end: f64,
     ctx: &'ctx DecodeContext<'_>,
 ) -> Result<Option<AngularBasis<'ctx>>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some((segment_count, sweep, end)) = angular_span_count(start, end) else {
         return Ok(None);
     };
@@ -1640,9 +1592,6 @@ struct OffsetLookups {
 
 impl OffsetLookups {
     fn from_ir(ir: &CadIr, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(CodecError::from(refusal));
-        }
         let mut surfaces = BTreeMap::new();
         let mut owner_storage = ctx.reserve_scoped(0, "iges offset unique owners")?;
         let mut owners = HashMap::<&str, Option<&SurfaceId>>::new();
@@ -1734,6 +1683,10 @@ fn indicator_normal(
     ir: &CadIr,
     surface: &SurfaceId,
     lookups: &OffsetLookups,
+    (sources, storage): (
+        &mut Option<super::evaluation_sources::EvaluationSources>,
+        &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    ),
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vector3>, CodecError> {
     let procedural = ctx
@@ -1748,7 +1701,20 @@ fn indicator_normal(
     let parameters = parameters.unwrap_or([0.0, 0.0]);
     let partials = match procedural {
         Some(_) => {
-            let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir, ctx)?;
+            if sources.is_none() {
+                *sources =
+                    Some(storage.with_storage(|| {
+                        super::evaluation_sources::EvaluationSources::new(ir, ctx)
+                    })?);
+            }
+            let sources = sources
+                .as_ref()
+                .ok_or_else(|| CodecError::malformed("offset evaluation sources are absent"))?;
+            let mut support_storage =
+                ctx.reserve_scoped(0, "iges offset evaluation support storage")?;
+            let support_model = support_storage
+                .with_storage(|| sources.surface_model(ir, surface.as_str(), ctx))?;
+            let index = cadmpeg_ir::index::ModelIndex::new_model_only(&support_model, ctx)?;
             finite_or_refusal(cadmpeg_ir::eval::model_surface_partials_by_id(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
                 &index,
@@ -2744,7 +2710,7 @@ pub(super) fn project<'ctx>(
         };
         let mut finite_poles = true;
         let mut indices = 0..pole_count;
-        while !indices.is_empty() || ctx.resource_refusal().is_some() {
+        while !indices.is_empty() {
             let Some(index) = ctx.next_charged(&mut indices, "iges tabulated pole traversal")?
             else {
                 break;
@@ -2783,9 +2749,6 @@ pub(super) fn project<'ctx>(
         let weights = if rational {
             let mut rows = row_storage
                 .with_storage(|| ctx.collection_vec(pole_count, "iges tabulated weight rows"))?;
-            if let Some(refusal) = ctx.resource_refusal() {
-                return Err(refusal.into());
-            }
             let mut source_values = IntoIterator::into_iter(0..pole_count);
             while !source_values.is_empty() {
                 let Some(index) =
@@ -3326,9 +3289,6 @@ pub(super) fn project<'ctx>(
         let mut weights = weight_storage.with_storage(|| {
             ctx.collection_vec(surface_pole_count, "iges revolution surface weights")
         })?;
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut source_values = IntoIterator::into_iter(0..generatrix_count);
         while !source_values.is_empty() {
             let Some(u_index) =
@@ -3344,9 +3304,6 @@ pub(super) fn project<'ctx>(
             let axis_point = axis_origin.translated(axis_direction, delta.dot(axis_direction));
             let radial = point.vector_from(axis_point);
             let u_weight = generatrix.pole_rows().weight_at(u_index).unwrap_or(1.0);
-            if let Some(refusal) = ctx.resource_refusal() {
-                return Err(refusal.into());
-            }
             let mut source_values = IntoIterator::into_iter(&angular_controls);
             while source_values.len() != 0 {
                 let Some((angle, angular_weight)) =
@@ -3797,7 +3754,7 @@ pub(super) fn project<'ctx>(
             };
             let mut values = ctx.collection_vec(count, operation)?;
             let mut indices = start..end;
-            while !indices.is_empty() || ctx.resource_refusal().is_some() {
+            while !indices.is_empty() {
                 let Some(index) = ctx.next_charged(&mut indices, operation)? else {
                     break;
                 };
@@ -4124,9 +4081,6 @@ pub(super) fn project<'ctx>(
         let poles = candidate_storage.with_storage(|| {
             Ok::<_, CodecError>(if polynomial {
                 let mut rows = ctx.collection_vec(u_count, "iges NURBS surface pole rows")?;
-                if let Some(refusal) = ctx.resource_refusal() {
-                    return Err(refusal.into());
-                }
                 let mut source_values = IntoIterator::into_iter(0..u_count);
                 while !source_values.is_empty() {
                     let Some(u) =
@@ -4136,9 +4090,6 @@ pub(super) fn project<'ctx>(
                     };
                     let mut row =
                         ctx.collection_vec(v_count, "iges NURBS surface pole row controls")?;
-                    if let Some(refusal) = ctx.resource_refusal() {
-                        return Err(refusal.into());
-                    }
                     let mut source_values = IntoIterator::into_iter(0..v_count);
                     while !source_values.is_empty() {
                         let Some(v) =
@@ -4153,9 +4104,6 @@ pub(super) fn project<'ctx>(
                 NurbsPoleGrid::Polynomial { rows }
             } else {
                 let mut rows = ctx.collection_vec(u_count, "iges NURBS surface weighted rows")?;
-                if let Some(refusal) = ctx.resource_refusal() {
-                    return Err(refusal.into());
-                }
                 let mut source_values = IntoIterator::into_iter(0..u_count);
                 while !source_values.is_empty() {
                     let Some(u) =
@@ -4165,9 +4113,6 @@ pub(super) fn project<'ctx>(
                     };
                     let mut row =
                         ctx.collection_vec(v_count, "iges NURBS surface weighted row controls")?;
-                    if let Some(refusal) = ctx.resource_refusal() {
-                        return Err(refusal.into());
-                    }
                     let mut source_values = IntoIterator::into_iter(0..v_count);
                     while !source_values.is_empty() {
                         let Some(v) =
@@ -4309,10 +4254,12 @@ pub(super) fn project<'ctx>(
         )?;
     }
 
-    // These position maps accept each appended offset. The immutable ModelIndex
-    // needed for procedural evaluation cannot borrow across a model append.
+    // Position lookups admit each appended offset. Evaluation copies only the
+    // reachable supports, so unrelated model records are not reindexed.
     let mut offset_storage = ctx.reserve_scoped(0, "iges offset lookup storage")?;
     let mut offset_lookups = None;
+    let mut evaluation_storage = ctx.reserve_scoped(0, "iges offset evaluation source storage")?;
+    let mut evaluation_sources = None;
     let mut directory_entries = directory.iter();
     while !directory_entries.as_slice().is_empty() {
         let Some(entry) =
@@ -4419,7 +4366,14 @@ pub(super) fn project<'ctx>(
             continue;
         };
         let distance = distance * factor;
-        let Some(normal) = indicator_normal(ir, &support_id, lookups, ctx)? else {
+        let Some(normal) = indicator_normal(
+            ir,
+            &support_id,
+            lookups,
+            (&mut evaluation_sources, &mut evaluation_storage),
+            ctx,
+        )?
+        else {
             super::push_entity_loss_with_scoped_slots(
                 ctx,
                 &mut loss_slots_storage,
@@ -4564,6 +4518,17 @@ pub(super) fn project<'ctx>(
             }
             Ok::<_, CodecError>(())
         })?;
+        if let Some(sources) = evaluation_sources.as_mut() {
+            evaluation_storage.with_storage(|| {
+                sources.extend_surfaces(ir, ctx)?;
+                if let Some(positions) =
+                    ctx.get_btree_map(&lookups.surfaces, &surface_id, "iges offset carrier lookup")?
+                {
+                    sources.observe_surface(&ir.model.surfaces[positions.0], positions.0, ctx)?;
+                }
+                Ok::<_, CodecError>(())
+            })?;
+        }
         ctx.insert_scoped_btree_set(
             &mut decoded_storage,
             &mut decoded,

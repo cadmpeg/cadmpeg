@@ -52,10 +52,12 @@ fn linear_nurbs_parameters_admit_knots_outside_the_returned_interval() {
     );
     // Validation visits all 1002 knots and performs its current terminal
     // probe. The source pass then admits one knot before reading it.
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "iges linear NURBS parameter knots"
-            && (limit.limit, limit.used, limit.additional) == (1003, 1003, 1)));
+            && (limit.limit, limit.used, limit.additional) == (1003, 1003, 1))
+    );
     crate::test_support::with_service_context(&[], |ctx| {
         let (parameters, _storage) =
             super::super::linear_nurbs_parameters(1, &knots, 1000, false, [500.25, 500.75], ctx)
@@ -170,7 +172,8 @@ fn conflicting_affine_constraints_stop_after_the_first_origin() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     // One finite-value pass and its end probe, one origin, and two pairs.
     policy.limits.max_work_units = u64::try_from(COUNT).unwrap() + 4;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(!super::super::declared_affine_progression(&values, &uncertainties, &ctx).unwrap());
     ctx.finish_session().unwrap();
 }
@@ -182,25 +185,38 @@ fn free_geometry_body_name_refuses_retained_bytes() {
 
     let bytes = crate::test_support::test_curves_and_surfaces::line_file(0);
     cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::RetainedBytes, "iges free geometry body name", |cap| {
+        ResourceDimension::RetainedBytes,
+        "iges free geometry body name",
+        |cap| {
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
-            crate::IgesCodec.decode(&mut std::io::Cursor::new(&bytes), &DecodeOptions {
-                policy, ..DecodeOptions::default()
-            }).map_err(|error| match error {
-                DecodeFailure::Codec(error) => error,
-                other => panic!("{other:?}"),
-            })
+            crate::IgesCodec
+                .decode(
+                    &mut std::io::Cursor::new(&bytes),
+                    &DecodeOptions {
+                        policy,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .map_err(|error| match error {
+                    DecodeFailure::Codec(error) => error,
+                    other => panic!("{other:?}"),
+                })
         },
     );
 }
 
-fn invalid_linear_knot_boundary(control_count: usize, invalid_index: usize,
-    invalid_value: f64, exact: bool) {
+fn invalid_linear_knot_boundary(
+    control_count: usize,
+    invalid_index: usize,
+    invalid_value: f64,
+    exact: bool,
+) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let mut knots: Vec<_> = (0..control_count + 2)
-        .map(|index| f64::from(u32::try_from(index).unwrap())).collect();
+        .map(|index| f64::from(u32::try_from(index).unwrap()))
+        .collect();
     knots[invalid_index] = invalid_value;
     let before: Vec<_> = knots.iter().map(|value| value.to_bits()).collect();
     let range = [1.0, f64::from(u32::try_from(control_count).unwrap())];
@@ -217,12 +233,20 @@ fn invalid_linear_knot_boundary(control_count: usize, invalid_index: usize,
     policy.limits.max_materialized_bytes = 0;
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = super::super::linear_nurbs_parameters(1, &knots, control_count, false, range, &ctx);
+    let result =
+        super::super::linear_nurbs_parameters(1, &knots, control_count, false, range, &ctx);
     let first = if exact {
         assert!(result.unwrap().is_none());
-        assert_eq!(knots.iter().map(|value| value.to_bits()).collect::<Vec<_>>(), before);
-        let Err(CodecError::ResourceLimit(first)) = ctx.charge_work(1,
-            "test exact invalid linear knot work") else {
+        assert_eq!(
+            knots
+                .iter()
+                .map(|value| value.to_bits())
+                .collect::<Vec<_>>(),
+            before
+        );
+        let Err(CodecError::ResourceLimit(first)) =
+            ctx.charge_work(1, "test exact invalid linear knot work")
+        else {
             panic!("expected exact short-circuit validation work");
         };
         assert_eq!(first.operation, "test exact invalid linear knot work");
@@ -239,12 +263,21 @@ fn invalid_linear_knot_boundary(control_count: usize, invalid_index: usize,
     assert_eq!(first.dimension, ResourceDimension::WorkUnits);
     assert_eq!((first.limit, first.used, first.additional), (cap, cap, 1));
     for _ in 0..64 {
-        for source in [&knots[..], &[][..]] {
-            let result = super::super::linear_nurbs_parameters(1, source,
-                control_count, false, range, &ctx);
-            assert!(matches!(result.as_ref(), Err(CodecError::ResourceLimit(last)) if *last == first));
+        {
+            let source = &knots[..];
+            let result =
+                super::super::linear_nurbs_parameters(1, source, control_count, false, range, &ctx);
+            assert!(
+                matches!(result.as_ref(), Err(CodecError::ResourceLimit(last)) if *last == first)
+            );
             drop(result);
-            assert_eq!(knots.iter().map(|value| value.to_bits()).collect::<Vec<_>>(), before);
+            assert_eq!(
+                knots
+                    .iter()
+                    .map(|value| value.to_bits())
+                    .collect::<Vec<_>>(),
+                before
+            );
         }
     }
     assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(last)) if last == first));
@@ -269,7 +302,9 @@ fn invalid_first_and_last_linear_knots_accept_exact_recovery_without_storage() {
 }
 
 fn linear_parameter_collection_boundary(count: usize, items: usize, accepts: bool) {
-    use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{
+        u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+    };
     use cadmpeg_core::CodecError;
     let mut knots = vec![0.0, 0.0];
     knots.extend((1..count).map(|index| f64::from(u32::try_from(index).unwrap())));
@@ -290,13 +325,18 @@ fn linear_parameter_collection_boundary(count: usize, items: usize, accepts: boo
     if accepts {
         let (parameters, storage) = result.unwrap().unwrap();
         let expected: Vec<_> = (0..count)
-            .map(|index| f64::from(u32::try_from(index).unwrap())).collect();
+            .map(|index| f64::from(u32::try_from(index).unwrap()))
+            .collect();
         assert_eq!(parameters, expected);
         assert_eq!(knots, before);
         drop(parameters);
         drop(storage);
-        let released = ctx.reserve_scoped(policy.limits.max_materialized_bytes,
-            "test linear parameter scratch released").unwrap();
+        let released = ctx
+            .reserve_scoped(
+                policy.limits.max_materialized_bytes,
+                "test linear parameter scratch released",
+            )
+            .unwrap();
         drop(released);
         ctx.finish_session().unwrap();
     } else {
@@ -307,12 +347,15 @@ fn linear_parameter_collection_boundary(count: usize, items: usize, accepts: boo
         drop(result);
         assert_eq!(first.dimension, ResourceDimension::CollectionItems);
         assert_eq!(first.operation, "iges linear NURBS parameters");
-        assert_eq!((first.limit, first.used, first.additional),
-            (u64_from_index(items), u64_from_index(items), 1));
+        assert_eq!(
+            (first.limit, first.used, first.additional),
+            (u64_from_index(items), u64_from_index(items), 1)
+        );
         for _ in 0..64 {
-            for source in [knots.as_slice(), &[]] {
-                let replay = super::super::linear_nurbs_parameters(1, source,
-                    count, false, range, &ctx);
+            {
+                let source = knots.as_slice();
+                let replay =
+                    super::super::linear_nurbs_parameters(1, source, count, false, range, &ctx);
                 assert!(matches!(replay.as_ref(),
                     Err(CodecError::ResourceLimit(last)) if *last == first));
                 drop(replay);

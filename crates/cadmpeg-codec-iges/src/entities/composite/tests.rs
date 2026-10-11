@@ -4,8 +4,8 @@
 
 mod index_admission;
 mod index_sources;
-mod presence_sources;
 mod nurbs;
+mod presence_sources;
 mod source_visits;
 
 use crate::directory::UseFlag;
@@ -1850,7 +1850,5 @@ fn composite_trim_multiplicity_refuses_work_before_scan() {
 }
 
 mod local_limits;
-
-mod entry_refusal;
 
 mod native_endpoint_lifetimes;

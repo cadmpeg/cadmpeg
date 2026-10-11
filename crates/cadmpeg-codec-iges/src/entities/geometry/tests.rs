@@ -1618,8 +1618,6 @@ mod wire_outcome_storage;
 
 mod parameter_index;
 
-mod entry_refusal;
-
 mod transform_semantics;
 
 mod candidate_lifetimes;

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Offset curve entity projection.
 
+use super::admit_with_scoped_loss_slots;
 use super::curve_conversion::angularly_equal;
 use super::geometry::{
     declared_unit_vector, resolve_transform, source_object, WireProjectionOutcome,
 };
-use super::admit_with_scoped_loss_slots;
 use crate::directory::{entry_by_sequence, DirectoryEntry};
 use crate::global::ProjectedGlobal;
 use crate::parameter::{record_by_sequence, ParameterRecord, TokenValue};
@@ -37,8 +37,10 @@ fn admit_offset_controls(
 ) -> Result<Option<Vec<FinitePoint3>>, CodecError> {
     let mut admitted = ctx.collection_vec(controls.len(), operation)?;
     let mut controls = controls.into_iter();
-    while controls.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(point) = ctx.next_charged(&mut controls, "iges offset control admission")? else { break; };
+    while controls.len() != 0 {
+        let Some(point) = ctx.next_charged(&mut controls, "iges offset control admission")? else {
+            break;
+        };
         let Some(point) = FinitePoint3::new(point) else {
             return Ok(None);
         };
@@ -257,9 +259,6 @@ impl OffsetSourceIndex {
         ctx: &DecodeContext<'_>,
         storage: &mut ScopedReservation<'_>,
     ) -> Result<(), CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(CodecError::from(refusal));
-        }
         let mut source_index_entries = ir.model.curves[self.curve_count..].iter().enumerate();
         while source_index_entries.len() != 0 {
             let Some((offset, curve)) =
@@ -676,8 +675,10 @@ pub(super) fn project<'ctx>(
                 let mut entries = BTreeMap::new();
                 let mut directory_entries = directory.iter();
                 while !directory_entries.as_slice().is_empty() {
-                    let Some(entry) =
-                        ctx.next_charged(&mut directory_entries, "iges offsets transform directory traversal")?
+                    let Some(entry) = ctx.next_charged(
+                        &mut directory_entries,
+                        "iges offsets transform directory traversal",
+                    )?
                     else {
                         break;
                     };
@@ -693,8 +694,10 @@ pub(super) fn project<'ctx>(
                 let mut records = BTreeMap::new();
                 let mut source_index_entries = parameters.iter();
                 while source_index_entries.len() != 0 {
-                    let Some(record) =
-                        ctx.next_charged(&mut source_index_entries, "iges offsets transform parameter traversal")?
+                    let Some(record) = ctx.next_charged(
+                        &mut source_index_entries,
+                        "iges offsets transform parameter traversal",
+                    )?
                     else {
                         break;
                     };
@@ -727,7 +730,13 @@ pub(super) fn project<'ctx>(
                 Ok(transform) => transform,
                 Err(error) => {
                     let message = error.non_resource()?;
-                    super::push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
+                    super::push_entity_loss_with_scoped_slots(
+                        ctx,
+                        &mut loss_slots_storage,
+                        &mut losses,
+                        entry,
+                        format_args!("{message}"),
+                    )?;
                     continue;
                 }
             };
@@ -1068,8 +1077,12 @@ pub(super) fn project<'ctx>(
                 let mut knots = ctx.collection_vec(4, "iges linear-offset knots")?;
                 knots.extend([start, start, end, end]);
                 let law = CurveOffsetDistanceLaw::linear(basis, distances, control_range);
-                let Some(controls) =
-                    admit_offset_controls(ctx, control_storage, controls, "iges linear-offset admitted controls")?
+                let Some(controls) = admit_offset_controls(
+                    ctx,
+                    control_storage,
+                    controls,
+                    "iges linear-offset admitted controls",
+                )?
                 else {
                     super::push_entity_loss_with_scoped_slots(
                         ctx,
@@ -1285,8 +1298,12 @@ pub(super) fn project<'ctx>(
                     .temporary_vec(function_nurbs.pole_count(), "iges function-offset controls")?;
                 control_storage = result_control_storage;
                 let mut indices = 0..function_nurbs.pole_count();
-                while !indices.is_empty() || ctx.resource_refusal().is_some() {
-                    let Some(index) = ctx.next_charged(&mut indices, "iges function-offset control traversal")? else { break; };
+                while !indices.is_empty() {
+                    let Some(index) =
+                        ctx.next_charged(&mut indices, "iges function-offset control traversal")?
+                    else {
+                        break;
+                    };
                     let Some(function_control) = function_nurbs.pole_rows().point_at(index) else {
                         ctx.clear_vec(&mut controls, "iges offset rejected controls")?;
                         break;
@@ -1378,8 +1395,12 @@ pub(super) fn project<'ctx>(
                     function_parameter_offset,
                     function_parameter_scale,
                 };
-                let Some(controls) =
-                    admit_offset_controls(ctx, control_storage, controls, "iges function-offset admitted controls")?
+                let Some(controls) = admit_offset_controls(
+                    ctx,
+                    control_storage,
+                    controls,
+                    "iges function-offset admitted controls",
+                )?
                 else {
                     super::push_entity_loss_with_scoped_slots(
                         ctx,
@@ -1505,7 +1526,13 @@ pub(super) fn project<'ctx>(
         let admitted_payload = match payload {
             Ok(admitted_payload) => admitted_payload,
             Err(error) => {
-                super::push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{error}"))?;
+                super::push_entity_loss_with_scoped_slots(
+                    ctx,
+                    &mut loss_slots_storage,
+                    &mut losses,
+                    entry,
+                    format_args!("{error}"),
+                )?;
                 continue;
             }
         };
@@ -1609,7 +1636,13 @@ pub(super) fn project<'ctx>(
         ) {
             Ok(carrier) => carrier,
             Err(error) => {
-                super::push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{error}"))?;
+                super::push_entity_loss_with_scoped_slots(
+                    ctx,
+                    &mut loss_slots_storage,
+                    &mut losses,
+                    entry,
+                    format_args!("{error}"),
+                )?;
                 continue;
             }
         };
@@ -1629,9 +1662,20 @@ pub(super) fn project<'ctx>(
         drop(source_id);
         drop(curve_id);
         drop(identity_storage);
-        ctx.reserve_scoped_vec(&mut wire_slots_storage, &mut wire_edges, 1, "iges offset wire edge slots")?;
+        ctx.reserve_scoped_vec(
+            &mut wire_slots_storage,
+            &mut wire_edges,
+            1,
+            "iges offset wire edge slots",
+        )?;
         wire_edges.push(edge_id);
-        ctx.insert_scoped_btree_set(&mut decoded_storage, &mut decoded, entry.sequence, "iges offsets decoded sequences", "iges offsets decoded sequences")?;
+        ctx.insert_scoped_btree_set(
+            &mut decoded_storage,
+            &mut decoded,
+            entry.sequence,
+            "iges offsets decoded sequences",
+            "iges offsets decoded sequences",
+        )?;
     }
 
     Ok(WireProjectionOutcome {

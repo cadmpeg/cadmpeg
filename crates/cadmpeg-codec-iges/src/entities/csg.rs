@@ -37,7 +37,7 @@ fn profile_closed(
     };
     let mut result = None;
     let mut edges = edges.iter();
-    while edges.len() != 0 || ctx.resource_refusal().is_some() {
+    while edges.len() != 0 {
         let Some(edge) = ctx.next_charged(&mut edges, "iges solid profile edges")? else {
             break;
         };
@@ -145,7 +145,7 @@ fn boolean_tree_is_valid(
         let mut has_direct_brep = false;
         let mut operands_valid = true;
         let mut terms = terms.iter();
-        while terms.len() != 0 || ctx.resource_refusal().is_some() {
+        while terms.len() != 0 {
             let Some(term) = ctx.next_charged(&mut terms, "iges boolean term validation")? else {
                 break;
             };
@@ -540,7 +540,7 @@ pub(super) fn project<'ctx>(
                 let mut storage = ctx.reserve_scoped(0, "iges solid profile edge groups")?;
                 let mut groups = BTreeMap::new();
                 let mut edges = ir.model.edges.iter();
-                while edges.len() != 0 || ctx.resource_refusal().is_some() {
+                while edges.len() != 0 {
                     let Some(edge) =
                         ctx.next_charged(&mut edges, "iges solid profile edge indexing")?
                     else {
@@ -665,7 +665,7 @@ pub(super) fn project<'ctx>(
         terms_storage = result_terms_storage;
         let mut terms_valid = true;
         let mut indices = 0..count;
-        while !indices.is_empty() || ctx.resource_refusal().is_some() {
+        while !indices.is_empty() {
             let Some(index) = ctx.next_charged(&mut indices, "iges Boolean postfix parsing")?
             else {
                 break;
@@ -745,9 +745,6 @@ pub(super) fn project<'ctx>(
         memo: BTreeMap::new(),
         storage: ctx.reserve_scoped(0, "iges Boolean validation scratch")?,
     };
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(&boolean_definitions);
     while source_values.len() != 0 {
         let Some((sequence, _)) =

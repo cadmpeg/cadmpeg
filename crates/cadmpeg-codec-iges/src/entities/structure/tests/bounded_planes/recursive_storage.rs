@@ -47,7 +47,7 @@ fn bounded_plane_child_depth_refusal_destroys_path_before_frame_storage() {
             },
             false,
             None,
-            &mut active,
+            (&mut active, None),
         );
         assert!(active.is_empty());
         if cap == 1 {
@@ -91,7 +91,7 @@ fn bounded_plane_removal_refusal_destroys_path_before_frame_storage() {
                 },
                 false,
                 None,
-                &mut active,
+                (&mut active, None),
             );
             assert!(active.is_empty());
             let Err(CodecError::ResourceLimit(first)) = &result else {
@@ -148,7 +148,7 @@ fn assert_nonsimple_child_root_destruction(unsolved: bool) {
             },
             false,
             None,
-            &mut active,
+            (&mut active, None),
         );
         assert!(active.is_empty());
         if cap == key + node {
@@ -219,7 +219,7 @@ fn bounded_plane_nonsimple_child_preserves_seeded_ancestor_storage() {
         },
         false,
         None,
-        &mut active
+        (&mut active, None)
     )
     .unwrap());
     assert_eq!(active, BTreeSet::from([seed]));
@@ -272,6 +272,7 @@ fn plane_boundary_destroys_active_path_before_retaining_proof_cache() {
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut proofs = super::super::super::PlaneBoundaryProofs {
+            sequences: crate::entities::plane_proof::PlaneProofSequences::default(),
             proven: std::collections::BTreeMap::new(),
             storage: ctx
                 .reserve_scoped(0, "test boundary proof cache storage")

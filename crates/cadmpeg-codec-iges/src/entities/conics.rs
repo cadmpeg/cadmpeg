@@ -26,7 +26,6 @@ const EPS_CONIC_EXACT_GEOMETRY: f64 = 1.0e-12;
 
 const CONIC_STANDARD_POSITION_RELATIVE_EPSILON: f64 = EPS_CONIC_EXACT_GEOMETRY;
 
-
 /// The bounded span one conic carrier is projected over.
 #[derive(Clone, Copy)]
 struct BoundedSpan {
@@ -137,8 +136,12 @@ pub(super) fn project<'ctx>(
     let mut wire_edges = Vec::new();
 
     let mut directory_entries = directory.iter();
-    while directory_entries.len() != 0 || ctx.resource_refusal().is_some() {
-        let Some(entry) = ctx.next_charged(&mut directory_entries, "iges conic directory traversal")? else { break; };
+    while directory_entries.len() != 0 {
+        let Some(entry) =
+            ctx.next_charged(&mut directory_entries, "iges conic directory traversal")?
+        else {
+            break;
+        };
         if entry.entity_type != 104 || !(0..=3).contains(&entry.form) {
             continue;
         }
@@ -208,7 +211,13 @@ pub(super) fn project<'ctx>(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
+                push_entity_loss_with_scoped_slots(
+                    ctx,
+                    &mut loss_slots_storage,
+                    &mut losses,
+                    entry,
+                    format_args!("{message}"),
+                )?;
                 continue;
             }
         };
@@ -709,11 +718,22 @@ pub(super) fn project<'ctx>(
             Ok(edge) => edge,
             Err(error) => {
                 let message = super::non_resource_error(error, ctx)?;
-                push_entity_loss_with_scoped_slots(ctx, &mut loss_slots_storage, &mut losses, entry, format_args!("{message}"))?;
+                push_entity_loss_with_scoped_slots(
+                    ctx,
+                    &mut loss_slots_storage,
+                    &mut losses,
+                    entry,
+                    format_args!("{message}"),
+                )?;
                 continue;
             }
         };
-        ctx.reserve_scoped_vec(&mut wire_slots_storage, &mut wire_edges, 1, "iges conic wire edges")?;
+        ctx.reserve_scoped_vec(
+            &mut wire_slots_storage,
+            &mut wire_edges,
+            1,
+            "iges conic wire edges",
+        )?;
         wire_edges.push(edge);
         decoded_storage.with_storage(|| {
             ctx.insert_btree_set(&mut decoded, entry.sequence, "iges conic decoded sequences")

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Text annotation entities.
 
-use super::geometry::{curve_geometry_coplanar, resolve_transform, ProjectionOutcome};
+use super::geometry::{curve_geometry_coplanar_proof, resolve_transform, ProjectionOutcome};
 use super::presentation::{
     general_note_font_valid_for_global_table, new_general_note_charset_valid,
     new_general_note_font_valid,
@@ -158,7 +158,7 @@ impl<'ctx, 'policy> AnnotationValidation<'ctx, 'policy> {
         let mut total = Some(0_i64);
         if let Some(strings) = note.count(1) {
             let mut offsets = 0..strings;
-            while !offsets.is_empty() || self.ctx.resource_refusal().is_some() {
+            while !offsets.is_empty() {
                 let Some(offset) = self
                     .ctx
                     .next_charged(&mut offsets, "iges flag note width sum")?
@@ -203,12 +203,13 @@ fn sectioned_area_pattern_plane(
     Some((point, normal))
 }
 
-type SectionCoplanarityKey = (u32, super::CoplanarityPlaneKey);
+type SectionCoplanarityKey = (u32, super::plane_proof::CoplanarityPlaneKey);
 
 struct SectionedAreaGeometryCache<'ctx, 'ir> {
     ir: &'ir CadIr,
     index: Option<cadmpeg_ir::index::DecodeModelIndex<'ctx, 'ir>>,
-    proofs: BTreeMap<SectionCoplanarityKey, super::CoplanarityProof<'ir, bool>>,
+    sequences: super::plane_proof::PlaneProofSequences,
+    proofs: BTreeMap<SectionCoplanarityKey, super::plane_proof::CoplanarityProof<'ir, bool>>,
     storage: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
@@ -218,6 +219,7 @@ impl<'ctx, 'ir> SectionedAreaGeometryCache<'ctx, 'ir> {
             ir,
             index: None,
             proofs: BTreeMap::new(),
+            sequences: super::plane_proof::PlaneProofSequences::default(),
             storage: ctx.reserve_scoped(0, "iges section coplanarity cache scratch")?,
         })
     }
@@ -229,13 +231,10 @@ impl<'ctx, 'ir> SectionedAreaGeometryCache<'ctx, 'ir> {
         resolution: f64,
         ctx: &'ctx DecodeContext<'_>,
     ) -> Result<bool, CodecError> {
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         if !resolution.is_finite() || resolution < 0.0 {
             return Ok(false);
         }
-        let plane_key = super::coplanarity_plane_key(pattern_plane, resolution);
+        let plane_key = super::plane_proof::coplanarity_plane_key(pattern_plane, resolution);
         let mut key = (sequence, plane_key);
         if let Some(proof) =
             ctx.get_btree_map(&self.proofs, &key, "iges section coplanarity proof lookup")?
@@ -245,12 +244,25 @@ impl<'ctx, 'ir> SectionedAreaGeometryCache<'ctx, 'ir> {
             }
             key = (
                 sequence,
-                super::coplanarity_placement_key(pattern_plane, resolution),
+                super::plane_proof::coplanarity_placement_key(pattern_plane, resolution),
             );
             if let Some(proof) =
                 ctx.get_btree_map(&self.proofs, &key, "iges section coplanarity proof lookup")?
             {
                 return Ok(proof.result);
+            }
+        }
+        if self.sequences.contains(sequence) {
+            for neighbor in super::plane_proof::coplanarity_neighbors(plane_key, pattern_plane.1) {
+                if let Some(proof) = ctx.get_btree_map(
+                    &self.proofs,
+                    &(sequence, neighbor),
+                    "iges section coplanarity proof lookup",
+                )? {
+                    if proof.matches(neighbor, pattern_plane, resolution) {
+                        return Ok(proof.result);
+                    }
+                }
             }
         }
         if self.index.is_none() {
@@ -266,14 +278,15 @@ impl<'ctx, 'ir> SectionedAreaGeometryCache<'ctx, 'ir> {
             crate::ids::curve_admitted(&crate::ids::Stem::directory(sequence), ctx)
         })?;
         let mut proven_geometry = None;
+        let mut envelope = None;
         let coplanar = if let Some(curve) = index.curves(curve_id.as_str(), ctx)? {
             if let Some(geometry) = curve.geometry.solved() {
                 proven_geometry = Some(geometry);
                 active_storage.with_storage(|| {
                     ctx.insert_btree_set(&mut active, curve_id, "iges section active curves")
                 })?;
-                active_storage.with_storage(|| {
-                    curve_geometry_coplanar(
+                let (valid, bounds) = active_storage.with_storage(|| {
+                    curve_geometry_coplanar_proof(
                         geometry,
                         index,
                         identity,
@@ -282,7 +295,9 @@ impl<'ctx, 'ir> SectionedAreaGeometryCache<'ctx, 'ir> {
                         &mut active,
                         ctx,
                     )
-                })?
+                })?;
+                envelope = bounds;
+                valid
             } else {
                 false
             }
@@ -293,14 +308,22 @@ impl<'ctx, 'ir> SectionedAreaGeometryCache<'ctx, 'ir> {
             ctx.insert_btree_map(
                 &mut self.proofs,
                 key,
-                super::CoplanarityProof {
+                super::plane_proof::CoplanarityProof {
                     origin: pattern_plane.0,
+                    normal: pattern_plane.1,
+                    envelope,
                     geometry: proven_geometry,
                     result: coplanar,
                 },
                 "iges section coplanarity proof cache",
             )
         })?;
+        if !self.sequences.contains(sequence) {
+            self.storage.with_storage(|| {
+                self.sequences
+                    .insert(sequence, ctx, "iges section coplanarity proof sequences")
+            })?;
+        }
         Ok(coplanar)
     }
 }
@@ -371,9 +394,6 @@ fn general_note_text_valid_for_global_table(
     is_v5_null_string: bool,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if font != 2001 {
         return Ok(true);
     }
@@ -404,9 +424,6 @@ fn general_note_valid_for_global_table(
     form: i64,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let parameter_end = crate::parameter::general_note_layout_end(record, form)
         .unwrap_or_else(|| record.parameter_end());
     if !general_note_suffix_structurally_valid(record, parameter_end) {
@@ -541,9 +558,6 @@ fn new_general_note_valid(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let parameter_end = record.parameter_end();
     let count = match record.count_with_stride_before_default_tail(12, 20, parameter_end) {
         DefaultTailCount::Held(count) if count > 0 => count,
@@ -636,9 +650,6 @@ fn leader_valid_for_global_table(
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(count) = record
         .count_with_stride_at(1, 7, 2, record.parameter_end())
         .filter(|count| *count > 0)
@@ -676,9 +687,6 @@ fn pointer(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<u32>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(sequence) = record
         .integer(index)
         .and_then(|value| u32::try_from(value).ok())
@@ -748,9 +756,6 @@ fn general_symbol_note_valid(
     global_table: GlobalTable,
     validation: &mut AnnotationValidation<'_, '_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = validation.ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     Ok(match record.integer(1) {
         Some(0) => form == 0 && !matches!(global_table, GlobalTable::V4_0),
         Some(_) => pointer(record, 1, entries, validation.ctx)?
@@ -778,9 +783,6 @@ fn dimension_children_valid(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let first_transform = loop {
         let Some(sequence) = children.next() else {
             return Ok(false);
@@ -815,9 +817,6 @@ fn dimension_children_valid(
 }
 
 fn witness_valid(record: &ParameterRecord, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(count) = record
         .count_with_stride_at(2, 4, 2, record.parameter_end())
         .filter(|count| *count >= 3 && *count % 2 == 1)
@@ -1444,9 +1443,6 @@ fn sectioned_area_valid<'ctx>(
     context: SectionedAreaContext,
     ctx: &'ctx DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let SectionedAreaContext {
         global_table,
         transform,

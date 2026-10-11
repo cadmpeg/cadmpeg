@@ -35,18 +35,28 @@ fn copious_merge_refuses_free_vertex_growth() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let vertex = crate::ids::vertex(&crate::ids::Stem::directory(1_u32));
-    let mut decoded_storage = ctx.reserve_scoped(0, "test merged decoded storage").unwrap();
-    let free_vertex_slots_storage = ctx.reserve_scoped(
-        u64::try_from(std::mem::size_of::<cadmpeg_ir::ids::VertexId>()).unwrap(),
-        "test copious free-vertex input backing",
-    ).unwrap();
+    let mut decoded_storage = ctx
+        .reserve_scoped(0, "test merged decoded storage")
+        .unwrap();
+    let free_vertex_slots_storage = ctx
+        .reserve_scoped(
+            u64::try_from(std::mem::size_of::<cadmpeg_ir::ids::VertexId>()).unwrap(),
+            "test copious free-vertex input backing",
+        )
+        .unwrap();
     let outcome = CopiousProjectionOutcome {
         decoded: BTreeSet::default(),
-        decoded_storage: ctx.reserve_scoped(0, "test copious decoded input backing").unwrap(),
+        decoded_storage: ctx
+            .reserve_scoped(0, "test copious decoded input backing")
+            .unwrap(),
         losses: Vec::new(),
-        loss_slots_storage: ctx.reserve_scoped(0, "test copious loss input backing").unwrap(),
+        loss_slots_storage: ctx
+            .reserve_scoped(0, "test copious loss input backing")
+            .unwrap(),
         wire_edges: Vec::new(),
-        wire_slots_storage: ctx.reserve_scoped(0, "test copious wire input backing").unwrap(),
+        wire_slots_storage: ctx
+            .reserve_scoped(0, "test copious wire input backing")
+            .unwrap(),
         free_vertices: vec![vertex],
         free_vertex_slots_storage,
     };
@@ -770,7 +780,9 @@ fn copious_duplicate_index_queries_refuse_work() {
         (0.001, "iges copious proximity lookup"),
     ] {
         cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits, operation, |cap| {
+            ResourceDimension::WorkUnits,
+            operation,
+            |cap| {
                 let mut policy = DecodePolicy::service();
                 policy.limits.max_work_units = cap;
                 crate::test_support::with_policy_context(&[], &policy, |ctx| {
@@ -784,24 +796,29 @@ fn copious_duplicate_index_queries_refuse_work() {
     }
     let bytes = copious_data_file(12, b"106,2,3,0,0,0,1,0,0,1,2,0;", "00000000");
     cadmpeg_test_support::refusal::resource_limit_at(
-        ResourceDimension::WorkUnits, "iges copious parameter lookup", |cap| {
+        ResourceDimension::WorkUnits,
+        "iges copious parameter lookup",
+        |cap| {
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
-            IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions {
-                policy, ..DecodeOptions::default()
-            }).map_err(|error| match error {
-                DecodeFailure::Codec(error) => error,
-                other => panic!("{other:?}"),
-            })
+            IgesCodec
+                .decode(
+                    &mut Cursor::new(&bytes),
+                    &DecodeOptions {
+                        policy,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .map_err(|error| match error {
+                    DecodeFailure::Codec(error) => error,
+                    other => panic!("{other:?}"),
+                })
         },
     );
 }
 
 mod directory_visits;
-mod local_limits;
 
 mod source_visits;
 
 mod outcome_storage;
-
-mod entry_refusal;

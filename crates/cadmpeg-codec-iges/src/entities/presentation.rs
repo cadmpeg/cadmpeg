@@ -73,9 +73,6 @@ fn text_font_definition_pointer_valid(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let Some(sequence) = value
         .checked_neg()
         .and_then(|value| u32::try_from(value).ok())
@@ -94,9 +91,6 @@ pub(super) fn general_note_font_valid_for_global_table(
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let standard = match global_table {
         GlobalTable::V4_0 => {
             matches!(
@@ -131,9 +125,6 @@ pub(super) fn new_general_note_charset_valid(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if matches!(value, 1 | 1001 | 1002 | 1003 | 2001 | 3001) {
         Ok(true)
     } else {
@@ -187,9 +178,6 @@ fn appearance(
         &mut cadmpeg_core::decode::ScopedReservation<'_>,
     ),
 ) -> Result<(), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     if identities.is_none() {
         let mut index = BTreeSet::new();
         let mut source_index_entries = ir.model.appearances.iter();
@@ -253,9 +241,6 @@ fn text_font_definition(
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<TextFontDefinition>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let parameter_end = record.parameter_end();
     let directory_valid = entry.status.subordinate() == Some(Subordinate::Independent)
         && entry.status.use_flag(global_table) == Some(UseFlag::Definition);
@@ -411,7 +396,7 @@ pub(super) fn project<'ctx>(
         let mut active = BTreeSet::new();
         let mut next_sequence = Some(entry.sequence);
         let cyclic = loop {
-            if next_sequence.is_none() && ctx.resource_refusal().is_none() {
+            if next_sequence.is_none() {
                 break false;
             }
             let mut current = next_sequence.into_iter();
@@ -433,9 +418,6 @@ pub(super) fn project<'ctx>(
                 .get_btree_map(&text_fonts, &sequence, "iges text font chain lookup")?
                 .and_then(|font| font.supersedes);
         };
-        if let Some(refusal) = ctx.resource_refusal() {
-            return Err(refusal.into());
-        }
         let mut source_values = IntoIterator::into_iter(active);
         while source_values.len() != 0 {
             let Some(sequence) =
@@ -982,9 +964,6 @@ pub(super) fn project<'ctx>(
         }
     }
 
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(&mut ir.model.curves);
     while source_values.len() != 0 {
         let Some(curve) = ctx.next_charged(&mut source_values, "iges curve display traversal")?
@@ -1004,9 +983,6 @@ pub(super) fn project<'ctx>(
                 None => None,
             };
         }
-    }
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
     }
     let mut source_values = IntoIterator::into_iter(&mut ir.model.surfaces);
     while source_values.len() != 0 {
@@ -1030,9 +1006,6 @@ pub(super) fn project<'ctx>(
         }
     }
 
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(0..ir.model.bodies.len());
     while !source_values.is_empty() {
         let Some(index) = ctx.next_charged(&mut source_values, "iges body display traversal")?
@@ -1093,9 +1066,6 @@ pub(super) fn project<'ctx>(
     }
     let mut name_texts = PropertyTextIndex::new(ctx)?;
     let mut body_names = BTreeMap::<u32, Option<&str>>::new();
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(&mut ir.model.bodies);
     while source_values.len() != 0 {
         let Some(body) = ctx.next_charged(&mut source_values, "iges body name traversal")? else {
@@ -1127,7 +1097,7 @@ pub(super) fn project<'ctx>(
         let mut first: Option<(u32, &str)> = None;
         let mut conflicting = false;
         let mut properties = groups.properties().iter();
-        while properties.len() != 0 || ctx.resource_refusal().is_some() {
+        while properties.len() != 0 {
             let Some(pointer) =
                 ctx.next_charged(&mut properties, "iges body property traversal")?
             else {
@@ -1226,9 +1196,6 @@ pub(super) fn project<'ctx>(
         }
     }
 
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
     let mut source_values = IntoIterator::into_iter(0..ir.model.faces.len());
     while !source_values.is_empty() {
         let Some(index) = ctx.next_charged(&mut source_values, "iges face display traversal")?
