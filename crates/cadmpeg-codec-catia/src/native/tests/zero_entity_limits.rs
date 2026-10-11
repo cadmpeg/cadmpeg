@@ -40,30 +40,32 @@ fn native_zero_entity_record_id_refuses_retained_limit() {
 }
 
 #[test]
-fn native_zero_entity_pair_ids_refuse_retained_limit() {
-    use cadmpeg_ir::features::FinitePoint3;
-    use cadmpeg_ir::math::Point3;
-    let point = FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).expect("finite point");
-    let pair = crate::families::zero_entity::topology::ZeroEntityEndpointPairCandidate {
-        face_record_ordinals: [1, 2],
-        support_record_ordinals: [3, 4],
-        model_endpoints: [point, point],
-        model_midpoint: point,
-    };
+fn native_zero_entity_allocation_ids_refuse_retained_limit() {
+    let bytes = crate::test_support::test_zero_entity::zero_entity_allocation_stream();
+    let (topology, records) = crate::test_support::with_service_context(|ctx| {
+        let runs = crate::families::zero_entity::records::zero_entity_support_runs_in_range(
+            ctx,
+            &bytes,
+            0..bytes.len(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )?;
+        let topology =
+            crate::families::zero_entity::allocation::parse(ctx, &bytes, 0..bytes.len(), &runs)?;
+        let records = super::super::zero_entity_records(ctx, &bytes, 0..bytes.len())?;
+        Ok::<_, CodecError>((topology, records))
+    })
+    .expect("complete source graph");
     let refused = crate::test_support::with_retained_refusal(
         &[],
-        "catia_native_zero_face_record_id",
-        |ctx| super::super::zero_entity_endpoint_pair_candidates(ctx, vec![pair]),
+        "catia_native_zero_allocation_target",
+        |ctx| super::super::zero_entity_allocation::derive(ctx, topology.clone(), &records),
     );
     assert!(matches!(refused, Err(CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_native_zero_face_record_id"));
+        if limit.operation == "catia_native_zero_allocation_target"));
     let admitted = crate::test_support::with_service_context(|ctx| {
-        super::super::zero_entity_endpoint_pair_candidates(ctx, vec![pair])
+        super::super::zero_entity_allocation::derive(ctx, topology, &records)
     })
-    .expect("service profile admits pair IDs");
-    assert_eq!(
-        admitted[0].id,
-        "catia:zero-entity:endpoint-pair-candidate#0"
-    );
-    assert_eq!(admitted[0].face_records[0], "catia:zero-entity:record#1");
+    .expect("service profile admits allocation IDs");
+    assert_eq!(admitted.len(), 3);
+    assert_eq!(admitted[0].id, "catia:zero-entity:allocation-edge#24");
 }

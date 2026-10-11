@@ -1140,8 +1140,12 @@ pub(in crate::families) fn try_decode_zero_entity(
         Ok(runs) => runs,
         Err(error) => return Some(Err(error)),
     };
+    let allocation_topology = match super::allocation::parse(ctx, &scan.data, preamble.clone(), &support_runs) {
+        Ok(topology) => topology,
+        Err(error) => return Some(Err(error)),
+    };
     let ownership_root = match crate::families::zero_entity::records::zero_entity_ownership_root_in_range(
-        ctx, &scan.data, preamble,
+        ctx, &scan.data, preamble.clone(),
     ) {
         Ok(root) => root,
         Err(error) => return Some(Err(error)),
@@ -1338,23 +1342,20 @@ pub(in crate::families) fn try_decode_zero_entity(
         }
     }
 
-    let topology_counts = {
+    let topology_counts = if let Some(allocation_topology) = &allocation_topology {
         let mut candidate_ir = std::mem::replace(&mut ir, CadIr::empty());
         let mut candidate_annotations = admitted!(annotations.copy_transaction(ctx, "catia_zero_topology_annotations"));
-        let topology_budget = ctx.work_budget(
-            u64_from_index(crate::families::zero_entity::topology::MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS),
-        );
         let counts = crate::families::zero_entity::topology_transfer::transfer_closed_face_topology(
             &mut admission,
             &mut candidate_ir,
             &mut candidate_annotations,
             crate::families::zero_entity::topology_transfer::ZeroEntityClosedTopology {
+                allocation_topology,
                 support_runs: &support_runs,
                 surface_ids_by_position: &surface_ids_by_position,
                 support_curve_ids: &support_curve_ids,
                 ownership_root: ownership_root.as_ref(),
             },
-            &topology_budget,
             refusal,
         );
         let admissible = match &counts {
@@ -1388,7 +1389,7 @@ pub(in crate::families) fn try_decode_zero_entity(
                 None
             },
         }
-    };
+    } else { None };
     let wire_counts = if topology_counts.is_some() {
         WireTransferCounts::default()
     } else {
@@ -1418,19 +1419,19 @@ pub(in crate::families) fn try_decode_zero_entity(
         topology_counts,
     ));
     let topology_message = if topology_counts.is_some() && ownership_root.is_some() {
-        "Complete zero-entity radial support pairs and endpoint loci lower into connected neutral faces, loops, coedges, edges, vertices, p-curves, and a body/region/shell hierarchy bound to the complete native ownership root; source allocation identities and native physical-edge identity remain retained as native records."
+        "Complete zero-entity source edge/use/support/incidence/vertex bindings lower into connected neutral faces, loops, coedges, edges, vertices, p-curves, and a body/region/shell hierarchy bound to the complete native ownership root; physical edge, side-use, and vertex identities select their source records."
     } else if topology_counts.is_some() {
-        "Complete zero-entity radial support pairs and endpoint loci lower into connected neutral faces, loops, coedges, edges, vertices, and p-curves under a deterministic derived body/region/shell hierarchy; native ownership allocation and physical-edge identities remain retained as native records."
+        "Complete zero-entity source edge/use/support/incidence/vertex bindings lower into connected neutral faces, loops, coedges, edges, vertices, and p-curves under a deterministic derived body/region/shell hierarchy; physical edge, side-use, and vertex identities select their source records."
     } else if wire_counts.loops == 0 {
         if ownership_root.is_some() {
-            "Zero-entity loop members bind their face-local support occurrences and the terminal ownership root binds the complete face roster through one shell and body, but support-to-oriented-use, oriented-use-to-incidence, and physical endpoint bindings remain unresolved; no neutral topology was transferred."
+            "Zero-entity loop members bind their face-local support occurrences and the terminal ownership root binds the complete face roster through one shell and body, but the complete allocation graph or its required geometry is unavailable; no neutral topology was transferred."
         } else {
-            "Zero-entity loop members bind their face-local support occurrences, but support-to-oriented-use, oriented-use-to-incidence, physical endpoint, and body/shell bindings remain unresolved; no neutral topology was transferred."
+            "Zero-entity loop members bind their face-local support occurrences, but the complete allocation graph or its required geometry is unavailable and body/shell ownership remains unresolved; no neutral topology was transferred."
         }
     } else if wire_counts.owned_bodies != 0 {
-        "Complete zero-entity face-local loops with exact model carriers and closed endpoint tapes were emitted under one derived wire container bound to the complete source shell and body roster; support-to-oriented-use, oriented-use-to-incidence, physical edge identity, and face topology remain unresolved."
+        "Complete zero-entity face-local loops with exact model carriers and closed endpoint tapes were emitted under one derived wire container bound to the complete source shell and body roster; the complete allocation graph or its required face geometry is unavailable."
     } else {
-        "Complete zero-entity face-local loops with exact model carriers and closed endpoint tapes were emitted as independent wire bodies; support-to-oriented-use, oriented-use-to-incidence, physical edge identity, and source body/shell bindings remain unresolved."
+        "Complete zero-entity face-local loops with exact model carriers and closed endpoint tapes were emitted as independent wire bodies; the complete allocation graph or its required face geometry is unavailable and source body/shell bindings remain unresolved."
     };
     let topology_loss = if topology_counts.is_some() {
         CatiaLossCode::TopologyZeroEntityGaugeSubstituted
@@ -1549,7 +1550,7 @@ mod tests {
             tag: [0x62, 0x14],
             members: ZeroEntityLoopMembers::try_new(2, 1, NonZeroUsize::MIN)
                 .expect("one loop member"),
-            typed_references: vec![1],
+            edge_stride_distances: vec![1],
             support_record_ordinals: vec![7],
             loop_class: ZeroEntityLoopClass::Outer41,
             forward_senses: vec![true],
@@ -1593,7 +1594,7 @@ mod tests {
             tag: [0x62, 0x14],
             members: ZeroEntityLoopMembers::try_new(2, 1, NonZeroUsize::MIN)
                 .expect("one loop member"),
-            typed_references: vec![1],
+            edge_stride_distances: vec![1],
             support_record_ordinals: vec![7],
             loop_class: ZeroEntityLoopClass::Outer41,
             forward_senses: vec![true],
@@ -1701,7 +1702,7 @@ mod tests {
                                 NonZeroUsize::new(2).expect("nonzero loop member count"),
                             )
                             .expect("admitted loop member run"),
-                            typed_references: vec![1, 2],
+                            edge_stride_distances: vec![1, 2],
                             support_record_ordinals: vec![4, 5],
                             loop_class: ZeroEntityLoopClass::Outer41,
                             forward_senses: vec![true, true],
@@ -1802,7 +1803,7 @@ mod tests {
                                 NonZeroUsize::new(2).expect("nonzero loop member count"),
                             )
                             .expect("admitted loop member run"),
-                            typed_references: vec![1, 2],
+                            edge_stride_distances: vec![1, 2],
                             support_record_ordinals: vec![4, 5],
                             loop_class: ZeroEntityLoopClass::Outer41,
                             forward_senses: vec![true, false],
@@ -1821,7 +1822,7 @@ mod tests {
                                 NonZeroUsize::new(2).expect("nonzero loop member count"),
                             )
                             .expect("admitted loop member run"),
-                            typed_references: vec![4, 5],
+                            edge_stride_distances: vec![4, 5],
                             support_record_ordinals: vec![5, 4],
                             loop_class: ZeroEntityLoopClass::Outer41,
                             forward_senses: vec![true, false],
@@ -1840,7 +1841,7 @@ mod tests {
                                 NonZeroUsize::new(1).expect("nonzero loop member count"),
                             )
                             .expect("admitted loop member run"),
-                            typed_references: vec![3],
+                            edge_stride_distances: vec![3],
                             support_record_ordinals: vec![99],
                             loop_class: ZeroEntityLoopClass::Bound50,
                             forward_senses: vec![true],
@@ -2006,7 +2007,7 @@ mod tests {
                                 NonZeroUsize::new(2).expect("nonzero loop member count"),
                             )
                             .expect("admitted loop member run"),
-                            typed_references: vec![1, 2],
+                            edge_stride_distances: vec![1, 2],
                             support_record_ordinals: vec![4, 5],
                             loop_class: ZeroEntityLoopClass::Outer41,
                             forward_senses: vec![true, true],
@@ -2144,7 +2145,7 @@ mod tests {
                                 NonZeroUsize::new(2).expect("nonzero loop member count"),
                             )
                             .expect("admitted loop member run"),
-                            typed_references: vec![1, 2],
+                            edge_stride_distances: vec![1, 2],
                             support_record_ordinals: vec![4, 4],
                             loop_class: ZeroEntityLoopClass::Outer41,
                             forward_senses: vec![true, false],
@@ -2266,7 +2267,7 @@ mod tests {
                                 NonZeroUsize::new(1).expect("nonzero loop member count"),
                             )
                             .expect("admitted loop member run"),
-                            typed_references: vec![1],
+                            edge_stride_distances: vec![1],
                             support_record_ordinals: vec![4],
                             loop_class: ZeroEntityLoopClass::Outer41,
                             forward_senses: vec![true],

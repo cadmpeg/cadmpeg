@@ -563,31 +563,26 @@ current levels require those matrices and representative fixtures.
   `03` or `05` terminal control. Decode coverage counts the two controls
   independently.
   Complete `62xx` loop rosters bind to those terminals and retain alternating
-  logical-member and typed-reference lanes, loop class, and absolute member
+  logical-member and backward edge-distance lanes, loop class, and absolute member
   senses. Decode coverage counts each admitted loop class and forward/reversed
   member senses independently. Each loop member binds to the unique face-local support occurrence
   whose slot equals the loop terminal minus that member; the complete
   face-local binding is atomic and retained as support-record ordinals. A loop
   retains its complete sense-oriented model endpoint tape when every support
   lifts directly or exactly one missing pair is bounded by lifted neighbors
-  and every cyclic join closes within the format tolerance. Matching occurrence
-  endpoint pairs establish face-incidence components when each occurrence has
-  one reciprocal endpoint match. Ambiguous endpoint groups require one
-  reciprocal bounded-curve midpoint match. Matching groups partition by those
-  components, and every two-occurrence partition retains one radial
-  endpoint-pair candidate. The midpoint disambiguates repeated endpoint pairs;
-  the candidate does not establish curve coincidence or a physical edge. Every
-  in-range odd-lane typed reference retains its selected global record identity
-  atomically for the loop. When every bound support occurrence belongs to one
-  radial pair and every pair endpoint belongs to one complete endpoint clique,
-  the decoder atomically lowers the closed relation set into one connected
-  neutral body, region, shell, face, loop, coedge, edge, vertex, point, and
-  pcurve graph. Edge orientation is solved from the bounded model-carrier
-  endpoints; each alternate face occurrence keeps its oriented use curve and
-  coedge sense. A complete terminal ownership root supplies the body and shell
-  identities. Without that root, the graph uses deterministic derived body,
-  region, and shell identities. Allocation namespaces and native physical-edge
-  identity remain native records. Any incomplete, ambiguous, or inadmissible
+  and every cyclic join closes within the format tolerance. Each odd lane selects a
+  physical-edge record by backward distance from the loop ordinal. The complete
+  allocation graph joins that edge to its `2569` header, ordered `0638` uses,
+  face-local supports, `05xx` incidences, and persistent `5d06` vertex owners.
+  Native allocation edges retain all six record classes through exact identities.
+  Coverage counts complete allocation edges and bound loop-to-edge distances.
+  The decoder atomically lowers a complete graph whose endpoint contributions
+  agree into neutral faces, loops, coedges, edges, vertices, points, and pcurves.
+  Physical edges, side-use coedges, and vertices use their source record ordinals.
+  Geometry validates the bindings and supplies derived carriers and coordinates.
+  Each alternate face occurrence keeps its oriented use curve and coedge sense.
+  A complete terminal ownership root supplies body and shell identities. Without
+  that root, the graph uses deterministic derived body, region, and shell identities. Any incomplete, ambiguous, or inadmissible
   relation candidate retains the atomic wire fallback. A direct carrier that
   cannot be evaluated or oriented remains a reachable unknown carrier; the
   topology candidate commits only when the complete graph remains admissible.

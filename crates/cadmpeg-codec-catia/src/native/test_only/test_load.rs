@@ -16,7 +16,6 @@ use super::test_links::{
     ConsolidatedSupportArenas,
 };
 use super::test_zero_entity::{
-    validate_zero_entity_endpoint_locus_candidates, validate_zero_entity_endpoint_pair_candidates,
     validate_zero_entity_ownership_roots, validate_zero_entity_records,
     validate_zero_entity_support_runs, validate_zero_entity_topology_records,
 };
@@ -47,10 +46,8 @@ use crate::native::{
     CatiaExternalReference, CatiaFinjplSegment, CatiaLegacyEntityRun, CatiaNative,
     CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecord, CatiaPreviewImage,
     CatiaReferenceSignatureCohort, CatiaValueBlock, CatiaValueSchemaSelection,
-    CatiaZeroEntityEdgeStride, CatiaZeroEntityEndpointLocusCandidate,
-    CatiaZeroEntityEndpointPairCandidate, CatiaZeroEntityOrientedUsePair,
-    CatiaZeroEntityOwnershipRoot, CatiaZeroEntityRecord, CatiaZeroEntitySupportRun,
-    CatiaZeroEntityVertexIncidence,
+    CatiaZeroEntityEdgeStride, CatiaZeroEntityOrientedUsePair, CatiaZeroEntityOwnershipRoot,
+    CatiaZeroEntityRecord, CatiaZeroEntitySupportRun, CatiaZeroEntityVertexIncidence,
 };
 use crate::object_graph;
 use std::collections::{HashMap, HashSet};
@@ -644,6 +641,7 @@ impl CatiaNative {
         )
         .map_err(cadmpeg_ir::NativeConvertError::InvalidOwner)?;
         consolidated_edge_nodes.sort_by_key(|node| node.byte_offset);
+        let zero_entity_allocation_edges = namespace.arena_as("zero_entity_allocation_edges")?;
         let mut zero_entity_edge_strides: Vec<CatiaZeroEntityEdgeStride> =
             namespace.arena_as("zero_entity_edge_strides")?;
         zero_entity_edge_strides.sort_by_key(|record| record.byte_offset);
@@ -652,8 +650,6 @@ impl CatiaNative {
         zero_entity_oriented_use_pairs.sort_by_key(|pair| pair.header_byte_offset);
         let zero_entity_ownership_roots: Vec<CatiaZeroEntityOwnershipRoot> =
             namespace.arena_as("zero_entity_ownership_roots")?;
-        let zero_entity_endpoint_pair_candidates: Vec<CatiaZeroEntityEndpointPairCandidate> =
-            namespace.arena_as("zero_entity_endpoint_pair_candidates")?;
         let mut zero_entity_records: Vec<CatiaZeroEntityRecord> =
             namespace.arena_as("zero_entity_records")?;
         zero_entity_records.sort_by_key(|record| record.record_ordinal);
@@ -667,16 +663,6 @@ impl CatiaNative {
             &zero_entity_support_runs,
             &zero_entity_records,
         )?;
-        let zero_entity_endpoint_locus_candidates: Vec<CatiaZeroEntityEndpointLocusCandidate> =
-            namespace.arena_as("zero_entity_endpoint_locus_candidates")?;
-        validate_zero_entity_endpoint_pair_candidates(
-            &zero_entity_endpoint_pair_candidates,
-            &zero_entity_support_runs,
-        )?;
-        validate_zero_entity_endpoint_locus_candidates(
-            &zero_entity_endpoint_locus_candidates,
-            &zero_entity_support_runs,
-        )?;
         let mut zero_entity_vertex_incidences: Vec<CatiaZeroEntityVertexIncidence> =
             namespace.arena_as("zero_entity_vertex_incidences")?;
         zero_entity_vertex_incidences.sort_by_key(|record| record.byte_offset);
@@ -685,6 +671,14 @@ impl CatiaNative {
             &zero_entity_oriented_use_pairs,
             &zero_entity_vertex_incidences,
             &zero_entity_records,
+        )?;
+        crate::native::zero_entity_allocation::validate(
+            &zero_entity_allocation_edges,
+            &zero_entity_records,
+            &zero_entity_edge_strides,
+            &zero_entity_oriented_use_pairs,
+            &zero_entity_vertex_incidences,
+            &zero_entity_support_runs,
         )?;
         validate_consolidated_edge_runs(
             &consolidated_edge_runs,
@@ -746,13 +740,12 @@ impl CatiaNative {
             reference_signature_cohorts,
             schema_configuration_row_chains,
             value_blocks,
+            zero_entity_allocation_edges,
             zero_entity_edge_strides,
             zero_entity_oriented_use_pairs,
             zero_entity_ownership_roots,
-            zero_entity_endpoint_pair_candidates,
             zero_entity_records,
             zero_entity_support_runs,
-            zero_entity_endpoint_locus_candidates,
             zero_entity_vertex_incidences,
         })
     }

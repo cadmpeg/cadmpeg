@@ -334,10 +334,10 @@ pub(crate) const DECODED_ZERO_ENTITY_EDGE_STRIDE_ALLOCATION_COUNT: CoverageKey =
     CoverageKey::new("decoded_zero_entity_edge_stride_allocation_count");
 pub(crate) const DECODED_ZERO_ENTITY_EDGE_STRIDE_COUNT: CoverageKey =
     CoverageKey::new("decoded_zero_entity_edge_stride_count");
-pub(crate) const DECODED_ZERO_ENTITY_EDGE_STRIDE_SURFACE_SUPPORT_REF_COUNT: CoverageKey =
-    CoverageKey::new("decoded_zero_entity_edge_stride_surface_support_ref_count");
-pub(crate) const DECODED_ZERO_ENTITY_EDGE_STRIDE_TOPOLOGY_REF_COUNT: CoverageKey =
-    CoverageKey::new("decoded_zero_entity_edge_stride_topology_ref_count");
+pub(crate) const DECODED_ZERO_ENTITY_EDGE_STRIDE_VERTEX_OWNER_DISTANCE_COUNT: CoverageKey =
+    CoverageKey::new("decoded_zero_entity_edge_stride_vertex_owner_distance_count");
+pub(crate) const DECODED_ZERO_ENTITY_EDGE_STRIDE_TOPOLOGY_DISTANCE_COUNT: CoverageKey =
+    CoverageKey::new("decoded_zero_entity_edge_stride_topology_distance_count");
 pub(crate) const DECODED_ZERO_ENTITY_FACE_BOUND_SUPPORT_RUN_COUNT: CoverageKey =
     CoverageKey::new("decoded_zero_entity_face_bound_support_run_count");
 pub(crate) const DECODED_ZERO_ENTITY_FACE_TERMINAL_CONTROL_03_COUNT: CoverageKey =
@@ -788,14 +788,12 @@ pub(crate) const DECODED_VALUE_FIELD_COUNT: CoverageKey =
     CoverageKey::new("decoded_value_field_count");
 pub(crate) const DECODED_VALUE_SCHEMA_SELECTION_COUNT: CoverageKey =
     CoverageKey::new("decoded_value_schema_selection_count");
+pub(crate) const DECODED_ZERO_ENTITY_ALLOCATION_EDGE_COUNT: CoverageKey =
+    CoverageKey::new("decoded_zero_entity_allocation_edge_count");
 pub(crate) const DECODED_ZERO_ENTITY_BOUND_SUPPORT_MEMBER_COUNT: CoverageKey =
     CoverageKey::new("decoded_zero_entity_bound_support_member_count");
-pub(crate) const DECODED_ZERO_ENTITY_BOUND_TYPED_LOOP_REFERENCE_COUNT: CoverageKey =
-    CoverageKey::new("decoded_zero_entity_bound_typed_loop_reference_count");
-pub(crate) const DECODED_ZERO_ENTITY_ENDPOINT_LOCUS_CANDIDATE_COUNT: CoverageKey =
-    CoverageKey::new("decoded_zero_entity_endpoint_locus_candidate_count");
-pub(crate) const DECODED_ZERO_ENTITY_ENDPOINT_PAIR_CANDIDATE_COUNT: CoverageKey =
-    CoverageKey::new("decoded_zero_entity_endpoint_pair_candidate_count");
+pub(crate) const DECODED_ZERO_ENTITY_BOUND_EDGE_STRIDE_RECORD_COUNT: CoverageKey =
+    CoverageKey::new("decoded_zero_entity_bound_edge_stride_record_count");
 pub(crate) const DECODED_ZERO_ENTITY_MODEL_ENDPOINT_PAIR_COUNT: CoverageKey =
     CoverageKey::new("decoded_zero_entity_model_endpoint_pair_count");
 pub(crate) const DECODED_ZERO_ENTITY_ORIENTED_MODEL_ENDPOINT_PAIR_COUNT: CoverageKey =
@@ -985,10 +983,9 @@ const ALL: &[CoverageKey] = &[
     DECODED_VALUE_BLOCK_COUNT,
     DECODED_VALUE_FIELD_COUNT,
     DECODED_VALUE_SCHEMA_SELECTION_COUNT,
+    DECODED_ZERO_ENTITY_ALLOCATION_EDGE_COUNT,
     DECODED_ZERO_ENTITY_BOUND_SUPPORT_MEMBER_COUNT,
-    DECODED_ZERO_ENTITY_BOUND_TYPED_LOOP_REFERENCE_COUNT,
-    DECODED_ZERO_ENTITY_ENDPOINT_LOCUS_CANDIDATE_COUNT,
-    DECODED_ZERO_ENTITY_ENDPOINT_PAIR_CANDIDATE_COUNT,
+    DECODED_ZERO_ENTITY_BOUND_EDGE_STRIDE_RECORD_COUNT,
     DECODED_ZERO_ENTITY_MODEL_ENDPOINT_PAIR_COUNT,
     DECODED_ZERO_ENTITY_ORIENTED_MODEL_ENDPOINT_PAIR_COUNT,
     TRANSFERRED_APPEARANCE_ASSET_COUNT,

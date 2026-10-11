@@ -1,10 +1,7 @@
 use crate::native::projection::{zero_entity_record, zero_entity_vertex_owner};
 use crate::native::{
-    zero_entity_endpoint_locus_candidates, zero_entity_endpoint_pair_candidates,
-    CatiaZeroEntityEdgeStride, CatiaZeroEntityEndpointLocusCandidate,
-    CatiaZeroEntityEndpointPairCandidate, CatiaZeroEntityOrientedUsePair,
-    CatiaZeroEntityOwnershipRoot, CatiaZeroEntityRecord, CatiaZeroEntitySupportRun,
-    CatiaZeroEntityVertexIncidence,
+    CatiaZeroEntityEdgeStride, CatiaZeroEntityOrientedUsePair, CatiaZeroEntityOwnershipRoot,
+    CatiaZeroEntityRecord, CatiaZeroEntitySupportRun, CatiaZeroEntityVertexIncidence,
 };
 use std::collections::HashSet;
 
@@ -107,17 +104,25 @@ pub(super) fn validate_zero_entity_support_runs(
                                 );
                                 loop_record.tag[0] == 0x62
                                     && !loop_record.member_ids.is_empty()
-                                    && loop_record.typed_references.len() == edge_count
-                                    && !loop_record.typed_references.contains(&0)
-                                    && (loop_record.typed_records.is_empty()
-                                        || loop_record.typed_records.len() == edge_count
+                                    && loop_record.edge_stride_distances.len() == edge_count
+                                    && !loop_record.edge_stride_distances.contains(&0)
+                                    && (loop_record.edge_stride_records.is_empty()
+                                        || loop_record.edge_stride_records.len() == edge_count
                                             && loop_record
-                                                .typed_references
+                                                .edge_stride_distances
                                                 .iter()
-                                                .zip(&loop_record.typed_records)
+                                                .zip(&loop_record.edge_stride_records)
                                                 .all(|(ordinal, id)| {
-                                                    zero_entity_record(records, *ordinal)
-                                                        .is_some_and(|record| &record.id == id)
+                                                    loop_record
+                                                        .record_ordinal
+                                                        .checked_sub(*ordinal)
+                                                        .and_then(|target| {
+                                                            zero_entity_record(records, target)
+                                                        })
+                                                        .is_some_and(|record| {
+                                                            record.tag == [0x5e, 0x1a]
+                                                                && &record.id == id
+                                                        })
                                                 }))
                                     && (loop_record.support_record_ordinals.is_empty()
                                         || loop_record.support_record_ordinals.len() == edge_count)
@@ -390,84 +395,6 @@ fn validate_zero_entity_model_curve(
     }
 }
 
-pub(super) fn validate_zero_entity_endpoint_pair_candidates(
-    endpoint_pairs: &[CatiaZeroEntityEndpointPairCandidate],
-    runs: &[CatiaZeroEntitySupportRun],
-) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    let expected = crate::test_support::with_service_context(|ctx| {
-        zero_entity_endpoint_pair_candidates(ctx, derived_zero_entity_endpoint_pairs(runs))
-    })
-    .expect("test endpoint pairs fit the service profile");
-    if endpoint_pairs != expected {
-        return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
-            "zero-entity endpoint-pair candidates disagree with their radial support occurrences"
-                .to_string(),
-        ));
-    }
-    Ok(())
-}
-
-fn derived_zero_entity_endpoint_pairs(
-    runs: &[CatiaZeroEntitySupportRun],
-) -> Vec<crate::families::zero_entity::topology::ZeroEntityEndpointPairCandidate> {
-    let mut occurrences = Vec::new();
-    for run in runs {
-        let Some(face) = run.face.as_ref() else {
-            continue;
-        };
-        let midpoints = run
-            .supports
-            .iter()
-            .filter_map(|support| Some((support.record_ordinal, support.model_midpoint?)))
-            .collect::<std::collections::HashMap<_, _>>();
-        for loop_record in &face.loops {
-            for (support_record_ordinal, model_endpoints) in loop_record
-                .support_record_ordinals
-                .iter()
-                .copied()
-                .zip(loop_record.oriented_model_endpoints.iter().copied())
-            {
-                let Some(model_midpoint) = midpoints.get(&support_record_ordinal).copied() else {
-                    continue;
-                };
-                occurrences.push(
-                    crate::families::zero_entity::topology::ZeroEntityOrientedOccurrence {
-                        face_record_ordinal: face.record_ordinal,
-                        support_record_ordinal,
-                        model_endpoints,
-                        model_midpoint,
-                    },
-                );
-            }
-        }
-    }
-    crate::test_support::with_service_context(|ctx| {
-        crate::families::zero_entity::topology::endpoint_pair_candidates(ctx, &occurrences)
-    })
-    .expect("test endpoint pairs fit the service profile")
-}
-
-pub(super) fn validate_zero_entity_endpoint_locus_candidates(
-    endpoint_loci: &[CatiaZeroEntityEndpointLocusCandidate],
-    runs: &[CatiaZeroEntitySupportRun],
-) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    let derived_pairs = derived_zero_entity_endpoint_pairs(runs);
-    let expected = crate::test_support::with_service_context(|ctx| {
-        zero_entity_endpoint_locus_candidates(
-            ctx,
-            crate::families::zero_entity::topology::endpoint_locus_candidates(ctx, &derived_pairs)?,
-        )
-    })
-    .expect("test endpoint loci fit the service profile");
-    if endpoint_loci != expected {
-        return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
-            "zero-entity endpoint-locus candidates disagree with their endpoint-pair endpoints"
-                .to_string(),
-        ));
-    }
-    Ok(())
-}
-
 pub(super) fn validate_zero_entity_records(
     records: &[CatiaZeroEntityRecord],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
@@ -551,13 +478,6 @@ pub(super) fn validate_zero_entity_topology_records(
             && !record.allocations.contains(&0)
             && record.allocations[0].checked_sub(1) == Some(record.allocations[3])
             && record.allocations[0].checked_sub(2) == Some(record.allocations[4])
-            && record.topology_refs
-                == [
-                    record.allocations[0],
-                    record.allocations[3],
-                    record.allocations[4],
-                ]
-            && record.surface_support_refs == [record.allocations[1], record.allocations[2]]
             && zero_entity_record(records, record.record_ordinal).is_some_and(|source| {
                 source.byte_offset == record.byte_offset && source.tag == [0x5e, 0x1a]
             })

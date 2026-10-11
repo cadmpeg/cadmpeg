@@ -224,8 +224,8 @@ pub(crate) struct ZeroEntityLoop {
     pub(crate) tag: [u8; 2],
     /// Nonterminal even-lane arithmetic run.
     pub(crate) members: ZeroEntityLoopMembers,
-    /// Odd-lane typed references in member order.
-    pub(crate) typed_references: Vec<u32>,
+    /// Backward distances from the loop to physical-edge stride records.
+    pub(crate) edge_stride_distances: Vec<u32>,
     /// Face-local support record ordinals selected by the logical members.
     pub(crate) support_record_ordinals: Vec<u32>,
     /// Stored loop-class byte.
@@ -245,22 +245,6 @@ pub(crate) struct ZeroEntityEdgeStride {
     pub(crate) record_ordinal: u32,
     /// Five allocation values following the fixed tagged-one prefix.
     pub(crate) allocations: [u32; 5],
-}
-
-impl ZeroEntityEdgeStride {
-    /// Topology allocations in source order.
-    pub(crate) const fn topology_refs(&self) -> [u32; 3] {
-        [
-            self.allocations[0],
-            self.allocations[3],
-            self.allocations[4],
-        ]
-    }
-
-    /// Adjacent surface-support allocations in source order.
-    pub(crate) const fn surface_support_refs(&self) -> [u32; 2] {
-        [self.allocations[1], self.allocations[2]]
-    }
 }
 
 /// One positional `0638` oriented use.
@@ -1359,19 +1343,19 @@ fn zero_entity_loops_from_records(
                 };
                 references.push(value);
             }
-            let mut typed_references = Vec::new();
+            let mut edge_stride_distances = Vec::new();
             ctx.reserve_vec(
-                &mut typed_references,
+                &mut edge_stride_distances,
                 edge_count,
-                "catia_zero_loop_typed_references",
+                "catia_zero_loop_edge_stride_distances",
             )?;
-            typed_references.extend(
+            edge_stride_distances.extend(
                 references[1..reference_count - 1]
                     .iter()
                     .step_by(2)
                     .copied(),
             );
-            if typed_references.contains(&0) {
+            if edge_stride_distances.contains(&0) {
                 return Ok(None);
             }
             let terminal_id = references[reference_count - 1];
@@ -1433,7 +1417,7 @@ fn zero_entity_loops_from_records(
                 record_ordinal: record.ordinal,
                 tag: record.tag,
                 members,
-                typed_references,
+                edge_stride_distances,
                 support_record_ordinals: Vec::new(),
                 loop_class,
                 forward_senses,
@@ -3908,8 +3892,6 @@ mod tests {
         };
         assert_eq!(edge_stride.record_ordinal, 1);
         assert_eq!(edge_stride.allocations, [5, 7, 8, 4, 3]);
-        assert_eq!(edge_stride.topology_refs(), [5, 4, 3]);
-        assert_eq!(edge_stride.surface_support_refs(), [7, 8]);
 
         let pairs = zero_entity_oriented_use_pairs(&stream);
         let [pair] = pairs.as_slice() else {
@@ -4108,7 +4090,7 @@ mod tests {
         assert_eq!(loop_record.record_ordinal, 4);
         assert_eq!(loop_record.tag, [0x62, 0x14]);
         assert_eq!(loop_record.members.member_ids().collect::<Vec<_>>(), [6]);
-        assert_eq!(loop_record.typed_references, [1]);
+        assert_eq!(loop_record.edge_stride_distances, [1]);
         assert_eq!(loop_record.members.terminal_id(), 7);
         assert_eq!(loop_record.members.gap(), 1);
         assert_eq!(loop_record.loop_class.as_byte(), 0x41);

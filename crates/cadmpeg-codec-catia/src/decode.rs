@@ -2056,19 +2056,19 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_TOPOLOGY_REF_COUNT,
+            crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_TOPOLOGY_DISTANCE_COUNT,
             native
                 .zero_entity_edge_strides
                 .iter()
-                .map(|stride| stride.topology_refs.len())
+                .map(|stride| stride.allocations[3..].len() + 1)
                 .sum(),
         ),
         (
-            crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_SURFACE_SUPPORT_REF_COUNT,
+            crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_VERTEX_OWNER_DISTANCE_COUNT,
             native
                 .zero_entity_edge_strides
                 .iter()
-                .map(|stride| stride.surface_support_refs.len())
+                .map(|stride| stride.allocations[1..3].len())
                 .sum(),
         ),
         (
@@ -2198,13 +2198,13 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            crate::coverage::DECODED_ZERO_ENTITY_BOUND_TYPED_LOOP_REFERENCE_COUNT,
+            crate::coverage::DECODED_ZERO_ENTITY_BOUND_EDGE_STRIDE_RECORD_COUNT,
             native
                 .zero_entity_support_runs
                 .iter()
                 .filter_map(|run| run.face.as_ref())
                 .flat_map(|face| &face.loops)
-                .map(|loop_record| loop_record.typed_records.len())
+                .map(|loop_record| loop_record.edge_stride_records.len())
                 .sum(),
         ),
         (
@@ -2229,12 +2229,8 @@ fn finish_decode(
                 .sum(),
         ),
         (
-            crate::coverage::DECODED_ZERO_ENTITY_ENDPOINT_PAIR_CANDIDATE_COUNT,
-            native.zero_entity_endpoint_pair_candidates.len(),
-        ),
-        (
-            crate::coverage::DECODED_ZERO_ENTITY_ENDPOINT_LOCUS_CANDIDATE_COUNT,
-            native.zero_entity_endpoint_locus_candidates.len(),
+            crate::coverage::DECODED_ZERO_ENTITY_ALLOCATION_EDGE_COUNT,
+            native.zero_entity_allocation_edges.len(),
         ),
         (
             crate::coverage::DECODED_ZERO_ENTITY_RECORD_COUNT,
@@ -3482,12 +3478,12 @@ fn finish_decode(
             .flat_map(|face| &face.loops)
             .map(|loop_record| loop_record.support_record_ordinals.len())
             .sum::<usize>();
-        let bound_typed_loop_reference_count = native
+        let bound_edge_stride_record_count = native
             .zero_entity_support_runs
             .iter()
             .filter_map(|run| run.face.as_ref())
             .flat_map(|face| &face.loops)
-            .map(|loop_record| loop_record.typed_records.len())
+            .map(|loop_record| loop_record.edge_stride_records.len())
             .sum::<usize>();
         let vertex_owner_binding_count = native
             .zero_entity_vertex_incidences
@@ -3515,23 +3511,19 @@ fn finish_decode(
                  {oriented_loop_member_count} stored member sense(s), including \
                  {oriented_model_endpoint_count} sense-oriented model-space endpoint pair(s), \
                  {bound_support_member_count} member(s) bound to face-local support records and \
-                 {bound_typed_loop_reference_count} typed reference(s) bound to global records; {} \
+                 {bound_edge_stride_record_count} backward distance(s) bound to physical-edge records; {} \
                  edge-stride allocation tuple(s) remain separate, and \
                  {vertex_owner_binding_count} of {} vertex-incidence record(s) bind their \
                  adjacent vertex owner; {} ownership root(s) bind {ownership_face_count} face \
-                 allocation(s) through a shell and body; {} radial occurrence endpoint-pair \
-                 candidate(s) and {} \
-                 complete endpoint-locus candidate(s) are established from matching bounded \
-                 model-space endpoint and midpoint witnesses; curve coincidence, loop-to-use, \
-                 use-to-incidence, physical \
-                 endpoint identity remain unresolved; {} oriented-use \
-                 pair(s) remain separate.",
+                 allocation(s) through a shell and body; {} physical edge(s) have complete \
+                 source edge/use/support/incidence/vertex bindings; {} oriented-use pair(s) \
+                 remain retained. Geometry transfer requires complete carriers and validated \
+                 source endpoint coordinates.",
                 native.zero_entity_support_runs.len(),
                 native.zero_entity_edge_strides.len(),
                 native.zero_entity_vertex_incidences.len(),
                 native.zero_entity_ownership_roots.len(),
-                native.zero_entity_endpoint_pair_candidates.len(),
-                native.zero_entity_endpoint_locus_candidates.len(),
+                native.zero_entity_allocation_edges.len(),
                 native.zero_entity_oriented_use_pairs.len(),
             ),
             "catia_report_zero_entity_loss",

@@ -492,32 +492,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 5. Zero-entity `a9 03`
 
-### ZE-02. Oriented-use allocation lane
-
-**Question.** Which allocation-lane rule associates a `0638` oriented use with its owner-local `0x21xx` support and `0x05xx` incidence record?
-
-**Known.** `catia.md` §8 "Record families:" defines these record populations and their owner-local identities independently.
-
-The `5e1a` tuple does not provide this missing join: its `T`, `T−1`, and `T−2` values belong to the `0638`/`2569` topology namespace, while `X` and `Y` select the two adjacent surface-support slots.
-
-**Need.** We must know the association to build neutral coedges.
-
-### ZE-03. Physical-edge endpoint binding
-
-**Question.** Which fields bind a `05 0b`, `05 10`, or `05 15` incidence allocation lane to its physical-edge endpoints?
-
-**Known.** The decoder retains the incidence lanes and endpoint coordinate rows.
-
-**Need.** We must know the binding to build neutral edges and vertices.
-
-### ZE-04. `5e 1a` allocation namespaces
-
-**Question.** What does each independent `T`, `X`, and `Y` allocation in the `5e 1a` tuple `[T,X,Y,T−1,T−2]` select?
-
-**Known.** `catia.md` §8 "A `5e1a` edge-stride record contains" defines the tuple relation and retains all five identities.
-
-**Need.** We must know the namespaces to bind the edge, supports, and incidences.
-
 ### ZE-05. Zero-entity ownership-root selection
 
 **Question.** How does a zero-entity stream select its ownership root when more than one face-roster/shell/body triple is structurally valid?

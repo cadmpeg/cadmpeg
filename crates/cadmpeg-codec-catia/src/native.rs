@@ -43,6 +43,9 @@ use entity_record::{
     CatiaEntityValueProduction,
 };
 
+pub(crate) mod zero_entity_allocation;
+use zero_entity_allocation::CatiaZeroEntityAllocationEdge;
+
 pub(crate) mod inline_field;
 use inline_field::CatiaInlineField;
 
@@ -63,7 +66,6 @@ use owner_numeric_tail::CatiaOwnerNumericTail;
 use crate::catalog;
 use crate::container;
 use crate::entity_table;
-use crate::families::zero_entity::topology::EdgeEnd;
 use crate::legacy_entity;
 use crate::object_graph::{
     self, AliasGroupMembership, AliasLead, HeadToken, ListItem, ObjectPayload, PayloadField,
@@ -7511,11 +7513,11 @@ pub(crate) struct CatiaZeroEntityLoop {
     tag: NativeBytes<[u8; 2]>,
     /// Nonterminal even-lane logical member identifiers.
     pub(crate) member_ids: Vec<u32>,
-    /// Odd-lane typed references in member order.
-    pub(crate) typed_references: Vec<u32>,
-    /// Global zero-entity records selected by the typed references.
+    /// Backward distances from the loop to physical-edge stride records.
+    pub(crate) edge_stride_distances: Vec<u32>,
+    /// Physical-edge stride records selected by the backward distances.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) typed_records: Vec<String>,
+    pub(crate) edge_stride_records: Vec<String>,
     /// Face-local support record ordinals selected by the logical members.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) support_record_ordinals: Vec<u32>,
@@ -7559,12 +7561,6 @@ pub(crate) struct CatiaZeroEntityEdgeStride {
     pub(crate) record_ordinal: u32,
     /// Five allocation values following the fixed tagged-one prefix.
     pub(crate) allocations: [u32; 5],
-    /// The three allocations in the `0638`/`2569` topology namespace, in
-    /// source order `[T, T-1, T-2]`.
-    pub(crate) topology_refs: [u32; 3],
-    /// The two allocations selecting the adjacent surface-support slots, in
-    /// source order `[X, Y]`.
-    pub(crate) surface_support_refs: [u32; 2],
 }
 
 /// One positional zero-entity `0638` oriented use.
@@ -7593,46 +7589,6 @@ pub(crate) struct CatiaZeroEntityOrientedUsePair {
     pub(crate) base_columns: [u32; 2],
     /// Side-one then side-two oriented uses.
     pub(crate) uses: [CatiaZeroEntityOrientedUse; 2],
-}
-
-/// Two zero-entity radial support occurrences with matching bounded model-space witnesses.
-///
-/// This relation does not establish curve coincidence.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct CatiaZeroEntityEndpointPairCandidate {
-    /// Stable derived-pair identity.
-    pub(crate) id: String,
-    /// Two face-record identities in support-record order.
-    pub(crate) face_records: [String; 2],
-    /// Two radial support-record identities in ascending ordinal order.
-    pub(crate) support_records: [String; 2],
-    /// Model-space endpoints oriented by the first support occurrence.
-    pub(crate) model_endpoints: [FinitePoint3; 2],
-    /// Model-space midpoint witness supplied by the first support occurrence.
-    pub(crate) model_midpoint: FinitePoint3,
-}
-
-/// One endpoint-pair endpoint incident to a geometric endpoint-locus candidate.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct CatiaZeroEntityEndpointPairEndpoint {
-    /// Derived endpoint-pair candidate.
-    pub(crate) endpoint_pair: String,
-    /// Start or end of that candidate's oriented endpoint pair.
-    pub(crate) endpoint_index: EdgeEnd,
-}
-
-/// One geometric endpoint-locus candidate established by a complete endpoint clique.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct CatiaZeroEntityEndpointLocusCandidate {
-    /// Stable derived-locus identity.
-    pub(crate) id: String,
-    /// Incident endpoints in endpoint-pair and endpoint order.
-    pub(crate) incident_endpoint_pair_endpoints:
-        cadmpeg_ir::features::NonEmptyMembers<CatiaZeroEntityEndpointPairEndpoint>,
-    /// Model-space point from the first incident endpoint.
-    pub(crate) representative_point: FinitePoint3,
-    /// Maximum pairwise distance between incident endpoint coordinates.
-    pub(crate) maximum_deviation: cadmpeg_ir::scalar::NonNegativeReal,
 }
 
 /// One counted zero-entity `05xx` vertex-incidence record.
@@ -8073,6 +8029,10 @@ define_catia_arenas! {
     value_schema_selections: CatiaValueSchemaSelection {
         => value_blocks.schema_selections;
     },
+    zero_entity_allocation_edges: CatiaZeroEntityAllocationEdge {
+        /// Complete source edge/use/support/vertex allocation chains.
+        pub(crate) stored;
+    },
     zero_entity_edge_strides: CatiaZeroEntityEdgeStride {
         /// Zero-entity edge-stride allocation tuples.
         pub(crate) stored;
@@ -8085,20 +8045,12 @@ define_catia_arenas! {
         /// Complete zero-entity face-roster, shell, and body roots.
         pub(crate) stored;
     },
-    zero_entity_endpoint_pair_candidates: CatiaZeroEntityEndpointPairCandidate {
-        /// Zero-entity endpoint pairs established by radial support occurrences.
-        pub(crate) stored;
-    },
     zero_entity_records: CatiaZeroEntityRecord {
         /// Complete zero-entity framed-record identity namespace.
         pub(crate) stored;
     },
     zero_entity_support_runs: CatiaZeroEntitySupportRun {
         /// Zero-entity surface carriers and their face-local support tapes.
-        pub(crate) stored;
-    },
-    zero_entity_endpoint_locus_candidates: CatiaZeroEntityEndpointLocusCandidate {
-        /// Geometric endpoint loci established by complete endpoint-pair endpoint cliques.
         pub(crate) stored;
     },
     zero_entity_vertex_incidences: CatiaZeroEntityVertexIncidence {
@@ -9449,18 +9401,23 @@ fn zero_entity_support_runs(
                 "catia_native_zero_face_loops",
             )?;
             for loop_record in loops {
-                let mut typed_records = Vec::new();
+                let mut edge_stride_records = Vec::new();
                 ctx.reserve_vec(
-                    &mut typed_records,
-                    loop_record.typed_references.len(),
-                    "catia_native_zero_typed_records",
+                    &mut edge_stride_records,
+                    loop_record.edge_stride_distances.len(),
+                    "catia_native_zero_edge_stride_records",
                 )?;
-                for ordinal in &loop_record.typed_references {
-                    let Some(record) = zero_entity_record(records, *ordinal) else {
-                        typed_records.clear();
+                for distance in &loop_record.edge_stride_distances {
+                    let Some(record) = loop_record
+                        .record_ordinal
+                        .checked_sub(*distance)
+                        .and_then(|ordinal| zero_entity_record(records, ordinal))
+                        .filter(|record| record.tag == [0x5e, 0x1a])
+                    else {
+                        edge_stride_records.clear();
                         break;
                     };
-                    typed_records.push(
+                    edge_stride_records.push(
                         ctx.copy_retained_text(&record.id, "catia_native_zero_typed_record_id")?,
                     );
                 }
@@ -9476,8 +9433,8 @@ fn zero_entity_support_runs(
                     record_ordinal: loop_record.record_ordinal,
                     tag: (loop_record.tag).into(),
                     member_ids,
-                    typed_references: loop_record.typed_references,
-                    typed_records,
+                    edge_stride_distances: loop_record.edge_stride_distances,
+                    edge_stride_records,
                     support_record_ordinals: loop_record.support_record_ordinals,
                     terminal_id: loop_record.members.terminal_id(),
                     gap: loop_record.members.gap(),
@@ -9533,93 +9490,6 @@ fn zero_entity_support_runs(
     Ok(output)
 }
 
-fn zero_entity_endpoint_pair_id(
-    ctx: &DecodeContext<'_>,
-    index: usize,
-) -> Result<String, CodecError> {
-    ctx.format_retained(
-        format_args!("catia:zero-entity:endpoint-pair-candidate#{index}"),
-        "catia_native_zero_endpoint_pair_id",
-    )
-}
-
-fn zero_entity_endpoint_pair_candidates(
-    ctx: &DecodeContext<'_>,
-    candidates: Vec<crate::families::zero_entity::topology::ZeroEntityEndpointPairCandidate>,
-) -> Result<Vec<CatiaZeroEntityEndpointPairCandidate>, CodecError> {
-    let mut output = Vec::new();
-    ctx.reserve_vec(
-        &mut output,
-        candidates.len(),
-        "catia_native_zero_endpoint_pairs",
-    )?;
-    for (index, candidate) in candidates.into_iter().enumerate() {
-        let [face_first, face_second] = candidate.face_record_ordinals.map(|ordinal| {
-            ctx.format_retained(
-                format_args!("catia:zero-entity:record#{ordinal}"),
-                "catia_native_zero_face_record_id",
-            )
-        });
-        let [support_first, support_second] = candidate.support_record_ordinals.map(|ordinal| {
-            ctx.format_retained(
-                format_args!("catia:zero-entity:record#{ordinal}"),
-                "catia_native_zero_support_record_id",
-            )
-        });
-        output.push(CatiaZeroEntityEndpointPairCandidate {
-            id: zero_entity_endpoint_pair_id(ctx, index)?,
-            face_records: [face_first?, face_second?],
-            support_records: [support_first?, support_second?],
-            model_endpoints: candidate.model_endpoints,
-            model_midpoint: candidate.model_midpoint,
-        });
-    }
-    Ok(output)
-}
-
-fn zero_entity_endpoint_locus_candidates(
-    ctx: &DecodeContext<'_>,
-    candidates: Vec<crate::families::zero_entity::topology::ZeroEntityEndpointLocusCandidate>,
-) -> Result<Vec<CatiaZeroEntityEndpointLocusCandidate>, CodecError> {
-    let mut output = Vec::new();
-    ctx.reserve_vec(
-        &mut output,
-        candidates.len(),
-        "catia_native_zero_endpoint_loci",
-    )?;
-    for (index, candidate) in candidates.into_iter().enumerate() {
-        let mut endpoints = Vec::new();
-        ctx.reserve_vec(
-            &mut endpoints,
-            candidate.incident_endpoint_pair_endpoints.len(),
-            "catia_native_zero_locus_incidence",
-        )?;
-        for (pair, endpoint_index) in candidate.incident_endpoint_pair_endpoints {
-            endpoints.push(CatiaZeroEntityEndpointPairEndpoint {
-                endpoint_pair: zero_entity_endpoint_pair_id(ctx, pair.ordinal())?,
-                endpoint_index,
-            });
-        }
-        output.push(CatiaZeroEntityEndpointLocusCandidate {
-            id: ctx.format_retained(
-                format_args!("catia:zero-entity:endpoint-locus-candidate#{index}"),
-                "catia_native_zero_endpoint_locus_id",
-            )?,
-            incident_endpoint_pair_endpoints: endpoints
-                .try_into()
-                .map_err(CodecError::malformed)?,
-            representative_point: candidate.representative_point,
-            maximum_deviation: cadmpeg_ir::scalar::NonNegativeReal::new(
-                candidate.maximum_deviation,
-            )
-            .ok_or_else(|| {
-                CodecError::malformed("endpoint locus deviation must be finite and nonnegative")
-            })?,
-        });
-    }
-    Ok(output)
-}
-
 fn zero_entity_edge_strides(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -9639,8 +9509,6 @@ fn zero_entity_edge_strides(
             byte_offset: u64_from_index(record.pos),
             record_ordinal: record.record_ordinal,
             allocations: record.allocations,
-            topology_refs: record.topology_refs(),
-            surface_support_refs: record.surface_support_refs(),
         });
     }
     Ok(output)
@@ -10189,25 +10057,16 @@ impl CatiaNative {
                 zero_entity_range.clone(),
                 refusal,
             )?;
-        let parsed_zero_entity_endpoint_pairs =
-            crate::families::zero_entity::topology::zero_entity_endpoint_pair_candidates(
-                ctx,
-                &parsed_zero_entity_support_runs,
-            )?;
-        let zero_entity_endpoint_pair_candidates = zero_entity_endpoint_pair_candidates(
+        let zero_entity_allocation_edges = zero_entity_allocation::derive(
             ctx,
-            ctx.copy_slice(
-                &parsed_zero_entity_endpoint_pairs,
-                "catia_native_zero_endpoint_pairs",
-            )?,
-        )?;
-        let parsed_zero_entity_endpoint_loci =
-            crate::families::zero_entity::topology::endpoint_locus_candidates(
+            crate::families::zero_entity::allocation::parse(
                 ctx,
-                &parsed_zero_entity_endpoint_pairs,
-            )?;
-        let zero_entity_endpoint_locus_candidates =
-            zero_entity_endpoint_locus_candidates(ctx, parsed_zero_entity_endpoint_loci)?;
+                bytes,
+                zero_entity_range.clone(),
+                &parsed_zero_entity_support_runs,
+            )?,
+            &zero_entity_records,
+        )?;
         let zero_entity_support_runs =
             zero_entity_support_runs(ctx, parsed_zero_entity_support_runs, &zero_entity_records)?;
         let zero_entity_vertex_incidences =
@@ -10259,13 +10118,12 @@ impl CatiaNative {
             reference_signature_cohorts,
             schema_configuration_row_chains,
             value_blocks,
+            zero_entity_allocation_edges,
             zero_entity_edge_strides,
             zero_entity_oriented_use_pairs,
             zero_entity_ownership_roots,
-            zero_entity_endpoint_pair_candidates,
             zero_entity_records,
             zero_entity_support_runs,
-            zero_entity_endpoint_locus_candidates,
             zero_entity_vertex_incidences,
         })
     }
