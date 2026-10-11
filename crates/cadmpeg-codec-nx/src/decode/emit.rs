@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Topology emission, unresolved carriers, and source metadata.
 
-use super::geometry_work::GeometryWorkBudget;
+use super::geometry_work::{same_pcurve_geometry, GeometryWorkBudget};
 use super::jpeg::jpeg_dimensions;
 use super::pcurves::{
     attach_tolerant_edge_intersections_with_budget,
@@ -1128,7 +1128,13 @@ pub(super) fn emit_topology(
             else {
                 continue;
             };
-            if *candidate_geometry != carrier.geometry || candidate_range != parameter_range {
+            if !same_pcurve_geometry(
+                ctx,
+                candidate_geometry,
+                &carrier.geometry,
+                "nx endpoint proof pcurve comparison",
+            )? || candidate_range != parameter_range
+            {
                 continue;
             }
             endpoint_witnesses.push(
