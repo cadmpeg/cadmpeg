@@ -464,7 +464,6 @@ fn distinct_negative_descriptor_demands_pay_each_complete_source_scan() {
     drop(probe);
 }
 
-
 #[test]
 fn ineligible_knot_demand_caches_source_rejection() {
     let bytes = [0xff; 64];

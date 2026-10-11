@@ -382,7 +382,10 @@ fn visit_array_candidates<'a, 'ctx, T, State>(
     bytes: &[u8],
     (framed, compact, attr): CandidateHeaders<'a, 'ctx, T>,
     state: &mut State,
-    mut count_matches: impl FnMut(&mut State, usize) -> Result<ControlFlow<(), bool>, cadmpeg_core::CodecError>,
+    mut count_matches: impl FnMut(
+        &mut State,
+        usize,
+    ) -> Result<ControlFlow<(), bool>, cadmpeg_core::CodecError>,
     read: impl Fn(usize) -> Option<T>,
     mut visit: impl FnMut(
         &mut State,
@@ -883,7 +886,10 @@ fn surface_multiplicity_lane<'a>(
     multiplicities: &'a [u16],
     declared_count: usize,
 ) -> Result<Option<&'a [u16]>, cadmpeg_core::CodecError> {
-    if declared_count == 0 || physical_count != multiplicities.len() || physical_count < declared_count {
+    if declared_count == 0
+        || physical_count != multiplicities.len()
+        || physical_count < declared_count
+    {
         return Ok(None);
     }
     let (declared, trailing) = multiplicities.split_at(declared_count);
@@ -952,7 +958,10 @@ fn surface_knot_values<'ctx>(
             if declared_count == 0 || count < declared_count {
                 return Ok(ControlFlow::Continue(false));
             }
-            let KnotCandidates { multiplicities_by_count, resolved } = candidates;
+            let KnotCandidates {
+                multiplicities_by_count,
+                resolved,
+            } = candidates;
             if let Some(cached) = ctx.get_btree_map(multiplicities_by_count, &count, OPERATION)? {
                 return Ok(ControlFlow::Continue(cached.is_some()));
             }
@@ -966,20 +975,32 @@ fn surface_knot_values<'ctx>(
                 |at| View::u16_be_at(bytes, at),
                 |selected, multiplicities| {
                     let Some(lane) = surface_multiplicity_lane(
-                        ctx, count, multiplicities.as_slice(), declared_count,
-                    )? else {
+                        ctx,
+                        count,
+                        multiplicities.as_slice(),
+                        declared_count,
+                    )?
+                    else {
                         return Ok(true);
                     };
                     if let Some(first) = selected.as_ref() {
-                        return ctx.equal(first.as_slice().split_at(declared_count).0, lane, OPERATION);
+                        return ctx.equal(
+                            first.as_slice().split_at(declared_count).0,
+                            lane,
+                            OPERATION,
+                        );
                     }
                     if let Some((_, first_count)) = resolved.as_ref() {
-                        let Some(Some(first)) = ctx.get_btree_map(
-                            multiplicities_by_count, first_count, OPERATION,
-                        )? else {
+                        let Some(Some(first)) =
+                            ctx.get_btree_map(multiplicities_by_count, first_count, OPERATION)?
+                        else {
                             return Ok(false);
                         };
-                        if !ctx.equal(first.as_slice().split_at(declared_count).0, lane, OPERATION)? {
+                        if !ctx.equal(
+                            first.as_slice().split_at(declared_count).0,
+                            lane,
+                            OPERATION,
+                        )? {
                             return Ok(false);
                         }
                     }
@@ -991,24 +1012,28 @@ fn surface_knot_values<'ctx>(
                 return Ok(ControlFlow::Break(()));
             }
             let present = selected.is_some();
-            cache_storage.with_storage(|| ctx.insert_btree_map(
-                multiplicities_by_count, count, selected,
-                "index Parasolid knot multiplicity counts",
-            ))?;
+            cache_storage.with_storage(|| {
+                ctx.insert_btree_map(
+                    multiplicities_by_count,
+                    count,
+                    selected,
+                    "index Parasolid knot multiplicity counts",
+                )
+            })?;
             Ok(ControlFlow::Continue(present))
         },
         |at| View::f64_be_at(bytes, at),
         |candidates, unique| match candidates.resolved.as_ref() {
-                Some((first, _)) => ctx.equal(
-                    first.as_slice().split_at(declared_count).0,
-                    unique.as_slice().split_at(declared_count).0,
-                    OPERATION,
-                ),
-                None => {
-                    let count = unique.as_slice().len();
-                    candidates.resolved = Some((unique, count));
-                    Ok(true)
-                }
+            Some((first, _)) => ctx.equal(
+                first.as_slice().split_at(declared_count).0,
+                unique.as_slice().split_at(declared_count).0,
+                OPERATION,
+            ),
+            None => {
+                let count = unique.as_slice().len();
+                candidates.resolved = Some((unique, count));
+                Ok(true)
+            }
         },
     )?;
     if !agreed {
