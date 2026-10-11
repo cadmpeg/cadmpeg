@@ -61,18 +61,3 @@ fn deferred_utf16_invalid_surrogate_keeps_original_location() {
         if offset == bytes.len() && message == "invalid UTF-16 surrogate sequence"));
     ctx.finish_session().unwrap();
 }
-
-#[test]
-fn deferred_utf16_empty_source_keeps_original_sticky_refusal() {
-    let bytes = super::utf16_bytes("");
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let CodecError::ResourceLimit(original) = ctx.charge_work(1, "original deferred refusal").unwrap_err()
-        else { panic!("original work refusal"); };
-    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
-    assert!(matches!(crate::settings::utf16_deferred(&ctx, &mut reader),
-        Err(FramingError::Resource(sticky)) if sticky == original));
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original));
-}

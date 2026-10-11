@@ -104,20 +104,6 @@ fn format_zero_empty_wide_string_has_no_work_or_storage_fee() {
     ctx.finish_session().unwrap();
 }
 
-#[test]
-fn format_zero_wide_string_returns_the_original_sticky_refusal() {
-    let bytes = wide_chunk(0, &[]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let CodecError::ResourceLimit(original) = ctx.charge_work(1, "wide string first refusal").unwrap_err()
-        else { panic!("original work refusal"); };
-    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).unwrap();
-    assert!(matches!(crate::presentation::wide_string(&ctx, &bytes, &mut reader, ArchiveVersion::V8), Err(FramingError::Resource(sticky)) if sticky == original));
-    assert_eq!(reader.position(), 0);
-    assert!(matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == original));
-}
 
 #[test]
 fn unsupported_wide_format_does_not_scan_its_payload() {

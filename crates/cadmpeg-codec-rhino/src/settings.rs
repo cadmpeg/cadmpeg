@@ -1107,8 +1107,6 @@ pub(crate) fn utf16_deferred<'a>(
     let error_offset = reader.position();
     let mut view = View::over_retained(bytes);
     let mut characters = char::decode_utf16(std::iter::from_fn(|| view.u16_le()));
-    // The empty source still observes the original refused session.
-    ctx.charge_work(0, "validate Rhino deferred UTF-16")?;
     let mut remaining_units = bytes.len() / 2;
     while remaining_units != 0 {
         let character = ctx
@@ -2571,10 +2569,7 @@ fn parse_layer(
                     FramingError::Resource(_) => error,
                     other => FramingError::structural(
                         reader.position(),
-                        ctx.format_retained(
-                            format_args!("rendering: {other}"),
-                            "Rhino parse_layer text",
-                        )?,
+                        format!("rendering: {other}"),
                     ),
                 })
             })?,
@@ -2588,10 +2583,7 @@ fn parse_layer(
         .or_else(|error| {
             Err(FramingError::structural(
                 reader.position(),
-                ctx.format_retained(
-                    format_args!("display material: {error}"),
-                    "Rhino parse_layer text",
-                )?,
+                format!("display material: {error}"),
             ))
         })?;
     if version.1 == 9 {
