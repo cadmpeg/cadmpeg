@@ -2129,7 +2129,7 @@ mod tests {
             |ctx| {
                 super::parse(ctx, &source)
                     .map(|_| ())
-                    .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+                    .map_err(|error| error.into_malformed(ctx))
             },
         );
         assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
@@ -2157,7 +2157,7 @@ mod tests {
             "scan SAT header line",
             |ctx| {
                 super::parse_container(ctx, &source)
-                    .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+                    .map_err(|error| error.into_malformed(ctx))
             },
         );
         assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
@@ -2187,7 +2187,7 @@ mod tests {
                     };
                     reader.skip_ws(ctx)
                 }
-                .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+                .map_err(|error| error.into_malformed(ctx))
             },
         );
         assert_eq!(whitespace.operation, "scan SAT whitespace");
@@ -2203,7 +2203,7 @@ mod tests {
                     };
                     reader.next_field(ctx, None)
                 }
-                .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+                .map_err(|error| error.into_malformed(ctx))
             },
         );
         assert_eq!(field.operation, "scan SAT field bytes");
@@ -2220,7 +2220,7 @@ mod tests {
                     let mut pos = 0;
                     super::counted_string(ctx, b" 1 x", &mut pos, 0, "fixture")
                 }
-                .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+                .map_err(|error| error.into_malformed(ctx))
             },
         );
         assert_eq!(whitespace.operation, "scan SAT header string whitespace");
@@ -2233,7 +2233,7 @@ mod tests {
                     let mut pos = 0;
                     super::counted_string(ctx, b"1 x", &mut pos, 0, "fixture")
                 }
-                .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+                .map_err(|error| error.into_malformed(ctx))
             },
         );
         assert_eq!(digits.operation, "scan SAT header string count");
@@ -2253,7 +2253,7 @@ mod tests {
                     };
                     reader.next_field(ctx, None)
                 }
-                .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+                .map_err(|error| error.into_malformed(ctx))
             },
         );
         assert_eq!(field.operation, "validate SAT field text");
@@ -2269,7 +2269,7 @@ mod tests {
                     };
                     reader.read_str_payload(ctx, 3, 0)
                 }
-                .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+                .map_err(|error| error.into_malformed(ctx))
             },
         );
         assert_eq!(payload.operation, "validate SAT string payload");
@@ -2279,7 +2279,7 @@ mod tests {
             "validate SAT header integer",
             |ctx| {
                 { super::header_int::<u32>(ctx, Some(b"1"), 0, "fixture") }
-                    .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+                    .map_err(|error| error.into_malformed(ctx))
             },
         );
         assert_eq!(integer.operation, "validate SAT header integer");
@@ -2292,7 +2292,7 @@ mod tests {
                     let mut pos = 0;
                     super::counted_string(ctx, b"1 x", &mut pos, 0, "fixture")
                 }
-                .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+                .map_err(|error| error.into_malformed(ctx))
             },
         );
         assert_eq!(length.operation, "validate SAT header string length");
@@ -2305,7 +2305,7 @@ mod tests {
                     let mut pos = 0;
                     super::counted_string(ctx, b"1 x", &mut pos, 0, "fixture")
                 }
-                .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+                .map_err(|error| error.into_malformed(ctx))
             },
         );
         assert_eq!(value.operation, "validate SAT header string value");
@@ -2315,7 +2315,7 @@ mod tests {
             "validate SAT header tolerance",
             |ctx| {
                 { super::header_float(ctx, Some(b"1"), 0, "fixture") }
-                    .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+                    .map_err(|error| error.into_malformed(ctx))
             },
         );
         assert_eq!(float.operation, "validate SAT header tolerance");
@@ -2332,7 +2332,7 @@ mod tests {
                 |ctx| {
                     super::parse(ctx, source)
                         .map(|_| ())
-                        .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+                        .map_err(|error| error.into_malformed(ctx))
                 },
             );
             assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
@@ -2348,7 +2348,7 @@ mod tests {
             "parse SAT header integer",
             |ctx| {
                 { super::header_int::<u32>(ctx, Some(b"12"), 0, "fixture") }
-                    .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+                    .map_err(|error| error.into_malformed(ctx))
             },
         );
         assert_eq!(integer.operation, "parse SAT header integer");
@@ -2364,7 +2364,7 @@ mod tests {
                     let mut pos = 0;
                     super::counted_string(ctx, b"12 x", &mut pos, 0, "fixture")
                 }
-                .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+                .map_err(|error| error.into_malformed(ctx))
             },
         );
         assert_eq!(length.operation, "parse SAT header string length");
@@ -2377,7 +2377,7 @@ mod tests {
             "parse SAT header tolerance",
             |ctx| {
                 { super::header_float(ctx, Some(b"1.5"), 0, "fixture") }
-                    .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+                    .map_err(|error| error.into_malformed(ctx))
             },
         );
         assert_eq!(tolerance.operation, "parse SAT header tolerance");
@@ -2533,7 +2533,7 @@ mod tests {
             |ctx| {
                 super::parse(ctx, &source)
                     .map(|_| ())
-                    .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+                    .map_err(|error| error.into_malformed(ctx))
             },
         );
         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
@@ -2658,7 +2658,7 @@ mod tests {
                 crate::test_support::resource_limit_at(&source, dimension, operation, |ctx| {
                     super::parse(ctx, &source)
                         .map(|_| ())
-                        .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+                        .map_err(|error| error.into_malformed(ctx))
                 });
             assert_eq!(refusal.dimension, dimension);
             assert_eq!(refusal.operation, operation);
@@ -2676,7 +2676,7 @@ mod tests {
                 |ctx| {
                     super::parse(ctx, &source)
                         .map(|_| ())
-                        .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+                        .map_err(|error| error.into_malformed(ctx))
                 },
             );
             assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
@@ -2744,7 +2744,7 @@ mod tests {
                         let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)?;
                         super::parse(&ctx, &source)
                             .map(|_| ())
-                            .map_err(|error| error.into_codec_error(&ctx, CodecError::malformed))
+                            .map_err(|error| error.into_malformed(&ctx))
                     },
                 );
                 let CodecError::ResourceLimit(limit) = error else {
@@ -2787,7 +2787,7 @@ mod tests {
             "retain SAT kernel header string",
             |ctx| {
                 let stream = super::parse(ctx, &source)
-                    .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))?;
+                    .map_err(|error| error.into_malformed(ctx))?;
                 stream.header.as_kernel_header(ctx)
             },
         );
@@ -2811,7 +2811,7 @@ mod tests {
                 |ctx| {
                     super::parse(ctx, &source)
                         .map(|_| ())
-                        .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+                        .map_err(|error| error.into_malformed(ctx))
                 },
             );
             assert_eq!(

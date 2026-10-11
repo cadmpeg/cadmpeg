@@ -152,10 +152,10 @@ pub(crate) fn decode_kernel_carrier(
     }
     .map_err(|failure| {
         failure.into_codec_error(ctx, |error| {
-            CodecError::malformed(format_args!(
+            ctx.format_retained(format_args!(
                 "Inventor {} SAB framing failed: {error}",
                 carrier.family.label()
-            ))
+            ), "Inventor SAB framing error text").map(CodecError::Malformed)
         })
     })?;
     let stream = ctx.format_retained(

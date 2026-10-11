@@ -899,7 +899,6 @@ mod tests {
     use crate::kernel_header::RefWidth;
     use crate::stream_error::{StreamError, StreamFailure};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
 
     #[test]
     fn sab_history_boundary_refuses_caller_work_before_lexing() {
@@ -1030,7 +1029,7 @@ mod tests {
                 |ctx| {
                     frame_stream(ctx, bytes, 0, bytes.len(), RefWidth::Eight, None)
                         .map(|_| ())
-                        .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+                        .map_err(|error| error.into_malformed(ctx))
                 },
             );
             assert_eq!(refusal.dimension, ResourceDimension::WorkUnits);
@@ -1047,7 +1046,7 @@ mod tests {
             |ctx| {
                 frame_stream(ctx, bytes, 0, bytes.len(), RefWidth::Eight, None)
                     .map(|_| ())
-                    .map_err(|error| error.into_codec_error(ctx, CodecError::malformed))
+                    .map_err(|error| error.into_malformed(ctx))
             },
         );
         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
