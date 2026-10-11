@@ -767,3 +767,68 @@ fn v1_meshes_between_breps_keep_linear_identity_index_work() {
     assert!(large < 3 * small,
         "doubling records must remain below quadratic growth: {small} -> {large}");
 }
+
+fn joined_line_fixture(invalid_last: bool) -> Vec<u8> {
+    const SEGMENTS: u16 = 32;
+    let mut body = vec![3, 0];
+    body.extend(SEGMENTS.to_le_bytes());
+    body.extend([0; 48]);
+    for index in 0..SEGMENTS {
+        let start = if invalid_last && index + 1 == SEGMENTS { f64::NAN } else { f64::from(index) };
+        let line = super::legacy_line([start, 0.0, 0.0], [f64::from(index + 1), 0.0, 0.0], 3);
+        let curve = chunk_at(&line, 0, line.len(), ArchiveVersion::V1, false).unwrap();
+        let stuff = chunk_at(&line, curve.body().start, line.len(), ArchiveVersion::V1, false).unwrap();
+        let spline = chunk_at(&line, stuff.body().start + 52, stuff.body().end, ArchiveVersion::V1, false).unwrap();
+        body.extend_from_slice(&line[spline.range()]);
+    }
+    super::legacy_chunk(super::TCODE_LEGACY_CRV,
+        &super::legacy_chunk(super::TCODE_LEGACY_CRVSTUFF, &body))
+}
+
+#[test]
+fn joined_v1_curve_releases_sources_before_final_assembly() {
+    const SCRATCH_BYTES: u64 = 12 * 1024;
+    let data = joined_line_fixture(false);
+    let chunk = chunk_at(&data, 0, data.len(), ArchiveVersion::V1, false).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = SCRATCH_BYTES;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
+    let mut storage = ctx.reserve_scoped(0, "joined curve output").unwrap();
+    let curve = super::super::legacy_curve(&ctx, &mut storage, &data, chunk.body(),
+        super::super::MillimeterScale::IDENTITY).expect("source owners release with source geometry");
+    assert_eq!(curve.degree(), 1);
+    assert_eq!(curve.pole_count(), 33);
+    assert_eq!(curve.pole_rows().point_at(0).unwrap().get(), Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(curve.pole_rows().point_at(32).unwrap().get(), Point3::new(32.0, 0.0, 0.0));
+    assert!(curve.weights().is_none());
+    drop(curve);
+    drop(storage);
+    drop(ctx.reserve_scoped(SCRATCH_BYTES, "released joined sources and output").unwrap());
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn rejected_v1_curve_releases_tuple_backing_before_diagnostic_copy() {
+    const SCRATCH_BYTES: u64 = 16 * 1024;
+    let data = joined_line_fixture(true);
+    let chunk = chunk_at(&data, 0, data.len(), ArchiveVersion::V1, false).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = SCRATCH_BYTES;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
+    let mut storage = ctx.reserve_scoped(0, "joined curve error").unwrap();
+    let error = super::super::legacy_curve(&ctx, &mut storage, &data, chunk.body(),
+        super::super::MillimeterScale::IDENTITY).unwrap_err();
+    assert!(matches!(&error, cadmpeg_core::CodecError::Malformed(message) if message.contains("finite")));
+    // The escaped error and one failed segment fit in 1 KiB. The discarded
+    // 32-entry tuple backing and preceding valid segment lanes do not.
+    drop(ctx.reserve_scoped(SCRATCH_BYTES - 1024, "released rejected curve tuples")
+        .expect("rejected source backing is released while the error remains live"));
+    drop(error);
+    drop(storage);
+    drop(ctx.reserve_scoped(SCRATCH_BYTES, "released joined error").unwrap());
+    ctx.finish_session().unwrap();
+}

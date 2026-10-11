@@ -942,6 +942,7 @@ pub(crate) fn checksum_children_through_class_end(
     context: &str,
 ) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
+    let mut backing_storage = ctx.reserve_scoped(0, "Rhino class-end checksum children")?;
     let mut children = Vec::new();
     loop {
         ctx.charge_work(1, "Rhino class-end checksum framing")?;
@@ -965,7 +966,7 @@ pub(crate) fn checksum_children_through_class_end(
                 )
                 .into());
         }
-        ctx.reserve_vec(&mut children, 1, "Rhino class-end checksum children")
+        ctx.reserve_scoped_vec(&mut backing_storage, &mut children, 1, "Rhino class-end checksum children")
             .map_err(crate::chunks::FramingError::from)?;
         children.push(child.range());
         reader.skip(child.next_offset() - start)?;
@@ -979,7 +980,7 @@ pub(crate) fn checksum_children_through_class_end(
                     )?,
                 ));
             }
-            return Ok(children);
+            return backing_storage.commit_value(children).map_err(FramingError::from);
         }
     }
 }

@@ -622,6 +622,7 @@ fn settings_attributes_checksum_children(
     }
 
     let minor = packed_version & 0x0f;
+    let mut backing_storage = ctx.reserve_scoped(0, "Rhino settings checksum children")?;
     let mut children = Vec::new();
     if minor >= 1 {
         let child = take_anonymous_checksum_child(
@@ -631,7 +632,7 @@ fn settings_attributes_checksum_children(
             archive,
             "settings-attributes page units",
         )?;
-        ctx.reserve_vec(&mut children, 1, "Rhino settings checksum children")
+        ctx.reserve_scoped_vec(&mut backing_storage, &mut children, 1, "Rhino settings checksum children")
             .map_err(crate::chunks::FramingError::from)?;
         children.push(child);
     }
@@ -647,7 +648,7 @@ fn settings_attributes_checksum_children(
             archive,
             "settings-attributes earth anchor",
         )?;
-        ctx.reserve_vec(&mut children, 1, "Rhino settings checksum children")
+        ctx.reserve_scoped_vec(&mut backing_storage, &mut children, 1, "Rhino settings checksum children")
             .map_err(crate::chunks::FramingError::from)?;
         children.push(child);
     }
@@ -662,13 +663,13 @@ fn settings_attributes_checksum_children(
             archive,
             "settings-attributes IO settings",
         )?;
-        ctx.reserve_vec(&mut children, 1, "Rhino settings checksum children")
+        ctx.reserve_scoped_vec(&mut backing_storage, &mut children, 1, "Rhino settings checksum children")
             .map_err(crate::chunks::FramingError::from)?;
         children.push(child);
     }
     if minor >= 6 {
         if let Some(child) = mesh_subd_checksum_child(ctx, data, &mut reader, archive)? {
-            ctx.reserve_vec(&mut children, 1, "Rhino settings checksum children")
+            ctx.reserve_scoped_vec(&mut backing_storage, &mut children, 1, "Rhino settings checksum children")
                 .map_err(crate::chunks::FramingError::from)?;
             children.push(child);
         }
@@ -676,7 +677,7 @@ fn settings_attributes_checksum_children(
     if minor >= 7 {
         reader.skip(16 * 6)?;
     }
-    Ok(children)
+    backing_storage.commit_value(children).map_err(FramingError::from)
 }
 
 /// Returns the deflate children in an `ON_WindowsBitmap::WriteCompressed`
@@ -731,6 +732,7 @@ fn compressed_preview_checksum_children(
         offset: reader.position(),
     })?;
 
+    let mut backing_storage = ctx.reserve_scoped(0, "Rhino preview checksum children")?;
     let mut children = Vec::new();
     let contiguous_size = palette_size
         .checked_add(image_size)
@@ -746,7 +748,7 @@ fn compressed_preview_checksum_children(
             first_size,
             "compressed preview buffer",
         )? {
-            ctx.reserve_vec(&mut children, 1, "Rhino preview checksum children")
+            ctx.reserve_scoped_vec(&mut backing_storage, &mut children, 1, "Rhino preview checksum children")
                 .map_err(crate::chunks::FramingError::from)?;
             children.push(child);
         }
@@ -759,7 +761,7 @@ fn compressed_preview_checksum_children(
             first_size,
             "compressed preview palette buffer",
         )? {
-            ctx.reserve_vec(&mut children, 1, "Rhino preview checksum children")
+            ctx.reserve_scoped_vec(&mut backing_storage, &mut children, 1, "Rhino preview checksum children")
                 .map_err(crate::chunks::FramingError::from)?;
             children.push(child);
         }
@@ -777,7 +779,7 @@ fn compressed_preview_checksum_children(
             second_size,
             "compressed preview image buffer",
         )? {
-            ctx.reserve_vec(&mut children, 1, "Rhino preview checksum children")
+            ctx.reserve_scoped_vec(&mut backing_storage, &mut children, 1, "Rhino preview checksum children")
                 .map_err(crate::chunks::FramingError::from)?;
             children.push(child);
         }
@@ -785,7 +787,7 @@ fn compressed_preview_checksum_children(
         return Ok(Vec::new());
     }
 
-    Ok(children)
+    backing_storage.commit_value(children).map_err(FramingError::from)
 }
 
 /// Reads one `WriteCompressedBuffer` prefix and returns its nested deflate
@@ -906,18 +908,20 @@ fn list_checksum_children(
             needed: offset - chunk.body().end,
         });
     }
+    let mut backing_storage = ctx.reserve_scoped(0, "Rhino view checksum ranges")?;
     let mut children = Vec::new();
     for _ in 0..child_count {
         ctx.charge_work(1, "Rhino view checksum child ranges")?;
         let child = chunk_at(data, offset, chunk.body().end, archive, false)?;
         ctx.push_scoped_vec(
-            reservation,
+            &mut backing_storage,
             &mut children,
             child.range(),
             "Rhino view checksum ranges",
         )?;
         offset = child.next_offset();
     }
+    reservation.absorb(&mut backing_storage)?;
     Ok(children)
 }
 
@@ -945,6 +949,7 @@ fn plugin_list_checksum_children(
         TABLE_RECORD_CAP,
         count_offset,
     )?;
+    let mut backing_storage = ctx.reserve_scoped(0, "Rhino plugin-list child ranges")?;
     let mut children = Vec::new();
     for _ in 0..child_count {
         ctx.charge_work(1, "Rhino plugin checksum child walk")?;
@@ -956,14 +961,15 @@ fn plugin_list_checksum_children(
                 "plugin-list child must be an anonymous long chunk",
             ));
         }
-        ctx.push_vec(
+        ctx.push_scoped_vec(
+            &mut backing_storage,
             &mut children,
             child.range(),
             "Rhino plugin-list child ranges",
         )?;
         reader.skip(child.next_offset() - start)?;
     }
-    Ok(children)
+    backing_storage.commit_value(children).map_err(FramingError::from)
 }
 
 fn table_rank(typecode: u32) -> Option<u8> {
