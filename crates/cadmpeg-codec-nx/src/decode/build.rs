@@ -5,6 +5,7 @@ use super::emit::{
     annotate_node, canonical_trim_range, curve_tag, decoded_tolerance, emit_topology, keep_marks,
     procedural_curve_owners, retain_marked, retain_unknown_stream_data,
     retain_unresolved_topology_carriers, source_meta, surface_tag, unknown_stream_metadata,
+    EndpointWitnessSink,
 };
 use super::geometry_work::{
     GeometryWorkBudget, MAX_ADAPTIVE_GEOMETRY_WORK, MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK,
@@ -1290,7 +1291,12 @@ pub(super) fn try_decode_geometry(
                 },
                 "nx invalid pcurves",
             )?;
-            retain_marked(&mut ir.model.pcurves, marks);
+            retain_marked(
+                ctx,
+                &mut ir.model.pcurves,
+                marks,
+                "nx compact invalid pcurves",
+            )?;
             intersection_index.reindex_pcurves_after_prune(ctx, &ir)?;
         }
         retain_unresolved_topology_carriers(
@@ -1317,7 +1323,7 @@ pub(super) fn try_decode_geometry(
         };
         adaptive_geometry_budget.clear_blend_frame_cache();
         completion_geometry_budget.clear_blend_frame_cache();
-        let initial_endpoint_witnesses = emit_topology(
+        emit_topology(
             ctx,
             &mut ir,
             &crate::decode::emit::TopologyStream {
@@ -1333,7 +1339,7 @@ pub(super) fn try_decode_geometry(
                 intersection_starts,
                 procedural_start,
             },
-            &mut annotations,
+            (&mut annotations, &mut topology_losses),
             &mut intersection_index,
             &crate::decode::emit::TopologyBudgets {
                 exact_transfer: &exact_transfer_budget,
@@ -1341,7 +1347,16 @@ pub(super) fn try_decode_geometry(
                 adaptive_geometry: &adaptive_geometry_budget,
                 completion_geometry: &completion_geometry_budget,
             },
-            &mut topology_losses,
+            &mut EndpointWitnessSink::new(&mut model_endpoint_witnesses, &mut witness_storage),
+        )?;
+        // Serialized validated lanes are already complete. Insert their proofs
+        // before computed validation and completion to preserve search order.
+        validated_support_uv_endpoint_witnesses(
+            ctx,
+            &ir,
+            &pending_ext11_support_uv,
+            &validated_support_uv_lanes,
+            &mut EndpointWitnessSink::new(&mut model_endpoint_witnesses, &mut witness_storage),
         )?;
         // Topology completion adds incidence and pcurve carriers, but does
         // not change surface or model-curve geometry. Keep its successful
@@ -1352,18 +1367,16 @@ pub(super) fn try_decode_geometry(
         // starving every later attachment candidate.
         let isolate_validation_lanes =
             completion_geometry_budget.remaining() <= MAX_PCURVE_COMPLETION_GEOMETRY_WORK / 2;
-        let support_uv_validation =
+        support_uv_lane_geometry_exhausted |=
             invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
                 ctx,
                 &mut ir,
                 &pending_ext11_support_uv,
                 &validated_support_uv_lanes,
-                &support_uv_validation_budget,
-                &completion_geometry_budget,
+                (&support_uv_validation_budget, &completion_geometry_budget),
                 isolate_validation_lanes,
+                &mut EndpointWitnessSink::new(&mut model_endpoint_witnesses, &mut witness_storage),
             )?;
-        support_uv_lane_geometry_exhausted |= support_uv_validation.lane_geometry_exhausted;
-        let newly_validated_endpoint_witnesses = support_uv_validation.endpoint_witnesses;
         serialized_support_uv_geometry_budget.clear_blend_frame_cache();
         complete_ext11_support_uv_with_budget(
             ctx,
@@ -1374,7 +1387,6 @@ pub(super) fn try_decode_geometry(
         support_uv_geometry_budget.clear_blend_frame_cache();
         coupled_support_uv_geometry_budget.clear_blend_frame_cache();
         complete_parameterization_equivalent_support_uv(ctx, &mut ir)?;
-        let mut completed_endpoint_witnesses = BTreeMap::new();
         support_uv_lane_geometry_exhausted |=
             complete_support_uv_with_budget_and_endpoint_witnesses(
                 ctx,
@@ -1382,29 +1394,10 @@ pub(super) fn try_decode_geometry(
                 &pending_ext11_support_uv,
                 (&support_budget, &support_uv_geometry_budget),
                 (&coupled_support_budget, &coupled_support_uv_geometry_budget),
-                &mut completed_endpoint_witnesses,
+                &mut EndpointWitnessSink::new(&mut model_endpoint_witnesses, &mut witness_storage),
             )?;
-        let mut validated_endpoint_witnesses = initial_endpoint_witnesses;
-        extend_endpoint_witnesses(
-            ctx,
-            &mut validated_endpoint_witnesses,
-            validated_support_uv_endpoint_witnesses(
-                ctx,
-                &ir,
-                &pending_ext11_support_uv,
-                &validated_support_uv_lanes,
-            )?,
-        )?;
-        extend_endpoint_witnesses(
-            ctx,
-            &mut validated_endpoint_witnesses,
-            newly_validated_endpoint_witnesses,
-        )?;
-        extend_endpoint_witnesses(
-            ctx,
-            &mut validated_endpoint_witnesses,
-            completed_endpoint_witnesses,
-        )?;
+        // Carrier identities are stream-scoped, so a proof from another
+        // stream cannot match this stream's exact curve/support key.
         attach_completed_intersection_pcurves_for_stream_with_budget(
             ctx,
             &mut ir,
@@ -1414,18 +1407,11 @@ pub(super) fn try_decode_geometry(
                 coedge_start: intersection_starts.coedges,
                 procedural_start: intersection_starts.procedural_curves,
                 source_stream: source_stream.clone(),
-                validated_endpoint_witnesses: &validated_endpoint_witnesses,
+                validated_endpoint_witnesses: &model_endpoint_witnesses,
             },
             &mut annotations,
             &completion_geometry_budget,
         )?;
-        witness_storage.with_storage(|| {
-            extend_endpoint_witnesses(
-                ctx,
-                &mut model_endpoint_witnesses,
-                validated_endpoint_witnesses,
-            )
-        })?;
         // Preserve the whole inflated stream verbatim so nothing is dropped.
         let unknown_index = unknowns.len();
         let mut unknown = unknown_stream_metadata(ctx, si, stream)?;
@@ -1902,7 +1888,12 @@ fn retain_referenced_pcurves(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<
         "nx referenced pcurves",
     )?;
     drop(referenced_pcurves);
-    retain_marked(&mut ir.model.pcurves, marks);
+    retain_marked(
+        ctx,
+        &mut ir.model.pcurves,
+        marks,
+        "nx compact referenced pcurves",
+    )?;
     Ok(())
 }
 
@@ -1921,24 +1912,6 @@ fn selected_hit_count(
         }
     }
     Ok(hits)
-}
-
-fn extend_endpoint_witnesses(
-    ctx: &DecodeContext<'_>,
-    target: &mut EndpointWitnesses,
-    source: EndpointWitnesses,
-) -> Result<(), CodecError> {
-    for (key, witnesses) in ctx.admit_iter(source, "nx endpoint witness merge")? {
-        match ctx.get_mut_btree_map(target, &key, "nx endpoint witness index")? {
-            Some(target_witnesses) => {
-                ctx.extend_vec(target_witnesses, witnesses, "nx endpoint witness merge")?;
-            }
-            None => {
-                ctx.insert_btree_map(target, key, witnesses, "nx endpoint witness index")?;
-            }
-        }
-    }
-    Ok(())
 }
 
 /// Add every surface and curve reachable from the used carriers through
@@ -2078,8 +2051,18 @@ fn prune_unreferenced_unknown_carriers(
         CURVES,
     )?;
     drop((used_surfaces, used_curves));
-    retain_marked(&mut ir.model.surfaces, surface_marks);
-    retain_marked(&mut ir.model.curves, curve_marks);
+    retain_marked(
+        ctx,
+        &mut ir.model.surfaces,
+        surface_marks,
+        "nx compact known surfaces",
+    )?;
+    retain_marked(
+        ctx,
+        &mut ir.model.curves,
+        curve_marks,
+        "nx compact known curves",
+    )?;
     Ok(())
 }
 
@@ -2583,7 +2566,12 @@ fn prune_inactive_topology(
         |body| ctx.contains_btree_set(selected, &body.id, "nx active bodies"),
         "nx active bodies",
     )?;
-    retain_marked(&mut ir.model.bodies, marks);
+    retain_marked(
+        ctx,
+        &mut ir.model.bodies,
+        marks,
+        "nx compact active topology bodies",
+    )?;
     let marks = keep_marks(
         ctx,
         &mut storage,
@@ -2591,7 +2579,12 @@ fn prune_inactive_topology(
         |region| ctx.contains_btree_set(selected, &region.body, "nx active regions"),
         "nx active regions",
     )?;
-    retain_marked(&mut ir.model.regions, marks);
+    retain_marked(
+        ctx,
+        &mut ir.model.regions,
+        marks,
+        "nx compact active topology regions",
+    )?;
     let mut regions = BTreeSet::new();
     for region in ctx.admit_iter(&ir.model.regions, "nx active regions")? {
         storage
@@ -2605,7 +2598,12 @@ fn prune_inactive_topology(
         "nx active shells",
     )?;
     drop(regions);
-    retain_marked(&mut ir.model.shells, marks);
+    retain_marked(
+        ctx,
+        &mut ir.model.shells,
+        marks,
+        "nx compact active topology shells",
+    )?;
     let mut shells = BTreeSet::new();
     for shell in ctx.admit_iter(&ir.model.shells, "nx active shells")? {
         storage
@@ -2619,7 +2617,12 @@ fn prune_inactive_topology(
         "nx active faces",
     )?;
     drop(shells);
-    retain_marked(&mut ir.model.faces, marks);
+    retain_marked(
+        ctx,
+        &mut ir.model.faces,
+        marks,
+        "nx compact active topology faces",
+    )?;
     let mut faces = BTreeSet::new();
     for face in ctx.admit_iter(&ir.model.faces, "nx active faces")? {
         storage.with_storage(|| ctx.insert_btree_set(&mut faces, &face.id, "nx active faces"))?;
@@ -2632,7 +2635,12 @@ fn prune_inactive_topology(
         "nx active loops",
     )?;
     drop(faces);
-    retain_marked(&mut ir.model.loops, marks);
+    retain_marked(
+        ctx,
+        &mut ir.model.loops,
+        marks,
+        "nx compact active topology loops",
+    )?;
     let mut loops = BTreeSet::new();
     for loop_ in ctx.admit_iter(&ir.model.loops, "nx active loops")? {
         storage.with_storage(|| ctx.insert_btree_set(&mut loops, &loop_.id, "nx active loops"))?;
@@ -2645,7 +2653,12 @@ fn prune_inactive_topology(
         "nx active coedges",
     )?;
     drop(loops);
-    retain_marked(&mut ir.model.coedges, marks);
+    retain_marked(
+        ctx,
+        &mut ir.model.coedges,
+        marks,
+        "nx compact active topology coedges",
+    )?;
     let mut edges = BTreeSet::new();
     for coedge in ctx.admit_iter(&ir.model.coedges, "nx active edges")? {
         storage
@@ -2664,7 +2677,12 @@ fn prune_inactive_topology(
         "nx active edges",
     )?;
     drop(edges);
-    retain_marked(&mut ir.model.edges, marks);
+    retain_marked(
+        ctx,
+        &mut ir.model.edges,
+        marks,
+        "nx compact active topology edges",
+    )?;
     let mut vertices = BTreeSet::new();
     for edge in ctx.admit_iter(&ir.model.edges, "nx active vertices")? {
         storage.with_storage(|| {
@@ -2687,7 +2705,12 @@ fn prune_inactive_topology(
         "nx active vertices",
     )?;
     drop(vertices);
-    retain_marked(&mut ir.model.vertices, marks);
+    retain_marked(
+        ctx,
+        &mut ir.model.vertices,
+        marks,
+        "nx compact active topology vertices",
+    )?;
     let mut points = BTreeSet::new();
     for vertex in ctx.admit_iter(&ir.model.vertices, "nx active points")? {
         storage.with_storage(|| {
@@ -2702,7 +2725,12 @@ fn prune_inactive_topology(
         "nx active points",
     )?;
     drop(points);
-    retain_marked(&mut ir.model.points, marks);
+    retain_marked(
+        ctx,
+        &mut ir.model.points,
+        marks,
+        "nx compact active topology points",
+    )?;
     drop(storage);
     prune_inactive_geometry(ctx, ir)?;
     Ok(())
@@ -2823,11 +2851,36 @@ fn prune_inactive_geometry(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<()
         surface_constructions,
         curve_constructions,
     ));
-    retain_marked(&mut ir.model.procedural_surfaces, procedural_surface_marks);
-    retain_marked(&mut ir.model.procedural_curves, procedural_curve_marks);
-    retain_marked(&mut ir.model.surfaces, surface_marks);
-    retain_marked(&mut ir.model.curves, curve_marks);
-    retain_marked(&mut ir.model.pcurves, pcurve_marks);
+    retain_marked(
+        ctx,
+        &mut ir.model.procedural_surfaces,
+        procedural_surface_marks,
+        "nx compact active geometry procedural surfaces",
+    )?;
+    retain_marked(
+        ctx,
+        &mut ir.model.procedural_curves,
+        procedural_curve_marks,
+        "nx compact active geometry procedural curves",
+    )?;
+    retain_marked(
+        ctx,
+        &mut ir.model.surfaces,
+        surface_marks,
+        "nx compact active geometry surfaces",
+    )?;
+    retain_marked(
+        ctx,
+        &mut ir.model.curves,
+        curve_marks,
+        "nx compact active geometry curves",
+    )?;
+    retain_marked(
+        ctx,
+        &mut ir.model.pcurves,
+        pcurve_marks,
+        "nx compact active geometry pcurves",
+    )?;
     Ok(())
 }
 
@@ -2856,7 +2909,12 @@ fn finalize_point_topology(
             "nx referenced points",
         )?;
         drop(referenced_points);
-        retain_marked(&mut ir.model.points, marks);
+        retain_marked(
+            ctx,
+            &mut ir.model.points,
+            marks,
+            "nx compact referenced points",
+        )?;
         return Ok(());
     }
 
