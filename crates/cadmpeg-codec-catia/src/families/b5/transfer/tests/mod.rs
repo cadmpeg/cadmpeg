@@ -5,6 +5,7 @@ mod decode;
 mod pcurves;
 
 mod parameter_ranges;
+mod support_index;
 
 #[test]
 fn b5_annotation_admits_retained_strings_and_map_entries() {
