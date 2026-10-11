@@ -468,7 +468,7 @@ fn b2_nurbs_source_headers_are_scoped_while_geometry_survives() {
     use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
     let bytes = super::b2_nurbs_curve_stream([1.0, 0.72, 1.31, 0.93]);
     let records = crate::wire::records::consolidated_records(&bytes);
-    let _probe = RefusalProbe::arm(
+    let probe = RefusalProbe::arm(
         ResourceDimension::RetainedBytes,
         "catia_b2_nurbs_curves",
         None,
@@ -490,7 +490,7 @@ fn b2_nurbs_source_headers_are_scoped_while_geometry_survives() {
             .expect("source headers no longer own scratch");
         assert_eq!(geometry.degree(), 3);
     });
-    drop(_probe);
+    drop(probe);
     let file = crate::test_support::test_container::standard_catpart_from_streams(&bytes, &[]);
     for operation in [
         "catia_b2_nurbs_curves",

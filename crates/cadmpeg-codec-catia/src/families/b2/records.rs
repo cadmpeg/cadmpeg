@@ -3235,6 +3235,7 @@ pub(crate) fn b2_resolved_revolutions_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<B2ResolvedRevolution>, CodecError> {
+    const DIRECT_PROFILE_LOOKUPS: usize = 255;
     let mut revolutions = b2_revolutions_from_records(ctx, data, records)?.enumerate();
     let mut current = ctx.next_charged(&mut revolutions, "catia_b2_resolved_revolution_scan")?;
     if current.is_none() {
@@ -3259,7 +3260,6 @@ pub(crate) fn b2_resolved_revolutions_from_records(
     // Small request populations avoid table storage and growth. Their direct
     // searches have a fixed population bound; larger populations share one
     // keyed table with tombstones.
-    const DIRECT_PROFILE_LOOKUPS: usize = 255;
     let by_identity = if requests.0.len() > DIRECT_PROFILE_LOOKUPS {
         Some(
             ctx.unique_index(
