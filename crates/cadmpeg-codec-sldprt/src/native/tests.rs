@@ -554,7 +554,6 @@ fn native_surface_validation_collection_limit_refuses_before_candidates() {
         &limited,
         &lane,
         &record,
-        &[],
         &features_by_source,
     )
     .unwrap_err();
@@ -572,7 +571,6 @@ fn native_surface_validation_collection_limit_refuses_before_candidates() {
         &service,
         &lane,
         &record,
-        &[],
         &features_by_source,
     )
     .unwrap());
