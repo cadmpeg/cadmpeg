@@ -1289,7 +1289,7 @@ fn derive_nurbs_isoparametric_pcurves(
                 let resolution =
                     match derive_nurbs_edge_pcurve(ctx, surface, curve, parameter_range) {
                         Ok(resolution) => resolution,
-                        Err(NurbsPcurveFailure::Carrier(error)) => {
+                        Err(NurbsPcurveFailure::Carrier(error, _diagnostic_storage)) => {
                             crate::lane_refusal::scoped::RefusalSink::Scoped(&mut lane_refusals)
                                 .note(
                                     ctx,
