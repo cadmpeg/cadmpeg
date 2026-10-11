@@ -1891,31 +1891,43 @@ mod tests {
         };
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        // Preserve the old cap: the moved token removes its former copy work,
-        // so this cap now admits the same digest output.
+        // Formatting scans and writes the identity once each, then hashing
+        // visits the three suffix bytes. Digest text has fixed size.
         let source_prior = 2 * "inventor:assembly:placement#segment-1".len() + suffix.len();
-        let old_prior =
-            2 * "inventor:assembly:placement#segment-1".len() + "segment".len() + suffix.len();
-        policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(old_prior + 63);
+        policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(source_prior);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
         let record = AssemblyPlacementRecord::from_placement(&ctx, placement())
-            .expect("former cap admits digest after the token copy is removed");
+            .expect("exact input-sized work admits the digest");
         assert_eq!(
             record.suffix_sha256.as_str(),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
 
-        policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(source_prior + 63);
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+        ctx.finish_session().expect("exact work completes the session");
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::RetainedBytes,
+            "retain Inventor assembly placement suffix digest",
+            |cap| {
+                policy.limits.max_retained_bytes = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("limited context");
+                let result = AssemblyPlacementRecord::from_placement(&ctx, placement())
+                    .map_err(|failure| failure.error);
+                if let Err(CodecError::ResourceLimit(limit)) = &result {
+                    assert!(matches!(ctx.finish_session(),
+                        Err(CodecError::ResourceLimit(sticky)) if sticky == *limit));
+                }
+                result
+            },
+        );
+        // The identity is retained before the 64-byte digest text.
         assert!(matches!(
-            AssemblyPlacementRecord::from_placement(&ctx, placement()),
-            Err(failure)
-                if matches!(failure.error, CodecError::ResourceLimit(limit)
-                    if limit.dimension == ResourceDimension::WorkUnits
-                        && limit.operation == "retain Inventor assembly placement suffix digest"
-                        && limit.used == cadmpeg_core::decode::u64_from_index(source_prior)
-                        && limit.additional == 64)
+            error, CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain Inventor assembly placement suffix digest"
+                    && limit.used == cadmpeg_core::decode::u64_from_index(
+                        "inventor:assembly:placement#segment-1".len())
+                    && limit.additional == 64
         ));
     }
 
@@ -2335,7 +2347,7 @@ mod tests {
             other => panic!("typed native copy should refuse work: {other:?}"),
         };
         assert_eq!(first_refusal.dimension, ResourceDimension::WorkUnits);
-        assert_eq!(first_refusal.operation, "construct canonical native value");
+        assert_eq!(first_refusal.operation, "select typed native arena");
         assert_eq!(ctx.resource_refusal(), Some(first_refusal));
         assert!(matches!(
             ActiveCarrierRecord::read(&ctx, &namespace),
