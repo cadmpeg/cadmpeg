@@ -1184,11 +1184,11 @@ pub(in crate::native) fn feature_pattern_construction_strings(
         else {
             continue;
         };
+        let mut value_storage = ctx.reserve_scoped(0, "NX pattern string parser rows")?;
+        let values =
+            value_storage.with_storage(|| crate::om::string_values(ctx, joined.bytes(), 0))?;
         for (ordinal, value) in ctx
-            .admit_iter(
-                crate::om::string_values(ctx, joined.bytes(), 0)?,
-                "visit NX pattern payload strings",
-            )?
+            .admit_iter(values, "visit NX pattern payload strings")?
             .enumerate()
         {
             let payload_offset = cadmpeg_core::decode::u64_from_index(value.offset);
@@ -1445,3 +1445,6 @@ mod tests;
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_data_block, String, "data_block");
+
+#[cfg(test)]
+mod text_storage_tests;

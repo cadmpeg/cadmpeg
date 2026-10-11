@@ -292,11 +292,11 @@ pub(in crate::native) fn feature_projected_curve_construction_strings(
         else {
             continue;
         };
+        let mut value_storage = ctx.reserve_scoped(0, "NX projected-curve string parser rows")?;
+        let values =
+            value_storage.with_storage(|| crate::om::string_values(ctx, joined.bytes(), 0))?;
         for (ordinal, value) in ctx
-            .admit_iter(
-                crate::om::string_values(ctx, joined.bytes(), 0)?,
-                "visit NX projected-curve payload strings",
-            )?
+            .admit_iter(values, "visit NX projected-curve payload strings")?
             .enumerate()
         {
             let payload_offset = cadmpeg_core::decode::u64_from_index(value.offset);
@@ -732,7 +732,8 @@ pub(in crate::native) fn feature_surface_construction_payloads(
         {
             continue;
         }
-        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, blocks)? else {
+        let Some(content) = FeaturePayloadContent::from_source_array(ctx, data_blocks, blocks)?
+        else {
             continue;
         };
         let Some(operation_key) = operation_key(
@@ -846,11 +847,11 @@ pub(in crate::native) fn feature_surface_construction_strings(
         else {
             continue;
         };
+        let mut value_storage = ctx.reserve_scoped(0, "NX surface string parser rows")?;
+        let values = value_storage
+            .with_storage(|| crate::om::surface_payload_strings(ctx, joined.bytes()))?;
         for (ordinal, value) in ctx
-            .admit_iter(
-                crate::om::surface_payload_strings(ctx, joined.bytes())?,
-                "visit NX surface payload strings",
-            )?
+            .admit_iter(values, "visit NX surface payload strings")?
             .enumerate()
         {
             let payload_offset = cadmpeg_core::decode::u64_from_index(value.offset);
@@ -2863,3 +2864,6 @@ pub(super) fn unique_offset_data_store(
     }
     Ok(Some(first))
 }
+
+#[cfg(test)]
+mod text_storage_tests;

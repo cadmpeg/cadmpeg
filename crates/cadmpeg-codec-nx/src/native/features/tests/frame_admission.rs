@@ -113,7 +113,7 @@ fn frame_fixture(route: FrameRoute) -> (Vec<u8>, FramePayload) {
         Ok::<FramePayload, CodecError>(match route {
             FrameRoute::CsysPair | FrameRoute::CsysFixed | FrameRoute::CsysScalar => {
                 let content: FeaturePayloadContent<[FeaturePayloadBlock; 2]> =
-                    FeaturePayloadContent::from_source(ctx, [id.clone(), id], blocks)?
+                    FeaturePayloadContent::from_source_array(ctx, [id.clone(), id], blocks)?
                         .expect("two-block payload");
                 FramePayload::Csys(FeatureDatumCsysPayload {
                     id: "csys-payload".into(),
@@ -177,7 +177,7 @@ fn frame_fixture(route: FrameRoute) -> (Vec<u8>, FramePayload) {
             }
             FrameRoute::SurfacePair | FrameRoute::SurfaceString => {
                 let content: FeaturePayloadContent<[FeaturePayloadBlock; 14]> =
-                    FeaturePayloadContent::from_source(ctx, vec![id; 14], blocks)?
+                    FeaturePayloadContent::from_source_array(ctx, vec![id; 14], blocks)?
                         .expect("surface payload");
                 FramePayload::Surface(Box::new(FeatureSurfaceConstructionPayload {
                     id: "surface-payload".into(),
