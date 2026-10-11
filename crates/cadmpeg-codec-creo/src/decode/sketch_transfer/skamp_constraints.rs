@@ -126,7 +126,10 @@ pub(in super::super) fn section_skamp_candidates_for_geometry<'ctx>(
             let unique_skamp_id = solver.is_unique(skamp.id);
             let joined_equation_id = solver.equation_id(skamp.id);
             let active = section_skamp_active(skamp.status);
+            let selected_native_storage = Cell::new(None);
             let native_constraint = |resource_error: &Cell<Option<cadmpeg_core::CodecError>>| {
+                let mut native_storage = defer_resource(ctx.reserve_scoped(0, "creo SKAMP native definition storage"), resource_error)?;
+                let build_native = || {
                 let mut reference_storage = defer_resource(
                     ctx.reserve_scoped(0, "creo SKAMP native reference storage"),
                     resource_error,
@@ -263,6 +266,11 @@ pub(in super::super) fn section_skamp_candidates_for_geometry<'ctx>(
                     parameter: None,
                     operands,
                 })
+
+                };
+                let native = defer_resource(native_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(build_native())), resource_error)??;
+                selected_native_storage.set(Some(native_storage));
+                Some(native)
             };
             let item_geometry = |item: &crate::feature::definitions::FeatureSkampItem| {
                 let mut lookup_storage = defer_resource(
@@ -364,9 +372,12 @@ pub(in super::super) fn section_skamp_candidates_for_geometry<'ctx>(
                 .or_else(|| point_entity(item).map(SketchLocus::Entity))
                 .or_else(|| inactive_incidence_locus(item))
             };
-            let mut constraint_definition = if unique_skamp_id {
+            let build_definition = || {
+                Some(if unique_skamp_id {
                 match (skamp.kind, skamp.items.as_slice()) {
                     (0, [first, second]) => {
+                        let mut center_storage = defer_resource(ctx.reserve_scoped(0, "creo SKAMP center pair storage"), &resource_error)?;
+                        let build_centers = || {
                         let first_center = defer_resource(
                             section_skamp_center_entity(
                                 ctx,
@@ -377,7 +388,7 @@ pub(in super::super) fn section_skamp_candidates_for_geometry<'ctx>(
                             ),
                             &resource_error,
                         )?;
-                        let centers = match first_center {
+                        match first_center {
                             Some(first) => defer_resource(
                                 section_skamp_center_entity(
                                     ctx,
@@ -390,6 +401,11 @@ pub(in super::super) fn section_skamp_candidates_for_geometry<'ctx>(
                             )?
                             .map(|second| [first, second]),
                             None => None,
+                        }
+                        };
+                        let centers = match defer_resource(center_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(build_centers())), &resource_error)? {
+                            Some(centers) => Some(defer_resource(center_storage.commit_value(centers), &resource_error)?),
+                            None => { drop(center_storage); None }
                         };
                         if let Some([first, second]) = centers {
                             SketchConstraintDefinitionInput::Concentric { first, second }
@@ -440,9 +456,10 @@ pub(in super::super) fn section_skamp_candidates_for_geometry<'ctx>(
                         }
                     }
                     (3, [first, second]) => {
-                        if let (Some(first), Some(second)) =
-                            (point_entity(first), point_entity(second))
-                        {
+                        let mut point_storage = defer_resource(ctx.reserve_scoped(0, "creo SKAMP point pair storage"), &resource_error)?;
+                        let points = defer_resource(point_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>((point_entity(first), point_entity(second)))), &resource_error)?;
+                        if let (Some(first), Some(second)) = points {
+                            let (first, second) = defer_resource(point_storage.commit_value((first, second)), &resource_error)?;
                             let mut loci = Vec::new();
                             defer_resource(
                                 ctx.reserve_vec(&mut loci, 2, "creo skamp coincident loci"),
@@ -452,10 +469,13 @@ pub(in super::super) fn section_skamp_candidates_for_geometry<'ctx>(
                             loci.push(SketchLocus::Entity(second));
                             SketchConstraintDefinitionInput::CoincidentLoci { loci }
                         } else {
+                            drop(points);
+                            drop(point_storage);
                             let directed = [(first, second), (second, first)];
                             let point_on_curve = crate::decode::uniqueness::exactly_one(
                                 directed.into_iter().filter_map(|(curve, point)| {
-                                    Some((
+                                    let mut pair_storage = defer_resource(ctx.reserve_scoped(0, "creo SKAMP directed pair storage"), &resource_error)?;
+                                    let build_pair = || { Some((
                                         defer_resource(
                                             section_skamp_curve_entity(
                                                 ctx,
@@ -468,10 +488,13 @@ pub(in super::super) fn section_skamp_candidates_for_geometry<'ctx>(
                                         )?
                                         .or_else(|| inactive_curve_entity(curve))?,
                                         inactive_incidence_locus(point)?,
-                                    ))
+                                    )) };
+                                    let pair = defer_resource(pair_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(build_pair())), &resource_error)??;
+                                    Some((pair, pair_storage))
                                 }),
                             );
-                            if let Some((entity, point)) = point_on_curve {
+                            if let Some(((entity, point), pair_storage)) = point_on_curve {
+                                let (entity, point) = defer_resource(pair_storage.commit_value((entity, point)), &resource_error)?;
                                 SketchConstraintDefinitionInput::PointOnObject { point, entity }
                             } else {
                                 let point_coincidence = crate::decode::uniqueness::exactly_one(
@@ -522,8 +545,8 @@ pub(in super::super) fn section_skamp_candidates_for_geometry<'ctx>(
                         }
                     }
                     (4, [first, second]) => {
-                        if let Some([first, second]) = defer_resource(
-                            section_skamp_tangent_loci(
+                        let mut tangent_storage = defer_resource(ctx.reserve_scoped(0, "creo SKAMP tangent attempt storage"), &resource_error)?;
+                        let tangents = defer_resource(tangent_storage.with_storage(|| section_skamp_tangent_loci(
                                 ctx,
                                 &resource_error,
                                 definition,
@@ -531,9 +554,12 @@ pub(in super::super) fn section_skamp_candidates_for_geometry<'ctx>(
                                 (first, second),
                                 active,
                                 geometry,
-                            ),
-                            &resource_error,
-                        )? {
+                            )), &resource_error)?;
+                        let tangents = match tangents {
+                            Some(tangents) => Some(defer_resource(tangent_storage.commit_value(tangents), &resource_error)?),
+                            None => { drop(tangent_storage); None }
+                        };
+                        if let Some([first, second]) = tangents {
                             SketchConstraintDefinitionInput::TangentLoci { first, second }
                         } else {
                             let first_curve = defer_resource(
@@ -815,7 +841,8 @@ pub(in super::super) fn section_skamp_candidates_for_geometry<'ctx>(
                         }
                     }
                     (14, [axis, first, second]) => {
-                        let symmetric = if axis.sense == 0
+                        let mut symmetric_storage = defer_resource(ctx.reserve_scoped(0, "creo SKAMP symmetric attempt storage"), &resource_error)?;
+                        let build_symmetric = || { if axis.sense == 0
                             && defer_resource(
                                 section_skamp_is_line(ctx, definition, axis),
                                 &resource_error,
@@ -846,6 +873,10 @@ pub(in super::super) fn section_skamp_candidates_for_geometry<'ctx>(
                             }
                         } else {
                             None
+                        } };
+                        let symmetric = match defer_resource(symmetric_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(build_symmetric())), &resource_error)? {
+                            Some(symmetric) => Some(defer_resource(symmetric_storage.commit_value(symmetric), &resource_error)?),
+                            None => { drop(symmetric_storage); None }
                         };
                         if let Some([first, second]) = symmetric {
                             SketchConstraintDefinitionInput::Symmetric {
@@ -877,8 +908,8 @@ pub(in super::super) fn section_skamp_candidates_for_geometry<'ctx>(
                         }
                     }
                     (15 | 17 | 30 | 31, [_, _]) => {
-                        if let Some((first, second, axis)) = defer_resource(
-                            section_skamp_same_coordinate(
+                        let mut coordinate_storage = defer_resource(ctx.reserve_scoped(0, "creo SKAMP coordinate attempt storage"), &resource_error)?;
+                        let coordinates = defer_resource(coordinate_storage.with_storage(|| section_skamp_same_coordinate(
                                 ctx,
                                 &resource_error,
                                 definition,
@@ -886,9 +917,12 @@ pub(in super::super) fn section_skamp_candidates_for_geometry<'ctx>(
                                 skamp,
                                 active,
                                 resolved_points.as_ref(),
-                            ),
-                            &resource_error,
-                        )? {
+                            )), &resource_error)?;
+                        let coordinates = match coordinates {
+                            Some(coordinates) => Some(defer_resource(coordinate_storage.commit_value(coordinates), &resource_error)?),
+                            None => { drop(coordinate_storage); None }
+                        };
+                        if let Some((first, second, axis)) = coordinates {
                             SketchConstraintDefinitionInput::SameCoordinate {
                                 relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                                     first, second, axis,
@@ -947,7 +981,11 @@ pub(in super::super) fn section_skamp_candidates_for_geometry<'ctx>(
                 }
             } else {
                 native_constraint(&resource_error)?
+            }
+                )
             };
+            let mut typed_storage = defer_resource(ctx.reserve_scoped(0, "creo SKAMP typed attempt storage"), &resource_error)?;
+            let constraint_definition = defer_resource(typed_storage.with_storage(|| Ok::<_, cadmpeg_core::CodecError>(build_definition())), &resource_error)??;
             let incompatible = match geometry {
                 Some(geometry) => !defer_resource(
                     sketch_constraint_loci_compatible_with_policy(
@@ -960,9 +998,18 @@ pub(in super::super) fn section_skamp_candidates_for_geometry<'ctx>(
                 )?,
                 None => false,
             };
-            if incompatible {
-                constraint_definition = native_constraint(&resource_error)?;
-            }
+            let constraint_definition = if incompatible {
+                drop(constraint_definition);
+                drop(typed_storage);
+                drop(selected_native_storage.take());
+                let native = native_constraint(&resource_error)?;
+                defer_resource(selected_native_storage.take()?.commit_value(native), &resource_error)?
+            } else if let Some(native_storage) = selected_native_storage.take() {
+                drop(typed_storage);
+                defer_resource(native_storage.commit_value(constraint_definition), &resource_error)?
+            } else {
+                defer_resource(typed_storage.commit_value(constraint_definition), &resource_error)?
+            };
             Some((
                 SketchConstraint {
                     id: if unique_skamp_id {
@@ -1233,6 +1280,7 @@ fn sketch_constraint_loci_compatible_with_policy(
 #[cfg(test)]
 mod tests {
     mod admission_recovery;
+    mod storage;
     use super::sketch_constraint_loci_compatible_with_policy;
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::sketches::{

@@ -494,12 +494,19 @@ pub(in super::super) fn close_sketch_constraint_parameter_references(
     }
     ctx.retain_mut(
         &mut ir.model.sketch_constraints,
-        |constraint| match constraint
-            .definition
-            .edit(|kind| reconcile_constraint_parameter_reference(ctx, kind, &emitted))
-        {
-            Ok(result) => result,
-            Err(_) => Ok(false),
+        |constraint| {
+            let placeholder = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                SketchConstraintDefinitionInput::Disabled {},
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+            let mut kind = std::mem::replace(&mut constraint.definition, placeholder).into_kind();
+            let keep = reconcile_constraint_parameter_reference(ctx, &mut kind, &emitted);
+            let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(kind)
+            else {
+                return keep.map(|_| false);
+            };
+            constraint.definition = definition;
+            keep
         },
         "creo sketch constraint parameter reconciliation",
     )?;
@@ -996,6 +1003,7 @@ pub(in super::super) fn section_segment_radius_constraints(
     Ok(constraints)
 }
 
+#[cfg(test)]
 pub(in super::super) fn section_segment_radius_constraints_for_emitted(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
@@ -1003,10 +1011,22 @@ pub(in super::super) fn section_segment_radius_constraints_for_emitted(
     emitted: &BTreeSet<SketchEntityId>,
     available_parameters: &BTreeSet<ParameterId>,
 ) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
+    let (rows, _slots) = section_segment_radius_candidates_for_emitted(ctx, definition, sketch, emitted, available_parameters)?;
+    if rows.is_empty() { return Ok(Vec::new()); }
+    ctx.try_collect_vec(rows.into_iter().map(|(constraint, offset, storage)| storage.commit_value((constraint, offset))), "creo retained radius constraints")
+}
+
+pub(in super::super) fn section_segment_radius_candidates_for_emitted<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+    definition: &crate::feature::definitions::FeatureDefinition,
+    sketch: &SketchId,
+    emitted: &BTreeSet<SketchEntityId>,
+    available_parameters: &BTreeSet<ParameterId>,
+) -> Result<ScopedConstraints<'ctx>, cadmpeg_core::CodecError> {
     let mut binding_storage = ctx.reserve_scoped(0, "creo radius binding scratch storage")?;
     let mut bindings =
         section_segment_radius_bindings(ctx, definition, sketch, &mut binding_storage)?;
-    let mut constraints = Vec::new();
+    let (mut constraints, mut slots) = ctx.temporary_vec(0, "creo emitted segment radius constraints")?;
     for binding in ctx.admit_iter(&mut bindings, "creo segment radius binding rows")? {
         let mut storage = ctx.reserve_scoped(0, "creo radius candidate storage")?;
         let Some((constraint, offset)) =
@@ -1037,13 +1057,14 @@ pub(in super::super) fn section_segment_radius_constraints_for_emitted(
             definition,
             ..constraint
         };
-        ctx.push_vec(
+        ctx.push_scoped_vec(
+            &mut slots,
             &mut constraints,
-            storage.commit_value((constraint, offset))?,
+            (constraint, offset, storage),
             "creo emitted segment radius constraints",
         )?;
     }
-    Ok(constraints)
+    Ok((constraints, slots))
 }
 
 fn reconcile_section_segment_radius_constraint(
@@ -1170,7 +1191,8 @@ pub(in super::super) fn section_equation_radius_dimension_candidates<'ctx>(
         let Ok(ordinal) = usize::try_from(equation.scalar.1) else {
             continue;
         };
-        let Some((dimension, parameter)) = scratch_storage.with_storage(|| {
+        let mut parameter_storage = ctx.reserve_scoped(0, "creo equation parameter scratch storage")?;
+        let Some((dimension, parameter)) = parameter_storage.with_storage(|| {
             resolved_feature_dimension_parameter_admitted(ctx, sketch, dimensions, ordinal)
         })?
         else {
@@ -1979,21 +2001,33 @@ fn native_equation_data(
     })
 }
 
+#[cfg(test)]
 pub(in super::super) fn section_equation_native_constraints(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     typed_offsets: &BTreeSet<usize>,
 ) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
+    let (rows, _slots) = section_equation_native_candidates(ctx, definition, sketch, typed_offsets)?;
+    if rows.is_empty() { return Ok(Vec::new()); }
+    ctx.try_collect_vec(rows.into_iter().map(|(constraint, offset, storage)| storage.commit_value((constraint, offset))), "creo retained native equation constraints")
+}
+
+pub(in super::super) fn section_equation_native_candidates<'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
+    definition: &crate::feature::definitions::FeatureDefinition,
+    sketch: &SketchId,
+    typed_offsets: &BTreeSet<usize>,
+) -> Result<ScopedConstraints<'ctx>, cadmpeg_core::CodecError> {
+    let (mut constraints, mut slots) = ctx.temporary_vec(0, "creo native equation constraints")?;
     let mut scratch_storage = ctx.reserve_scoped(0, "creo constraint scratch storage")?;
     let Some(table) = scratch_storage.with_storage(|| {
         crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())
     })?
     else {
-        return Ok(Vec::new());
+        return Ok((constraints, slots));
     };
     let solver = EquationIncidences::new(ctx, definition)?;
-    let mut constraints = Vec::new();
     for equation in ctx.admit_iter(&table.rows, "creo native equation rows")? {
         if ctx.contains_btree_set(
             typed_offsets,
@@ -2002,6 +2036,8 @@ pub(in super::super) fn section_equation_native_constraints(
         )? {
             continue;
         }
+        let mut storage = ctx.reserve_scoped(0, "creo native equation candidate storage")?;
+        let build_candidate = || -> Result<Option<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
         let active = !solver.is_disabled(equation.equation_id);
         let native_ref = sketch_native_ref_admitted(ctx, sketch)?;
         let mut native_properties = BTreeMap::new();
@@ -2072,7 +2108,7 @@ pub(in super::super) fn section_equation_native_constraints(
             format_args!("equation:offset:{}", equation.offset),
         )?
         else {
-            continue;
+            return Ok(None);
         };
         let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
             SketchConstraintDefinitionInput::Native {
@@ -2089,10 +2125,9 @@ pub(in super::super) fn section_equation_native_constraints(
                 operands,
             },
         ) else {
-            continue;
+            return Ok(None);
         };
-        ctx.reserve_vec(&mut constraints, 1, "creo native equation constraints")?;
-        constraints.push((
+        Ok(Some((
             SketchConstraint {
                 id,
                 sketch: sketch.try_clone_for_decode(ctx, "creo native equation sketch identity")?,
@@ -2109,9 +2144,13 @@ pub(in super::super) fn section_equation_native_constraints(
                 native_ref: Some(native_ref),
             },
             equation.offset,
-        ));
+        )))
+        };
+        if let Some((constraint, offset)) = storage.with_storage(build_candidate)? {
+            ctx.push_scoped_vec(&mut slots, &mut constraints, (constraint, offset, storage), "creo native equation constraints")?;
+        }
     }
-    Ok(constraints)
+    Ok((constraints, slots))
 }
 
 pub(in super::super) fn section_equation_same_coordinate_candidates<'ctx>(

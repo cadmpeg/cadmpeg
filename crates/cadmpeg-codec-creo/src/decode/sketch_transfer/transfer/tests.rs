@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{admit_constraint_row, available_parameter_ids, emitted_entity_views};
+use super::{available_parameter_ids, emitted_entity_views};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::sketches::{
-    SketchConstraint, SketchConstraintDefinition, SketchConstraintDefinitionInput,
-    SketchConstraintId, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
+    SketchConstraint, SketchConstraintDefinitionInput,
+    SketchEntity, SketchEntityId, SketchGeometry, SketchId,
 };
 use std::collections::BTreeSet;
 
@@ -161,44 +161,51 @@ fn sketch_native_reference_refuses_below_retained_limit() {
     );
 }
 
-fn disabled_constraint() -> SketchConstraint {
-    SketchConstraint {
-        id: SketchConstraintId::mint("creo:model:sketch_constraint#1").expect("constraint id"),
-        sketch: SketchId::mint("creo:model:sketch#1").expect("sketch id"),
-        definition: SketchConstraintDefinition::try_from(
-            SketchConstraintDefinitionInput::Disabled {},
-        )
-        .expect("disabled constraint"),
-        name: None,
-        driving: None,
-        active: None,
-        virtual_space: None,
-        visible: None,
-        orientation: None,
-        label_distance: None,
-        label_position: None,
-        metadata: None,
-        native_ref: None,
-    }
+#[test]
+fn sketch_constraint_rows_refuse_before_growth() {
+    let run = |ctx: &DecodeContext<'_>| {
+        let (mut rows, mut slots) = ctx.temporary_vec(0, "test constraint staging")?;
+        let storage = ctx.reserve_scoped(0, "test disabled candidate")?;
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        let sketch = SketchId::mint("creo:model:sketch#1").expect("sketch");
+        let result = super::emit_verhor_constraint(ctx, (&mut annotations, &mut rows, &mut slots),
+            &BTreeSet::new(), &sketch, "7", (SketchConstraintDefinitionInput::Disabled {}, storage), 0);
+        if result.is_err() { assert!(rows.is_empty()); }
+        result?;
+        assert_eq!(rows.len(), 1);
+        assert!(matches!(rows[0].definition.kind(), SketchConstraintDefinitionInput::Disabled {}));
+        slots.commit_value(rows)
+    };
+    let error = crate::test_support::last_refusal_at(&[], ResourceDimension::CollectionItems, "creo sketch constraint rows", run);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems && resource.operation == "creo sketch constraint rows"
+        && resource.additional == 1));
 }
 
 #[test]
-fn sketch_constraint_rows_refuse_before_growth() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
-    let mut rows = Vec::new();
-    let error = admit_constraint_row(&ctx, &mut rows, disabled_constraint())
-        .expect_err("one row exceeds zero items");
-    assert!(matches!(error, CodecError::ResourceLimit(resource)
-        if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == "creo sketch constraint rows"));
-    assert!(rows.is_empty());
-    let service = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
-    admit_constraint_row(&ctx, &mut rows, disabled_constraint()).expect("service row admitted");
-    assert_eq!(rows.len(), 1);
+fn constraint_staging_backing_is_live_until_source_admission_finishes() {
+    for admitted in [false, true] {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let (mut rows, mut slots) = ctx.temporary_vec(0, "test constraint staging").expect("staging");
+        let storage = ctx.reserve_scoped(0, "test disabled candidate").expect("candidate");
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        let sketch = SketchId::mint("creo:model:sketch#1").expect("sketch");
+        super::emit_verhor_constraint(&ctx, (&mut annotations, &mut rows, &mut slots),
+            &BTreeSet::new(), &sketch, "7", (SketchConstraintDefinitionInput::Disabled {}, storage), 0).expect("emitted row");
+        let backing = u64::try_from(rows.capacity() * std::mem::size_of::<cadmpeg_ir::sketches::SketchConstraint>()).expect("staging bytes");
+        let (expected, _live_storage) = if admitted {
+            let mut ir = cadmpeg_ir::CadIr::empty();
+            crate::decode::source_carriers::SourceUnitCarriers::default().admit_sketch_constraints(&ctx, &mut ir, rows).expect("source admission");
+            assert_eq!(ir.model.sketch_constraints.len(), 1);
+            drop(slots);
+            (0, None)
+        } else { (backing, Some(slots)) };
+        let error = ctx.reserve_scoped(u64::MAX, "test live constraint backing").expect_err("live storage probe");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::MaterializedBytes && resource.used == expected));
+    }
 }
 
 fn fixture() -> SketchEntity {
@@ -893,7 +900,7 @@ fn rejected_orientation_candidates_do_not_consume_retained_storage() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-    let mut constraints = Vec::new();
+    let (mut constraints, mut slots) = ctx.temporary_vec(0, "test orientation staging").expect("staging");
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
     for _ in 0..16 {
         let mut storage = ctx
@@ -905,7 +912,7 @@ fn rejected_orientation_candidates_do_not_consume_retained_storage() {
             .expect("valid identity");
         super::emit_verhor_constraint(
             &ctx,
-            (&mut annotations, &mut constraints),
+            (&mut annotations, &mut constraints, &mut slots),
             &BTreeSet::new(),
             &sketch,
             "7",
@@ -923,6 +930,7 @@ fn rejected_orientation_candidates_do_not_consume_retained_storage() {
             .expect("discarded candidates retained no bytes"),
         "x"
     );
+    drop(slots);
     ctx.finish_session().expect("active session");
 }
 
