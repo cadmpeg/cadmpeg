@@ -41,8 +41,7 @@ fn distinct_color_roots_do_not_duplicate_long_names() {
             let reports = RefCell::new(ctx.reserve_scoped(0, "named colour reports").expect("scope"));
             let mut losses = Vec::new();
             for id in 100..100 + roots {
-                let storage = RefCell::new(ctx.reserve_scoped(0, "named colour query").expect("scope"));
-                let cached = shared.resolve(&[id], StyleDomain::Surface, &storage, (&mut losses, &reports))
+                let cached = shared.resolve(&[id], StyleDomain::Surface, (&mut losses, &reports))
                     .expect("shared name fits").1;
                 let Some(ColorResolution::Candidate(candidate)) = cached.color else {
                     panic!("red candidate")

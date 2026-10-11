@@ -473,8 +473,6 @@ pub(super) fn decode<'ctx>(
             continue;
         }
         let domain = style_domains.domain(target_step, exchange)?;
-        let color_storage =
-            std::cell::RefCell::new(ctx.reserve_scoped(0, "step color search storage")?);
         let mut style_storage = ctx.reserve_scoped(0, "STEP style selection scratch")?;
         let mut style_references = Vec::new();
         let mut values = parts.styles.list().unwrap_or_default().iter();
@@ -531,7 +529,6 @@ pub(super) fn decode<'ctx>(
         let (color_query, resolved) = style_colors.resolve(
             &style_references,
             domain,
-            &color_storage,
             (&mut losses, &slot_storage),
         )?;
         let color = match &resolved.color {
@@ -2234,7 +2231,6 @@ impl<'source, 'ctx, 'arena> StyleColors<'source, 'ctx, 'arena> {
         &mut self,
         references: &[u64],
         domain: StyleDomain,
-        storage: &std::cell::RefCell<ScopedReservation<'ctx>>,
         (losses, slot_storage): (
             &mut Vec<LossNote>,
             &std::cell::RefCell<ScopedReservation<'ctx>>,
@@ -2268,6 +2264,7 @@ impl<'source, 'ctx, 'arena> StyleColors<'source, 'ctx, 'arena> {
         if !cached_before {
             // Local cache history precedes shared lookup. Shared completions
             // are acyclic, warning-free, and fit wholly below the cutoff.
+            let storage = std::cell::RefCell::new(ctx.reserve_scoped(0, "STEP color query scratch")?);
             let loss_start = losses.len();
             let mut active = BTreeSet::new();
             let mut cache = ColorCache::default();
@@ -2285,7 +2282,7 @@ impl<'source, 'ctx, 'arena> StyleColors<'source, 'ctx, 'arena> {
                         exchange,
                         domain,
                         ColorSearchState {
-                            storage,
+                            storage: &storage,
                             active: &mut active,
                             cache: &mut cache,
                             completed: Some(&mut self.completed),
