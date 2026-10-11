@@ -326,3 +326,209 @@ fn annotation_discovery_releases_cached_materialization() {
         );
     });
 }
+
+#[test]
+fn annotation_discovery_shares_multi_child_wide_graphs() {
+    for count in [32_u64, 64, 128] {
+        let mut records = String::from("#1=CARTESIAN_POINT('',(0.,0.,0.));#2=DIRECTION('',(0.,0.,1.));#3=DIRECTION('',(1.,0.,0.));#4=ITEM();#5=ITEM((");
+        for id in 10..10 + count {
+            if id != 10 {
+                records.push(',');
+            }
+            write!(records, "#{id}").expect("text reference");
+        }
+        records.push_str("));");
+        for id in 10..10 + count {
+            write!(records,"#{id}=TEXT_LITERAL('text {id}',#{placement},.LEFT.);#{placement}=AXIS2_PLACEMENT_3D('',#1,#2,#3);",placement=id+500).expect("carriers");
+        }
+        for id in 1000..1000 + count {
+            write!(records, "#{id}=ANNOTATION_TEXT_OCCURRENCE('',(),(#5,#4));")
+                .expect("multi-child annotation");
+        }
+        let exchange = exchange(&records);
+        let setup = cadmpeg_test_support::service_decode_context();
+        let geometry = crate::reader::geometry::decode(&exchange, &mut CadIr::empty(), &setup)
+            .expect("geometry");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 5000 * (2 * count);
+        policy.limits.max_collection_items = 40 * (2 * count);
+        crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+            let mut index = super::AnnotationDiscoveryIndex::new(ctx).expect("index");
+            let reports =
+                std::cell::RefCell::new(ctx.reserve_scoped(0, "test reports").expect("scope"));
+            let mut claims = ctx.reserve_scoped(0, "test claims").expect("scope");
+            let mut losses = Vec::new();
+            let mut used = BTreeSet::new();
+            for id in 1000..1000 + count {
+                assert!(index
+                    .text(
+                        id,
+                        &exchange,
+                        &geometry.value,
+                        (&mut used, &mut claims),
+                        (&mut losses, &reports)
+                    )
+                    .expect("shared text discovery")
+                    .is_none());
+                assert!(
+                    matches!(index.placement(exchange.records().get(&id).expect("root"),&exchange,&geometry.value).expect("shared placement discovery"),super::PlacementSelection::Ambiguous(found) if u64::try_from(found).expect("count") == count)
+                );
+            }
+            assert!(used.is_empty());
+            assert_eq!(u64::try_from(losses.len()).expect("loss count"), count);
+            for (loss, id) in losses.iter().zip(1000..1000 + count) {
+                assert_eq!(
+                    loss.code,
+                    crate::loss::StepLossCode::PresentationAnnotationTextUnordered.kind()
+                );
+                assert_eq!(loss.message,format!("presentation annotation #{id} has {count} reachable text carriers with no ordered composition"));
+            }
+        });
+    }
+}
+
+#[test]
+fn annotation_warning_replay_skips_shared_duplicate_prefixes() {
+    for count in [32_u64, 64, 128] {
+        let mut records = String::from("#2=TEXT_LITERAL('\\X2\\D83D\\X0\\',$,.LEFT.);#3=TEXT_LITERAL('\\X2\\DE42\\X0\\',$,.LEFT.);#4=ITEM();#5=ITEM((");
+        for id in 10..10 + count {
+            if id != 10 {
+                records.push(',');
+            }
+            write!(records, "#{id}").expect("alias reference");
+        }
+        records.push_str(",#3));");
+        for id in 10..10 + count {
+            write!(records, "#{id}=ITEM(#2);").expect("warning alias");
+        }
+        for id in 1000..1000 + count {
+            write!(records, "#{id}=ANNOTATION_TEXT_OCCURRENCE('',(),(#5,#4));").expect("root");
+        }
+        let exchange = exchange(&records);
+        let setup = cadmpeg_test_support::service_decode_context();
+        let geometry = crate::reader::geometry::decode(&exchange, &mut CadIr::empty(), &setup)
+            .expect("geometry");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 40 * (2 * count);
+        crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+            let mut index = super::AnnotationDiscoveryIndex::new(ctx).expect("index");
+            let reports =
+                std::cell::RefCell::new(ctx.reserve_scoped(0, "test reports").expect("scope"));
+            let mut claims = ctx.reserve_scoped(0, "test claims").expect("scope");
+            let mut losses = Vec::new();
+            for id in 1000..1000 + count {
+                assert!(index
+                    .text(
+                        id,
+                        &exchange,
+                        &geometry.value,
+                        (&mut BTreeSet::new(), &mut claims),
+                        (&mut losses, &reports)
+                    )
+                    .expect("shared warning traversal")
+                    .is_none());
+            }
+            assert_eq!(u64::try_from(losses.len()).expect("loss count"), 2 * count);
+            for losses in losses.chunks_exact(2) {
+                assert!(losses[0].message.contains("record #2"));
+                assert!(losses[1].message.contains("record #3"));
+            }
+        });
+    }
+}
+
+#[test]
+fn annotation_cutoff_keeps_first_visit_depth_and_cached_warning_order() {
+    // The recursive integration oracle needs more than the test thread's
+    // default stack at its 256-record cutoff. The production walk is iterative.
+    std::thread::Builder::new().stack_size(32 * 1024 * 1024).spawn(|| {
+    let mut records = String::from("#1=ITEM(#2,#1000,#3000);#3000=TEXT_LITERAL('\\X2\\D83D\\X0\\',$,.LEFT.);#1000=ITEM(#1001);#1001=TEXT_LITERAL('text',$,.LEFT.);#2000=ITEM(#1000,#2,#3000);");
+    for id in 2..255 { write!(records,"#{id}=ITEM(#{});",id+1).expect("chain"); }
+    records.push_str("#255=ITEM(#1000);");
+    let exchange = exchange(&records);
+    let setup = cadmpeg_test_support::service_decode_context();
+    let geometry = crate::reader::geometry::decode(&exchange,&mut CadIr::empty(),&setup).expect("geometry");
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 1024;
+    crate::test_support::with_policy_context(b"",&policy,|_,ctx| {
+        let mut index = super::AnnotationDiscoveryIndex::new(ctx).expect("index");
+        let mut claims = ctx.reserve_scoped(0,"test claims").expect("scope");
+        let reports = std::cell::RefCell::new(ctx.reserve_scoped(0,"test reports").expect("scope"));
+        for id in [1,2000,1,2000] {
+            let mut expected_used = BTreeSet::new();
+            let mut expected_losses = Vec::new();
+            let expected = super::super::find_annotation_text(id,&exchange,&mut BTreeSet::new(),(&mut expected_used,&mut claims),(&mut expected_losses,&reports),0,ctx).expect("integration first-visit cutoff");
+            assert_eq!(expected.as_deref(),if id==1 { None } else { Some("text") });
+            let mut used = BTreeSet::new();
+            let mut losses = Vec::new();
+            let actual = index.text(id,&exchange,&geometry.value,(&mut used,&mut claims),(&mut losses,&reports)).expect("cached cutoff query");
+            assert_eq!(actual,expected);
+            assert_eq!(used,expected_used);
+            assert_eq!(losses,expected_losses);
+            assert_eq!(losses.len(),1);
+            assert!(losses[0].message.contains("record #3000"));
+        }
+    });
+    }).expect("cutoff oracle thread").join().expect("cutoff equivalence");
+}
+
+#[test]
+fn annotation_discovery_shares_empty_single_child_cycles_across_roots() {
+    for count in [32_u64, 64, 128] {
+        let mut records = String::new();
+        for id in 1..=count {
+            write!(
+                records,
+                "#{id}=ITEM(#{});",
+                if id == count { 1 } else { id + 1 }
+            )
+            .expect("cycle");
+        }
+        for id in 1000..1000 + count {
+            write!(
+                records,
+                "#{id}=ANNOTATION_TEXT_OCCURRENCE('',(),#{});",
+                id - 999
+            )
+            .expect("root");
+        }
+        let exchange = exchange(&records);
+        let setup = cadmpeg_test_support::service_decode_context();
+        let geometry = crate::reader::geometry::decode(&exchange, &mut CadIr::empty(), &setup)
+            .expect("geometry");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 20 * (2 * count);
+        crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+            let mut index = super::AnnotationDiscoveryIndex::new(ctx).expect("index");
+            let reports =
+                std::cell::RefCell::new(ctx.reserve_scoped(0, "test reports").expect("scope"));
+            let mut claims = ctx.reserve_scoped(0, "test claims").expect("scope");
+            let mut used = BTreeSet::new();
+            let mut losses = Vec::new();
+            for id in 1000..1000 + count {
+                assert!(index
+                    .text(
+                        id,
+                        &exchange,
+                        &geometry.value,
+                        (&mut used, &mut claims),
+                        (&mut losses, &reports)
+                    )
+                    .expect("shared empty text cycle")
+                    .is_none());
+                assert!(matches!(
+                    index
+                        .placement(
+                            exchange.records().get(&id).expect("root"),
+                            &exchange,
+                            &geometry.value
+                        )
+                        .expect("shared empty placement cycle"),
+                    super::PlacementSelection::Absent
+                ));
+            }
+            assert!(used.is_empty());
+            assert!(losses.is_empty());
+        });
+    }
+}

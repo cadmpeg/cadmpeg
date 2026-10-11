@@ -169,3 +169,55 @@ fn characteristic_value_analysis_keeps_each_relation_ambiguity() {
         });
     }
 }
+
+#[test]
+fn characteristic_value_analysis_shares_distinct_representation_item_graphs() {
+    for count in [32_u64, 64, 128] {
+        let mut records = String::from("#1=DIMENSIONAL_SIZE($,'width');#3=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#5=ITEM((");
+        for id in 10..10 + count {
+            if id != 10 {
+                records.push(',');
+            }
+            write!(records, "#{id}").expect("measure reference");
+        }
+        records.push_str("));");
+        for id in 10..10 + count {
+            let name = if id == 10 { "nominal value" } else { "" };
+            write!(
+                records,
+                "#{id}=MEASURE_REPRESENTATION_ITEM('{name}',LENGTH_MEASURE(1.),#3);"
+            )
+            .expect("measure");
+        }
+        for id in 1000..1000 + count {
+            write!(records,"#{id}=SHAPE_DIMENSION_REPRESENTATION('',(#5),$);#{relation}=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#1,#{id});",relation=id+1000).expect("distinct representation");
+        }
+        let exchange = exchange(&records);
+        let setup = cadmpeg_test_support::service_decode_context();
+        let geometry = crate::reader::geometry::decode(&exchange, &mut CadIr::empty(), &setup)
+            .expect("geometry");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 4000 * (2 * count) + 50_000;
+        crate::test_support::with_policy_context(b"", &policy, |_, ctx| {
+            let mut losses = Vec::new();
+            let reports =
+                std::cell::RefCell::new(ctx.reserve_scoped(0, "test reports").expect("scope"));
+            let mut storage = ctx.reserve_scoped(0, "test values").expect("scope");
+            let values = super::super::characteristic_values(
+                &exchange,
+                &geometry.value,
+                (&mut losses, &reports),
+                64,
+                &mut storage,
+                ctx,
+            )
+            .expect("overlapping analyses fit a linear work bound");
+            assert_eq!(values.len(), 1);
+            assert_eq!(
+                values[&1],
+                PmiValue::new(1.0, PmiQuantity::Length).expect("nominal")
+            );
+            assert!(losses.is_empty());
+        });
+    }
+}
