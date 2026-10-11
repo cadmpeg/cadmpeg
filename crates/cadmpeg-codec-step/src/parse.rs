@@ -3613,8 +3613,11 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
         else {
             return Err(Self::incomplete_template(self.budget)?.into());
         };
-        let lower_bound = child_distance.saturating_sub(start_distance);
-        self.check_depth(depth + lower_bound + 1)?;
+        match child_distance.checked_sub(start_distance) {
+            Some(lower_bound) => self.check_depth(depth + lower_bound + 1)?,
+            // A child closer to the root adds no lower bound to the closing depth.
+            None => self.check_depth(depth + 1)?,
+        }
         let mut left = child;
         let mut right = start;
         let difference = child_distance.abs_diff(start_distance);
