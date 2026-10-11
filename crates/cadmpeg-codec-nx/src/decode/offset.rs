@@ -3321,7 +3321,9 @@ mod tests {
                 matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
             );
         }
-        for cap in 0..6 {
+        // Two conversions, two surface visits and two visits in each of the
+        // destination and source replacement lanes require eight work units.
+        for cap in 0..8 {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_work_units = cap;
@@ -3350,7 +3352,7 @@ mod tests {
         }
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 6;
+        policy.limits.max_work_units = 8;
         policy.limits.max_retained_bytes = 0;
         policy.limits.max_materialized_bytes = 4096;
         policy.limits.max_collection_items = 2;

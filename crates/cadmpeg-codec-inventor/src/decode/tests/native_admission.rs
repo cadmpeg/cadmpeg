@@ -564,8 +564,8 @@ fn retained_carrier_fidelity_refuses_before_unknown_record_creation() {
 
 #[test]
 fn kernel_unknown_records_are_charged_by_their_ir_attachment() {
-    // The IR attachment copies each identity and link under the caller's
-    // context, so decode adds no charge of its own for those copies.
+    // The IR attachment moves each link into an admitted native value vector.
+    // Its first push requires one collection item before allocating storage.
     let unknown = || {
         cadmpeg_ir::UnknownRecord::retained(
             cadmpeg_ir::ids::UnknownId::mint("inventor:kernel:unknown#one").expect("valid id"),
@@ -588,7 +588,7 @@ fn kernel_unknown_records_are_charged_by_their_ir_attachment() {
         ),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "native unknown product links"
+                && limit.operation == "native unknown arena links"
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
