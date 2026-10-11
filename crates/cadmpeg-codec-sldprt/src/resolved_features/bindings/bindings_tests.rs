@@ -563,6 +563,15 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
         FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. })
             if seeds == &[PatternSeed::Feature(FeatureId::mint("synthetic:test:id#seed").expect("identity grammar"))]));
     crate::test_support::work_refusal_at("deduplicate SLDPRT pattern input seeds", deduplicate);
+    let mut comparison_lane = duplicate_lane.clone();
+    comparison_lane.names.push(FeatureInputName {
+        id: "seed-name".into(), parent: "lane".into(), ordinal: 1, offset: 200,
+        object_id: ObjectId::from_value(224), value: "HoleWizard1".into(),
+    });
+    crate::test_support::work_refusal_at("compare SLDPRT derived cosmetic thread output class", |ctx| {
+        let mut candidates = features.clone();
+        bind_pattern_inputs(ctx, &mut candidates, std::slice::from_ref(&history), std::slice::from_ref(&comparison_lane))
+    });
 
     bind_pattern_inputs_test(
         &mut features,
@@ -967,6 +976,11 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         configurations: Vec::new(),
         features: vec![feature.clone()],
     };
+
+    crate::test_support::work_refusal_at("compare SLDPRT detached sketch XML tag", |ctx| {
+        let mut candidate = lane.clone();
+        bind_detached_legacy_sketch_objects(ctx, std::slice::from_ref(&history), &HashSet::default(), &mut candidate)
+    });
 
     bind_detached_legacy_sketch_objects(
         &cadmpeg_test_support::service_decode_context(),

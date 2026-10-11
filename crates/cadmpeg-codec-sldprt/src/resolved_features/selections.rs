@@ -747,7 +747,9 @@ pub(super) fn compact_surface_selections(
     for (index, &(name, feature, _)) in ctx.admit_iter(&objects, OPERATION)?.enumerate() {
         let classified = native_object_class(feature.input_class.as_deref().unwrap_or_default());
         let kind = match classified {
-            NativeClassKind::Unknown if matches!(feature.xml_tag.as_str(), "Extrusion" | "Cut") => {
+            NativeClassKind::Unknown
+                if ctx.equal(feature.xml_tag.as_str(), "Extrusion", "compare SLDPRT surface extrusion XML tag")?
+                    || ctx.equal(feature.xml_tag.as_str(), "Cut", "compare SLDPRT surface cut XML tag")? => {
                 NativeClassKind::Extrusion
             }
             NativeClassKind::Unknown => {
@@ -963,7 +965,7 @@ pub(super) fn compact_surface_selections(
                         candidates
                     }
                     NativeClassKind::Fillet
-                        if feature.input_class.as_deref() == Some("Fillet_c") =>
+                        if ctx.equal(feature.input_class.as_deref().unwrap_or_default(), "Fillet_c", "compare SLDPRT surface fillet class")? =>
                     {
                         fillet_face_selection_candidates(
                             ctx,
@@ -3740,7 +3742,7 @@ pub(crate) fn variable_fillet_dimension_index_for_feature(
     feature: &crate::records::Feature,
     name: &str,
 ) -> Result<Option<usize>, CodecError> {
-    if name == "D1"
+    if ctx.equal(name, "D1", "compare SLDPRT variable fillet control name")?
         && !ctx.contains_key_btree_map(
             &feature.parameters,
             "D01",
