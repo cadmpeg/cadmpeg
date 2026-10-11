@@ -14,8 +14,8 @@ pub(crate) fn decode_payload(
     payload: &Range<usize>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<u8>, ParseError> {
-    let mut compact = Vec::new();
     let mut compact_reservation = ctx.reserve_scoped(0, "step_signature_compact_temp")?;
+    let mut compact = Vec::new();
     let mut at = payload.start;
     while at < payload.end {
         ctx.charge_work(1, "STEP signature cursor traversal")?;

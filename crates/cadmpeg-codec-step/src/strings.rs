@@ -41,6 +41,31 @@ pub(crate) fn decode_with_context(
     ctx: &DecodeContext<'_>,
 ) -> Result<String, StringDecodeFailure> {
     let len = decoded_len(ctx, input, level)?;
+    decode_validated(input, level, ctx, len)
+}
+
+/// Drop malformed validation text and retain only a successfully decoded string.
+pub(crate) fn decode_optional_with_context(
+    input: &[u8],
+    level: ImplementationLevel,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<String>, StringDecodeFailure> {
+    let mut storage = ctx.reserve_scoped(0, "STEP optional string validation storage")?;
+    let len = storage.with_storage(|| match decoded_len(ctx, input, level) {
+        Ok(len) => Ok(Some(len)),
+        Err(StringDecodeFailure::Invalid(_)) => Ok(None),
+        Err(error) => Err(error),
+    })?;
+    drop(storage);
+    len.map(|len| decode_validated(input, level, ctx, len)).transpose()
+}
+
+fn decode_validated(
+    input: &[u8],
+    level: ImplementationLevel,
+    ctx: &DecodeContext<'_>,
+    len: usize,
+) -> Result<String, StringDecodeFailure> {
     let operation = "step_string_text";
     let mut output = ctx
         .retained_string(len, operation)
