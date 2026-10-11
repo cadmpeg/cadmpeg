@@ -13,6 +13,7 @@ use crate::test_support::exchange::decode_inline;
 use crate::StepCodec;
 
 mod collection_limits;
+mod shared_joins;
 mod original_context;
 mod prefix_admission;
 mod string_limits;
