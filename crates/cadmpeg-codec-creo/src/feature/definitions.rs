@@ -2718,7 +2718,9 @@ fn decode_variable_scalar(
     };
     if let (Some(head), Some(tail)) = (
         variable_dict,
-        payload.get(offset + 1..offset + 7).filter(|_| offset + 7 <= end),
+        payload
+            .get(offset + 1..offset + 7)
+            .filter(|_| offset + 7 <= end),
     ) {
         let mut raw = [0; 8];
         raw[..2].copy_from_slice(&head);
@@ -3139,13 +3141,13 @@ fn positional_variable_table(
             break;
         }
         if rows.is_empty() {
-                if payload.get(cursor..cursor + 2) != Some(&[0xf1, psb::token::ENTITY_REF])
-                    || payload.get(cursor + 2..cursor + 2 + reference_bytes.len())
-                        != Some(reference_bytes)
-                    || payload.get(cursor + prototype_separator_len - 1) != Some(&0xe2)
-                {
-                    break;
-                }
+            if payload.get(cursor..cursor + 2) != Some(&[0xf1, psb::token::ENTITY_REF])
+                || payload.get(cursor + 2..cursor + 2 + reference_bytes.len())
+                    != Some(reference_bytes)
+                || payload.get(cursor + prototype_separator_len - 1) != Some(&0xe2)
+            {
+                break;
+            }
             cursor += prototype_separator_len;
         } else if rows.len() + 1 < row_limit {
             if payload.get(cursor) != Some(&0xe2) {

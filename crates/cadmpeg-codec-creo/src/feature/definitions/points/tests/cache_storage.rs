@@ -53,37 +53,35 @@ fn checked_trim_cache_radius_constructor_has_exact_backing_boundary() {
         ResourceDimension::MaterializedBytes,
         &["creo trim radius groups"],
         |cap| {
-            with_limits(cap, |ctx| {
-                match table.reconciled_trim_geometry(&ctx) {
-                    Ok(cache) => {
-                        assert_eq!(cap, backing);
-                        assert_eq!(cache.radius(7).expect("radius").expect("stored").get(), 2.0);
-                        assert!(cache.coordinates.points.is_empty());
-                        assert!(cache.coordinates.ambiguous.is_empty());
-                        drop(cache);
-                        drop(
-                            ctx.reserve_scoped(cap, "trim cache cleanup")
-                                .expect("backing refunded"),
-                        );
-                        Ok(())
-                    }
-                    Err(CodecError::ResourceLimit(original)) => {
-                        assert!(cap < backing);
-                        assert_eq!(
-                            (
-                                original.dimension,
-                                original.used,
-                                original.additional,
-                                original.limit
-                            ),
-                            (ResourceDimension::MaterializedBytes, 0, backing, cap)
-                        );
-                        assert_eq!(original.operation, "creo trim radius groups");
-
-                        Err(CodecError::ResourceLimit(original))
-                    }
-                    Err(error) => panic!("unexpected cache error: {error:?}"),
+            with_limits(cap, |ctx| match table.reconciled_trim_geometry(&ctx) {
+                Ok(cache) => {
+                    assert_eq!(cap, backing);
+                    assert_eq!(cache.radius(7).expect("radius").expect("stored").get(), 2.0);
+                    assert!(cache.coordinates.points.is_empty());
+                    assert!(cache.coordinates.ambiguous.is_empty());
+                    drop(cache);
+                    drop(
+                        ctx.reserve_scoped(cap, "trim cache cleanup")
+                            .expect("backing refunded"),
+                    );
+                    Ok(())
                 }
+                Err(CodecError::ResourceLimit(original)) => {
+                    assert!(cap < backing);
+                    assert_eq!(
+                        (
+                            original.dimension,
+                            original.used,
+                            original.additional,
+                            original.limit
+                        ),
+                        (ResourceDimension::MaterializedBytes, 0, backing, cap)
+                    );
+                    assert_eq!(original.operation, "creo trim radius groups");
+
+                    Err(CodecError::ResourceLimit(original))
+                }
+                Err(error) => panic!("unexpected cache error: {error:?}"),
             })
         },
     );
