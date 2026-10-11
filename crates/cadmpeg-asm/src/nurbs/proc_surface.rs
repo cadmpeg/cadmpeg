@@ -5812,3 +5812,6 @@ mod ellipse_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

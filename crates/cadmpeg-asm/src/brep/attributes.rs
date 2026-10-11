@@ -582,6 +582,7 @@ pub fn unknown_record_id(
 
 #[cfg(test)]
 mod tests {
+    mod fixed_values;
     use super::decode_transform;
     use crate::sab::{Record, Token};
 

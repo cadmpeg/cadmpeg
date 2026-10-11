@@ -289,6 +289,7 @@ pub fn asm_binary_row(width: RefWidth) -> DialectId {
 
 #[cfg(test)]
 mod tests {
+    mod fixed_classification;
 
     use super::{
         acis_band_verified, acis_binary_row, acis_match, classify, classify_layer,

@@ -1860,4 +1860,36 @@ mod tests {
             [Token::SubtypeOpen, Token::Ident(name), Token::SubtypeClose] if name == "real_def"));
         }
     }
+
+#[test]
+    fn subtype_span_no_open_executes_zero_work() {
+        use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+
+        let toks = [ident("x"), Token::SubtypeClose];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test decode context");
+        assert!(subtype_span_ctx(&ctx, &toks, 0)
+            .expect("no scan occurs")
+            .is_none());
+        ctx.finish_session().expect("no-open is a fixed O(1) check");
+}
+
+#[test]
+    fn payload_subtype_missing_chunk_executes_zero_work() {
+        use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+
+        let record = crate::test_support::sab::record(0, "pcurve".into(), Vec::new().into(), 0, 0);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test decode context");
+        assert!(super::payload_subtype_toks(&ctx, &record, 0, "exp_par_cur")
+            .expect("empty lookup does not scan")
+            .is_none());
+        ctx.finish_session().expect("empty lookup uses no work");
+}
 }

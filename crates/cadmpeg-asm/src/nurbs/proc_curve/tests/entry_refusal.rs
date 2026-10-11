@@ -146,3 +146,14 @@ fn embedded_surface_propagates_knot_refusal_before_missing_bounds() {
         }
     }
 }
+
+#[test]
+fn canonical_support_chart_keeps_populated_pcurve_without_allocation() {
+    crate::test_support::with_zero_context(|ctx| {
+        let mut curve = pcurve(); let before = curve.clone();
+        let result = super::super::normalize_support_pcurve(ctx, super::super::NativeSupportChart::Canonical, &mut curve);
+        
+            result.unwrap().unwrap(); assert_eq!(curve, before);
+        
+    });
+}

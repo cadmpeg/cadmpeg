@@ -758,6 +758,23 @@ mod marker_ownership_tests {
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, "scan ASM owned marker token");
     }
+
+#[test]
+    fn owned_byte_markers_are_free_for_64_empty_walks() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        for _ in 0..64 {
+            let (markers, balanced) = walk_owned_markers(&ctx, &[], RefWidth::Four).unwrap();
+            assert!(markers.is_empty());
+            assert!(balanced);
+        }
+    ctx.finish_session().unwrap();
+}
 }
 
 #[cfg(test)]

@@ -133,3 +133,23 @@ fn law_expression_children_preserve_every_original_refusal() {
         assert!(out.curves.is_empty() && out.surfaces.is_empty());
     });
 }
+
+#[test]
+fn law_integer_seven_and_empty_cos_execute_no_child_descent() {
+    crate::test_support::with_zero_context(|ctx| {
+        for expression in [EmbeddedLawExpression::Integer(7),
+            EmbeddedLawExpression::Algebraic { operator: "COS".into(), operands: Vec::new() }] {
+            let mut out = AsmBrep::default();
+            let result = map(ctx, &mut out, expression);
+            match result.expect("no child work is free") {
+                    LawExpression::Integer { value } => assert_eq!(value, 7),
+                    LawExpression::Algebraic { operator, operands } => {
+                        assert_eq!(operator, "COS");
+                        assert!(operands.is_empty());
+                    }
+                    _ => panic!("preserve scalar or empty recovery"),
+                };
+            assert!(out.curves.is_empty() && out.surfaces.is_empty());
+        }
+    });
+}

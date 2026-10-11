@@ -498,4 +498,31 @@ mod ownership_tests {
         assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
         assert_eq!(limit.operation, "scan ASM subtype scope token");
     }
+
+#[test]
+    fn owned_byte_subtypes_empty_and_invalid_routes_are_free() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        policy.limits.max_collection_items = 0;
+        policy.limits.max_materialized_bytes = 0;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        for _ in 0..64 {
+            assert!(owned_subtype_defs(&ctx, &[], RefWidth::Four)
+                .unwrap()
+                .unwrap()
+                .is_empty());
+            for (input, start) in [
+                (b"".as_slice(), 0),
+                (b"\x0b".as_slice(), 0),
+                (b"\x0f".as_slice(), 1),
+            ] {
+                assert!(subtype_span(&ctx, input, start, RefWidth::Four)
+                    .unwrap()
+                    .is_none());
+            }
+        }
+    ctx.finish_session().unwrap();
+}
 }

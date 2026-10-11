@@ -2105,6 +2105,7 @@ fn type_record(
 
 #[cfg(test)]
 mod tests {
+    mod typing_entry;
     mod frame_order;
     mod manual_scans;
     fn with_work_limit<T>(

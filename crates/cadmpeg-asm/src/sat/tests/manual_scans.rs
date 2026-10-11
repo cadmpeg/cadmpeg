@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::{parse, Cur, Prim};
+use super::super::{parse, Cur, Prim, FieldReader};
 use crate::stream_error::StreamFailure;
 use cadmpeg_core::decode::{
     refusal_probe::RefusalProbe, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
@@ -87,4 +87,81 @@ fn manual_sat_absent_field_keeps_the_missing_terminator_error() {
     drop(probe);
     assert!(ctx.resource_refusal().is_none());
     ctx.finish_session().unwrap();
+}
+
+#[test]
+fn sat_empty_field_reads_are_free_over_64_reads() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut reader = FieldReader { bytes: &[], pos: 0 };
+    for _ in 0..64 {
+        assert!(reader.next_field(&ctx, None).unwrap().is_none());
+    }
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn sat_missing_header_integer_keeps_diagnostic_and_offset() {
+    crate::test_support::with_zero_context(|ctx| {
+        let result = super::super::header_int::<i64>(ctx, None, 7, "version");
+        
+            let Err(StreamFailure::Parse(error)) = result else {
+                panic!("missing field");
+            };
+            assert_eq!(error.offset, 7);
+            assert_eq!(error.reason, "header line has no version field");
+        
+    });
+}
+
+#[test]
+fn sat_missing_header_float_keeps_diagnostic_and_offset() {
+    crate::test_support::with_zero_context(|ctx| {
+        let result = super::super::header_float(ctx, None, 9, "tolerance");
+        
+            let Err(StreamFailure::Malformed(error)) = result else {
+                panic!("missing value");
+            };
+            assert_eq!(error.offset, 9);
+            assert_eq!(error.reason, "header line has no valid tolerance value");
+        
+    });
+}
+
+#[test]
+fn sat_truncated_string_keeps_diagnostic_and_cursor() {
+    crate::test_support::with_zero_context(|ctx| {
+        let mut reader = FieldReader { bytes: &[], pos: 0 };
+        let result = reader.read_str_payload(ctx, 3, 11);
+        
+            let Err(StreamFailure::Parse(error)) = result else {
+                panic!("truncated string");
+            };
+            assert_eq!(error.offset, 11);
+            assert_eq!(error.reason, "truncated @3 string");
+            assert_eq!(reader.pos, 1);
+        
+    });
+}
+
+#[test]
+fn sat_fixed_braces_keep_open_close_classification() {
+    crate::test_support::with_zero_context(|ctx| {
+        for field in ["{", "}"] {
+            let mut reader = FieldReader { bytes: &[], pos: 0 };
+            let result = super::super::lex_prim(ctx, &mut reader, 0, field, false);
+            
+                assert!(matches!(
+                    (field, result.unwrap()),
+                    ("{", Prim::Open) | ("}", Prim::Close)
+                ));
+            
+            assert_eq!(reader.pos, 0);
+        }
+    });
 }
