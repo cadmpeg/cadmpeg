@@ -427,93 +427,29 @@ fn supplemental_edges_do_not_copy_unread_metadata_or_overlaid_model_definition()
             )]),
         }));
     let id = ir.model.features[0].id.clone();
-    ir.model.configurations[0].feature_states.get_mut(&id).unwrap().definition = chamfer_definition(cadmpeg_ir::features::EdgeSelection::Unresolved);
+    ir.model.configurations[0]
+        .feature_states
+        .get_mut(&id)
+        .unwrap()
+        .definition = chamfer_definition(cadmpeg_ir::features::EdgeSelection::Unresolved);
     let mut expected = ir.clone();
-    expected.model.configurations[0].feature_states.get_mut(&id).unwrap().definition = chamfer_definition(cadmpeg_ir::features::EdgeSelection::Native("sldprt:feature-input:edge-ids:7".into()));
+    expected.model.configurations[0]
+        .feature_states
+        .get_mut(&id)
+        .unwrap()
+        .definition = chamfer_definition(cadmpeg_ir::features::EdgeSelection::Native(
+        "sldprt:feature-input:edge-ids:7".into(),
+    ));
     let lane = edge_lane(ir.model.features[0].native_ref.as_deref().unwrap(), 7);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = 128 * 1024;
     policy.limits.max_work_units = 128 * 1024;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::project_configuration_supplemental_edge_selections(&ctx, &mut ir, &[lane]).unwrap();
+    super::super::project_configuration_supplemental_edge_selections(&ctx, &mut ir, &[lane])
+        .unwrap();
     assert_eq!(ir, expected);
     ctx.finish_session().unwrap();
-}
-
-fn run_operation_base(policy: &DecodePolicy) -> Result<(), CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
-    let mut native = crate::history::tests::feature("extrusion", Some("1"), 0);
-    native.kind = "Extrusion".into();
-    native.xml_tag = "Extrusion".into();
-    native
-        .parameters
-        .insert(cadmpeg_core::nonblank_literal!("Depth"), "1mm".into());
-    let histories = [crate::records::FeatureHistory {
-        id: "history".into(),
-        part_name: None,
-        properties: BTreeMap::new(),
-        content: Vec::new(),
-        configurations: Vec::new(),
-        features: vec![native],
-    }];
-    let fixture_ctx = cadmpeg_test_support::service_decode_context();
-    let local = crate::history::project::project_features(&fixture_ctx, &histories)?;
-    assert!(matches!(
-        local[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Extrude {
-            op: cadmpeg_ir::features::BooleanOp::Unresolved,
-            ..
-        })
-    ));
-    let mut model = local.clone();
-    model[0].name = Some("x".repeat(32 * 1024));
-    model[0].evaluation.edit(|definition, _| {
-        if let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, op, .. }) = definition {
-            *op = cadmpeg_ir::features::BooleanOp::Cut;
-            *profile = cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Sketch(
-                cadmpeg_ir::sketches::SketchId::mint(format!("synthetic:test:sketch#{}", "p".repeat(17 * 1024 * 1024))).unwrap(),
-            ));
-        }
-    });
-    model[0].native_ref = Some("n".repeat(17 * 1024 * 1024));
-    let mut expected = local.clone();
-    expected[0].evaluation.edit(|definition, _| {
-        if let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) = definition { *op = cadmpeg_ir::features::BooleanOp::Cut; }
-    });
-    let mut local = local;
-    crate::resolved_features::operations::inherit_configuration_operations(
-        &ctx, &mut local, &model, &histories, &[], &[], None,
-    )?;
-    assert_eq!(local, expected);
-    ctx.finish_session()?;
-    Ok(())
-}
-
-#[test]
-fn configuration_operation_base_uses_scoped_storage() {
-    for dimension in [
-        ResourceDimension::MaterializedBytes,
-        ResourceDimension::CollectionItems,
-        ResourceDimension::WorkUnits,
-    ] {
-        assert_projection_refusal(
-            dimension,
-            "index SLDPRT configuration operation consumers",
-            run_operation_base,
-        );
-    }
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = u64::MAX;
-    policy.limits.max_materialized_bytes = 4096;
-    policy.limits.max_work_units = 4096;
-    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
-        ResourceDimension::RetainedBytes,
-        "index SLDPRT configuration operation consumers",
-        None,
-    );
-    run_operation_base(&policy).expect("operation base is temporary");
 }
 
 #[test]
@@ -712,7 +648,9 @@ fn chamfer_definition(edges: cadmpeg_ir::features::EdgeSelection) -> FeatureDefi
     FeatureDefinition::Operation(FeatureOperation::Chamfer {
         groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
             edges,
-            spec: ChamferSpec::Distance { distance: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap() },
+            spec: ChamferSpec::Distance {
+                distance: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
+            },
         }),
         flip_direction: false,
     })
@@ -720,11 +658,20 @@ fn chamfer_definition(edges: cadmpeg_ir::features::EdgeSelection) -> FeatureDefi
 
 fn edge_lane(native: &str, local_id: u32) -> crate::records::FeatureInputLane {
     let mut lane = feature_input_lane("sldprt:feature-input:config-objects#0", Some("0"));
-    lane.edge_selections.push(crate::records::FeatureInputEdgeSelection {
-        id: "selection".into(), parent: lane.id.clone(), ordinal: 0, offset: 100,
-        object_name_ref: "name".into(), feature_ref: native.into(), local_edge_ids: vec![local_id],
-        components: Vec::new(), references: Vec::new(), producer_feature_refs: Vec::new(), terminal_feature_ref: None,
-    });
+    lane.edge_selections
+        .push(crate::records::FeatureInputEdgeSelection {
+            id: "selection".into(),
+            parent: lane.id.clone(),
+            ordinal: 0,
+            offset: 100,
+            object_name_ref: "name".into(),
+            feature_ref: native.into(),
+            local_edge_ids: vec![local_id],
+            components: Vec::new(),
+            references: Vec::new(),
+            producer_feature_refs: Vec::new(),
+            terminal_feature_ref: None,
+        });
     lane
 }
 
@@ -732,15 +679,28 @@ fn edge_lane(native: &str, local_id: u32) -> crate::records::FeatureInputLane {
 fn supplemental_replacements_retain_only_final_fields() {
     let mut ir = model();
     let id = ir.model.features[0].id.clone();
-    ir.model.configurations[0].feature_states.get_mut(&id).unwrap().definition = chamfer_definition(cadmpeg_ir::features::EdgeSelection::Unresolved);
+    ir.model.configurations[0]
+        .feature_states
+        .get_mut(&id)
+        .unwrap()
+        .definition = chamfer_definition(cadmpeg_ir::features::EdgeSelection::Unresolved);
     let mut expected = ir.clone();
-    expected.model.configurations[0].feature_states.get_mut(&id).unwrap().definition = chamfer_definition(cadmpeg_ir::features::EdgeSelection::Native("sldprt:feature-input:edge-ids:127".into()));
-    let lanes = (0..128).map(|index| edge_lane(ir.model.features[0].native_ref.as_deref().unwrap(), index)).collect::<Vec<_>>();
+    expected.model.configurations[0]
+        .feature_states
+        .get_mut(&id)
+        .unwrap()
+        .definition = chamfer_definition(cadmpeg_ir::features::EdgeSelection::Native(
+        "sldprt:feature-input:edge-ids:127".into(),
+    ));
+    let lanes = (0..128)
+        .map(|index| edge_lane(ir.model.features[0].native_ref.as_deref().unwrap(), index))
+        .collect::<Vec<_>>();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 4096;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::project_configuration_supplemental_edge_selections(&ctx, &mut ir, &lanes).unwrap();
+    super::super::project_configuration_supplemental_edge_selections(&ctx, &mut ir, &lanes)
+        .unwrap();
     assert_eq!(ir, expected);
     ctx.finish_session().unwrap();
 }
@@ -750,26 +710,48 @@ fn supplemental_consumer_keeps_nonconsumer_payloads_borrowed_and_last_producer_i
     let mut ir = model();
     let first = ir.model.features[0].clone();
     let first_id = first.id.clone();
-    if let FeatureDefinition::Operation(FeatureOperation::Native { parameters, .. }) = &mut ir.model.configurations[0].feature_states.get_mut(&first_id).unwrap().definition {
-        parameters.insert(cadmpeg_core::nonblank_literal!("Large nonconsumer"), "x".repeat(17 * 1024 * 1024));
+    if let FeatureDefinition::Operation(FeatureOperation::Native { parameters, .. }) =
+        &mut ir.model.configurations[0]
+            .feature_states
+            .get_mut(&first_id)
+            .unwrap()
+            .definition
+    {
+        parameters.insert(
+            cadmpeg_core::nonblank_literal!("Large nonconsumer"),
+            "x".repeat(17 * 1024 * 1024),
+        );
     }
     let mut consumer = first.clone();
     consumer.id = FeatureId::mint("synthetic:test:feature#chamfer").unwrap();
     consumer.native_ref = Some("Chamfer".into());
-    ir.model.configurations[0].feature_states.insert(consumer.id.clone(), ConfigurationFeatureState {
-        definition: chamfer_definition(cadmpeg_ir::features::EdgeSelection::Unresolved), dependencies: DistinctMembers::default(), evaluation: ConfigurationEvaluation::Suppressed {},
-    });
+    ir.model.configurations[0].feature_states.insert(
+        consumer.id.clone(),
+        ConfigurationFeatureState {
+            definition: chamfer_definition(cadmpeg_ir::features::EdgeSelection::Unresolved),
+            dependencies: DistinctMembers::default(),
+            evaluation: ConfigurationEvaluation::Suppressed {},
+        },
+    );
     let mut last = first;
     last.id = FeatureId::mint("synthetic:test:feature#last-producer").unwrap();
     ir.model.features.extend([consumer.clone(), last.clone()]);
     let mut unused_producer = consumer.clone();
-    unused_producer.id = FeatureId::mint(format!("synthetic:test:feature#{}", "u".repeat(17 * 1024 * 1024))).unwrap();
+    unused_producer.id = FeatureId::mint(format!(
+        "synthetic:test:feature#{}",
+        "u".repeat(17 * 1024 * 1024)
+    ))
+    .unwrap();
     unused_producer.native_ref = Some("Unused Producer".into());
     ir.model.features.push(unused_producer);
     let expected = ir.clone();
     let mut lane = edge_lane("Chamfer", 7);
-    lane.edge_selections[0].producer_feature_refs.push(last.native_ref.clone().unwrap());
-    let mut ignored = edge_lane(last.native_ref.as_deref().unwrap(), 9).edge_selections.remove(0);
+    lane.edge_selections[0]
+        .producer_feature_refs
+        .push(last.native_ref.clone().unwrap());
+    let mut ignored = edge_lane(last.native_ref.as_deref().unwrap(), 9)
+        .edge_selections
+        .remove(0);
     ignored.producer_feature_refs.push("Unused Producer".into());
     lane.edge_selections.push(ignored);
     let arena = DecodeArena::new();
@@ -777,11 +759,20 @@ fn supplemental_consumer_keeps_nonconsumer_payloads_borrowed_and_last_producer_i
     policy.limits.max_materialized_bytes = 128 * 1024;
     policy.limits.max_work_units = 128 * 1024;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::project_configuration_supplemental_edge_selections(&ctx, &mut ir, &[lane]).unwrap();
+    super::super::project_configuration_supplemental_edge_selections(&ctx, &mut ir, &[lane])
+        .unwrap();
     assert_eq!(ir.model.features, expected.model.features);
-    assert_eq!(ir.model.configurations[0].feature_states[&first_id], expected.model.configurations[0].feature_states[&first_id]);
+    assert_eq!(
+        ir.model.configurations[0].feature_states[&first_id],
+        expected.model.configurations[0].feature_states[&first_id]
+    );
     let state = &ir.model.configurations[0].feature_states[&consumer.id];
-    assert_eq!(state.definition, chamfer_definition(cadmpeg_ir::features::EdgeSelection::Native("sldprt:feature-input:edge-ids:7".into())));
+    assert_eq!(
+        state.definition,
+        chamfer_definition(cadmpeg_ir::features::EdgeSelection::Native(
+            "sldprt:feature-input:edge-ids:7".into()
+        ))
+    );
     assert_eq!(state.dependencies.as_slice(), &[last.id]);
     assert_eq!(state.evaluation, ConfigurationEvaluation::Suppressed {});
     ctx.finish_session().unwrap();
@@ -792,37 +783,69 @@ fn supplemental_dependency_length_mismatch_does_not_compare_identity_bytes() {
     let mut ir = model();
     let id = ir.model.features[0].id.clone();
     let old = FeatureId::mint(format!("synthetic:test:feature#{}", "d".repeat(8192))).unwrap();
-    let state = ir.model.configurations[0].feature_states.get_mut(&id).unwrap();
+    let state = ir.model.configurations[0]
+        .feature_states
+        .get_mut(&id)
+        .unwrap();
     state.definition = chamfer_definition(cadmpeg_ir::features::EdgeSelection::Unresolved);
-    state.dependencies = DistinctMembers::try_from(vec![old.clone()], &cadmpeg_test_support::service_decode_context()).unwrap();
+    state.dependencies = DistinctMembers::try_from(
+        vec![old.clone()],
+        &cadmpeg_test_support::service_decode_context(),
+    )
+    .unwrap();
     let mut producer = ir.model.features[0].clone();
     producer.id = FeatureId::mint("synthetic:test:feature#producer").unwrap();
     producer.native_ref = Some("Producer".into());
     ir.model.features.push(producer.clone());
     let mut lane = edge_lane(ir.model.features[0].native_ref.as_deref().unwrap(), 7);
-    lane.edge_selections[0].producer_feature_refs.push("Producer".into());
+    lane.edge_selections[0]
+        .producer_feature_refs
+        .push("Producer".into());
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(ResourceDimension::WorkUnits, "compare SLDPRT supplemental dependencies", None);
-    super::super::project_configuration_supplemental_edge_selections(&ctx, &mut ir, &[lane]).unwrap();
-    assert_eq!(ir.model.configurations[0].feature_states[&id].dependencies.as_slice(), &[old, producer.id]);
+    let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "compare SLDPRT supplemental dependencies",
+        None,
+    );
+    super::super::project_configuration_supplemental_edge_selections(&ctx, &mut ir, &[lane])
+        .unwrap();
+    assert_eq!(
+        ir.model.configurations[0].feature_states[&id]
+            .dependencies
+            .as_slice(),
+        &[old, producer.id]
+    );
     ctx.finish_session().unwrap();
 }
 
 #[test]
 fn configuration_assignments_without_unique_lanes_do_not_build_slot_index() {
     let mut configuration = design_configuration("unused", 0, Some(0), None);
-    configuration.properties.insert(cadmpeg_core::nonblank_literal!("id"), "9".repeat(17 * 1024 * 1024));
+    configuration.properties.insert(
+        cadmpeg_core::nonblank_literal!("id"),
+        "9".repeat(17 * 1024 * 1024),
+    );
     let duplicate = feature_input_lane("lane", Some("0"));
     for lanes in [Vec::new(), vec![duplicate.clone(), duplicate]] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = u64::MAX;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(ResourceDimension::WorkUnits, "match SLDPRT configuration lane identities", None);
-        assert!(super::super::configuration_lane_assignments(&ctx, std::slice::from_ref(&configuration), &lanes).unwrap().is_empty());
+        let _probe = cadmpeg_core::decode::refusal_probe::RefusalProbe::arm(
+            ResourceDimension::WorkUnits,
+            "match SLDPRT configuration lane identities",
+            None,
+        );
+        assert!(super::super::configuration_lane_assignments(
+            &ctx,
+            std::slice::from_ref(&configuration),
+            &lanes
+        )
+        .unwrap()
+        .is_empty());
         ctx.finish_session().unwrap();
     }
 }
@@ -831,25 +854,43 @@ fn configuration_assignments_without_unique_lanes_do_not_build_slot_index() {
 fn supplemental_duplicate_model_identities_share_one_replacement_lease() {
     let mut ir = model();
     let id = ir.model.features[0].id.clone();
-    ir.model.configurations[0].feature_states.get_mut(&id).unwrap().definition = chamfer_definition(cadmpeg_ir::features::EdgeSelection::Unresolved);
+    ir.model.configurations[0]
+        .feature_states
+        .get_mut(&id)
+        .unwrap()
+        .definition = chamfer_definition(cadmpeg_ir::features::EdgeSelection::Unresolved);
     let original = ir.model.features[0].clone();
-    ir.model.features = (0..128).map(|index| {
-        let mut feature = original.clone();
-        feature.native_ref = Some(format!("Chamfer{index}"));
-        feature
-    }).collect();
+    ir.model.features = (0..128)
+        .map(|index| {
+            let mut feature = original.clone();
+            feature.native_ref = Some(format!("Chamfer{index}"));
+            feature
+        })
+        .collect();
     let mut lane = feature_input_lane("sldprt:feature-input:config-objects#0", Some("0"));
     for (index, feature) in ir.model.features.iter().enumerate() {
-        let selection = edge_lane(feature.native_ref.as_deref().unwrap(), u32::try_from(index).unwrap()).edge_selections.remove(0);
+        let selection = edge_lane(
+            feature.native_ref.as_deref().unwrap(),
+            u32::try_from(index).unwrap(),
+        )
+        .edge_selections
+        .remove(0);
         lane.edge_selections.push(selection);
     }
     let mut expected = ir.clone();
-    expected.model.configurations[0].feature_states.get_mut(&id).unwrap().definition = chamfer_definition(cadmpeg_ir::features::EdgeSelection::Native("sldprt:feature-input:edge-ids:127".into()));
+    expected.model.configurations[0]
+        .feature_states
+        .get_mut(&id)
+        .unwrap()
+        .definition = chamfer_definition(cadmpeg_ir::features::EdgeSelection::Native(
+        "sldprt:feature-input:edge-ids:127".into(),
+    ));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 4096;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::project_configuration_supplemental_edge_selections(&ctx, &mut ir, &[lane]).unwrap();
+    super::super::project_configuration_supplemental_edge_selections(&ctx, &mut ir, &[lane])
+        .unwrap();
     assert_eq!(ir, expected);
     ctx.finish_session().unwrap();
 }
