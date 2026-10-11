@@ -1845,11 +1845,9 @@ fn terminal_repeated_radial_circle_pairs<'a>(
             let mut pairs = Vec::new();
             for pair in ctx
                 .admit_iter(roster, MARKER_CIRCLE_OPERATION)?
-                .windows(std::num::NonZeroUsize::new(2).expect("two-point window"))
+                .windows(std::num::NonZeroUsize::MIN.saturating_add(1))
             {
-                let [center, radial] = pair else {
-                    unreachable!("two-point window");
-                };
+                let (center, radial) = (&pair[0], &pair[1]);
                 let Some((center_index, radial_index)) =
                     center.object_index().zip(radial.object_index())
                 else {
