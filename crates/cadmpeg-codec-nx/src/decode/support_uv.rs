@@ -1849,8 +1849,9 @@ geometry_budget,
                         true
                     } else {
                         let mut reproduces = true;
-                        for sample_index in ctx.admit_iter(
-                            &(0..uv.len().min(points.len())),
+                        let mut samples = 0..uv.len().min(points.len());
+                        while let Some(sample_index) = ctx.next_charged(
+                            &mut samples,
                             "nx support UV chart reproduction",
                         )? {
                             let (sample_uv, point) = (&uv[sample_index], &points[sample_index]);

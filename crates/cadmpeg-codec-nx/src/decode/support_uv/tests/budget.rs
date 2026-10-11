@@ -475,3 +475,100 @@ fn retry_routes_admit_geometry_comparisons_after_the_lookup() {
         });
     }
 }
+
+fn run_uncertified_chart(
+    ctx: &DecodeContext<'_>,
+    source: &CadIr,
+    pending: &[PendingExt11SupportUv],
+) -> Result<(), CodecError> {
+    let mut ir = source.clone();
+    let support = ctx.work_budget(1000);
+    let empty_support = WorkBudget::new(0);
+    let geometry = GeometryWorkBudget::from_context(ctx, 100_000);
+    let mut witness_storage = ctx.reserve_scoped(0, "nx test witnesses")?;
+    let mut witnesses = BTreeMap::new();
+    let mut direct_storage = ctx.reserve_scoped(0, "nx test direct retry table")?;
+    let mut direct = FailedSupportUvAttempts::new();
+    let mut coupled_storage = ctx.reserve_scoped(0, "nx test coupled retry table")?;
+    let mut coupled = FailedCoupledSupportUvAttempts::new();
+    complete_support_uv_wave(
+        ctx,
+        &mut ir,
+        SupportUvAttempts {
+            pending,
+            failed_attempts: &mut direct,
+            failed_storage: &mut direct_storage,
+            failed_coupled_attempts: &mut coupled,
+            failed_coupled_storage: &mut coupled_storage,
+            endpoint_witnesses: &mut EndpointWitnessSink::new(
+                &mut witnesses,
+                &mut witness_storage,
+            ),
+        },
+        &support,
+        &geometry,
+        &empty_support,
+        &geometry,
+    )?;
+    assert!(ir.model.procedural_curves[0]
+        .intersection_context_mut()
+        .unwrap()
+        .sides()[0]
+        .pcurve
+        .is_none());
+    assert_eq!(ctx.resource_refusal(), None);
+    Ok(())
+}
+
+#[test]
+fn chart_reproduction_refuses_each_visit_without_admitting_the_suffix() {
+    let (mut ir, mut pending) = charted_fixture();
+    ir.model.procedural_curves[0]
+        .intersection_context_mut()
+        .unwrap()
+        .set_unmapped_pcurve(0, None);
+    let samples = |rejected_index| {
+        crate::intersection::chart_samples::ChartSamples::from_test_values(
+            (0..32)
+                .map(|i| Point3::new(
+                    cadmpeg_core::convert::f64_from_index(i).unwrap(),
+                    0.0,
+                    if i == rejected_index { 1.0 } else { 0.0 },
+                ))
+                .collect(),
+            (0..32)
+                .map(|i| cadmpeg_core::convert::f64_from_index(i).unwrap())
+                .collect(),
+        )
+        .unwrap()
+    };
+    pending[0].1 = samples(0);
+    let error = resource_refusal_at(
+        &[],
+        ResourceDimension::WorkUnits,
+        "nx support UV chart reproduction",
+        |ctx| run_uncertified_chart(ctx, &ir, &pending),
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("chart visit refusal")
+    };
+    assert_eq!(limit.additional, 1);
+    with_decode_context(|ctx| run_uncertified_chart(ctx, &ir, &pending).unwrap());
+    let work = |rejected_index| {
+        let mut pending = pending.clone();
+        pending[0].1 = samples(rejected_index);
+        with_decode_context(|ctx| {
+            run_uncertified_chart(ctx, &ir, &pending).unwrap();
+            let CodecError::ResourceLimit(usage) = ctx
+                .charge_work(u64::MAX, "nx test work census")
+                .unwrap_err()
+            else {
+                panic!("work census")
+            };
+            usage.used
+        })
+    };
+    // Plane evaluation is fixed work. Moving rejection from sample zero to
+    // sample 31 adds exactly 31 chart visits; parameter fitting is unchanged.
+    assert_eq!(work(31) - work(0), 31);
+}
