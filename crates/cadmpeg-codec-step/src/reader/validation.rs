@@ -3,7 +3,7 @@
 
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::Point3;
@@ -152,6 +152,8 @@ pub(super) fn decode<'ctx>(
     let mut typed = BTreeSet::new();
     let mut validation_points = BTreeSet::new();
     let mut validation_representations = BTreeSet::new();
+    let mut unit_scales = UnitScales::default();
+    let mut expanded_units = BTreeSet::new();
     let mut notes = Vec::new();
 
     for indexed_entity in exchange.entities(ctx, "PROPERTY_DEFINITION_REPRESENTATION")? {
@@ -205,7 +207,7 @@ pub(super) fn decode<'ctx>(
             let expected = expected_value(
                 item_id,
                 item,
-                exchange,
+                (exchange, &mut unit_scales, &mut scratch_storage),
                 scale,
                 (&mut losses, &slot_storage),
                 ctx,
@@ -214,9 +216,9 @@ pub(super) fn decode<'ctx>(
                 push_validation_loss(
                     (&mut losses, &slot_storage),
                     StepLossCode::DecodeWarning,
-                    format!(
+                    ctx.format_retained(format_args!(
                         "geometric validation property #{property_id} has unsupported item #{item_id}"
-                    ),
+                    ), "STEP validation unsupported item warning")?,
                     ctx,
                 )?;
                 continue;
@@ -233,7 +235,10 @@ pub(super) fn decode<'ctx>(
             }
             if let Some(unit) = measure_unit(ctx, item)? {
                 claim_storage
-                    .with_storage(|| collect_unit_records(unit, exchange, &mut typed, ctx))?;
+                    .with_storage(|| collect_unit_records(
+                        unit, exchange, &mut typed,
+                        (&mut expanded_units, &mut scratch_storage), ctx,
+                    ))?;
             }
             let (kind, expected_text, actual) = match expected {
                 Expected::Area(value) => {
@@ -346,10 +351,21 @@ pub(super) fn decode<'ctx>(
     })
 }
 
+// Derived-unit products and explicit length-unit roots have distinct semantics.
+#[derive(Default)]
+struct UnitScales {
+    derived: BTreeMap<u64, Option<f64>>,
+    length: BTreeMap<u64, Option<f64>>,
+}
+
 fn expected_value(
     id: u64,
     record: &RawRecord,
-    exchange: &Exchange,
+    (exchange, unit_scales, unit_storage): (
+        &Exchange,
+        &mut UnitScales,
+        &mut ScopedReservation<'_>,
+    ),
     scale: f64,
     (losses, slot_storage): (
         &mut Vec<LossNote>,
@@ -389,7 +405,7 @@ fn expected_value(
     let scale = measure_scale(
         id,
         record,
-        exchange,
+        (exchange, unit_scales, unit_storage),
         scale,
         kind,
         (losses, slot_storage),
@@ -405,7 +421,11 @@ fn expected_value(
 fn measure_scale(
     id: u64,
     record: &RawRecord,
-    exchange: &Exchange,
+    (exchange, unit_scales, unit_storage): (
+        &Exchange,
+        &mut UnitScales,
+        &mut ScopedReservation<'_>,
+    ),
     fallback: f64,
     kind: &str,
     (losses, slot_storage): (
@@ -414,10 +434,13 @@ fn measure_scale(
     ),
     ctx: &DecodeContext<'_>,
 ) -> Result<f64, CodecError> {
-    let resolved = measure_unit(ctx, record)?
-        .map(|unit| ctx.get_btree_map(exchange.records(), &unit, "STEP validation record get"))
-        .transpose()?
-        .flatten()
+    let resolved = if let Some(unit) = measure_unit(ctx, record)? {
+        if let Some(&resolved) = ctx.get_btree_map(
+            &unit_scales.derived, &unit, "STEP validation unit scale lookup",
+        )? {
+            resolved
+        } else {
+    let resolved = ctx.get_btree_map(exchange.records(), &unit, "STEP validation record get")?
         .map(|record| derived_unit_elements(ctx, record))
         .transpose()?
         .flatten()
@@ -448,20 +471,41 @@ fn measure_scale(
                     scale = None;
                     return Ok(false);
                 };
-                let (base, _unit_storage) = ctx
-                    .with_scoped_storage("STEP validation unit resolver scratch", || {
-                        super::geometry::unit_scale_mm(base, exchange, &mut BTreeSet::new(), ctx)
-                    })?;
-                let Some(base) = base else {
+                let resolved = if let Some(&resolved) = ctx.get_btree_map(
+                    &unit_scales.length, &base, "STEP validation base unit scale lookup",
+                )? {
+                    resolved
+                } else {
+                    let (resolved, resolver_storage) = ctx.with_scoped_storage(
+                        "STEP validation unit resolver scratch", || {
+                            super::geometry::unit_scale_mm(base, exchange, &mut BTreeSet::new(), ctx)
+                        },
+                    )?;
+                    drop(resolver_storage);
+                    let resolved = resolved.map(cadmpeg_ir::scalar::PositiveReal::get);
+                    unit_storage.with_storage(|| ctx.insert_btree_map(
+                        &mut unit_scales.length, base, resolved, "STEP validation base unit scales",
+                    ))?;
+                    resolved
+                };
+                let Some(base) = resolved else {
                     scale = None;
                     return Ok(false);
                 };
-                scale = scale.map(|scale| scale * base.get().powf(exponent));
+                scale = scale.map(|scale| scale * base.powf(exponent));
                 Ok(true)
             },
             "STEP validation elements traversal",
         )?;
         scale
+    } else {
+        None
+    };
+    unit_storage.with_storage(|| ctx.insert_btree_map(
+        &mut unit_scales.derived, unit, resolved, "STEP validation unit scale cache",
+    ))?;
+    resolved
+        }
     } else {
         None
     };
@@ -561,9 +605,16 @@ fn collect_unit_records(
     id: u64,
     exchange: &Exchange,
     typed: &mut BTreeSet<u64>,
+    (expanded, storage): (&mut BTreeSet<u64>, &mut ScopedReservation<'_>),
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     ctx.insert_btree_set(typed, id, "step_validation_claims")?;
+    if !storage.with_storage(|| ctx.insert_btree_set(
+        expanded, id, "STEP validation expanded units",
+    ))? {
+        return Ok(());
+    }
+
     let Some(record) = ctx.get_btree_map(exchange.records(), &id, "STEP validation record get")?
     else {
         return Ok(());

@@ -492,7 +492,7 @@ fn decode_exchange_mode(
         &mut session.admitted_ir_entities,
     )?;
     session.charge_pending_ir_entities("step_pmi_decode")?;
-    let mut pmi = pmi::decode(
+    let (mut pmi, pmi_text) = pmi::decode(
         exchange,
         &geometry.value,
         &topology.value,
@@ -534,6 +534,7 @@ fn decode_exchange_mode(
     session.absorb(&mut topology)?;
     topology.value.release_claim_storage();
     session.absorb(&mut geometry)?;
+    pmi_text.commit()?;
     session.absorb(&mut pmi)?;
     drop(pmi);
     session.absorb(&mut validation)?;

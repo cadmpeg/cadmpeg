@@ -691,3 +691,5 @@ fn validation_reference_list_refuses_only_first_visit() {
     assert!(matches!(ctx.finish_session(),
         Err(CodecError::ResourceLimit(sticky)) if sticky == refusal));
 }
+
+mod shared_units;
