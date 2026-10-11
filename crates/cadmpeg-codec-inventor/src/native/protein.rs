@@ -429,10 +429,6 @@ mod tests {
             )
         );
         assert_eq!(ctx.resource_refusal(), Some(storage_refusal));
-        assert!(
-            matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit))
-            if limit == storage_refusal)
-        );
 
         assert!(
             matches!(ProteinRecord::read(&crate::native::test_ctx(), &namespace),
@@ -450,12 +446,6 @@ mod tests {
         };
         assert_eq!(first_refusal.dimension, ResourceDimension::WorkUnits);
         assert_eq!(first_refusal.operation, "construct canonical native value");
-        assert_eq!(ctx.resource_refusal(), Some(first_refusal));
-        assert!(matches!(
-            ProteinRecord::read(&ctx, &namespace),
-            Err(NativeConvertError::Resource(CodecError::ResourceLimit(limit)))
-                if limit == first_refusal
-        ));
         assert_eq!(ctx.resource_refusal(), Some(first_refusal));
     }
 

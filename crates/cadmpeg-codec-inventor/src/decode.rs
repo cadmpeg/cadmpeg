@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, HashMap};
 use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
 use cadmpeg_asm::brep::AsmBrep;
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
@@ -2113,16 +2114,9 @@ fn project_ufrx_external_reference(
     issues: &mut Vec<StructuralIssueRecord>,
 ) -> Result<Option<ExternalReferenceRecord>, CodecError> {
     let wire_ordinal = record_ordinal(ctx, ordinal, "Inventor UFRx external ordinal")?;
-    if reference.document_id == [0; 16] {
-        let mut has_path = false;
-        for character in reference.path.chars() {
-            ctx.charge_work(1, "validate path")?;
-            if !character.is_whitespace() {
-                has_path = true;
-                break;
-            }
-        }
-        if !has_path {
+    let path = if reference.document_id == [0; 16] {
+        let path = NonBlankString::for_decode(ctx, &reference.path, "validate path")?;
+        if path.is_none() {
             return admit_ufrx_record(
                 ctx,
                 Err(CodecError::malformed(
@@ -2132,14 +2126,21 @@ fn project_ufrx_external_reference(
                 issues,
             );
         }
-    }
+        path
+    } else {
+        None
+    };
     let admitted = ExternalReferenceRecordWire {
         id: ctx.format_retained(
             format_args!("inventor:ufrx:external-reference#{ordinal}"),
             "retain Inventor UFRx external reference id",
         )?,
         ordinal: wire_ordinal,
-        path: ctx.copy_retained_text(&reference.path, "retain Inventor UFRx external path")?,
+        path: if path.is_some() {
+            None
+        } else {
+            Some(ctx.copy_retained_text(&reference.path, "retain Inventor UFRx external path")?)
+        },
         library_id: reference.library_id,
         library_name: ctx.copy_retained_text(
             &reference.library_name,
@@ -2154,11 +2155,15 @@ fn project_ufrx_external_reference(
             "copy Inventor UFRx reference state groups",
         )?,
         state: reference.state,
-        document_id: Some(retained_hex(
-            ctx,
-            &reference.document_id,
-            "retain Inventor UFRx document id",
-        )?),
+        document_id: if reference.document_id == [0; 16] {
+            None
+        } else {
+            Some(retained_hex(
+                ctx,
+                &reference.document_id,
+                "retain Inventor UFRx document id",
+            )?)
+        },
         database_id: retained_hex(
             ctx,
             &reference.database_id,
@@ -2169,7 +2174,14 @@ fn project_ufrx_external_reference(
         version: reference.version,
         flags: reference.flags,
     }
-    .into_record(ctx);
+    .into_record_with_path(|unchecked_path| match unchecked_path {
+        Some(unchecked_path) => Ok(NonBlankString::for_decode(
+            ctx,
+            unchecked_path,
+            "validate path",
+        )?),
+        None => Ok(path),
+    });
     let admitted = match admitted {
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         result => result,

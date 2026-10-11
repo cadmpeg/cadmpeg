@@ -932,6 +932,27 @@ fn feature_output_collection_uses_existing_identity_index() {
 }
 
 #[test]
+fn native_arena_names_charge_only_the_collector_step() {
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let namespace = ir.native.namespace_mut("inventor");
+    for name in ["a", "z"] {
+        namespace.arenas_mut().insert(name.to_owned(), Vec::new());
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        super::validate_native(&ctx, &ir),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "collect Inventor native arena names"
+                && limit.used == 0
+                && limit.additional == 1
+    ));
+}
+
+#[test]
 fn missing_arena_report_uses_only_one_finding_slot() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.native.namespace_mut("inventor");
