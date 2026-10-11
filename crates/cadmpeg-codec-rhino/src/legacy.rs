@@ -981,7 +981,7 @@ fn legacy_curve(
         Some(output_storage),
         Some(&mut warnings),
     )
-    .or_else(|error| Err(geometry_error(ctx, error)?))?;
+    .or_else(|error| output_storage.with_storage(|| Err(geometry_error(ctx, error)?)))?;
     Ok(joined)
 }
 
@@ -3119,6 +3119,7 @@ fn legacy_loop(
 fn legacy_face(
     ctx: &DecodeContext<'_>,
     workspace: &mut ScopedReservation<'_>,
+    surface_storage: &mut ScopedReservation<'_>,
     data: &[u8],
     range: std::ops::Range<usize>,
     scale: MillimeterScale,
@@ -3172,7 +3173,8 @@ fn legacy_face(
         ));
     }
     let surface_chunk = nested_chunk(ctx, data, &mut reader, TCODE_LEGACY_SRF)?;
-    let surface = legacy_surface(ctx, data, surface_chunk.body(), scale)?;
+    let surface = surface_storage
+        .with_storage(|| legacy_surface(ctx, data, surface_chunk.body(), scale))?;
     if boundary_count > reader.remaining() / 8 {
         return Err(CodecError::Malformed(
             "V1 face boundary count exceeds the remaining bytes".to_string(),
@@ -3204,12 +3206,13 @@ fn legacy_face(
 fn legacy_brep(
     ctx: &DecodeContext<'_>,
     workspace: &mut ScopedReservation<'_>,
+    surface_storage: &mut ScopedReservation<'_>,
     data: &[u8],
     chunk: &crate::chunks::Chunk,
     scale: MillimeterScale,
 ) -> Result<LegacyBrep, CodecError> {
     if chunk.typecode == TCODE_LEGACY_FAC {
-        let face = legacy_face(ctx, workspace, data, chunk.body().clone(), scale)?;
+        let face = legacy_face(ctx, workspace, surface_storage, data, chunk.body().clone(), scale)?;
         let mut faces = {
             let mut values = Vec::new();
             ctx.reserve_scoped_vec::<LegacyFace>(workspace, &mut values, 1, "Rhino V1 Brep faces")?;
@@ -3270,7 +3273,7 @@ fn legacy_brep(
     for _ in 0..face_count {
         ctx.charge_work(1, "Rhino V1 counted record traversal")?;
         let face = nested_chunk(ctx, data, &mut reader, TCODE_LEGACY_FAC)?;
-        faces.push(legacy_face(ctx, workspace, data, face.body(), scale)?);
+        faces.push(legacy_face(ctx, workspace, surface_storage, data, face.body(), scale)?);
     }
     Ok(LegacyBrep { shell_glue, faces })
 }
@@ -4074,7 +4077,8 @@ pub(crate) fn decode_v1_with_header(
             }
         } else if matches!(chunk.typecode, TCODE_LEGACY_FAC | TCODE_LEGACY_SHL) && !chunk.short() {
             let mut workspace = ctx.reserve_scoped(0, "Rhino V1 Brep parsing workspace")?;
-            match legacy_brep(ctx, &mut workspace, data, &chunk, scale).and_then(|brep| {
+            let mut surface_storage = ctx.reserve_scoped(0, "Rhino V1 Brep surface candidates")?;
+            match legacy_brep(ctx, &mut workspace, &mut surface_storage, data, &chunk, scale).and_then(|brep| {
                 let (suffix_buffer, _suffix_storage) =
                     ctx.with_scoped_storage("Rhino V1 Brep identity workspace", || {
                         ctx.format_retained(
@@ -4086,6 +4090,10 @@ pub(crate) fn decode_v1_with_header(
                 append_legacy_brep_in_session(ctx, &mut session, brep, &suffix)
             }) {
                 Ok(()) => {
+                    // Every parsed surface moved into the committed model.
+                    // Parsing vectors and source curves stay in `workspace`.
+                    surface_storage.commit()?;
+                    drop(workspace);
                     push_v1_record(
                         ctx,
                         &mut source_storage,
@@ -4104,6 +4112,9 @@ pub(crate) fn decode_v1_with_header(
                         &mut diagnostics,
                         format_args!("V1 Brep at offset {offset}: {error}"),
                     )?;
+                    drop(error);
+                    drop(workspace);
+                    drop(surface_storage);
                     omitted_storage
                         .with_storage(|| count_v1_omission(ctx, &mut omitted, chunk.typecode))?;
                     push_v1_record(
@@ -5377,14 +5388,19 @@ mod tests {
                 let mut parse_workspace = parse_ctx
                     .reserve_scoped(0, "V1 test parsing workspace")
                     .expect("service parsing workspace");
+                let mut surface_storage = parse_ctx
+                    .reserve_scoped(0, "test surface candidates")
+                    .expect("service surface workspace");
                 let brep = super::legacy_brep(
                     &parse_ctx,
                     &mut parse_workspace,
+                    &mut surface_storage,
                     &data,
                     &face,
                     super::MillimeterScale::IDENTITY,
                 )
                 .expect("valid V1 Brep payload");
+                let brep = surface_storage.commit_value(brep).expect("fixture surface storage");
                 let mut policy = cadmpeg_core::decode::DecodePolicy::service();
                 policy.limits.max_materialized_bytes = cap;
                 let limited_arena = cadmpeg_core::decode::DecodeArena::new();
@@ -5450,14 +5466,19 @@ mod tests {
                 let mut parse_workspace = parse_ctx
                     .reserve_scoped(0, "V1 test parsing workspace")
                     .expect("service parsing workspace");
+                let mut surface_storage = parse_ctx
+                    .reserve_scoped(0, "test surface candidates")
+                    .expect("service surface workspace");
                 let brep = super::legacy_brep(
                     &parse_ctx,
                     &mut parse_workspace,
+                    &mut surface_storage,
                     &data,
                     &face,
                     super::MillimeterScale::IDENTITY,
                 )
                 .expect("valid V1 Brep payload");
+                let brep = surface_storage.commit_value(brep).expect("fixture surface storage");
                 let mut policy = cadmpeg_core::decode::DecodePolicy::service();
                 policy.limits.max_materialized_bytes = cap;
                 let limited_arena = cadmpeg_core::decode::DecodeArena::new();

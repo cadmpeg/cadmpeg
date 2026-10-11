@@ -269,8 +269,6 @@ pub(crate) struct Scan<'a> {
     _history_record_storage: Vec<ScopedReservation<'a>>,
     /// The history-record vector backing stays scratch through source reporting.
     _history_storage: ScopedReservation<'a>,
-    /// The history record-guard vector stays scratch through source reporting.
-    _history_record_guards_storage: ScopedReservation<'a>,
     /// Parsed instance-definition fields stay scratch through native projection.
     _definition_storage: Vec<(crate::wire::Uuid, ScopedReservation<'a>)>,
     /// The definition guard vector stays scratch through native projection.
@@ -293,6 +291,10 @@ pub(crate) struct Scan<'a> {
     _object_record_storage: Vec<ScopedReservation<'a>>,
     /// Source object records are scratch until projection completes.
     _object_storage: ScopedReservation<'a>,
+    /// Direct scan diagnostics stay scratch through warning consumption.
+    _warnings_storage: ScopedReservation<'a>,
+    /// History guard backing and global warning text outlive both value fields.
+    _history_record_guards_storage: ScopedReservation<'a>,
     /// Table, record, opaque-descriptor, and count-map backing storage.
     _descriptor_storage: ScopedReservation<'a>,
 }
@@ -506,6 +508,7 @@ fn checksum_warning(
         verify_checksum(ctx, data, &chunk)
     }
     .or_else(|error| Err(framing_error(ctx, error)?))?;
+    drop(child_storage);
     match status {
         ChecksumStatus::Mismatch { expected, actual } => Ok(Some(ctx.format_retained(format_args!(
             "CRC mismatch at offset {offset} for typecode {typecode:#x}: expected {expected:#x}, got {actual:#x}"
@@ -1120,6 +1123,7 @@ fn scan_with_record_limit<'a>(
             "first post-header chunk is not a long comment".to_string(),
         ));
     }
+    let mut warnings_storage = ctx.reserve_scoped(0, "Rhino scan diagnostics")?;
     let mut warnings = Diagnostics::new();
     if let (Some(note), _note_storage) =
         ctx.with_scoped_storage("Rhino checksum warning workspace", || {
@@ -1133,11 +1137,11 @@ fn scan_with_record_limit<'a>(
             )
         })?
     {
-        warnings.push_coded_admitted(
+        warnings_storage.with_storage(|| warnings.push_coded_admitted(
             ctx,
             crate::loss::RhinoLossCode::IntegrityFailure,
             format_args!("{note}"),
-        )?;
+        ))?;
     }
     let mut descriptor_storage = ctx.reserve_scoped(0, "Rhino scan descriptors")?;
     let mut tables = Vec::new();
@@ -1210,6 +1214,7 @@ fn scan_with_record_limit<'a>(
                 _definition_ambiguous_storage: definition_ambiguous_storage,
                 eof_offset: offset,
                 warnings,
+                _warnings_storage: warnings_storage,
                 metadata,
                 _metadata_storage: metadata_storage,
                 _object_record_storage: object_record_storage,
@@ -1324,13 +1329,13 @@ fn scan_with_record_limit<'a>(
                         record.typecode, chunk.typecode
                     )));
                 }
-                warnings.push_admitted(
+                warnings_storage.with_storage(|| warnings.push_admitted(
                     ctx,
                     format_args!(
                     "unknown bounded record {:#x} skipped in table {:#x} at offset {child_offset}",
                     record.typecode, chunk.typecode
                 ),
-                )?;
+                ))?;
             }
             if let (Some(note), _note_storage) =
                 ctx.with_scoped_storage("Rhino checksum warning workspace", || {
@@ -1344,16 +1349,16 @@ fn scan_with_record_limit<'a>(
                     )
                 })?
             {
-                warnings.push_coded_admitted(
+                warnings_storage.with_storage(|| warnings.push_coded_admitted(
                     ctx,
                     crate::loss::RhinoLossCode::IntegrityFailure,
                     format_args!("{note}"),
-                )?;
+                ))?;
             }
             if table_base(chunk.typecode) == TCODE_OBJECTS && record.typecode == TCODE_OBJECT_RECORD
             {
                 let mut record_storage = ctx.reserve_scoped(0, "Rhino scanned object record")?;
-                let (descriptor, record_storage) = match parse_object_record(
+                let (descriptor, record_storage) = match warnings_storage.with_storage(|| parse_object_record(
                     ctx,
                     &mut record_storage,
                     data,
@@ -1361,35 +1366,35 @@ fn scan_with_record_limit<'a>(
                     archive,
                     writer_version,
                     &mut warnings,
-                ) {
-                    Ok(descriptor) => (descriptor, Some(record_storage)),
+                )) {
+                    Ok(descriptor) => (descriptor, record_storage),
                     Err(FramingError::Resource(limit)) => {
                         return Err(CodecError::ResourceLimit(limit))
                     }
                     Err(error) => {
-                        warnings.push_admitted(
+                        warnings_storage.with_storage(|| warnings.push_admitted(
                             ctx,
                             format_args!(
                                 "bounded object record at {child_offset} is malformed: {error}"
                             ),
-                        )?;
+                        ))?;
                         // The parser can return an admitted diagnostic string
                         // inside `error`; keep its source reservation live
-                        // through both retained warning copies.
-                        let descriptor = degraded_object_record(ctx, &record, &error)?;
+                        // through both scoped warning copies.
+                        let mut degraded_storage = ctx.reserve_scoped(0, "Rhino degraded object record")?;
+                        let descriptor = degraded_storage
+                            .with_storage(|| degraded_object_record(ctx, &record, &error))?;
                         drop(error);
                         drop(record_storage);
-                        (descriptor, None)
+                        (descriptor, degraded_storage)
                     }
                 };
-                if let Some(record_storage) = record_storage {
-                    ctx.push_scoped_vec(
-                        &mut object_storage,
-                        &mut object_record_storage,
-                        record_storage,
-                        "Rhino scanned object record guards",
-                    )?;
-                }
+                ctx.push_scoped_vec(
+                    &mut object_storage,
+                    &mut object_record_storage,
+                    record_storage,
+                    "Rhino scanned object record guards",
+                )?;
                 let typecode = descriptor.framed().map_or(0, |object| object.object_type);
                 descriptor_storage
                     .with_storage(|| count_object_typecode(ctx, &mut object_typecodes, typecode))?;
@@ -1422,10 +1427,10 @@ fn scan_with_record_limit<'a>(
             child_offset = child.next_offset();
         }
         if !terminated {
-            warnings.push_admitted(
+            warnings_storage.with_storage(|| warnings.push_admitted(
                 ctx,
                 format_args!("table {:#x} has no end-of-table marker", chunk.typecode),
-            )?;
+            ))?;
         }
         if let (Some(note), _note_storage) =
             ctx.with_scoped_storage("Rhino checksum warning workspace", || {
@@ -1439,11 +1444,11 @@ fn scan_with_record_limit<'a>(
                 )
             })?
         {
-            warnings.push_coded_admitted(
+            warnings_storage.with_storage(|| warnings.push_coded_admitted(
                 ctx,
                 crate::loss::RhinoLossCode::IntegrityFailure,
                 format_args!("{note}"),
-            )?;
+            ))?;
         }
         if table_base(chunk.typecode) == TCODE_INSTANCE_DEFINITION {
             let crate::instances::DefinitionParse {

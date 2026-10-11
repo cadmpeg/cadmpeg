@@ -410,3 +410,60 @@ fn checksum_child_error_storage_lives_through_warning_copy() {
         .expect("child workspace is released after warning creation"));
     ctx.finish_session().unwrap();
 }
+
+fn scan_warning_fixture(property: Vec<u8>, object: Option<Vec<u8>>) -> Vec<u8> {
+    let archive = ArchiveVersion::V5;
+    crate::test_support::test_dump::minimal_document("50", &[
+        crate::test_support::test_dump::table(archive, 0x1000_0014, &[property]),
+        crate::test_support::test_dump::table(archive, 0x1000_0015, &[]),
+        crate::test_support::test_dump::table(archive, 0x1000_0013, &object.into_iter().collect::<Vec<_>>()),
+    ])
+}
+
+fn assert_scan_warning_storage(bytes: &[u8], expected: &str, degraded: bool) {
+    const SCRATCH_BYTES: u64 = 64 * 1024;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = SCRATCH_BYTES;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let scan = super::super::scan(&ctx, bytes)
+        .expect("scan diagnostics and descriptors consume scratch, not retained allowance");
+    assert!(scan.warnings.iter().any(|warning| warning.message.starts_with(expected)));
+    if degraded {
+        assert!(matches!(&scan.objects[0], crate::objects::ObjectRecord::Degraded { warning, .. }
+            if warning.starts_with("bounded object record at ")));
+    }
+    let summary = super::super::summarize(&cadmpeg_test_support::service_decode_context(), &scan).unwrap();
+    assert!(summary.notes.iter().any(|note| note.starts_with(expected)));
+    drop(scan);
+    drop(ctx.reserve_scoped(SCRATCH_BYTES, "released scan diagnostic storage")
+        .expect("all scan-owned backing and text is released with the scan"));
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn unknown_record_scan_diagnostics_are_scoped() {
+    let bytes = scan_warning_fixture(
+        crate::test_support::test_dump::long_chunk(ArchiveVersion::V5, 0x1234, b"opaque"),
+        None,
+    );
+    assert_scan_warning_storage(&bytes, "unknown bounded record ", false);
+}
+
+#[test]
+fn checksum_scan_diagnostics_are_scoped() {
+    let mut record = crc_chunk(ArchiveVersion::V5, 0x2000_80ff, b"opaque");
+    *record.last_mut().unwrap() ^= 1;
+    let bytes = scan_warning_fixture(record, None);
+    assert_scan_warning_storage(&bytes, "CRC mismatch ", false);
+}
+
+#[test]
+fn degraded_object_scan_diagnostics_are_scoped() {
+    let bytes = scan_warning_fixture(
+        crate::test_support::test_dump::long_chunk(ArchiveVersion::V5, 0x1234, b"opaque"),
+        Some(crc_chunk(ArchiveVersion::V5, 0x2000_8070, &[])),
+    );
+    assert_scan_warning_storage(&bytes, "bounded object record at ", true);
+}
