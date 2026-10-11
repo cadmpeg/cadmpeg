@@ -363,3 +363,40 @@ fn representation_claim_fanout_does_not_expand_cached_body_lists() {
     // Body roots and mapping links double; ordered keyed queries grow with n log n.
     assert!(large < 3 * small, "claim work grew from {small} to {large}");
 }
+
+#[test]
+fn representation_body_output_releases_consumed_set_nodes() {
+    let input = source("#2=DUMMY();#20=SHAPE_REPRESENTATION('',(#2),$);");
+    let (exchange, _) =
+        crate::test_support::with_service_context(input.as_bytes(), crate::parse::parse_inner)
+            .expect("representation parses");
+    let topology = topology_with_body_at(2);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut cache = BTreeMap::new();
+    let output = representation_bodies(
+        20,
+        &exchange,
+        &topology,
+        &mut cache,
+        &mut BTreeSet::new(),
+        &ctx,
+    )
+    .expect("representation body output");
+    assert_eq!(&output[..], &[body_id()]);
+    drop(cache);
+    // Only the copied identity and the result vector still own storage.
+    let expected = output.values.capacity() * std::mem::size_of::<BodyId>()
+        + output.iter().map(|body| body.as_str().len()).sum::<usize>();
+    let CodecError::ResourceLimit(limit) = ctx
+        .reserve_scoped(u64::MAX, "representation live storage probe")
+        .expect_err("probe live materialized bytes")
+    else {
+        panic!("materialized refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
+    assert_eq!(
+        limit.used,
+        u64::try_from(expected).expect("output bytes fit")
+    );
+    drop(output);
+}
