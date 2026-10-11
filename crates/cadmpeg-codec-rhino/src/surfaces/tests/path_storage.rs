@@ -123,3 +123,38 @@ fn extrusion_path_input_releases_after_conversion_and_output_stays_retained() {
     );
     assert_eq!(value.v_knots().as_slice(), &[2.0, 2.0, 5.0, 5.0]);
 }
+
+#[test]
+fn rejected_sum_surface_releases_its_first_child() {
+    let mut bytes = vec![0x10];
+    for value in [1.0, 2.0, 3.0, -10.0, -10.0, -10.0, 10.0, 10.0, 10.0] {
+        super::push_f64(&mut bytes, value);
+    }
+    bytes.extend(super::line_wrapper(1.0));
+    bytes.extend(super::nil_object_wrapper());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = 64 * 1024;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let error = super::super::decode(
+        &ctx,
+        &bytes,
+        super::super::SUM_SURFACE,
+        0..bytes.len(),
+        crate::settings::MillimeterScale::IDENTITY,
+        crate::chunks::ArchiveVersion::V5,
+        0,
+    )
+    .expect_err("second child is not a curve");
+    assert!(matches!(error, crate::curves::GeometryError::Malformed(_)));
+    let reuse = ctx
+        .reserve_scoped(
+            policy.limits.max_materialized_bytes,
+            "test failed sum scratch reuse",
+        )
+        .expect("first child and wrapper diagnostics were released");
+    drop(reuse);
+    ctx.finish_session()
+        .expect("failed surface retains no storage");
+}

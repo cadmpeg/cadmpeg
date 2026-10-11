@@ -2266,7 +2266,7 @@ impl<'a> DecodeContext<'a> {
         let ctx = self.expand.ctx();
 
         let identity = &object.identity;
-        let polyedge = match crate::polyedge::decode(
+        let (polyedge_buffer, _polyedge_storage) = match crate::polyedge::decode(
             self.expand,
             object.class_data_range.clone(),
             self.archive(),
@@ -2281,6 +2281,7 @@ impl<'a> DecodeContext<'a> {
                 return Ok(());
             }
         };
+        let polyedge = polyedge_buffer;
         let (construction, mut construction_storage) = ctx
             .with_scoped_storage("Rhino polyedge construction scratch", || {
                 crate::polyedge::semantic_json(ctx, &polyedge)

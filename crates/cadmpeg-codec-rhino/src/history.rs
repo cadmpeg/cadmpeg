@@ -1981,6 +1981,7 @@ fn extended_geometry_json(
         };
         let polyedge = match polyedge_storage.with_storage(|| {
             crate::polyedge::decode(expand, value.class_data_range.clone(), archive)
+                .and_then(|(polyedge, storage)| Ok(storage.commit_value(polyedge)?))
         }) {
             Ok(polyedge) => polyedge,
             Err(FramingError::Resource(limit)) => {

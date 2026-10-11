@@ -223,35 +223,38 @@ pub(crate) fn decode(
     archive: ArchiveVersion,
     depth: usize,
 ) -> Result<DecodedSurface, GeometryError> {
-    let mut reader = BoundedReader::new(data, range.start, range.end)?;
-    let result = if matches!(
-        class,
-        NURBS_SURFACE | NURBS_SURFACE_TL | NURBS_SURFACE_LEGACY
-    ) {
-        DecodedSurface::Typed {
-            geometry: TypedSurface::Nurbs(read_nurbs_surface(ctx, &mut reader, scale)?),
-            derived: true,
-        }
-    } else if class == PLANE_SURFACE {
-        let geometry = read_plane_surface_with_parameterization(ctx, &mut reader, scale)?;
-        DecodedSurface::Typed {
-            geometry,
-            derived: scale != MillimeterScale::IDENTITY,
-        }
-    } else if class == CLIPPING_PLANE_SURFACE {
-        read_clipping_plane_surface(ctx, data, &mut reader, scale, archive)?
-    } else if matches!(class, REV_SURFACE | REV_SURFACE_LEGACY) {
-        read_revolution(ctx, data, &mut reader, scale, archive, depth)?
-    } else if class == SUM_SURFACE {
-        read_sum(ctx, data, &mut reader, scale, archive, depth)?
-    } else {
-        return Err(GeometryError::unsupported(
-            range.start,
-            "unsupported Rhino surface class",
-        ));
-    };
-    reader.skip_remaining()?;
-    Ok(result)
+    let (candidate, storage) = ctx.with_scoped_storage("Rhino decoded surface", || {
+        let mut reader = BoundedReader::new(data, range.start, range.end)?;
+        let result = if matches!(
+            class,
+            NURBS_SURFACE | NURBS_SURFACE_TL | NURBS_SURFACE_LEGACY
+        ) {
+            DecodedSurface::Typed {
+                geometry: TypedSurface::Nurbs(read_nurbs_surface(ctx, &mut reader, scale)?),
+                derived: true,
+            }
+        } else if class == PLANE_SURFACE {
+            let geometry = read_plane_surface_with_parameterization(ctx, &mut reader, scale)?;
+            DecodedSurface::Typed {
+                geometry,
+                derived: scale != MillimeterScale::IDENTITY,
+            }
+        } else if class == CLIPPING_PLANE_SURFACE {
+            read_clipping_plane_surface(ctx, data, &mut reader, scale, archive)?
+        } else if matches!(class, REV_SURFACE | REV_SURFACE_LEGACY) {
+            read_revolution(ctx, data, &mut reader, scale, archive, depth)?
+        } else if class == SUM_SURFACE {
+            read_sum(ctx, data, &mut reader, scale, archive, depth)?
+        } else {
+            return Err(GeometryError::unsupported(
+                range.start,
+                "unsupported Rhino surface class",
+            ));
+        };
+        reader.skip_remaining()?;
+        Ok(result)
+    })?;
+    Ok(storage.commit_value(candidate)?)
 }
 
 fn read_clipping_plane_surface(
@@ -877,7 +880,6 @@ fn matching_pole_weights(
         (NurbsPoles3::Polynomial { .. }, NurbsPoles3::Polynomial { .. }) => true,
         (NurbsPoles3::Rational { points: start }, NurbsPoles3::Rational { points: end }) => {
             let operation = "Rhino extrusion start pole weights";
-            ctx.charge_work(0, operation)?;
             let mut pairs = start.iter().zip(end.iter());
             for _ in 0..pairs.len() {
                 let Some((first, second)) = ctx.next_charged(&mut pairs, operation)? else {

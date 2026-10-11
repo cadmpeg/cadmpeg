@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::disallowed_methods)]
 
-use super::{decode, ANONYMOUS};
+use super::ANONYMOUS;
 use crate::chunks::ArchiveVersion;
 use crate::test_support::test_archive::class_wrapper;
 use crate::test_support::test_dump::crc_chunk;
@@ -10,6 +10,15 @@ use crate::test_support::test_dump::{
     scan_with_objects, set_identity, POINT_CLASS, POLYEDGE_SEGMENT_TARGET,
 };
 use crate::wire::Uuid;
+
+fn decode(
+    expand: crate::mesh::MeshExpand<'_>,
+    range: std::ops::Range<usize>,
+    archive: ArchiveVersion,
+) -> Result<super::PersistentPolyEdge, crate::chunks::FramingError> {
+    let (polyedge, storage) = super::decode(expand, range, archive)?;
+    Ok(storage.commit_value(polyedge)?)
+}
 
 const OPENNURBS_UNSET_VALUE: f64 = -1.234_321_012_343_21e308;
 
@@ -267,4 +276,98 @@ fn polyedge_segment_uuid_owned_by_two_records_is_charged_as_ambiguous() {
             .expect("resource allocation did not fail")
             .is_ok()
     );
+}
+
+#[test]
+fn polyedge_semantic_conversion_releases_source_vectors() {
+    let payload = polyedge_payload();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 64 * 1024;
+    policy.limits.max_materialized_bytes = 64 * 1024;
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let (polyedge_buffer, storage) = super::decode(
+        crate::mesh::MeshExpand::new(&ctx, root),
+        0..payload.len(),
+        ArchiveVersion::V8,
+    )
+    .expect("scoped parser output");
+    let polyedge = polyedge_buffer;
+    let construction = super::semantic_json(&ctx, &polyedge).unwrap().unwrap();
+    assert_eq!(polyedge.parameters.len(), 2);
+    assert_eq!(polyedge.segments.len(), 1);
+    drop(polyedge);
+    drop(storage);
+    ctx.charge_retained(
+        policy.limits.max_retained_bytes
+            - cadmpeg_core::decode::u64_from_index(construction.capacity()),
+        "test converted polyedge retained reuse",
+    )
+    .expect("only construction text survives");
+    let scratch = ctx
+        .reserve_scoped(
+            policy.limits.max_materialized_bytes,
+            "test polyedge scratch reuse",
+        )
+        .expect("source vectors and wrapper descriptors were released");
+    drop(scratch);
+    ctx.finish_session()
+        .expect("successful semantic conversion");
+}
+
+fn reject_polyedge(payload: &[u8], message: &str) {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 64 * 1024;
+    policy.limits.max_materialized_bytes = 64 * 1024;
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(payload, &arena, &policy).unwrap();
+    for _ in 0..8 {
+        let error = super::decode(
+            crate::mesh::MeshExpand::new(&ctx, root),
+            0..payload.len(),
+            ArchiveVersion::V8,
+        )
+        .expect_err("malformed polyedge");
+        assert!(
+            matches!(error, crate::chunks::FramingError::Structural { message: actual, .. }
+            if actual == message)
+        );
+    }
+    ctx.charge_retained(
+        policy.limits.max_retained_bytes,
+        "test rejected polyedge retained reuse",
+    )
+    .expect("rejected vectors retain no storage");
+    let scratch = ctx
+        .reserve_scoped(
+            policy.limits.max_materialized_bytes,
+            "test rejected polyedge scratch reuse",
+        )
+        .expect("failed parser releases its candidate before recovery");
+    drop(scratch);
+    ctx.finish_session().expect("recoverable polyedge failure");
+}
+
+#[test]
+fn polyedge_invalid_first_parameter_releases_source_vectors() {
+    let mut payload = polyedge_payload();
+    payload[65..73].copy_from_slice(&f64::NAN.to_le_bytes());
+    reject_polyedge(&payload, "invalid polyedge parameter");
+}
+
+#[test]
+fn polyedge_wrong_segment_class_releases_source_vectors() {
+    let mut payload = vec![0x10];
+    payload.extend(1_i32.to_le_bytes());
+    payload.extend(0_i32.to_le_bytes());
+    payload.extend(0_i32.to_le_bytes());
+    payload.extend([0_u8; 48]);
+    payload.extend(2_i32.to_le_bytes());
+    payload.extend(0.0_f64.to_le_bytes());
+    payload.extend(10.0_f64.to_le_bytes());
+    // A long point-class body keeps the declared segment count within its byte bound.
+    payload.extend(class_wrapper(POINT_CLASS, &[0; 128]));
+    reject_polyedge(&payload, "polyedge child is not a persistent segment");
 }
