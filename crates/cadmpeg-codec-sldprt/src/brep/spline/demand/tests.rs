@@ -463,3 +463,20 @@ fn distinct_negative_descriptor_demands_pay_each_complete_source_scan() {
     );
     drop(probe);
 }
+
+#[test]
+fn ineligible_knot_demand_caches_source_rejection() {
+    let bytes = [0xff; 64];
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &unlimited_work()).unwrap();
+    let mut sources = Sources::new(&ctx, &bytes, true).unwrap();
+    sources.prepare_knots(501, 500, 2).unwrap();
+    assert!(sources.knots(501, 500, 2).unwrap().is_none());
+    let operation = "collect Parasolid surface array references";
+    let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+    sources.prepare_knots(501, 500, 2).unwrap();
+    assert!(sources.knots(501, 500, 2).unwrap().is_none());
+    drop(sources);
+    require_armed(ctx, operation);
+    drop(probe);
+}
