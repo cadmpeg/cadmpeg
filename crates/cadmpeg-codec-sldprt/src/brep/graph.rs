@@ -1201,11 +1201,13 @@ fn unique_body_modifiers(
             }
             Ok::<_, cadmpeg_core::CodecError>(by_attr)
         })?;
-    ctx.collect_vec(
-        ctx.admit_iter(by_attr, "collect Parasolid body modifiers")?
-            .filter_map(|(_, modifier)| modifier),
-        "collect Parasolid body modifiers",
-    )
+    let mut modifiers = Vec::new();
+    for (_, modifier) in ctx.admit_iter(by_attr, "collect Parasolid body modifiers")? {
+        if let Some(modifier) = modifier {
+            ctx.push_vec(&mut modifiers, modifier, "collect Parasolid body modifiers")?;
+        }
+    }
+    Ok(modifiers)
 }
 
 fn unique_face_colors(
@@ -1213,8 +1215,9 @@ fn unique_face_colors(
     colors: Vec<entity::FaceColor>,
     versions: Vec<entity::FaceColorVersion>,
 ) -> Result<(Vec<entity::FaceColor>, usize), cadmpeg_core::CodecError> {
-    let mut scratch = ctx.reserve_scoped(0, "select Parasolid face colors")?;
-    let current_versions = scratch.with_storage(|| {
+    let mut current_versions_storage =
+        ctx.reserve_scoped(0, "select current Parasolid face colors")?;
+    let current_versions = current_versions_storage.with_storage(|| {
         let mut current_versions = BTreeMap::<u16, (u32, usize)>::new();
         for version in ctx.admit_iter(versions, "select current Parasolid face colors")? {
             let stamp = (version.seq, version.stream_order);
@@ -1235,7 +1238,8 @@ fn unique_face_colors(
         Ok::<_, cadmpeg_core::CodecError>(current_versions)
     })?;
 
-    let by_face = scratch.with_storage(|| {
+    let mut by_face_storage = ctx.reserve_scoped(0, "select Parasolid face colors")?;
+    let by_face = by_face_storage.with_storage(|| {
         let mut by_face = BTreeMap::<u16, Vec<entity::FaceColor>>::new();
         for color in ctx.admit_iter(colors, "select Parasolid face colors")? {
             if ctx.get_btree_map(
@@ -1256,8 +1260,11 @@ fn unique_face_colors(
         Ok::<_, cadmpeg_core::CodecError>(by_face)
     })?;
 
+    drop((current_versions, current_versions_storage));
+
     let mut unresolved = 0;
-    let by_color = scratch.with_storage(|| {
+    let mut by_color_storage = ctx.reserve_scoped(0, "resolve Parasolid color identities")?;
+    let by_color = by_color_storage.with_storage(|| {
         let mut by_color = BTreeMap::<u16, Vec<entity::FaceColor>>::new();
         for (_, mut candidates) in ctx.admit_iter(by_face, "select Parasolid face colors")? {
             let first = &candidates[0];
@@ -1283,6 +1290,8 @@ fn unique_face_colors(
         Ok::<_, cadmpeg_core::CodecError>(by_color)
     })?;
 
+    drop(by_face_storage);
+
     let mut out = Vec::new();
     for (_, mut candidates) in ctx.admit_iter(by_color, "resolve Parasolid color identities")? {
         let first = &candidates[0];
@@ -1300,6 +1309,7 @@ fn unique_face_colors(
             unresolved += candidates.len();
         }
     }
+    drop(by_color_storage);
     ctx.stable_sort_by_key(
         &mut out,
         |value| (value.face_attr, value.offset),
@@ -1498,29 +1508,39 @@ fn bind_bridges(
 ) -> Result<BridgeBindings, cadmpeg_core::CodecError> {
     const INDEX: &str = "index Parasolid body references";
     const BIND: &str = "bind Parasolid face bridges";
-    // Attr -> body groups whose references name it, in group order.
-    let mut groups_by_ref = BTreeMap::<u16, Vec<usize>>::new();
-    // (attr, group) -> (ordinal, shell attr) of the group's first shell that
-    // names the attr.
-    let mut shell_by_ref = BTreeMap::<(u16, usize), (usize, u16)>::new();
-    for (group, record) in ctx.admit_iter(body_records, INDEX)?.enumerate() {
-        for &attr in ctx.admit_iter(&record.refs, INDEX)? {
-            ctx.push_btree_group(&mut groups_by_ref, attr, group, INDEX, INDEX)?;
-        }
-        let mut ordinal = 0_usize;
-        for region in ctx.admit_iter(&record.regions, INDEX)? {
-            for shell in ctx.admit_iter(&region.shells, INDEX)? {
-                for &attr in ctx.admit_iter(&shell.refs, INDEX)? {
-                    if let std::collections::btree_map::Entry::Vacant(slot) =
-                        ctx.entry_btree_map(&mut shell_by_ref, (attr, group), INDEX)?
-                    {
-                        slot.insert((ordinal, shell.attr));
+    if faces.is_empty() {
+        return Ok((BTreeMap::new(), BTreeMap::new()));
+    }
+    let _reference_storage;
+    let groups_by_ref;
+    let shell_by_ref;
+    ((groups_by_ref, shell_by_ref), _reference_storage) =
+        ctx.with_scoped_storage("hold Parasolid bridge reference indexes", || {
+            // Attr -> body groups whose references name it, in group order.
+            let mut groups_by_ref = BTreeMap::<u16, Vec<usize>>::new();
+            // (attr, group) -> (ordinal, shell attr) of the group's first shell that
+            // names the attr.
+            let mut shell_by_ref = BTreeMap::<(u16, usize), (usize, u16)>::new();
+            for (group, record) in ctx.admit_iter(body_records, INDEX)?.enumerate() {
+                for &attr in ctx.admit_iter(&record.refs, INDEX)? {
+                    ctx.push_btree_group(&mut groups_by_ref, attr, group, INDEX, INDEX)?;
+                }
+                let mut ordinal = 0_usize;
+                for region in ctx.admit_iter(&record.regions, INDEX)? {
+                    for shell in ctx.admit_iter(&region.shells, INDEX)? {
+                        for &attr in ctx.admit_iter(&shell.refs, INDEX)? {
+                            if let std::collections::btree_map::Entry::Vacant(slot) =
+                                ctx.entry_btree_map(&mut shell_by_ref, (attr, group), INDEX)?
+                            {
+                                slot.insert((ordinal, shell.attr));
+                            }
+                        }
+                        ordinal += 1;
                     }
                 }
-                ordinal += 1;
             }
-        }
-    }
+            Ok::<_, cadmpeg_core::CodecError>((groups_by_ref, shell_by_ref))
+        })?;
 
     let mut bridge_group = BTreeMap::new();
     let mut bridge_shell = BTreeMap::new();
@@ -1667,7 +1687,7 @@ mod walk_storage_tests {
 
     #[test]
     fn face_walk_releases_rejected_ring_storage_between_sibling_loops() {
-        let (bridge, tables) = fixture(32, false);
+        let (bridge, tables) = fixture(128, false);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = 4096;
@@ -1726,5 +1746,268 @@ mod walk_storage_tests {
         };
         assert_eq!(limit.used, expected_bytes);
         assert_eq!(limit.additional, 4096);
+    }
+}
+
+#[cfg(test)]
+mod modifier_admission_tests {
+    use super::{attrib, unique_body_modifiers};
+    use cadmpeg_core::CodecError;
+
+    fn modifier(body_attr: u16, history_ordinal: u32) -> attrib::BodyModifier {
+        attrib::BodyModifier {
+            body_attr,
+            history_ordinal,
+            target: None,
+        }
+    }
+
+    #[test]
+    fn body_modifier_collection_charges_one_source_traversal() {
+        const COLLECT: &str = "collect Parasolid body modifiers";
+        const PROBE: &str = "probe collected Parasolid body modifiers";
+        let input = || vec![modifier(30, 3), modifier(10, 1), modifier(20, 2)];
+        let before = crate::test_support::work_refusal_at(COLLECT, |ctx| {
+            unique_body_modifiers(ctx, input())
+        });
+        let after = crate::test_support::work_refusal_at(PROBE, |ctx| {
+            let modifiers = unique_body_modifiers(ctx, input())?;
+            assert_eq!(
+                modifiers
+                    .iter()
+                    .map(|value| (value.body_attr, value.history_ordinal))
+                    .collect::<Vec<_>>(),
+                vec![(10, 1), (20, 2), (30, 3)]
+            );
+            ctx.charge_work(1, PROBE)
+        });
+        let (CodecError::ResourceLimit(before), CodecError::ResourceLimit(after)) = (before, after)
+        else {
+            panic!("work refusal")
+        };
+        assert_eq!(before.additional, 3);
+        assert_eq!(after.used - before.used, 3);
+        assert_eq!(after.additional, 1);
+    }
+
+    #[test]
+    fn body_modifier_collection_preserves_ambiguous_attributes() {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let modifiers = unique_body_modifiers(
+            &ctx,
+            vec![
+                modifier(30, 3),
+                modifier(20, 2),
+                modifier(10, 1),
+                modifier(20, 4),
+                modifier(30, 3),
+                modifier(20, 2),
+            ],
+        )
+        .expect("modifier selectors");
+        assert_eq!(
+            modifiers
+                .iter()
+                .map(|value| (value.body_attr, value.history_ordinal))
+                .collect::<Vec<_>>(),
+            vec![(10, 1), (30, 3)]
+        );
+    }
+}
+
+#[cfg(test)]
+mod binding_color_storage_tests {
+    use super::{
+        bind_bridges, entity, topology, unique_face_colors, BodyRecord, Sense, WalkedFace,
+    };
+    use cadmpeg_core::decode::{
+        DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceLimit,
+    };
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::topology::{BodyKind, Color};
+    use std::collections::BTreeMap;
+
+    const PROBE: &str = "probe graph stage storage";
+
+    fn storage_run<T>(
+        cap: u64,
+        run: impl FnOnce(&DecodeContext<'_>) -> Result<T, CodecError>,
+    ) -> Result<T, CodecError> {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cap;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        let mut graph_storage = ctx.reserve_scoped(0, "test graph scratch")?;
+        graph_storage.with_storage(|| run(&ctx))
+    }
+
+    fn storage_boundary(
+        run: impl FnMut(&DecodeContext<'_>) -> Result<(), CodecError>,
+    ) -> ResourceLimit {
+        let mut run = run;
+        let error = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::MaterializedBytes,
+            PROBE,
+            |cap| storage_run(cap, &mut run),
+        );
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("storage refusal")
+        };
+        limit
+    }
+
+    fn bodies() -> Vec<BodyRecord> {
+        vec![BodyRecord {
+            attr: 1,
+            kind: BodyKind::Sheet,
+            refs: (10..42).collect(),
+            offset: 0,
+            regions: vec![super::RegionRecord {
+                attr: 2,
+                offset: 0,
+                shells: vec![super::ShellRecord {
+                    attr: 3,
+                    offset: 0,
+                    refs: (10..42).collect(),
+                }],
+            }],
+        }]
+    }
+
+    fn color() -> entity::FaceColor {
+        entity::FaceColor {
+            face_attr: 10,
+            color_attr: 20,
+            face_seq: 1,
+            stream_order: 0,
+            color: Color::new(0.2, 0.4, 0.6, 1.0).unwrap(),
+            offset: 30,
+            target: None,
+        }
+    }
+
+    fn select_color(ctx: &DecodeContext<'_>) -> Result<Vec<entity::FaceColor>, CodecError> {
+        let (colors, unresolved) = unique_face_colors(
+            ctx,
+            vec![color()],
+            vec![entity::FaceColorVersion {
+                face_attr: 10,
+                seq: 1,
+                stream_order: 0,
+            }],
+        )?;
+        assert_eq!(unresolved, 0);
+        assert_eq!(colors.len(), 1);
+        let actual = &colors[0];
+        let expected = color();
+        assert_eq!(
+            (
+                actual.face_attr,
+                actual.color_attr,
+                actual.face_seq,
+                actual.stream_order,
+                actual.color,
+                actual.offset,
+                &actual.target
+            ),
+            (
+                expected.face_attr,
+                expected.color_attr,
+                expected.face_seq,
+                expected.stream_order,
+                expected.color,
+                expected.offset,
+                &expected.target
+            )
+        );
+        Ok(colors)
+    }
+
+    #[test]
+    fn bridge_indexes_are_not_built_without_faces() {
+        let error = crate::test_support::work_refusal_at(PROBE, |ctx| {
+            let bindings = bind_bridges(ctx, &topology::Tables::default(), &bodies(), &[])?;
+            assert!(bindings.0.is_empty() && bindings.1.is_empty());
+            ctx.charge_work(1, PROBE)
+        });
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("work refusal")
+        };
+        assert_eq!((limit.used, limit.additional), (0, 1));
+    }
+
+    #[test]
+    fn bridge_source_index_storage_ends_at_binding_return() {
+        let expected = storage_boundary(|ctx| {
+            let mut groups = BTreeMap::<u16, usize>::new();
+            let mut shells = BTreeMap::<u16, u16>::new();
+            ctx.insert_btree_map(&mut groups, 10, 0, "test binding output")?;
+            ctx.insert_btree_map(&mut shells, 10, 3, "test binding output")?;
+            let _probe = ctx.reserve_scoped(65536, PROBE)?;
+            Ok(())
+        });
+        let actual = storage_boundary(|ctx| {
+            let face = WalkedFace {
+                bridge_attr: 10,
+                surface_attr: 20,
+                sense: Sense::Forward,
+                loops: Vec::new(),
+            };
+            let bindings = bind_bridges(ctx, &topology::Tables::default(), &bodies(), &[face])?;
+            assert_eq!(bindings.0, BTreeMap::from([(10, 0)]));
+            assert_eq!(bindings.1, BTreeMap::from([(10, 3)]));
+            let _probe = ctx.reserve_scoped(65536, PROBE)?;
+            Ok(())
+        });
+        assert_eq!(
+            (actual.used, actual.additional),
+            (expected.used, expected.additional)
+        );
+    }
+
+    #[test]
+    fn face_color_stages_reuse_consumed_map_storage() {
+        // The live storage bound is two grouped maps, or one grouped map and
+        // the returned vector. The version index does not overlap either pair.
+        let mut cap = 0;
+        for second_map in [true, false] {
+            let boundary = storage_boundary(|ctx| {
+                let mut groups = BTreeMap::<u16, Vec<entity::FaceColor>>::new();
+                ctx.push_btree_group(
+                    &mut groups,
+                    10,
+                    color(),
+                    "test color group",
+                    "test color slot",
+                )?;
+                if second_map {
+                    let mut next = BTreeMap::<u16, Vec<entity::FaceColor>>::new();
+                    ctx.push_btree_group(&mut next, 20, color(), "test color group", PROBE)?;
+                } else {
+                    let mut out = Vec::new();
+                    let mut candidates = vec![color()];
+                    ctx.append_vec(&mut out, &mut candidates, PROBE)?;
+                }
+                Ok(())
+            });
+            cap = cap.max(boundary.used + boundary.additional);
+        }
+        storage_run(cap, select_color).expect("consumed color stages release their storage");
+    }
+
+    #[test]
+    fn face_color_return_keeps_only_output_storage_in_graph_scope() {
+        let mut expected_bytes = 0;
+        let boundary = storage_boundary(|ctx| {
+            let colors = select_color(ctx)?;
+            expected_bytes =
+                u64::try_from(colors.capacity() * std::mem::size_of::<entity::FaceColor>())
+                    .unwrap();
+            let _probe = ctx.reserve_scoped(4096, PROBE)?;
+            Ok(())
+        });
+        assert_eq!(boundary.used, expected_bytes);
+        assert_eq!(boundary.additional, 4096);
     }
 }
