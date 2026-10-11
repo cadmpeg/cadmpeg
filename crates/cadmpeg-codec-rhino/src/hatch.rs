@@ -344,8 +344,8 @@ pub(crate) fn apply_userdata<'ctx>(
     hatch: &mut Hatch,
 ) -> Result<HatchUserdataInstall<'ctx>, CodecError> {
     let mut last_basepoint = None;
-    let mut errors = Vec::new();
     let mut error_storage = ctx.reserve_scoped(0, "Rhino hatch userdata errors")?;
+    let mut errors = Vec::new();
     let mut gradient_storage = None;
     let mut first_gradient = None;
     let mut descriptors = userdata.iter();

@@ -1301,6 +1301,7 @@ fn user_string_list_rejects_a_negative_count() {
 fn user_string_list_refusal(
     collection_limit: u64,
     retained_limit: u64,
+    materialized_limit: u64,
 ) -> crate::chunks::FramingError {
     let archive = ArchiveVersion::V5;
     let mut entry = utf16_bytes("key");
@@ -1312,9 +1313,10 @@ fn user_string_list_refusal(
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
     policy.limits.max_retained_bytes = retained_limit;
+    policy.limits.max_materialized_bytes = materialized_limit;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
         .expect("root bytes admitted");
-    crate::objects::parse_user_string_list(
+    let error = crate::objects::parse_user_string_list(
         &ctx,
         &bytes,
         0..bytes.len(),
@@ -1322,46 +1324,70 @@ fn user_string_list_refusal(
         crate::objects::UserStringSelection::All,
     )
     .map(|parsed| parsed.entries)
-    .expect_err("user strings exceed configured limit")
+    .expect_err("user strings exceed configured limit");
+    if let crate::chunks::FramingError::Resource(limit) = &error {
+        assert!(
+            matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == *limit)
+        );
+    }
+    error
 }
 
 #[test]
 fn user_string_entries_refuse_collection_limit() {
     assert_attribute_resource(
-        &user_string_list_refusal(0, 100),
+        &user_string_list_refusal(0, 100, u64::MAX),
         "Rhino user-string entries",
     );
 }
 
 #[test]
-fn user_string_key_refuses_retained_limit() {
-    assert_attribute_resource(
-        &user_string_list_refusal(
-            100,
-            crate::test_support::retained_limit_at("Rhino user-string key", 0, |cap| {
-                match user_string_list_refusal(100, cap) {
-                    crate::chunks::FramingError::Resource(limit) => limit,
-                    error => panic!("unexpected resource refusal: {error:?}"),
-                }
-            }),
-        ),
+fn user_string_key_refuses_materialized_limit() {
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
         "Rhino user-string key",
+        |cap| match user_string_list_refusal(100, 100, cap) {
+            crate::chunks::FramingError::Resource(limit) => {
+                Err::<(), _>(cadmpeg_core::CodecError::ResourceLimit(limit))
+            }
+            error => panic!("unexpected resource refusal: {error:?}"),
+        },
     );
 }
 
 #[test]
-fn user_string_value_refuses_retained_limit() {
-    assert_attribute_resource(
-        &user_string_list_refusal(
-            100,
-            crate::test_support::retained_limit_at("Rhino user-string value", 0, |cap| {
-                match user_string_list_refusal(100, cap) {
-                    crate::chunks::FramingError::Resource(limit) => limit,
-                    error => panic!("unexpected resource refusal: {error:?}"),
-                }
-            }),
-        ),
+fn user_string_value_refuses_materialized_limit() {
+    cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
         "Rhino user-string value",
+        |cap| match user_string_list_refusal(100, 100, cap) {
+            crate::chunks::FramingError::Resource(limit) => {
+                Err::<(), _>(cadmpeg_core::CodecError::ResourceLimit(limit))
+            }
+            error => panic!("unexpected resource refusal: {error:?}"),
+        },
+    );
+}
+
+#[test]
+fn complete_user_string_text_refuses_retained_limit() {
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "Rhino user-string text",
+        |cap| match user_string_list_refusal(100, cap, u64::MAX) {
+            crate::chunks::FramingError::Resource(limit) => {
+                Err::<(), _>(cadmpeg_core::CodecError::ResourceLimit(limit))
+            }
+            error => panic!("unexpected resource refusal: {error:?}"),
+        },
+    );
+    let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+        panic!("selected text retention refusal");
+    };
+    assert_eq!(limit.used, 0);
+    assert_eq!(
+        limit.additional,
+        u64::try_from("key".len() + "value".len()).unwrap()
     );
 }
 
