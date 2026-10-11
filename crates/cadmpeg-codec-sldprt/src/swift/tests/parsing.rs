@@ -1765,3 +1765,58 @@ fn swift_lower_tier_identity_retains_only_its_final_text() {
     let CodecError::ResourceLimit(limit) = error else { panic!("lower-tier retained boundary"); };
     assert_eq!(limit.used, 0, "the validation identity is temporary");
 }
+
+#[test]
+fn swift_root_marker_search_skips_unvisited_tails() {
+    let mut prefix_work = None;
+    for tail in [0, 96] {
+        let name = format!("SWIFT/Schema{}", "x".repeat(tail));
+        let mut payload = crate::swift::ROOT_CLASS.as_bytes().to_vec();
+        payload.extend(vec![0; tail * 128]);
+        let mut source = crate::test_support::container::synthetic_sldprt();
+        source.extend(crate::test_support::container::make_block(0x40, &name, &payload));
+        let scan = crate::test_support::container::scan(&source);
+        for operation in ["find SWIFT schema section name", "scan SWIFT root class marker"] {
+            let error = crate::test_support::work_refusal_at(operation, |ctx| {
+                crate::swift::has_root_marker(ctx, &scan)
+            });
+            let CodecError::ResourceLimit(limit) = error else { panic!("marker search boundary"); };
+            assert_eq!(limit.additional, 1);
+        }
+        let error = crate::test_support::work_refusal_at("measure SWIFT marker work", |ctx| {
+            assert!(crate::swift::has_root_marker(ctx, &scan)?);
+            ctx.copy_retained_text("x", "measure SWIFT marker work")
+        });
+        let CodecError::ResourceLimit(limit) = error else { panic!("marker search measurement"); };
+        if let Some(expected) = prefix_work { assert_eq!(limit.used, expected); }
+        else { prefix_work = Some(limit.used); }
+    }
+}
+
+#[test]
+fn swift_ambiguous_annotation_fallback_skips_unvisited_tails() {
+    let root = Entity { class: crate::swift::ROOT_CLASS.into(), ..Entity::default() };
+    let mut prefix = Vec::new();
+    encode_entity(&root, &mut prefix);
+    encode_entity(&root, &mut prefix);
+    let mut prefix_work = None;
+    for tail in [32, 16_384] {
+        let mut payload = prefix.clone();
+        payload.extend(vec![0; tail]);
+        let mut source = crate::test_support::container::synthetic_sldprt();
+        source.extend(crate::test_support::container::make_block(0x40, "SWIFT/Schema", &payload));
+        let scan = crate::test_support::container::scan(&source);
+        crate::test_support::work_refusal_at("scan SWIFT root class marker", |ctx| {
+            annotations(ctx, &scan, &mut cadmpeg_ir::annotations::Annotations::default(), None)
+        });
+        let error = crate::test_support::work_refusal_at("measure ambiguous SWIFT annotation work", |ctx| {
+            let result = annotations(ctx, &scan, &mut cadmpeg_ir::annotations::Annotations::default(), None)?;
+            assert!(result.annotations.is_empty());
+            assert!(result.unsupported_loss.as_deref().unwrap().contains("GdtAnalysisGraphUnresolved"));
+            ctx.copy_retained_text("x", "measure ambiguous SWIFT annotation work")
+        });
+        let CodecError::ResourceLimit(limit) = error else { panic!("annotation work measurement"); };
+        if let Some(expected) = prefix_work { assert_eq!(limit.used, expected); }
+        else { prefix_work = Some(limit.used); }
+    }
+}
