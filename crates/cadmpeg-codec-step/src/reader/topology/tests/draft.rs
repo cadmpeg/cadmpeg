@@ -736,6 +736,10 @@ fn shared_surface_carrier_is_staged_once() {
     let body_id = BodyId::mint("step:data:body#shared-surface").expect("identity grammar");
     let region_id = RegionId::mint("step:data:region#shared-surface").expect("identity grammar");
     let built = super::super::staged_topology(
+        ctx.provisional_retained("test payload")
+            .expect("empty payload"),
+        ctx.reserve_scoped(0, "test staged metadata")
+            .expect("empty staged storage"),
         super::super::StagedTopologyParts {
             typed: std::collections::BTreeSet::new(),
             vertices: Vec::new(),
@@ -760,8 +764,6 @@ fn shared_surface_carrier_is_staged_once() {
                 visible: None,
             },
         },
-        ctx.reserve_scoped(0, "test staged metadata")
-            .expect("empty staged storage"),
         &ctx,
     )
     .expect("duplicate references to one source surface must stage");

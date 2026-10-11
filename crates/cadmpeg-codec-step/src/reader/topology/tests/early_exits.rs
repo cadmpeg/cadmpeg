@@ -162,6 +162,10 @@ fn rejected_shell_face_work(tail: usize) -> u64 {
     let ctx = cadmpeg_test_support::service_decode_context();
     let ir = cadmpeg_ir::CadIr::empty();
     let carriers = crate::reader::index::CarrierIndex::from_ir(&ir, &ctx).expect("empty carriers");
+    let decoded = std::collections::BTreeSet::new();
+    let mut associations =
+        super::super::associations::PcurveAssociations::new(&exchange, &decoded, &ctx)
+            .expect("empty associations");
     let mut cache = super::super::FaceAttributeCache::new(&ctx).expect("empty face cache");
     let mut storage = ctx
         .reserve_scoped(0, "test shell losses")
@@ -176,11 +180,11 @@ fn rejected_shell_face_work(tail: usize) -> u64 {
             edefs: &BTreeMap::new(),
             odefs: &BTreeMap::new(),
             shell_definitions: &shells,
-            decoded_pcurves: &std::collections::BTreeSet::new(),
             point_positions: &carriers,
             ctx: &ctx,
         },
         &mut cache,
+        &mut associations,
         false,
         (&mut Vec::new(), &mut storage),
     )

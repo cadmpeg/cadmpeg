@@ -49,11 +49,15 @@ fn associated_pcurves_refuse_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
+    let decoded = std::collections::BTreeSet::from([2]);
+    let mut associations =
+        super::super::associations::PcurveAssociations::new(&exchange, &decoded, &ctx)
+            .expect("empty associations");
     assert!(matches!(
-        super::super::associated_pcurves(1, 3, &exchange, &std::collections::BTreeSet::from([2]), &ctx),
+        associations.candidates(1, 3),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_associated_pcurves"
+                && refusal.operation == "step_associated_pcurve_members"
     ));
 }
 
@@ -189,6 +193,11 @@ fn built_outcome_refuses_collection_limit() {
         body_id: body_id(),
         shell_sources: std::collections::BTreeSet::new(),
         pcurve_admissions: Vec::new(),
+        face_ancestors: Vec::new(),
+        shell_ancestors: Vec::new(),
+        payload: ctx
+            .provisional_retained("test payload")
+            .expect("empty payload"),
     };
     assert!(matches!(
         outcome.push(built, &ctx),
@@ -360,18 +369,22 @@ fn edge_definition_refusal(operation: &'static str) -> CodecError {
 
 #[test]
 fn edge_definition_active_set_refuses_collection_limit() {
-    assert!(matches!(edge_definition_refusal("step_edge_definition_active"),
+    assert!(
+        matches!(edge_definition_refusal("step_edge_definition_active"),
         CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_edge_definition_active"));
+                && refusal.operation == "step_edge_definition_active")
+    );
 }
 
 #[test]
 fn edge_definition_cache_refuses_collection_limit() {
-    assert!(matches!(edge_definition_refusal("step_edge_definition_cache"),
+    assert!(
+        matches!(edge_definition_refusal("step_edge_definition_cache"),
         CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_edge_definition_cache"));
+                && refusal.operation == "step_edge_definition_cache")
+    );
 }
 
 #[test]
@@ -424,18 +437,22 @@ fn shell_definition_refusal(operation: &'static str) -> CodecError {
 
 #[test]
 fn shell_definition_active_set_refuses_collection_limit() {
-    assert!(matches!(shell_definition_refusal("step_shell_definition_active"),
+    assert!(
+        matches!(shell_definition_refusal("step_shell_definition_active"),
         CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_shell_definition_active"));
+                && refusal.operation == "step_shell_definition_active")
+    );
 }
 
 #[test]
 fn shell_definition_cache_refuses_collection_limit() {
-    assert!(matches!(shell_definition_refusal("step_shell_definition_cache"),
+    assert!(
+        matches!(shell_definition_refusal("step_shell_definition_cache"),
         CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_shell_definition_cache"));
+                && refusal.operation == "step_shell_definition_cache")
+    );
 }
 
 #[test]
@@ -478,19 +495,23 @@ fn shell_definition_claims_refuse_collection_limit() {
                 .reserve_scoped(0, "test shell ancestor scratch")
                 .expect("empty ancestor storage");
             let mut typed = std::collections::BTreeSet::new();
-            let result = super::super::shell_def_for(
+            let result = super::super::claim_shell_ancestors(
                 2,
                 &shells,
-                &mut typed,
-                &mut std::collections::BTreeSet::new(),
-                &mut seen_storage,
+                (
+                    &mut typed,
+                    &mut ctx
+                        .reserve_scoped(0, "test shell claims")
+                        .expect("empty claims"),
+                ),
+                (&mut std::collections::BTreeSet::new(), &mut seen_storage),
                 &ctx,
             );
             if let Err(CodecError::ResourceLimit(limit)) = &result {
                 assert_eq!(ctx.resource_refusal(), Some(*limit));
                 assert!(typed.is_empty());
             }
-            result.map(|_| ())
+            result
         },
     );
     assert!(
@@ -517,19 +538,20 @@ fn shell_ancestor_work(count: u64) -> u64 {
         .expect("empty ancestor storage");
     let mut seen = std::collections::BTreeSet::new();
     let mut claims = std::collections::BTreeSet::new();
+    let mut claim_storage = ctx
+        .reserve_scoped(0, "test shell claims")
+        .expect("empty claims");
     for reference in (1..=count).rev() {
-        assert_eq!(
-            super::super::shell_def_for(
-                reference,
-                &shells,
-                &mut claims,
-                &mut seen,
-                &mut storage,
-                &ctx
-            )
-            .expect("shell claims"),
-            Some((1, true))
-        );
+        super::super::claim_shell_ancestors(
+            reference,
+            &shells,
+            (&mut claims, &mut claim_storage),
+            (&mut seen, &mut storage),
+            &ctx,
+        )
+        .expect("shell claims");
+        let definition = shells.get(&reference).expect("resolved shell definition");
+        assert_eq!((definition.base, definition.forward), (1, true));
     }
     assert_eq!(claims, (2..=count).collect());
     let CodecError::ResourceLimit(limit) = ctx
@@ -713,6 +735,10 @@ fn staged_topology_attempt(
         })
         .collect();
     super::super::staged_topology(
+        ctx.provisional_retained("test payload")
+            .expect("empty payload"),
+        ctx.reserve_scoped(0, "test staged metadata")
+            .expect("empty staged storage"),
         super::super::StagedTopologyParts {
             typed: std::collections::BTreeSet::new(),
             vertices: Vec::new(),
@@ -737,8 +763,6 @@ fn staged_topology_attempt(
                 visible: None,
             },
         },
-        ctx.reserve_scoped(0, "test staged metadata")
-            .expect("empty staged storage"),
         &ctx,
     )
     .map(|_| ())
@@ -831,14 +855,18 @@ fn brep_builder_refusal(collection_limit: u64) -> super::super::BuildError {
     let ir = cadmpeg_ir::CadIr::empty();
     let mut face_cache =
         super::super::FaceAttributeCache::new(&ctx).expect("empty face attribute cache");
+    let decoded = std::collections::BTreeSet::new();
+    let mut associations =
+        super::super::associations::PcurveAssociations::new(&exchange, &decoded, &ctx)
+            .expect("empty associations");
     let mut state = super::super::BuildState {
         face_cache: &mut face_cache,
+        associations: &mut associations,
         failure: None,
         selection_index: None,
     };
     super::super::build_one(
         3,
-        exchange.records().get(&3).expect("model"),
         super::super::BuildSources {
             exchange: &exchange,
             ir: &ir,
@@ -846,7 +874,6 @@ fn brep_builder_refusal(collection_limit: u64) -> super::super::BuildError {
             edefs: &BTreeMap::new(),
             odefs: &BTreeMap::new(),
             shell_definitions: &shells,
-            decoded_pcurves: &std::collections::BTreeSet::new(),
             point_positions: &carriers,
             ctx: &ctx,
         },
@@ -854,6 +881,9 @@ fn brep_builder_refusal(collection_limit: u64) -> super::super::BuildError {
             shell_steps: &[1],
             bid: body_id(),
             rid: &region,
+            solid: false,
+            voids: false,
+            face_based: false,
         },
         super::super::BuildScope {
             faces: false,
@@ -885,7 +915,7 @@ fn brep_body_regions_refuse_collection_limit() {
 
 #[test]
 fn brep_used_shells_refuse_collection_limit() {
-    assert!(matches!(brep_builder_refusal(2),
+    assert!(matches!(brep_builder_refusal(3),
         super::super::BuildError::Resource(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_brep_used_shells"));
@@ -893,7 +923,7 @@ fn brep_used_shells_refuse_collection_limit() {
 
 #[test]
 fn brep_used_faces_refuse_collection_limit() {
-    assert!(matches!(brep_builder_refusal(3),
+    assert!(matches!(brep_builder_refusal(4),
         super::super::BuildError::Resource(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_brep_used_faces"));
