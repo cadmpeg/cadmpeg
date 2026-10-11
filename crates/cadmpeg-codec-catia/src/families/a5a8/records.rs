@@ -794,14 +794,16 @@ pub(in crate::families) struct A5NurbsCurve {
 fn a5_nurbs_curves(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Vec<A5NurbsCurve>, CodecError> {
     let records = consolidated_records(data);
     a5_nurbs_curves_from_records(ctx, data, &records, &mut crate::nurbs::LaneRefusals::new())
+        .and_then(|(curves, storage)| storage.commit_value(curves))
 }
 
-pub(in crate::families) fn a5_nurbs_curves_from_records(
-    ctx: &DecodeContext<'_>,
+pub(in crate::families) fn a5_nurbs_curves_from_records<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Result<Vec<A5NurbsCurve>, CodecError> {
+) -> Result<(Vec<A5NurbsCurve>, ScopedReservation<'ctx>), CodecError> {
+    let mut storage = ctx.reserve_scoped(0, "catia_a5_nurbs_curves")?;
     let mut curves = Vec::new();
     for record in ctx
         .admit_iter(records, "catia_a5_nurbs_record_scan")?
@@ -817,10 +819,10 @@ pub(in crate::families) fn a5_nurbs_curves_from_records(
             header_token: record.header_token(),
         };
         if let Some(curve) = parse_a5_nurbs_curve(ctx, data, frame, refusal)? {
-            ctx.push_vec(&mut curves, curve, "catia_a5_nurbs_curves")?;
+            ctx.push_scoped_vec(&mut storage, &mut curves, curve, "catia_a5_nurbs_curves")?;
         }
     }
-    Ok(curves)
+    Ok((curves, storage))
 }
 
 fn parse_a5_nurbs_curve(
