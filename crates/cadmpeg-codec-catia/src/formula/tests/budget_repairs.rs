@@ -5,6 +5,99 @@ use crate::test_support::{with_materialized_limit, with_retained_limit, with_wor
 use cadmpeg_core::CodecError;
 
 #[test]
+fn formula_entity_index_waits_for_a_lookup() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+
+    let mut native = crate::native::CatiaNative::decode(
+        &crate::test_support::test_formula::standard_catpart_with_definition_chain_type(
+            "Boolean",
+            &[0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0x81],
+        ),
+    );
+    let mut record = native.entity_records[0].clone();
+    record.value_production = None;
+    record.object_production = None;
+    native.legacy_entity_runs.clear();
+    native.entity_records = (0..4096)
+        .map(|ordinal| {
+            let mut entity = record.clone();
+            entity.id = format!("synthetic:test:entity#{ordinal}");
+            entity.ordinal = ordinal;
+            entity
+        })
+        .collect();
+    let _probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "catia_formula_entity_index",
+        None,
+    );
+    crate::test_support::with_work_limit(u64::MAX, |ctx| {
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        let transfer = super::super::transfer_parameters(
+            ctx,
+            &mut ir,
+            &native,
+            &mut cadmpeg_ir::Annotations::default(),
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )?;
+        assert!(ir.model.parameters.is_empty());
+        assert_eq!(transfer.typed_parameter_count, 0);
+        assert_eq!(transfer.definition_chain_parameter_count, 0);
+        assert_eq!(transfer.relation_program_parameter_count, 0);
+        assert_eq!(transfer.legacy_parameter_count, 0);
+        assert_eq!(transfer.legacy_formula_count, 0);
+        assert!(transfer.consumed_object_records.is_empty());
+        assert_eq!(ctx.resource_refusal(), None);
+        Ok::<_, CodecError>(())
+    })
+    .expect("unqueried entity records have no lookup-index work");
+}
+
+#[test]
+fn formula_entity_index_admits_the_first_lookup() {
+    let native = crate::native::CatiaNative::decode(
+        &crate::test_support::test_formula::standard_catpart_with_formula_relation(4, false),
+    );
+    let refused = with_work_refusal("catia_formula_entity_index", |ctx| {
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        super::super::transfer_parameters(
+            ctx,
+            &mut ir,
+            &native,
+            &mut cadmpeg_ir::Annotations::default(),
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+        .map(|transfer| transfer.typed_parameter_count)
+    });
+    assert!(matches!(refused, Err(CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_formula_entity_index"));
+    let (count, parameters) = crate::test_support::with_service_context(|ctx| {
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        let transfer = super::super::transfer_parameters(
+            ctx,
+            &mut ir,
+            &native,
+            &mut cadmpeg_ir::Annotations::default(),
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )?;
+        Ok::<_, CodecError>((transfer.typed_parameter_count, ir.model.parameters))
+    })
+    .expect("queried entity index preserves the formula transfer");
+    assert_eq!(count, 2);
+    let [input, output] = parameters.as_slice() else {
+        panic!("one input and one formula output");
+    };
+    assert_eq!(input.name, "Thickness");
+    assert_eq!(input.expression, "35 mm");
+    assert_eq!(output.name, "Result");
+    assert_eq!(output.expression, "#1_ /2-2mm");
+    assert_eq!(
+        output.dependencies.as_slice(),
+        std::slice::from_ref(&input.id)
+    );
+}
+
+#[test]
 fn formula_transfer_moves_the_surviving_candidate_without_copying() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 

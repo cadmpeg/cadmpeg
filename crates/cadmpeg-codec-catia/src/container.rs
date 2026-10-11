@@ -1273,10 +1273,8 @@ fn parse_directory_region(
     // At each candidate extent-count field, validate every extent and the
     // descriptor-header logical length; a candidate that validates fully is a
     // real descriptor. The extent count sits at `desc_offset + EXTENT_COUNT`.
-    for o in ctx.admit_iter(
-        0..dirbuf.len().saturating_sub(3),
-        "catia_directory_candidate_scan",
-    )? {
+    for last_byte in ctx.admit_iter(3..dirbuf.len(), "catia_directory_candidate_scan")? {
+        let o = last_byte - 3;
         let Some(k) = View::u32_be_at(dirbuf, o).and_then(|value| usize::try_from(value).ok())
         else {
             break;

@@ -20,7 +20,9 @@ use crate::legacy_entity::TYPE_OPEN;
 
 mod admission;
 mod identity;
+mod roles;
 mod scans;
+mod storage;
 mod transfer;
 
 use crate::container;
@@ -207,12 +209,14 @@ fn legacy_relation_signature_refuses_nested_limits() {
         if limit.operation == "catia_legacy_relation_names")
     );
     let retained =
-        crate::test_support::with_retained_refusal(&[], "catia_legacy_relation_parameter", |ctx| {
+        crate::test_support::with_retained_refusal(&[], "catia_legacy_relation_candidate", |ctx| {
             super::parse_relation_signature(ctx, signature)
         });
     assert!(
         matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_legacy_relation_parameter")
+        if limit.operation == "catia_legacy_relation_candidate"
+            && limit.used == 0
+            && limit.additional == u64::try_from(4 * std::mem::size_of::<super::LegacyRelationParameter>() + 14).expect("accepted signature storage"))
     );
     let admitted = crate::test_support::with_service_context(|ctx| {
         super::parse_relation_signature(ctx, signature)
@@ -228,6 +232,7 @@ fn legacy_value_and_role_parsers_refuse_their_own_limits() {
     type_bytes.extend_from_slice(&[8, b'B', b'o', b'o', b'l', b'e', b'a', b'n', 0x83]);
     let type_refusal = crate::test_support::with_retained_limit(0, |ctx| {
         super::parse_type_descriptors(ctx, &type_bytes, 0, type_bytes.len(), 1)
+            .and_then(|(values, storage)| storage.commit_value(values))
     });
     assert!(
         matches!(type_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -237,6 +242,7 @@ fn legacy_value_and_role_parsers_refuse_their_own_limits() {
     string_bytes.extend_from_slice(&[2, b'A']);
     let string_refusal = crate::test_support::with_retained_limit(0, |ctx| {
         super::parse_string_values(ctx, &string_bytes, 0, string_bytes.len(), 1)
+            .and_then(|(values, storage)| storage.commit_value(values))
     });
     assert!(
         matches!(string_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -245,6 +251,7 @@ fn legacy_value_and_role_parsers_refuse_their_own_limits() {
     let role_bytes = [5, b'n', b'a', b'm', b'e', 0xd1, 8];
     let role_refusal = crate::test_support::with_retained_limit(0, |ctx| {
         super::parse_role_selectors(ctx, &role_bytes, 0, role_bytes.len(), 1)
+            .and_then(|(values, storage)| storage.commit_value(values))
     });
     assert!(
         matches!(role_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -254,6 +261,7 @@ fn legacy_value_and_role_parsers_refuse_their_own_limits() {
     text_bytes.extend_from_slice(&[2, b'A', 0xfe]);
     let text_refusal = crate::test_support::with_retained_limit(0, |ctx| {
         super::parse_text_fields(ctx, &text_bytes, 0, text_bytes.len(), 1, &[])
+            .and_then(|(values, storage)| storage.commit_value(values))
     });
     assert!(
         matches!(text_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -263,6 +271,7 @@ fn legacy_value_and_role_parsers_refuse_their_own_limits() {
     scalar_bytes.push(0xe7);
     let scalar_refusal = crate::test_support::with_collection_limit(0, |ctx| {
         super::parse_scalar_values(ctx, &scalar_bytes, 0, scalar_bytes.len(), 1)
+            .and_then(|(values, storage)| storage.commit_value(values))
     });
     assert!(
         matches!(scalar_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -272,6 +281,7 @@ fn legacy_value_and_role_parsers_refuse_their_own_limits() {
     integer_bytes.push(0x81);
     let integer_refusal = crate::test_support::with_collection_limit(0, |ctx| {
         super::parse_integer_values(ctx, &integer_bytes, 0, integer_bytes.len(), 1)
+            .and_then(|(values, storage)| storage.commit_value(values))
     });
     assert!(
         matches!(integer_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -880,6 +890,7 @@ fn rejects_ambiguous_unresolved_role_selector_framing() {
     let bytes = [0x81, 0x80, 0x01, 0x82, 0xd1, 0x17, 0xe8, 0x00, 0x1c, 0x01];
     assert!(crate::test_support::with_service_context(|ctx| {
         super::parse_role_selectors(ctx, &bytes, 0, bytes.len(), 1)
+            .and_then(|(values, storage)| storage.commit_value(values))
     })
     .expect("role selector fixture fits service limits")
     .is_empty());
