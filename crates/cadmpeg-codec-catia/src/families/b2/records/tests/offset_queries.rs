@@ -194,11 +194,20 @@ fn invalid_u_spans_do_not_populate_optional_knot_indexes() {
     let carriers = [
         surface([0.0, 1.0], vec![0.0, 0.0, 1.0, 1.0]),
         surface([0.0, 1.0], vec![0.0, 0.0, 1.0, 1.0]),
+        surface([0.0, 1.0], vec![0.0, 0.0, 1.0, 1.0]),
         surface([-f64::MAX, f64::MAX], knots),
     ];
     let queries = vec![offset([0.0, 1.0], [0.0, 1.0]); 8193];
-    // 8193*2 domain candidates exceed 8*2048, so the valid knot bands are
+    // 8193*3 domain candidates exceed 12*2048, so the valid knot bands are
     // built. The overflowing U span cannot bind and must not visit 1026 knots.
+    let refused =
+        crate::test_support::with_work_refusal("catia_b2_offset_knot_index_scan", |ctx| {
+            offset_support_carriers(ctx, &queries, &carriers)
+        });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_b2_offset_knot_index_scan")
+    );
     let _probe = RefusalProbe::arm(
         ResourceDimension::WorkUnits,
         "catia_b2_offset_knot_index_scan",
@@ -228,4 +237,63 @@ fn offsets_without_eligible_domains_build_no_query_or_active_index() {
         .expect("only unresolved binding slots survive the domain walk"),
         [None, None]
     );
+}
+
+#[test]
+fn two_offset_domain_candidates_do_not_build_knot_bands_for_many_queries() {
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, ResourceDimension};
+    let carriers = [
+        surface([0.0, 1.0], vec![0.0, 0.0, 1.0, 1.0]),
+        surface([0.0, 1.0], vec![0.0, 0.0, 1.0, 1.0]),
+    ];
+    let queries = vec![offset([0.0, 1.0], [0.0, 1.0]); 8193];
+    let _probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "catia_b2_offset_knot_index_scan",
+        None,
+    );
+    let bindings = crate::test_support::with_service_context(|ctx| {
+        offset_support_carriers(ctx, &queries, &carriers)
+    })
+    .expect("a fixed candidate pair needs no knot bands");
+    assert_eq!(bindings, vec![None; 8193]);
+}
+
+#[test]
+fn optional_knot_bands_preserve_rounded_unique_bindings() {
+    let carriers = [
+        surface(
+            [0.0, 1.0],
+            vec![
+                0.0,
+                0.0,
+                3.969_197_063_200_492_7,
+                100.0,
+                30_639.389_180_574_413,
+                30_639.389_180_574_413,
+            ],
+        ),
+        surface(
+            [0.0, 1.0],
+            vec![0.0, 0.0, 30_639.389_180_574_413, 30_639.389_180_574_413],
+        ),
+        surface(
+            [0.0, 1.0],
+            vec![0.0, 0.0, 30_639.389_180_574_413, 30_639.389_180_574_413],
+        ),
+    ];
+    // Every domain admits three candidates. 9558*3 exceeds 14*2048, so
+    // knot bands run. Only carrier zero has both accepted endpoint knots.
+    let queries = vec![offset([0.0, 1.0], [34.608_586_243_774_91, 100.0]); 9558];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        offset_support_carriers(ctx, &queries, &carriers)
+    };
+    let refused = crate::test_support::with_work_refusal("catia_b2_offset_knot_index_scan", run);
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_b2_offset_knot_index_scan")
+    );
+    let bindings = crate::test_support::with_service_context(run)
+        .expect("rounded knot-band bounds admit the exact match");
+    assert_eq!(bindings, vec![Some(0); 9558]);
 }
