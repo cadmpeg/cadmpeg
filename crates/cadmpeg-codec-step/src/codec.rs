@@ -108,7 +108,7 @@ impl CodecBackend for StepCodec {
         }
         refuse_alternate_encoding(ctx, bytes)?;
         if self.detect_impl(ctx, root)? == Confidence::No {
-            return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
+            return Err(CodecError::WrongFormat(ctx.copy_retained_text("missing ISO-10303-21 magic", "STEP missing magic error")?));
         }
         reader::decode(bytes, ctx, reader::Packaging::Bare)
     }
@@ -157,7 +157,7 @@ fn inspect_exchange(
     let bytes = root.window();
     refuse_alternate_encoding(ctx, bytes)?;
     if codec.detect_impl(ctx, root)? == Confidence::No {
-        return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
+        return Err(CodecError::WrongFormat(ctx.copy_retained_text("missing ISO-10303-21 magic", "STEP missing magic error")?));
     }
     let mut graph_storage = ctx.reserve_scoped(0, "STEP inspect parsed graph storage")?;
     let (mut exchange, diagnostics) = parse::parse_with_context(bytes, ctx, &mut graph_storage)?;
@@ -532,7 +532,7 @@ fn inspect_zip(
     let root_bytes = root_view.window();
     refuse_alternate_encoding(ctx, root_bytes)?;
     if StepCodec::default().detect_impl(ctx, root_view)? == Confidence::No {
-        return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
+        return Err(CodecError::WrongFormat(ctx.copy_retained_text("missing ISO-10303-21 magic", "STEP missing magic error")?));
     }
     let mut graph_storage = ctx.reserve_scoped(0, "STEP inspect parsed graph storage")?;
     let (mut exchange, diagnostics) =
@@ -924,6 +924,7 @@ const BO_MODEL_NAMESPACES: [&[u8]; 2] = [
 #[cfg(test)]
 mod tests {
     mod prefix_admission;
+    mod error_admission;
 
     use std::fmt::Write as _;
     use std::io::Cursor;

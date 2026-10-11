@@ -150,12 +150,16 @@ fn decode_chars(
                 }
                 let direct = &input[start..at];
                 if level.is_edition3() {
-                    let text = ctx
+                    let text = match ctx
                         .validate_utf8(direct, "STEP direct string UTF-8 validation")?
-                        .map_err(|error| StringError {
-                            offset: start + error.valid_up_to(),
-                            message: "invalid UTF-8 direct string bytes".into(),
-                        })?;
+                    {
+                        Ok(text) => text,
+                        Err(invalid) => return error(
+                            ctx,
+                            start + invalid.valid_up_to(),
+                            "invalid UTF-8 direct string bytes",
+                        ),
+                    };
                     let mut characters = text.chars();
                     ctx.charge_work(0, "STEP decode chars traversal")?;
                     while !characters.as_str().is_empty() {
@@ -212,7 +216,10 @@ fn decode_page_byte(
         _ => {
             return Err(StringError {
                 offset,
-                message: format!("ISO 8859 part {part} is unavailable"),
+                message: ctx.format_retained(
+                    format_args!("ISO 8859 part {part} is unavailable"),
+                    "STEP string error message",
+                )?,
             }
             .into())
         }
@@ -229,13 +236,10 @@ fn decode_page_byte(
         );
     }
     // Each selected single-byte page maps one byte to one BMP scalar.
-    char::from_u32(u32::from(units[0]))
-        .filter(|_| written != 0)
-        .ok_or_else(|| StringError {
-            offset,
-            message: "S escape decoded to no character".into(),
-        })
-        .map_err(StringDecodeFailure::Invalid)
+    match char::from_u32(u32::from(units[0])).filter(|_| written != 0) {
+        Some(character) => Ok(character),
+        None => error(ctx, offset, "S escape decoded to no character"),
+    }
 }
 
 /// Encode text as bytes suitable between Part 21 apostrophe delimiters.
@@ -292,13 +296,12 @@ fn decode_wide(
     let mut offset = start;
     while offset < end {
         ctx.charge_work(1, "STEP wide escape cursor traversal")?;
-        let raw = std::str::from_utf8(&input[offset..offset + width])
+        let Some(raw) = std::str::from_utf8(&input[offset..offset + width])
             .ok()
             .and_then(|hex| u32::from_str_radix(hex, 16).ok())
-            .ok_or_else(|| StringError {
-                offset,
-                message: "wide escape contains non-hexadecimal digits".into(),
-            })?;
+        else {
+            return error(ctx, offset, "wide escape contains non-hexadecimal digits");
+        };
         if width == 4 {
             let Ok(unit) = u16::try_from(raw) else {
                 return error(ctx, offset, "wide escape contains non-hexadecimal digits");
@@ -331,10 +334,9 @@ fn decode_wide(
                 }
             }
         } else {
-            let character = char::from_u32(raw).ok_or_else(|| StringError {
-                offset: start,
-                message: "wide escape contains an invalid Unicode scalar".into(),
-            })?;
+            let Some(character) = char::from_u32(raw) else {
+                return error(ctx, start, "wide escape contains an invalid Unicode scalar");
+            };
             emit(character)?;
         }
         offset += width;
@@ -353,14 +355,13 @@ fn hex_byte(
     let Some(bytes) = input.get(offset..offset + 2) else {
         return error(ctx, offset, "truncated byte escape");
     };
-    std::str::from_utf8(bytes)
+    match std::str::from_utf8(bytes)
         .ok()
         .and_then(|hex| u8::from_str_radix(hex, 16).ok())
-        .ok_or_else(|| StringError {
-            offset,
-            message: "byte escape contains non-hexadecimal digits".into(),
-        })
-        .map_err(StringDecodeFailure::Invalid)
+    {
+        Some(byte) => Ok(byte),
+        None => error(ctx, offset, "byte escape contains non-hexadecimal digits"),
+    }
 }
 
 fn error<T>(
