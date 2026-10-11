@@ -1890,3 +1890,5 @@ mod component_text;
 mod consensus_limits;
 mod route_limits;
 mod surface_sweep_limits;
+
+mod depth_admission;

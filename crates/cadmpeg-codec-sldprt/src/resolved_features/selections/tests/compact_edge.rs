@@ -1457,6 +1457,9 @@ fn variable_fillet_control_names_require_canonical_unsigned_indices() {
         text: None,
         content: Vec::new(),
     };
+    crate::test_support::work_refusal_at("compare SLDPRT variable fillet control name", |ctx| {
+        crate::resolved_features::selections::variable_fillet_dimension_index_for_feature(ctx, &feature, "D1")
+    });
     let index = |feature: &Feature, name: &str| {
         crate::resolved_features::selections::variable_fillet_dimension_index_for_feature(
             &cadmpeg_test_support::service_decode_context(),
@@ -1483,18 +1486,9 @@ fn variable_fillet_control_names_require_canonical_unsigned_indices() {
         .insert(cadmpeg_core::nonblank_literal!("D01"), "1mm".into());
     assert_eq!(index(&feature, "D1"), None);
     assert_eq!(index(&feature, "D01"), Some(1));
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root");
-    assert!(matches!(
-        crate::resolved_features::selections::variable_fillet_dimension_index_for_feature(
-            &ctx, &feature, "D012",
-        ),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-    ));
+    crate::test_support::work_refusal_at("compare SLDPRT variable fillet control name", |ctx| {
+        crate::resolved_features::selections::variable_fillet_dimension_index_for_feature(ctx, &feature, "D012")
+    });
 }
 
 #[test]

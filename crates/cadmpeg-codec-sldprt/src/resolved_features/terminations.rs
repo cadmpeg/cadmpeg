@@ -331,7 +331,8 @@ pub(crate) fn enrich_history_extrusion_terminations(
                             else {
                                 return Ok(false);
                             };
-                            if !matches!(name.value.as_str(), "D1" | "Depth") {
+                            if !ctx.equal(name.value.as_str(), "D1", "compare SLDPRT extrusion D1 depth name")?
+                                && !ctx.equal(name.value.as_str(), "Depth", "compare SLDPRT extrusion named depth")? {
                                 return Ok(false);
                             }
                             Ok(value_only_scalar_offset(ctx, &lane.native_payload, name)?
