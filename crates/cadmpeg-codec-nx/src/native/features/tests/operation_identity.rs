@@ -1023,10 +1023,7 @@ fn operation_object_reference_route_refuses_work_limit() {
     }
 }
 
-fn operation_common_frame_refusal(
-    terminal: bool,
-    dimension: cadmpeg_core::decode::ResourceDimension,
-) -> cadmpeg_core::CodecError {
+fn operation_frame_fixture() -> Vec<u8> {
     let frame = [
         0x00, 0x81, 0x5f, 0x80, 0xab, 0x01, 0x03, 0x02, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x00,
         0x00, 0x81, 0x23, 0x81, 0x23, 0xff, 0x00,
@@ -1035,7 +1032,14 @@ fn operation_common_frame_refusal(
         &[(&[0xff; 4], "FSET", frame.to_vec())],
         &[],
     );
-    let source_bytes_5 = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+    prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)])
+}
+
+fn operation_common_frame_refusal(
+    terminal: bool,
+    dimension: cadmpeg_core::decode::ResourceDimension,
+) -> cadmpeg_core::CodecError {
+    let source_bytes_5 = operation_frame_fixture();
 
     let container = crate::test_support::with_decode_context(|ctx| {
         crate::container::scan_bytes(ctx, &source_bytes_5)
@@ -1073,7 +1077,7 @@ fn operation_common_frame_refusal(
                     "retain NX feature history identity"
                 }
                 cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
-                    "NX indexed section readers"
+                    "index NX operation common frames"
                 }
                 _ => {
                     if terminal {
@@ -1149,6 +1153,11 @@ fn feature_payload_reference_refusal(
             let operation = match dimension {
                 cadmpeg_core::decode::ResourceDimension::WorkUnits => {
                     "retain NX feature history identity"
+                }
+                cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                    if matches!(route_kind, FeaturePayloadReferenceRoute::Text) =>
+                {
+                    "nx operation payload text frames"
                 }
                 _ => match route_kind {
                     FeaturePayloadReferenceRoute::Text => "NX feature payload strings",
@@ -1347,6 +1356,14 @@ macro_rules! feature_payload_reference_limit_tests {
         }
         #[test]
         fn $scoped() {
+            if matches!($route, FeaturePayloadReferenceRoute::Text) {
+                let error = feature_payload_reference_refusal($route,
+                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
+                assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                        && limit.operation == "nx operation payload text frames"));
+                return;
+            }
             let payload_bytes: &[u8] = match $route {
                 FeaturePayloadReferenceRoute::Text => b"\x04\x07BLOCK\0",
                 _ => b"\x01\x02\x10\x07\xff",
@@ -1382,7 +1399,7 @@ macro_rules! feature_payload_reference_limit_tests {
 feature_payload_reference_limit_tests!(
     payload_string_route_refuses_collection_limit,
     payload_string_route_refuses_retained_limit,
-    payload_string_route_admits_zero_scoped_storage,
+    payload_string_route_refuses_scoped_limit,
     payload_string_route_refuses_work_limit,
     FeaturePayloadReferenceRoute::Text
 );
@@ -1402,7 +1419,7 @@ feature_payload_reference_limit_tests!(
 );
 
 macro_rules! operation_frame_limit_tests {
-    ($collection:ident, $retained:ident, $scoped:ident, $work:ident, $terminal:expr) => {
+    ($collection:ident, $retained:ident, $work:ident, $terminal:expr) => {
         #[test]
         fn $collection() {
             let error = operation_common_frame_refusal($terminal,
@@ -1418,13 +1435,6 @@ macro_rules! operation_frame_limit_tests {
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
         }
         #[test]
-        fn $scoped() {
-            let error = operation_common_frame_refusal($terminal,
-                cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
-            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
-        }
-        #[test]
         fn $work() {
             let error = operation_common_frame_refusal($terminal,
                 cadmpeg_core::decode::ResourceDimension::WorkUnits);
@@ -1437,17 +1447,50 @@ macro_rules! operation_frame_limit_tests {
 operation_frame_limit_tests!(
     common_frame_route_refuses_collection_limit,
     common_frame_route_refuses_retained_limit,
-    common_frame_route_refuses_scoped_limit,
     common_frame_route_refuses_work_limit,
     false
 );
 operation_frame_limit_tests!(
     terminal_frame_route_refuses_collection_limit,
     terminal_frame_route_refuses_retained_limit,
-    terminal_frame_route_refuses_scoped_limit,
     terminal_frame_route_refuses_work_limit,
     true
 );
+
+#[test]
+fn common_frame_route_admits_zero_scoped_storage() {
+    let file = operation_frame_fixture();
+    let container =
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, &file))
+            .expect("synthetic common-frame container");
+    crate::test_support::with_decode_context(|history_ctx| {
+        let history = crate::native::features::FeatureHistory::new(history_ctx, &container)
+            .expect("prepared feature history");
+        let baseline = feature_operation_common_frames(history_ctx, &history)
+            .expect("admitted operation common frames");
+        assert_eq!(baseline.len(), 1);
+        let admitted = crate::test_support::with_decode_context_over(
+            container.data.as_ref(),
+            |policy| policy.limits.max_materialized_bytes = 0,
+            |ctx| feature_operation_common_frames(ctx, &history),
+        )
+        .expect("common-frame route needs no scoped storage");
+        assert_eq!(admitted, baseline);
+    });
+}
+
+#[test]
+fn terminal_frame_route_refuses_scoped_limit() {
+    let error = operation_common_frame_refusal(
+        true,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+    );
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+            && limit.operation == "index NX operation common frames")
+    );
+}
 
 fn operation_body_write_refusal(
     dimension: cadmpeg_core::decode::ResourceDimension,
