@@ -2217,8 +2217,10 @@ fn try_decode_standard_populations(
     else {
         return Ok(None);
     };
+    let mut output_storage = ctx.reserve_scoped(0, "catia_standard_population_outputs")?;
     let mut outputs = Vec::new();
-    ctx.reserve_vec(
+    ctx.reserve_scoped_vec(
+        &mut output_storage,
         &mut outputs,
         rest.len(),
         "catia_standard_population_outputs",
@@ -2292,52 +2294,58 @@ fn try_decode_standard_populations(
         population_count == scan.census.fbb_runs && admitted_face_rows == scan.census.fbb_face_rows;
     let all_topologies_attached = attached_topology_count == population_count;
 
-    for (index, output) in outputs.into_iter().enumerate() {
-        merged.admitted_model_entities = merged
-            .admitted_model_entities
-            .checked_add(output.admitted_model_entities)
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "count CATIA standard population entities",
-                    u64::MAX,
-                    u64::MAX,
-                )
-            })?;
-        let (scope, _scope_reservation) = ctx.format_scoped(
-            format_args!("population-{}", index + 1),
-            "catia_standard_population_scope",
-        )?;
-        let mut model = output.ir.model;
-        retain_standard_population_model(ctx, &mut model)?;
-        let mut rewriter = StandardPopulationScope { scope: &scope, ctx };
-        match merged
-            .ir
-            .model
-            .extend_rewritten(
-                ctx,
-                model,
-                &mut rewriter,
-                "catia_standard_population_model_merge",
-            )
-            .map_err(CodecError::from)
+    {
+        let mut output_visits = outputs.into_iter().enumerate();
+        while let Some((index, output)) =
+            ctx.next_charged(&mut output_visits, "catia_standard_population_output_merge")?
         {
-            Ok(()) => {}
-            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-            Err(_) => return Ok(None),
-        }
-        if let Err(error) = merge_standard_population_annotations(
-            ctx,
-            &mut merged.annotations,
-            output.annotations,
-            &scope,
-        )? {
-            refusal.push_annotation_collision(ctx, &error)?;
-            return Ok(None);
-        }
-        if output.report.transfer.geometry_transferred() {
-            merged.report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
+            merged.admitted_model_entities = merged
+                .admitted_model_entities
+                .checked_add(output.admitted_model_entities)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "count CATIA standard population entities",
+                        u64::MAX,
+                        u64::MAX,
+                    )
+                })?;
+            let (scope, _scope_reservation) = ctx.format_scoped(
+                format_args!("population-{}", index + 1),
+                "catia_standard_population_scope",
+            )?;
+            let mut model = output.ir.model;
+            retain_standard_population_model(ctx, &mut model)?;
+            let mut rewriter = StandardPopulationScope { scope: &scope, ctx };
+            match merged
+                .ir
+                .model
+                .extend_rewritten(
+                    ctx,
+                    model,
+                    &mut rewriter,
+                    "catia_standard_population_model_merge",
+                )
+                .map_err(CodecError::from)
+            {
+                Ok(()) => {}
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                Err(_) => return Ok(None),
+            }
+            if let Err(error) = merge_standard_population_annotations(
+                ctx,
+                &mut merged.annotations,
+                output.annotations,
+                &scope,
+            )? {
+                refusal.push_annotation_collision(ctx, &error)?;
+                return Ok(None);
+            }
+            if output.report.transfer.geometry_transferred() {
+                merged.report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
+            }
         }
     }
+    drop(output_storage);
 
     for (key, value) in population_coverage {
         merged.report.coverage.record(ctx, key, value)?;
