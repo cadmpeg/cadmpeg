@@ -1495,7 +1495,8 @@ fn object_attributes_presentation(
         offset: source_offset,
         uuid: source_uuid,
     } = source;
-    let mut rendering_storage = ctx.reserve_scoped(0, "Rhino object rendering projection attempt")?;
+    let mut rendering_storage =
+        ctx.reserve_scoped(0, "Rhino object rendering projection attempt")?;
     let rendering = match rendering_storage.with_storage(|| {
         rendering_attributes(
             ctx,
@@ -2040,9 +2041,9 @@ fn legacy_rdk_material_instance_id(
             continue;
         }
         let mut attempt = ctx.reserve_scoped(0, "Rhino RDK classification attempt")?;
-        match attempt.with_storage(|| {
-            classify_rdk_material_payload(ctx, data, value.payload_range.clone())
-        }) {
+        match attempt
+            .with_storage(|| classify_rdk_material_payload(ctx, data, value.payload_range.clone()))
+        {
             Ok(RdkMaterialPayload::Compatibility(Some(value))) => return Ok(Some(value)),
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Ok(_) | Err(_) => {}
@@ -2076,9 +2077,9 @@ fn rdk_material_userdata_requires_opaque(
             continue;
         }
         let mut attempt = ctx.reserve_scoped(0, "Rhino RDK classification attempt")?;
-        match attempt.with_storage(|| {
-            classify_rdk_material_payload(ctx, data, value.payload_range.clone())
-        }) {
+        match attempt
+            .with_storage(|| classify_rdk_material_payload(ctx, data, value.payload_range.clone()))
+        {
             Ok(RdkMaterialPayload::Compatibility(_)) => {}
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Ok(RdkMaterialPayload::CallbackOwned) | Err(_) => return Ok(true),
@@ -2510,7 +2511,8 @@ fn parse_texture(
     ];
     let blend_order = reader.i32()?;
     let file_reference = if version.1 >= 1 {
-        let mut diagnostics_storage = ctx.reserve_scoped(0, "Rhino texture file-reference diagnostics")?;
+        let mut diagnostics_storage =
+            ctx.reserve_scoped(0, "Rhino texture file-reference diagnostics")?;
         let mut diagnostics = Diagnostics::new();
         let value = match crate::instances::file_reference(
             ctx,
@@ -2518,7 +2520,8 @@ fn parse_texture(
             &mut reader,
             archive,
             &mut |code, message| {
-                diagnostics_storage.with_storage(|| diagnostics.push_coded_admitted(ctx, code, message))
+                diagnostics_storage
+                    .with_storage(|| diagnostics.push_coded_admitted(ctx, code, message))
             },
         ) {
             Ok(value) => value,
@@ -5328,7 +5331,8 @@ fn parse_text_style(
         ));
     }
     let mut component_storage = ctx.reserve_scoped(0, "Rhino text style component attempt")?;
-    let component = component_storage.with_storage(|| component(ctx, data, &mut reader, archive))?;
+    let component =
+        component_storage.with_storage(|| component(ctx, data, &mut reader, archive))?;
     let index = component.index;
     let font_description = if reader.bool_with_writer_version(writer_version)? {
         crate::settings::utf16_retained(ctx, &mut reader, "Rhino text style font description")?
@@ -5347,7 +5351,10 @@ fn parse_text_style(
         drop(component_storage);
         (id, name)
     } else {
-        (component.id, component_storage.commit_value(component.name)?)
+        (
+            component.id,
+            component_storage.commit_value(component.name)?,
+        )
     };
     reader.skip_remaining()?;
     Ok(TextStyleRecord {

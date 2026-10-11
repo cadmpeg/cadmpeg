@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Known-length searches stop at a match or at the actual source boundary.
 
-use cadmpeg_core::decode::refusal_probe::RefusalProbe;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use crate::chunks::{ArchiveVersion, FramingError};
 use crate::wire::Uuid;
+use cadmpeg_core::decode::refusal_probe::RefusalProbe;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
 fn assert_rdk_no_terminal_visit(opaque: bool, count: usize) {
     let mut descriptor = super::legacy_rdk_descriptor(0..0);
@@ -21,9 +21,14 @@ fn assert_rdk_no_terminal_visit(opaque: bool, count: usize) {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     if opaque {
-        assert!(!crate::presentation::rdk_material_userdata_requires_opaque(&ctx, &[], &input).unwrap());
+        assert!(
+            !crate::presentation::rdk_material_userdata_requires_opaque(&ctx, &[], &input).unwrap()
+        );
     } else {
-        assert_eq!(crate::presentation::legacy_rdk_material_instance_id(&ctx, &[], &input).unwrap(), None);
+        assert_eq!(
+            crate::presentation::legacy_rdk_material_instance_id(&ctx, &[], &input).unwrap(),
+            None
+        );
     }
     assert_eq!(ctx.resource_refusal(), None);
     ctx.finish_session().unwrap();
@@ -49,7 +54,6 @@ fn complete_rdk_opaque_search_visits_only_the_source_items() {
     assert_rdk_no_terminal_visit(true, 1024);
 }
 
-
 #[test]
 fn absent_rdk_instance_attribute_preserves_the_structural_error_without_a_visit() {
     let xml = "<xml><render-content-manager-data><material/></render-content-manager-data></xml>";
@@ -58,11 +62,18 @@ fn absent_rdk_instance_attribute_preserves_the_structural_error_without_a_visit(
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "Rhino RDK instance attribute search", None);
-    let error = crate::presentation::classify_rdk_material_payload(&ctx, &bytes, 0..bytes.len()).unwrap_err();
+    let probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "Rhino RDK instance attribute search",
+        None,
+    );
+    let error = crate::presentation::classify_rdk_material_payload(&ctx, &bytes, 0..bytes.len())
+        .unwrap_err();
     drop(probe);
-    assert!(matches!(error, FramingError::Structural { offset: 0, message }
-        if message == "legacy RDK material has no instance-id attribute"));
+    assert!(
+        matches!(error, FramingError::Structural { offset: 0, message }
+        if message == "legacy RDK material has no instance-id attribute")
+    );
     assert_eq!(ctx.resource_refusal(), None);
     ctx.finish_session().unwrap();
 }
@@ -72,17 +83,31 @@ fn light_without_attribute_userdata_executes_no_search_visit() {
     use crate::test_support::test_dump::{class_wrapper, short_chunk};
     let archive = ArchiveVersion::V5;
     let mut bytes = class_wrapper(archive, crate::presentation::LIGHT.to_wire(), &[]);
-    bytes.extend(short_chunk(archive, crate::presentation::LIGHT_RECORD_END, 0));
+    bytes.extend(short_chunk(
+        archive,
+        crate::presentation::LIGHT_RECORD_END,
+        0,
+    ));
     let record = crate::container::Record::long(0x2000_8060, 0..bytes.len(), 0..bytes.len());
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "Rhino parse light record attributes traversal", None);
+    let probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "Rhino parse light record attributes traversal",
+        None,
+    );
     let mut losses = Vec::new();
     let value = crate::presentation::parse_light_record_attributes(
-        &ctx, &bytes, &record, archive, None, &mut losses,
-    ).unwrap();
+        &ctx,
+        &bytes,
+        &record,
+        archive,
+        None,
+        &mut losses,
+    )
+    .unwrap();
     drop(probe);
     assert!(value.is_none());
     assert!(losses.is_empty());
@@ -108,34 +133,66 @@ fn mapping_primitive_without_userdata_executes_no_cache_search_visit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = u64::MAX;
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, "Rhino parse texture mapping traversal", None);
+    let probe = RefusalProbe::arm(
+        ResourceDimension::WorkUnits,
+        "Rhino parse texture mapping traversal",
+        None,
+    );
     let mapping = crate::presentation::parse_texture_mapping(
-        &ctx, &bytes, 0..bytes.len(), ArchiveVersion::V8, 42,
-    ).unwrap();
+        &ctx,
+        &bytes,
+        0..bytes.len(),
+        ArchiveVersion::V8,
+        42,
+    )
+    .unwrap();
     drop(probe);
     assert_eq!(mapping.value.mapping_type, 6);
-    assert_eq!(mapping.value.primitive_class_uuid, Some(Uuid::from_wire(MESH_CLASS).to_string()));
+    assert_eq!(
+        mapping.value.primitive_class_uuid,
+        Some(Uuid::from_wire(MESH_CLASS).to_string())
+    );
     assert!(!mapping.cache_requires_opaque);
     assert_eq!(ctx.resource_refusal(), None);
     ctx.finish_session().unwrap();
 }
 
-fn assert_empty_install_search(table_type: u32, record_type: u32, class_uuid: Uuid,
-    operation: &'static str, application_name: Option<&str>, arena_name: &str) {
-    use crate::test_support::test_dump::{class_wrapper, crc_chunk, minimal_document, set_test_units, table};
+fn assert_empty_install_search(
+    table_type: u32,
+    record_type: u32,
+    class_uuid: Uuid,
+    operation: &'static str,
+    application_name: Option<&str>,
+    arena_name: &str,
+) {
+    use crate::test_support::test_dump::{
+        class_wrapper, crc_chunk, minimal_document, set_test_units, table,
+    };
     let archive = ArchiveVersion::V5;
-    let record = crc_chunk(archive, record_type, &class_wrapper(archive, class_uuid.to_wire(), &[]));
-    let bytes = minimal_document("50", &[
-        table(archive, 0x1000_0014, &[]), table(archive, 0x1000_0015, &[]),
-        table(archive, table_type, &[record]), table(archive, 0x1000_0013, &[]),
-    ]);
+    let record = crc_chunk(
+        archive,
+        record_type,
+        &class_wrapper(archive, class_uuid.to_wire(), &[]),
+    );
+    let bytes = minimal_document(
+        "50",
+        &[
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, table_type, &[record]),
+            table(archive, 0x1000_0013, &[]),
+        ],
+    );
     let mut scan = crate::container::scan_owned(bytes).unwrap();
     assert_eq!(scan.tables[2].records.len(), 1);
     set_test_units(&mut scan, 1.0);
-    scan.metadata.properties.application = application_name.map(|name| crate::settings::Application {
-        source: crate::settings::SourceRange { range: 0..0 },
-        name: name.to_owned(), url: String::new(), details: String::new(),
-    });
+    scan.metadata.properties.application =
+        application_name.map(|name| crate::settings::Application {
+            source: crate::settings::SourceRange { range: 0..0 },
+            name: name.to_owned(),
+            url: String::new(),
+            details: String::new(),
+        });
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = u64::MAX;
@@ -155,18 +212,36 @@ fn assert_empty_install_search(table_type: u32, record_type: u32, class_uuid: Uu
 
 #[test]
 fn material_without_userdata_executes_no_pbr_search_visit() {
-    assert_empty_install_search(0x1000_0010, 0x2000_8040, crate::presentation::MATERIAL,
-        "Rhino PBR userdata search", None, "materials");
+    assert_empty_install_search(
+        0x1000_0010,
+        0x2000_8040,
+        crate::presentation::MATERIAL,
+        "Rhino PBR userdata search",
+        None,
+        "materials",
+    );
 }
 
 #[test]
 fn dimension_style_without_userdata_executes_no_extra_search_visit() {
-    assert_empty_install_search(0x1000_0020, 0x2000_8075, crate::presentation::V5_DIMSTYLE,
-        "Rhino dimension style userdata search", None, "dimension_styles");
+    assert_empty_install_search(
+        0x1000_0020,
+        0x2000_8075,
+        crate::presentation::V5_DIMSTYLE,
+        "Rhino dimension style userdata search",
+        None,
+        "dimension_styles",
+    );
 }
 
 #[test]
 fn short_application_name_executes_no_font_window_search_visit() {
-    assert_empty_install_search(0x1000_0019, 0x2000_8074, crate::presentation::TEXT_STYLE,
-        "Rhino font application search", Some("ab"), "text_styles");
+    assert_empty_install_search(
+        0x1000_0019,
+        0x2000_8074,
+        crate::presentation::TEXT_STYLE,
+        "Rhino font application search",
+        Some("ab"),
+        "text_styles",
+    );
 }

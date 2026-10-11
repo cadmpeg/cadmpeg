@@ -2564,14 +2564,9 @@ fn parse_layer(
                 RenderingAttributesKind::Layer,
                 warnings,
             )
-            .or_else(|error| {
-                Err(match error {
-                    FramingError::Resource(_) => error,
-                    other => FramingError::structural(
-                        reader.position(),
-                        format!("rendering: {other}"),
-                    ),
-                })
+            .map_err(|error| match error {
+                FramingError::Resource(_) => error,
+                other => FramingError::structural(reader.position(), format!("rendering: {other}")),
             })?,
         )
     } else {
@@ -2580,11 +2575,8 @@ fn parse_layer(
     let display_material_id = (version.1 >= 8)
         .then(|| uuid(&mut reader))
         .transpose()
-        .or_else(|error| {
-            Err(FramingError::structural(
-                reader.position(),
-                format!("display material: {error}"),
-            ))
+        .map_err(|error| {
+            FramingError::structural(reader.position(), format!("display material: {error}"))
         })?;
     if version.1 == 9 {
         reader.skip(2)?;
@@ -2990,7 +2982,7 @@ pub(crate) fn parse_metadata(
     {
         storage.absorb(reservation)?;
     }
-    Ok(storage.commit_value(metadata)?)
+    storage.commit_value(metadata)
 }
 
 /// Records a layer UUID in the table of UUIDs seen so far and returns whether

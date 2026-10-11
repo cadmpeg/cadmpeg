@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Empty userdata sources execute no search visits.
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use crate::chunks::ArchiveVersion;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 #[test]
 fn empty_user_string_sources_have_no_terminal_work_or_storage() {
@@ -15,8 +15,15 @@ fn empty_user_string_sources_have_no_terminal_work_or_storage() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut losses = Vec::new();
     let (geometry, attributes) = crate::presentation::first_user_string_records(
-        &ctx, &[], ArchiveVersion::V8, &[], &[], 0, &mut losses,
-    ).unwrap();
+        &ctx,
+        &[],
+        ArchiveVersion::V8,
+        &[],
+        &[],
+        0,
+        &mut losses,
+    )
+    .unwrap();
     assert!(geometry.is_empty());
     assert_eq!(geometry.capacity(), 0);
     assert!(attributes.is_empty());
