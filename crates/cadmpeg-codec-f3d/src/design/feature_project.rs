@@ -8029,7 +8029,7 @@ fn resolved_loft_path(
     scope: &DesignParameterScope,
     ctx: &DecodeContext<'_>,
 ) -> Result<cadmpeg_ir::features::PathRef, CodecError> {
-    let selection = {
+    let (selection, selection_storage) = ctx.with_scoped_storage("f3d loft edge selection storage", || {
         let (selection_feature_id, _selection_feature_storage) = ctx
             .with_scoped_storage("f3d edge selection feature key", || {
                 crate::design::identity::neutral_feature_id(ctx, scope)
@@ -8043,8 +8043,18 @@ fn resolved_loft_path(
             &selection_feature_id,
             ctx,
         )
-    }?;
-    loft_path_from_edge_selection(ctx, &group.id, selection)
+    })?;
+    if matches!(selection,
+        cadmpeg_ir::features::EdgeSelection::All
+            | cadmpeg_ir::features::EdgeSelection::Unresolved
+            | cadmpeg_ir::features::EdgeSelection::Generated { .. }
+            | cadmpeg_ir::features::EdgeSelection::HistoricalPartial { .. }) {
+        drop(selection);
+        drop(selection_storage);
+        return loft_path_from_edge_selection(ctx, &group.id,
+            cadmpeg_ir::features::EdgeSelection::Unresolved);
+    }
+    selection_storage.commit_value(loft_path_from_edge_selection(ctx, &group.id, selection)?)
 }
 
 #[derive(Clone, Copy)]
@@ -8064,49 +8074,55 @@ fn resolved_surface_patch_path(
 ) -> Result<cadmpeg_ir::features::PathRef, CodecError> {
     use cadmpeg_ir::features::PathRef;
 
-    let mut paths = Vec::new();
-    for group in ctx.admit_iter(groups, "f3d surface patch path group source")? {
-        let selection = if matches!(recipe, SurfacePatchRecipe::Grouped) {
-            {
+    let resolve_group = |group: &DesignConstructionOperandGroup| {
+        let (selection, selection_storage) = ctx.with_scoped_storage(
+            "f3d surface patch group selection storage",
+            || {
                 let (selection_feature_id, _selection_feature_storage) = ctx
                     .with_scoped_storage("f3d edge selection feature key", || {
                         crate::design::identity::neutral_feature_id(ctx, scope)
                     })?;
-                resolved_surface_patch_edge_group(
-                    group,
-                    all_groups,
-                    operands,
-                    identity_operands,
-                    scope.previous_history_state_id(),
-                    &selection_feature_id,
-                    ctx,
-                )
-            }
-        } else {
-            {
-                let (selection_feature_id, _selection_feature_storage) = ctx
-                    .with_scoped_storage("f3d edge selection feature key", || {
-                        crate::design::identity::neutral_feature_id(ctx, scope)
-                    })?;
-                resolved_edge_group(
-                    group,
-                    all_groups,
-                    operands,
-                    identity_operands,
-                    scope.previous_history_state_id(),
-                    &selection_feature_id,
-                    ctx,
-                )
-            }
-        }?;
-        let path = loft_path_from_edge_selection(ctx, &group.id, selection)?;
-        ctx.push_vec(&mut paths, path, "f3d surface patch path")?;
-    }
-    if matches!(recipe, SurfacePatchRecipe::Grouped) && paths.len() == 1 {
-        if let Some(path) = paths.pop() {
-            return Ok(path);
+                if matches!(recipe, SurfacePatchRecipe::Grouped) {
+                    resolved_surface_patch_edge_group(
+                        group, all_groups, operands, identity_operands,
+                        scope.previous_history_state_id(), &selection_feature_id, ctx,
+                    )
+                } else {
+                    resolved_edge_group(
+                        group, all_groups, operands, identity_operands,
+                        scope.previous_history_state_id(), &selection_feature_id, ctx,
+                    )
+                }
+            },
+        )?;
+        if matches!(selection,
+            cadmpeg_ir::features::EdgeSelection::All
+                | cadmpeg_ir::features::EdgeSelection::Unresolved
+                | cadmpeg_ir::features::EdgeSelection::Generated { .. }
+                | cadmpeg_ir::features::EdgeSelection::HistoricalPartial { .. }) {
+            drop(selection);
+            drop(selection_storage);
+            return loft_path_from_edge_selection(ctx, &group.id,
+                cadmpeg_ir::features::EdgeSelection::Unresolved);
+        }
+        selection_storage.commit_value(loft_path_from_edge_selection(ctx, &group.id, selection)?)
+    };
+    if matches!(recipe, SurfacePatchRecipe::Grouped) && groups.len() == 1 {
+        let mut source = groups.iter();
+        if let Some(group) = ctx.next_charged(&mut source, "f3d surface patch path group source")? {
+            return resolve_group(group);
         }
     }
+    let (paths, _paths_storage) = ctx.with_scoped_storage(
+        "f3d surface patch input paths storage",
+        || {
+            let mut paths = Vec::new();
+            for group in ctx.admit_iter(groups, "f3d surface patch path group source")? {
+                ctx.push_vec(&mut paths, resolve_group(group)?, "f3d surface patch path")?;
+            }
+            Ok::<_, CodecError>(paths)
+        },
+    )?;
     if paths.is_empty() {
         return Ok(PathRef::Native(
             ctx.copy_retained_text(&scope.id, "f3d surface patch native path")?,
@@ -8136,7 +8152,10 @@ fn resolved_surface_patch_path(
             },
             "f3d surface patch historical lane source",
         )? {
-            let state = (state).try_clone_for_decode(ctx, "f3d surface patch historical state")?;
+            let (candidate, candidate_storage) = ctx.with_scoped_storage(
+                "f3d surface patch accepted historical path",
+                || {
+                let state = (state).try_clone_for_decode(ctx, "f3d surface patch historical state")?;
             let mut edges = Vec::new();
             for path in ctx.admit_iter(&paths, "f3d surface patch selected path source")? {
                 if let PathRef::HistoricalEdges {
@@ -8158,20 +8177,23 @@ fn resolved_surface_patch_path(
                 ctx,
                 "f3d surface patch historical uniqueness",
             )?;
+                    Ok::<_, CodecError>(members.map(|edges| (state, edges)))
+                },
+            )?;
             let native =
                 ctx.copy_retained_text(&scope.id, "f3d surface patch historical native path")?;
-            return Ok(match members {
-                Ok(edges) => PathRef::HistoricalEdges {
-                    state,
-                    edges,
-                    native: cadmpeg_core::text::NonBlankString::for_decode(
-                        ctx,
-                        native,
-                        "validate nonblank text",
-                    )?
-                    .ok_or_else(|| CodecError::malformed("surface patch path is blank"))?,
-                },
-                Err(_) => PathRef::Native(native),
+            return Ok(match candidate {
+                Ok((state, edges)) => {
+                    let native = cadmpeg_core::text::NonBlankString::for_decode(
+                        ctx, native, "validate nonblank text",
+                    )?.ok_or_else(|| CodecError::malformed("surface patch path is blank"))?;
+                    let (state, edges) = candidate_storage.commit_value((state, edges))?;
+                    PathRef::HistoricalEdges { state, edges, native }
+                }
+                Err(_) => {
+                    drop(candidate_storage);
+                    PathRef::Native(native)
+                }
             });
         }
     }
@@ -8220,6 +8242,10 @@ fn loft_path_from_edge_selection(
             edges,
             native,
         }),
+        EdgeSelection::Native(selected)
+            if ctx.equal_bytes(selected.as_bytes(), native.as_bytes(), "f3d loft native identity comparison")? => {
+                Ok(PathRef::Native(selected))
+            }
         EdgeSelection::All
         | EdgeSelection::Unresolved
         | EdgeSelection::Native(_)

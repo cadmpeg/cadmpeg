@@ -388,3 +388,58 @@ fn patch_candidates_keep_the_original_session_refusal() {
         assert_eq!(later, original);
     }
 }
+
+#[test]
+fn merged_patch_native_path_retains_only_returned_identity() {
+    use crate::design::feature_project::{resolved_surface_patch_path, SurfacePatchRecipe};
+    let (scope, groups) = occupancy_fixture(0);
+    let sources = [&groups[0], &groups[1], &groups[2]];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = u64_from_index(scope.id.len());
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let path = resolved_surface_patch_path(
+        &sources, &groups, &[], &[], &scope, SurfacePatchRecipe::Direct, &ctx,
+    ).unwrap();
+    assert_eq!(path, cadmpeg_ir::features::PathRef::Native(scope.id.clone()));
+}
+
+#[test]
+fn merged_patch_native_identity_refuses_before_copy() {
+    use crate::design::feature_project::{resolved_surface_patch_path, SurfacePatchRecipe};
+    let (scope, groups) = occupancy_fixture(0);
+    let sources = [&groups[0], &groups[1], &groups[2]];
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::RetainedBytes, "f3d surface patch native path", |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let result = resolved_surface_patch_path(
+                &sources, &groups, &[], &[], &scope, SurfacePatchRecipe::Direct, &ctx,
+            );
+            if let Err(CodecError::ResourceLimit(limit)) = &result {
+                assert_eq!(ctx.resource_refusal(), Some(*limit));
+            }
+            result
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else { panic!("native path copy must refuse"); };
+    assert_eq!(limit.used, 0);
+    assert_eq!(limit.additional, u64_from_index(scope.id.len()));
+}
+
+#[test]
+fn grouped_patch_singleton_moves_returned_native_identity() {
+    use crate::design::feature_project::{resolved_surface_patch_path, SurfacePatchRecipe};
+    let (scope, groups) = occupancy_fixture(0);
+    let sources = [&groups[0]];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = u64_from_index(groups[0].id.len());
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let path = resolved_surface_patch_path(
+        &sources, &groups, &[], &[], &scope, SurfacePatchRecipe::Grouped, &ctx,
+    ).unwrap();
+    assert_eq!(path, cadmpeg_ir::features::PathRef::Native(groups[0].id.clone()));
+}
