@@ -287,7 +287,7 @@ fn staged_curve_arena_preserves_materialized_refusal() {
             super::stage_curve_tree(
                 (&ctx, &mut storage, &mut metadata_storage),
                 &mut staged,
-                super::decoded_nurbs(super::line_nurbs(0.0, 1.0, false)),
+                &super::decoded_nurbs(super::line_nurbs(0.0, 1.0, false)),
                 "curve",
                 "root",
                 &super::test_association(),
@@ -531,7 +531,7 @@ fn staged_curve_links_preserve_work_and_storage_refusals() {
             super::stage_curve_tree(
                 (&ctx, &mut arena_storage, &mut link_storage),
                 &mut staged,
-                super::decoded_nurbs(super::line_nurbs(0.0, 1.0, false)),
+                &super::decoded_nurbs(super::line_nurbs(0.0, 1.0, false)),
                 "curve",
                 "root",
                 &super::test_association(),
@@ -848,11 +848,8 @@ fn mesh_source_association_is_constructed_after_payload_decode() {
     });
 }
 
-#[test]
-fn hatch_placement_rejection_charges_only_the_first_loop() {
+fn hatch_placement_failure_scan(count: usize, curve: Option<([u8; 16], Vec<u8>)>) -> crate::container::Scan<'static> {
     use crate::test_support::{test_archive as curves, test_dump as bytes};
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
-    let run = |count, cap, measure_end| {
         let archive = ArchiveVersion::V5;
         let mut payload = vec![0x10];
         for value in [
@@ -882,25 +879,52 @@ fn hatch_placement_rejection_charges_only_the_first_loop() {
         let mut line = curves::line_payload([2.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0]);
         line.truncate(line.len() - std::mem::size_of::<i32>());
         bytes::push_i32(&mut line, 2);
-        let child = bytes::class_wrapper(archive, curves::LINE_CLASS, &line);
+        let (class, child_payload) = curve.unwrap_or((curves::LINE_CLASS, line));
+        let child = bytes::class_wrapper(archive, class, &child_payload);
         for _ in 0..count {
             payload.push(0x10);
             bytes::push_i32(&mut payload, 0);
             payload.extend_from_slice(&child);
         }
-        let scan = scan_with_objects(&[bytes::object_record_with_payload(
+        scan_with_objects(&[bytes::object_record_with_payload(
             archive,
             0x1_0000,
             crate::hatch::CLASS.to_wire(),
             &payload,
-        )]);
+        )])
+}
+
+#[test]
+fn hatch_placement_rejection_charges_only_the_first_loop() {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    let run = |count, cap, probe| {
+        let archive = ArchiveVersion::V5;
+        let scan = hatch_placement_failure_scan(count, None);
 
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
         let (ctx, root) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
-        let mut transaction = DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root))?;
+        let expand = crate::mesh::MeshExpand::new(&ctx, root);
+        let mut transaction = DecodeContext::new(&scan, expand)?;
+        if probe == PrefixProbe::Setup {
+            let object = scan.objects[0].framed().expect("framed hatch");
+            let mut storage = ctx.reserve_scoped(0, "hatch parser setup")?;
+            let mut hatch = crate::hatch::decode(
+                expand, &mut storage, object.class_data_range.clone(),
+                crate::settings::MillimeterScale::IDENTITY, archive,
+            ).map_err(|error| match error {
+                crate::curves::GeometryError::Codec(error) => error,
+                error => panic!("valid hatch parser setup: {error}"),
+            })?;
+            let install = crate::hatch::apply_userdata(
+                &ctx, scan.data, &object.userdata, crate::settings::MillimeterScale::IDENTITY, archive, &mut hatch,
+            )?;
+            assert!(install.errors.is_empty());
+            ctx.next_charged(&mut std::iter::once(()), "prefix setup completed")?;
+            return Ok(());
+        }
         transaction.decode_geometry()?;
         assert!(transaction.session.document().model.curves.is_empty());
         assert_eq!(
@@ -913,7 +937,7 @@ fn hatch_placement_rejection_charges_only_the_first_loop() {
             .iter()
             .any(|warning| warning.contains("hatch loop placement failed")));
         assert!(ctx.resource_refusal().is_none());
-        if measure_end {
+        if probe == PrefixProbe::Complete {
             ctx.next_charged(&mut std::iter::once(()), "prefix completed")?;
         }
         Ok::<(), cadmpeg_core::CodecError>(())
@@ -924,7 +948,7 @@ fn hatch_placement_rejection_charges_only_the_first_loop() {
 #[test]
 fn brep_scaled_vertex_rejection_charges_only_the_first_vertex() {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
-    let run = |count, cap, measure_end| {
+    let run = |count, cap, probe| {
         let (data, mut raw) = source_shaped_plane_brep();
         raw.c2.slots.clear();
         raw.c3.slots.clear();
@@ -959,6 +983,10 @@ fn brep_scaled_vertex_rejection_charges_only_the_first_vertex() {
         policy.limits.max_work_units = cap;
         let (ctx, root) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)?;
+        if probe == PrefixProbe::Setup {
+            ctx.next_charged(&mut std::iter::once(()), "prefix setup completed")?;
+            return Ok(());
+        }
         let mut backing = ctx.reserve_scoped(0, "vertex prefix fixture backing")?;
         let mut metadata = ctx.reserve_scoped(0, "vertex prefix fixture metadata")?;
         let association = super::test_association();
@@ -986,7 +1014,7 @@ fn brep_scaled_vertex_rejection_charges_only_the_first_vertex() {
                     .to_string()
                     .contains("scaled Brep vertex coordinate is invalid"));
                 assert!(ctx.resource_refusal().is_none());
-                if measure_end {
+                if probe == PrefixProbe::Complete {
                     ctx.next_charged(&mut std::iter::once(()), "prefix completed")?;
                 }
                 Ok(())
@@ -1008,11 +1036,15 @@ fn extrusion_cap_rejection_charges_only_the_first_boundary() {
             directrix: "rhino:test:curve#cap".try_into().unwrap(),
         })
         .collect::<Vec<_>>();
-    let run = |count, cap, measure_end| {
+    let run = |count, cap, probe| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        if probe == PrefixProbe::Setup {
+            ctx.next_charged(&mut std::iter::once(()), "prefix setup completed")?;
+            return Ok(());
+        }
         let mut backing = ctx.reserve_scoped(0, "cap prefix fixture backing")?;
         match super::stage_extrusion_caps(
             (&ctx, &mut backing),
@@ -1027,7 +1059,7 @@ fn extrusion_cap_rejection_charges_only_the_first_boundary() {
             Err(super::CandidateError::Admission(message)) => {
                 assert!(message.contains("pcurve knot count 0"));
                 assert!(ctx.resource_refusal().is_none());
-                if measure_end {
+                if probe == PrefixProbe::Complete {
                     ctx.next_charged(&mut std::iter::once(()), "prefix completed")?;
                 }
                 Ok(())
@@ -1089,11 +1121,15 @@ fn plane_pcurve_overflow_charges_only_the_first_pcurve() {
         .unwrap();
     let pcurve = pcurve.clone();
     fixture.draft.model_mut().pcurves = (0..128).map(|_| pcurve.clone()).collect();
-    let run = |count, cap, measure_end| {
+    let run = |count, cap, probe| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = cap;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        if probe == PrefixProbe::Setup {
+            ctx.next_charged(&mut std::iter::once(()), "prefix setup completed")?;
+            return Ok(());
+        }
         let mut staged = super::BrepDraft::default();
         *staged.draft.model_mut() = fixture.draft.model().clone();
         staged.draft.model_mut().pcurves.truncate(count);
@@ -1108,7 +1144,7 @@ fn plane_pcurve_overflow_charges_only_the_first_pcurve() {
                     .to_string()
                     .contains("control_points contains a non-finite point"));
                 assert!(ctx.resource_refusal().is_none());
-                if measure_end {
+                if probe == PrefixProbe::Complete {
                     ctx.next_charged(&mut std::iter::once(()), "prefix completed")?;
                 }
                 Ok(())
@@ -1119,38 +1155,130 @@ fn plane_pcurve_overflow_charges_only_the_first_pcurve() {
     assert_prefix_work("Rhino plane pcurve traversal", run);
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PrefixProbe {
+    Setup,
+    Complete,
+    None,
+}
+
 fn assert_prefix_work(
     operation: &str,
-    mut run: impl FnMut(usize, u64, bool) -> Result<(), cadmpeg_core::CodecError>,
+    mut run: impl FnMut(usize, u64, PrefixProbe) -> Result<(), cadmpeg_core::CodecError>,
 ) {
     use cadmpeg_core::decode::ResourceDimension;
-    let mut suffix_cost = None;
+    let mut first_cost = None;
     for count in [1, 128] {
+        let setup = cadmpeg_test_support::refusal::resource_limit_at(
+            ResourceDimension::WorkUnits, "prefix setup completed",
+            |cap| run(count, cap, PrefixProbe::Setup),
+        );
+        let cadmpeg_core::CodecError::ResourceLimit(setup) = setup else {
+            panic!("setup refusal");
+        };
         let start = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits,
-            operation,
-            |cap| run(count, cap, false),
+            ResourceDimension::WorkUnits, operation,
+            |cap| run(count, cap, PrefixProbe::None),
         );
         let cadmpeg_core::CodecError::ResourceLimit(start) = start else {
             panic!("prefix visit refusal");
         };
         assert_eq!(start.additional, 1);
         let end = cadmpeg_test_support::refusal::resource_limit_at(
-            ResourceDimension::WorkUnits,
-            "prefix completed",
-            |cap| run(count, cap, true),
+            ResourceDimension::WorkUnits, "prefix completed",
+            |cap| run(count, cap, PrefixProbe::Complete),
         );
         let cadmpeg_core::CodecError::ResourceLimit(end) = end else {
             panic!("completed prefix refusal");
         };
-        let cost = end
-            .used
-            .checked_sub(start.used)
-            .expect("completion follows first visit");
-        if let Some(previous) = suffix_cost {
-            assert_eq!(cost, previous, "unused suffix adds no work");
-        }
-        suffix_cost = Some(cost);
-        run(count, end.used, false).expect("exact completed-prefix budget suffices");
+        let entry_cost = start.used.checked_sub(setup.used)
+            .expect("first visit follows independent setup");
+        let completed_cost = end.used.checked_sub(setup.used)
+            .expect("completion follows independent setup");
+        let (expected_entry, expected_completed) = *first_cost.get_or_insert((entry_cost, completed_cost));
+        assert_eq!(entry_cost, expected_entry, "unused suffix adds no previsit work");
+        assert_eq!(completed_cost, expected_completed, "unused suffix adds no work");
+        run(count, setup.used + expected_completed, PrefixProbe::None)
+            .expect("independently measured completed-prefix budget suffices");
     }
+}
+
+#[test]
+#[should_panic(expected = "unused suffix adds no previsit work")]
+fn prefix_oracle_rejects_previsit_bulk_charge() {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    let run = |count, cap, probe| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        if probe == PrefixProbe::Setup {
+            ctx.next_charged(&mut std::iter::once(()), "prefix setup completed")?;
+            return Ok(());
+        }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), "injected suffix precharge")?;
+        ctx.next_charged(&mut std::iter::once(()), "injected first visit")?;
+        if probe == PrefixProbe::Complete {
+            ctx.next_charged(&mut std::iter::once(()), "prefix completed")?;
+        }
+        Ok(())
+    };
+    assert_prefix_work("injected first visit", run);
+}
+
+#[test]
+fn rejected_hatch_placement_releases_unvisited_loop_fields() {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+    let mut expected = None;
+    for count in [1, 128] {
+        let scan = hatch_placement_failure_scan(count, None);
+        let used = |decode| {
+            let error = cadmpeg_test_support::refusal::resource_limit_at(
+                ResourceDimension::RetainedBytes, "hatch field lifetime checkpoint", |cap| {
+                    let arena = DecodeArena::new();
+                    let mut policy = DecodePolicy::service();
+                    policy.limits.max_retained_bytes = cap;
+                    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy)?;
+                    let mut transaction = DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root))?;
+                    if decode {
+                        transaction.decode_geometry()?;
+                        assert!(transaction.session.document().model.curves.is_empty());
+                        assert!(transaction.report.phase_warnings.iter().any(|warning| warning.contains("hatch loop placement failed")));
+                    }
+                    ctx.copy_retained_text("x", "hatch field lifetime checkpoint")?;
+                    Ok(())
+                },
+            );
+            let cadmpeg_core::CodecError::ResourceLimit(limit) = error else { panic!("checkpoint refusal"); };
+            limit.used
+        };
+        let cost = used(true) - used(false);
+        if let Some(previous) = expected { assert_eq!(cost, previous, "unvisited parsed loops retain no fields"); }
+        expected = Some(cost);
+    }
+}
+
+#[test]
+fn rejected_hatch_placement_releases_analytic_conversion_fields() {
+    use crate::test_support::test_archive as bytes;
+    use cadmpeg_core::decode::{refusal_probe::RefusalProbe, DecodeArena, DecodePolicy, ResourceDimension};
+    let angle = [0.0, std::f64::consts::TAU];
+    let mut arc = bytes::arc_payload(angle, angle);
+    arc.truncate(arc.len() - std::mem::size_of::<i32>());
+    crate::test_support::test_dump::push_i32(&mut arc, 2);
+    let scan = hatch_placement_failure_scan(1, Some((bytes::ARC_CLASS, arc)));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::MAX;
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(scan.data, &arena, &policy).unwrap();
+    let mut transaction = DecodeContext::new(&scan, crate::mesh::MeshExpand::new(&ctx, root)).unwrap();
+    {
+        let _probe = RefusalProbe::arm(ResourceDimension::RetainedBytes, "Rhino arc knots", None);
+        transaction.decode_geometry().unwrap();
+        assert!(transaction.session.document().model.curves.is_empty());
+        assert!(transaction.report.phase_warnings.iter().any(|warning| warning.contains("hatch loop placement failed: instance control point transform produced a non-finite coordinate")));
+        assert!(ctx.resource_refusal().is_none());
+    }
+    drop(transaction);
+    ctx.finish_session().unwrap();
 }

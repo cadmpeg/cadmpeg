@@ -55,7 +55,7 @@ fn staged_curve_tree_refusal(limit: u64, operation: &str) {
                     .expect("fixture scratch"),
             ),
             &mut staged,
-            one_child_compound(),
+            &one_child_compound(),
             "compound",
             "root",
             &test_association(),
@@ -76,7 +76,7 @@ fn committed_curve_tree_refusal(limit: u64, operation: &str) {
             ctx,
             &mut CadIr::empty(),
             &mut cadmpeg_ir::Annotations::default(),
-            one_child_compound(),
+            &one_child_compound(),
             CurveCommitSource {
                 key: "compound",
                 association: &test_association(),
