@@ -1858,3 +1858,5 @@ fn overlapping_endpoint_index_bases_use_the_marker_roster() {
     .unwrap();
     assert!(ambiguous);
 }
+
+mod lazy_geometry;
