@@ -500,10 +500,7 @@ fn run_uncertified_chart(
             failed_storage: &mut direct_storage,
             failed_coupled_attempts: &mut coupled,
             failed_coupled_storage: &mut coupled_storage,
-            endpoint_witnesses: &mut EndpointWitnessSink::new(
-                &mut witnesses,
-                &mut witness_storage,
-            ),
+            endpoint_witnesses: &mut EndpointWitnessSink::new(&mut witnesses, &mut witness_storage),
         },
         &support,
         &geometry,
@@ -530,11 +527,13 @@ fn chart_reproduction_refuses_each_visit_without_admitting_the_suffix() {
     let samples = |rejected_index| {
         crate::intersection::chart_samples::ChartSamples::from_test_values(
             (0..32)
-                .map(|i| Point3::new(
-                    cadmpeg_core::convert::f64_from_index(i).unwrap(),
-                    0.0,
-                    if i == rejected_index { 1.0 } else { 0.0 },
-                ))
+                .map(|i| {
+                    Point3::new(
+                        cadmpeg_core::convert::f64_from_index(i).unwrap(),
+                        0.0,
+                        if i == rejected_index { 1.0 } else { 0.0 },
+                    )
+                })
                 .collect(),
             (0..32)
                 .map(|i| cadmpeg_core::convert::f64_from_index(i).unwrap())
@@ -606,10 +605,17 @@ fn equivalent_surface_route_charges_equal_nurbs_geometry_after_lookups() {
             &[],
             ResourceDimension::WorkUnits,
             "NX equivalent surface geometry comparison",
-            |ctx| Ok(parameterization_equivalent_surfaces_with_index(&index, &ids[0], &ids[1], ctx)?),
+            |ctx| {
+                Ok(parameterization_equivalent_surfaces_with_index(
+                    &index, &ids[0], &ids[1], ctx,
+                )?)
+            },
         );
         with_decode_context(|ctx| {
-            assert!(parameterization_equivalent_surfaces_with_index(&index, &ids[0], &ids[1], ctx).unwrap());
+            assert!(
+                parameterization_equivalent_surfaces_with_index(&index, &ids[0], &ids[1], ctx)
+                    .unwrap()
+            );
             assert_eq!(ctx.resource_refusal(), None);
         });
     }
@@ -619,7 +625,9 @@ fn equivalent_surface_route_charges_equal_nurbs_geometry_after_lookups() {
 fn duplicate_attachment_candidates_charge_equal_nurbs_pcurves() {
     let (mut ir, _) = charted_fixture();
     let pcurve = long_pcurve(64);
-    let context = ir.model.procedural_curves[0].intersection_context_mut().unwrap();
+    let context = ir.model.procedural_curves[0]
+        .intersection_context_mut()
+        .unwrap();
     let surface = context.sides()[0].surface.clone();
     context.set_surface(1, surface);
     for side in 0..2 {
