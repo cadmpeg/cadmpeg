@@ -16,16 +16,6 @@ Each item has an identifier. Use the identifier in commit messages and in code c
 
 This document uses ASD-STE100 Simplified Technical English. Record names, field names, and token values are technical names. They keep their source spelling.
 
-## 1. Container and roster
-
-### CR-02. Extent flags
-
-**Question.** What does each bit of the extent `flags` word control?
-
-**Known.** `catia.md` §3.4 "ds+0x54 : k extent structs" defines the extent directory and the position of `flags`. The decoder retains the word and reports it as `extent_flags`.
-
-**Need.** We must know the bit assignments to validate an extent and to write its flags.
-
 ## 2. Design intent
 
 ### DI-01. Compact schema-program semantics

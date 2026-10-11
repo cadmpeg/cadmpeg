@@ -102,12 +102,14 @@ ds+0x54 : k extent structs, 20 bytes each:
             phys_len u32be
             log_len  u32be
             log_off  u32be
-            flags    u32be
+            trailing_word u32be
 ```
 
 A candidate is a descriptor when every extent validates: `inner + phys_off + phys_len <= filesize`, `phys_len != 0`, `log_off` cumulative from 0, `log_len == phys_len`, `sum(log_len) == logical_stream_length`. A logical stream is the concatenation of `file[inner+phys_off : inner+phys_off+phys_len]` over the descriptor's extents in `log_off` order. The standard descriptor form has `00 00 00` at `ds-3..ds`: a two-byte UTF-16LE name terminator followed by one padding byte. Its name is the complete run of pairs `<printable-ASCII-byte> 00` immediately before that tail, with at least three characters. The legacy descriptor form starts its name at `ds+0x10`; the name has the same UTF-16LE terminator, and every byte from the terminator through `ds+0x50` is zero. A descriptor with neither complete name form has no name.
 
-Container inspection retains the `flags` word of every extent and reports the words as an ordered comma-separated list of eight-digit hexadecimal values in the `extent_flags` attribute.
+The trailing word is reserved in the zero directory form: every extent stores `0`. In the ordinal directory form, extent `i` stores `i + 1` within its descriptor, giving the sequence `1, 2, ..., k`. All descriptors of a directory use the same form. The word does not control a content transform or logical placement; reconstruction uses only the four offset and length fields. Retain the raw word, including unrecognized values, without changing structural extent admission. A fresh zero-form directory emits zero for each extent; a preserved ordinal-form directory emits its descriptor-local one-based ordinal.
+
+Container inspection reports the retained words in logical order as an ordered comma-separated list of eight-digit hexadecimal values in the `extent_words` attribute.
 
 The descriptor names include `MAIN`, `MainDataStream`, `Header`, `SceneGraph`, `Describe`, and `SurfacicReps`. `MainDataStream` contains the topology spine, including FBB groups, `05 08 01` vertices, and `30 04 04` loops. `SurfacicReps` contains analytic surface and curve kind markers and trim records. Extents for these streams can interleave physically. The BREP stream is admitted only when the directory has one uniquely largest `MainDataStream` descriptor and one uniquely largest `SurfacicReps` descriptor by logical length. Names are exact; a repeated maximum or a non-canonical alias leaves the BREP stream unselected.
 

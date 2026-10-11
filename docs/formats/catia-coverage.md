@@ -39,7 +39,7 @@ current levels require those matrices and representative fixtures.
   `[directory_length,directory_offset)` range. The trailing stream directory
   cannot contribute FINJPL segments, E5 census markers, E5 candidates,
   previews, version metadata, or external references.
-- Stream-directory inspection retains every extent's raw flags word in logical
+- Stream-directory inspection retains every extent's raw trailing word in logical
   extent order.
 - Admitted outer `Data` declarations bind canonical or leading-underscore
   UUID-named streams to their concrete and base model-container classes and

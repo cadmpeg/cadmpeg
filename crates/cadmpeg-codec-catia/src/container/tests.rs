@@ -125,12 +125,12 @@ fn logical_stream_bytes_use_scoped_storage_without_collection_items() {
             Extent {
                 phys_off: 1,
                 phys_len: 2,
-                flags: 0,
+                trailing_word: 0,
             },
             Extent {
                 phys_off: 4,
                 phys_len: 1,
-                flags: 0,
+                trailing_word: 0,
             },
         ],
         ..test_descriptor("Data", 0, 0)
@@ -407,7 +407,7 @@ fn test_descriptor(name: &str, physical_offset: u32, length: u32) -> Descriptor 
         extents: vec![Extent {
             phys_off: physical_offset,
             phys_len: length,
-            flags: 0,
+            trailing_word: 0,
         }],
     }
 }
@@ -776,7 +776,7 @@ fn brep_stream_requires_unique_canonical_descriptors() {
 }
 
 #[test]
-fn extent_parser_retains_the_raw_flags_word() {
+fn extent_parser_retains_the_raw_trailing_word() {
     let mut directory = vec![0; 24];
     for (offset, value) in [(4, 40u32), (8, 8), (12, 8), (16, 0), (20, 0xa501_0080)] {
         directory[offset..offset + 4].copy_from_slice(&value.to_be_bytes());
@@ -784,7 +784,7 @@ fn extent_parser_retains_the_raw_flags_word() {
     let (extents, logical_length) =
         parse_extents_service(&directory, 0, 1, 0, 64).expect("complete extent");
     assert_eq!(logical_length, 8);
-    assert_eq!(extents[0].flags, 0xa501_0080);
+    assert_eq!(extents[0].trailing_word, 0xa501_0080);
     assert!(parse_extents_service(&directory, 0, 1, usize::MAX, usize::MAX).is_none());
 }
 
@@ -945,12 +945,12 @@ fn logical_stream_reconstruction_is_atomic_over_its_extent_roster() {
             Extent {
                 phys_off: 1,
                 phys_len: 2,
-                flags: 0,
+                trailing_word: 0,
             },
             Extent {
                 phys_off: 7,
                 phys_len: 2,
-                flags: 0,
+                trailing_word: 0,
             },
         ],
     };
@@ -962,6 +962,38 @@ fn logical_stream_reconstruction_is_atomic_over_its_extent_roster() {
 }
 
 #[test]
+fn extent_trailing_words_do_not_change_logical_reconstruction() {
+    for words in [[0, 0], [1, 2], [0xa501_0080, 7]] {
+        let mut directory = vec![0; 44];
+        for (index, (physical, length, logical, word)) in
+            [(7u32, 2u32, 0u32, words[0]), (1, 1, 2, words[1])]
+                .into_iter()
+                .enumerate()
+        {
+            let start = 4 + index * 20;
+            for (field, value) in [physical, length, length, logical, word]
+                .into_iter()
+                .enumerate()
+            {
+                let offset = start + field * 4;
+                directory[offset..offset + 4].copy_from_slice(&value.to_be_bytes());
+            }
+        }
+        let (extents, length) =
+            parse_extents_service(&directory, 0, 2, 0, 10).expect("complete extent roster");
+        assert_eq!(length, 3);
+        assert_eq!(extents[0].trailing_word, words[0]);
+        assert_eq!(extents[1].trailing_word, words[1]);
+        let descriptor = Descriptor {
+            name: "MainDataStream".to_string(),
+            desc_offset: 0,
+            extents,
+        };
+        assert_eq!(reconstruct_service(b"0123456789", &descriptor, 0), b"781");
+    }
+}
+
+#[test]
 fn logical_stream_reconstruction_rejects_overflowing_physical_offsets() {
     let descriptor = Descriptor {
         name: "MAIN".to_string(),
@@ -969,14 +1001,14 @@ fn logical_stream_reconstruction_rejects_overflowing_physical_offsets() {
         extents: vec![Extent {
             phys_off: 1,
             phys_len: 1,
-            flags: 0,
+            trailing_word: 0,
         }],
     };
     assert!(reconstruct_service(&[0], &descriptor, usize::MAX).is_empty());
 }
 
 #[test]
-fn container_summary_exposes_extent_flags_in_logical_order() {
+fn container_summary_exposes_extent_words_in_logical_order() {
     let scan = ContainerScan {
         data: Vec::new().into(),
         outer_dir_offset: 0,
@@ -990,12 +1022,12 @@ fn container_summary_exposes_extent_flags_in_logical_order() {
                     Extent {
                         phys_off: 40,
                         phys_len: 4,
-                        flags: 0xa501_0080,
+                        trailing_word: 0xa501_0080,
                     },
                     Extent {
                         phys_off: 80,
                         phys_len: 8,
-                        flags: 0,
+                        trailing_word: 0,
                     },
                 ],
             }],
@@ -1014,7 +1046,7 @@ fn container_summary_exposes_extent_flags_in_logical_order() {
     };
     let summary = summarize_service(&scan);
     assert_eq!(
-        summary.entries[0].attributes["extent_flags"],
+        summary.entries[0].attributes["extent_words"],
         "0xa5010080,0x00000000"
     );
 }
@@ -1042,7 +1074,7 @@ fn outer_data_declaration_assigns_class_to_its_uuid_stream() {
                 extents: vec![Extent {
                     phys_off: 0,
                     phys_len: data_len,
-                    flags: 0,
+                    trailing_word: 0,
                 }],
             },
             Descriptor {
@@ -1051,7 +1083,7 @@ fn outer_data_declaration_assigns_class_to_its_uuid_stream() {
                 extents: vec![Extent {
                     phys_off: data_len,
                     phys_len: 1,
-                    flags: 0,
+                    trailing_word: 0,
                 }],
             },
         ],
@@ -1098,7 +1130,7 @@ fn outer_data_declaration_assigns_class_to_its_uuid_stream() {
         extents: vec![Extent {
             phys_off: data_len,
             phys_len: 1,
-            flags: 0,
+            trailing_word: 0,
         }],
     });
     assert!(outer_declarations_service(&data, &ambiguous_outer).is_empty());
@@ -1158,7 +1190,7 @@ fn outer_data_declaration_uses_the_terminal_marker_after_long_class_names() {
                 extents: vec![Extent {
                     phys_off: 0,
                     phys_len: data_len,
-                    flags: 0,
+                    trailing_word: 0,
                 }],
             },
             Descriptor {
@@ -1167,7 +1199,7 @@ fn outer_data_declaration_uses_the_terminal_marker_after_long_class_names() {
                 extents: vec![Extent {
                     phys_off: data_len,
                     phys_len: 1,
-                    flags: 0,
+                    trailing_word: 0,
                 }],
             },
         ],
@@ -1602,12 +1634,12 @@ fn outer_declarations_release_their_reconstructed_stream() {
                 Extent {
                     phys_off: 0,
                     phys_len: 32,
-                    flags: 0,
+                    trailing_word: 0,
                 },
                 Extent {
                     phys_off: 40,
                     phys_len: 32,
-                    flags: 0,
+                    trailing_word: 0,
                 },
             ],
             ..test_descriptor("Data", 0, 64)

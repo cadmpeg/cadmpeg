@@ -89,7 +89,7 @@ Spec §3.4 · layout: byte offsets · size: 20 B
 | 4 | 4 | `phys_len` | `u32` | big | spec | phys_len u32be |
 | 8 | 4 | `log_len` | `u32` | big | spec | log_len u32be |
 | 12 | 4 | `log_off` | `u32` | big | spec | log_off u32be |
-| 16 | 4 | `flags` | `u32` | big | spec | flags u32be |
+| 16 | 4 | `trailing_word` | `u32` | big | spec | trailing_word u32be |
 
 Cross-checked against code:
 

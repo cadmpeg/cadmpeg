@@ -82,8 +82,8 @@ pub(crate) mod extent_struct {
     pub(crate) const LOG_LEN: usize = 8;
     /// Offset of `log_off` (`u32`, big-endian). Spec §3.4.
     pub(crate) const LOG_OFF: usize = 12;
-    /// Offset of `flags` (`u32`, big-endian). Spec §3.4.
-    pub(crate) const FLAGS: usize = 16;
+    /// Offset of `trailing_word` (`u32`, big-endian). Spec §3.4.
+    pub(crate) const TRAILING_WORD: usize = 16;
 }
 
 /// Byte offsets for the `vertex_roster_row` record.

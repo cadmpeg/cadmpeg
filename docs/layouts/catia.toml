@@ -179,11 +179,11 @@ source = "spec"
 anchor = "log_off  u32be"
 
 [[record.field]]
-name = "flags"
+name = "trailing_word"
 offset = 16
 type = "u32"
 source = "spec"
-anchor = "flags    u32be"
+anchor = "trailing_word u32be"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-catia/src/container.rs"

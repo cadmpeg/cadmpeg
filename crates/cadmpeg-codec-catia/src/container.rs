@@ -798,8 +798,8 @@ struct Extent {
     phys_off: u32,
     /// Physical byte length of this extent.
     phys_len: u32,
-    /// Raw trailing extent flags word.
-    flags: u32,
+    /// Raw ordinal/reserved word; stream reconstruction does not use it.
+    trailing_word: u32,
 }
 
 /// One catalogued logical stream.
@@ -1434,7 +1434,7 @@ fn read_extent_fields(dirbuf: &[u8], o: usize, index: usize) -> Option<(Extent, 
         Extent {
             phys_off: View::u32_be_at(dirbuf, base + extent::PHYS_OFF)?,
             phys_len: View::u32_be_at(dirbuf, base + extent::PHYS_LEN)?,
-            flags: View::u32_be_at(dirbuf, base + extent::FLAGS)?,
+            trailing_word: View::u32_be_at(dirbuf, base + extent::TRAILING_WORD)?,
         },
         View::u32_be_at(dirbuf, base + extent::LOG_LEN)?,
         View::u32_be_at(dirbuf, base + extent::LOG_OFF)?,
@@ -2002,14 +2002,14 @@ pub(crate) fn summarize(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<ContainerSummary, CodecError> {
-    struct ExtentFlags<'a>(&'a [Extent]);
-    impl std::fmt::Display for ExtentFlags<'_> {
+    struct ExtentWords<'a>(&'a [Extent]);
+    impl std::fmt::Display for ExtentWords<'_> {
         fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             for (index, extent) in self.0.iter().enumerate() {
                 if index != 0 {
                     out.write_str(",")?;
                 }
-                write!(out, "0x{:08x}", extent.flags)?;
+                write!(out, "0x{:08x}", extent.trailing_word)?;
             }
             Ok(())
         }
@@ -2047,8 +2047,8 @@ pub(crate) fn summarize(
             crate::resource::string_attribute(
                 ctx,
                 &mut attributes,
-                "extent_flags",
-                format_args!("{}", ExtentFlags(&d.extents)),
+                "extent_words",
+                format_args!("{}", ExtentWords(&d.extents)),
                 "catia_summary_attribute",
             )?;
             if directory == "outer" {
