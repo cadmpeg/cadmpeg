@@ -417,6 +417,7 @@ pub(super) fn decode<'ctx>(
         Ord::cmp,
         "step_presentation_style_ids_sort",
     )?;
+    let mut scalar_loss_order = Vec::new();
     let mut empty_style_targets = BTreeMap::new();
     let mut no_null_styles = BTreeMap::new();
     let mut scalar_color_candidates: ScalarCandidates = std::array::from_fn(|_| BTreeMap::new());
@@ -533,6 +534,8 @@ pub(super) fn decode<'ctx>(
         let color = match &resolved.color {
             Some(ColorResolution::Candidate(candidate)) => candidate,
             Some(ColorResolution::Ambiguous { .. }) => {
+                ctx.push_scoped_vec(&mut scratch_storage, &mut scalar_loss_order,
+                    (losses.len(), (style.span.start, 0, 0)), "STEP scalar conflict source positions")?;
                 ctx.push_scoped_vec(&mut slot_storage.borrow_mut(), &mut losses, StepLossCode::ConflictingScalarColors.note(ctx.format_retained(format_args!(
                     "STYLED_ITEM #{style_id} has distinct equal-precedence colors; no scalar color is selected and the source style graph remains retained"
                 ), "step_presentation_loss_text")?), "step_presentation_losses")?;
@@ -830,29 +833,10 @@ pub(super) fn decode<'ctx>(
             })?;
         }
     }
-    let mut scalar_groups = Vec::new();
     for lane in scalar_color_candidates {
         let mut groups = lane.into_values();
-        while let Some(group) = ctx.next_charged(&mut groups, "STEP scalar color group traversal")? {
-            ctx.push_scoped_vec(
-                &mut scratch_storage,
-                &mut scalar_groups,
-                group,
-                "STEP scalar color ordered groups",
-            )?;
-        }
-    }
-    ctx.stable_sort_by(
-        &mut scalar_groups,
-        |group| &group.source_order,
-        Ord::cmp,
-        "STEP scalar color source order",
-    )?;
-    let mut groups = scalar_groups.into_iter();
-    for _ in 0..groups.len() {
-        let ScalarGroup { target, colors: candidates, .. } = ctx
-            .next_charged(&mut groups, "STEP scalar color group traversal")?
-            .ok_or_else(|| CodecError::malformed("STEP presentation source ended early"))?;
+        while let Some(ScalarGroup { source_order, target, colors: candidates }) =
+            ctx.next_charged(&mut groups, "STEP scalar color group traversal")? {
         let mut selected = None::<Color>;
         let mut conflicting = false;
         // The candidate vector is a complete, infallible reduction. It is
@@ -897,6 +881,8 @@ pub(super) fn decode<'ctx>(
             }
         } else {
             let message = scalar_conflict_message(&candidates, &target, ctx)?;
+            ctx.push_scoped_vec(&mut scratch_storage, &mut scalar_loss_order,
+                (losses.len(), source_order), "STEP scalar conflict source positions")?;
             ctx.push_scoped_vec(
                 &mut slot_storage.borrow_mut(),
                 &mut losses,
@@ -905,6 +891,8 @@ pub(super) fn decode<'ctx>(
             )?;
         }
     }
+    }
+    order_scalar_conflicts(&mut losses, &scalar_loss_order, ctx)?;
     Ok(StageOutcome {
         value: (claim_storage, slot_storage.into_inner()),
         claims: typed,
@@ -1724,8 +1712,39 @@ struct PresentationIndices<'a> {
     bodies: &'a BTreeMap<String, usize>,
 }
 
+type ScalarSourceOrder = (usize, usize, usize);
+
+fn order_scalar_conflicts(
+    losses: &mut [LossNote],
+    positions: &[(usize, ScalarSourceOrder)],
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    if positions.len() < 2 {
+        return Ok(());
+    }
+    let (notes_buffer, mut storage) = ctx.temporary_vec(0, "STEP ordered scalar conflict notes")?;
+    let mut notes = notes_buffer;
+    let mut positions_source = positions.iter();
+    while let Some(&(index, source_order)) = ctx.next_charged(&mut positions_source, "STEP scalar conflict extraction")? {
+        let slot = losses.get_mut(index).ok_or_else(|| CodecError::malformed("STEP scalar conflict position missing"))?;
+        let note = std::mem::replace(slot, StepLossCode::ConflictingScalarColors.note(String::new()));
+        ctx.push_scoped_vec(&mut storage, &mut notes, (source_order, note), "STEP ordered scalar conflict notes")?;
+    }
+    ctx.stable_sort_by(&mut notes, |note| &note.0, Ord::cmp, "STEP scalar conflict source order")?;
+    let mut notes = notes.into_iter();
+    let mut positions_source = positions.iter();
+    for _ in 0..positions.len() {
+        let &(index, _) = ctx.next_charged(&mut positions_source, "STEP scalar conflict placement")?
+            .ok_or_else(|| CodecError::malformed("STEP scalar conflict position ended early"))?;
+        let (_, note) = ctx.next_charged(&mut notes, "STEP scalar conflict note placement")?
+            .ok_or_else(|| CodecError::malformed("STEP scalar conflict notes ended early"))?;
+        *losses.get_mut(index).ok_or_else(|| CodecError::malformed("STEP scalar conflict position missing"))? = note;
+    }
+    Ok(())
+}
+
 struct ScalarGroup {
-    source_order: (usize, usize, usize),
+    source_order: ScalarSourceOrder,
     target: AppearanceTarget,
     colors: Vec<(u64, Color)>,
 }
@@ -1735,7 +1754,7 @@ type ScalarCandidates = [BTreeMap<String, ScalarGroup>; 2];
 fn push_scalar_candidate(
     candidates: &mut ScalarCandidates,
     target: &AppearanceTarget,
-    (style_id, source_order): (u64, (usize, usize, usize)),
+    (style_id, source_order): (u64, ScalarSourceOrder),
     color: Color,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
@@ -3232,7 +3251,7 @@ fn finish_color(
     if let (Some(completed), Some(height)) = (completed.as_deref_mut(), result.height) {
         if depth + usize::from(height) < 256 {
             // An active parent cannot acquire a completion from a child walk.
-            // Reuse the entry-presence result from its admitted initial lookup.
+            // Reuse the result from its admitted initial lookup.
             let cached = if had_completion {
                 ctx.get_btree_map(&completed.values, &(id, domain), "STEP completed color lookup")?
             } else {
