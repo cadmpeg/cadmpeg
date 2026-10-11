@@ -990,7 +990,7 @@ pub(super) fn nurbs_edge_parameter_range(
     ctx: &DecodeContext<'_>,
     edge: &Edge,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
-    endpoints: Option<[cadmpeg_ir::math::Point3; 2]>,
+    endpoints: impl FnOnce() -> Result<Option<[cadmpeg_ir::math::Point3; 2]>, cadmpeg_core::CodecError>,
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
     let Some(domain) = nurbs_curve_parameter_domain(curve) else {
         return Ok(None);
@@ -999,7 +999,7 @@ pub(super) fn nurbs_edge_parameter_range(
     let range = if let Some(range) = edge.param_range() {
         range.get()
     } else {
-        let Some([start, end]) = endpoints else {
+        let Some([start, end]) = endpoints()? else {
             return Ok(None);
         };
         match (
