@@ -128,3 +128,23 @@ fn feature_rename_duplicate_parameter_without_owner_cancels_earlier_owner() {
     .unwrap();
     assert_eq!(parameters[2].expression, "Width@Old");
 }
+
+#[test]
+fn feature_rename_without_identifier_consumers_does_not_scan_owner_suffixes() {
+    let owner = FeatureId::mint("synthetic:test:feature#owner").unwrap();
+    let changes = HashMap::from([(owner.clone(), ("x".repeat(17 * 1024 * 1024), "New".into()))]);
+    for expression in ["", "\"unterminated", "pi + 1", "\"\""] {
+        let mut parameters = [
+            parameter("synthetic:test:parameter#owned", Some(owner.clone()), "1"),
+            parameter("synthetic:test:parameter#consumer", None, expression),
+        ];
+        parameters[1].dependencies = DistinctMembers::try_from(
+            vec![parameters[0].id.clone()],
+            &cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap();
+        let expected = parameters.clone();
+        apply_feature_name_changes(&mut parameters, &changes).unwrap();
+        assert_eq!(parameters, expected);
+    }
+}
