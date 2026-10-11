@@ -416,19 +416,16 @@ pub(super) fn clamp_nurbs_curve_to_domain<'ctx>(
         Some(Err(mut error)) => {
             use cadmpeg_ir::geometry::nurbs::NurbsError;
             let text = match &mut error {
-                NurbsError::Structure(text) | NurbsError::EditRefused(text) => Some(text),
+                NurbsError::Structure(text) | NurbsError::EditRefused(text) => text,
                 NurbsError::WeightLaneLength { field, .. }
-                | NurbsError::UnusableWeight { field, .. } => Some(field),
-                NurbsError::ResourceLimit(_) => None,
+                | NurbsError::UnusableWeight { field, .. } => field,
+                NurbsError::ResourceLimit(limit) => return Err((*limit).into()),
             };
             // The error owns its diagnostic until the refusal sink copies it.
-            let mut diagnostic_storage =
-                ctx.reserve_scoped(0, "hold clamped NURBS refusal")?;
-            if let Some(text) = text {
-                let copy = diagnostic_storage
-                    .with_storage(|| ctx.copy_retained_text(text, "copy clamped NURBS refusal"))?;
-                *text = copy;
-            }
+            let mut diagnostic_storage = ctx.reserve_scoped(0, "hold clamped NURBS refusal")?;
+            let copy = diagnostic_storage
+                .with_storage(|| ctx.copy_retained_text(text, "copy clamped NURBS refusal"))?;
+            *text = copy;
             drop(candidate_storage);
             Err(NurbsPcurveFailure::Carrier(error, Some(diagnostic_storage)))
         }
