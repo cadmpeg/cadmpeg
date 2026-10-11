@@ -107,7 +107,6 @@ fn clone_drawing_identities(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeSet<String>, CodecError> {
     let mut copy = BTreeSet::new();
-    ctx.charge_work(0, "STEP clone drawing identities traversal")?;
     let mut identity_source = source.iter();
     for _ in 0..identity_source.len() {
         let Some(identity) = ctx.next_charged(
@@ -132,7 +131,6 @@ fn visit_drawing_references(
     match value {
         Value::Reference(id) => visitor(*id)?,
         Value::List(values) => {
-            ctx.charge_work(0, "STEP visit drawing references value traversal")?;
             let mut reference_source = values.iter();
             for _ in 0..reference_source.len() {
                 let Some(value) = ctx.next_charged(
@@ -187,7 +185,6 @@ pub(super) fn decode<'ctx>(
     let mut scratch_storage = ctx.reserve_scoped(0, "STEP decode scratch")?;
     let mut losses = Vec::new();
     let mut candidates = Vec::new();
-    ctx.charge_work(0, "STEP decode traversal")?;
     let mut drawing_record_source = exchange.records().iter();
     for _ in 0..drawing_record_source.len() {
         let Some((&id, record)) =
@@ -240,7 +237,6 @@ pub(super) fn decode<'ctx>(
     }
 
     let mut drawing_ids = BTreeSet::new();
-    ctx.charge_work(0, "STEP decode traversal")?;
     let mut drawing_id_source = candidates.iter();
     for _ in 0..drawing_id_source.len() {
         let Some(candidate) = ctx.next_charged(&mut drawing_id_source, "STEP decode traversal")?
@@ -252,7 +248,6 @@ pub(super) fn decode<'ctx>(
         })?;
     }
     let mut hidden_drawing_ids = BTreeSet::new();
-    ctx.charge_work(0, "STEP decode map traversal")?;
     let mut hidden_record_source = exchange.records().values();
     for _ in 0..hidden_record_source.len() {
         let Some(record) =
@@ -291,7 +286,6 @@ pub(super) fn decode<'ctx>(
             )
         })?;
     let mut target_identities = target_identities_buffer;
-    ctx.charge_work(0, "STEP decode traversal")?;
     let mut candidate_target_source = candidates.iter();
     for _ in 0..candidate_target_source.len() {
         let Some(candidate) =
@@ -322,7 +316,6 @@ pub(super) fn decode<'ctx>(
     // DR-01: a drawing association scoped by PRODUCT_DEFINITION_SHAPE targets
     // that shape's one owning product-definition view, not a product-wide
     // identity set.
-    ctx.charge_work(0, "STEP decode traversal")?;
     let mut shape_target_source = product_definition_ids_by_shape.iter();
     for _ in 0..shape_target_source.len() {
         let Some((&shape_id, product_definition_id)) =
@@ -366,7 +359,6 @@ pub(super) fn decode<'ctx>(
         ctx,
     )?;
     let mut external_documents = BTreeMap::new();
-    ctx.charge_work(0, "STEP decode borrowed traversal")?;
     let mut external_document_source = exchange.references().iter();
     for _ in 0..external_document_source.len() {
         let Some(entry) = ctx.next_charged(
@@ -396,7 +388,6 @@ pub(super) fn decode<'ctx>(
     };
 
     let mut drawings = BTreeMap::<u64, Drawing>::new();
-    ctx.charge_work(0, "STEP drawing candidate traversal")?;
     let mut candidate_source = candidates.into_iter().enumerate();
     for _ in 0..candidate_source.len() {
         let Some((order, candidate)) =
@@ -424,7 +415,6 @@ pub(super) fn decode<'ctx>(
             ctx.copy_retained_text(name, "STEP drawing source type")?,
             "step_drawing_stored_parameters",
         )?;
-        ctx.charge_work(0, "STEP drawing inherited parameter traversal")?;
         let mut inherited_name = parameters.inherited_name;
         let mut direct_parameters = parameters.direct.iter();
         for index in 0..parameters.len() {
@@ -531,7 +521,6 @@ pub(super) fn decode<'ctx>(
     )?;
 
     let mut typed_records = BTreeSet::new();
-    ctx.charge_work(0, "STEP decode map traversal")?;
     let mut drawing_claim_source = drawings.keys();
     for _ in 0..drawing_claim_source.len() {
         let Some(&id) = ctx.next_charged(&mut drawing_claim_source, "STEP decode map traversal")?
@@ -542,7 +531,6 @@ pub(super) fn decode<'ctx>(
             ctx.insert_btree_set(&mut typed_records, id, "step_drawing_typed_claims")
         })?;
     }
-    ctx.charge_work(0, "step_drawing_typed_claims")?;
     let mut association_claim_source = association_ids.into_iter();
     for _ in 0..association_claim_source.len() {
         let Some(id) =
@@ -592,7 +580,6 @@ fn referenced_target_ids(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeSet<u64>, CodecError> {
     let mut ids = BTreeSet::new();
-    ctx.charge_work(0, "STEP referenced target ids traversal")?;
     let mut referenced_candidate_source = candidates.iter();
     for _ in 0..referenced_candidate_source.len() {
         let Some(candidate) = ctx.next_charged(
@@ -676,7 +663,6 @@ fn add_source_typed_targets(
     // proofs separate from identity summaries until the target map is settled.
     let mut probe_storage = ctx.reserve_scoped(0, "STEP drawing wrapper probe scratch")?;
     let mut proven = BTreeSet::new();
-    ctx.charge_work(0, "STEP add source typed targets traversal")?;
     let mut source_target_source = referenced_ids.iter();
     for _ in 0..source_target_source.len() {
         let Some(&id) = ctx.next_charged(
@@ -1014,8 +1000,10 @@ fn add_sheet_revision_usages(
         let Some(revision_id) = parameters.get(1).and_then(ValueExt::reference) else {
             continue;
         };
-        let sheet_target = target_context.resolve(revision_id)?;
-        let revision_target = target_context.resolve(sheet_id)?;
+        let mut sheet_target_storage = ctx.reserve_scoped(0, "STEP sheet usage target")?;
+        let sheet_target = sheet_target_storage.with_storage(|| target_context.resolve(revision_id))?;
+        let mut revision_target_storage = ctx.reserve_scoped(0, "STEP revision usage target")?;
+        let revision_target = revision_target_storage.with_storage(|| target_context.resolve(sheet_id))?;
         if let Some(sheet) =
             ctx.get_mut_btree_map(drawings, &sheet_id, "STEP drawing drawings get_mut")?
         {
@@ -1024,7 +1012,7 @@ fn add_sheet_revision_usages(
                     .push_btree_group(
                         &mut sheet.relationships,
                         cadmpeg_core::nonblank_literal!("drawing_revision"),
-                        target,
+                        sheet_target_storage.commit_value(target)?,
                         "step_drawing_relationship_groups",
                         "step_drawing_relationship_members",
                     )?,
@@ -1083,7 +1071,7 @@ fn add_sheet_revision_usages(
                     .push_btree_group(
                         &mut revision.relationships,
                         cadmpeg_core::nonblank_literal!("sheet_revision"),
-                        target,
+                        revision_target_storage.commit_value(target)?,
                         "step_drawing_relationship_groups",
                         "step_drawing_relationship_members",
                     )?,
@@ -1442,15 +1430,16 @@ enum WrapperTargets {
     Ambiguous,
 }
 
-struct WrapperSummary {
+struct WrapperSummary<'ctx> {
     cycle: bool,
     complete: bool,
     targets: WrapperTargets,
     children: Vec<u64>,
+    _edge_storage: ScopedReservation<'ctx>,
 }
 
 struct WrapperCache<'ctx, 'arena> {
-    values: std::cell::RefCell<BTreeMap<u64, WrapperSummary>>,
+    values: std::cell::RefCell<BTreeMap<u64, WrapperSummary<'ctx>>>,
     parents: std::cell::RefCell<BTreeMap<u64, BTreeSet<u64>>>,
     ctx: &'ctx DecodeContext<'arena>,
     storage: std::cell::RefCell<ScopedReservation<'ctx>>,
@@ -1791,12 +1780,14 @@ impl<'ctx, 'arena> WrapperCache<'ctx, 'arena> {
                             complete: true,
                             targets,
                             children: Vec::new(),
+                            _edge_storage: ctx.reserve_scoped(0, "STEP wrapper edge storage")?,
                         },
                         "step_drawing_wrapper_complete",
                     )
                 })?;
                 continue;
             }
+            let mut edge_storage = ctx.reserve_scoped(0, "STEP wrapper edge storage")?;
             let mut children = Vec::new();
             if let Some(record) =
                 ctx.get_btree_map(exchange.records(), &id, "STEP drawing record get")?
@@ -1807,7 +1798,7 @@ impl<'ctx, 'arena> WrapperCache<'ctx, 'arena> {
                     .and_then(ValueExt::reference)
                 {
                     ctx.push_scoped_vec(
-                        &mut self.storage.borrow_mut(),
+                        &mut edge_storage,
                         &mut children,
                         plane,
                         "STEP drawing wrapper edges",
@@ -1829,7 +1820,7 @@ impl<'ctx, 'arena> WrapperCache<'ctx, 'arena> {
                                 })?;
                             if let Some(item) = value.reference() {
                                 ctx.push_scoped_vec(
-                                    &mut self.storage.borrow_mut(),
+                                    &mut edge_storage,
                                     &mut children,
                                     item,
                                     "STEP drawing wrapper edges",
@@ -1851,6 +1842,7 @@ impl<'ctx, 'arena> WrapperCache<'ctx, 'arena> {
                         complete: false,
                         targets: WrapperTargets::Empty,
                         children,
+                        _edge_storage: edge_storage,
                     },
                     "step_drawing_wrapper_active",
                 )

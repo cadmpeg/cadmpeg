@@ -17,6 +17,7 @@ mod shared_joins;
 mod original_context;
 mod prefix_admission;
 mod string_limits;
+mod sheet_storage;
 
 #[test]
 fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
