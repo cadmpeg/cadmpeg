@@ -327,7 +327,12 @@ fn project_default_bindings(
             binding_text.push_str("inventor:presentation:body-default#");
             binding_text.push_str(key.as_str());
             let binding_id =
-                AppearanceBindingId::mint(binding_text).map_err(CodecError::malformed)?;
+                AppearanceBindingId::mint_for_decode(
+                    ctx,
+                    binding_text,
+                    "validate Inventor appearance binding id",
+                )?
+                .map_err(CodecError::malformed)?;
             drop(digest_storage);
             binding_id
         };
@@ -685,7 +690,12 @@ fn project_face_bindings(
             binding_text.push_str("inventor:presentation:face-override#");
             binding_text.push_str(key.as_str());
             let binding_id =
-                AppearanceBindingId::mint(binding_text).map_err(CodecError::malformed)?;
+                AppearanceBindingId::mint_for_decode(
+                    ctx,
+                    binding_text,
+                    "validate Inventor appearance binding id",
+                )?
+                .map_err(CodecError::malformed)?;
             drop(digest_storage);
             binding_id
         };
