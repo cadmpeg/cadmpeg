@@ -691,6 +691,7 @@ fn parameter_value_states_borrow_stated_values() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
+    policy.limits.max_materialized_bytes = u64::MAX;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let _storage;
@@ -837,7 +838,11 @@ fn display_modifier_aliases_do_not_block_expression_evaluation() {
 #[test]
 fn coherence_without_dependencies_builds_no_value_index() {
     let parameters = scratch_parameters();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = u64::MAX;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let _storage;
     let aliases;
     (aliases, _storage) =
@@ -1163,7 +1168,10 @@ fn expression_rewrite_refusal(dimension: cadmpeg_core::decode::ResourceDimension
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
             rewrite_parameter_expression(
                 &ctx,
-                "A + A",
+                match dimension {
+                    ResourceDimension::WorkUnits => "A",
+                    _ => "A + A",
+                },
                 &HashMap::from([("A".into(), "B".into())]),
             )?;
             ctx.finish_session()
