@@ -1048,6 +1048,17 @@ The domain-relation arena retains allocation addressing forms, sample block
 order, source positions, signed accuracy, fit tolerance, and target sites.
 Operand binding and the separate multi-operand productions remain open.
 
+Fresh whole-file comparison covers all 79 CATIA files: 78 decode and pass
+neutral and CATIA native validation, retaining 6,015 complete class-25 maps.
+Class-24 data and source positions remain exact. The complete documents match
+before and after except for the independently verified class-25 native
+projections and domain-relation identities. No whole-file edge definition or
+class-25 descriptor binds these maps. Arduino validation requires a verification
+budget of one trillion work units and 256 million collection items; the default
+CLI work ceiling is exceeded. Apartman reaches the same existing 512-operation
+face-constraint refusal in both versions. Its 62 complete maps are verified in
+the separate frame-grammar container above.
+
 The parameter-map golden fixture covers paired arrays, decreasing source
 orientation, interior target sites, a distinct fit tolerance, and elided
 accuracy. All 72 earlier golden files, including their frozen inputs, remain
