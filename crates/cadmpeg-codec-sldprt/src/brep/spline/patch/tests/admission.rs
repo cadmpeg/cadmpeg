@@ -196,7 +196,46 @@ fn patch_control_matching_stops_at_each_first_mismatch() {
 }
 
 #[test]
-fn patch_knot_matching_gates_counts_and_skips_the_second_lane_after_mismatch() {
+fn patch_scalar_mismatches_do_not_materialize_payload_buffers() {
+    let expected: Vec<_> = (0..100_000_u32).map(f64::from).collect();
+    let native: Vec<_> = expected.iter().map(|value| value + 1.0).collect();
+    for control in [false, true] {
+        let tag = if control { 0x2d } else { 0x80 };
+        let mut bytes = f64_array(tag, 40, &native);
+        if control {
+            bytes.extend(f64_array(tag, 40, &native));
+        } else {
+            bytes.extend(u16_array(41, &vec![1; 100_000]));
+        }
+        let arena = DecodeArena::new();
+        let mut policy = probe_policy();
+        policy.limits.max_materialized_bytes = 4096;
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = if control {
+            unique_control_span(&ctx, &bytes, &Arrays::default(), 40, &expected)
+        } else {
+            unique_surface_knot_span(
+                &ctx,
+                &bytes,
+                &Arrays::default(),
+                (40, 41),
+                expected.len(),
+                &expected,
+                &vec![1; 100_000],
+            )
+        };
+        assert_eq!(result.unwrap(), None);
+        drop(
+            ctx.reserve_scoped(4096, "test scalar mismatch scratch release")
+                .unwrap(),
+        );
+        ctx.finish_session().unwrap();
+    }
+}
+
+#[test]
+fn patch_knot_matching_gates_counts_and_admits_multiplicity_comparison() {
     for short in [true, false] {
         let mut bytes = f64_array(0x80, 40, &[0.0, 1.0]);
         bytes.extend(u16_array(41, &[2, 2]));
@@ -207,7 +246,7 @@ fn patch_knot_matching_gates_counts_and_skips_the_second_lane_after_mismatch() {
         } else {
             "match Parasolid patch multiplicity values"
         };
-        let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
+        let probe = short.then(|| RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None));
         let knots: &[f64] = if short { &[0.0, 1.0, 2.0] } else { &[2.0, 3.0] };
         let mult: &[usize] = if short { &[2, 2, 2] } else { &[2, 2] };
         assert_eq!(
@@ -223,10 +262,24 @@ fn patch_knot_matching_gates_counts_and_skips_the_second_lane_after_mismatch() {
             .unwrap(),
             None
         );
-        assert!(matches!(
-            ctx.charge_work(1, operation),
-            Err(CodecError::ResourceLimit(_))
-        ));
+        if short {
+            assert!(matches!(
+                ctx.charge_work(1, operation),
+                Err(CodecError::ResourceLimit(_))
+            ));
+        } else {
+            crate::test_support::work_refusal_at(operation, |ctx| {
+                unique_surface_knot_span(
+                    ctx,
+                    &bytes,
+                    &Arrays::default(),
+                    (40, 41),
+                    knots.len(),
+                    knots,
+                    mult,
+                )
+            });
+        }
         drop(probe);
     }
 }
@@ -343,7 +396,7 @@ fn assert_unpaired_patch_knots(multiplicity_bytes: &[u8]) {
     bytes.extend_from_slice(multiplicity_bytes);
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &probe_policy()).unwrap();
-    let operation = "read Parasolid patch scalar values";
+    let operation = "match Parasolid patch knot spans";
     let probe = RefusalProbe::arm(ResourceDimension::WorkUnits, operation, None);
     assert_eq!(
         unique_surface_knot_span(
@@ -413,7 +466,7 @@ fn patch_knot_matching_reads_only_the_declared_scalar_prefix() {
     let arena = DecodeArena::new();
     let mut policy = probe_policy();
     policy.limits.max_retained_bytes = 0;
-    // The integer lane and two scalar values fit; a full scalar buffer does not.
+    // The complete scalar lane cannot fit in this scratch allowance.
     policy.limits.max_materialized_bytes = 512 * 1024;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let span = unique_surface_knot_span(
@@ -751,4 +804,173 @@ fn rejected_u_knot_span_skips_replacement_pole_construction() {
 #[test]
 fn rejected_v_knot_span_skips_replacement_pole_construction() {
     assert_rejected_surface_span_skips_replacement(4);
+}
+
+#[test]
+fn mismatched_patch_multiplicities_skip_scalar_payloads() {
+    let mut multiplicities = vec![0; 100_000];
+    multiplicities[0] = 1;
+    multiplicities[1] = 3;
+    assert_unpaired_patch_knots(&u16_array(41, &multiplicities));
+}
+
+#[test]
+fn mismatched_patch_multiplicities_skip_the_physical_tail() {
+    let mut knots = vec![0.0; 100_000];
+    knots[1] = 1.0;
+    let mut multiplicities = vec![0; 100_000];
+    multiplicities[1] = 3;
+    let mut bytes = f64_array(0x80, 40, &knots);
+    let multiplicity_at = bytes.len();
+    bytes.extend(u16_array(41, &multiplicities));
+    let operation = "test completed first-cell patch rejection";
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = probe_policy();
+            policy.limits.max_work_units = cap;
+            policy.limits.max_materialized_bytes = 4096;
+            policy.limits.max_retained_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            assert_eq!(
+                unique_surface_knot_span(
+                    &ctx,
+                    &bytes,
+                    &Arrays::default(),
+                    (40, 41),
+                    2,
+                    &[0.0, 1.0],
+                    &[2, 2],
+                )?,
+                None
+            );
+            ctx.charge_work(1, operation)
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("first-cell rejection boundary")
+    };
+    // Both first cells exclude the pair. Changing zero to a positive
+    // mismatch cannot require the remaining integer cells or a buffer.
+    let first = super::super::array_body(&bytes, multiplicity_at, 0x7f).unwrap()
+        + crate::layout::bspline_array_header::LEN;
+    bytes[first..first + 2].copy_from_slice(&1_u16.to_be_bytes());
+    let arena = DecodeArena::new();
+    let mut policy = probe_policy();
+    policy.limits.max_work_units = limit.used;
+    policy.limits.max_materialized_bytes = 4096;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(
+        unique_surface_knot_span(
+            &ctx,
+            &bytes,
+            &Arrays::default(),
+            (40, 41),
+            2,
+            &[0.0, 1.0],
+            &[2, 2],
+        )
+        .unwrap(),
+        None
+    );
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn empty_patch_knot_roster_skips_multiplicity_discovery() {
+    let bytes = u16_array(41, &[2; 4096]);
+    let operation = "test completed empty patch knot roster";
+    let error = cadmpeg_test_support::refusal::resource_limit_at(
+        ResourceDimension::WorkUnits,
+        operation,
+        |cap| {
+            let arena = DecodeArena::new();
+            let mut policy = probe_policy();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+            let (spans, _storage) = ctx.with_scoped_storage("test patch span discovery", || {
+                array_spans(&ctx, &bytes, &Arrays::default(), 0x80, 40)
+            })?;
+            assert!(spans.is_empty());
+            ctx.charge_work(1, operation)
+        },
+    );
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("empty roster boundary")
+    };
+    let arena = DecodeArena::new();
+    let mut policy = probe_policy();
+    policy.limits.max_work_units = limit.used;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(
+        unique_surface_knot_span(
+            &ctx,
+            &bytes,
+            &Arrays::default(),
+            (40, 41),
+            2,
+            &[0.0, 1.0],
+            &[2, 2]
+        )
+        .unwrap(),
+        None
+    );
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn zero_declared_patch_knots_skip_both_rosters() {
+    let bytes = u16_array(41, &[2; 4096]);
+    let arena = DecodeArena::new();
+    let mut policy = probe_policy();
+    policy.limits.max_work_units = 0;
+    policy.limits.max_materialized_bytes = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(
+        unique_surface_knot_span(&ctx, &bytes, &Arrays::default(), (40, 41), 0, &[], &[]).unwrap(),
+        None
+    );
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn invalid_patch_multiplicities_store_no_physical_suffix() {
+    for trailing in [false, true] {
+        let mut multiplicities = vec![0; 100_000];
+        multiplicities[1] = 2;
+        if trailing {
+            multiplicities[0] = 2;
+            multiplicities[2] = 1;
+        }
+        let mut bytes = f64_array(0x80, 40, &vec![0.0; 100_000]);
+        bytes.extend(u16_array(41, &multiplicities));
+        let arena = DecodeArena::new();
+        let mut policy = probe_policy();
+        policy.limits.max_retained_bytes = 0;
+        policy.limits.max_materialized_bytes = 4096;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert_eq!(
+            unique_surface_knot_span(
+                &ctx,
+                &bytes,
+                &Arrays::default(),
+                (40, 41),
+                2,
+                &[0.0, 1.0],
+                &[2, 2]
+            )
+            .unwrap(),
+            None
+        );
+        drop(
+            ctx.reserve_scoped(4096, "test rejected patch multiplicity scratch release")
+                .unwrap(),
+        );
+        ctx.finish_session().unwrap();
+    }
 }
