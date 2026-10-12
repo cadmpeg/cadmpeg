@@ -496,6 +496,20 @@ For both resolved layouts, the radius is positive, both intervals are strictly i
 
 Layout `0x62` is `<origin:3f64le> 0e <vector:2f64le> <one:f64le> <radius:f64le> <u_range:2f64le> <v_range:2f64le> 03 <range_origin:f64le>`. The vector is unit length, `one=1`, the radius is positive, both intervals are strictly increasing, and `u1-u0≤2π·radius+1e-6`. The tail satisfies `range_origin=(u0+u1)/2−π·radius` exactly. It is a redundant origin for the stored partial circumferential interval, not an additional rotation. The cylinder axis is `(0,1,0)` and its reference direction is `(vector_x,0,vector_y)`.
 
+The layout-`0x62` cylinder payload is exactly 98 bytes:
+
+| Payload offset | Encoding | Field |
+| --- | --- | --- |
+| `+0` | `f64le[3]` | cylinder origin |
+| `+24` | `u8` | cylinder frame token `0e` |
+| `+25` | `f64le[2]` | cylinder stored unit vector |
+| `+41` | `f64le` | cylinder fixed unit scalar |
+| `+49` | `f64le` | cylinder radius |
+| `+57` | `f64le[2]` | cylinder U limits |
+| `+73` | `f64le[2]` | cylinder V limits |
+| `+89` | `u8` | cylinder terminal `03` |
+| `+90` | `f64le` | cylinder redundant range origin |
+
 ### 5.12 Cone record `b2 03 29`
 
 The 184-byte payload is `<apex:3f64le> <direction_x:3f64le> <direction_y:3f64le> <axis:3f64le> <half_angle:f64le> <reference_radius:f64le> <angular_range:2f64le> <slant_range:2f64le> <angular_scale:f64le> <one:f64le> <zero:f64le> <angular_domain:2f64le>`. `reference_radius` is the conical-surface reference radius. It is independent of the active chart ranges and does not enter the native chart evaluator. The three directions form a right-handed orthonormal frame, `0<half_angle<π/2`, the angular scale is positive, and the slant interval is increasing. `|slant_min|≤1e-12` denotes the apex and canonicalizes to zero. The angular range is strictly increasing, spans at most `2π`, and lies inside the full-turn angular domain. The domain spans `2π` and has the same midpoint as the active range, within `1e-12`. The two fixed tail scalars are exactly `1` and `0`. The native chart evaluates with `azimuth=U/angular_scale` and `P(U,V)=apex+V·(cos(half_angle)·axis+sin(half_angle)·(cos(azimuth)·direction_x+sin(azimuth)·direction_y))`.
@@ -591,7 +605,11 @@ transferred geometric jet.
 
 ### 6.3 Consolidated class-`0x20` pcurve-on-surface (`CATPSpline`)
 
-A 2D spline in a support surface's parameter space. Its payload stores `degU`, `K` definition points, one global curve parameter, one `(U,V)` pair per point, and 2D tangent and second derivative values. The leading operand `op1` is an absolute persistent CGM object tag. The `mode/offset` byte encodes the leading-extrapolation count `q = (mode−1)/4`.
+A 2D spline in a support surface's parameter space. Its payload stores `degU`, `K` definition points, one global curve parameter, one `(U,V)` pair per point, and 2D tangent and second derivative values. The leading operand `op1` is the underlying support's persistent CGM tag within its geometry factory. Explicit and implicit factories have separate tag namespaces. A tag remains stable through object creation, removal of other objects, and factory streaming. The `mode/offset` byte encodes the leading-extrapolation count `q = (mode−1)/4`.
+
+The compact tag is separate from a physical file offset, record ordinal, allocation reference, and framed header token. Numeric equality supplies a candidate for an admitted typed identity relation; uniqueness and that relation's chart and endpoint invariants must also hold. Tags in separate factories or documents do not define a common identity.
+
+The complete consolidated A-family width-1/2/3 class-`34` surface and B-family width-1/2/3 class-`27`, `28`, `29`, `2a`, `2b`, and `2d` carrier payloads store geometry without their own persistent surface tag. The class-`2d` allocation reference names its profile. A unique construction or geometric witness can bind one of these carriers as neutral support geometry. Such a binding does not assign `op1` to the carrier record. An unresolved support retains its tag and pcurve; numeric proximity and equal geometric loci do not supply the missing identity relation.
 
 `b2 03 20` is the B-family form with the same support reference, degree, knot-site parameters, U/V values, first derivatives, second derivatives, and native range. Wide `a6/a7` and `b3/b4` records use identical payload grammars. Terminal `0x07`, optionally followed by one zero padding byte, exhausts every framed form.
 

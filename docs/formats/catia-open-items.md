@@ -230,13 +230,17 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Need.** Resolve the interpolation selector before mapping arbitrary stations into the co-curve gauge. Parse the `84` operand production independently before admitting it as a two-operand map.
 
-### SN-12. Consolidated persistent-tag namespace
+### SN-12. Serialized geometry-factory context and remaining support relations
 
-**Question.** How does an `op1` or absolute persistent CGM tag select a serialized record outside the exact class-`0x19` circle and embedded type-`3` cylinder bindings?
+**Question.** Which serialized relation identifies a consolidated pcurve's geometry factory and binds its remaining persistent support tags to identity-bearing records?
 
 **Known.** `catia.md` §6.3 "When the `op1` support identity equals" defines the exact unique class-`0x19` binding, the unique embedded type-`3` cylinder binding, and the unique standard `00 33` carrier binding. Before the standard-carrier lookup, §7.5 outer alias rows canonicalize a raw `op1` tag only when exactly one retained alias row supplies one canonical surface-roster tag. Direct surface-support rows preserve their tag; grouped non-surface rows require one direct row in the same exact group. Duplicate raw tags, duplicate group targets, missing group targets, unknown geometry, and failed endpoint lifts remain unresolved. B5 object-stream references and allocation operands remain separate namespaces.
 
-**Need.** We must resolve the remaining persistent identities that do not select a unique admitted class-`0x19`, embedded-cylinder, standard-carrier, or canonical-alias target, including any identity-bearing carrier family not covered by an explicit chart or endpoint witness.
+`catia.md` §6.3 "The compact tag is separate" defines factory-local tag scope and the separate addressing forms. Complete consolidated analytic and freeform carrier payloads without their own persistent surface tag supply geometry through independent construction or geometric witnesses.
+
+**Need.** Identify the serialized factory context and any additional typed identity relation for support tags outside the admitted circle, embedded-cylinder, standard-carrier, and canonical-alias relations. Require a source-closed relation and its chart and endpoint invariants.
+
+**Conflict.** A unique class-`19` record with tag 125 and a pcurve with `op1=125` occupy the same source extent, but their U intervals differ and the pcurve is not constant in V. Distinct tags 113 and 126 lift to the same five-site geometric locus through different cylinder charts. Same-source containment, numeric uniqueness, and geometric coincidence do not identify the owning factory or object.
 
 ### SN-14. Incomplete multiple-FBB population membership
 
@@ -251,14 +255,6 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 **Conflict.** A positional pair is not sound when one lane is incomplete or a paired position has different local face or edge cardinality. Counts from a single lane and allocation order do not provide that missing membership witness.
 
 **Note.** The admitted positional relation is source order within the two complete source-closed lanes. It is not a persistent allocation-order join and does not select an entry from a partial lane.
-
-### SN-16. Class-`0x20` persistent reference
-
-**Question.** How does the `op1` or persistent-tag reference in an `a5 03 20` record select a serialized record?
-
-**Known.** `catia.md` §6.3 "`b2 03 20` is the B-family form" defines the pcurve payload and support binding for exact identity and chart matches.
-
-**Need.** We must resolve other references to bind the pcurve support.
 
 ### SN-17. Class-`0x62` owner bounds
 

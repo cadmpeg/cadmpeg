@@ -939,6 +939,25 @@ Parsed by:
 | 16 | 8 | `repeated_fit` | `f64` | little | spec | \| `+16` \| `f64le` \| sampled map repeated fit tolerance \| |
 | 24 | 1 | `terminal` | `u8` | little | spec | \| `+24` \| `u8` \| sampled map terminal `01` \| |
 
+## `consolidated_cylinder_range_origin`
+
+Spec §5.11 · layout: byte offsets · size: 98 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/b2/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 24 | `origin` | `f64[3]` | little | spec | \| `+0` \| `f64le[3]` \| cylinder origin \| |
+| 24 | 1 | `frame_token` | `u8` | little | spec | \| `+24` \| `u8` \| cylinder frame token `0e` \| |
+| 25 | 16 | `stored_vector` | `f64[2]` | little | spec | \| `+25` \| `f64le[2]` \| cylinder stored unit vector \| |
+| 41 | 8 | `one` | `f64` | little | spec | \| `+41` \| `f64le` \| cylinder fixed unit scalar \| |
+| 49 | 8 | `radius` | `f64` | little | spec | \| `+49` \| `f64le` \| cylinder radius \| |
+| 57 | 16 | `u_range` | `f64[2]` | little | spec | \| `+57` \| `f64le[2]` \| cylinder U limits \| |
+| 73 | 16 | `v_range` | `f64[2]` | little | spec | \| `+73` \| `f64le[2]` \| cylinder V limits \| |
+| 89 | 1 | `terminal` | `u8` | little | spec | \| `+89` \| `u8` \| cylinder terminal `03` \| |
+| 90 | 8 | `range_origin` | `f64` | little | spec | \| `+90` \| `f64le` \| cylinder redundant range origin \| |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

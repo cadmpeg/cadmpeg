@@ -35,6 +35,13 @@ current levels require those matrices and representative fixtures.
 
 ## Implemented slices above the score
 
+- Consolidated support tags remain separate from carrier offsets, record order,
+  and header tokens. The existing circle resolver requires a unique identity
+  and a compatible constant-V arc chart; a conflicting identity does not fall
+  back to another geometric candidate. Duplicate-identity and conflicting-chart
+  regressions exercise that rule. Complete identity-free carriers retain their
+  geometry without receiving a persistent support tag.
+
 - Outer-body FINJPL inventory and E5 candidate selection use the header-defined
   `[directory_length,directory_offset)` range. The trailing stream directory
   cannot contribute FINJPL segments, E5 census markers, E5 candidates,
@@ -1161,3 +1168,38 @@ occur, once each, both inside `05 08 01` vertex rows. Searches for nine known
 class-16 signatures across all 79 CATPart files find 17 raw hits in four
 files and none in CTC05. Those raw counts bound known signatures; the closed
 standard row and native frames establish the absence of an inline cache.
+
+The CTC05 cylinder at physical offset 606,682 closes in 103 bytes, including
+its five-byte frame header, with no persistent identity lane. Independent
+parsing verifies the complete pcurve jets at offsets 608,198 and 609,351.
+Their support tags 126 and 113 differ, but their five paired sites agree
+within `5.707901599824335e-11` mm through opposite cylinder charts. The
+tag-113 endpoints select exactly one of 403 native edges at a `2e-3` mm gate:
+edge 174, with residual `6.105067919430197e-6` mm. The tag-125 pcurve at offset
+645,000 and unique circle ID 125 at offset 515,727 share one descriptor
+extent; their U ranges differ and their endpoint V difference is
+`9.769569662968705`. Numeric uniqueness fails the circle-chart invariants.
+
+An independent sweep reconstructs logical descriptor sources in all 79
+CATPart files, suppresses nested markers, and deduplicates physical starts.
+Its width-1/2/3 class-20 frame candidates contain 5,906 valid compact operand
+fronts; five additional fronts fail compact decoding. These counts classify
+framing and operand fronts, rather than semantically admitted pcurves.
+None of the 5,906 operands equals a candidate identity-free carrier offset.
+Header-token comparison also fails as a general selector:
+
+| Candidate header representation | Absent | Unique numeric match | Multiple numeric matches |
+| --- | ---: | ---: | ---: |
+| Packed native token bytes | 5,743 | 62 | 101 |
+| Decoded compact token | 5,440 | 221 | 245 |
+
+The sweep retains 623 numeric pcurve/circle collisions. It finds 379 operand
+values in multiple documents, with one value used in nine files. No matching
+scalar assigns a persistent tag to an identity-free carrier.
+
+The CAA geometry-object documentation defines persistent tags within explicit
+or implicit geometry factories, and the creation example reads a pcurve's
+underlying surface tag with `GetSurface()->GetPersistentTag()`.
+[Geometry objects](https://www.maruf.ca/files/caadoc/CAAGobTechArticles/GeoObjects.htm)
+and [geometry creation](https://www.maruf.ca/files/caadoc/CAAGobUseCases/CAAGobCreation.htm)
+establish the API namespace. The serialized factory relation remains in SN-12.
