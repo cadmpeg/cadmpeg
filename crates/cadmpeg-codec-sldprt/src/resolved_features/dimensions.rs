@@ -1843,12 +1843,9 @@ fn terminal_repeated_radial_circle_pairs<'a>(
                 return Ok(None);
             };
             let mut pairs = Vec::new();
-            let pair_width = std::num::NonZeroUsize::new(2).ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed("empty radial circle pair window")
-            })?;
             for pair in ctx
                 .admit_iter(roster, MARKER_CIRCLE_OPERATION)?
-                .windows(pair_width)
+                .windows(const { crate::nonzero(2) })
             {
                 let (center, radial) = (&pair[0], &pair[1]);
                 let Some((center_index, radial_index)) =
